@@ -1,0 +1,191 @@
+# REST API Reference Manual
+
+LinkedIn Studio Enterprise exposes a comprehensive RESTful API on `http://127.0.0.1:8000/api`. Interactive Swagger documentation is accessible at `http://127.0.0.1:8000/docs`.
+
+---
+
+## 1. Analytics Endpoints
+
+### `GET /api/analytics/kpis`
+Calculates high-level metrics, growth rates, and true period-over-period percentage deltas.
+* **Query Parameters**:
+  * `range` (string, optional): `7d`, `14d`, `30d` (default), or `90d`.
+* **Response (200 OK)**:
+```json
+{
+  "range": "30d",
+  "impressions": 58400,
+  "impressions_delta_pct": 14.2,
+  "total_engagements": 2980,
+  "engagements_delta_pct": 8.6,
+  "avg_engagement_rate": 5.1,
+  "engagement_rate_delta": 0.4,
+  "total_followers": 2412,
+  "follower_growth": 148,
+  "profile_views": 104,
+  "profile_views_delta_pct": 18.2,
+  "scheduled_posts_count": 1
+}
+```
+
+### `GET /api/analytics/overview`
+Returns the daily time-series array for charts.
+* **Query Parameters**: `range` (`7d`, `14d`, `30d`, `90d`).
+* **Response (200 OK)**:
+```json
+{
+  "status": "success",
+  "range": "30d",
+  "count": 30,
+  "series": [
+    {
+      "date": "2026-08-15",
+      "impressions": 1820,
+      "reactions": 85,
+      "comments": 22,
+      "shares": 8,
+      "followers": 2264,
+      "profile_views": 92
+    }
+  ]
+}
+```
+
+### `GET /api/analytics/demographics`
+Returns audience distribution across 4 dimensions: `job_title`, `company`, `geography`, and `seniority`.
+
+### `GET /api/analytics/export`
+Generates and downloads a complete historical CSV report.
+
+---
+
+## 2. AI Command Engine Endpoints
+
+### `GET /api/ai/status`
+Returns current configuration, active mode, and capabilities.
+* **Response (200 OK)**:
+```json
+{
+  "provider": "gemini_antigravity",
+  "has_api_key": true,
+  "model": "gemini-2.5-flash",
+  "active_mode": "Gemini 2.5 Flash (Cloud Native)",
+  "antigravity_pair_programming": true,
+  "capabilities": [
+    "10x_viral_hooks",
+    "smart_repurpose",
+    "algorithmic_audit",
+    "antigravity_agent_command",
+    "personalized_crm_dm"
+  ]
+}
+```
+
+### `POST /api/ai/settings`
+Saves your optional Google Gemini API key to local SQLite.
+* **Request Body**:
+```json
+{
+  "gemini_api_key": "AIzaSy..."
+}
+```
+
+### `POST /api/ai/command`
+Executes an instruction using Gemini (if key configured) or the Antigravity Local Engine.
+* **Request Body**:
+```json
+{
+  "command": "Draft a punchy post about decoupled state machines",
+  "context": "Optional existing draft notes here..."
+}
+```
+* **Response (200 OK)**:
+```json
+{
+  "status": "success",
+  "engine": "Gemini 2.5 Flash",
+  "output": "𝗭𝗲𝗿𝗼 𝗺𝗮𝗻𝘂𝗮𝗹 𝗶𝗻𝘁𝗲𝗿𝘃𝗲𝗻𝘁𝗶𝗼𝗻.\n\nThat is the single metric that matters..."
+}
+```
+
+---
+
+## 3. Carousel PDF Generator
+
+### `POST /api/carousel/generate`
+Generates a 1080×1080 multi-page PDF ready for LinkedIn Document upload.
+* **Request Body**:
+```json
+{
+  "slides": [
+    { "title": "Decoupled Architecture", "body": "Why schemas must be decoupled from business logic." },
+    { "title": "01. Immutable State", "body": "State transitions should be events, not in-place mutations." },
+    { "title": "Summary & Takeaways", "body": "Save this carousel to revisit foundational architecture." }
+  ],
+  "theme": "dark_slate",
+  "author_name": "Dharmik Shingala",
+  "author_title": "Content Strategist & Enterprise Systems Practitioner"
+}
+```
+* **Response (200 OK)**: Binary stream (`application/pdf`) with `Content-Disposition: attachment; filename=linkedin_carousel.pdf`.
+
+---
+
+## 4. Leads & CRM Endpoints
+
+### `GET /api/leads`
+Lists leads, optionally filtered by status (`New Lead`, `Outreach Sent`, `Connected`, `Meeting Booked`).
+
+### `POST /api/leads`
+Creates a new prospect lead in the pipeline.
+
+### `PUT /api/leads/{id}/status`
+Updates lead pipeline status and notes.
+* **Request Body**:
+```json
+{
+  "status": "Outreach Sent",
+  "notes": "Sent personalized DM via LinkedIn on Monday morning"
+}
+```
+
+### `GET /api/leads/{id}/dm-script`
+Generates a personalized direct message script for the prospect.
+* **Response (200 OK)**:
+```json
+{
+  "status": "success",
+  "lead_name": "Aravind Subramanian",
+  "dm_script": "Hi Aravind, noticed your perspective on our recent discussion around enterprise systems. Loved your insights..."
+}
+```
+
+---
+
+## 5. Post Formatting & Algorithmic Audit
+
+### `POST /api/format/re-hook`
+Generates 10 high-converting alternative hooks with mobile fold analysis.
+
+### `POST /api/format/repurpose`
+Transforms draft text into 5 distinct LinkedIn frameworks.
+
+### `POST /api/format/algorithm-audit`
+Performs real-time 2026 algorithmic distribution safety audit.
+* **Response (200 OK)**:
+```json
+{
+  "safety_score": 95,
+  "status_label": "Optimal",
+  "word_count": 142,
+  "estimated_dwell_seconds": 42,
+  "penalties": [],
+  "recommendations": ["Consider adding 2-3 focused hashtags to aid discovery"],
+  "has_outbound_links": false,
+  "hashtag_count": 0,
+  "mention_count": 0
+}
+```
+
+### `POST /api/format/bold`, `/italic`, `/monospace`, `/clean`
+Transforms text into Unicode mathematical styles or scrubs em-dashes.

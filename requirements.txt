@@ -1,0 +1,15 @@
+# Core Backend & Gateway
+fastapi>=0.110.0
+uvicorn>=0.28.0
+pydantic>=2.6.0
+
+# Image & PDF Processing (1080x1080 Carousel Engine)
+pillow>=10.2.0
+
+# Networking & API Integrations
+requests>=2.31.0
+httpx>=0.27.0
+
+# Testing & Quality Assurance
+pytest>=8.0.0
+flake8>=7.0.0

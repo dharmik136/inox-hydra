@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LinkedIn Studio Enterprise | Minimalist Desktop Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <!-- Chart.js CDN for interactive creator analytics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <div class="app-container">
+
+    <!-- LEFT PANE: Global Collapsible Iconic Sidebar -->
+    <aside class="global-sidebar" id="global-sidebar">
+      <div class="sidebar-top">
+        <a href="#" class="sidebar-brand" id="brand-toggle" title="LinkedIn Studio Enterprise">
+          <div class="brand-icon-box">LS</div>
+          <span class="brand-name">LinkedIn Studio</span>
+        </a>
+
+        <nav class="sidebar-nav">
+          <button class="nav-link active" data-tab="tab-studio" title="Studio (Editor & Queue)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+            <span class="nav-link-label">Studio & Editor</span>
+          </button>
+
+          <button class="nav-link" data-tab="tab-queue" title="Schedule & Smart Slots">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+            <span class="nav-link-label">Schedule & Queue</span>
+            <span class="sidebar-badge count" id="queue-badge-count">1</span>
+          </button>
+
+          <button class="nav-link" data-tab="tab-crm" title="Warm-Lead CRM Inbox">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            <span class="nav-link-label">Inbound CRM</span>
+            <span class="sidebar-badge pro">WARM</span>
+          </button>
+
+          <button class="nav-link" data-tab="tab-inspirations" title="Viral Post Swipe File (356 Vaulted)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
+            <span class="nav-link-label">Viral Swipe File</span>
+            <span class="sidebar-badge count">356</span>
+          </button>
+
+          <button class="nav-link" data-tab="tab-analytics" title="Analytics (Reach/Growth)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+            <span class="nav-link-label">Analytics</span>
+          </button>
+
+          <button class="nav-link" data-tab="tab-ai-command" title="AI Command Hub">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
+            <span class="nav-link-label">AI Command</span>
+            <span class="sidebar-badge ai">GEMINI</span>
+          </button>
+
+          <button class="nav-link" data-tab="tab-docs" title="Enterprise Documentation & Playbook">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/><path d="M6 14h6"/></svg>
+            <span class="nav-link-label">Docs & Playbook</span>
+            <span class="sidebar-badge pro">V2.5</span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="local-shield-indicator" title="Local Air-Gapped Engine Running on 127.0.0.1:8000">
+          <span class="shield-pulse-dot"></span>
+          <span class="shield-text">100% Local Machine</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MAIN SHELL -->
+    <div class="main-shell">
+
+      <!-- STUDIO TOPBAR -->
+      <header class="studio-topbar">
+        <div class="topbar-left">
+          <div class="view-indicator">
+            <h1 class="view-main-title" id="view-title">Post Studio & Simulator</h1>
+            <span class="view-sub-title" id="view-subtitle">Distraction-Free Editor with Real-Time Feed Simulator</span>
+          </div>
+        </div>
+
+        <div class="topbar-center">
+          <div class="stat-pill" title="Total characters in draft">
+            Chars: <strong id="top-char-count">0</strong> / 3,000
+          </div>
+          <div class="stat-pill" title="Pre-fold hook length (Target: < 180 chars)">
+            Pre-Fold: <strong id="top-hook-count">0</strong> chars
+          </div>
+          <div class="stat-pill" title="Estimated reading dwell time">
+            Dwell: <strong id="top-dwell-time">0s</strong>
+          </div>
+        </div>
+
+        <div class="topbar-right">
+          <button class="btn btn-subtle btn-sm" id="btn-clean-formatting" title="Scrub em-dashes and fix spacing">
+            🧹 Clean Spacing
+          </button>
+          <button class="btn btn-outline btn-sm" id="btn-save-draft">
+            💾 Save Draft
+          </button>
+          <button class="btn btn-primary btn-sm" id="btn-schedule-post">
+            ⏰ Schedule Post
+          </button>
+        </div>
+      </header>
+
+      <!-- VIEW 1: THREE-PANE STUDIO VIEWPORT (Editor + Mobile Simulator) -->
+      <div class="studio-viewport" id="tab-studio">
+
+        <!-- CENTER PANE: The Distraction-Free Editor -->
+        <main class="editor-pane">
+          <div class="editor-stage">
+
+            <!-- INLINE HOOK VARIANT CAROUSEL (Appears when clicking "Generate Hooks") -->
+            <div class="hook-carousel-container" id="hook-carousel-container">
+              <div class="hook-carousel-header">
+                <div class="hook-carousel-title">
+                  <span>🎯 10x Scroll-Stopping Hook Variants</span>
+                  <span class="sidebar-badge pro" id="hook-count-pill">10 Options</span>
+                </div>
+                <div class="hook-carousel-actions">
+                  <button class="btn btn-subtle btn-sm" id="btn-prev-hook-scroll">◀</button>
+                  <button class="btn btn-subtle btn-sm" id="btn-next-hook-scroll">▶</button>
+                  <button class="btn btn-subtle btn-sm" id="btn-close-hook-carousel" title="Dismiss carousel">✕</button>
+                </div>
+              </div>
+              <div class="hook-cards-track" id="hook-cards-track">
+                <!-- Dynamically populated hook cards -->
+              </div>
+            </div>
+
+            <!-- MAIN EDITOR CARD -->
+            <div class="editor-card">
+              <div class="editor-toolbar-row">
+                <div class="editor-mode-toggle">
+                  <button class="mode-tab-btn active" id="mode-text-btn">Standard Post</button>
+                  <button class="mode-tab-btn" id="mode-carousel-btn">1080×1080 PDF Deck</button>
+                </div>
+
+                <div class="editor-quick-helpers">
+                  <button class="btn btn-outline btn-sm" id="btn-trigger-rehook">
+                    ⚡ Generate Hooks
+                  </button>
+                  <button class="btn btn-outline btn-sm" id="btn-trigger-repurpose">
+                    🔄 Repurpose Post
+                  </button>
+                </div>
+              </div>
+
+              <!-- STANDARD WRITING TEXTAREA CANVAS -->
+              <div class="editor-canvas-wrapper" id="editor-text-mode-canvas">
+                <textarea class="main-writing-textarea" id="post-editor-input" placeholder="Start typing your insight, breakdown, or framework...
+
+Highlight text anytime to format with sans-bold or clean formatting. Watch the glowing red fold line below to optimize your hook before LinkedIn truncates it."></textarea>
+
+                <!-- DYNAMIC GLOWING RED "SEE MORE" FOLD LINE -->
+                <div class="see-more-fold-line" id="editor-fold-line" style="top: 130px;">
+                  <span class="fold-line-tag">...see more fold</span>
+                  <span class="fold-line-counter" id="fold-char-badge">Pre-Fold: 160 chars</span>
+                </div>
+
+                <!-- FLOATING HIGHLIGHT ACTION BAR -->
+                <div class="floating-action-bar" id="floating-selection-toolbar">
+                  <button class="floating-btn" id="float-bold-btn" title="Convert to Mathematical Sans-Bold">𝗕 Bold</button>
+                  <button class="floating-btn" id="float-italic-btn" title="Convert to Mathematical Sans-Italic">𝘐 Italic</button>
+                  <button class="floating-btn" id="float-mono-btn" title="Convert to Monospace">𝙼 Mono</button>
+                  <button class="floating-btn" id="float-strike-btn" title="Apply Strikethrough">S̶ Strike</button>
+                  <button class="floating-btn" id="float-clean-btn" title="Clean em-dashes and formatting">🧹 Clean</button>
+                  <button class="floating-btn danger" id="float-rehook-btn" title="Generate Hook for this concept">⚡ Re-Hook</button>
+                </div>
+              </div>
+
+              <!-- 1080x1080 MULTI-SLIDE CAROUSEL CANVAS -->
+              <div class="carousel-deck-canvas" id="carousel-deck-canvas">
+                <div class="carousel-meta-bar">
+                  <div style="display: flex; align-items: center; gap: 10px;">
+                    <span style="font-size: 13px; font-weight: 700;">Theme:</span>
+                    <select class="media-path-field" id="carousel-theme-select" style="width: 180px;">
+                      <option value="dark_slate">Dark Slate (Executive)</option>
+                      <option value="minimalist_white">Minimalist White (Clean)</option>
+                      <option value="blueprint">Engineering Blueprint</option>
+                    </select>
+                  </div>
+                  <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-outline btn-sm" id="btn-add-carousel-slide">+ Add Slide</button>
+                    <button class="btn btn-primary btn-sm" id="btn-download-carousel-pdf">📄 Download 1080×1080 PDF</button>
+                  </div>
+                </div>
+
+                <div class="carousel-slides-grid" id="carousel-slides-grid">
+                  <!-- Dynamically rendered square slide cards -->
+                </div>
+              </div>
+
+              <!-- Media Attachment Input Row -->
+              <div class="media-attachment-row" id="media-attachment-row">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                <input type="text" class="media-path-field" id="media-path-input" placeholder="Media URL or local image path (e.g. /assets/motadata_to_enterprise_4k_flawless.jpg)...">
+              </div>
+            </div>
+
+          </div>
+        </main>
+
+        <!-- RIGHT PANE: The Live Simulator & Intelligence Panel -->
+        <aside class="simulator-pane">
+          <div class="simulator-pane-header">
+            <span class="simulator-pane-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><line x1="12" x2="12.01" y1="18" y2="18"/></svg>
+              Mobile Feed Simulator
+            </span>
+            <span class="sidebar-badge pro" id="sim-fold-status">Fold Safe</span>
+          </div>
+
+          <!-- Pixel-Perfect Mobile Phone Frame -->
+          <div class="mobile-device-frame">
+            <div class="device-notch"></div>
+            <div class="device-screen-content">
+              <div class="feed-post-card">
+                <!-- Author Header -->
+                <div class="feed-author-header">
+                  <div class="feed-author-avatar">DS</div>
+                  <div class="feed-author-details">
+                    <span class="feed-author-name">Dharmik Shingala</span>
+                    <span class="feed-author-headline">Content Strategist • Enterprise Systems</span>
+                    <div class="feed-timestamp-row">Just now • 🌐</div>
+                  </div>
+                </div>
+
+                <!-- Text Body with Dynamic Truncation Fold -->
+                <div class="feed-post-text-box" id="sim-post-box">
+                  <div class="sim-above-fold" id="simulated-above-fold">Stepping into enterprise architecture and modern systems requires discipline.</div>
+                  
+                  <!-- Synchronized Mobile Fold Line Indicator -->
+                  <div class="sim-fold-marker" id="sim-fold-marker">
+                    <span class="sim-fold-tag">Mobile Fold Cutoff</span>
+                  </div>
+
+                  <span class="sim-see-more-toggle" id="simulated-see-more">...see more</span>
+                  <div class="sim-below-fold" id="simulated-below-fold"></div>
+                </div>
+
+                <!-- Media Preview -->
+                <div class="feed-post-media" id="simulated-media">
+                  <img id="simulated-media-img" src="" alt="Post Attachment">
+                </div>
+
+                <!-- Engagement Bar -->
+                <div class="feed-engagement-bar">
+                  <span>👍 Like</span>
+                  <span>💬 Comment</span>
+                  <span>🔁 Repost</span>
+                  <span>📤 Send</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ALGORITHMIC SAFETY SCORECARD PANEL -->
+          <div class="algo-safety-card">
+            <div class="algo-card-header">
+              <span class="algo-card-title">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                Algorithmic Safety Audit
+              </span>
+              <span class="algo-score-badge high-reach" id="algo-score-badge">94% High Reach</span>
+            </div>
+
+            <!-- 6 Deterministic Dimension Checklist -->
+            <div class="algo-dimension-list" id="algo-dimension-list">
+              <div class="dimension-item">
+                <span class="dimension-label">🔗 Outbound Link Egress</span>
+                <span class="dimension-status safe" id="dim-link-status">Safe (0 in body)</span>
+              </div>
+              <div class="dimension-item">
+                <span class="dimension-label">🎯 Pre-Fold Hook CTR</span>
+                <span class="dimension-status safe" id="dim-hook-status">Fold Safe (< 180 chars)</span>
+              </div>
+              <div class="dimension-item">
+                <span class="dimension-label">🛡️ Engagement-Bait Classifier</span>
+                <span class="dimension-status safe" id="dim-bait-status">Clean (0 bait flags)</span>
+              </div>
+              <div class="dimension-item">
+                <span class="dimension-label">🏷️ Hashtag Density</span>
+                <span class="dimension-status safe" id="dim-hashtag-status">Optimal (0–4 tags)</span>
+              </div>
+              <div class="dimension-item">
+                <span class="dimension-label">📖 Pacing & Wall-of-Text</span>
+                <span class="dimension-status safe" id="dim-pacing-status">Well-spaced</span>
+              </div>
+              <div class="dimension-item">
+                <span class="dimension-label">♿ Font & Em-Dash Health</span>
+                <span class="dimension-status safe" id="dim-emdash-status">Zero Em-Dash</span>
+              </div>
+            </div>
+
+            <!-- Estimated Pacing & Dwell Time -->
+            <div class="dwell-pacing-grid">
+              <div class="dwell-metric-box">
+                <span class="dwell-metric-label">Estimated Dwell</span>
+                <span class="dwell-metric-val" id="dwell-display">~65 sec</span>
+              </div>
+              <div class="dwell-metric-box">
+                <span class="dwell-metric-label">Algorithm Verdict</span>
+                <span class="dwell-metric-val" id="verdict-display" style="color: var(--accent-emerald);">Expand Feed</span>
+              </div>
+            </div>
+          </div>
+
+        </aside>
+      </div>
+
+      <!-- VIEW 2: SCHEDULE & QUEUE -->
+      <div class="full-view-container" id="tab-queue">
+        <div class="view-panel">
+          <div class="panel-header-row">
+            <div>
+              <h2 class="panel-title">Publishing Cadence & Smart Slots</h2>
+              <p class="panel-sub">Optimized for maximum creator dwell time and organic feed distribution</p>
+            </div>
+            <button class="btn btn-outline btn-sm" id="btn-refresh-queue">Sync Queue</button>
+          </div>
+          <div id="queue-cards-list"></div>
+        </div>
+      </div>
+
+      <!-- VIEW 3: WARM-LEAD CRM INBOX -->
+      <div class="full-view-container" id="tab-crm">
+        <div class="kpi-row">
+          <div class="kpi-box">
+            <span class="kpi-title">Active Prospects</span>
+            <span class="kpi-number" id="crm-total-leads">4</span>
+            <span class="kpi-delta positive">Warm engagers</span>
+          </div>
+          <div class="kpi-box">
+            <span class="kpi-title">Outreach Sent</span>
+            <span class="kpi-number" id="crm-outreach-count">1</span>
+            <span class="kpi-delta neutral">In progress</span>
+          </div>
+          <div class="kpi-box">
+            <span class="kpi-title">Connected</span>
+            <span class="kpi-number" id="crm-connected-count">1</span>
+            <span class="kpi-delta positive">1st degree</span>
+          </div>
+          <div class="kpi-box">
+            <span class="kpi-title">Meetings Booked</span>
+            <span class="kpi-number" id="crm-meeting-count">1</span>
+            <span class="kpi-delta positive">High conversion</span>
+          </div>
+        </div>
+
+        <div class="view-panel">
+          <div class="panel-header-row" style="flex-wrap: wrap; gap: 12px;">
+            <div>
+              <h2 class="panel-title">Warm Engager Relationship Pipeline</h2>
+              <p class="panel-sub">People who commented or reacted to your posts • 100% Private Local Storage</p>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <input type="text" id="crm-search-input" class="media-path-field" placeholder="Search by name, company, notes..." style="width: 240px;">
+              <button class="btn btn-outline btn-sm" id="btn-export-crm-csv">⬇ Export CSV</button>
+              <button class="btn btn-primary btn-sm" id="btn-add-prospect-modal">+ Add Prospect</button>
+            </div>
+          </div>
+
+          <!-- CRM Status Filter Chips -->
+          <div class="topic-chips-row" id="crm-status-chips" style="margin-bottom: 14px;">
+            <button class="topic-chip active" data-status="">All Leads</button>
+            <button class="topic-chip" data-status="New Lead">🔥 New Leads</button>
+            <button class="topic-chip" data-status="Outreach Sent">✉️ Outreach Sent</button>
+            <button class="topic-chip" data-status="Connected">🤝 Connected</button>
+            <button class="topic-chip" data-status="Meeting Booked">🎯 Meetings Booked</button>
+          </div>
+
+          <div class="data-table-wrapper">
+            <table class="clean-table">
+              <thead>
+                <tr>
+                  <th>Contact Name</th>
+                  <th>Title & Company</th>
+                  <th>Engagement</th>
+                  <th>Status</th>
+                  <th>Notes</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="crm-table-tbody">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 4: VIRAL POST SWIPE FILE (356 Vaulted Blueprints) -->
+      <div class="full-view-container" id="tab-inspirations">
+        <div class="view-panel">
+          <div class="panel-header-row">
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <h2 class="panel-title">Viral Post Swipe File</h2>
+                <span class="sidebar-badge count" id="swipe-count-badge">356 Vaulted Blueprints</span>
+              </div>
+              <p class="panel-sub">Reverse-engineered viral hooks, structures, and pacing vaulted permanently from top creators</p>
+            </div>
+            <div style="width: 320px;">
+              <input type="text" class="media-path-field" id="insp-search-input" placeholder="Search 356 posts by keyword, author, or topic..." style="width: 100%;">
+            </div>
+          </div>
+
+          <!-- 13 Topic Category Filter Chips -->
+          <div class="topic-chips-row" id="insp-topic-chips">
+            <button class="topic-chip active" data-topic="">All (356)</button>
+            <button class="topic-chip" data-topic="AI Agents">🤖 AI Agents (25)</button>
+            <button class="topic-chip" data-topic="Enterprise Architecture">🏛️ Enterprise Architecture (25)</button>
+            <button class="topic-chip" data-topic="Observability">📡 Observability (23)</button>
+            <button class="topic-chip" data-topic="Systems Engineering">⚙️ Systems Engineering (23)</button>
+            <button class="topic-chip" data-topic="B2B SaaS">💼 B2B SaaS (26)</button>
+            <button class="topic-chip" data-topic="Leadership">👑 Leadership (28)</button>
+            <button class="topic-chip" data-topic="Content Strategy">✍️ Content Strategy (28)</button>
+            <button class="topic-chip" data-topic="Growth">📈 Growth (28)</button>
+            <button class="topic-chip" data-topic="Solopreneur">🚀 Solopreneur (28)</button>
+            <button class="topic-chip" data-topic="CTO">💻 CTO (29)</button>
+            <button class="topic-chip" data-topic="Productivity">⚡ Productivity (29)</button>
+            <button class="topic-chip" data-topic="Consulting">🎯 Consulting (30)</button>
+          </div>
+
+          <div class="swipe-file-grid" id="inspirations-container">
+            <!-- 356 Curated Cards rendered dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 5: ANALYTICS OVERVIEW -->
+      <div class="full-view-container" id="tab-analytics">
+        <div class="kpi-row">
+          <div class="kpi-box">
+            <span class="kpi-title">Followers</span>
+            <span class="kpi-number" id="kpi-followers">2,412</span>
+            <span class="kpi-delta positive">+103 past 30 days</span>
+          </div>
+          <div class="kpi-box">
+            <span class="kpi-title">Connections</span>
+            <span class="kpi-number" id="kpi-connections">2,347</span>
+            <span class="kpi-delta positive">Active Network</span>
+          </div>
+          <div class="kpi-box">
+            <span class="kpi-title">Profile Views</span>
+            <span class="kpi-number" id="kpi-views">104</span>
+            <span class="kpi-delta positive">+18% vs prev</span>
+          </div>
+          <div class="kpi-box">
+            <span class="kpi-title">Total Impressions</span>
+            <span class="kpi-number" id="kpi-impressions">314</span>
+            <span class="kpi-delta positive">Active Cadence</span>
+          </div>
+        </div>
+
+        <div class="view-panel">
+          <div class="panel-header-row">
+            <div>
+              <h2 class="panel-title">Audience Reach & Dwell Velocity</h2>
+              <p class="panel-sub">Daily impressions time-series data</p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="btn btn-outline btn-sm" id="btn-export-csv-report">Export CSV</button>
+            </div>
+          </div>
+          <div style="height: 320px; width: 100%;">
+            <canvas id="analytics-chart-canvas"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 6: AI COMMAND HUB -->
+      <div class="full-view-container" id="tab-ai-command">
+        <div class="view-panel" style="max-width: 800px; margin: 0 auto;">
+          <div class="panel-header-row">
+            <div>
+              <h2 class="panel-title">✨ Gemini & Antigravity AI Command Hub</h2>
+              <p class="panel-sub">Dual-mode local content generation, hook formulation, and CRM scripting</p>
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div class="topic-chips-row">
+              <button class="topic-chip ai-quick-cmd" data-cmd="Draft a punchy contrarian LinkedIn post on Enterprise Observability vs reactive fire-drills. Use sans-bold for key lines and no em-dashes.">Contrarian Systems Post</button>
+              <button class="topic-chip ai-quick-cmd" data-cmd="Generate 10 scroll-stopping hooks for scaling data infrastructure with zero downtime.">10x Hooks Generator</button>
+              <button class="topic-chip ai-quick-cmd" data-cmd="Repurpose my notes into 5 distinct high-performing LinkedIn frameworks with clean whitespace.">Repurpose Notes</button>
+            </div>
+
+            <textarea class="main-writing-textarea" id="ai-command-prompt" placeholder="Type your instruction or prompt here..." style="min-height: 120px; background: var(--bg-subtle); padding: 14px; border-radius: 8px; border: 1px solid var(--border-light);"></textarea>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <button class="btn btn-outline btn-sm" id="btn-attach-draft-context">📎 Attach Current Draft</button>
+              <button class="btn btn-primary btn-sm" id="btn-run-ai-command">Execute Command</button>
+            </div>
+
+            <div style="margin-top: 10px;">
+              <span style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">Output:</span>
+              <textarea class="main-writing-textarea" id="ai-command-output" readonly placeholder="Output will appear here..." style="min-height: 200px; background: #FFFFFF; padding: 14px; border-radius: 8px; border: 1px solid var(--border-light); margin-top: 6px;"></textarea>
+              <div style="display: flex; gap: 8px; margin-top: 8px;">
+                <button class="btn btn-outline btn-sm" id="btn-copy-ai-output">📋 Copy</button>
+                <button class="btn btn-primary btn-sm" id="btn-send-output-to-editor">✍️ Load into Studio</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VIEW 7: ENTERPRISE DOCUMENTATION & PLAYBOOK HUB -->
+      <div class="full-view-container" id="tab-docs">
+        <div class="view-panel docs-hub-panel">
+          <div class="panel-header-row" style="flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
+            <div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <h2 class="panel-title">Enterprise Documentation & Architecture Playbook</h2>
+                <span class="sidebar-badge pro">100% LOCALHOST</span>
+                <span class="sidebar-badge count" id="docs-count-badge">7 Modules</span>
+              </div>
+              <p class="panel-sub">Operational manual, algorithmic safety formulas, data schemas, and zero-egress architecture guides</p>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center;">
+              <input type="text" id="docs-search-input" class="media-path-field" placeholder="Search documentation, formulas, architecture..." style="width: 280px;">
+              <button class="btn btn-outline btn-sm" id="btn-export-docs-md" title="Download current manual">⬇ Export Markdown</button>
+            </div>
+          </div>
+
+          <!-- Documentation Explorer Split Layout -->
+          <div class="docs-explorer-layout">
+            <!-- Left Sidebar Navigation of Modules -->
+            <aside class="docs-nav-sidebar" id="docs-nav-list">
+              <!-- Dynamically populated module cards -->
+            </aside>
+
+            <!-- Right Reading Pane -->
+            <main class="docs-reading-pane" id="docs-reading-pane">
+              <div class="docs-article-header" id="docs-article-header">
+                <!-- Dynamically populated module header -->
+              </div>
+              <div class="docs-article-body" id="docs-article-body">
+                <!-- Formatted document markdown/HTML content -->
+              </div>
+            </main>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- CONTEXTUAL DM MODAL -->
+  <div class="modal-overlay" id="dm-modal">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 class="modal-title">⚡ Contextual Warm Outreach Starter</h3>
+        <button class="btn btn-subtle btn-sm" id="dm-close-btn">✕</button>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted);">
+        Personalized, conversational DM draft referencing the prospect's profile and the exact post they engaged with.
+      </p>
+
+      <!-- DM Style Selector Chips -->
+      <div class="topic-chips-row" id="dm-style-chips" style="margin-bottom: 6px;">
+        <button class="topic-chip active" data-style="value_add">💡 Value Add (Technical Question)</button>
+        <button class="topic-chip" data-style="resource_share">📑 Resource Share (Blueprint)</button>
+        <button class="topic-chip" data-style="quick_chat">☕ Quick Chat (15-min Coffee)</button>
+      </div>
+
+      <textarea class="main-writing-textarea" id="dm-script-textarea" style="min-height: 160px; background: var(--bg-subtle); padding: 12px; border-radius: 8px; border: 1px solid var(--border-light); font-size: 14px;"></textarea>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="btn btn-outline btn-sm" id="dm-cancel-btn">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-copy-dm">📋 Copy to Clipboard</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ADD PROSPECT MODAL -->
+  <div class="modal-overlay" id="prospect-modal">
+    <div class="modal-card" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3 class="modal-title">👤 Add Warm Inbound Prospect</h3>
+        <button class="btn btn-subtle btn-sm" id="prospect-modal-close">✕</button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <div>
+          <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Full Name *</label>
+          <input type="text" id="add-lead-name" class="media-path-field" placeholder="e.g. David Lin" style="width: 100%;">
+        </div>
+        <div>
+          <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Headline / Title</label>
+          <input type="text" id="add-lead-headline" class="media-path-field" placeholder="e.g. VP of Infrastructure at Nexus" style="width: 100%;">
+        </div>
+        <div>
+          <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Company</label>
+          <input type="text" id="add-lead-company" class="media-path-field" placeholder="e.g. Nexus Tech" style="width: 100%;">
+        </div>
+        <div>
+          <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">LinkedIn Profile URL</label>
+          <input type="text" id="add-lead-url" class="media-path-field" placeholder="https://www.linkedin.com/in/username" style="width: 100%;">
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Engagement</label>
+            <select id="add-lead-engagement" class="media-path-field" style="width: 100%;">
+              <option value="Commented">Commented</option>
+              <option value="Liked">Liked</option>
+              <option value="Reposted">Reposted</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Status</label>
+            <select id="add-lead-status" class="media-path-field" style="width: 100%;">
+              <option value="New Lead">New Lead</option>
+              <option value="Outreach Sent">Outreach Sent</option>
+              <option value="Connected">Connected</option>
+              <option value="Meeting Booked">Meeting Booked</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Context Notes</label>
+          <textarea id="add-lead-notes" class="media-path-field" placeholder="e.g. Commented on enterprise decoupling post." style="width: 100%; min-height: 60px; resize: vertical;"></textarea>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
+        <button class="btn btn-outline btn-sm" id="prospect-modal-cancel">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-save-prospect">Save Prospect</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <!-- Main Application Script -->
+  <script src="app.js"></script>
+</body>
+</html>
