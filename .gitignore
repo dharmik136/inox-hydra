@@ -1,0 +1,54 @@
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# SQLite WAL & temporary database files
+*.db-wal
+*.db-shm
+*.sqlite3-wal
+*.sqlite3-shm
+
+# Environment & credentials
+.env
+.env.local
+.env.*.local
+*.key
+*.token
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# Operating System files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
+
+# Build & Temporary directories
+build/
+dist/
+build_artifacts/
+*.egg-info/
+.system_generated/
