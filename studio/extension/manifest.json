@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn Studio Bridge (LocalTaplio)",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "description": "Docks Personal LinkedIn Studio beside LinkedIn with live session synchronization and 1-click post injection.",
   "icons": {
     "16": "icons/icon-16.png",
