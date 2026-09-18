@@ -1213,6 +1213,95 @@ function toStrikethrough(text) {
   return text.split('').map(c => c !== '\n' ? c + '\u0336' : c).join('');
 }
 
+function toUnicodeSerifBold(text) {
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code >= 65 && code <= 90) {
+      out += String.fromCodePoint(0x1D400 + code - 65);
+    } else if (code >= 97 && code <= 122) {
+      out += String.fromCodePoint(0x1D41A + code - 97);
+    } else if (code >= 48 && code <= 57) {
+      out += String.fromCodePoint(0x1D7CE + code - 48);
+    } else {
+      out += text[i];
+    }
+  }
+  return out;
+}
+
+function toUnicodeSerifItalic(text) {
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code >= 65 && code <= 90) {
+      out += String.fromCodePoint(0x1D434 + code - 65);
+    } else if (text[i] === 'h') {
+      out += '\u210E';
+    } else if (code >= 97 && code <= 122) {
+      out += String.fromCodePoint(0x1D44E + code - 97);
+    } else {
+      out += text[i];
+    }
+  }
+  return out;
+}
+
+function toUnicodeBlackboard(text) {
+  const specialCaps = {
+    'C': '\u2102', 'H': '\u210D', 'N': '\u2115', 'P': '\u2119',
+    'Q': '\u211A', 'R': '\u211D', 'Z': '\u2124'
+  };
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const code = text.charCodeAt(i);
+    if (specialCaps[char]) {
+      out += specialCaps[char];
+    } else if (code >= 65 && code <= 90) {
+      out += String.fromCodePoint(0x1D538 + code - 65);
+    } else if (code >= 97 && code <= 122) {
+      out += String.fromCodePoint(0x1D552 + code - 97);
+    } else if (code >= 48 && code <= 57) {
+      out += String.fromCodePoint(0x1D7D8 + code - 48);
+    } else {
+      out += char;
+    }
+  }
+  return out;
+}
+
+function toUnicodeUnderline(text) {
+  return text.split('').map(c => c !== '\n' ? c + '\u0332' : c).join('');
+}
+
+function toUnicodeCircledNumbers(text) {
+  const circledMap = {
+    '0': '\u24FF', '1': '\u2776', '2': '\u2777', '3': '\u2778', '4': '\u2779',
+    '5': '\u277A', '6': '\u277B', '7': '\u277C', '8': '\u277D', '9': '\u277E'
+  };
+  return text.split('').map(c => circledMap[c] || c).join('');
+}
+
+function calculateClientDwellMetrics(text) {
+  if (!text || !text.trim()) {
+    return { readingSec: "0.0", dwellBadge: "0.0s [EMPTY]", dwellClass: "dwell-badge" };
+  }
+  const words = text.trim().split(/\s+/);
+  const wordCount = words.length;
+  const paragraphs = text.split('\n\n').filter(p => p.trim());
+  const breaks = Math.max(0, paragraphs.length - 1);
+  const readingSec = ((wordCount / 220.0) * 60.0 + (breaks * 0.8)).toFixed(1);
+
+  if (readingSec < 8.0) {
+    return { readingSec, dwellBadge: `${readingSec}s [FAST HOOK]`, dwellClass: "dwell-badge warning" };
+  } else if (readingSec <= 22.0) {
+    return { readingSec, dwellBadge: `${readingSec}s [OPTIMAL DWELL]`, dwellClass: "dwell-badge optimal" };
+  } else {
+    return { readingSec, dwellBadge: `${readingSec}s [DEEP AUTHORITY]`, dwellClass: "dwell-badge deep" };
+  }
+}
+
 function cleanEmDashes(text) {
   let cleaned = text.replace(/\u2014/g, ", ").replace(/\u2013/g, ", ");
   cleaned = cleaned.replace(/(?<=\w)--+(?=\w)/g, ", ");
@@ -1242,19 +1331,37 @@ function initEditor() {
     btnToggleSimGuide.classList.add("active");
   }
 
-  // Load scheduled post or draft by default
-  fetch(`${API_BASE}/posts?status=scheduled`)
+  // Restore the user's own most recent DRAFT first, then fall back to the next
+  // scheduled post.
+  //
+  // This previously queried only status=scheduled. A saved draft has
+  // status=draft, so it was never returned, and the editor would open showing a
+  // different seeded post instead. The draft was safe in the database the whole
+  // time, but to the user it looked like their work had been thrown away and
+  // replaced with someone else's.
+  const restoreInto = (post) => {
+    if (!post || textarea.value) return false;
+    currentDraftId = post.id;
+    textarea.value = post.content;
+    if (post.media_urls && post.media_urls.length) {
+      mediaInput.value = post.media_urls[0];
+    }
+    updateStudioState();
+    return true;
+  };
+
+  fetch(`${API_BASE}/posts?status=draft`)
     .then(r => r.json())
     .then(data => {
-      const scheduled = data.posts && data.posts[0];
-      if (scheduled && !textarea.value) {
-        currentDraftId = scheduled.id;
-        textarea.value = scheduled.content;
-        if (scheduled.media_urls && scheduled.media_urls.length) {
-          mediaInput.value = scheduled.media_urls[0];
-        }
-        updateStudioState();
-      }
+      const drafts = (data && data.posts) || [];
+      // The API orders ascending by scheduled_for or created_at, so the most
+      // recently written draft is the last element, not the first.
+      if (restoreInto(drafts[drafts.length - 1])) return null;
+      return fetch(`${API_BASE}/posts?status=scheduled`).then(r => r.json());
+    })
+    .then(data => {
+      if (!data) return;
+      restoreInto(data.posts && data.posts[0]);
     })
     .catch(() => {});
 
@@ -1469,6 +1576,13 @@ function updateStudioState() {
 
   const topDwellTime = document.getElementById("top-dwell-time");
   if (topDwellTime) topDwellTime.innerText = `${estDwellSeconds}s`;
+
+  const dwellBadgeElem = document.getElementById("editor-dwell-badge");
+  if (dwellBadgeElem) {
+    const dwellMetrics = calculateClientDwellMetrics(text);
+    dwellBadgeElem.innerText = dwellMetrics.dwellBadge;
+    dwellBadgeElem.className = dwellMetrics.dwellClass;
+  }
 
   // 2. Compute Pre-Fold Cutoff for LinkedIn Mobile Feed (Project Prudent Day 05 Physics)
   // Mobile LinkedIn feed truncates at ~140 characters OR at 3 lines, whichever occurs first.
@@ -1913,19 +2027,52 @@ function initFloatingToolbar() {
     toolbar.style.display = "none";
   }
 
-  document.getElementById("float-bold-btn").addEventListener("click", () => applySelectionTransform(toUnicodeSansBold));
-  document.getElementById("float-italic-btn").addEventListener("click", () => applySelectionTransform(toUnicodeSansItalic));
-  document.getElementById("float-mono-btn").addEventListener("click", () => applySelectionTransform(toUnicodeMonospace));
-  document.getElementById("float-strike-btn").addEventListener("click", () => applySelectionTransform(toStrikethrough));
-  document.getElementById("float-clean-btn").addEventListener("click", () => applySelectionTransform(cleanEmDashes));
+  const bindBtn = (id, fn) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("click", () => applySelectionTransform(fn));
+  };
 
-  document.getElementById("float-rehook-btn").addEventListener("click", () => {
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const selected = textarea.value.substring(start, end).trim();
-    toolbar.style.display = "none";
-    generateHookVariants(selected || textarea.value.slice(0, 150));
+  bindBtn("float-bold-btn", toUnicodeSansBold);
+  bindBtn("float-italic-btn", toUnicodeSansItalic);
+  bindBtn("float-serif-bold-btn", toUnicodeSerifBold);
+  bindBtn("float-serif-italic-btn", toUnicodeSerifItalic);
+  bindBtn("float-blackboard-btn", toUnicodeBlackboard);
+  bindBtn("float-underline-btn", toUnicodeUnderline);
+  bindBtn("float-circled-btn", toUnicodeCircledNumbers);
+  bindBtn("float-mono-btn", toUnicodeMonospace);
+  bindBtn("float-strike-btn", toStrikethrough);
+  bindBtn("float-clean-btn", cleanEmDashes);
+
+  // Desktop Ergonomic Hotkeys: Ctrl+B, Ctrl+I, Ctrl+M, Ctrl+U
+  textarea.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey) {
+      const key = e.key.toLowerCase();
+      if (key === "b") {
+        e.preventDefault();
+        applySelectionTransform(toUnicodeSansBold);
+      } else if (key === "i") {
+        e.preventDefault();
+        applySelectionTransform(toUnicodeSansItalic);
+      } else if (key === "m") {
+        e.preventDefault();
+        applySelectionTransform(toUnicodeMonospace);
+      } else if (key === "u") {
+        e.preventDefault();
+        applySelectionTransform(toUnicodeUnderline);
+      }
+    }
   });
+
+  const rehookBtn = document.getElementById("float-rehook-btn");
+  if (rehookBtn) {
+    rehookBtn.addEventListener("click", () => {
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const selected = textarea.value.substring(start, end).trim();
+      toolbar.style.display = "none";
+      generateHookVariants(selected || textarea.value.slice(0, 150));
+    });
+  }
 }
 
 // -------------------------------------------------------------
