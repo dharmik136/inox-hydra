@@ -58,7 +58,7 @@ The top bar sits anchored at the header of the Studio interface and displays rea
 
 ### Universal Action Buttons
 * **`🧹 Clean Spacing`**:
-  * Scans the active draft for forbidden em-dashes (`—`, `–`) and double hyphens (`--`), replacing them with natural commas, periods, or clean whitespace.
+  * Scans the active draft for forbidden em-dashes (` - `, `–`) and double hyphens (`--`), replacing them with natural commas, periods, or clean whitespace.
   * Strips trailing whitespaces and collapses accidental triple line breaks into standard double-spaced paragraph pacing.
 * **`💾 Save Draft`**:
   * Persists the post directly to the local SQLite database (`posts` table with `status = 'draft'`).
@@ -170,7 +170,7 @@ $$\text{Final Score} = \max\left(20, \; 100 - \sum \text{Deductions}\right)$$
 | **3. Engagement-Bait Classifier** | **-25 points** if spam phrases are detected (e.g. `comment "yes"`, `comment below`, `tag 3 friends`, `like and share`). | LinkedIn's modern spam classifiers demote posts that artificially solicit low-effort comments. Authentic engagement comes from thoughtful, opinionated questions. |
 | **4. Hashtag Density** | **-15 points** if post contains > 5 hashtags. | Hashtag stuffing looks amateur and triggers LinkedIn's spam filter. Optimal density is **2 to 4 niche, highly relevant hashtags**. |
 | **5. Pacing & Wall-of-Text** | **-15 points** if any single paragraph exceeds 5 lines and 350 characters without line breaks. | Dense text blocks cause high mobile bounce rates. The algorithm rewards content formatted into bite-sized 1-to-2 sentence thoughts with clean whitespace. |
-| **6. Font & Em-Dash Health** | **-10 points** if em-dashes (`—`, `–`) or double dashes (`--`) are found. | Em-dashes appear corporate and AI-generated. The studio enforces natural commas or period delimiters for authentic executive voice. |
+| **6. Font & Em-Dash Health** | **-10 points** if em-dashes (` - `, `–`) or double dashes (`--`) are found. | Em-dashes appear corporate and AI-generated. The studio enforces natural commas or period delimiters for authentic executive voice. |
 
 ### Score Badges & Algorithm Verdicts
 

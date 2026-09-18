@@ -7,9 +7,16 @@ from typing import List, Dict, Optional, Any
 try:
     from .database import get_db
     from .formatters import to_sans_bold, clean_text_formatting
+    from .agno_agentos.model_gateway import get_current_ai_config, execute_llm_completion, AIProviderConfig
 except ImportError:
-    from database import get_db
-    from formatters import to_sans_bold, clean_text_formatting
+    try:
+        from database import get_db
+        from formatters import to_sans_bold, clean_text_formatting
+        from agno_agentos.model_gateway import get_current_ai_config, execute_llm_completion, AIProviderConfig
+    except ImportError:
+        get_current_ai_config = None
+        execute_llm_completion = None
+        AIProviderConfig = None
 
 
 def get_gemini_api_key() -> Optional[str]:
@@ -83,15 +90,27 @@ def call_gemini_api(prompt: str, system_instruction: str = "") -> Optional[str]:
 
 def get_ai_status() -> Dict[str, Any]:
     """
-    Returns current AI Engine configuration and active mode.
+    Returns current Bring-Your-Own-AI (BYO-AI) Engine configuration and active mode.
     """
-    api_key = get_gemini_api_key()
-    has_key = bool(api_key)
+    if get_current_ai_config:
+        cfg = get_current_ai_config()
+        has_key = cfg.is_configured
+        provider_name = cfg.provider
+        model_name = cfg.model
+        active_mode = f"{provider_name.upper()} ({model_name})" if has_key else "Antigravity Local Engine (Deterministic Zero-Egress)"
+    else:
+        api_key = get_gemini_api_key()
+        has_key = bool(api_key)
+        provider_name = "gemini" if has_key else "local_deterministic"
+        model_name = "gemini-2.5-flash" if has_key else "antigravity-local"
+        active_mode = "Gemini 2.5 Flash (Cloud Native)" if has_key else "Antigravity Local Engine (Deterministic Zero-Egress)"
+
     return {
-        "provider": "gemini_antigravity",
+        "provider": provider_name,
         "has_api_key": has_key,
-        "model": "gemini-2.5-flash" if has_key else "antigravity-local-engine",
-        "active_mode": "Gemini 2.5 Flash (Cloud Native)" if has_key else "Antigravity Local Engine (Deterministic)",
+        "model": model_name,
+        "active_mode": active_mode,
+        "byo_ai_enabled": True,
         "antigravity_pair_programming": True,
         "capabilities": [
             "10x_viral_hooks",
@@ -105,14 +124,15 @@ def get_ai_status() -> Dict[str, Any]:
 
 def command_ai_engine(command: str, context: Optional[str] = None) -> Dict[str, Any]:
     """
-    Executes a high-level command against the AI Engine (Gemini if configured, Antigravity Local Engine otherwise).
+    Executes a high-level command against the configured AI Engine (Gemini, OpenAI, Claude, Groq, Ollama,
+    or Antigravity Local Engine fallback).
     Strictly enforces zero em-dashes and mathematical bolding standards.
     """
     system_prompt = (
         "You are the elite AI Copilot for a high-performing Content Strategist and Enterprise Systems Practitioner on LinkedIn.\n"
         "Your writing style is punchy, high-signal, authentic, and authoritative.\n"
         "CRITICAL FORMATTING RULES:\n"
-        "1. NEVER use em-dashes (—) or en-dashes (–). Use commas, periods, or clean line breaks instead.\n"
+        "1. NEVER use em-dashes (\u2014) or en-dashes (–). Use commas, periods, or clean line breaks instead.\n"
         "2. NO corporate clichés or generic buzzwords (avoid: 'In today's fast-paced world', 'game-changer', 'delve', 'testament').\n"
         "3. Format for mobile dwell time: short paragraphs (1-2 sentences max), generous spacing.\n"
         "4. Hook rule: The first line must stop the scroll instantly.\n"
@@ -124,12 +144,32 @@ def command_ai_engine(command: str, context: Optional[str] = None) -> Dict[str, 
         full_prompt += f"Context/Draft:\n{context}\n\n"
     full_prompt += "Generate the optimized response. Remember: NEVER use em-dashes."
 
-    gemini_out = call_gemini_api(full_prompt, system_instruction=system_prompt)
-    if gemini_out:
-        cleaned = clean_text_formatting(gemini_out.strip())
+    ai_out = None
+    engine_name = "Antigravity Local Engine"
+
+    # Route through configured BYO-AI provider
+    if get_current_ai_config and execute_llm_completion:
+        cfg = get_current_ai_config()
+        if cfg.is_configured:
+            try:
+                ai_out = execute_llm_completion(cfg, full_prompt, system_prompt=system_prompt, max_tokens=1500)
+                if ai_out:
+                    engine_name = f"{cfg.provider.capitalize()} ({cfg.model})"
+            except Exception as e:
+                print(f"[BYO-AI] Completion failed on {cfg.provider}: {e}")
+
+    # Fallback to direct Gemini if available
+    if not ai_out:
+        gemini_out = call_gemini_api(full_prompt, system_instruction=system_prompt)
+        if gemini_out:
+            ai_out = gemini_out
+            engine_name = "Gemini 2.5 Flash"
+
+    if ai_out:
+        cleaned = clean_text_formatting(ai_out.strip())
         return {
             "status": "success",
-            "engine": "Gemini 2.5 Flash",
+            "engine": engine_name,
             "output": cleaned
         }
 
@@ -171,43 +211,64 @@ def generate_10x_hooks(topic_or_draft: str) -> List[Dict[str, Any]]:
         subject = "enterprise systems and observability"
     subject_clean = subject.rstrip(".:,;")
 
-    # Attempt Gemini generation if key is present
-    api_key = get_gemini_api_key()
-    if api_key:
-        prompt = (
-            f"Generate exactly 10 distinct, high-converting LinkedIn hooks for the topic: '{subject_clean}'.\n"
-            "Archetypes required: Pattern Interrupt, Concrete Metric, Hard Lesson, Counter-Intuitive, "
-            "Tactical Playbook, Cost of Inaction, Quiet Title, Unpopular Truth, Before vs After, Razor of Leverage.\n"
-            "Rules:\n"
-            "- NEVER use em-dashes (—). Use clean punctuation.\n"
-            "- First line must be under 120 characters so it does not truncate before the 'see more' button on mobile.\n"
-            "- Return strictly a valid JSON array of objects with keys: 'archetype', 'hook'. Do not enclose in markdown code blocks."
-        )
-        resp = call_gemini_api(prompt, system_instruction="You output ONLY raw JSON.")
-        if resp:
+    # Attempt AI generation if provider configured
+    resp = None
+    if get_current_ai_config and execute_llm_completion:
+        cfg = get_current_ai_config()
+        if cfg.is_configured:
+            prompt = (
+                f"Generate exactly 10 distinct, high-converting LinkedIn hooks for the topic: '{subject_clean}'.\n"
+                "Archetypes required: Pattern Interrupt, Concrete Metric, Hard Lesson, Counter-Intuitive, "
+                "Tactical Playbook, Cost of Inaction, Quiet Title, Unpopular Truth, Before vs After, Razor of Leverage.\n"
+                "Rules:\n"
+                "- NEVER use em-dashes (\u2014). Use clean punctuation.\n"
+                "- First line must be under 120 characters so it does not truncate before the 'see more' button on mobile.\n"
+                "- Return strictly a valid JSON array of objects with keys: 'archetype', 'hook'. Do not enclose in markdown code blocks."
+            )
             try:
-                clean_json = resp.strip()
-                if clean_json.startswith("```"):
-                    clean_json = re.sub(r'^```(json)?\n', '', clean_json)
-                    clean_json = re.sub(r'\n```$', '', clean_json)
-                parsed = json.loads(clean_json)
-                if isinstance(parsed, list) and len(parsed) >= 5:
-                    out = []
-                    for item in parsed[:10]:
-                        hk = clean_text_formatting(item.get("hook", ""))
-                        first_line_hk = hk.split("\n")[0]
-                        char_len = len(first_line_hk)
-                        is_safe = char_len <= 140 and len(hk) <= 240
-                        out.append({
-                            "archetype": item.get("archetype", "High-Converting Hook"),
-                            "hook_text": hk,
-                            "char_count": len(hk),
-                            "mobile_safe": is_safe,
-                            "predicted_score": 92 if is_safe else 80
-                        })
-                    return out
+                resp = execute_llm_completion(cfg, prompt, system_prompt="You output ONLY raw JSON.", max_tokens=1000)
             except Exception as e:
-                print(f"[Gemini Hooks] Fallback to deterministic: {e}")
+                print(f"[BYO-AI Hooks] Failed on {cfg.provider}: {e}")
+
+    # Fallback to direct Gemini if available
+    if not resp:
+        api_key = get_gemini_api_key()
+        if api_key:
+            prompt = (
+                f"Generate exactly 10 distinct, high-converting LinkedIn hooks for the topic: '{subject_clean}'.\n"
+                "Archetypes required: Pattern Interrupt, Concrete Metric, Hard Lesson, Counter-Intuitive, "
+                "Tactical Playbook, Cost of Inaction, Quiet Title, Unpopular Truth, Before vs After, Razor of Leverage.\n"
+                "Rules:\n"
+                "- NEVER use em-dashes (\u2014). Use clean punctuation.\n"
+                "- First line must be under 120 characters so it does not truncate before the 'see more' button on mobile.\n"
+                "- Return strictly a valid JSON array of objects with keys: 'archetype', 'hook'. Do not enclose in markdown code blocks."
+            )
+            resp = call_gemini_api(prompt, system_instruction="You output ONLY raw JSON.")
+
+    if resp:
+        try:
+            clean_json = resp.strip()
+            if clean_json.startswith("```"):
+                clean_json = re.sub(r'^```(json)?\n', '', clean_json)
+                clean_json = re.sub(r'\n```$', '', clean_json)
+            parsed = json.loads(clean_json)
+            if isinstance(parsed, list) and len(parsed) >= 5:
+                out = []
+                for item in parsed[:10]:
+                    hk = clean_text_formatting(item.get("hook", ""))
+                    first_line_hk = hk.split("\n")[0]
+                    char_len = len(first_line_hk)
+                    is_safe = char_len <= 140 and len(hk) <= 240
+                    out.append({
+                        "archetype": item.get("archetype", "High-Converting Hook"),
+                        "hook_text": hk,
+                        "char_count": len(hk),
+                        "mobile_safe": is_safe,
+                        "predicted_score": 92 if is_safe else 80
+                    })
+                return out
+        except Exception as e:
+            print(f"[BYO-AI Hooks] Fallback to deterministic: {e}")
 
     # Deterministic Archetype Templates
     templates = [
@@ -311,7 +372,7 @@ def audit_linkedin_algorithm_safety(text: str) -> Dict[str, Any]:
         recommendations.append("Insert line breaks after 1-2 sentences for clean visual cadence.")
 
     # 4. Em-dashes check
-    if "—" in text or "–" in text:
+    if "\u2014" in text or "–" in text:
         safety_score -= 5
         penalties.append("Em-dashes detected (unnatural punctuation).")
         recommendations.append("Click '🧹 Clean Formatting' to use clean commas or periods.")
@@ -355,39 +416,53 @@ def repurpose_content(raw_text: str) -> List[Dict[str, str]]:
     """
     clean_input = clean_text_formatting(raw_text.strip())
 
-    api_key = get_gemini_api_key()
-    if api_key:
-        prompt = (
-            f"Repurpose this thought/draft into 5 distinct LinkedIn post frameworks:\n\n'{clean_input}'\n\n"
-            "Frameworks:\n"
-            "1. The Contrarian Pattern Interrupt\n"
-            "2. The 3-Step Tactical Breakdown\n"
-            "3. The Hard Truth / Anti-Pattern\n"
-            "4. The Razor of Leverage\n"
-            "5. The Personal Practitioner Narrative\n\n"
-            "Rules:\n"
-            "- NEVER use em-dashes (—). Use clean commas, periods, or line breaks.\n"
-            "- Short paragraphs (1-2 sentences), generous line breaks.\n"
-            "- Return strictly a valid JSON array of objects with keys: 'framework', 'content'. No markdown code blocks."
-        )
-        resp = call_gemini_api(prompt, system_instruction="You output ONLY raw JSON.")
-        if resp:
+    # Attempt AI generation if provider configured
+    resp = None
+    prompt = (
+        f"Repurpose this thought/draft into 5 distinct LinkedIn post frameworks:\n\n'{clean_input}'\n\n"
+        "Frameworks:\n"
+        "1. The Contrarian Pattern Interrupt\n"
+        "2. The 3-Step Tactical Breakdown\n"
+        "3. The Hard Truth / Anti-Pattern\n"
+        "4. The Razor of Leverage\n"
+        "5. The Personal Practitioner Narrative\n\n"
+        "Rules:\n"
+        "- NEVER use em-dashes (\u2014). Use clean commas, periods, or line breaks.\n"
+        "- Short paragraphs (1-2 sentences), generous line breaks.\n"
+        "- Return strictly a valid JSON array of objects with keys: 'framework', 'content'. No markdown code blocks."
+    )
+
+    if get_current_ai_config and execute_llm_completion:
+        cfg = get_current_ai_config()
+        if cfg.is_configured:
             try:
-                clean_json = resp.strip()
-                if clean_json.startswith("```"):
-                    clean_json = re.sub(r'^```(json)?\n', '', clean_json)
-                    clean_json = re.sub(r'\n```$', '', clean_json)
-                parsed = json.loads(clean_json)
-                if isinstance(parsed, list) and len(parsed) >= 3:
-                    return [
-                        {
-                            "framework": item.get("framework", "Framework"),
-                            "content": clean_text_formatting(item.get("content", ""))
-                        }
-                        for item in parsed
-                    ]
+                resp = execute_llm_completion(cfg, prompt, system_prompt="You output ONLY raw JSON.", max_tokens=1500)
             except Exception as e:
-                print(f"[Gemini Repurpose] Fallback to deterministic: {e}")
+                print(f"[BYO-AI Repurpose] Failed on {cfg.provider}: {e}")
+
+    # Fallback to direct Gemini if available
+    if not resp:
+        api_key = get_gemini_api_key()
+        if api_key:
+            resp = call_gemini_api(prompt, system_instruction="You output ONLY raw JSON.")
+
+    if resp:
+        try:
+            clean_json = resp.strip()
+            if clean_json.startswith("```"):
+                clean_json = re.sub(r'^```(json)?\n', '', clean_json)
+                clean_json = re.sub(r'\n```$', '', clean_json)
+            parsed = json.loads(clean_json)
+            if isinstance(parsed, list) and len(parsed) >= 3:
+                return [
+                    {
+                        "framework": item.get("framework", "Framework"),
+                        "content": clean_text_formatting(item.get("content", ""))
+                    }
+                    for item in parsed
+                ]
+        except Exception as e:
+            print(f"[BYO-AI Repurpose] Fallback to deterministic: {e}")
 
     # Deterministic Fallback Templates
     words = clean_input.split()

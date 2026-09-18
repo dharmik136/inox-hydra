@@ -1,6 +1,6 @@
-# Dual-Mode AI Engine Specification
+# Bring-Your-Own-AI (BYO-AI) & Multi-Model Engine Specification
 
-LinkedIn Studio Enterprise features a hybrid **Dual-Mode AI Engine** engineered to deliver world-class content generation, viral re-hooking, content repurposing, and CRM outreach scripting with zero mandatory cloud dependencies.
+LinkedIn Studio Enterprise features a pluggable **Bring-Your-Own-AI (BYO-AI)** multi-model architecture. The platform does not mandate or restrict creators to any single proprietary vendor (such as Google Gemini). Creators have complete autonomy to configure and hot-swap between industry-leading cloud LLMs, local offline models, or the zero-egress local deterministic engine.
 
 ---
 
@@ -8,99 +8,98 @@ LinkedIn Studio Enterprise features a hybrid **Dual-Mode AI Engine** engineered 
 
 ```mermaid
 graph TD
-    UserCmd[User Command / In-Editor Action] --> Router[AI Engine Dispatcher: repurposer.py]
+    UserCmd[Creator Action / Studio Dispatcher] --> Gateway[Model Gateway: model_gateway.py]
     
-    Router --> CheckKey{GEMINI_API_KEY Configured?}
+    Gateway --> RouteCheck{Active Configured AI Provider?}
     
-    CheckKey -->|Yes| GeminiCloud[Mode A: Google Gemini 2.5 Flash<br/>Cloud Native Inference<br/>via REST API]
-    CheckKey -->|No / Timeout| LocalEngine[Mode B: Antigravity Local Engine<br/>Deterministic Pattern Synthesizer<br/>0ms Latency - 100% Offline]
+    RouteCheck -->|OpenAI| OpenAICloud[OpenAI Engine<br/>GPT-4o / GPT-4o-mini / DALL-E 3<br/>via OpenAI API]
+    RouteCheck -->|Gemini| GeminiCloud[Google Gemini Engine<br/>Gemini 2.5 Flash / Imagen 3<br/>via Generative Language API]
+    RouteCheck -->|Anthropic| AnthropicCloud[Anthropic Claude Engine<br/>Claude 3.5 Sonnet / Haiku<br/>via Messages API]
+    RouteCheck -->|Ollama / vLLM| LocalLLM[Local Hardware Inference<br/>Llama 3 / DeepSeek / Mistral<br/>100% Offline / Zero Egress]
+    RouteCheck -->|Groq| GroqLPU[Groq LPU Acceleration<br/>Llama 3.3 70B Versatile<br/>Ultra-low Latency]
+    RouteCheck -->|None / Offline| LocalEngine[Antigravity Deterministic Engine<br/>Pattern Synthesizer & Rule Vault<br/>0ms Latency - 100% Offline]
     
-    GeminiCloud --> ScrubFilter[Strict Zero Em-Dash & Unicode Bold Sanitizer]
+    OpenAICloud --> ScrubFilter[P6 Scar Tissue Sanitizer<br/>Strict Zero Em-Dash & Unicode Sans-Bold]
+    GeminiCloud --> ScrubFilter
+    AnthropicCloud --> ScrubFilter
+    LocalLLM --> ScrubFilter
+    GroqLPU --> ScrubFilter
     LocalEngine --> ScrubFilter
     
-    ScrubFilter --> Output[High-Converting LinkedIn Post / Hook Output]
+    ScrubFilter --> Output[High-Converting LinkedIn Post / Hook / Image Output]
 ```
-
-### Mode A: Google Gemini 2.5 Flash (Cloud Native)
-* **Model Identifier**: `gemini-2.5-flash`
-* **Transport Protocol**: Direct lightweight HTTP POST to Google Generative Language API endpoint (`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`).
-* **Dependency Overhead**: 0 external heavy SDKs. Uses standard Python `requests`.
-* **Latency**: ~800ms - 1.5s.
-* **Capabilities**: Deep contextual understanding, creative lateral thinking, nuanced humor, industry-specific terminology adaptation, bespoke outreach scripting.
-
-### Mode B: Antigravity Local Engine (Deterministic Fallback)
-* **Execution Environment**: 100% In-memory Python process on localhost.
-* **Latency**: 0ms.
-* **Network Requirement**: Completely air-gapped / offline.
-* **Capabilities**: 10 categorized hook archetypes, 5 high-converting post frameworks, algorithmic safety rule evaluation, and templated CRM direct message generation.
 
 ---
 
-## 2. Strict Content & Formatting Guidelines
+## 2. Supported AI Providers & Models
 
-The AI engine automatically enforces non-negotiable linguistic rules tailored to the 2026 LinkedIn newsfeed distribution algorithm:
+| Provider Key | Provider Name | Default Model | Supported Models | Image Support | Key Required |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `openai` | OpenAI | `gpt-4o` | `gpt-4o`, `gpt-4o-mini`, `o3-mini` | DALL-E 3 (`dall-e-3`) | Yes |
+| `gemini` | Google Gemini | `gemini-2.5-flash` | `gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-1.5-pro` | Imagen 3 (`imagen-3.0-generate-002`) | Yes |
+| `anthropic` | Anthropic Claude | `claude-3-5-sonnet-20241022` | `claude-3-5-sonnet`, `claude-3-5-haiku`, `claude-3-opus` | No (Pollinations fallback) | Yes |
+| `ollama` | Ollama Local LLM | `llama3:latest` | `llama3`, `mistral`, `deepseek-r1`, `qwen2.5` | No (Local canvas fallback) | No |
+| `groq` | Groq LPU | `llama-3.3-70b-versatile` | `llama-3.3-70b-versatile`, `llama-3.1-8b-instant` | No (Pollinations fallback) | Yes |
+| `custom_openai` | Custom OpenAI Endpoint | `default` | Any model hosted on vLLM, LocalAI, or OpenRouter | No (Pollinations fallback) | Optional |
+| `local_deterministic` | Antigravity Local Engine | `deterministic-heuristics-v2` | Categorized viral patterns and heuristics | Local Canvas Generator | No |
+
+---
+
+## 3. Active Verification Gate & CLI Tooling
+
+A core architectural principle of Inox Hydra is the **Active Verification Ping**:
+The platform will **NEVER** save broken credentials or an unreachable endpoint to SQLite. When you configure an AI provider via the CLI or API, a lightweight live test prompt is sent to verify that the credentials and network connection succeed.
+
+If verification succeeds, the latency is measured, recorded, and the configuration is saved. If verification fails (e.g., HTTP 401 Unauthorized, HTTP 404, or network timeout), the configuration is rejected with a descriptive error message and the previous working configuration remains active.
+
+### CLI Commands
+
+```bash
+# List all available AI providers and default models
+python studio_cli.py ai list-providers
+
+# Configure an AI provider (interactive prompt or non-interactive flags)
+python studio_cli.py ai configure --provider openai --api-key "sk-..." --model gpt-4o
+python studio_cli.py ai configure --provider gemini --api-key "AIzaSy..." --model gemini-2.5-flash
+python studio_cli.py ai configure --provider anthropic --api-key "sk-ant-..." --model claude-3-5-sonnet-20241022
+python studio_cli.py ai configure --provider ollama --model llama3:latest
+
+# Display currently active provider, model, masked key, and status
+python studio_cli.py ai status
+
+# Run live latency ping test on the active provider
+python studio_cli.py ai test
+
+# Reset configuration to 100% offline local deterministic engine
+python studio_cli.py ai reset
+```
+
+---
+
+## 4. Strict Linguistic & Formatting Standards (P6 Scar Tissue)
+
+Regardless of which AI model you configure, every generation passes through the deterministic P6 scar tissue sanitization filter:
 
 ### 1. The Strict Zero Em-Dash Rule
 > [!IMPORTANT]
-> Em-dashes (`—`) and en-dashes (`–`) sound robotic, artificial, and synthetically corporate in executive LinkedIn feeds. The engine automatically intercepts and scrubs all dashes, replacing them with natural commas, periods, or clean whitespace breaks.
-
-```python
-def clean_text_formatting(text: str) -> str:
-    cleaned = text.replace("—", ", ").replace("–", ", ")
-    cleaned = re.sub(r'(?<=\w)--+(?=\w)', ', ', cleaned)
-    return cleaned
-```
+> Em-dashes (` - `) and en-dashes (`–`) make LinkedIn posts sound robotic, artificial, and corporate. The sanitization layer intercepts and strips all dashes, replacing them with natural commas, periods, or clean line breaks.
 
 ### 2. Mathematical Sans-Bold Unicode Transformation
-LinkedIn does not support native markdown bolding (`**text**`). To create eye-catching, scroll-stopping headlines that render across iOS, Android, and Desktop, the engine maps standard ASCII characters to **Mathematical Sans-Serif Bold Unicode (U+1D5D4 to U+1D5FF)**:
-
+LinkedIn does not render native markdown bolding (`**text**`). To create eye-catching headlines that render across iOS, Android, and Desktop feeds, the engine maps standard ASCII characters to **Mathematical Sans-Serif Bold Unicode (U+1D5D4 to U+1D5FF)**:
 * Standard: `Zero manual intervention.`
 * Mathematical Bold: `𝗭𝗲𝗿𝗼 𝗺𝗮𝗻𝘂𝗮𝗹 𝗶𝗻𝘁𝗲𝗿𝘃𝗲𝗻𝘁𝗶𝗼𝗻.`
 
 ### 3. Mobile Dwell-Time Pacing
-* **Hook Line Constraint**: The first line is strictly formatted under 140 characters to prevent truncation before LinkedIn's mobile `...see more` fold.
-* **Paragraph Density**: Paragraphs are capped at 1–2 sentences, followed by double line breaks. Dense text walls are penalized by reader bounce rates.
+* **Pre-Fold Hook**: Opening line is formatted strictly under 140 characters to avoid truncation before the `...see more` fold.
+* **Paragraph Density**: Paced at 1-2 sentences with double line breaks to maximize mobile dwell time.
 
 ---
 
-## 3. Core Capabilities & Prompts
+## 5. REST API Endpoints
 
-### 1. 10× Viral Re-Hooker (`generate_10x_hooks`)
-Generates 10 proven hook archetypes for any subject:
-1. **The Pattern Interrupt / Contrarian**: Breaks consensus expectations.
-2. **Concrete Metric & Statistic**: Anchors attention with hard numbers.
-3. **Hard-Won Experience**: Establishes battle-tested authority.
-4. **Counter-Intuitive Insight**: Challenges intuitive assumptions.
-5. **Tactical Playbook**: Promises step-by-step actionable blueprints.
-6. **The Cost of Inaction**: Creates urgent executive risk awareness.
-7. **The Quiet Title**: Re-frames quiet roles as immense leverage points.
-8. **Unpopular Truth**: High-engagement discussion trigger.
-9. **Before vs After Contrast**: Visualizes frictionless transformation.
-10. **The Razor of Leverage**: Connects strategy to compounding assets.
-
-### 2. 5-Style Content Repurposer (`repurpose_content`)
-Transforms raw meeting notes, terminal logs, or stream-of-consciousness thoughts into 5 distinct publishing frameworks:
-* *Framework 1*: The Contrarian Pattern Interrupt
-* *Framework 2*: The 3-Step Tactical Breakdown
-* *Framework 3*: The Hard Truth / Anti-Pattern
-* *Framework 4*: The Razor of Leverage
-* *Framework 5*: The Personal Practitioner Narrative
-
-### 3. CRM Outreach DM Generator (`generate_dm_script`)
-Analyzes the prospect's name, headline, company, and the exact post they engaged with to generate high-touch, non-salesy direct messages that spark authentic peer-to-peer conversations.
-
----
-
-## 4. Configuring the Gemini API Key
-
-You can configure your API key via two methods:
-
-### Method 1: In the Studio UI (Recommended)
-1. Open the studio and switch to the **AI Command Center** tab.
-2. Enter your key into the **Gemini API Engine** card.
-3. Click **Save Key**. The key is encrypted in your local SQLite `settings` table.
-
-### Method 2: System Environment Variable
-```powershell
-[System.Environment]::SetEnvironmentVariable('GEMINI_API_KEY', 'your_api_key_here', 'User')
-```
+* `GET /api/ai/config`: Retrieves active provider, model, masked key, base URL, and supported providers list.
+* `POST /api/ai/configure`: Submits candidate configuration for active verification and persistence.
+* `GET /api/ai/status`: High-level operational status, active mode, and BYO-AI capabilities.
+* `POST /api/ai/command`: High-level prompt execution through the active provider.
+* `POST /api/format/re-hook`: 10x viral hook generator.
+* `POST /api/format/repurpose`: 5-style content repurposer.

@@ -20,7 +20,7 @@ graph TD
         subgraph CoreServices [Modular Services Layer]
             AnalyticsSvc[Analytics Service: Period Deltas & KPIs]
             CarouselSvc[Carousel Generator: Pillow 1080x1080 PDF]
-            AISvc[Dual-Mode AI Engine: Gemini 2.5 + Antigravity]
+            AISvc[BYO-AI Multi-Model Gateway: OpenAI, Gemini, Claude, Ollama, Groq + Local Engine]
             CRMSvc[Leads & Engagers CRM: leads.py]
             QueueSvc[Queue & Scheduler Daemon: scheduler.py]
             LinkedInClient[Session Bridge: linkedin_client.py]
@@ -34,7 +34,7 @@ graph TD
 
     subgraph ExternalBoundaries [External Ecosystem]
         LinkedInWeb[LinkedIn.com User Session]
-        GeminiAPI[Optional Google Gemini 2.5 Flash API]
+        ExternalAI[Configured BYO-AI Providers: OpenAI, Gemini, Claude, Ollama, Groq]
     end
 
     DesktopApp <--> BrowserUI
