@@ -2281,13 +2281,29 @@ async function uploadMediaFile(file) {
 
     const data = await res.json();
     setAttachedMedia(data);
-    showToast(`Uploaded ${data.file_name} successfully!`);
+    showToast(`Uploaded ${data.filename || data.file_name || "file"} successfully!`);
   } catch (e) {
     showToast("Network error uploading file: " + e.message);
   }
 }
 
 function setAttachedMedia(media) {
+  if (!media) return;
+
+  // Two callers pass two different shapes. The upload endpoint returns
+  // `filename` and `url`; the AI image studio hand-builds `file_name` and
+  // `file_url`. This function only ever read the second form, so every real
+  // file upload threw "Cannot read properties of undefined (reading
+  // 'toLowerCase')" and the attachment silently never appeared. The image
+  // studio path worked, which is why it went unnoticed.
+  //
+  // Normalise once here rather than at each call site, so a future caller
+  // passing either shape cannot reintroduce this.
+  media = Object.assign({}, media, {
+    file_name: media.file_name || media.filename || "",
+    file_url: media.file_url || media.url || ""
+  });
+
   activeMediaAsset = media;
   const pathInput = document.getElementById("media-path-input");
   const targetZone = document.getElementById("media-dropzone-target");

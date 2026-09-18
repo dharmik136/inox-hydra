@@ -1513,7 +1513,13 @@ def seed_initial_data():
         (
             "post-enterprise-scheduled",
             """Sample scheduled post. Replace with your own words.""",
-            json.dumps(["sample_creative.jpg"]),
+            # No media. This previously referenced a bare filename, which the
+            # browser resolved against the site root and served a 404. The image
+            # lives in the repository's assets/ directory, which is not the
+            # directory mounted at /assets (that one holds user media), and it is
+            # not shipped in the distributable. A seeded demo post showing a
+            # broken image is worse than one showing none.
+            json.dumps([]),
             "scheduled",
             "2026-09-14T12:00:00.000Z",
             None,
