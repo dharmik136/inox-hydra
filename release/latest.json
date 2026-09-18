@@ -1,5 +1,5 @@
 {
-  "version": "2.5.1",
+  "version": "2.5.2",
   "notes": "Portable Windows distributable. Extract anywhere and run InoxHydra.bat. Your data in %LOCALAPPDATA%\\InoxHydra is never touched by an upgrade.",
   "releases_url": "https://github.com/dharmik136/inox-hydra/releases"
 }
