@@ -40,51 +40,105 @@ Most commercial creator platforms charge upwards of **$199/month**, store your p
 ## 🏗️ Repository Architecture
 
 ```text
-Linkedin strategy/
-├── assets/                     # Master 4K visual assets and infographics
-├── docs/                       # Comprehensive enterprise documentation
-│   ├── GETTING_STARTED.md      # Installation, desktop app launch & quickstart
-│   ├── ARCHITECTURE.md         # System design, data flow, WAL mode & security
-│   ├── AI_ENGINE.md            # Multi-model Bring-Your-Own-AI specification
-│   ├── BYO_AI_ARCHITECTURE.md  # Detailed CLI configuration & model routing guide
-│   ├── EXTENSION_AND_SYNC.md   # Chrome MV3 session bridge & anti-detection design
-│   ├── ENTERPRISE_USAGE.md     # Feature-by-feature operational guide
-│   └── API_REFERENCE.md        # Complete OpenAPI / REST endpoint schemas
-├── studio_cli.py               # Unified CLI tool for BYO-AI management & diagnostics
-├── studio/                     # Core application platform
-│   ├── backend/                # Modular Python FastAPI services
-│   │   ├── app.py              # Main API router, lifespan manager & static server
-│   │   ├── database.py         # SQLite connection provider & WAL initialization
-│   │   ├── formatters.py       # Mathematical sans-bold & punctuation scrubbers
-│   │   ├── image_studio.py     # Multi-stage AI image studio (DALL-E 3, Imagen, Pollinations)
-│   │   ├── repurposer.py       # Multi-model content repurposer & 10x hook generator
-│   │   ├── leads.py            # Relationship CRM & personalized DM builder
-│   │   ├── linkedin_client.py  # Passive session bridge & telemetry ingestor
-│   │   ├── scheduler.py        # Background thread queue dispatcher
-│   │   └── agno_agentos/       # Agno AgentOS multi-agent orchestrator & BYO-AI gateway
-│   │       ├── model_gateway.py # Unified provider registry & connection verifier
-│   │       ├── orchestrator.py  # Master agent coordinator
-│   │       └── agents/          # Specialized prompt, copilot, research, and swipe agents
-│   ├── frontend/               # Single-page web studio interface
-│   │   ├── index.html          # Semantic application layout & navigation
-│   │   ├── styles.css          # Curated dark-slate design system
-│   │   └── app.js              # Reactive UI controller & API bridge
-│   ├── extension/              # Chrome Extension (Manifest V3)
-│   │   ├── manifest.json       # Extension configuration & permissions
-│   │   ├── background.js       # Background cookie synchronization & alarms
-│   │   ├── content.js          # Passive DOM observer for commenter CRM capture
-│   │   ├── popup.html / .js    # Quick status popup
-│   │   └── sidepanel.html / .js # Embedded composer & sidepanel injection
-│   └── data/                   # Local encrypted database
-│       └── linkedin_studio.db  # SQLite database in WAL journal mode
-├── launch_studio.bat           # 1-Click native Windows desktop app launcher
-├── strategy_playbook.md        # Content pillars, positioning & authority framework
-└── README.md                   # This document
+inox-hydra/
+├── studio/                     # The application package
+│   ├── __version__.py          # Single source of version truth for every surface
+│   ├── cli.py                  # Support toolkit: doctor, backup, restore, export
+│   ├── backend/                # FastAPI services
+│   │   ├── app.py              # API router, lifespan manager & static server
+│   │   ├── paths.py            # Resolves ALL user state, outside the install dir
+│   │   ├── migrations.py       # Forward-only schema ledger (PRAGMA user_version)
+│   │   ├── database.py         # Frozen schema baseline & WAL configuration
+│   │   ├── support.py          # Redacted diagnostics, backup, restore, export
+│   │   ├── updates.py          # Opt-in update check, off by default
+│   │   ├── vault.py            # DPAPI encryption at rest for session tokens
+│   │   ├── ingress.py          # Telegram capture, outbound long-polling only
+│   │   ├── crm.py              # Reverse CRM & deterministic ICP scoring
+│   │   ├── event_bus.py        # SSE hub with replay buffer
+│   │   ├── intelligence_sync.py # ETag-cached CDN sync for hook archetypes
+│   │   ├── docs_engine.py      # SQLite FTS5 index over bundled documentation
+│   │   └── agno_agentos/       # Multi-agent orchestrator & BYO-AI gateway
+│   ├── core/rate_limiter.py    # Gaussian jitter governor & single-writer actor
+│   ├── frontend/               # Single-page studio interface (no build step)
+│   └── extension/              # Chrome Extension (Manifest V3)
+├── tools/                      # Build and release tooling
+│   ├── build_portable.py       # Produces the portable Windows ZIP
+│   ├── smoke_portable.py       # Boots the artifact with a scrubbed environment
+│   ├── verify_package.py       # Builds, installs and boots a wheel in isolation
+│   ├── prepare_package.py      # Stages bundled docs into the package
+│   └── sync_version.py         # Propagates the version to every surface
+├── tests/                      # 260 automated tests
+├── docs/                       # Documentation suite and the master plan
+├── release/latest.json         # Manifest read by opt-in update checks
+├── pyproject.toml              # Packaging metadata and dependencies
+├── launch_studio.bat           # 1-click Windows launcher (source checkout)
+└── studio_cli.py               # BYO-AI provider configuration
 ```
+
+> Your drafts, leads, analytics and media are **not** stored here. They live in
+> `%LOCALAPPDATA%\InoxHydra`, deliberately outside the application folder, so
+> replacing it with a newer version never touches your work. See
+> [`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`](docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md).
 
 ---
 
-## ⚡ Quick Start & CLI Management
+## 📦 Install
+
+### Option A: Download and run (recommended, no Python required)
+
+1. Download **`InoxHydra-2.5.0-win64.zip`** from [Releases](https://github.com/dharmik136/inox-hydra/releases/latest).
+2. Extract it anywhere. A USB stick is fine.
+3. Double-click **`InoxHydra.bat`**.
+
+The studio opens in its own window. No installer, no administrator rights, and
+no Python installation: the ZIP embeds its own CPython runtime.
+
+**To upgrade**, delete the folder and extract the newer one. Your data lives in
+`%LOCALAPPDATA%\InoxHydra`, so it is untouched, and any database schema changes
+are applied automatically on first launch with a timestamped backup taken first.
+
+### Option B: Run from source (developers)
+
+```bash
+git clone https://github.com/dharmik136/inox-hydra.git
+cd inox-hydra
+pip install -r requirements.txt
+python -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000
+```
+
+A source checkout keeps its state in `studio/data/` rather than your user
+profile, so each clone is self-contained. Set `INOX_HYDRA_HOME` to override.
+
+---
+
+## 🛠️ Support Toolkit
+
+Everything runs locally, so nobody can see errors on your machine. The CLI is
+how you look after your own installation:
+
+```bash
+python -m studio.cli doctor --bundle   # health report, safe to post publicly
+python -m studio.cli backup            # snapshot database and media
+python -m studio.cli restore <zip>     # roll back, snapshots current state first
+python -m studio.cli export            # take your content elsewhere, JSON or CSV
+python -m studio.cli reset             # fix a broken setup, keeping your content
+python -m studio.cli migrate --dry-run # show pending schema migrations
+python -m studio.cli update status     # update checks are OFF by default
+```
+
+In the portable build these are reachable as `InoxHydra-CLI.bat <command>`.
+
+The diagnostics bundle **redacts your LinkedIn session and any API keys by
+allowlist**, so it is safe to attach to a public issue. Open it in a text editor
+and confirm for yourself.
+
+**Update checks are opt-in and off by default.** Nothing is sent anywhere unless
+you run `update enable`, and even then the check only reads a small version file
+and tells you whether a newer release exists. It never installs anything itself.
+
+---
+
+## ⚡ Configuration & CLI Management
 
 ### 1. Configure Your AI Provider (Bring-Your-Own-AI)
 Inox Hydra is provider-agnostic and never locks you into a single vendor. Configure your preferred model using the CLI:
