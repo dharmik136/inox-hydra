@@ -6,16 +6,16 @@ The **Viral Swipe File** module provides a high-signal repository of reverse-eng
 
 ## 1. Visual Layout & User Interface
 
-Accessed via the sidebar (**Viral Swipe File**, `#tab-inspirations`), the interface provides instant filtering across 356 permanently vaulted blueprints:
+Accessed via the sidebar (**Viral Swipe File**, `#tab-inspirations`), the interface provides instant filtering across the vaulted blueprints. Every count shown in the interface is read from `/api/inspirations` at load time and is never hardcoded:
 
 ```
 +-------------------------------------------------------------------------------------------------------+
-| PANEL HEADER: Viral Post Swipe File  |  [Badge: 356 Vaulted Blueprints]                               |
+| PANEL HEADER: Viral Post Swipe File  |  [Badge: <N> Vaulted Blueprints, read from the API]           |
 | Subtitle: Reverse-engineered viral hooks, structures, and pacing vaulted permanently from top creators|
-| Search Bar: [🔍 Search 356 posts by keyword, author, or topic...                                  ] |
+| Search Bar: [🔍 Search blueprints by keyword, author, or topic...                                 ] |
 +-------------------------------------------------------------------------------------------------------+
 | 13 TOPIC CATEGORY FILTER CHIPS (#insp-topic-chips)                                                   |
-| [All (356)]  [🤖 AI Agents (25)]  [🏛️ Architecture (25)]  [📡 Observability (23)]  [⚙️ Systems (23)]   |
+| [All (<N>)]  [🤖 AI Agents]  [🏛️ Architecture]  [📡 Observability]  [⚙️ Systems]                     |
 | [💼 B2B SaaS (26)]  [👑 Leadership (28)]  [✍️ Content (28)]  [📈 Growth (28)]  [🚀 Solopreneur (28)]    |
 | [💻 CTO (29)]  [⚡ Productivity (29)]  [🎯 Consulting (30)]                                            |
 +-------------------------------------------------------------------------------------------------------+
@@ -37,21 +37,29 @@ Accessed via the sidebar (**Viral Swipe File**, `#tab-inspirations`), the interf
 ## 2. Current Architecture & Accumulation Method
 
 ### How Posts Are Accumulated Today:
-* **Curated Offline Vault**: The 356 blueprints are currently stored locally in `studio/data/taplio_vault_archive_backup.json` and mirrored in the local SQLite database.
+
+> **Status note.** This section previously stated that 356 blueprints were mirrored
+> into SQLite from `studio/data/taplio_vault_archive_backup.json`. That mirroring
+> was never implemented. The `inspirations` table is seeded with a small sample
+> set from a literal list in `database.py`, and nothing reads the archive at
+> runtime. The interface now reports whatever is actually present rather than a
+> figure typed into the markup. See section 5 for the decision this raised.
+
+* **Curated Offline Vault**: A sample set of blueprints is seeded into the local SQLite `inspirations` table at first launch.
 * **100% Air-Gapped & Offline**: Unlike cloud tools that query remote APIs on every keystroke, the entire database is loaded into local memory upon startup, ensuring zero latency and zero external network calls.
-* **13 Specialized Topic Taxonomies**:
-  1. **AI Agents (25 posts)**: Practical implementation stories, LLM orchestration patterns, evals, and agent workflows.
-  2. **Enterprise Architecture (25 posts)**: Decoupling monoliths, event-driven designs, and bounded contexts.
-  3. **Observability (23 posts)**: Distributed tracing, telemetry metrics, and MTTR reduction narratives.
-  4. **Systems Engineering (23 posts)**: Zero-downtime migrations, database scaling, and state machine designs.
-  5. **B2B SaaS (26 posts)**: Positioning, ARR growth frameworks, and outbound strategy.
-  6. **Leadership (28 posts)**: Team empowerment, culture building, and hiring playbooks.
-  7. **Content Strategy (28 posts)**: Hook formulas, dwell-time pacing, and audience growth mechanics.
-  8. **Growth (28 posts)**: Funnel optimization, creator monetization, and distribution loops.
-  9. **Solopreneur (28 posts)**: High-leverage workflows, automation, and boutique consulting.
-  10. **CTO (29 posts)**: Technical debt management, executive communication, and vendor evaluations.
-  11. **Productivity (29 posts)**: Deep work systems, calendar audits, and asynchronous operations.
-  12. **Consulting (30 posts)**: Retainer packaging, advisory pricing, and client discovery.
+* **Topic Taxonomies** (counts below describe the intended target shape, not current contents):
+  1. **AI Agents**: Practical implementation stories, LLM orchestration patterns, evals, and agent workflows.
+  2. **Enterprise Architecture**: Decoupling monoliths, event-driven designs, and bounded contexts.
+  3. **Observability**: Distributed tracing, telemetry metrics, and MTTR reduction narratives.
+  4. **Systems Engineering**: Zero-downtime migrations, database scaling, and state machine designs.
+  5. **B2B SaaS**: Positioning, ARR growth frameworks, and outbound strategy.
+  6. **Leadership**: Team empowerment, culture building, and hiring playbooks.
+  7. **Content Strategy**: Hook formulas, dwell-time pacing, and audience growth mechanics.
+  8. **Growth**: Funnel optimization, creator monetization, and distribution loops.
+  9. **Solopreneur**: High-leverage workflows, automation, and boutique consulting.
+  10. **CTO**: Technical debt management, executive communication, and vendor evaluations.
+  11. **Productivity**: Deep work systems, calendar audits, and asynchronous operations.
+  12. **Consulting**: Retainer packaging, advisory pricing, and client discovery.
 
 ### Interactivity & Authoring Controls:
 * **`⚡ Inject into Studio`**: Copies the blueprint directly into the Studio Editor, allowing you to substitute your own metrics and case studies into a proven narrative skeleton.
