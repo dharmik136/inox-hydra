@@ -1,5 +1,13 @@
 name: Inox Hydra CI/CD Pipeline
 
+# Runs on windows-latest, deliberately.
+#
+# This is a Windows product: the credential vault uses DPAPI, the launchers are
+# .bat files, the tray controller calls the Win32 shell API through ctypes, and
+# the distributable embeds an ABI-specific CPython for win64. Testing on Linux
+# would validate a configuration no user will ever run, while producing failures
+# that say nothing about whether the product works.
+
 on:
   push:
     branches: [ "main" ]
@@ -9,7 +17,7 @@ on:
 jobs:
   test-and-verify:
     name: Build, Quality & Automated Test Suite
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
 
     steps:
       - name: Checkout Source Code
@@ -18,13 +26,8 @@ jobs:
       - name: Set up Python Runtime
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
           cache: "pip"
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libfreetype6-dev libjpeg-dev zlib1g-dev
 
       - name: Install Python Dependencies
         run: |
@@ -33,24 +36,22 @@ jobs:
 
       - name: Static Code Analysis & Syntax Validation
         run: |
-          # Stop build if there are Python syntax errors or undefined names
-          flake8 studio/backend tests --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 studio tests tools --count --select=E9,F63,F7,F82 --show-source --statistics
 
+      # A build where the extension manifest and the application disagree about
+      # the version is a support problem that only surfaces after install.
       - name: Verify Version Consistency Across Surfaces
-        run: |
-          python tools/sync_version.py --check
+        run: python tools/sync_version.py --check
 
       - name: Run Enterprise Backend Test Suite (9 Suites)
-        run: |
-          python tests/test_studio_backend.py
+        run: python tests/test_studio_backend.py
 
       - name: Run Full Automated Test Suite (pytest)
-        run: |
-          pytest tests studio/tests -v --tb=short
+        run: pytest tests studio/tests -q
 
   package-verify:
     name: Distributable Build & Clean-Install Verification
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     needs: test-and-verify
 
     steps:
@@ -60,13 +61,8 @@ jobs:
       - name: Set up Python Runtime
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.13"
           cache: "pip"
-
-      - name: Install System Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libfreetype6-dev libjpeg-dev zlib1g-dev
 
       - name: Install Build Tooling
         run: |
@@ -78,5 +74,4 @@ jobs:
       # Catches undeclared dependencies and missing package data, neither of
       # which a normal test run can detect.
       - name: Verify The Distributable Actually Runs
-        run: |
-          python tools/verify_package.py
+        run: python tools/verify_package.py
