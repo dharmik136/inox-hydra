@@ -35,7 +35,7 @@ Real leverage is invisible: event-driven, bounded by strict schemas, executing i
 𝟯. 𝗪𝗵𝗼 𝗵𝗼𝗹𝗱𝘀 𝘁𝗵𝗲 𝗷𝘂𝗱𝗴𝗺𝗲𝗻𝘁?
 Models have zero skin in the game.
 They don't get paged when a pipeline fails in production.
-The moment you delegate judgment—instead of execution—you sacrifice taste, accuracy, and reliability.
+The moment you delegate judgment\u2014instead of execution\u2014you sacrifice taste, accuracy, and reliability.
 
 ━━━━━━━━━━━━━━━━━━━━━
 

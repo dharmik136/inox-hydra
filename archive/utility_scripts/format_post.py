@@ -63,7 +63,7 @@ lines = [
 post = "\n".join(lines)
 
 # Verify zero em dashes or en dashes
-em_count = post.count("—") + post.count("–") + post.count("--")
+em_count = post.count("\u2014") + post.count("–") + post.count("--")
 print(f"Em-dash count: {em_count}")
 
 with open("draft_post_1.txt", "w", encoding="utf-8") as f:

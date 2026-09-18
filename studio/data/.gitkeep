@@ -1,0 +1,3 @@
+# Keeps studio/data present in a fresh clone so a source checkout resolves
+# to portable mode (state beside the code) rather than the user profile.
+# See studio/backend/paths.py.

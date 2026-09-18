@@ -35,7 +35,7 @@ True leverage happens when AI runs in the background (self-hosted or automated p
 𝟯. 𝗥𝗲𝗽𝗹𝗮𝗰𝗲 𝘁𝗵𝗲 𝗲𝗻𝘁𝗶𝗿𝗲 𝗺𝗮𝗻𝘂𝗮𝗹 𝗹𝗼𝗼𝗽, 𝗻𝗼𝘁 𝟮𝟬% 𝗼𝗳 𝗶𝘁
 If your workflow still requires a human to copy text from Tool A to Tool B, the friction remains.
 Identify one repetitive, predictable 15-minute task this week. 
-Build the pipeline so the input directly creates the final output—completely removing human intervention from the loop.
+Build the pipeline so the input directly creates the final output\u2014completely removing human intervention from the loop.
 
 ━━━━━━━━━━━━━━━━━━━━━
 

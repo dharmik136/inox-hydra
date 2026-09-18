@@ -5,6 +5,13 @@ pydantic>=2.6.0
 
 # Image & PDF Processing (1080x1080 Carousel Engine)
 pillow>=10.2.0
+pymupdf>=1.24.0
+
+# Background Queue Dispatcher (studio/backend/scheduler.py)
+apscheduler>=3.10.0
+
+# Multipart form parsing (media dropzone uploads)
+python-multipart>=0.0.9
 
 # Networking & API Integrations
 requests>=2.31.0
