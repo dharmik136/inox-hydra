@@ -20,6 +20,7 @@ Strict Invariants:
 - Zero em-dashes.
 """
 
+import importlib.util
 import os
 import shutil
 import subprocess
@@ -88,6 +89,15 @@ def main() -> int:
     print("1. Staging bundled content")
     if run([sys.executable, os.path.join(REPO_ROOT, "tools", "prepare_package.py")],
            cwd=REPO_ROOT).returncode != 0:
+        return 1
+
+    # --no-isolation below means the build backend is taken from THIS
+    # environment. setuptools stopped being preinstalled with Python 3.12, so
+    # check for it here rather than letting `build` emit a traceback that buries
+    # the actual cause.
+    if importlib.util.find_spec("setuptools") is None:
+        print("   setuptools is not installed, and the build runs with --no-isolation.")
+        print("   Fix: pip install setuptools")
         return 1
 
     print("2. Building wheel")

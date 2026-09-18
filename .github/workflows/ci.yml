@@ -67,7 +67,10 @@ jobs:
       - name: Install Build Tooling
         run: |
           python -m pip install --upgrade pip
-          pip install build wheel
+          # setuptools is NOT preinstalled on Python 3.12+ runners, and
+          # verify_package builds with --no-isolation, so the backend has to
+          # be present in the ambient environment.
+          pip install build wheel setuptools
 
       # Builds a wheel, installs it into a virtual environment with no access to
       # system site packages, and boots it from an unrelated working directory.
