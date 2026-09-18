@@ -1519,7 +1519,13 @@ Lately, I’ve been spending my time doing something humbling:
 Going back to the foundational drawing board to dive deep into enterprise architectures and modern ERP systems.
 
 During my time at Motadata, my world was shaped by 𝗜𝗧 𝗢𝗯𝘀𝗲𝗿𝘃𝗮𝗯𝗶𝗹𝗶𝘁𝘆 and 𝗜𝗧 𝗦𝗲𝗿𝘃𝗶𝗰𝗲 𝗠𝗮𝗻𝗮𝗴𝗲𝗺𝗲𝗻𝘁 (𝗜𝗧𝗦𝗠)...""",
-            json.dumps(["motadata_to_enterprise_4k_flawless.jpg"]),
+            # No media. This previously referenced a bare filename, which the
+            # browser resolved against the site root and served a 404. The image
+            # lives in the repository's assets/ directory, which is not the
+            # directory mounted at /assets (that one holds user media), and it is
+            # not shipped in the distributable. A seeded demo post showing a
+            # broken image is worse than one showing none.
+            json.dumps([]),
             "scheduled",
             "2026-09-14T12:00:00.000Z",
             None,
