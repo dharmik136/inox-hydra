@@ -36,10 +36,47 @@ jobs:
           # Stop build if there are Python syntax errors or undefined names
           flake8 studio/backend tests --count --select=E9,F63,F7,F82 --show-source --statistics
 
+      - name: Verify Version Consistency Across Surfaces
+        run: |
+          python tools/sync_version.py --check
+
       - name: Run Enterprise Backend Test Suite (9 Suites)
         run: |
-          python studio/backend/test_studio_backend.py
+          python tests/test_studio_backend.py
 
-      - name: Run FastAPI Contracts & Algorithmic Safety Tests (pytest)
+      - name: Run Full Automated Test Suite (pytest)
         run: |
-          pytest tests/test_api_contracts.py -v --tb=short
+          pytest tests studio/tests -v --tb=short
+
+  package-verify:
+    name: Distributable Build & Clean-Install Verification
+    runs-on: ubuntu-latest
+    needs: test-and-verify
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python Runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfreetype6-dev libjpeg-dev zlib1g-dev
+
+      - name: Install Build Tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel
+
+      # Builds a wheel, installs it into a virtual environment with no access to
+      # system site packages, and boots it from an unrelated working directory.
+      # Catches undeclared dependencies and missing package data, neither of
+      # which a normal test run can detect.
+      - name: Verify The Distributable Actually Runs
+        run: |
+          python tools/verify_package.py

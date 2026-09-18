@@ -1,0 +1,256 @@
+"""
+Schema Migration Ledger: Forward-Only, Transactional, Backed Up.
+================================================================
+Decides whether this product can ever ship an update to a stranger.
+
+Before this module, schema evolution worked by sniffing `PRAGMA table_info` and
+conditionally issuing `ALTER TABLE`. That is idempotent, which is why it worked,
+but it has no concept of which version a given database is. There was no way to
+answer "can this build safely open that file", which is the only question that
+matters when the file is on a machine nobody can reach.
+
+The model:
+
+  - `PRAGMA user_version` is the database's schema version. SQLite reserves it
+    for applications and never interprets it.
+  - Version 1 is the BASELINE: the schema produced by `database.init_db()` as it
+    stood when the ledger was adopted. Existing databases already have that
+    schema, so adopting the ledger only stamps them, it does not rebuild them.
+  - Every later change is a numbered entry in MIGRATIONS. Entries are immutable
+    once shipped. Editing one that a user has already applied means their
+    database and the ledger disagree forever.
+  - Each migration and its version bump commit in ONE transaction. A failure
+    rolls back both, so a database is never left at a version it does not match.
+  - A timestamped backup is taken before the first migration of any run.
+  - A database newer than this build is refused rather than opened, which
+    protects the user who installs an update and then rolls back.
+
+Strict Invariants:
+- Zero em-dashes in any code, docstring, or comment.
+- Never edit a shipped migration. Add a new one.
+- Never put schema changes in init_db() again. They belong here.
+"""
+
+import os
+import sqlite3
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+
+try:
+    from .paths import get_backups_dir, get_db_path
+except ImportError:
+    from paths import get_backups_dir, get_db_path
+
+# The schema as produced by init_db() at the moment the ledger was adopted.
+# Databases created before the ledger existed already match this, so they are
+# stamped rather than migrated.
+BASELINE_VERSION = 1
+
+# Oldest schema this build knows how to bring forward. Raise this only when
+# dropping support for very old databases, and say so in the changelog.
+MIN_SUPPORTED_SCHEMA = 1
+
+# Migration = (version, description, payload)
+# payload is either a sequence of SQL statements or a callable taking a cursor.
+# Append only. Never reorder, never edit, never delete.
+Payload = Union[Sequence[str], Callable[[sqlite3.Cursor], None]]
+MIGRATIONS: List[Tuple[int, str, Payload]] = [
+    # Example of the shape future entries take:
+    # (2, "Add dwell_seconds to posts", [
+    #     "ALTER TABLE posts ADD COLUMN dwell_seconds REAL DEFAULT 0.0",
+    #     "CREATE INDEX IF NOT EXISTS idx_posts_dwell ON posts(dwell_seconds DESC)",
+    # ]),
+]
+
+SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
+
+
+class SchemaTooNewError(RuntimeError):
+    """The database was written by a newer build than this one."""
+
+
+class SchemaTooOldError(RuntimeError):
+    """The database predates the oldest schema this build can migrate."""
+
+
+def get_schema_version(conn: sqlite3.Connection) -> int:
+    return int(conn.execute("PRAGMA user_version").fetchone()[0])
+
+
+def _set_schema_version(cursor: sqlite3.Cursor, version: int) -> None:
+    """
+    PRAGMA does not accept bound parameters, so the value is interpolated.
+    It is validated as an integer first, which is what makes that safe.
+    """
+    if not isinstance(version, int) or version < 0:
+        raise ValueError(f"refusing to write a non-integer schema version: {version!r}")
+    cursor.execute(f"PRAGMA user_version = {version:d}")
+
+
+def _database_has_tables(conn: sqlite3.Connection) -> bool:
+    row = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+    ).fetchone()
+    return int(row[0]) > 0
+
+
+def check_compatibility(conn: sqlite3.Connection) -> None:
+    """
+    Raises when this build must not touch the database.
+
+    Called before any write. Refusing to start is always better than silently
+    operating against a schema we do not understand.
+    """
+    current = get_schema_version(conn)
+    if current > SCHEMA_VERSION:
+        raise SchemaTooNewError(
+            f"This database is at schema version {current}, but this build only "
+            f"understands up to {SCHEMA_VERSION}. It was almost certainly written by a "
+            f"newer version of Inox Hydra. Install the newer version again, or restore "
+            f"a backup from {get_backups_dir()}."
+        )
+    if current != 0 and current < MIN_SUPPORTED_SCHEMA:
+        raise SchemaTooOldError(
+            f"This database is at schema version {current}, older than the minimum "
+            f"supported version {MIN_SUPPORTED_SCHEMA}. Upgrade through an intermediate "
+            f"release first."
+        )
+
+
+def pending_migrations(conn: sqlite3.Connection) -> List[Tuple[int, str, Payload]]:
+    """Migrations this database has not yet had applied, in order."""
+    current = get_schema_version(conn)
+    return [m for m in MIGRATIONS if m[0] > current]
+
+
+def backup_database(reason: str = "migration") -> Optional[str]:
+    """
+    Copies the database aside before it is altered.
+
+    Returns the backup path, or None when there is nothing to back up yet.
+    Uses the SQLite backup API so the copy is consistent even under WAL with
+    other readers active, which a plain file copy cannot guarantee.
+    """
+    db_path = get_db_path()
+    if not os.path.exists(db_path) or os.path.getsize(db_path) == 0:
+        return None
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    name = f"linkedin_studio_{reason}_{stamp}.db"
+    target = os.path.join(get_backups_dir(), name)
+
+    source = sqlite3.connect(db_path)
+    try:
+        destination = sqlite3.connect(target)
+        try:
+            source.backup(destination)
+        finally:
+            destination.close()
+    finally:
+        source.close()
+    return target
+
+
+def _apply(cursor: sqlite3.Cursor, payload: Payload) -> None:
+    if callable(payload):
+        payload(cursor)
+        return
+    for statement in payload:
+        cursor.execute(statement)
+
+
+def ensure_schema(conn: sqlite3.Connection, take_backup: bool = True) -> Dict[str, Any]:
+    """
+    Brings the database up to SCHEMA_VERSION, or raises without touching it.
+
+    Assumes the baseline DDL has already run (init_db does this), so a database
+    that has tables but no version stamp is adopted at BASELINE_VERSION rather
+    than being rebuilt.
+
+    Returns a report suitable for logging and for the diagnostics bundle.
+    """
+    check_compatibility(conn)
+
+    started_at = get_schema_version(conn)
+    report: Dict[str, Any] = {
+        "from_version": started_at,
+        "to_version": started_at,
+        "target_version": SCHEMA_VERSION,
+        "applied": [],
+        "backup_path": None,
+        "baselined": False,
+    }
+
+    # Manual transaction control. The default isolation handling does not open a
+    # transaction for DDL, which would let a migration commit without its
+    # version bump.
+    previous_isolation = conn.isolation_level
+    conn.isolation_level = None
+    cursor = conn.cursor()
+
+    try:
+        if started_at == 0:
+            if not _database_has_tables(conn):
+                # A genuinely empty file. init_db has not run yet, so there is
+                # nothing to adopt. Caller is responsible for creating the schema.
+                return report
+            # Pre-ledger database carrying the baseline schema. Stamp it.
+            cursor.execute("BEGIN IMMEDIATE")
+            try:
+                _set_schema_version(cursor, BASELINE_VERSION)
+                cursor.execute("COMMIT")
+            except Exception:
+                cursor.execute("ROLLBACK")
+                raise
+            report["baselined"] = True
+            report["to_version"] = BASELINE_VERSION
+
+        outstanding = pending_migrations(conn)
+        if not outstanding:
+            report["to_version"] = get_schema_version(conn)
+            return report
+
+        if take_backup:
+            report["backup_path"] = backup_database("premigration")
+
+        for version, description, payload in outstanding:
+            cursor.execute("BEGIN IMMEDIATE")
+            try:
+                _apply(cursor, payload)
+                _set_schema_version(cursor, version)
+                cursor.execute("COMMIT")
+            except Exception as exc:
+                cursor.execute("ROLLBACK")
+                raise RuntimeError(
+                    f"Migration {version} ({description}) failed and was rolled back. "
+                    f"The database is still at version {get_schema_version(conn)}. "
+                    f"A backup was saved to {report['backup_path']}. Original error: {exc}"
+                ) from exc
+            report["applied"].append({"version": version, "description": description})
+            report["to_version"] = version
+
+        return report
+    finally:
+        conn.isolation_level = previous_isolation
+
+
+def describe(conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
+    """Schema status for the diagnostics bundle and the status endpoint."""
+    should_close = False
+    if conn is None:
+        conn = sqlite3.connect(get_db_path())
+        should_close = True
+    try:
+        current = get_schema_version(conn)
+        return {
+            "current_version": current,
+            "target_version": SCHEMA_VERSION,
+            "baseline_version": BASELINE_VERSION,
+            "min_supported_version": MIN_SUPPORTED_SCHEMA,
+            "pending": [{"version": v, "description": d} for v, d, _ in pending_migrations(conn)],
+            "up_to_date": current == SCHEMA_VERSION,
+            "too_new": current > SCHEMA_VERSION,
+        }
+    finally:
+        if should_close:
+            conn.close()
