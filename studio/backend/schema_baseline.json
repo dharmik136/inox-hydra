@@ -1,0 +1,198 @@
+{
+  "_comment": [
+    "Frozen fingerprint of the schema init_db() produces: schema version 1.",
+    "Regenerate ONLY when deliberately re-baselining, which should be almost never.",
+    "If a test told you to look here, you probably added DDL to init_db().",
+    "That DDL belongs in studio/backend/migrations.py as a numbered entry, or",
+    "existing users will never receive it. See the master plan, section 5.1."
+  ],
+  "baseline_version": 1,
+  "tables": {
+    "analytics_daily": [
+      "comments",
+      "connections",
+      "created_at",
+      "date",
+      "engagement_rate",
+      "followers",
+      "impressions",
+      "profile_views",
+      "reactions",
+      "shares",
+      "unique_members_reached"
+    ],
+    "audience_demographics": [
+      "dimension",
+      "id",
+      "label",
+      "percentage"
+    ],
+    "drafts": [
+      "account_id",
+      "archetype",
+      "char_count",
+      "created_at",
+      "formatted_content",
+      "id",
+      "is_pre_fold_safe",
+      "lines_above_fold",
+      "pre_fold_chars",
+      "raw_content",
+      "status",
+      "tags",
+      "title",
+      "updated_at"
+    ],
+    "generation_tasks": [
+      "created_at",
+      "error_message",
+      "options_json",
+      "progress_percent",
+      "prompt",
+      "result_url",
+      "status",
+      "status_message",
+      "task_id",
+      "updated_at"
+    ],
+    "gstack_backlog": [
+      "anti_slop_check",
+      "created_at",
+      "id",
+      "role",
+      "specification",
+      "status",
+      "title",
+      "updated_at"
+    ],
+    "inspirations": [
+      "author_headline",
+      "author_name",
+      "comments_count",
+      "content",
+      "created_at",
+      "id",
+      "key_hook",
+      "likes_count",
+      "topic"
+    ],
+    "lead_enrichments": [
+      "company_intelligence",
+      "enriched_at",
+      "enriched_by",
+      "estimated_tech_stack",
+      "friction_points",
+      "icebreakers",
+      "key_topics",
+      "lead_id"
+    ],
+    "lead_interactions": [
+      "account_id",
+      "comment_text",
+      "id",
+      "interacted_at",
+      "interaction_type",
+      "lead_id",
+      "post_id",
+      "post_urn",
+      "sentiment_label",
+      "suggested_dm_reply"
+    ],
+    "leads": [
+      "account_id",
+      "company",
+      "created_at",
+      "engagement_type",
+      "full_name",
+      "headline",
+      "icp_score",
+      "id",
+      "lead_status",
+      "linkedin_urn",
+      "name",
+      "notes",
+      "post_id",
+      "profile_url",
+      "seniority_level",
+      "status",
+      "updated_at"
+    ],
+    "media_assets": [
+      "created_at",
+      "dimensions",
+      "duration_seconds",
+      "filename",
+      "id",
+      "media_type",
+      "mime_type",
+      "page_count",
+      "prompt",
+      "size_bytes",
+      "storage_path"
+    ],
+    "posts": [
+      "account_id",
+      "clicks",
+      "comments",
+      "content",
+      "created_at",
+      "id",
+      "impressions",
+      "media_urls",
+      "published_at",
+      "reactions",
+      "scheduled_for",
+      "shares",
+      "status",
+      "tags"
+    ],
+    "queue_items": [
+      "channel",
+      "created_at",
+      "draft_id",
+      "id",
+      "published_at",
+      "scheduled_at",
+      "status"
+    ],
+    "queue_slots": [
+      "day_of_week",
+      "id",
+      "is_active",
+      "label",
+      "time_slot"
+    ],
+    "settings": [
+      "account_id",
+      "key",
+      "updated_at",
+      "value"
+    ],
+    "viral_templates": [
+      "archetype",
+      "engagement_multiplier",
+      "example_post_id",
+      "hook_text",
+      "id",
+      "pacing_style",
+      "updated_at",
+      "velocity_score"
+    ]
+  },
+  "indexes": [
+    "idx_drafts_account",
+    "idx_drafts_status",
+    "idx_drafts_updated",
+    "idx_gstack_role",
+    "idx_interactions_account",
+    "idx_interactions_lead",
+    "idx_leads_account",
+    "idx_leads_icp",
+    "idx_leads_status",
+    "idx_leads_urn",
+    "idx_posts_account",
+    "idx_queue_scheduled",
+    "idx_viral_templates_archetype",
+    "idx_viral_templates_velocity"
+  ]
+}
