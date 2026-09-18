@@ -67,7 +67,7 @@ inox-hydra/
 │   ├── verify_package.py       # Builds, installs and boots a wheel in isolation
 │   ├── prepare_package.py      # Stages bundled docs into the package
 │   └── sync_version.py         # Propagates the version to every surface
-├── tests/                      # 260 automated tests
+├── tests/                      # Automated test suite
 ├── docs/                       # Documentation suite and the master plan
 ├── release/latest.json         # Manifest read by opt-in update checks
 ├── pyproject.toml              # Packaging metadata and dependencies
@@ -86,7 +86,7 @@ inox-hydra/
 
 ### Option A: Download and run (recommended, no Python required)
 
-1. Download **`InoxHydra-2.5.0-win64.zip`** from [Releases](https://github.com/dharmik136/inox-hydra/releases/latest).
+1. Download the `InoxHydra-<version>-win64.zip` asset from [the latest release](https://github.com/dharmik136/inox-hydra/releases/latest).
 2. Extract it anywhere. A USB stick is fine.
 3. Double-click **`InoxHydra.bat`**.
 
@@ -218,7 +218,7 @@ Inox Hydra is designed as an open, model-agnostic creator studio. You can seamle
 * [**Module 01: Studio & Editor**](docs/modules/01_STUDIO_AND_EDITOR.md): Topbar telemetry, dynamic fold tracker, 1080×1080 PDF carousels, and 6-dimension algorithmic audit.
 * [**Module 02: Schedule & Queue**](docs/modules/02_SCHEDULE_AND_QUEUE.md): Publishing cadence, peak smart slots, and local background dispatcher.
 * [**Module 03: Inbound CRM**](docs/modules/03_INBOUND_CRM.md): Pipeline lifecycle, column dictionary, search/filter, and 3-style contextual DM generator.
-* [**Module 04: Viral Swipe File**](docs/modules/04_VIRAL_SWIPE_FILE.md): 356 curated blueprints, 13 topic categories, and Agno Framework autonomous inbound roadmap.
+* [**Module 04: Viral Swipe File**](docs/modules/04_VIRAL_SWIPE_FILE.md): Reverse-engineered hook blueprints, topic filtering, 1-click injection into the editor, and the Agno Framework autonomous inbound roadmap.
 * [**Module 05: Creator Analytics**](docs/modules/05_ANALYTICS.md): Direct LinkedIn session ingestion, growth deltas, Chart.js time-series, and demographics.
 * [**Module 06: AI Command Hub**](docs/modules/06_AI_COMMAND.md): Dual-mode Gemini 2.5 Flash + Antigravity local engine, prompt presets, and direct Studio transfer.
 * [**Architecture & Security Blueprint**](docs/ARCHITECTURE.md): Deep-dive into data flow, SQLite WAL concurrency, and threat model.

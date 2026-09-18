@@ -10,7 +10,7 @@
  * - 6-Dimension Algorithmic Safety Auditor (0-100%)
  * - 1080x1080 Multi-Slide Carousel Canvas Engine
  * - Warm-Lead CRM Inbox with Contextual DM Generator
- * - 356 Vaulted Viral Swipe File Blueprints
+ * - Viral Swipe File blueprints (count is read from the API, never hardcoded)
  */
 
 const API_BASE = "http://127.0.0.1:8000/api";
@@ -282,7 +282,7 @@ function switchTab(tabId) {
       loadLeads();
     } else if (tabId === "tab-inspirations") {
       if (viewTitle) viewTitle.innerText = "Viral Post Swipe File";
-      if (viewSubtitle) viewSubtitle.innerText = "356 Reverse-Engineered High-Performing Blueprints";
+      if (viewSubtitle) viewSubtitle.innerText = "Reverse-engineered hooks, structures and pacing you can pour your own metrics into";
       loadInspirations(currentInspQuery, currentInspTopic);
     } else if (tabId === "tab-analytics") {
       if (viewTitle) viewTitle.innerText = "Creator Analytics & Growth";
@@ -3379,7 +3379,7 @@ function showAgnoDossierModal(dossier) {
 
 
 // -------------------------------------------------------------
-// 10. VIRAL POST SWIPE FILE (356 Vaulted Blueprints)
+// 10. VIRAL POST SWIPE FILE (count comes from the API)
 // -------------------------------------------------------------
 function initInspirations() {
   const searchInput = document.getElementById("insp-search-input");
@@ -3416,12 +3416,31 @@ async function loadInspirations(query = "", topic = "") {
     if (!res.ok) return;
     const json = await res.json();
     const items = json.inspirations || [];
-    const totalVaulted = json.total_vaulted || 356;
+    // No hardcoded fallback. A default of 356 meant that whenever the API
+    // could not report a count, the interface asserted one anyway, which is
+    // how the vault came to advertise 356 blueprints while holding 5.
+    const totalVaulted = Number.isFinite(json.total_vaulted) ? json.total_vaulted : items.length;
 
     const countBadge = document.getElementById("swipe-count-badge");
     if (countBadge) {
       countBadge.innerText = (topic || query) ? `${items.length} of ${totalVaulted} Blueprints` : `${totalVaulted} Vaulted Blueprints`;
     }
+
+    // The sidebar badge, the tab tooltip, the vault label and the "All" chip are
+    // authored as static markup. Left alone they keep asserting whatever number
+    // was typed into the HTML. Drive them from the same figure the panel uses so
+    // the interface cannot contradict its own data.
+    const navBtn = document.querySelector('[data-tab="tab-inspirations"]');
+    if (navBtn) {
+      navBtn.setAttribute("title", `Viral Swipe File (${totalVaulted} Vaulted)`);
+      const navBadge = navBtn.querySelector(".sidebar-badge");
+      if (navBadge) navBadge.innerText = String(totalVaulted);
+    }
+    document.querySelectorAll(".topic-chip").forEach(chip => {
+      if (chip.getAttribute("data-topic") === "") chip.innerText = `All (${totalVaulted})`;
+    });
+    const vaultLabel = document.querySelector("#topbar-group-inspirations .stat-pill strong");
+    if (vaultLabel) vaultLabel.innerText = `${totalVaulted} Blueprints`;
 
     const container = document.getElementById("inspirations-container");
     if (!container) return;
@@ -4170,7 +4189,7 @@ const DEFAULT_DOCS_MODULES = [
     category: "Research & Blueprints",
     icon: "zap",
     file: "04_VIRAL_SWIPE_FILE.md",
-    summary: "356 vaulted blueprints, 13 topic taxonomies, instant search, and Agno Framework autonomous inbound roadmap."
+    summary: "Reverse-engineered hook blueprints, topic taxonomies, instant search, and the Agno Framework autonomous inbound roadmap."
   },
   {
     id: "analytics",
