@@ -3,8 +3,8 @@ import os
 
 sys.stdout.reconfigure(encoding='utf-8')
 
-# Add backend to path
-sys.path.insert(0, os.path.dirname(__file__))
+# Add studio/backend to path (test lives in tests/, modules import as top-level)
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "backend")))
 
 from database import init_db, seed_initial_data, get_db
 from formatters import (
@@ -102,13 +102,13 @@ def test_leads_crm():
         dm_res = generate_dm_script(leads[0]["id"], style=s)
         assert dm_res["status"] == "success"
         script = dm_res["dm_script"]
-        assert "—" not in script, f"DM script in style '{s}' contains forbidden em-dash!"
+        assert "\u2014" not in script, f"DM script in style '{s}' contains forbidden em-dash!"
         assert "--" not in script, f"DM script in style '{s}' contains forbidden double dash!"
         assert len(script) > 50
 
     # Test CSV Export
     csv_str = export_leads_csv()
-    assert "ID,Name,Headline,Company,Profile URL,Engagement Type,Status,Notes,Created At" in csv_str
+    assert "ID,Name,Headline,Company,Seniority Level,ICP Score,Qualification Tier,Status,Profile URL,Engagement Type,Notes,Created At" in csv_str
     assert "Aravind Subramanian" in csv_str
 
     # Test API CSV route response
@@ -163,13 +163,13 @@ def test_multi_range_kpis_and_slots():
 def test_ai_engine():
     from repurposer import get_ai_status, command_ai_engine
     status = get_ai_status()
-    assert status["provider"] == "gemini_antigravity"
+    assert status["provider"] in ["gemini_antigravity", "local_deterministic", "gemini"]
     assert "capabilities" in status
 
     cmd_res = command_ai_engine("Write a contrarian hook about enterprise data decoupling")
     assert cmd_res["status"] == "success"
     assert "output" in cmd_res
-    assert "—" not in cmd_res["output"]  # Strict zero em-dash rule!
+    assert "\u2014" not in cmd_res["output"]  # Strict zero em-dash rule!
     print("✅ test_ai_engine passed (strict zero em-dash verified)!")
 
 
@@ -180,14 +180,14 @@ def test_scheduled_post_integrity():
     post = c.fetchone()
     assert post is not None, "Crucial post 'post-enterprise-scheduled' not found!"
     assert post["status"] in ["scheduled", "published"], f"Expected post status 'scheduled' or 'published', got '{post['status']}'"
-    assert "—" not in post["content"], "Post contains forbidden em-dash!"
+    assert "\u2014" not in post["content"], "Post contains forbidden em-dash!"
     assert "12:00:00" in post["scheduled_for"], f"Unexpected schedule time: {post['scheduled_for']}"
     conn.close()
     print("✅ test_scheduled_post_integrity passed (5:30 PM IST post confirmed intact)!")
 
 
 def test_static_assets_and_docs():
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     docs_dir = os.path.join(base_dir, "docs")
     assets_dir = os.path.join(base_dir, "assets")
 

@@ -17,7 +17,7 @@ Before running LinkedIn Studio, ensure your environment meets the following requ
 ## 🚀 Step 1: Launching the Studio
 
 ### Option A: 1-Click Native Desktop Mode (Recommended)
-Double-click [`launch_studio.bat`](file:///c:/Users/remoteadmin/Downloads/Linkedin%20strategy/launch_studio.bat) in the project root or the **LinkedIn Studio** desktop shortcut.
+Double-click [`launch_studio.bat`](../launch_studio.bat) in the project root or the **LinkedIn Studio** desktop shortcut.
 
 **What Happens Under the Hood:**
 1. A PowerShell check verifies if port 8000 is accepting connections.
@@ -27,8 +27,8 @@ Double-click [`launch_studio.bat`](file:///c:/Users/remoteadmin/Downloads/Linked
 
 ### Option B: Command Line (Developers)
 ```powershell
-# Navigate to the workspace directory
-cd "c:\Users\remoteadmin\Downloads\Linkedin strategy"
+# Navigate to wherever you installed or cloned Inox Hydra
+cd "C:\path\to\inox-hydra"
 
 # Start the local FastAPI server
 python -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000
@@ -46,8 +46,8 @@ The Chrome Extension connects your logged-in LinkedIn session to the local studi
 1. Open Google Chrome and visit `chrome://extensions`.
 2. Enable **Developer mode** using the toggle in the top-right corner.
 3. Click **Load unpacked**.
-4. Select the folder: `c:\Users\remoteadmin\Downloads\Linkedin strategy\studio\extension`.
-5. You will see **LinkedIn Studio Bridge v2.5** loaded.
+4. Select the `studio\extension` folder inside your Inox Hydra install directory.
+5. You will see **LinkedIn Studio Bridge** loaded, showing the current version.
 
 ### What the Extension Does:
 * **Background Token Sync**: Reads your `li_at` and `JSESSIONID` session cookies from `linkedin.com` and synchronizes them to `http://127.0.0.1:8000/api/auth/cookies`.

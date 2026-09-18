@@ -1,0 +1,102 @@
+name: Inox Hydra Release
+
+# Builds the portable Windows distributable and attaches it to a GitHub Release.
+#
+# Runs on a Windows runner deliberately. The artifact embeds compiled wheels
+# (pymupdf, pillow, pydantic-core), which are ABI specific, so building it on
+# Linux would produce a ZIP that cannot import its own dependencies.
+#
+# Trigger by pushing a tag that matches the version in studio/__version__.py,
+# for example: git tag v2.5.0 && git push origin v2.5.0
+# Or run it manually from the Actions tab to produce a test artifact.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-portable:
+    name: Build Portable Windows Distributable
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # The embeddable runtime downloaded by the build script is chosen from the
+      # building interpreter's own version, so this pin decides what ships.
+      - name: Set up Python Runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install Build Tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel flake8 pytest
+
+      - name: Verify Version Consistency Across Surfaces
+        run: python tools/sync_version.py --check
+
+      - name: Confirm The Tag Matches The Declared Version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          DECLARED=$(python -c "import sys; sys.path.insert(0,'.'); from studio.__version__ import __version__; print(__version__)")
+          TAG="${GITHUB_REF_NAME#v}"
+          echo "declared=$DECLARED tag=$TAG"
+          if [ "$DECLARED" != "$TAG" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match studio/__version__.py ($DECLARED)."
+            echo "Releasing these out of step would ship a build whose version nobody can trust."
+            exit 1
+          fi
+
+      - name: Run The Test Suite
+        run: pytest tests studio/tests -q
+
+      # Proves the wheel is complete and every dependency is declared, before
+      # any of it is folded into a 40 MB ZIP that is harder to debug.
+      - name: Verify The Distributable Actually Runs
+        run: python tools/verify_package.py
+
+      - name: Build The Portable Artifact
+        run: python tools/build_portable.py
+
+      # The gate that matters: the artifact must run entirely from its own
+      # embedded runtime, with no reliance on the runner's Python.
+      - name: Smoke Test The Portable Artifact
+        shell: bash
+        run: python tools/smoke_portable.py
+
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: InoxHydra-portable-win64
+          path: dist/portable/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Attach To GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/portable/*.zip
+          generate_release_notes: true
+          body: |
+            ## Inox Hydra ${{ github.ref_name }}
+
+            Download the ZIP below, extract it anywhere, and double click `InoxHydra.bat`.
+            No Python installation and no administrator rights are required.
+
+            **Your data is safe across upgrades.** Drafts, leads and analytics live in
+            `%LOCALAPPDATA%\InoxHydra`, outside the application folder, so replacing this
+            folder with a newer one never touches your work. A timestamped database backup
+            is taken automatically before any schema upgrade.
+
+            To upgrade: delete the old folder and extract the new one.

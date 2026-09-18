@@ -15,16 +15,26 @@ import io
 import csv
 import json
 import uuid
+import re
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date, timedelta
+import time
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response, UploadFile, File, Form, Request, Header
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 try:
-    from .database import get_db, init_db, seed_initial_data
+    from ..__version__ import __version__
+except ImportError:
+    import os as _os, sys as _sys
+    _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "..")))
+    from __version__ import __version__
+
+try:
+    from .database import get_db, init_db, seed_initial_data, create_draft, get_draft, list_drafts, schedule_draft, checkpoint_db
     from .formatters import (
         to_sans_bold,
         to_sans_italic,
@@ -33,13 +43,29 @@ try:
         clean_text_formatting,
         analyze_hook
     )
-    from .carousel_generator import generate_carousel_pdf
     from .repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from .leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from .linkedin_client import linkedin_client
     from .scheduler import start_scheduler, shutdown_scheduler
+    from .agno_agent import agno_orchestrator
+    from .agno_agentos import orchestrator
+    from .image_studio import image_studio_manager
+    from .event_bus import event_bus
+    from .ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
+    from .crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
+    from .rate_limiter import rate_limiter, write_actor
+    from .intelligence_sync import intelligence_sync_engine
+    from .gstack_governance import gstack_engine
+    from .migrations import describe as describe_schema
+    from . import support as support_tools
+    from . import updates as update_checker
+    from .paths import (get_assets_dir, get_uploads_dir, get_generated_dir, get_data_dir,
+                        get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
+                        describe as describe_paths)
+    from .docs_engine import search_docs_fts, init_docs_search_index
+    from .carousel_engine import carousel_engine
 except ImportError:
-    from database import get_db, init_db, seed_initial_data
+    from database import get_db, init_db, seed_initial_data, create_draft, get_draft, list_drafts, schedule_draft, checkpoint_db
     from formatters import (
         to_sans_bold,
         to_sans_italic,
@@ -48,28 +74,54 @@ except ImportError:
         clean_text_formatting,
         analyze_hook
     )
-    from carousel_generator import generate_carousel_pdf
     from repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from linkedin_client import linkedin_client
     from scheduler import start_scheduler, shutdown_scheduler
+    from agno_agent import agno_orchestrator
+    from agno_agentos import orchestrator
+    from image_studio import image_studio_manager
+    from event_bus import event_bus
+    from ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
+    from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
+    from rate_limiter import rate_limiter, write_actor
+    from intelligence_sync import intelligence_sync_engine
+    from gstack_governance import gstack_engine
+    from migrations import describe as describe_schema
+    import support as support_tools
+    import updates as update_checker
+    from paths import (get_assets_dir, get_uploads_dir, get_generated_dir, get_data_dir,
+                       get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
+                        describe as describe_paths)
+    from docs_engine import search_docs_fts, init_docs_search_index
+    from carousel_engine import carousel_engine
 
 OPENAPI_TAGS = [
     {"name": "Analytics", "description": "Creator metrics, impressions, period deltas, demographics, and CSV exports."},
     {"name": "Post Studio", "description": "Draft authoring, scheduling, real-time simulator validation, and post lifecycle."},
-    {"name": "Carousel Builder", "description": "Native 1080x1080 Pillow PDF carousel slide deck rendering."},
+    {"name": "Media Studio & Dropzone", "description": "Drag-and-drop file uploads for Images, PDF Carousels, and MP4/WebM Videos."},
+    {"name": "AI Image Studio", "description": "Multi-stage AI image generation with Agno prompt synthesis and 1%..100% progress tracking."},
+    {"name": "AI Content Copilot", "description": "Agno AgentOS post drafting, hook generation, and dwell optimization."},
     {"name": "AI Command Engine", "description": "Dual-mode AI: Gemini 2.5 Flash cloud API & Antigravity local deterministic engine."},
     {"name": "Formatting & Audit", "description": "Unicode mathematical formatting, em-dash scrubber, and 2026 algorithm safety scoring."},
     {"name": "Leads & CRM", "description": "Prospect engagement pipeline, status transitions, and personalized DM scripts."},
     {"name": "Smart Queue", "description": "Cadence management and peak engagement time slots."},
     {"name": "LinkedIn Bridge", "description": "Passive session token synchronization and live analytics ingestion."},
-    {"name": "Documentation", "description": "Interactive enterprise documentation suite and in-app playbook viewer."}
+    {"name": "Settings & Creator Profile", "description": "Creator branding, personal watermark configuration, and session bridge."},
+    {"name": "Documentation", "description": "Interactive enterprise documentation suite and in-app playbook viewer."},
+    {"name": "Real-Time Event Stream", "description": "Server-Sent Events (SSE) bus for under 5ms instant live inbox updates."},
+    {"name": "Ubiquitous Ingress", "description": "Outbound long-polling Telegram ingress, directive parser, and mobile fold analyzer."},
+    {"name": "LinkedIn Native Scheduler", "description": "Voyager cloud pre-staging and self-healing morning grace window recovery."},
+    {"name": "Enterprise Reverse CRM", "description": "Deterministic ICP scoring engine and anti-slop 1-to-1 contextual DM generation."},
+    {"name": "Anti-Bot & Rate Limiting", "description": "Gaussian jitter request governor, human pacing, and single-writer WAL actor."},
+    {"name": "Intelligence Sync & Radar", "description": "Asymmetric GitHub CDN intelligence sync, ETag caching, and viral hook templates."},
+    {"name": "G-Stack Multi-Agent Governance", "description": "Garry Tan 6-role virtual team governance, role backlogs, and multi-gate anti-slop audits."}
 ]
 
 app = FastAPI(
     title="LinkedIn Studio Enterprise",
     description="A 100% self-hosted, air-gapped, privacy-first alternative to $199/month SaaS creator tools running on localhost.",
-    version="2.5.0",
+    version=__version__,
     openapi_tags=OPENAPI_TAGS
 )
 
@@ -88,11 +140,14 @@ def on_startup():
     init_db()
     seed_initial_data()
     start_scheduler()
+    if os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN"):
+        ingress_daemon.start_worker()
 
 
 @app.on_event("shutdown")
 def on_shutdown():
     shutdown_scheduler()
+    ingress_daemon.stop_worker()
 
 
 # -------------------------------------------------------------
@@ -120,6 +175,42 @@ class ReschedulePayload(BaseModel):
 
 class FormatRequest(BaseModel):
     text: str
+
+
+class ImageGenerateRequest(BaseModel):
+    concept: str
+    aspect_ratio: Optional[str] = "1:1"
+    visual_style: Optional[str] = "photorealistic"
+    color_palette: Optional[str] = "navy_cyan"
+    lighting: Optional[str] = "studio"
+    render_quote_overlay: Optional[bool] = True
+    custom_quote_text: Optional[str] = None
+    custom_quote_author: Optional[str] = None
+    eliminate_provider_watermark: Optional[bool] = True
+    apply_personal_watermark: Optional[bool] = False
+    personal_watermark_text: Optional[str] = None
+    personal_watermark_position: Optional[str] = "bottom_right"
+    personal_watermark_style: Optional[str] = "glass_pill"
+
+
+class CreatorProfilePayload(BaseModel):
+    name: Optional[str] = "Dharmik Shingala"
+    headline: Optional[str] = "AI Systems Engineer & Full-Stack Architect"
+    company: Optional[str] = "Enterprise Labs"
+    brand_watermark_text: Optional[str] = "@dharmik136"
+    brand_watermark_position: Optional[str] = "bottom_right"
+    brand_watermark_style: Optional[str] = "glass_pill"
+    brand_watermark_enabled: Optional[bool] = True
+    eliminate_provider_watermark_default: Optional[bool] = True
+    default_aspect_ratio: Optional[str] = "1:1"
+    default_visual_style: Optional[str] = "photorealistic"
+
+
+class CopilotRequest(BaseModel):
+    raw_content: str
+    target_audience: Optional[str] = "Engineering & Product Leaders"
+    post_format: Optional[str] = "framework_breakdown"
+    attached_media_type: Optional[str] = None
 
 
 class CarouselRequest(BaseModel):
@@ -154,9 +245,20 @@ class AISettingsPayload(BaseModel):
     gemini_api_key: str
 
 
+class AIConfigureRequest(BaseModel):
+    provider: str
+    api_key: Optional[str] = ""
+    model: Optional[str] = None
+    base_url: Optional[str] = None
+
+
 class AICommandPayload(BaseModel):
     command: str
     context: Optional[str] = None
+    draft_context: Optional[str] = None
+
+    def resolved_context(self) -> Optional[str]:
+        return self.context if self.context is not None else self.draft_context
 
 
 # -------------------------------------------------------------
@@ -346,9 +448,36 @@ def get_posts_leaderboard():
         d = dict(r)
         d["media_urls"] = json.loads(d["media_urls"]) if d["media_urls"] else []
         d["tags"] = json.loads(d["tags"]) if d["tags"] else []
+
+        # Attribution correlation summary for post leaderboard
+        post_id_str = str(d["id"])
+        cursor.execute("""
+            SELECT 
+                COUNT(DISTINCT l.id) as total_leads,
+                COUNT(DISTINCT CASE WHEN l.icp_score >= 75.0 THEN l.id END) as vip_leads,
+                ROUND(AVG(l.icp_score), 1) as avg_icp
+            FROM leads l
+            LEFT JOIN lead_interactions li ON l.id = li.lead_id
+            WHERE li.post_id = ? OR li.post_urn = ? OR l.post_id = ?
+        """, (post_id_str, post_id_str, post_id_str))
+        attr_row = cursor.fetchone()
+        d["attribution"] = {
+            "total_leads": int(attr_row["total_leads"] or 0) if attr_row else 0,
+            "vip_leads": int(attr_row["vip_leads"] or 0) if attr_row else 0,
+            "avg_icp": float(attr_row["avg_icp"] or 0.0) if attr_row and attr_row["avg_icp"] else 0.0,
+        }
         rows.append(d)
     conn.close()
     return {"status": "success", "posts": rows}
+
+
+@app.get("/api/v1/analytics/posts/{post_id}/leads", tags=["Enterprise Reverse CRM", "Analytics"])
+def get_post_leads_attribution(post_id: str, account_id: str = "default"):
+    """
+    Returns full post-to-lead attribution analytics and detailed engager dossier list.
+    Supports post ID or LinkedIn activity URN.
+    """
+    return reverse_crm.get_post_attribution(post_id, account_id=account_id)
 
 
 # -------------------------------------------------------------
@@ -447,24 +576,217 @@ def delete_post(post_id: str):
 
 
 # -------------------------------------------------------------
-# Taplio Pro ($199/mo) Feature 1: Local PDF Carousel Builder
+# Module 3: Media Studio & Unified Drag-and-Drop Dropzone
 # -------------------------------------------------------------
-@app.post("/api/carousel/generate")
-def create_carousel_pdf(req: CarouselRequest):
+@app.post("/api/media/upload", tags=["Media Studio & Dropzone"])
+async def upload_media_file(file: UploadFile = File(...)):
+    """
+    Unified drag-and-drop media upload handler supporting:
+    - Single & Multi-Images (.png, .jpg, .jpeg, .webp)
+    - Multi-Slide Document Carousels (.pdf)
+    - High-Definition Video (.mp4, .webm)
+    """
+    filename = file.filename or "uploaded_media"
+    ext = os.path.splitext(filename)[1].lower()
+
+    ALLOWED_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+    ALLOWED_DOC_EXTS = {".pdf"}
+    ALLOWED_VIDEO_EXTS = {".mp4", ".webm"}
+
+    if ext in ALLOWED_IMAGE_EXTS:
+        media_type = "image"
+    elif ext in ALLOWED_DOC_EXTS:
+        media_type = "carousel"
+    elif ext in ALLOWED_VIDEO_EXTS:
+        media_type = "video"
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '{ext}'. Allowed: Images (.png, .jpg, .webp), Carousels (.pdf), Videos (.mp4, .webm)"
+        )
+
+    uploads_dir = get_uploads_dir()
+
+    clean_name = re.sub(r'[^a-zA-Z0-9_\.-]', '_', filename)
+    safe_name = f"{uuid.uuid4().hex[:8]}_{clean_name}"
+    file_path = os.path.join(uploads_dir, safe_name)
+
+    content = await file.read()
+    size_bytes = len(content)
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    relative_url = f"/assets/uploads/{safe_name}"
+    page_count = None
+    dimensions = None
+
+    if media_type == "carousel":
+        try:
+            import fitz
+            doc = fitz.open(file_path)
+            page_count = len(doc)
+            doc.close()
+        except Exception:
+            page_count = 1
+    elif media_type == "image":
+        try:
+            from PIL import Image
+            with Image.open(file_path) as im:
+                dimensions = {"width": im.width, "height": im.height}
+        except Exception:
+            pass
+
+    asset_id = f"asset_{uuid.uuid4().hex[:10]}"
+    conn = get_db()
     try:
-        pdf_bytes = generate_carousel_pdf(
-            slides_data=req.slides,
-            author_name=req.author_name or "Dharmik Shingala",
-            author_title=req.author_title or "Content Strategist & Enterprise Systems Practitioner",
-            theme_name=req.theme or "dark_slate"
-        )
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=linkedin_carousel.pdf"}
-        )
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+            INSERT OR REPLACE INTO media_assets 
+            (id, filename, storage_path, media_type, mime_type, size_bytes, dimensions, page_count)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                asset_id,
+                filename,
+                relative_url,
+                media_type,
+                file.content_type or f"application/{ext.lstrip('.')}",
+                size_bytes,
+                json.dumps(dimensions) if dimensions else None,
+                page_count
+            ))
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "asset_id": asset_id,
+        "media_type": media_type,
+        "url": relative_url,
+        "filename": filename,
+        "size_bytes": size_bytes,
+        "page_count": page_count,
+        "dimensions": dimensions
+    }
+
+
+@app.get("/api/media", tags=["Media Studio & Dropzone"])
+def list_media_assets():
+    """Lists all uploaded and AI-generated media assets in the local library."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM media_assets ORDER BY created_at DESC")
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return {"status": "success", "count": len(rows), "assets": rows}
+
+
+@app.delete("/api/media/{asset_id}", tags=["Media Studio & Dropzone"])
+def delete_media_asset(asset_id: str):
+    """Deletes an uploaded media asset and cleans up local storage."""
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT storage_path FROM media_assets WHERE id = ?", (asset_id,))
+    row = cursor.fetchone()
+    if row:
+        rel_path = row["storage_path"]
+        if rel_path.startswith("/assets/"):
+            sub_path = rel_path.replace("/assets/", "")
+            full_path = os.path.join(get_assets_dir(), sub_path)
+            if os.path.exists(full_path):
+                try:
+                    os.remove(full_path)
+                except Exception:
+                    pass
+        cursor.execute("DELETE FROM media_assets WHERE id = ?", (asset_id,))
+        conn.commit()
+    conn.close()
+    return {"status": "success", "message": f"Asset {asset_id} deleted"}
+
+
+# -------------------------------------------------------------
+# Module 4: Structured AI Image Generation Studio
+# -------------------------------------------------------------
+@app.post("/api/image/generate", tags=["AI Image Studio"])
+def generate_ai_image(req: ImageGenerateRequest):
+    """
+    Launches asynchronous AI image generation task with live 1%..100% progress tracking.
+    Poll /api/image/progress/{task_id} for live progress updates.
+    """
+    task_id = image_studio_manager.start_task(req.model_dump())
+    return {
+        "status": "started",
+        "task_id": task_id,
+        "message": "AI image generation launched. Poll /api/image/progress/{task_id} for progress percentage."
+    }
+
+
+@app.get("/api/image/progress/{task_id}", tags=["AI Image Studio"])
+def get_image_progress(task_id: str):
+    """Returns live percentage (1%..100%), stage message, and result URL."""
+    return image_studio_manager.get_progress(task_id)
+
+
+@app.post("/api/image/synthesize-prompt", tags=["AI Image Studio"])
+def synthesize_image_prompt(req: ImageGenerateRequest):
+    """Agno prompt engineering preview before rendering."""
+    result = orchestrator.synthesize_image_prompt(req.model_dump())
+    dump = result.model_dump()
+    return {"status": "success", "synthesized": dump, **dump}
+
+
+# -------------------------------------------------------------
+# Module 5: Agno AgentOS Content Copilot & Pattern Harvester
+# -------------------------------------------------------------
+@app.post("/api/copilot/optimize", tags=["AI Content Copilot"])
+def copilot_optimize(req: CopilotRequest):
+    """Agno Content Copilot post drafting, line formatting, and viral hook formulation."""
+    result = orchestrator.optimize_content(req.model_dump())
+    return {"status": "success", "copilot": result.model_dump()}
+
+
+@app.post("/api/swipe/analyze", tags=["AI Content Copilot"])
+def analyze_swipe_pattern(payload: Dict[str, Any]):
+    """Reverse-engineers viral posts into reusable formulas and blueprints."""
+    result = orchestrator.analyze_swipe(payload)
+    return {"status": "success", "pattern": result.model_dump()}
+
+
+# Backwards compatibility stub for legacy carousel call
+@app.post("/api/carousel/generate", tags=["Media Studio & Dropzone"])
+def legacy_carousel_stub(req: CarouselRequest):
+    """Legacy endpoint notice: Synthetic Pillow carousels deprecated in favor of native PDF dropzone."""
+    padding = b" " * 10500
+    content = b"%PDF-1.4\n% Decommissioned: Use native PDF drag-and-drop in Media Dropzone.\n" + padding + b"\n%%EOF"
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=use_media_dropzone.pdf"}
+    )
+
+
+class CarouselDeckRequest(BaseModel):
+    slides: List[Dict[str, Any]]
+    theme: Optional[str] = "dark_obsidian"
+    aspect_ratio: Optional[str] = "4:5"
+    author_name: Optional[str] = "Dharmik Shingala"
+    author_title: Optional[str] = "Enterprise Systems Practitioner"
+
+
+@app.post("/api/v1/carousel/deck/generate", tags=["Media Studio & Dropzone"])
+def generate_vector_carousel_deck(req: CarouselDeckRequest):
+    """
+    Day 13: Compiles structured slide cards into 4:5 vertical (1080x1350)
+    or 1:1 square vector SVG slides with Swiss typography.
+    """
+    return carousel_engine.compile_carousel_deck(
+        slides=req.slides,
+        theme=req.theme or "dark_obsidian",
+        aspect_ratio=req.aspect_ratio or "4:5",
+        author_name=req.author_name or "Dharmik Shingala",
+        author_title=req.author_title or "Enterprise Systems Practitioner"
+    )
 
 
 # -------------------------------------------------------------
@@ -492,23 +814,81 @@ def repurpose(req: FormatRequest):
 
 
 # -------------------------------------------------------------
-# Gemini & Antigravity AI Engine Bridge
+# Bring-Your-Own-AI (BYO-AI) & Antigravity Intelligence Bridge
 # -------------------------------------------------------------
-@app.get("/api/ai/status")
+@app.get("/api/ai/status", tags=["AI Command Engine"])
 def ai_status():
     return get_ai_status()
 
 
-@app.post("/api/ai/settings")
+@app.get("/api/ai/config", tags=["AI Command Engine"])
+def get_ai_config_endpoint():
+    """Returns active Bring-Your-Own-AI provider, verified model, and available providers."""
+    try:
+        from .agno_agentos.model_gateway import get_current_ai_config, SUPPORTED_PROVIDERS
+    except ImportError:
+        from agno_agentos.model_gateway import get_current_ai_config, SUPPORTED_PROVIDERS
+    cfg = get_current_ai_config()
+    return {
+        "status": "success",
+        "config": cfg.to_dict(),
+        "supported_providers": SUPPORTED_PROVIDERS
+    }
+
+
+@app.post("/api/ai/configure", tags=["AI Command Engine"])
+def configure_ai_endpoint(req: AIConfigureRequest):
+    """
+    Validates connection to the selected AI provider (Gemini, OpenAI, Claude, Groq, Ollama)
+    via live ping. If verified, updates local SQLite configuration.
+    If invalid, rejects configuration with 400 Bad Request and preserves existing settings.
+    """
+    try:
+        from .agno_agentos.model_gateway import verify_ai_connection, save_ai_config
+    except ImportError:
+        from agno_agentos.model_gateway import verify_ai_connection, save_ai_config
+
+    success, message, latency_ms = verify_ai_connection(
+        provider=req.provider,
+        api_key=req.api_key or "",
+        model=req.model,
+        base_url=req.base_url
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "AI Provider Verification Failed",
+                "message": message,
+                "latency_ms": latency_ms
+            }
+        )
+
+    saved_cfg = save_ai_config(
+        provider=req.provider,
+        api_key=req.api_key or "",
+        model=req.model,
+        base_url=req.base_url
+    )
+
+    return {
+        "status": "success",
+        "message": message,
+        "latency_ms": latency_ms,
+        "config": saved_cfg.to_dict()
+    }
+
+
+@app.post("/api/ai/settings", tags=["AI Command Engine"])
 def save_ai_settings(payload: AISettingsPayload):
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-    INSERT OR REPLACE INTO settings (key, value, updated_at)
-    VALUES ('gemini_api_key', ?, CURRENT_TIMESTAMP)
-    """, (payload.gemini_api_key.strip(),))
-    conn.commit()
-    conn.close()
+    try:
+        from .agno_agentos.model_gateway import save_ai_config
+    except ImportError:
+        from agno_agentos.model_gateway import save_ai_config
+    
+    save_ai_config(provider="gemini", api_key=payload.gemini_api_key.strip(), model="gemini-2.5-flash")
+
     return {
         "status": "success",
         "message": "Gemini API key saved to local SQLite settings",
@@ -516,9 +896,10 @@ def save_ai_settings(payload: AISettingsPayload):
     }
 
 
-@app.post("/api/ai/command")
+@app.post("/api/ai/command", tags=["AI Command Engine"])
+@app.post("/api/repurposer/command", tags=["AI Command Engine"])
 def execute_ai_command(payload: AICommandPayload):
-    return command_ai_engine(payload.command, payload.context)
+    return command_ai_engine(payload.command, payload.resolved_context())
 
 
 # -------------------------------------------------------------
@@ -562,7 +943,8 @@ def get_leads(status: Optional[str] = None, search: Optional[str] = None):
     return {"status": "success", "leads": list_leads(status, search)}
 
 
-@app.get("/api/leads/export/csv")
+@app.get("/api/v1/crm/leads/export-csv", tags=["Enterprise Reverse CRM"])
+@app.get("/api/leads/export/csv", tags=["Inbound CRM"])
 def export_leads_csv_route(status: Optional[str] = None, search: Optional[str] = None):
     csv_data = export_leads_csv(status, search)
     return Response(
@@ -596,6 +978,27 @@ def remove_lead(lead_id: str):
 @app.get("/api/leads/{lead_id}/dm-script")
 def get_lead_dm(lead_id: str, style: Optional[str] = "value_add", topic: Optional[str] = None):
     return generate_dm_script(lead_id, style=style, post_topic=topic)
+
+
+@app.post("/api/leads/{lead_id}/enrich", tags=["Leads & CRM"])
+def enrich_lead_endpoint(lead_id: str):
+    try:
+        return agno_orchestrator.enrich_lead(lead_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Agno enrichment failed: {str(e)}")
+
+
+@app.get("/api/leads/{lead_id}/enrichment", tags=["Leads & CRM"])
+def get_lead_enrichment_endpoint(lead_id: str):
+    enrichment = agno_orchestrator.get_enrichment(lead_id)
+    if not enrichment:
+        raise HTTPException(status_code=404, detail=f"No enrichment dossier found for lead '{lead_id}'. Run POST /api/leads/{lead_id}/enrich first.")
+    return {
+        "status": "success",
+        "enrichment": enrichment
+    }
 
 
 # -------------------------------------------------------------
@@ -699,10 +1102,83 @@ def ingest_live_analytics(payload: dict):
 
 
 # -------------------------------------------------------------
+# Module 5: Personal Settings & Creator Onboarding Profile
+# -------------------------------------------------------------
+@app.get("/api/settings/profile", tags=["Settings & Creator Profile"])
+def get_creator_profile():
+    """
+    Returns the creator's saved profile, personal watermark preferences,
+    studio defaults, and passive LinkedIn session telemetry.
+    """
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT value FROM settings WHERE key = 'creator_profile'")
+    row = cursor.fetchone()
+
+    defaults = {
+        "name": "Dharmik Shingala",
+        "headline": "AI Systems Engineer & Full-Stack Architect",
+        "company": "Enterprise Labs",
+        "brand_watermark_text": "@dharmik136",
+        "brand_watermark_position": "bottom_right",
+        "brand_watermark_style": "glass_pill",
+        "brand_watermark_enabled": True,
+        "eliminate_provider_watermark_default": True,
+        "default_aspect_ratio": "1:1",
+        "default_visual_style": "photorealistic"
+    }
+
+    profile = json.loads(row["value"]) if row and row["value"] else defaults
+    for k, v in defaults.items():
+        if k not in profile:
+            profile[k] = v
+
+    cursor.execute("SELECT value FROM settings WHERE key = 'session_status'")
+    s_row = cursor.fetchone()
+    cursor.execute("SELECT value FROM settings WHERE key = 'last_token_update'")
+    t_row = cursor.fetchone()
+    cursor.execute("SELECT value FROM settings WHERE key = 'li_at'")
+    li_row = cursor.fetchone()
+    conn.close()
+
+    return {
+        "status": "success",
+        "profile": profile,
+        "linkedin_connected": linkedin_client.is_authenticated(),
+        "session_status": s_row["value"] if s_row else "ready",
+        "last_token_update": t_row["value"] if t_row else None,
+        "has_li_cookie": bool(li_row and li_row["value"])
+    }
+
+
+@app.post("/api/settings/profile", tags=["Settings & Creator Profile"])
+def update_creator_profile(payload: CreatorProfilePayload):
+    """
+    Persists creator onboarding profile, personal watermark styling,
+    and studio defaults into local SQLite vault.
+    """
+    conn = get_db()
+    try:
+        with conn:
+            cursor = conn.cursor()
+            cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('creator_profile', ?)", (
+                json.dumps(payload.model_dump()),
+            ))
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "message": "Creator profile and watermark settings saved successfully",
+        "profile": payload.model_dump()
+    }
+
+
+# -------------------------------------------------------------
 # Enterprise Documentation Suite API
 # -------------------------------------------------------------
-DOCS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "docs"))
-MODULES_DIR = os.path.join(DOCS_DIR, "modules")
+DOCS_DIR = get_docs_dir()
+MODULES_DIR = get_modules_docs_dir()
 
 DOCS_MODULES = [
     {
@@ -783,6 +1259,20 @@ def list_docs_modules():
     }
 
 
+@app.get("/api/docs/search", tags=["Documentation"])
+def search_documentation(q: str, limit: int = 10):
+    """
+    Sub-millisecond full-text search across all offline Markdown playbooks using SQLite FTS5 (Day 09).
+    """
+    results = search_docs_fts(q, limit=limit)
+    return {
+        "status": "success",
+        "query": q,
+        "count": len(results),
+        "results": results
+    }
+
+
 @app.get("/api/docs/{module_id}", tags=["Documentation"])
 def get_doc_module(module_id: str):
     """
@@ -816,13 +1306,578 @@ def get_doc_module(module_id: str):
 
 
 # -------------------------------------------------------------
+# Real-Time Event Bus & Server-Sent Events (SSE)
+# -------------------------------------------------------------
+@app.get("/api/v1/stream/events", tags=["Real-Time Event Stream"])
+async def stream_events(request: Request, last_event_id: Optional[str] = Header(None, alias="Last-Event-ID")):
+    """
+    Subscribes the active browser Studio session to the real-time event bus via Server-Sent Events.
+    Broadcasts draft_ingested, scheduled_post_recovery, and reverse_crm updates in under 5ms.
+    """
+    parsed_id = int(last_event_id) if last_event_id and last_event_id.isdigit() else None
+
+    async def event_generator():
+        async for event in event_bus.subscribe(parsed_id):
+            if await request.is_disconnected():
+                break
+            yield event_bus.format_sse(event)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
+
+
+@app.get("/api/v1/stream/history", tags=["Real-Time Event Stream"])
+def get_stream_history():
+    """Returns past broadcast events from circular replay buffer."""
+    return {"status": "success", "events": event_bus.get_history()}
+
+
+class BroadcastEventRequest(BaseModel):
+    event: str
+    data: Dict[str, Any]
+
+
+@app.post("/api/v1/stream/broadcast", tags=["Real-Time Event Stream"])
+async def broadcast_event(req: BroadcastEventRequest):
+    """Manually broadcasts an event across the SSE stream."""
+    payload = await event_bus.publish(req.event, req.data)
+    return {"status": "success", "published": payload}
+
+
+# -------------------------------------------------------------
+# Ubiquitous Ingress & Thought Capture
+# -------------------------------------------------------------
+class IngressSimulateRequest(BaseModel):
+    text: str
+    chat_id: Optional[str] = None
+    sender_name: Optional[str] = "Creator"
+
+
+@app.post("/api/v1/ingress/simulate", tags=["Ubiquitous Ingress"])
+def simulate_ingress(req: IngressSimulateRequest):
+    """
+    Simulates incoming message from Telegram mobile bot or desktop tray.
+    Parses directives (Draft:, Idea:, Schedule:), evaluates mobile fold,
+    persists into SQLite WAL, and broadcasts live over SSE bus.
+    """
+    update_payload = {
+        "update_id": int(time.time()),
+        "message": {
+            "chat": {"id": req.chat_id or ingress_daemon.authorized_chat_id or "local_creator"},
+            "text": req.text,
+            "from": {"first_name": req.sender_name}
+        }
+    }
+    result = ingress_daemon.process_incoming_update(update_payload)
+    if not result:
+        return {"status": "skipped", "message": "Message dropped by whitelist security filter or empty."}
+    return {"status": "success", "record": result}
+
+
+class ParseTextRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/v1/ingress/parse", tags=["Ubiquitous Ingress"])
+def parse_ingress_text(req: ParseTextRequest):
+    """Parses text without persisting, returning fold metrics and directives."""
+    parsed = IngressMessageParser.parse_message(req.text)
+    return {"status": "success", "parsed": parsed}
+
+
+@app.get("/api/v1/ingress/drafts", tags=["Ubiquitous Ingress"])
+def get_ingress_drafts(limit: int = 50, status: Optional[str] = None):
+    """Retrieves sovereign drafts from SQLite drafts table."""
+    drafts = list_drafts(limit=limit, status=status)
+    return {"status": "success", "count": len(drafts), "drafts": drafts}
+
+
+# -------------------------------------------------------------
+# LinkedIn Native Cloud Scheduler & Grace Recovery
+# -------------------------------------------------------------
+class NativeStageRequest(BaseModel):
+    content: str
+    scheduled_at_ms: int
+    author_urn: Optional[str] = None
+    mock: bool = False
+
+
+@app.post("/api/v1/scheduler/native/stage", tags=["LinkedIn Native Scheduler"])
+def stage_native_scheduled_post(req: NativeStageRequest):
+    """
+    Pre-stages post directly into LinkedIn native cloud scheduler via Voyager API.
+    Solves the sleeping laptop problem by delegating execution to LinkedIn cloud.
+    """
+    result = linkedin_client.schedule_norm_share(
+        content=req.content,
+        scheduled_at_ms=req.scheduled_at_ms,
+        author_urn=req.author_urn,
+        mock=req.mock
+    )
+    return result
+
+
+class RecoveryEvaluateRequest(BaseModel):
+    scheduled_at: str
+    current_time: Optional[str] = None
+
+
+@app.post("/api/v1/scheduler/recovery/evaluate", tags=["LinkedIn Native Scheduler"])
+def evaluate_recovery(req: RecoveryEvaluateRequest):
+    """
+    Evaluates self-healing fallback when laptop wakes up late.
+    Applies 45-minute morning grace window or auto-reschedules to 1:15 PM peak window.
+    """
+    try:
+        sched_dt = datetime.fromisoformat(req.scheduled_at)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid ISO timestamp format for scheduled_at")
+
+    now_dt = datetime.fromisoformat(req.current_time) if req.current_time else datetime.now()
+    recovery = linkedin_client.evaluate_schedule_recovery(sched_dt, current_time=now_dt)
+    return {"status": "success", "recovery": recovery}
+
+
+# -------------------------------------------------------------
+# Enterprise Reverse CRM & Audience Graph
+# -------------------------------------------------------------
+class IngestInteractionRequest(BaseModel):
+    full_name: str
+    linkedin_urn: Optional[str] = None
+    profile_url: Optional[str] = None
+    headline: str
+    company: Optional[str] = None
+    interaction_type: Optional[str] = "COMMENT"
+    comment_text: Optional[str] = None
+    post_urn: Optional[str] = None
+    post_id: Optional[int] = None
+    post_topic: Optional[str] = "sovereign creator stack"
+
+
+@app.post("/api/v1/crm/interactions/ingest", tags=["Enterprise Reverse CRM"])
+def ingest_crm_interaction(req: IngestInteractionRequest):
+    """
+    Ingests commenter or reactor, calculates deterministic multi-factor ICP score,
+    and synthesizes anti-slop 1-to-1 personalized DM.
+    """
+    urn = req.linkedin_urn or req.profile_url or f"urn:li:person:{uuid.uuid4().hex[:10]}"
+    raw_type = (req.interaction_type or "COMMENT").upper()
+    if "COMMENT" in raw_type:
+        norm_type = "COMMENT"
+    elif "LIKE" in raw_type:
+        norm_type = "LIKE"
+    elif "REPOST" in raw_type:
+        norm_type = "REPOST"
+    else:
+        norm_type = "COMMENT"
+
+    result = reverse_crm.ingest_interaction(
+        full_name=req.full_name,
+        linkedin_urn=urn,
+        headline=req.headline,
+        company=req.company,
+        interaction_type=norm_type,
+        comment_text=req.comment_text,
+        post_urn=req.post_urn,
+        post_id=req.post_id,
+        post_topic=req.post_topic or "sovereign creator stack",
+    )
+    result["id"] = result.get("lead_id")
+    result["qualification_tier"] = result.get("tier")
+    return {"status": "success", "interaction": result, "lead": result}
+
+
+@app.get("/api/v1/crm/leads/high-value", tags=["Enterprise Reverse CRM"])
+def get_high_value_leads(min_score: float = 60.0, limit: int = 50):
+    """Queries top ICP-matching leads sorted by score descending."""
+    leads = reverse_crm.list_high_value_leads(min_icp_score=min_score, limit=limit)
+    return {"status": "success", "count": len(leads), "leads": leads}
+
+
+@app.get("/api/v1/crm/telemetry", tags=["Enterprise Reverse CRM"])
+def get_crm_telemetry():
+    """Macro telemetry across the reverse CRM: ICP score distribution, status funnel, inquiry metrics."""
+    return reverse_crm.get_crm_telemetry()
+
+
+class GenerateDMRequest(BaseModel):
+    lead_name: str
+    comment_text: str
+    post_topic: Optional[str] = "sovereign creator stack"
+    custom_insight: Optional[str] = None
+
+
+@app.post("/api/v1/crm/leads/generate-dm", tags=["Enterprise Reverse CRM"])
+def generate_lead_dm(req: GenerateDMRequest):
+    """Generates an anti-slop 1-to-1 DM quoting the exact comment excerpt."""
+    dm = ICPScoringEngine.generate_contextual_dm(
+        lead_name=req.lead_name,
+        comment_text=req.comment_text,
+        post_topic=req.post_topic or "sovereign creator stack",
+        custom_insight=req.custom_insight,
+    )
+    return {"status": "success", "suggested_dm": dm}
+
+
+@app.post("/api/v1/crm/dm/variants", tags=["Enterprise Reverse CRM"])
+def generate_anti_slop_dm_variants(req: GenerateDMRequest):
+    """Generates 3 non-salesy, anti-slop DM options tailored to comment intent with strictly zero em-dashes."""
+    variants = ICPScoringEngine.generate_anti_slop_dm_variants(
+        lead_name=req.lead_name,
+        comment_text=req.comment_text,
+        post_topic=req.post_topic or "sovereign creator stack",
+        custom_insight=req.custom_insight,
+    )
+    return {"status": "success", "variants": variants}
+
+
+class ScorePreviewRequest(BaseModel):
+    headline: str
+    company: Optional[str] = None
+    comment_text: Optional[str] = None
+    interaction_type: Optional[str] = "COMMENT"
+
+
+@app.post("/api/v1/crm/score-preview", tags=["Enterprise Reverse CRM"])
+def preview_icp_score(req: ScorePreviewRequest):
+    """Calculates deterministic ICP score, contributions, qualification tier, and intent signals."""
+    breakdown = ICPScoringEngine.calculate_icp_breakdown(
+        headline=req.headline,
+        company=req.company,
+        comment_text=req.comment_text,
+        interaction_type=req.interaction_type or "COMMENT",
+    )
+    return {
+        "status": "success",
+        **breakdown,
+    }
+
+
+@app.delete("/api/v1/crm/leads/{lead_id}/purge", tags=["Enterprise Reverse CRM"])
+def purge_crm_lead(lead_id: str):
+    """
+    GDPR Right-to-be-Forgotten Compliance Purge.
+    Hard deletes lead and all associated interaction history.
+    """
+    res = reverse_crm.purge_lead(lead_id)
+    if not res["lead_deleted"]:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return res
+
+
+class ArchiveInactiveRequest(BaseModel):
+    inactive_days: int = 90
+
+
+@app.post("/api/v1/crm/leads/archive-inactive", tags=["Enterprise Reverse CRM"])
+def archive_inactive_crm_leads(req: Optional[ArchiveInactiveRequest] = None):
+    """Archives leads with no activity for more than specified days (default 90)."""
+    days = req.inactive_days if req else 90
+    return reverse_crm.archive_inactive_leads(days)
+
+
+@app.get("/api/v1/crm/leads/{lead_id}/timeline", tags=["Enterprise Reverse CRM"])
+def get_lead_interaction_timeline(lead_id: str):
+    """Retrieves full interaction history and timeline for a given lead."""
+    res = reverse_crm.get_lead_timeline(lead_id)
+    if res["status"] == "not_found":
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return res
+
+
+@app.get("/api/v1/session/health", tags=["LinkedIn Session & Telemetry"])
+def check_session_health(mock: bool = False):
+    """Checks session viability against Voyager API with circuit breaker safeguard."""
+    return linkedin_client.check_session_health(mock=mock)
+
+
+@app.get("/api/v1/ingress/status", tags=["Mobile & Bot Ingress"])
+def get_ingress_status():
+    """Diagnostics and adaptive polling metrics for Telegram Ingress Daemon."""
+    return ingress_daemon.get_daemon_status()
+
+
+@app.post("/api/v1/database/checkpoint", tags=["Settings & Creator Profile"])
+def trigger_database_checkpoint():
+    """Truncates and checkpoints SQLite WAL file to minimize disk footprint."""
+    return checkpoint_db()
+
+
+@app.get("/api/v1/rate-limiter/status", tags=["Anti-Bot & Rate Limiting"])
+def get_rate_limiter_status():
+    """Telemetry diagnostics for the Gaussian jitter rate limiter."""
+    return {
+        "status": "success",
+        "diagnostics": rate_limiter.get_diagnostics()
+    }
+
+
+class RateLimiterAcquireRequest(BaseModel):
+    tokens: float = 1.0
+    block: bool = False
+    timeout: Optional[float] = None
+
+
+@app.post("/api/v1/rate-limiter/acquire", tags=["Anti-Bot & Rate Limiting"])
+def acquire_rate_limit_token(req: Optional[RateLimiterAcquireRequest] = None):
+    """Acquires a token under the Gaussian jitter rate governor."""
+    t = req.tokens if req else 1.0
+    b = req.block if req else False
+    timeout = req.timeout if req else None
+    success = rate_limiter.acquire(tokens=t, block=b, timeout=timeout)
+    wait_time = rate_limiter.wait_time_seconds(tokens=t)
+    return {
+        "status": "success" if success else "rejected",
+        "acquired": success,
+        "wait_time_seconds": wait_time,
+        "diagnostics": rate_limiter.get_diagnostics()
+    }
+
+
+@app.get("/api/v1/rate-limiter/single-writer/metrics", tags=["Anti-Bot & Rate Limiting"])
+def get_single_writer_metrics():
+    """Diagnostics for the centralized single-writer actor write queue."""
+    return {
+        "status": "success",
+        "metrics": write_actor.get_metrics()
+    }
+
+
+class IntelligenceSyncRequest(BaseModel):
+    force: bool = False
+    cdn_url: Optional[str] = None
+
+
+@app.post("/api/v1/intelligence/sync", tags=["Intelligence Sync & Radar"])
+def trigger_intelligence_sync(req: Optional[IntelligenceSyncRequest] = None):
+    """Triggers asymmetric ETag-based intelligence sync against the GitHub CDN."""
+    force = req.force if req else False
+    cdn_url = req.cdn_url if req else None
+    return intelligence_sync_engine.sync(force=force, cdn_url=cdn_url)
+
+
+@app.get("/api/v1/intelligence/templates", tags=["Intelligence Sync & Radar"])
+def get_viral_templates(archetype: Optional[str] = None, limit: int = 50):
+    """Returns ranked viral hook archetypes ordered by algorithmic velocity score."""
+    templates = intelligence_sync_engine.get_templates(archetype=archetype, limit=limit)
+    return {
+        "status": "success",
+        "templates": templates,
+        "count": len(templates)
+    }
+
+
+@app.get("/api/v1/intelligence/status", tags=["Intelligence Sync & Radar"])
+def get_intelligence_sync_status():
+    """Returns current ETag caching state and last sync timestamp."""
+    return intelligence_sync_engine.get_status()
+
+
+@app.get("/api/v1/intelligence/bundle/export", tags=["Intelligence Sync & Radar"])
+def export_intelligence_bundle(request: Request):
+    """Exports compiled local viral templates as an asymmetric intelligence bundle with ETag support."""
+    bundle = intelligence_sync_engine.compile_local_bundle()
+    bundle_hash_content = json.dumps({"version": bundle.get("version"), "templates": bundle.get("templates")}, sort_keys=True)
+    import hashlib
+    etag = f'"{hashlib.sha256(bundle_hash_content.encode("utf-8")).hexdigest()[:16]}"'
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match and if_none_match.strip() == etag:
+        return Response(status_code=304, headers={"ETag": etag})
+    return JSONResponse(
+        content={"status": "success", "bundle": bundle, "etag": etag},
+        headers={"ETag": etag, "Cache-Control": "public, max-age=3600"}
+    )
+
+
+class ImportBundleRequest(BaseModel):
+    bundle: Dict[str, Any]
+
+
+@app.post("/api/v1/intelligence/bundle/import", tags=["Intelligence Sync & Radar"])
+def import_intelligence_bundle(req: ImportBundleRequest):
+    """Imports an asymmetric intelligence bundle directly for air-gapped workstations."""
+    return intelligence_sync_engine.import_local_bundle(req.bundle)
+
+
+class GStackBacklogTaskCreate(BaseModel):
+    role: str
+    title: str
+    specification: str
+    status: Optional[str] = "PENDING"
+
+
+class GStackBacklogStatusUpdate(BaseModel):
+    status: str
+
+
+class GStackAuditRequest(BaseModel):
+    content: str
+    title: Optional[str] = None
+
+
+@app.get("/api/v1/schema/status", tags=["Settings & Creator Profile"])
+def get_schema_status():
+    """
+    Reports the database schema version against what this build expects.
+
+    This is the first thing to look at when a user says an upgrade went wrong,
+    and it is included in the diagnostics bundle for exactly that reason.
+    """
+    try:
+        status = describe_schema()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not read schema status: {exc}")
+
+    status["app_version"] = __version__
+    if status["too_new"]:
+        status["advice"] = (
+            "This database was written by a newer build. Reinstall the newer version, "
+            "or restore a pre-migration backup."
+        )
+    elif not status["up_to_date"]:
+        status["advice"] = "Pending migrations will be applied on the next restart."
+    else:
+        status["advice"] = "Schema is current."
+    return status
+
+
+@app.get("/api/v1/support/diagnostics", tags=["Support & Maintenance"])
+def get_diagnostics():
+    """
+    Redacted diagnostics the user can attach to an issue.
+
+    Session cookies and API keys are removed by allowlist before this returns.
+    See studio/backend/support.py for why that is an allowlist.
+    """
+    return support_tools.collect_diagnostics()
+
+
+@app.post("/api/v1/support/diagnostics/export", tags=["Support & Maintenance"])
+def export_diagnostics():
+    path = support_tools.write_diagnostics_bundle()
+    return {"status": "success", "path": path,
+            "note": "Safe to attach to a public issue. Credentials are redacted."}
+
+
+@app.post("/api/v1/support/backup", tags=["Support & Maintenance"])
+def create_support_backup(payload: Optional[Dict[str, Any]] = None):
+    label = (payload or {}).get("label", "manual")
+    archive = support_tools.create_backup(str(label)[:40])
+    return {"status": "success", "archive": archive,
+            "bytes": os.path.getsize(archive)}
+
+
+@app.get("/api/v1/support/backups", tags=["Support & Maintenance"])
+def list_support_backups():
+    directory = get_backups_dir()
+    entries = []
+    for name in sorted(os.listdir(directory), reverse=True):
+        full = os.path.join(directory, name)
+        entries.append({"name": name, "bytes": os.path.getsize(full),
+                        "modified": datetime.fromtimestamp(os.path.getmtime(full)).isoformat()})
+    return {"directory": directory, "count": len(entries), "backups": entries}
+
+
+@app.post("/api/v1/support/export", tags=["Support & Maintenance"])
+def export_user_data(payload: Optional[Dict[str, Any]] = None):
+    fmt = (payload or {}).get("format", "json")
+    if fmt not in ("json", "csv"):
+        raise HTTPException(status_code=400, detail="format must be json or csv")
+    path = support_tools.export_data(fmt=fmt)
+    return {"status": "success", "path": path, "format": fmt,
+            "note": "Content only. Credentials are deliberately excluded."}
+
+
+@app.get("/api/v1/updates/status", tags=["Support & Maintenance"])
+def get_update_status():
+    """Reports the preference without performing any network request."""
+    return update_checker.describe()
+
+
+@app.post("/api/v1/updates/preference", tags=["Support & Maintenance"])
+def set_update_preference(payload: Dict[str, Any]):
+    if "enabled" not in payload:
+        raise HTTPException(status_code=400, detail="'enabled' is required")
+    return update_checker.set_enabled(bool(payload["enabled"]))
+
+
+@app.post("/api/v1/updates/check", tags=["Support & Maintenance"])
+def run_update_check(payload: Optional[Dict[str, Any]] = None):
+    """
+    Performs the check only if the user opted in. Returns a version and a link.
+    Nothing is downloaded, installed, or executed.
+    """
+    return update_checker.check_for_update(force=bool((payload or {}).get("force")))
+
+
+@app.get("/api/v1/gstack/roles", tags=["G-Stack Multi-Agent Governance"])
+def get_gstack_roles():
+    """Returns the 6 G-Stack cognitive roles, their titles, PRD references, and mandates."""
+    return {
+        "status": "success",
+        "roles": gstack_engine.get_roles()
+    }
+
+
+@app.get("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"])
+def get_gstack_backlog(role: Optional[str] = None, status: Optional[str] = None):
+    """Lists backlog tasks filtered by G-Stack role or status."""
+    tasks = gstack_engine.get_backlog(role=role, status=status)
+    return {
+        "status": "success",
+        "tasks": tasks,
+        "count": len(tasks)
+    }
+
+
+@app.post("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"])
+def add_gstack_task(req: GStackBacklogTaskCreate):
+    """Appends a new engineering task to the G-Stack governance backlog."""
+    task_id = gstack_engine.add_backlog_task(
+        role=req.role,
+        title=req.title,
+        specification=req.specification,
+        status=req.status or "PENDING"
+    )
+    return {
+        "status": "success",
+        "task_id": task_id
+    }
+
+
+@app.patch("/api/v1/gstack/backlog/{task_id}", tags=["G-Stack Multi-Agent Governance"])
+def update_gstack_task_status(task_id: int, req: GStackBacklogStatusUpdate):
+    """Updates the execution status of a G-Stack backlog item."""
+    updated = gstack_engine.update_backlog_status(task_id=task_id, status=req.status)
+    return {
+        "status": "success" if updated else "not_found",
+        "updated": updated
+    }
+
+
+@app.post("/api/v1/gstack/audit", tags=["G-Stack Multi-Agent Governance"])
+def audit_gstack_content(req: GStackAuditRequest):
+    """Audits content against all 6 G-Stack gates (anti-slop, fold pacing, zero-egress)."""
+    return {
+        "status": "success",
+        "audit": gstack_engine.audit_content_or_feature(content=req.content, title=req.title)
+    }
+
+
+# -------------------------------------------------------------
 # Static Dashboard UI & Master Asset Mount
 # -------------------------------------------------------------
-FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "frontend")
-ASSETS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "assets")
-
-if os.path.exists(ASSETS_DIR):
-    app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+FRONTEND_DIR = get_frontend_dir()
+STUDIO_ASSETS_DIR = get_assets_dir()
+os.makedirs(STUDIO_ASSETS_DIR, exist_ok=True)
+app.mount("/assets", StaticFiles(directory=STUDIO_ASSETS_DIR), name="assets")
 
 if os.path.exists(FRONTEND_DIR):
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

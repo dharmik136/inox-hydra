@@ -8,12 +8,12 @@ A comprehensive, publication-grade operational guide covering all 6 core functio
 
 | # | Module Name | Primary Objective | Key Features & Controls | Dedicated Spec |
 | :-: | :--- | :--- | :--- | :--- |
-| **01** | **[Studio & Editor](#module-01-studio--editor)** | Authoring, Dwell Optimization, Mobile Simulation | Dynamic Fold Tracker, Sans-Bold Unicode, 1080×1080 PDF Deck, 6-Dimension Algorithmic Audit | [01_STUDIO_AND_EDITOR.md](file:///c:/Users/remoteadmin/Downloads/Linkedin%20strategy/docs/modules/01_STUDIO_AND_EDITOR.md) |
-| **02** | **[Schedule & Queue](#module-02-schedule--queue)** | Cadence Control & Peak Windows | Smart Engagement Slots (08:30 AM & 05:30 PM), Background Dispatcher Daemon, Rescheduling | [02_SCHEDULE_AND_QUEUE.md](file:///c:/Users/remoteadmin/Downloads/Linkedin%20strategy/docs/modules/02_SCHEDULE_AND_QUEUE.md) |
-| **03** | **[Inbound CRM](#module-03-inbound-crm)** | Turning Engagers into Relationships | 4 Pipeline Stages, Real-Time Search, 3-Style Contextual DM Generator, CSV Export | [03_INBOUND_CRM.md](file:///c:/Users/remoteadmin/Downloads/Linkedin%20strategy/docs/modules/03_INBOUND_CRM.md) |
-| **04** | **[Viral Swipe File](#module-04-viral-swipe-file)** | Reverse-Engineered Post Formulas | 356 Vaulted Blueprints, 13 Topic Taxonomies, Agno Framework Autonomous Inbound Roadmap | [04_VIRAL_SWIPE_FILE.md](file:///c:/Users/remoteadmin/Downloads/Linkedin%20strategy/docs/modules/04_VIRAL_SWIPE_FILE.md) |
-| **05** | **[Creator Analytics](#module-05-creator-analytics)** | True Audience Telemetry | Direct LinkedIn Session Bridge (`li_at`), Chart.js Vector Curves, Multi-Range Deltas, Demographics | [05_ANALYTICS.md](file:///c:/Users/remoteadmin/Downloads/Linkedin%20strategy/docs/modules/05_ANALYTICS.md) |
-| **06** | **[AI Command Hub](#module-06-ai-command-hub)** | Dual-Mode Content Synthesis | Gemini 2.5 Flash Cloud Native + Antigravity Local Engine, Presets, Direct Studio Transfer | [06_AI_COMMAND.md](file:///c:/Users/remoteadmin/Downloads/Linkedin%20strategy/docs/modules/06_AI_COMMAND.md) |
+| **01** | **[Studio & Editor](#module-01-studio--editor)** | Authoring, Dwell Optimization, Mobile Simulation | Dynamic Fold Tracker, Sans-Bold Unicode, 1080×1080 PDF Deck, 6-Dimension Algorithmic Audit | [01_STUDIO_AND_EDITOR.md](modules/01_STUDIO_AND_EDITOR.md) |
+| **02** | **[Schedule & Queue](#module-02-schedule--queue)** | Cadence Control & Peak Windows | Smart Engagement Slots (08:30 AM & 05:30 PM), Background Dispatcher Daemon, Rescheduling | [02_SCHEDULE_AND_QUEUE.md](modules/02_SCHEDULE_AND_QUEUE.md) |
+| **03** | **[Inbound CRM](#module-03-inbound-crm)** | Turning Engagers into Relationships | 4 Pipeline Stages, Real-Time Search, 3-Style Contextual DM Generator, CSV Export | [03_INBOUND_CRM.md](modules/03_INBOUND_CRM.md) |
+| **04** | **[Viral Swipe File](#module-04-viral-swipe-file)** | Reverse-Engineered Post Formulas | 356 Vaulted Blueprints, 13 Topic Taxonomies, Agno Framework Autonomous Inbound Roadmap | [04_VIRAL_SWIPE_FILE.md](modules/04_VIRAL_SWIPE_FILE.md) |
+| **05** | **[Creator Analytics](#module-05-creator-analytics)** | True Audience Telemetry | Direct LinkedIn Session Bridge (`li_at`), Chart.js Vector Curves, Multi-Range Deltas, Demographics | [05_ANALYTICS.md](modules/05_ANALYTICS.md) |
+| **06** | **[AI Command Hub](#module-06-ai-command-hub)** | Bring-Your-Own-AI Multi-Model Gateway | Multi-Provider (OpenAI, Gemini, Claude, Ollama, Groq) + Local Engine, CLI Active Ping, Presets, Direct Studio Transfer | [06_AI_COMMAND.md](modules/06_AI_COMMAND.md) |
 
 ---
 
@@ -27,7 +27,7 @@ The **Studio & Editor** is the primary creation canvas of the platform. It featu
 * **Dwell Time Prediction (`Dwell: Xs`)**: Formulated on executive reading speed (200 words/min):
   $$\text{Dwell Seconds} = \text{round}\left(\frac{\text{word\_count}}{200} \times 60\right)$$
 * **Universal Action Buttons**:
-  * **`🧹 Clean Spacing`**: Strips robotic em-dashes (`—`), double-hyphens, and trailing whitespace; normalizes paragraph double-spacing.
+  * **`🧹 Clean Spacing`**: Strips robotic em-dashes (` - `), double-hyphens, and trailing whitespace; normalizes paragraph double-spacing.
   * **`💾 Save Draft`**: Saves draft immediately to local SQLite (`posts` table).
   * **`⏰ Schedule Post`**: Assigns draft to next peak engagement smart slot.
 
@@ -62,7 +62,7 @@ Calculates reach score starting at 100% with deterministic penalty deductions:
 3. **Engagement-Bait Classifier (-25 points)**: Flags synthetic spam triggers (`comment "yes"`, `tag friends`).
 4. **Hashtag Density (-15 points)**: Penalizes > 5 hashtags (optimal: 2–4).
 5. **Wall-of-Text Pacing (-15 points)**: Penalizes unspaced paragraphs > 5 lines & > 350 chars.
-6. **Font & Em-Dash Health (-10 points)**: Deducts for em-dashes (`—`) or double hyphens (`--`).
+6. **Font & Em-Dash Health (-10 points)**: Deducts for em-dashes (` - `) or double hyphens (`--`).
 * Score Tiers: **High Reach Profile** ($\ge 90\%$), **Minor Optimizations** ($70-89\%$), **High Distribution Risk** ($< 70\%$).
 
 ---
@@ -137,13 +137,13 @@ Pulls creator performance directly from the authenticated LinkedIn connection:
 ## Module 06: AI Command Hub
 
 The centralized intelligence and content generation console:
-* **Dual-Mode Engine**:
-  * **Mode A (Google Gemini 2.5 Flash)**: Live cloud-native API using your private API key saved in local SQLite. Delivers lateral reasoning, deep technical nuance, and bespoke outreach drafting.
-  * **Mode B (Antigravity Local Engine)**: 100% offline, deterministic pattern synthesizer (0ms latency). Serves as the active offline fallback / demo mode using 10 hook archetypes and 5 repurposing frameworks.
+* **Bring-Your-Own-AI (BYO-AI) Multi-Model Gateway**:
+  * **Supported Providers**: OpenAI (`gpt-4o`, DALL-E 3), Google Gemini (`gemini-2.5-flash`), Anthropic (`claude-3-5-sonnet-20241022`), Groq LPU (`llama-3.3-70b-versatile`), local Ollama (`llama3` on localhost), and custom OpenAI-compatible endpoints.
+  * **Active CLI Verification Ping**: Run `python studio_cli.py ai configure` to perform an active HTTP handshake before credentials are saved to SQLite. Broken credentials are automatically rejected.
+  * **Local Deterministic Fallback**: 100% offline, zero-cloud-egress pattern synthesizer (0ms latency) serving 10 hook archetypes and 5 repurposing frameworks when no external AI is configured.
 * **Prompt Presets**:
   * *Contrarian Systems Post*, *10x Hooks Generator*, *Repurpose Notes*.
 * **Workflow Integrations**:
   * `📎 Attach Current Draft`: Appends text from Studio editor canvas into the prompt.
   * `✍️ Load into Studio`: Injects generated copy into Studio editor and switches to live mobile simulator.
-* **Roadmap**:
-  * Support for local open-weights LLMs (via Ollama on localhost), streaming WebSockets, and multi-turn conversational chat refinement.
+  * Integrated across Agno AgentOS Orchestrator, AI Image Studio (DALL-E 3 / Imagen 3), Inbound CRM Icebreakers, and Content Repurposer.

@@ -6,7 +6,7 @@ const LOCAL_INGEST_URL = "http://127.0.0.1:8000/api/analytics/ingest";
 
 // Configure alarms on installation
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("[Studio Bridge v2.5] Service worker installed.");
+  console.log(`[Studio Bridge v${chrome.runtime.getManifest().version}] Service worker installed.`);
   // Setup automated periodic sync every 15 minutes
   chrome.alarms.create("studio_periodic_sync", { periodInMinutes: 15 });
 });
@@ -73,6 +73,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     syncActiveSessionToStudio()
       .then(() => sendResponse({ status: "synced" }))
       .catch((err) => sendResponse({ status: "error", error: err.message }));
+    return true;
+  }
+
+  if (message.action === "INGEST_ANALYTICS") {
+    fetch(LOCAL_INGEST_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(message.payload)
+    })
+      .then(res => res.json())
+      .then(data => sendResponse({ status: "success", data }))
+      .catch(err => sendResponse({ status: "error", error: err.message }));
     return true;
   }
 });

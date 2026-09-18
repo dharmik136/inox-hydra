@@ -1,6 +1,6 @@
 # Chrome Extension & Zero-Detection Sync Bridge
 
-The **LinkedIn Studio Chrome Extension (v2.5)** serves as a private, undetectable bridge between your authenticated LinkedIn session and the local studio running on `127.0.0.1:8000`.
+The **LinkedIn Studio Chrome Extension** serves as a private, undetectable bridge between your authenticated LinkedIn session and the local studio running on `127.0.0.1:8000`.
 
 ---
 
