@@ -114,11 +114,57 @@ README = """Inox Hydra - LinkedIn Studio (Portable)
 
 QUICK START
 -----------
-1. Extract this folder anywhere you like. A USB stick is fine.
-2. Double click InoxHydra.bat.
-3. The studio opens in its own window.
+1. BEFORE extracting: right click the downloaded ZIP, choose Properties, tick
+   "Unblock" near the bottom, then click OK. See the next section for why.
+2. Extract the folder anywhere you like. A USB stick is fine.
+3. Double click InoxHydra.bat.
+4. The studio opens in its own window.
 
 No Python installation is required. Nothing is sent to any server.
+
+
+IF WINDOWS BLOCKS IT
+--------------------
+This is expected, and it is not a sign that anything is wrong.
+
+Windows attaches a "downloaded from the internet" mark to every file inside a
+ZIP you download. This software is not code signed, because a signing
+certificate costs several hundred dollars a year and this is a local tool that
+never talks to a server. So Windows treats it with suspicion.
+
+What you may see, and what to do:
+
+  "Windows protected your PC" (blue SmartScreen box)
+      Click "More info", then "Run anyway".
+
+  The launcher opens and closes instantly, or nothing happens
+      The Unblock step in Quick Start was most likely skipped. Delete the
+      extracted folder, tick Unblock on the original ZIP, and extract again.
+      Unblocking the ZIP before extracting clears every file inside at once.
+
+  Your antivirus quarantines runtime\\python.exe
+      A false positive on an unsigned Python interpreter. Restore it and add an
+      exclusion for the folder, or ask whoever sent you this for a copy through
+      a different channel.
+
+Everything in this folder is ordinary files. You can inspect any of it: the
+application is plain Python source under app\\studio\\, readable in Notepad.
+
+
+IF IT STILL WILL NOT START
+--------------------------
+  Something else is using port 8000
+      Close the other application, or close any earlier copy of Inox Hydra
+      still running in the background, then try again.
+
+  Chrome is not installed
+      Not a problem. The studio opens in your default browser instead. It will
+      look like a normal tab rather than its own window.
+
+  Anything else
+      Run InoxHydra-CLI.bat doctor --bundle and send the resulting file to
+      whoever gave you this. It redacts passwords and keys, and it tells them
+      exactly what went wrong on your machine, which they otherwise cannot see.
 
 
 WHERE YOUR DATA LIVES
