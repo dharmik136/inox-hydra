@@ -230,19 +230,40 @@ function observeAndCaptureEngagers() {
 
   // Only POST if we have valid leads
   if (leads.length) {
-    const newCount = leads.filter(l => l._isNew).length;
+    const newLeads = leads.filter(l => l._isNew);
+    const newCount = newLeads.length;
+
+    // 1. Batch ingest into analytics & leads store
     fetch("http://127.0.0.1:8000/api/analytics/ingest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ leads })
-    })
-    .then(r => r.json())
-    .then(() => {
-      if (newCount > 0) {
-        showInPageToast(`⚡ LinkedIn Studio CRM: Ingested ${newCount} warm engager(s)!`, "success");
+    }).catch(() => {});
+
+    // 2. High-precision Reverse CRM ingestion for new commenters/reactors
+    newLeads.forEach(lead => {
+      let commentOnly = "";
+      if (lead.notes && lead.notes.startsWith('Commented: "')) {
+        commentOnly = lead.notes.replace(/^Commented:\s*"/, "").replace(/"$/, "");
       }
-    })
-    .catch(() => {});
+      fetch("http://127.0.0.1:8000/api/v1/crm/interactions/ingest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          full_name: lead.name,
+          linkedin_urn: lead.profile_url || `urn:li:person:${Math.abs(lead.name.split('').reduce((a,b)=>(((a<<5)-a)+b.charCodeAt(0))|0,0))}`,
+          headline: lead.headline,
+          company: lead.company,
+          interaction_type: (lead.engagement_type || "COMMENT").toUpperCase(),
+          comment_text: commentOnly || lead.notes || "",
+          post_topic: "sovereign creator architecture"
+        })
+      }).catch(() => {});
+    });
+
+    if (newCount > 0) {
+      showInPageToast(`⚡ LinkedIn Studio CRM: Ingested ${newCount} warm engager(s) with deterministic ICP scoring!`, "success");
+    }
   }
 }
 

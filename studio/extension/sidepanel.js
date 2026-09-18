@@ -193,7 +193,7 @@ function toUnicodeSansItalic(text) {
 }
 
 function cleanDashes(text) {
-  return text.replace(/—/g, ", ").replace(/–/g, ", ").replace(/(?<=\w)--+(?=\w)/g, ", ").replace(/[ \t]+/g, " ");
+  return text.replace(/\u2014/g, ", ").replace(/\u2013/g, ", ").replace(/(?<=\w)--+(?=\w)/g, ", ").replace(/[ \t]+/g, " ");
 }
 
 async function loadSideQueue() {
@@ -222,6 +222,13 @@ async function loadSideQueue() {
         document.getElementById("sp-text").value = p.content;
         document.getElementById("tab-composer-btn").click();
       });
+      container.appendChild(item);
+    });
+  } catch (err) {
+    container.innerHTML = "<p style='color: var(--text-dim);'>Failed to load queue.</p>";
+  }
+}
+
 async function loadSideCRM() {
   const container = document.getElementById("crm-mini-list");
   const countBadge = document.getElementById("sp-crm-count");
@@ -247,12 +254,50 @@ async function loadSideCRM() {
           <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(99, 102, 241, 0.2); color: #a5b4fc;">${escapeHtml(l.status)}</span>
         </div>
         <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">${escapeHtml(l.headline || l.company || '')}</div>
+        <div id="agno-dossier-${l.id}" style="display: none; font-size: 11px; background: rgba(15, 23, 42, 0.8); border-radius: 6px; padding: 8px; margin-bottom: 8px; border: 1px solid rgba(99, 102, 241, 0.35); color: var(--text-secondary);"></div>
         <div style="display: flex; gap: 6px; justify-content: flex-end;">
           ${l.profile_url ? `<a href="${escapeHtml(l.profile_url)}" target="_blank" style="font-size: 11px; color: var(--accent); text-decoration: none; padding: 3px 6px;">Profile ↗</a>` : ''}
+          <button class="tool-btn btn-side-enrich" data-id="${l.id}" style="font-size: 11px; padding: 3px 8px; background: rgba(99, 102, 241, 0.2); border-color: #6366f1; color: #a5b4fc;">✨ Enrich</button>
           <button class="tool-btn btn-side-copy-dm" data-id="${l.id}" style="font-size: 11px; padding: 3px 8px;">⚡ Copy DM</button>
         </div>
       `;
       container.appendChild(card);
+    });
+
+    container.querySelectorAll(".btn-side-enrich").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-id");
+        const dossierBox = document.getElementById(`agno-dossier-${id}`);
+        if (dossierBox.style.display === "block") {
+          dossierBox.style.display = "none";
+          btn.innerText = "✨ Enrich";
+          return;
+        }
+        btn.innerText = "Enriching...";
+        try {
+          const enrichRes = await fetch(`${LOCAL_API}/leads/${id}/enrich`, { method: "POST" });
+          const enrichJson = await enrichRes.json();
+          if (enrichJson.status === "success" && enrichJson.enrichment) {
+            const en = enrichJson.enrichment;
+            dossierBox.innerHTML = `
+              <div style="font-weight: 600; color: #a5b4fc; margin-bottom: 4px;">⚡ Agno Intelligence Dossier:</div>
+              <div style="margin-bottom: 3px;"><strong>Stack:</strong> ${escapeHtml(en.estimated_tech_stack || "Enterprise")}</div>
+              <div style="margin-bottom: 4px;"><strong>Friction:</strong> ${escapeHtml(en.friction_points || "")}</div>
+              <div style="font-weight: 600; color: #38bdf8; margin-top: 4px;">Top Hook:</div>
+              <div style="font-style: italic; color: #e2e8f0;">"${escapeHtml(en.icebreakers ? en.icebreakers[0] : "")}"</div>
+            `;
+            dossierBox.style.display = "block";
+            btn.innerText = "Hide Dossier";
+          } else {
+            btn.innerText = "Failed";
+            setTimeout(() => { btn.innerText = "✨ Enrich"; }, 2000);
+          }
+        } catch {
+          btn.innerText = "Error";
+          setTimeout(() => { btn.innerText = "✨ Enrich"; }, 2000);
+        }
+      });
     });
 
     container.querySelectorAll(".btn-side-copy-dm").forEach(btn => {

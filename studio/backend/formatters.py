@@ -54,7 +54,7 @@ def clean_text_formatting(text: str) -> str:
     Cleans em-dashes, en-dashes, irregular spaces, and restores clean natural punctuation.
     """
     # Replace em-dashes and en-dashes with natural comma/pause
-    cleaned = text.replace("—", ", ").replace("–", ", ")
+    cleaned = text.replace("\u2014", ", ").replace("–", ", ")
     # Fix double/triple hyphens used as dashes
     cleaned = re.sub(r'(?<=\w)--+(?=\w)', ', ', cleaned)
     # Clean redundant spaces
@@ -81,8 +81,13 @@ def analyze_hook(text: str) -> dict:
             "line_count": 0,
             "score": 0,
             "hook_archetype": "Empty",
+            "archetype": "Empty",
             "hook_line": "",
             "mobile_safe": True,
+            "is_pre_fold_safe": True,
+            "has_air_gap": False,
+            "pre_fold_chars": 0,
+            "pre_fold_length": 0,
             "desktop_safe": True,
             "recommendations": ["Write a strong first sentence to hook your reader."]
         }
@@ -94,64 +99,85 @@ def analyze_hook(text: str) -> dict:
     word_count = len(words)
     char_count = len(text)
     
-    # Check mobile fold (typically 3 visual lines or ~210 characters)
-    # If the first non-empty block is too long or there are >3 lines before 210 chars
-    mobile_cutoff_chars = 210
+    # Check mobile fold physics (strictly 140 characters or 3 visual lines per Day 05 PRD)
+    mobile_cutoff_chars = 140
     desktop_cutoff_chars = 320
-    
-    first_3_lines_text = "\n".join(raw_lines[:3]) if len(raw_lines) >= 3 else text
-    mobile_safe = len(first_3_lines_text) <= mobile_cutoff_chars and len(first_line) <= 140
+
+    first_3_lines = raw_lines[:3] if len(raw_lines) >= 3 else raw_lines
+    first_3_lines_text = "\n".join(first_3_lines)
+    pre_fold_chars = len(first_3_lines_text)
+
+    # Visual air gap: empty line directly following the first sentence
+    has_air_gap = bool(len(raw_lines) >= 2 and raw_lines[1].strip() == "")
+
+    mobile_safe = pre_fold_chars <= mobile_cutoff_chars and len(first_line) <= mobile_cutoff_chars
     desktop_safe = len("\n".join(raw_lines[:5])) <= desktop_cutoff_chars
 
-    # Classify Hook Archetype
+    # Classify 5 High-Velocity Hook Archetypes (Project Prudent PRD-005)
     fl_lower = first_line.lower()
     archetype = "Direct Statement"
     recommendations = []
 
-    if any(q in fl_lower for q in ["?", "why", "how do you", "have you ever", "what if"]):
+    if any(k in fl_lower for k in ["i spent", "i wasted", "before realizing", "biggest mistake", "hard truth", "stop doing"]):
+        archetype = "The Contrarian Confession"
+    elif any(k in fl_lower for k in ["90% of engineers", "how it actually works", "system design", "architecture", "under the hood", "monolith", "decoupling"]):
+        archetype = "The Architectural Breakdown"
+    elif any(k in fl_lower for k in ["we processed", "0 downtime", "reduced latency", "benchmarked", "10m records", "100k requests"]):
+        archetype = "The Concrete Proof"
+    elif any(k in fl_lower for k in ["how to build", "step-by-step", "blueprint", "teardown", "in 48 hours", "without paying"]):
+        archetype = "The Step-by-Step Teardown"
+    elif any(k in fl_lower for k in ["failed completely", "post-mortem", "i was wrong", "my confession", "what nobody tells you", "my biggest failure", "crashed", "outage", "broke"]):
+        archetype = "The Direct Vulnerability"
+    elif any(q in fl_lower for q in ["?", "why", "how do you", "have you ever", "what if"]):
         archetype = "Question / Curiosity Gap"
     elif any(c in fl_lower for c in ["stop", "don't", "never", "nobody", "wrong", "myth", "instead of", "versus", "vs"]):
         archetype = "Contrarian / Pattern Interrupt"
     elif re.search(r'^\d+\s|^\b[1-9]\b|\b\d+%\b|\b\d+\s(ways|steps|rules|lessons|frameworks|secrets)', fl_lower):
         archetype = "Numbered Framework / Listicle"
-    elif any(s in fl_lower for s in ["i spent", "after 3 years", "last week i", "when i was", "i failed", "stepping into", "during my time"]):
-        archetype = "Personal Experience / Narrative"
-    elif "how to" in fl_lower or "the blueprint" in fl_lower or "the architecture" in fl_lower:
-        archetype = "Playbook / Tactical Guide"
 
     # Score calculation
-    score = 70
+    score = 65
 
     # Archetype bonus
-    if archetype in ["Contrarian / Pattern Interrupt", "Numbered Framework / Listicle"]:
-        score += 12
-    elif archetype in ["Personal Experience / Narrative", "Question / Curiosity Gap"]:
-        score += 8
+    if archetype in [
+        "The Contrarian Confession", "The Architectural Breakdown", "The Concrete Proof",
+        "The Step-by-Step Teardown", "The Direct Vulnerability", "Contrarian / Pattern Interrupt"
+    ]:
+        score += 15
+    elif archetype in ["Numbered Framework / Listicle", "Question / Curiosity Gap"]:
+        score += 10
+
+    # Air gap bonus
+    if has_air_gap:
+        score += 10
+    else:
+        recommendations.append("Insert a visual air gap (blank line) immediately after line 1 to eliminate mobile reader fatigue.")
+        score -= 10
 
     # Specificity & numbers
     has_number = bool(re.search(r'\d+', first_line))
     if has_number:
-        score += 8
+        score += 10
 
     # Cutoff compliance
     if mobile_safe:
-        score += 10
+        score += 15
     else:
-        score -= 15
-        recommendations.append("Your hook exceeds the mobile 3-line fold (~210 chars). Tighten line 1 so readers don't lose context before 'see more'.")
+        score -= 20
+        recommendations.append(f"Your hook ({pre_fold_chars} chars) exceeds the 140-char mobile fold. Tighten line 1 so readers don't lose context before 'see more'.")
 
     # White space & line breaks
     blank_line_count = text.count("\n\n")
     if blank_line_count >= 2:
         score += 5
-    elif len(raw_lines) <= 2 and char_count > 400:
+    elif len(raw_lines) <= 2 and char_count > 300:
         score -= 15
         recommendations.append("Avoid dense walls of text. Break long paragraphs into 1-2 sentence digestible chunks.")
 
     # Em-dash check
-    if "—" in text or "–" in text:
+    if "\u2014" in text or "–" in text:
         recommendations.append("Em-dashes detected. Use natural commas or periods for executive readability.")
-        score -= 5
+        score -= 10
 
     # Hashtags check
     hashtags = re.findall(r'#\w+', text)
@@ -159,7 +185,7 @@ def analyze_hook(text: str) -> dict:
         recommendations.append(f"Found {len(hashtags)} hashtags. LinkedIn's 2026 algorithm penalizes hashtag stuffing; keep to 3-5 high-relevance tags.")
         score -= 5
 
-    final_score = min(max(score, 25), 100)
+    final_score = min(max(score, 20), 100)
 
     return {
         "char_count": char_count,
@@ -168,11 +194,16 @@ def analyze_hook(text: str) -> dict:
         "hook_line": first_line,
         "hook_length": len(first_line),
         "hook_archetype": archetype,
+        "archetype": archetype,
+        "pre_fold_chars": pre_fold_chars,
+        "pre_fold_length": pre_fold_chars,
         "mobile_safe": mobile_safe,
+        "is_pre_fold_safe": mobile_safe,
+        "has_air_gap": has_air_gap,
         "desktop_safe": desktop_safe,
         "score": final_score,
         "blank_lines": blank_line_count,
         "hashtag_count": len(hashtags),
-        "has_em_dashes": ("—" in text or "–" in text),
+        "has_em_dashes": ("\u2014" in text or "–" in text),
         "recommendations": recommendations if recommendations else ["Outstanding hook structure! Highly optimized for mobile scroll stoppage."]
     }

@@ -137,7 +137,7 @@ If you are ever open to a low-key 15-minute virtual coffee to swap notes on engi
 ```
 
 ### Strict Quality Rules:
-* **Zero Em-Dash Rule**: Strictly enforces the absence of em-dashes (`—`) and double hyphens (`--`).
+* **Zero Em-Dash Rule**: Strictly enforces the absence of em-dashes (` - `) and double hyphens (`--`).
 * **1-Click Copy**: Clicking **`📋 Copy to Clipboard`** copies the rendered script and displays a confirmation toast.
 
 ---

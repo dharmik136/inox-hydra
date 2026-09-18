@@ -243,7 +243,7 @@ def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optio
         )
 
     # Strict zero em-dash verification
-    script = script.replace("—", ", ").replace("--", ", ")
+    script = script.replace("\u2014", ", ").replace("--", ", ")
 
     return {
         "status": "success",
@@ -264,16 +264,33 @@ def export_leads_csv(status: Optional[str] = None, search: Optional[str] = None)
     leads = list_leads(status, search)
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["ID", "Name", "Headline", "Company", "Profile URL", "Engagement Type", "Status", "Notes", "Created At"])
+    writer.writerow([
+        "ID", "Name", "Headline", "Company", "Seniority Level",
+        "ICP Score", "Qualification Tier", "Status", "Profile URL",
+        "Engagement Type", "Notes", "Created At"
+    ])
     for l in leads:
+        score = float(l.get("icp_score") or 0.0)
+        if score >= 80.0:
+            tier = "TIER_1_VIP"
+        elif score >= 60.0:
+            tier = "QUALIFIED"
+        elif score >= 30.0:
+            tier = "NURTURE"
+        else:
+            tier = "DISQUALIFIED"
+
         writer.writerow([
             l.get("id", ""),
-            l.get("name", ""),
+            l.get("full_name") or l.get("name", ""),
             l.get("headline", ""),
             l.get("company", ""),
+            l.get("seniority_level", "Unknown"),
+            f"{score:.1f}",
+            tier,
+            l.get("lead_status") or l.get("status", "NEW"),
             l.get("profile_url", ""),
             l.get("engagement_type", ""),
-            l.get("status", ""),
             l.get("notes", ""),
             l.get("created_at", "")
         ])

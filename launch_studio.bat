@@ -8,6 +8,20 @@ echo   100%% Local Engine - Zero Cloud Egress - Port 8000
 echo =================================================================
 echo.
 
+:: Check if --tray argument is passed to launch background daemon
+if /i "%~1"=="--tray" (
+    echo [*] Starting Inox Hydra in System Tray Daemon mode...
+    start "" pythonw "%~dp0studio_tray.py"
+    echo [*] System Tray daemon active in background.
+    exit /b 0
+)
+if /i "%~1"=="/tray" (
+    echo [*] Starting Inox Hydra in System Tray Daemon mode...
+    start "" pythonw "%~dp0studio_tray.py"
+    echo [*] System Tray daemon active in background.
+    exit /b 0
+)
+
 :: Check if server is already running on port 8000
 powershell -Command "$tcp = Test-NetConnection -ComputerName 127.0.0.1 -Port 8000 -InformationLevel Quiet -WarningAction SilentlyContinue; if ($tcp) { exit 0 } else { exit 1 }"
 if %ERRORLEVEL% EQU 0 (

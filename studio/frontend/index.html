@@ -1,66 +1,302 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>LinkedIn Studio Enterprise | Minimalist Desktop Studio</title>
+  <title>LinkedIn Studio Enterprise | Editorial Motion OS</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
-  <!-- Chart.js CDN for interactive creator analytics -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
+  <!-- =========================================================================
+       PROPRIETARY EDITORIAL SYMBOL CATALOG (Cornery, Abstract, Monochrome)
+       ========================================================================= -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display: none;" id="editorial-symbol-catalog">
+    <defs>
+      <!-- 1. Master Brand Mark: Intersecting Orthogonal Frames with Diamond Junction -->
+      <symbol id="sym-brand-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M3 8V3h5"/>
+        <path d="M21 8V3h-5"/>
+        <path d="M3 16v5h5"/>
+        <path d="M21 16v5h-5"/>
+        <rect x="7" y="7" width="10" height="10"/>
+        <path d="M12 7v10M7 12h10"/>
+      </symbol>
+
+      <!-- 2. Section: Composer / Post Studio (Drafting Stylus & Framing Mark) -->
+      <symbol id="sym-sec-composer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M3 21h7"/>
+        <path d="M14 3l7 7L8 21H3v-5L14 3z"/>
+        <path d="M11 6l7 7"/>
+        <path d="M18 18h3v3"/>
+      </symbol>
+
+      <!-- 3. Section: Queue & Cadence (Orthogonal Stepped Rail) -->
+      <symbol id="sym-sec-queue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <rect x="3" y="4" width="18" height="16"/>
+        <path d="M3 9h18"/>
+        <path d="M8 2v4M16 2v4"/>
+        <path d="M7 13h4M7 16h7"/>
+        <rect x="15" y="13" width="3" height="3"/>
+      </symbol>
+
+      <!-- 4. Section: CRM & Inbound Leads (Nodal Convergence Vertex) -->
+      <symbol id="sym-sec-crm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <rect x="3" y="3" width="6" height="6"/>
+        <rect x="15" y="3" width="6" height="6"/>
+        <rect x="9" y="15" width="6" height="6"/>
+        <path d="M6 9v3h6M18 9v3h-6M12 12v3"/>
+      </symbol>
+
+      <!-- 5. Section: Viral Swipe File (Isometric Archival Facet) -->
+      <symbol id="sym-sec-swipe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M3 4h14l4 4v12H3V4z"/>
+        <path d="M17 4v4h4"/>
+        <path d="M7 11h10M7 15h6"/>
+        <path d="M3 8h4"/>
+      </symbol>
+
+      <!-- 6. Section: Analytics & Velocity (Orthogonal Trajectory Step) -->
+      <symbol id="sym-sec-analytics" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M3 21h18"/>
+        <path d="M3 17l6-6h4l5-5"/>
+        <path d="M18 6v5M18 6h-5"/>
+        <rect x="16" y="4" width="4" height="4"/>
+      </symbol>
+
+      <!-- 7. Section: AI Command Hub (4-Corner Reticle Diamond Star) -->
+      <symbol id="sym-sec-ai-command" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7z"/>
+        <path d="M2 2h3M2 2v3M22 2h-3M22 2v3M2 22h3M2 22v-3M22 22h-3M22 22v-3"/>
+      </symbol>
+
+      <!-- 8. Section: Docs & Playbook (Technical Architectural Folio) -->
+      <symbol id="sym-sec-docs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M4 3h16v18H4V3z"/>
+        <path d="M4 7h16M9 7v14"/>
+        <path d="M13 11h4M13 15h4"/>
+      </symbol>
+
+      <!-- 9. Section: Brand Studio & Security (Framing Aperture with Seal) -->
+      <symbol id="sym-sec-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M3 7V3h4M21 7V3h-4M3 17v4h4M21 17v4h-4"/>
+        <rect x="7" y="7" width="10" height="10"/>
+        <path d="M12 10v4M10 12h4"/>
+      </symbol>
+
+      <!-- 10. Inspector Mode: Preview Stage (Split Orthogonal Screen) -->
+      <symbol id="sym-mode-preview" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <rect x="3" y="3" width="18" height="18"/>
+        <path d="M3 8h18M13 8v13"/>
+        <circle cx="6" cy="5.5" r="0.75" fill="currentColor"/>
+      </symbol>
+
+      <!-- 11. Inspector Mode: Safety Audit Matrix (Angular Faceted Shield) -->
+      <symbol id="sym-mode-audit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/>
+        <path d="M6 12h12M12 6v12"/>
+      </symbol>
+
+      <!-- 12. Inspector Mode: Media Studio (Geometric Viewport with Crop Blades) -->
+      <symbol id="sym-mode-media" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <rect x="3" y="4" width="18" height="16"/>
+        <path d="M3 15l5-5 4 4 4-4 5 5"/>
+        <rect x="6" y="7" width="3" height="3"/>
+      </symbol>
+
+      <!-- 13. Inspector Mode: Brand Identity (Signature Seal Stamp) -->
+      <symbol id="sym-mode-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <rect x="3" y="3" width="18" height="18"/>
+        <rect x="12" y="12" width="9" height="9"/>
+        <path d="M6 7h6M6 10h4"/>
+      </symbol>
+
+      <!-- 14. Inspector Mode: Prompt Copilot (Terminal Prompt Bracket) -->
+      <symbol id="sym-mode-prompt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <rect x="3" y="4" width="18" height="16"/>
+        <path d="M7 9l4 3-4 3M13 15h4"/>
+      </symbol>
+
+      <!-- 15. Action: Clean / Scrub (Orthogonal Alignment Scraper) -->
+      <symbol id="sym-act-clean" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M4 20h16"/>
+        <path d="M15 4l5 5-9 9H6v-5L15 4z"/>
+        <path d="M12 7l5 5"/>
+      </symbol>
+
+      <!-- 16. Action: Hooks (Angular Focal Burst) -->
+      <symbol id="sym-act-hooks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M13 2L3 14h8l-2 8 12-14h-8l2-6z"/>
+      </symbol>
+
+      <!-- 17. Action: Repurpose (Orthogonal Dual Loop) -->
+      <symbol id="sym-act-repurpose" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M4 12V6h12"/>
+        <path d="M13 3l3 3-3 3"/>
+        <path d="M20 12v6H8"/>
+        <path d="M11 21l-3-3 3-3"/>
+      </symbol>
+
+      <!-- 18. Action: Image Studio (Geometric Lens Aperture) -->
+      <symbol id="sym-act-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <rect x="3" y="3" width="18" height="18"/>
+        <path d="M3 3l7 7M21 3l-7 7M3 21l7-7M21 21l-7-7"/>
+        <rect x="9" y="9" width="6" height="6"/>
+      </symbol>
+
+      <!-- 19. Action: Save (Orthogonal Data Cassette) -->
+      <symbol id="sym-act-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M4 3h13l4 4v14H4V3z"/>
+        <path d="M8 3v5h8V3M8 14h8v7H8v-7z"/>
+      </symbol>
+
+      <!-- 20. Action: Publish / Launch (Orthogonal Launch Vector) -->
+      <symbol id="sym-act-publish" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M21 3L10 14M21 3l-6 18-4-8-8-4 18-6z"/>
+      </symbol>
+
+      <!-- 21. Action: Copy (Interlocking Orthogonal Sheets) -->
+      <symbol id="sym-act-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <rect x="8" y="8" width="13" height="13"/>
+        <path d="M5 16H3V3h13v2"/>
+      </symbol>
+
+      <!-- 22. Action: Apply (Stylus Vector) -->
+      <symbol id="sym-act-apply" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M16 3l5 5L7 22H2v-5L16 3z"/>
+        <path d="M13 6l5 5"/>
+      </symbol>
+
+      <!-- 23. Action: Trim (Precision Crop Mark) -->
+      <symbol id="sym-act-trim" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M6 2v14h16M2 6h14v16"/>
+        <path d="M18 18l3 3M18 6l3-3"/>
+      </symbol>
+
+      <!-- 24. Action: Eject / Move Links (Routed Downward Conduit) -->
+      <symbol id="sym-act-eject" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M4 4h16v10H4V4z"/>
+        <path d="M12 14v7M8 18l4 3 4-3"/>
+      </symbol>
+
+      <!-- 25. Action: Rhythm / Whitespace (Stepped Paragraph Stairs) -->
+      <symbol id="sym-act-rhythm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M4 5h16M4 11h10M4 17h14"/>
+        <path d="M18 11v4h-3M18 15l-2-2M18 15l2-2"/>
+      </symbol>
+
+      <!-- 26. Action: Tag / Hashtag (Chamfered Corner Tag) -->
+      <symbol id="sym-act-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M3 11l8-8h10v10l-8 8L3 11z"/>
+        <circle cx="16" cy="8" r="1.5" fill="currentColor"/>
+      </symbol>
+
+      <!-- 27. Action: Theme Dark (Geometric Crescent) -->
+      <symbol id="sym-act-theme-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>
+      </symbol>
+
+      <!-- 28. Action: Theme Light (Geometric Square Sun) -->
+      <symbol id="sym-act-theme-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <rect x="8" y="8" width="8" height="8"/>
+        <path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"/>
+      </symbol>
+
+      <!-- 29. Action: Precision Spark / Reticle (Replaces generic sparkles) -->
+      <symbol id="sym-act-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M12 3v18M3 12h18"/>
+        <rect x="8" y="8" width="8" height="8"/>
+      </symbol>
+
+      <!-- 30. Action: Lock / Vault (Orthogonal Padlock) -->
+      <symbol id="sym-act-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <rect x="5" y="10" width="14" height="11"/>
+        <path d="M8 10V6a4 4 0 0 1 8 0v4"/>
+      </symbol>
+
+      <!-- 31. Action: Export / Download (Orthogonal Tray) -->
+      <symbol id="sym-act-export" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M4 15v5h16v-5M12 4v11M8 11l4 4 4-4"/>
+      </symbol>
+
+      <!-- 32. Action: Eye / Reveal -->
+      <symbol id="sym-act-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/>
+        <circle cx="12" cy="12" r="3"/>
+      </symbol>
+
+      <!-- 33. Action: Close / Dismiss (Orthogonal Reticle Cross) -->
+      <symbol id="sym-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </symbol>
+
+      <!-- 34. Action: Refresh / Synchronize / Spinner (Orthogonal Dual Arc) -->
+      <symbol id="sym-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter">
+        <path d="M23 4v6h-6M1 20v-6h6"/>
+        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      </symbol>
+    </defs>
+  </svg>
+
   <div class="app-container">
 
-    <!-- LEFT PANE: Global Collapsible Iconic Sidebar -->
+    <!-- =========================================================================
+         SECTION 5: STUDIO RAIL (56px Collapsed by default, Morphing Tray on click)
+         ========================================================================= -->
     <aside class="global-sidebar" id="global-sidebar">
       <div class="sidebar-top">
-        <a href="#" class="sidebar-brand" id="brand-toggle" title="LinkedIn Studio Enterprise">
-          <div class="brand-icon-box">LS</div>
+        <a href="#" class="sidebar-brand" id="brand-toggle" title="LinkedIn Studio: Editorial Motion OS">
+          <div class="brand-icon-box">
+            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-brand-logo"></use></svg>
+          </div>
           <span class="brand-name">LinkedIn Studio</span>
         </a>
 
         <nav class="sidebar-nav">
-          <button class="nav-link active" data-tab="tab-studio" title="Studio (Editor & Queue)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-            <span class="nav-link-label">Studio & Editor</span>
+          <button class="nav-link active" data-tab="tab-studio" title="Composer (Writing Canvas)">
+            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-composer"></use></svg>
+            <span class="nav-link-label">Composer</span>
           </button>
 
-          <button class="nav-link" data-tab="tab-queue" title="Schedule & Smart Slots">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
-            <span class="nav-link-label">Schedule & Queue</span>
-            <span class="sidebar-badge count" id="queue-badge-count">1</span>
+          <button class="nav-link" data-tab="tab-queue" title="Publishing Cadence & Queue">
+            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
+            <span class="nav-link-label">Queue</span>
+            <span class="sidebar-badge" id="queue-badge-count">1</span>
           </button>
 
           <button class="nav-link" data-tab="tab-crm" title="Warm-Lead CRM Inbox">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-            <span class="nav-link-label">Inbound CRM</span>
-            <span class="sidebar-badge pro">WARM</span>
+            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
+            <span class="nav-link-label">Leads & CRM</span>
+            <span class="sidebar-badge" style="color: var(--signal-orange);">WARM</span>
           </button>
 
-          <button class="nav-link" data-tab="tab-inspirations" title="Viral Post Swipe File (356 Vaulted)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></svg>
-            <span class="nav-link-label">Viral Swipe File</span>
-            <span class="sidebar-badge count">356</span>
+          <button class="nav-link" data-tab="tab-inspirations" title="Viral Swipe File (356 Vaulted)">
+            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-swipe"></use></svg>
+            <span class="nav-link-label">Swipe File</span>
+            <span class="sidebar-badge">356</span>
           </button>
 
-          <button class="nav-link" data-tab="tab-analytics" title="Analytics (Reach/Growth)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" x2="18" y1="20" y2="10"/><line x1="12" x2="12" y1="20" y2="4"/><line x1="6" x2="6" y1="20" y2="14"/></svg>
+          <button class="nav-link" data-tab="tab-analytics" title="Editorial Analytics & Dwell">
+            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
             <span class="nav-link-label">Analytics</span>
           </button>
 
           <button class="nav-link" data-tab="tab-ai-command" title="AI Command Hub">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/></svg>
-            <span class="nav-link-label">AI Command</span>
-            <span class="sidebar-badge ai">GEMINI</span>
+            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
+            <span class="nav-link-label">Command Hub</span>
           </button>
 
-          <button class="nav-link" data-tab="tab-docs" title="Enterprise Documentation & Playbook">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/><path d="M6 6h10"/><path d="M6 10h10"/><path d="M6 14h6"/></svg>
-            <span class="nav-link-label">Docs & Playbook</span>
-            <span class="sidebar-badge pro">V2.5</span>
+          <button class="nav-link" data-tab="tab-docs" title="Architecture Docs & Playbook">
+            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
+            <span class="nav-link-label">Docs</span>
+          </button>
+
+          <button class="nav-link" data-tab="tab-settings" title="Brand Studio & Security">
+            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
+            <span class="nav-link-label">Brand Studio</span>
           </button>
         </nav>
       </div>
@@ -68,554 +304,1750 @@
       <div class="sidebar-footer">
         <div class="local-shield-indicator" title="Local Air-Gapped Engine Running on 127.0.0.1:8000">
           <span class="shield-pulse-dot"></span>
-          <span class="shield-text">100% Local Machine</span>
+          <span class="shield-text">100% Local</span>
         </div>
       </div>
     </aside>
 
-    <!-- MAIN SHELL -->
+    <!-- =========================================================================
+         MAIN SPATIAL SHELL
+         ========================================================================= -->
     <div class="main-shell">
 
-      <!-- STUDIO TOPBAR -->
+      <!-- SECTION 6: SLIM TOP CONTEXT BAR -->
       <header class="studio-topbar">
         <div class="topbar-left">
+          <span class="editorial-slug-badge" id="topbar-slug-badge">POST / DRAFT 07</span>
+          <span class="stream-beacon" id="stream-beacon-badge" title="Live Ingress Stream Active (<5ms latency)">Live Stream</span>
           <div class="view-indicator">
-            <h1 class="view-main-title" id="view-title">Post Studio & Simulator</h1>
-            <span class="view-sub-title" id="view-subtitle">Distraction-Free Editor with Real-Time Feed Simulator</span>
+            <input type="text" class="view-main-title" id="view-title" value="Post Studio & Simulator" title="Draft Slug / Title">
+            <span class="view-sub-title" id="view-subtitle" style="display: none;"></span>
           </div>
         </div>
 
         <div class="topbar-center">
-          <div class="stat-pill" title="Total characters in draft">
-            Chars: <strong id="top-char-count">0</strong> / 3,000
+          <!-- Monospace Telemetry Strip (Section 6) -->
+          <div class="topbar-context-group active" id="topbar-group-studio">
+            <div class="telemetry-strip">
+              <span class="telemetry-item"><strong id="top-char-count">0</strong> / 3,000 chars</span>
+              <span class="telemetry-dot">·</span>
+              <span class="telemetry-item">Pre-Fold: <strong id="top-hook-count">0</strong></span>
+              <span class="telemetry-dot">·</span>
+              <span class="telemetry-item">Dwell: <strong id="top-dwell-time">0s</strong></span>
+            </div>
           </div>
-          <div class="stat-pill" title="Pre-fold hook length (Target: < 180 chars)">
-            Pre-Fold: <strong id="top-hook-count">0</strong> chars
+
+          <!-- Analytics Controls Group -->
+          <div class="topbar-context-group" id="topbar-group-analytics">
+            <div class="range-selector-pills">
+              <button class="range-pill active" data-range="7d">7D</button>
+              <button class="range-pill" data-range="14d">14D</button>
+              <button class="range-pill" data-range="30d">30D</button>
+              <button class="range-pill" data-range="90d">90D</button>
+            </div>
           </div>
-          <div class="stat-pill" title="Estimated reading dwell time">
-            Dwell: <strong id="top-dwell-time">0s</strong>
+
+          <!-- CRM Stats Group -->
+          <div class="topbar-context-group" id="topbar-group-crm">
+            <div class="stat-pill" title="Total Prospects in Local Pipeline">
+              Pipeline: <strong id="topbar-crm-total">23 Leads</strong>
+            </div>
+            <div class="stat-pill" title="100% Private SQLite Persistence">
+              Vault: <strong style="color: var(--signal-green);">Private Local</strong>
+            </div>
+          </div>
+
+          <!-- AI Command Stats Group -->
+          <div class="topbar-context-group" id="topbar-group-ai">
+            <div class="stat-pill" id="topbar-ai-engine-pill">
+              <span class="shield-pulse-dot" style="background: var(--accent-indigo);"></span>
+              Engine: <strong id="topbar-ai-engine-name">Agno Multi-Model</strong>
+            </div>
+          </div>
+
+          <!-- Queue Stats Group -->
+          <div class="topbar-context-group" id="topbar-group-queue">
+            <div class="stat-pill">
+              Smart Slots: <strong>08:30 AM & 05:30 PM</strong>
+            </div>
+          </div>
+
+          <!-- Swipe File Stats Group -->
+          <div class="topbar-context-group" id="topbar-group-inspirations">
+            <div class="stat-pill">
+              Vault: <strong>356 Blueprints</strong>
+            </div>
+          </div>
+
+          <!-- Settings Stats Group -->
+          <div class="topbar-context-group" id="topbar-group-settings">
+            <div class="stat-pill">
+              Branding: <strong id="topbar-settings-handle">@dharmik136</strong>
+            </div>
           </div>
         </div>
 
         <div class="topbar-right">
-          <button class="btn btn-subtle btn-sm" id="btn-clean-formatting" title="Scrub em-dashes and fix spacing">
-            🧹 Clean Spacing
+          <!-- Quiet Saved Status Indicator (Section 16.6) -->
+          <span class="saved-indicator-quiet" id="saved-status-indicator">SAVED</span>
+
+          <div class="topbar-actions-group active" id="topbar-actions-studio">
+            <button class="btn btn-subtle btn-sm" id="btn-clean-formatting" title="Scrub em-dashes and fix spacing">
+              <svg class="app-symbol"><use href="#sym-act-clean"></use></svg> Clean
+            </button>
+            <button class="btn btn-outline btn-sm" id="btn-save-draft">
+              Save
+            </button>
+            <button class="btn btn-primary btn-sm" id="btn-schedule-post">
+              Publish
+            </button>
+          </div>
+
+          <div class="topbar-actions-group" id="topbar-actions-analytics" style="display: none;">
+            <button class="btn btn-primary btn-sm" id="btn-topbar-export-csv">
+              <svg class="app-symbol"><use href="#sym-act-export"></use></svg> Export CSV
+            </button>
+          </div>
+
+          <div class="topbar-actions-group" id="topbar-actions-crm" style="display: none;">
+            <button class="btn btn-outline btn-sm" id="btn-topbar-crm-export">
+              <svg class="app-symbol"><use href="#sym-act-export"></use></svg> Export
+            </button>
+            <button class="btn btn-primary btn-sm" id="btn-topbar-add-prospect">
+              + Add Lead
+            </button>
+          </div>
+
+          <!-- Command Palette Trigger -->
+          <button class="btn btn-subtle btn-xs" id="btn-trigger-cmd-palette" title="Command Palette (Ctrl+K)" style="font-family: var(--font-mono);">
+            ⌘K
           </button>
-          <button class="btn btn-outline btn-sm" id="btn-save-draft">
-            💾 Save Draft
+
+          <!-- Theme Switcher -->
+          <button class="theme-toggle-btn" id="btn-theme-toggle" title="Toggle Theme (View Transition)" aria-label="Toggle Theme">
+            <svg class="app-symbol theme-icon-dark app-symbol-no-margin" style="display: none;"><use href="#sym-act-theme-dark"></use></svg>
+            <svg class="app-symbol theme-icon-light app-symbol-no-margin"><use href="#sym-act-theme-light"></use></svg>
           </button>
-          <button class="btn btn-primary btn-sm" id="btn-schedule-post">
-            ⏰ Schedule Post
+
+          <!-- Contextual Inspector Toggle (Section 10) -->
+          <button class="inspector-toggle-btn active" id="btn-toggle-inspector" title="Toggle Inspector Panel (Cmd+\)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><line x1="15" x2="15" y1="3" y2="21"/></svg>
+            <span>Inspector</span>
           </button>
         </div>
       </header>
 
-      <!-- VIEW 1: THREE-PANE STUDIO VIEWPORT (Editor + Mobile Simulator) -->
-      <div class="studio-viewport" id="tab-studio">
+      <!-- =========================================================================
+           SPATIAL WORK SURFACE VIEWPORT
+           ========================================================================= -->
+      <div class="work-surface-viewport">
 
-        <!-- CENTER PANE: The Distraction-Free Editor -->
-        <main class="editor-pane">
-          <div class="editor-stage">
+        <!-- VIEW 1: COMPOSER WORKSPACE (Section 7) -->
+        <div class="studio-viewport" id="tab-studio">
+          <main class="editor-pane">
+            <div class="editor-stage">
 
-            <!-- INLINE HOOK VARIANT CAROUSEL (Appears when clicking "Generate Hooks") -->
-            <div class="hook-carousel-container" id="hook-carousel-container">
-              <div class="hook-carousel-header">
-                <div class="hook-carousel-title">
-                  <span>🎯 10x Scroll-Stopping Hook Variants</span>
-                  <span class="sidebar-badge pro" id="hook-count-pill">10 Options</span>
+              <!-- SECTION 7.A: HOOK RAIL / CONTACT-SHEET FILMSTRIP -->
+              <div class="hook-carousel-container" id="hook-carousel-container" style="display: none;">
+                <div class="hook-carousel-header">
+                  <div class="hook-carousel-title">
+                    <svg class="app-symbol"><use href="#sym-act-hooks"></use></svg>
+                    <span>Hook Specimens</span>
+                    <span class="sidebar-badge" id="hook-count-pill" style="display: inline-block;">10 Options</span>
+                  </div>
+                  <div class="hook-carousel-actions" style="display: flex; gap: 4px;">
+                    <button class="btn btn-subtle btn-xs" id="btn-prev-hook-scroll"><svg class="app-symbol app-symbol-xs app-symbol-no-margin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+                    <button class="btn btn-subtle btn-xs" id="btn-next-hook-scroll"><svg class="app-symbol app-symbol-xs app-symbol-no-margin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+                    <button class="btn btn-subtle btn-xs" id="btn-close-hook-carousel" title="Dismiss"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+                  </div>
                 </div>
-                <div class="hook-carousel-actions">
-                  <button class="btn btn-subtle btn-sm" id="btn-prev-hook-scroll">◀</button>
-                  <button class="btn btn-subtle btn-sm" id="btn-next-hook-scroll">▶</button>
-                  <button class="btn btn-subtle btn-sm" id="btn-close-hook-carousel" title="Dismiss carousel">✕</button>
+                <div class="hook-cards-track" id="hook-cards-track">
+                  <!-- Dynamically populated filmstrip specimens with [1]..[9] shortcuts -->
                 </div>
               </div>
-              <div class="hook-cards-track" id="hook-cards-track">
-                <!-- Dynamically populated hook cards -->
+
+              <!-- SECTION 7.B: UNENCLOSED WRITING CANVAS -->
+              <div class="editor-card">
+                <div class="editor-toolbar-row">
+                  <div style="display: flex; align-items: center;">
+                    <span class="section-logo-badge" style="width: 26px; height: 26px; margin-right: 8px;">
+                      <svg class="app-symbol app-symbol-xs"><use href="#sym-sec-composer"></use></svg>
+                    </span>
+                    <span class="editor-mode-label">Editorial Writing Canvas</span>
+                  </div>
+
+                  <div class="editor-quick-helpers">
+                    <button type="button" class="btn btn-outline btn-xs" id="btn-trigger-rehook">
+                      <svg class="app-symbol"><use href="#sym-act-hooks"></use></svg> 10x Hooks
+                    </button>
+                    <button type="button" class="btn btn-outline btn-xs" id="btn-trigger-repurpose">
+                      <svg class="app-symbol"><use href="#sym-act-repurpose"></use></svg> Repurpose
+                    </button>
+                    <button type="button" class="btn btn-primary btn-xs" id="btn-open-image-studio" title="Agno AI Image Studio">
+                      <svg class="app-symbol"><use href="#sym-act-image"></use></svg> Image Studio
+                    </button>
+                  </div>
+                </div>
+
+                <div class="editor-canvas-wrapper" id="editor-text-mode-canvas">
+                  <textarea class="main-writing-textarea" id="post-editor-input" placeholder="Start typing your thesis, breakdown, or framework...
+
+Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
+
+                  <!-- SECTION 7.C: EDITORIAL CROP MARK FOLD LINE (1px Dashed Rule) -->
+                  <div class="see-more-fold-line" id="editor-fold-line" style="display: none;">
+                    <span class="fold-line-tag">LINKEDIN FOLD / 180± CHARS</span>
+                    <span class="fold-line-counter" id="fold-char-badge">Pre-Fold: 0 chars</span>
+                  </div>
+
+                  <!-- SECTION 7.D: FLOATING CONTEXTUAL SELECTION TOOLBAR -->
+                  <div class="floating-action-bar" id="floating-selection-toolbar">
+                    <button class="floating-btn" id="float-bold-btn" title="Convert to Mathematical Sans-Bold">𝗕 Bold</button>
+                    <button class="floating-btn" id="float-italic-btn" title="Convert to Mathematical Sans-Italic">𝘐 Italic</button>
+                    <button class="floating-btn" id="float-mono-btn" title="Convert to Monospace">𝙼 Mono</button>
+                    <button class="floating-btn" id="float-strike-btn" title="Apply Strikethrough">S̶ Strike</button>
+                    <button class="floating-btn" id="float-clean-btn" title="Scrub Em-Dashes">
+                      <svg class="app-symbol"><use href="#sym-act-clean"></use></svg> Clean
+                    </button>
+                    <button class="floating-btn danger" id="float-rehook-btn" title="Generate Hook for selection">
+                      <svg class="app-symbol"><use href="#sym-act-hooks"></use></svg> Re-Hook
+                    </button>
+                  </div>
+                </div>
+
+                <!-- PRE-FOLD STATUS BAR -->
+                <div class="editor-hook-status-bar" id="editor-hook-status-bar">
+                  <div class="hook-status-left">
+                    <span style="font-weight: 600; color: var(--text-secondary);">Pre-Fold Hook:</span>
+                    <span class="hook-char-metric"><strong id="editor-hook-chars">0</strong> / 180 chars</span>
+                    <span class="sidebar-badge" id="editor-hook-badge" style="display: inline-block; color: var(--signal-green);">Fold Safe</span>
+                    <span id="editor-hook-desc" style="color: var(--text-muted);">• Visible above mobile fold</span>
+                  </div>
+                  <div class="hook-status-right">
+                    <button type="button" class="btn btn-subtle btn-xs" id="btn-toggle-editor-fold" title="Toggle fold guideline">
+                      Ruler: <span id="editor-fold-status-text">OFF</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- MEDIA ATTACHMENT CARD / DROPZONE -->
+                <div class="media-dropzone-container" id="media-dropzone-container">
+                  <input type="file" id="media-file-input" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4,video/webm" style="display: none;">
+                  <input type="hidden" id="media-path-input" value="">
+
+                  <div class="media-attached-card" id="media-attached-card" style="display: none;">
+                    <div class="media-attached-preview" id="media-attached-preview"></div>
+                    <div class="media-attached-info">
+                      <div class="media-attached-header">
+                        <span class="media-attached-name" id="media-attached-name">asset.png</span>
+                        <span class="sidebar-badge" id="media-attached-type" style="display: inline-block;">IMAGE</span>
+                      </div>
+                      <div class="media-attached-meta" id="media-attached-meta">Ready to post</div>
+                    </div>
+                    <div class="media-attached-actions" style="display: flex; gap: 6px;">
+                      <a href="#" target="_blank" class="btn btn-subtle btn-xs" id="media-attached-view"><svg class="app-symbol app-symbol-xs"><use href="#sym-act-eye"></use></svg> View</a>
+                      <button type="button" class="btn btn-subtle btn-xs btn-danger" id="media-attached-remove"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+                    </div>
+                  </div>
+
+                  <div class="media-dropzone-target" id="media-dropzone-target">
+                    <div class="dropzone-icon-box">
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    </div>
+                    <div class="dropzone-text-group">
+                      <div class="dropzone-primary-text">
+                        <strong>Drag & drop visual here</strong> or <span class="dropzone-browse-link" id="dropzone-browse-btn">browse local files</span>
+                      </div>
+                      <div class="dropzone-subtext">
+                        High-Res Images (PNG, JPG, WebP) • Native PDF Carousels • HD Video (MP4)
+                      </div>
+                    </div>
+                    <div class="dropzone-ai-shortcut">
+                      <button type="button" class="btn btn-outline btn-xs" id="btn-dropzone-ai-studio">
+                        <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Synthesize with AI
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
               </div>
+
+            </div>
+          </main>
+        </div>
+
+        <!-- VIEW 2: SCHEDULE & QUEUE -->
+        <div class="full-view-container" id="tab-queue">
+          <div style="padding: 32px 40px; max-width: 1000px; margin: 0 auto; width: 100%;">
+            <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 16px;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="section-logo-badge">
+                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
+                </div>
+                <div>
+                  <h2 style="font-family: var(--font-display); font-size: 26px; font-weight: 600;">Publishing Cadence & Queue</h2>
+                  <p style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">Smart engagement slots optimized for maximum LinkedIn dwell velocity</p>
+                </div>
+              </div>
+              <button class="btn btn-outline btn-sm" id="btn-refresh-queue">Sync Queue</button>
+            </div>
+            <div id="queue-cards-list" style="display: flex; flex-direction: column; gap: 12px;"></div>
+          </div>
+        </div>
+
+        <!-- VIEW 3: CRM REDESIGN (SECTION 11: SPLIT INBOX + DOSSIER) -->
+        <div class="full-view-container" id="tab-crm">
+
+          <!-- CRM MACRO TELEMETRY HEADER (ATTIO / LINEAR HYBRID) -->
+          <div class="crm-telemetry-container" id="crm-telemetry-container">
+            <div class="crm-telemetry-grid">
+              
+              <div class="crm-telemetry-card">
+                <div class="crm-telemetry-label">Total Inbound Leads</div>
+                <div class="crm-telemetry-value" id="crm-telem-total-leads">0</div>
+                <div class="crm-telemetry-subtext">Passive commenter pipeline</div>
+              </div>
+
+              <div class="crm-telemetry-card crm-telemetry-card-highlight">
+                <div class="crm-telemetry-label">High-Value VIPs (&ge; 70 ICP)</div>
+                <div class="crm-telemetry-value" id="crm-telem-vip-leads" style="color: var(--signal-emerald, #10b981);">0</div>
+                <div class="crm-telemetry-subtext">Decision-maker intent</div>
+              </div>
+
+              <div class="crm-telemetry-card">
+                <div class="crm-telemetry-label">Average ICP Score</div>
+                <div class="crm-telemetry-value" id="crm-telem-avg-score">0.0</div>
+                <div class="crm-telemetry-subtext">Deterministic 4-factor mean</div>
+              </div>
+
+              <div class="crm-telemetry-card">
+                <div class="crm-telemetry-label">Question Inquiry Rate</div>
+                <div class="crm-telemetry-value" id="crm-telem-inquiry-rate" style="color: var(--accent-primary, #0a66c2);">0%</div>
+                <div class="crm-telemetry-subtext">Direct buying intent ratio</div>
+              </div>
+
             </div>
 
-            <!-- MAIN EDITOR CARD -->
-            <div class="editor-card">
-              <div class="editor-toolbar-row">
-                <div class="editor-mode-toggle">
-                  <button class="mode-tab-btn active" id="mode-text-btn">Standard Post</button>
-                  <button class="mode-tab-btn" id="mode-carousel-btn">1080×1080 PDF Deck</button>
-                </div>
+            <!-- Pipeline Status Mini-Funnel -->
+            <div class="crm-funnel-bar-container">
+              <div class="crm-funnel-bar-header">
+                <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted, #94a3b8);">Pipeline Funnel Progression</span>
+                <span style="font-size: 11px; color: var(--text-muted, #94a3b8);" id="crm-telem-conversion-rate">Conversion Rate: 0.0%</span>
+              </div>
+              <div class="crm-funnel-progress-track" id="crm-funnel-progress-track">
+                <div class="crm-funnel-segment segment-new" id="funnel-seg-new" style="width: 25%;" title="New Leads"></div>
+                <div class="crm-funnel-segment segment-engaged" id="funnel-seg-engaged" style="width: 25%;" title="Engaged"></div>
+                <div class="crm-funnel-segment segment-sent" id="funnel-seg-sent" style="width: 25%;" title="DM Sent"></div>
+                <div class="crm-funnel-segment segment-converted" id="funnel-seg-converted" style="width: 25%;" title="Converted"></div>
+              </div>
+            </div>
+          </div>
 
-                <div class="editor-quick-helpers">
-                  <button class="btn btn-outline btn-sm" id="btn-trigger-rehook">
-                    ⚡ Generate Hooks
+          <div class="crm-split-layout">
+            
+            <!-- Left Stream Pane -->
+            <aside class="crm-lead-stream-pane">
+              <div class="crm-stream-header">
+                <div class="crm-stream-title-row">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <div class="section-logo-badge" style="width: 24px; height: 24px;">
+                      <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
+                    </div>
+                    <span class="crm-stream-title">Inbound Lead Stream</span>
+                  </div>
+                  <div style="display: flex; gap: 6px;">
+                    <button class="btn btn-subtle btn-xs" id="btn-export-crm-csv">
+                      <svg class="app-symbol"><use href="#sym-act-export"></use></svg> CSV
+                    </button>
+                    <button class="btn btn-primary btn-xs" id="btn-add-prospect-modal">+ Add Lead</button>
+                  </div>
+                </div>
+                <input type="text" id="crm-search-input" class="media-path-field" placeholder="Search by name, company, notes...">
+                <div class="topic-chips-row" id="crm-status-chips">
+                  <button class="topic-chip active" data-status="">All Leads</button>
+                  <button class="topic-chip" data-status="New Lead">New</button>
+                  <button class="topic-chip" data-status="Outreach Sent">Outreach</button>
+                  <button class="topic-chip" data-status="Connected">Connected</button>
+                  <button class="topic-chip" data-status="Meeting Booked">Meeting</button>
+                </div>
+              </div>
+
+              <!-- Stream List Cards -->
+              <div class="crm-stream-list" id="crm-stream-list">
+                <!-- Dynamically populated lead cards -->
+              </div>
+
+              <!-- Hidden table wrapper for backward compatibility -->
+              <div class="data-table-wrapper" style="display: none;">
+                <tbody id="crm-table-tbody"></tbody>
+              </div>
+            </aside>
+
+            <!-- Right Dossier Research Pane -->
+            <main class="crm-dossier-pane" id="crm-dossier-pane">
+              <div class="dossier-header-section">
+                <div>
+                  <h1 class="dossier-name" id="dossier-lead-name">Select a Lead</h1>
+                  <div class="dossier-headline" id="dossier-lead-headline">Click any prospect from the stream to view their full dossier</div>
+                  <div style="display: flex; gap: 8px; margin-top: 8px;" id="dossier-status-container">
+                    <span class="sidebar-badge" id="dossier-lead-status" style="display: inline-block;">Pending</span>
+                    <span class="sidebar-badge" id="dossier-lead-engagement" style="display: inline-block; color: var(--signal-orange);">Engagement</span>
+                  </div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn btn-danger-outline btn-sm" id="btn-dossier-purge-lead" title="GDPR Right-to-be-Forgotten: Permanent Cascade Deletion">
+                    <svg class="app-symbol"><use href="#sym-close"></use></svg> Purge
                   </button>
-                  <button class="btn btn-outline btn-sm" id="btn-trigger-repurpose">
-                    🔄 Repurpose Post
+                  <button class="btn btn-outline btn-sm" id="btn-dossier-agno-enrich">
+                    <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Agno Dossier
+                  </button>
+                  <button class="btn btn-primary btn-sm" id="btn-dossier-dm-script">
+                    <svg class="app-symbol"><use href="#sym-act-apply"></use></svg> Generate DM
                   </button>
                 </div>
               </div>
 
-              <!-- STANDARD WRITING TEXTAREA CANVAS -->
-              <div class="editor-canvas-wrapper" id="editor-text-mode-canvas">
-                <textarea class="main-writing-textarea" id="post-editor-input" placeholder="Start typing your insight, breakdown, or framework...
-
-Highlight text anytime to format with sans-bold or clean formatting. Watch the glowing red fold line below to optimize your hook before LinkedIn truncates it."></textarea>
-
-                <!-- DYNAMIC GLOWING RED "SEE MORE" FOLD LINE -->
-                <div class="see-more-fold-line" id="editor-fold-line" style="top: 130px;">
-                  <span class="fold-line-tag">...see more fold</span>
-                  <span class="fold-line-counter" id="fold-char-badge">Pre-Fold: 160 chars</span>
-                </div>
-
-                <!-- FLOATING HIGHLIGHT ACTION BAR -->
-                <div class="floating-action-bar" id="floating-selection-toolbar">
-                  <button class="floating-btn" id="float-bold-btn" title="Convert to Mathematical Sans-Bold">𝗕 Bold</button>
-                  <button class="floating-btn" id="float-italic-btn" title="Convert to Mathematical Sans-Italic">𝘐 Italic</button>
-                  <button class="floating-btn" id="float-mono-btn" title="Convert to Monospace">𝙼 Mono</button>
-                  <button class="floating-btn" id="float-strike-btn" title="Apply Strikethrough">S̶ Strike</button>
-                  <button class="floating-btn" id="float-clean-btn" title="Clean em-dashes and formatting">🧹 Clean</button>
-                  <button class="floating-btn danger" id="float-rehook-btn" title="Generate Hook for this concept">⚡ Re-Hook</button>
-                </div>
-              </div>
-
-              <!-- 1080x1080 MULTI-SLIDE CAROUSEL CANVAS -->
-              <div class="carousel-deck-canvas" id="carousel-deck-canvas">
-                <div class="carousel-meta-bar">
-                  <div style="display: flex; align-items: center; gap: 10px;">
-                    <span style="font-size: 13px; font-weight: 700;">Theme:</span>
-                    <select class="media-path-field" id="carousel-theme-select" style="width: 180px;">
-                      <option value="dark_slate">Dark Slate (Executive)</option>
-                      <option value="minimalist_white">Minimalist White (Clean)</option>
-                      <option value="blueprint">Engineering Blueprint</option>
-                    </select>
-                  </div>
-                  <div style="display: flex; gap: 8px;">
-                    <button class="btn btn-outline btn-sm" id="btn-add-carousel-slide">+ Add Slide</button>
-                    <button class="btn btn-primary btn-sm" id="btn-download-carousel-pdf">📄 Download 1080×1080 PDF</button>
+              <div class="dossier-grid">
+                <div class="dossier-card">
+                  <div class="dossier-card-title">Profile & Context</div>
+                  <div class="dossier-card-body" id="dossier-profile-context">
+                    Select a contact to view company context, profile link, and interaction history.
                   </div>
                 </div>
-
-                <div class="carousel-slides-grid" id="carousel-slides-grid">
-                  <!-- Dynamically rendered square slide cards -->
+                <div class="dossier-card">
+                  <div class="dossier-card-title">Why They Matter</div>
+                  <div class="dossier-card-body" id="dossier-why-they-matter">
+                    Deterministic conversion analysis and authority match indicators.
+                  </div>
+                </div>
+                <div class="dossier-card" style="grid-column: span 2;">
+                  <div class="dossier-card-title">Engagement Notes & Next Action</div>
+                  <div class="dossier-card-body" id="dossier-notes-body">
+                    No notes recorded yet.
+                  </div>
                 </div>
               </div>
+            </main>
 
-              <!-- Media Attachment Input Row -->
-              <div class="media-attachment-row" id="media-attachment-row">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--text-muted);"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
-                <input type="text" class="media-path-field" id="media-path-input" placeholder="Media URL or local image path (e.g. /assets/motadata_to_enterprise_4k_flawless.jpg)...">
+          </div>
+        </div>
+
+        <!-- VIEW 4: SWIPE FILE REDESIGN (SECTION 12: MASONRY ARCHIVE) -->
+        <div class="full-view-container" id="tab-inspirations">
+          <div class="swipe-archive-header">
+            <div class="swipe-archive-title-row">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="section-logo-badge">
+                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-swipe"></use></svg>
+                </div>
+                <div>
+                  <h2 style="font-family: var(--font-display); font-size: 26px; font-weight: 600;">Viral Post Specimen Archive</h2>
+                  <p style="font-size: 13px; color: var(--text-secondary); margin-top: 2px;">
+                    <span id="swipe-count-badge">356 Vaulted Blueprints</span> with reverse-engineered hook structures
+                  </p>
+                </div>
+              </div>
+              <div style="width: 320px;">
+                <input type="text" class="media-path-field" id="insp-search-input" placeholder="Search specimens by keyword or author...">
               </div>
             </div>
 
-          </div>
-        </main>
-
-        <!-- RIGHT PANE: The Live Simulator & Intelligence Panel -->
-        <aside class="simulator-pane">
-          <div class="simulator-pane-header">
-            <span class="simulator-pane-title">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><line x1="12" x2="12.01" y1="18" y2="18"/></svg>
-              Mobile Feed Simulator
-            </span>
-            <span class="sidebar-badge pro" id="sim-fold-status">Fold Safe</span>
-          </div>
-
-          <!-- Pixel-Perfect Mobile Phone Frame -->
-          <div class="mobile-device-frame">
-            <div class="device-notch"></div>
-            <div class="device-screen-content">
-              <div class="feed-post-card">
-                <!-- Author Header -->
-                <div class="feed-author-header">
-                  <div class="feed-author-avatar">DS</div>
-                  <div class="feed-author-details">
-                    <span class="feed-author-name">Dharmik Shingala</span>
-                    <span class="feed-author-headline">Content Strategist • Enterprise Systems</span>
-                    <div class="feed-timestamp-row">Just now • 🌐</div>
-                  </div>
-                </div>
-
-                <!-- Text Body with Dynamic Truncation Fold -->
-                <div class="feed-post-text-box" id="sim-post-box">
-                  <div class="sim-above-fold" id="simulated-above-fold">Stepping into enterprise architecture and modern systems requires discipline.</div>
-                  
-                  <!-- Synchronized Mobile Fold Line Indicator -->
-                  <div class="sim-fold-marker" id="sim-fold-marker">
-                    <span class="sim-fold-tag">Mobile Fold Cutoff</span>
-                  </div>
-
-                  <span class="sim-see-more-toggle" id="simulated-see-more">...see more</span>
-                  <div class="sim-below-fold" id="simulated-below-fold"></div>
-                </div>
-
-                <!-- Media Preview -->
-                <div class="feed-post-media" id="simulated-media">
-                  <img id="simulated-media-img" src="" alt="Post Attachment">
-                </div>
-
-                <!-- Engagement Bar -->
-                <div class="feed-engagement-bar">
-                  <span>👍 Like</span>
-                  <span>💬 Comment</span>
-                  <span>🔁 Repost</span>
-                  <span>📤 Send</span>
-                </div>
-              </div>
+            <!-- Topic Filter Chips -->
+            <div class="topic-chips-row" id="insp-topic-chips">
+              <button class="topic-chip active" data-topic="">All (356)</button>
+              <button class="topic-chip" data-topic="AI Agents">AI Agents</button>
+              <button class="topic-chip" data-topic="Enterprise Architecture">Architecture</button>
+              <button class="topic-chip" data-topic="Observability">Observability</button>
+              <button class="topic-chip" data-topic="Systems Engineering">Systems</button>
+              <button class="topic-chip" data-topic="B2B SaaS">B2B SaaS</button>
+              <button class="topic-chip" data-topic="Leadership">Leadership</button>
+              <button class="topic-chip" data-topic="Content Strategy">Strategy</button>
+              <button class="topic-chip" data-topic="Growth">Growth</button>
+              <button class="topic-chip" data-topic="Solopreneur">Solopreneur</button>
+              <button class="topic-chip" data-topic="CTO">CTO</button>
+              <button class="topic-chip" data-topic="Productivity">Productivity</button>
+              <button class="topic-chip" data-topic="Consulting">Consulting</button>
             </div>
           </div>
 
-          <!-- ALGORITHMIC SAFETY SCORECARD PANEL -->
-          <div class="algo-safety-card">
-            <div class="algo-card-header">
-              <span class="algo-card-title">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-                Algorithmic Safety Audit
+          <!-- Masonry Specimen Wall -->
+          <div class="swipe-file-masonry" id="inspirations-container">
+            <!-- Populated via loadInspirations() -->
+          </div>
+        </div>
+
+        <!-- VIEW 5: ANALYTICS REDESIGN (SECTION 13: NEWSPAPER ANALYSIS) -->
+        <div class="full-view-container" id="tab-analytics">
+          <div class="analytics-newspaper-layout">
+            <div class="newspaper-header">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="section-logo-badge">
+                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
+                </div>
+                <div>
+                  <h1 class="newspaper-title">Audience Reach & Dwell Velocity</h1>
+                  <p style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">Enterprise creator telemetry and algorithm health report</p>
+                </div>
+              </div>
+              <button class="btn btn-outline btn-sm" id="btn-export-csv-report">
+                <svg class="app-symbol"><use href="#sym-act-export"></use></svg> Export CSV
+              </button>
+            </div>
+
+            <!-- Newspaper Grid: Chart + 3 Editorial Observations -->
+            <div class="newspaper-grid">
+              
+              <!-- Main Crosshair Chart -->
+              <div class="newspaper-chart-card">
+                <div class="chart-card-header">
+                  <span style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em;">
+                    Daily Impression Trajectory
+                  </span>
+                  <span class="telemetry-strip">
+                    <span class="telemetry-item">Followers: <strong id="kpi-followers">2,412</strong></span>
+                    <span class="telemetry-dot">·</span>
+                    <span class="telemetry-item">Views: <strong id="kpi-views">104</strong></span>
+                  </span>
+                </div>
+                <div class="analytics-chart-wrapper">
+                  <canvas id="analytics-chart-canvas"></canvas>
+                  <div id="chart-tooltip-floater" class="chart-tooltip-floater"></div>
+                </div>
+              </div>
+
+              <!-- 3 Textual Editorial Observations (Section 13) -->
+              <div class="editorial-observations-col">
+                <div class="observation-card">
+                  <div class="observation-label">What Changed</div>
+                  <div class="observation-text" id="obs-what-changed">
+                    Weekly impression velocity accelerated by +18% following high-density system architecture breakdowns.
+                  </div>
+                </div>
+                <div class="observation-card">
+                  <div class="observation-label">What Caused It</div>
+                  <div class="observation-text" id="obs-what-caused">
+                    Pre-fold hook CTR reached 74% with zero em-dashes, sustaining organic feed distribution past 48 hours.
+                  </div>
+                </div>
+                <div class="observation-card">
+                  <div class="observation-label">What to Test Next</div>
+                  <div class="observation-text" id="obs-what-next">
+                    Test 1080x1080 multi-slide PDF carousels in the Tuesday 08:30 AM slot for higher aggregate dwell time.
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Post Performance Comparison Table -->
+            <div class="newspaper-chart-card">
+              <span style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em; margin-bottom: 8px;">
+                Recent Post Trajectory Comparison
               </span>
-              <span class="algo-score-badge high-reach" id="algo-score-badge">94% High Reach</span>
+              <table class="clean-table">
+                <thead>
+                  <tr>
+                    <th>Post Hook Line</th>
+                    <th>Date</th>
+                    <th>Impressions</th>
+                    <th>Est. Dwell</th>
+                    <th>Audit Score</th>
+                    <th>Attributed Leads</th>
+                  </tr>
+                </thead>
+                <tbody id="analytics-posts-table-tbody">
+                  <tr>
+                    <td>Stepping into enterprise architecture requires discipline...</td>
+                    <td>Yesterday</td>
+                    <td>314</td>
+                    <td>~65 sec</td>
+                    <td><span style="color: var(--signal-green);">94% Safe</span></td>
+                  </tr>
+                  <tr>
+                    <td>The single biggest mistake senior engineers make in 2026...</td>
+                    <td>3 days ago</td>
+                    <td>1,240</td>
+                    <td>~82 sec</td>
+                    <td><span style="color: var(--signal-green);">98% Safe</span></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
-            <!-- 6 Deterministic Dimension Checklist -->
-            <div class="algo-dimension-list" id="algo-dimension-list">
-              <div class="dimension-item">
-                <span class="dimension-label">🔗 Outbound Link Egress</span>
-                <span class="dimension-status safe" id="dim-link-status">Safe (0 in body)</span>
-              </div>
-              <div class="dimension-item">
-                <span class="dimension-label">🎯 Pre-Fold Hook CTR</span>
-                <span class="dimension-status safe" id="dim-hook-status">Fold Safe (< 180 chars)</span>
-              </div>
-              <div class="dimension-item">
-                <span class="dimension-label">🛡️ Engagement-Bait Classifier</span>
-                <span class="dimension-status safe" id="dim-bait-status">Clean (0 bait flags)</span>
-              </div>
-              <div class="dimension-item">
-                <span class="dimension-label">🏷️ Hashtag Density</span>
-                <span class="dimension-status safe" id="dim-hashtag-status">Optimal (0–4 tags)</span>
-              </div>
-              <div class="dimension-item">
-                <span class="dimension-label">📖 Pacing & Wall-of-Text</span>
-                <span class="dimension-status safe" id="dim-pacing-status">Well-spaced</span>
-              </div>
-              <div class="dimension-item">
-                <span class="dimension-label">♿ Font & Em-Dash Health</span>
-                <span class="dimension-status safe" id="dim-emdash-status">Zero Em-Dash</span>
-              </div>
-            </div>
-
-            <!-- Estimated Pacing & Dwell Time -->
-            <div class="dwell-pacing-grid">
-              <div class="dwell-metric-box">
-                <span class="dwell-metric-label">Estimated Dwell</span>
-                <span class="dwell-metric-val" id="dwell-display">~65 sec</span>
-              </div>
-              <div class="dwell-metric-box">
-                <span class="dwell-metric-label">Algorithm Verdict</span>
-                <span class="dwell-metric-val" id="verdict-display" style="color: var(--accent-emerald);">Expand Feed</span>
-              </div>
-            </div>
-          </div>
-
-        </aside>
-      </div>
-
-      <!-- VIEW 2: SCHEDULE & QUEUE -->
-      <div class="full-view-container" id="tab-queue">
-        <div class="view-panel">
-          <div class="panel-header-row">
-            <div>
-              <h2 class="panel-title">Publishing Cadence & Smart Slots</h2>
-              <p class="panel-sub">Optimized for maximum creator dwell time and organic feed distribution</p>
-            </div>
-            <button class="btn btn-outline btn-sm" id="btn-refresh-queue">Sync Queue</button>
-          </div>
-          <div id="queue-cards-list"></div>
-        </div>
-      </div>
-
-      <!-- VIEW 3: WARM-LEAD CRM INBOX -->
-      <div class="full-view-container" id="tab-crm">
-        <div class="kpi-row">
-          <div class="kpi-box">
-            <span class="kpi-title">Active Prospects</span>
-            <span class="kpi-number" id="crm-total-leads">4</span>
-            <span class="kpi-delta positive">Warm engagers</span>
-          </div>
-          <div class="kpi-box">
-            <span class="kpi-title">Outreach Sent</span>
-            <span class="kpi-number" id="crm-outreach-count">1</span>
-            <span class="kpi-delta neutral">In progress</span>
-          </div>
-          <div class="kpi-box">
-            <span class="kpi-title">Connected</span>
-            <span class="kpi-number" id="crm-connected-count">1</span>
-            <span class="kpi-delta positive">1st degree</span>
-          </div>
-          <div class="kpi-box">
-            <span class="kpi-title">Meetings Booked</span>
-            <span class="kpi-number" id="crm-meeting-count">1</span>
-            <span class="kpi-delta positive">High conversion</span>
           </div>
         </div>
 
-        <div class="view-panel">
-          <div class="panel-header-row" style="flex-wrap: wrap; gap: 12px;">
-            <div>
-              <h2 class="panel-title">Warm Engager Relationship Pipeline</h2>
-              <p class="panel-sub">People who commented or reacted to your posts • 100% Private Local Storage</p>
-            </div>
-            <div style="display: flex; gap: 10px; align-items: center;">
-              <input type="text" id="crm-search-input" class="media-path-field" placeholder="Search by name, company, notes..." style="width: 240px;">
-              <button class="btn btn-outline btn-sm" id="btn-export-crm-csv">⬇ Export CSV</button>
-              <button class="btn btn-primary btn-sm" id="btn-add-prospect-modal">+ Add Prospect</button>
-            </div>
-          </div>
-
-          <!-- CRM Status Filter Chips -->
-          <div class="topic-chips-row" id="crm-status-chips" style="margin-bottom: 14px;">
-            <button class="topic-chip active" data-status="">All Leads</button>
-            <button class="topic-chip" data-status="New Lead">🔥 New Leads</button>
-            <button class="topic-chip" data-status="Outreach Sent">✉️ Outreach Sent</button>
-            <button class="topic-chip" data-status="Connected">🤝 Connected</button>
-            <button class="topic-chip" data-status="Meeting Booked">🎯 Meetings Booked</button>
-          </div>
-
-          <div class="data-table-wrapper">
-            <table class="clean-table">
-              <thead>
-                <tr>
-                  <th>Contact Name</th>
-                  <th>Title & Company</th>
-                  <th>Engagement</th>
-                  <th>Status</th>
-                  <th>Notes</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody id="crm-table-tbody">
-                <!-- Dynamically populated -->
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- VIEW 4: VIRAL POST SWIPE FILE (356 Vaulted Blueprints) -->
-      <div class="full-view-container" id="tab-inspirations">
-        <div class="view-panel">
-          <div class="panel-header-row">
-            <div>
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <h2 class="panel-title">Viral Post Swipe File</h2>
-                <span class="sidebar-badge count" id="swipe-count-badge">356 Vaulted Blueprints</span>
+        <!-- VIEW 6: AI COMMAND HUB -->
+        <div class="full-view-container" id="tab-ai-command">
+          <div style="padding: 32px 40px; max-width: 800px; margin: 0 auto; width: 100%; display: flex; flex-direction: column; gap: 16px;">
+            <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid var(--border-subtle); padding-bottom: 12px;">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="section-logo-badge">
+                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
+                </div>
+                <div>
+                  <h2 style="font-family: var(--font-display); font-size: 26px; font-weight: 600;">AI Command Hub</h2>
+                  <p style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">Multi-model orchestration: Gemini Flash, OpenAI, Claude, Ollama + local fallback</p>
+                </div>
               </div>
-              <p class="panel-sub">Reverse-engineered viral hooks, structures, and pacing vaulted permanently from top creators</p>
             </div>
-            <div style="width: 320px;">
-              <input type="text" class="media-path-field" id="insp-search-input" placeholder="Search 356 posts by keyword, author, or topic..." style="width: 100%;">
-            </div>
-          </div>
 
-          <!-- 13 Topic Category Filter Chips -->
-          <div class="topic-chips-row" id="insp-topic-chips">
-            <button class="topic-chip active" data-topic="">All (356)</button>
-            <button class="topic-chip" data-topic="AI Agents">🤖 AI Agents (25)</button>
-            <button class="topic-chip" data-topic="Enterprise Architecture">🏛️ Enterprise Architecture (25)</button>
-            <button class="topic-chip" data-topic="Observability">📡 Observability (23)</button>
-            <button class="topic-chip" data-topic="Systems Engineering">⚙️ Systems Engineering (23)</button>
-            <button class="topic-chip" data-topic="B2B SaaS">💼 B2B SaaS (26)</button>
-            <button class="topic-chip" data-topic="Leadership">👑 Leadership (28)</button>
-            <button class="topic-chip" data-topic="Content Strategy">✍️ Content Strategy (28)</button>
-            <button class="topic-chip" data-topic="Growth">📈 Growth (28)</button>
-            <button class="topic-chip" data-topic="Solopreneur">🚀 Solopreneur (28)</button>
-            <button class="topic-chip" data-topic="CTO">💻 CTO (29)</button>
-            <button class="topic-chip" data-topic="Productivity">⚡ Productivity (29)</button>
-            <button class="topic-chip" data-topic="Consulting">🎯 Consulting (30)</button>
-          </div>
-
-          <div class="swipe-file-grid" id="inspirations-container">
-            <!-- 356 Curated Cards rendered dynamically -->
-          </div>
-        </div>
-      </div>
-
-      <!-- VIEW 5: ANALYTICS OVERVIEW -->
-      <div class="full-view-container" id="tab-analytics">
-        <div class="kpi-row">
-          <div class="kpi-box">
-            <span class="kpi-title">Followers</span>
-            <span class="kpi-number" id="kpi-followers">2,412</span>
-            <span class="kpi-delta positive">+103 past 30 days</span>
-          </div>
-          <div class="kpi-box">
-            <span class="kpi-title">Connections</span>
-            <span class="kpi-number" id="kpi-connections">2,347</span>
-            <span class="kpi-delta positive">Active Network</span>
-          </div>
-          <div class="kpi-box">
-            <span class="kpi-title">Profile Views</span>
-            <span class="kpi-number" id="kpi-views">104</span>
-            <span class="kpi-delta positive">+18% vs prev</span>
-          </div>
-          <div class="kpi-box">
-            <span class="kpi-title">Total Impressions</span>
-            <span class="kpi-number" id="kpi-impressions">314</span>
-            <span class="kpi-delta positive">Active Cadence</span>
-          </div>
-        </div>
-
-        <div class="view-panel">
-          <div class="panel-header-row">
-            <div>
-              <h2 class="panel-title">Audience Reach & Dwell Velocity</h2>
-              <p class="panel-sub">Daily impressions time-series data</p>
-            </div>
-            <div style="display: flex; gap: 8px;">
-              <button class="btn btn-outline btn-sm" id="btn-export-csv-report">Export CSV</button>
-            </div>
-          </div>
-          <div style="height: 320px; width: 100%;">
-            <canvas id="analytics-chart-canvas"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <!-- VIEW 6: AI COMMAND HUB -->
-      <div class="full-view-container" id="tab-ai-command">
-        <div class="view-panel" style="max-width: 800px; margin: 0 auto;">
-          <div class="panel-header-row">
-            <div>
-              <h2 class="panel-title">✨ Gemini & Antigravity AI Command Hub</h2>
-              <p class="panel-sub">Dual-mode local content generation, hook formulation, and CRM scripting</p>
-            </div>
-          </div>
-
-          <div style="display: flex; flex-direction: column; gap: 16px;">
             <div class="topic-chips-row">
               <button class="topic-chip ai-quick-cmd" data-cmd="Draft a punchy contrarian LinkedIn post on Enterprise Observability vs reactive fire-drills. Use sans-bold for key lines and no em-dashes.">Contrarian Systems Post</button>
               <button class="topic-chip ai-quick-cmd" data-cmd="Generate 10 scroll-stopping hooks for scaling data infrastructure with zero downtime.">10x Hooks Generator</button>
               <button class="topic-chip ai-quick-cmd" data-cmd="Repurpose my notes into 5 distinct high-performing LinkedIn frameworks with clean whitespace.">Repurpose Notes</button>
             </div>
 
-            <textarea class="main-writing-textarea" id="ai-command-prompt" placeholder="Type your instruction or prompt here..." style="min-height: 120px; background: var(--bg-subtle); padding: 14px; border-radius: 8px; border: 1px solid var(--border-light);"></textarea>
+            <textarea class="main-writing-textarea" id="ai-command-prompt" placeholder="Type your instruction or prompt here..." style="min-height: 120px; background: var(--bg-ink); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle); font-size: 14px;"></textarea>
 
             <div style="display: flex; justify-content: space-between; align-items: center;">
-              <button class="btn btn-outline btn-sm" id="btn-attach-draft-context">📎 Attach Current Draft</button>
-              <button class="btn btn-primary btn-sm" id="btn-run-ai-command">Execute Command</button>
+              <button class="btn btn-outline btn-sm" id="btn-attach-draft-context">
+                <svg class="app-symbol"><use href="#sym-act-eject"></use></svg> Attach Current Draft
+              </button>
+              <button class="btn btn-primary btn-sm" id="btn-run-ai-command">
+                <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Execute Command
+              </button>
             </div>
 
             <div style="margin-top: 10px;">
-              <span style="font-size: 12px; font-weight: 700; color: var(--text-secondary);">Output:</span>
-              <textarea class="main-writing-textarea" id="ai-command-output" readonly placeholder="Output will appear here..." style="min-height: 200px; background: #FFFFFF; padding: 14px; border-radius: 8px; border: 1px solid var(--border-light); margin-top: 6px;"></textarea>
+              <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em;">Output:</span>
+              <textarea class="main-writing-textarea" id="ai-command-output" readonly placeholder="Output will appear here..." style="min-height: 200px; background: var(--bg-ink); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle); margin-top: 6px; font-size: 13.5px;"></textarea>
               <div style="display: flex; gap: 8px; margin-top: 8px;">
-                <button class="btn btn-outline btn-sm" id="btn-copy-ai-output">📋 Copy</button>
-                <button class="btn btn-primary btn-sm" id="btn-send-output-to-editor">✍️ Load into Studio</button>
+                <button class="btn btn-outline btn-sm" id="btn-copy-ai-output">
+                  <svg class="app-symbol"><use href="#sym-act-copy"></use></svg> Copy
+                </button>
+                <button class="btn btn-primary btn-sm" id="btn-send-output-to-editor">
+                  <svg class="app-symbol"><use href="#sym-act-apply"></use></svg> Load into Composer
+                </button>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- VIEW 7: ENTERPRISE DOCUMENTATION & PLAYBOOK HUB -->
-      <div class="full-view-container" id="tab-docs">
-        <div class="view-panel docs-hub-panel">
-          <div class="panel-header-row" style="flex-wrap: wrap; gap: 12px; margin-bottom: 20px;">
-            <div>
-              <div style="display: flex; align-items: center; gap: 10px;">
-                <h2 class="panel-title">Enterprise Documentation & Architecture Playbook</h2>
-                <span class="sidebar-badge pro">100% LOCALHOST</span>
-                <span class="sidebar-badge count" id="docs-count-badge">7 Modules</span>
+        <!-- VIEW 7: DOCS & PLAYBOOK -->
+        <div class="full-view-container" id="tab-docs">
+          <div class="docs-hub-panel">
+            <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 14px; border-bottom: 1px solid var(--border-subtle);">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="section-logo-badge">
+                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
+                </div>
+                <div>
+                  <h2 style="font-family: var(--font-display); font-size: 26px; font-weight: 600;">Architecture Docs & Playbook</h2>
+                  <p style="font-size: 13px; color: var(--text-secondary); margin-top: 2px;">
+                    <span id="docs-count-badge">7 Modules</span> • 100% Localhost Air-Gapped Manual
+                  </p>
+                </div>
               </div>
-              <p class="panel-sub">Operational manual, algorithmic safety formulas, data schemas, and zero-egress architecture guides</p>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="docs-search-input" class="media-path-field" placeholder="Search docs & formulas..." style="width: 240px;">
+                <button class="btn btn-outline btn-sm" id="btn-export-docs-md">
+                  <svg class="app-symbol"><use href="#sym-act-export"></use></svg> Export MD
+                </button>
+              </div>
             </div>
-            <div style="display: flex; gap: 10px; align-items: center;">
-              <input type="text" id="docs-search-input" class="media-path-field" placeholder="Search documentation, formulas, architecture..." style="width: 280px;">
-              <button class="btn btn-outline btn-sm" id="btn-export-docs-md" title="Download current manual">⬇ Export Markdown</button>
+
+            <div class="docs-explorer-layout">
+              <aside class="docs-nav-sidebar" id="docs-nav-list"></aside>
+              <main class="docs-reading-pane" id="docs-reading-pane">
+                <div class="docs-article-header" id="docs-article-header"></div>
+                <div class="docs-article-body" id="docs-article-body"></div>
+              </main>
             </div>
-          </div>
-
-          <!-- Documentation Explorer Split Layout -->
-          <div class="docs-explorer-layout">
-            <!-- Left Sidebar Navigation of Modules -->
-            <aside class="docs-nav-sidebar" id="docs-nav-list">
-              <!-- Dynamically populated module cards -->
-            </aside>
-
-            <!-- Right Reading Pane -->
-            <main class="docs-reading-pane" id="docs-reading-pane">
-              <div class="docs-article-header" id="docs-article-header">
-                <!-- Dynamically populated module header -->
-              </div>
-              <div class="docs-article-body" id="docs-article-body">
-                <!-- Formatted document markdown/HTML content -->
-              </div>
-            </main>
           </div>
         </div>
+
+        <!-- VIEW 8: BRAND STUDIO & SETTINGS (SECTION 14) -->
+        <div class="full-view-container" id="tab-settings">
+          <div class="brand-studio-layout">
+            <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 16px; border-bottom: 1px solid var(--border-subtle);">
+              <div style="display: flex; align-items: center; gap: 14px;">
+                <div class="section-logo-badge">
+                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
+                </div>
+                <div>
+                  <h1 style="font-family: var(--font-display); font-size: 28px; font-weight: 600;">Brand Studio & Local Security</h1>
+                  <p style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">Creator identity, visual watermark positioning, and zero-egress security</p>
+                </div>
+              </div>
+              <button class="btn btn-primary btn-sm" id="btn-save-creator-settings">
+                <svg class="app-symbol"><use href="#sym-act-save"></use></svg> Save Settings
+              </button>
+            </div>
+
+            <div class="brand-studio-grid">
+              
+              <!-- Column 1: Identity -->
+              <div class="settings-card">
+                <div class="settings-card-header">
+                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
+                  <div>
+                    <h3 class="settings-card-title">Creator Identity</h3>
+                    <span class="settings-card-sub">Used for AI post context and DM scripts</span>
+                  </div>
+                </div>
+
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Display Name</label>
+                  <input type="text" id="setting-creator-name" class="media-path-field" value="Dharmik Shingala">
+                </div>
+
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Professional Headline / Authority Bio</label>
+                  <input type="text" id="setting-creator-headline" class="media-path-field" value="AI Systems Engineer & Full-Stack Architect">
+                </div>
+
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Company / Organization</label>
+                  <input type="text" id="setting-creator-company" class="media-path-field" value="Enterprise Labs">
+                </div>
+
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Target Audience</label>
+                  <select id="setting-target-audience" class="media-path-field">
+                    <option value="Engineering & Product Leaders">Engineering & Product Leaders</option>
+                    <option value="Enterprise Architects & CTOs">Enterprise Architects & CTOs</option>
+                    <option value="Founders & Venture Operators">Founders & Venture Operators</option>
+                    <option value="DevRel & Community Builders">DevRel & Community Builders</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Column 2: Watermark Positioning Simulator -->
+              <div class="settings-card">
+                <div class="settings-card-header">
+                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-mode-brand"></use></svg>
+                  <div>
+                    <h3 class="settings-card-title">Brand Watermark Canvas</h3>
+                    <span class="settings-card-sub">Position your signature handle on visuals</span>
+                  </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-size: 12.5px; font-weight: 500;">Stamp Watermark by Default</span>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="setting-watermark-enabled" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Watermark Handle</label>
+                  <input type="text" id="setting-watermark-text" class="media-path-field" value="@dharmik136">
+                </div>
+
+                <!-- 2x2 Corner Picker (Section 14) -->
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Corner Position</label>
+                  <div class="corner-grid-picker" id="settings-corner-picker">
+                    <button type="button" class="corner-btn" data-pos="top_left">Top-Left</button>
+                    <button type="button" class="corner-btn" data-pos="top_right">Top-Right</button>
+                    <button type="button" class="corner-btn" data-pos="bottom_left">Bottom-Left</button>
+                    <button type="button" class="corner-btn active" data-pos="bottom_right">Bottom-Right</button>
+                  </div>
+                  <input type="hidden" id="setting-watermark-position" value="bottom_right">
+                </div>
+
+                <!-- Style Preset Chips -->
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Badge Style Preset</label>
+                  <div class="watermark-style-chips" id="settings-style-chips">
+                    <button type="button" class="watermark-chip active" data-style="glass_pill">
+                      <strong>Glass Pill</strong>
+                      <span>Frosted backdrop with verified indicator</span>
+                    </button>
+                    <button type="button" class="watermark-chip" data-style="minimal_text">
+                      <strong>Minimal Text</strong>
+                      <span>Crisp typography with shadow</span>
+                    </button>
+                    <button type="button" class="watermark-chip" data-style="accent_badge">
+                      <strong>Accent Badge</strong>
+                      <span>Signal orange pill badge</span>
+                    </button>
+                  </div>
+                  <input type="hidden" id="setting-watermark-style" value="glass_pill">
+                </div>
+
+                <!-- Live Positioning Canvas Preview (Section 14) -->
+                <div class="watermark-preview-container">
+                  <label class="settings-field-label">Live Canvas Simulator:</label>
+                  <div class="watermark-preview-canvas" id="watermark-live-preview-box">
+                    <div class="preview-canvas-grid"></div>
+                    <div class="watermark-live-badge pos-bottom-right style-glass-pill" id="watermark-badge-element">
+                      <span class="shield-pulse-dot" style="width: 5px; height: 5px;"></span>
+                      <span id="watermark-badge-text">@dharmik136</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Column 3: Local Security & LinkedIn Bridge -->
+              <div class="settings-card">
+                <div class="settings-card-header">
+                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-act-lock"></use></svg>
+                  <div>
+                    <h3 class="settings-card-title">Local Security & Sync</h3>
+                    <span class="settings-card-sub">Air-gapped SQLite & session tokens</span>
+                  </div>
+                </div>
+
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <div style="font-size: 12px; font-weight: 600;">AI Provider Watermark Removal</div>
+                    <div style="font-size: 11px; color: var(--text-muted);">Slices model corner stamps</div>
+                  </div>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="setting-eliminate-provider-watermark" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+
+                <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: 4px 0;">
+
+                <div style="display: flex; align-items: center; justify-content: space-between;">
+                  <span style="font-size: 12px; font-weight: 600;">LinkedIn Session Bridge</span>
+                  <span class="sidebar-badge" id="settings-linkedin-status-pill" style="display: inline-block;">
+                    <span id="settings-linkedin-status-text">Checking...</span>
+                  </span>
+                </div>
+
+                <div class="settings-field-group">
+                  <label class="settings-field-label">li_at Session Cookie</label>
+                  <div style="position: relative;">
+                    <input type="password" id="setting-li-at" class="media-path-field" placeholder="AQED..." style="padding-right: 36px;">
+                    <button type="button" class="btn btn-subtle btn-xs" id="btn-toggle-li-at" style="position: absolute; right: 4px; top: 4px;">
+                      <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-eye"></use></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="settings-field-group">
+                  <label class="settings-field-label">JSESSIONID Token</label>
+                  <div style="position: relative;">
+                    <input type="password" id="setting-jsessionid" class="media-path-field" placeholder="ajax:..." style="padding-right: 36px;">
+                    <button type="button" class="btn btn-subtle btn-xs" id="btn-toggle-jsessionid" style="position: absolute; right: 4px; top: 4px;">
+                      <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-eye"></use></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div style="display: flex; gap: 8px;">
+                  <button type="button" class="btn btn-outline btn-xs" id="btn-sync-linkedin-tokens" style="flex: 1;">
+                    <svg class="app-symbol"><use href="#sym-act-save"></use></svg> Save Tokens
+                  </button>
+                  <button type="button" class="btn btn-subtle btn-xs" id="btn-verify-linkedin-session" style="flex: 1;">
+                    <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Verify
+                  </button>
+                </div>
+
+                <div style="background: var(--bg-soft); border-radius: 6px; padding: 10px; font-size: 11px; color: var(--text-muted); line-height: 1.45; border: 1px solid var(--border-subtle);">
+                  <svg class="app-symbol app-symbol-xs" style="vertical-align: middle;"><use href="#sym-act-lock"></use></svg> <strong>Air-Gapped Vault:</strong> All drafts, metrics, leads, and tokens stay on your local machine. Zero external telemetry or cloud egress.
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Proprietary Symbol Catalog Showcase (Section 15) -->
+            <div class="settings-card" style="margin-top: 20px; padding: 20px;">
+              <div class="settings-card-header" style="margin-bottom: 8px;">
+                <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-brand-logo"></use></svg>
+                <div>
+                  <h3 class="settings-card-title">Proprietary Architectural Symbol Catalog</h3>
+                  <span class="settings-card-sub">Bespoke vector glyphs with right-angle corner geometry, chamfered framing brackets, and monochrome line art.</span>
+                </div>
+              </div>
+
+              <div class="symbol-catalog-grid">
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-brand-logo"></use></svg>
+                  <span class="symbol-specimen-name">Brand Logo</span>
+                  <span class="symbol-specimen-id">#sym-brand-logo</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-composer"></use></svg>
+                  <span class="symbol-specimen-name">Composer</span>
+                  <span class="symbol-specimen-id">#sym-sec-composer</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
+                  <span class="symbol-specimen-name">Queue Cadence</span>
+                  <span class="symbol-specimen-id">#sym-sec-queue</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
+                  <span class="symbol-specimen-name">Inbound CRM</span>
+                  <span class="symbol-specimen-id">#sym-sec-crm</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-swipe"></use></svg>
+                  <span class="symbol-specimen-name">Swipe Archive</span>
+                  <span class="symbol-specimen-id">#sym-sec-swipe</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
+                  <span class="symbol-specimen-name">Analytics</span>
+                  <span class="symbol-specimen-id">#sym-sec-analytics</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
+                  <span class="symbol-specimen-name">AI Command</span>
+                  <span class="symbol-specimen-id">#sym-sec-ai-command</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
+                  <span class="symbol-specimen-name">Architecture Docs</span>
+                  <span class="symbol-specimen-id">#sym-sec-docs</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
+                  <span class="symbol-specimen-name">Brand Studio</span>
+                  <span class="symbol-specimen-id">#sym-sec-brand</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-preview"></use></svg>
+                  <span class="symbol-specimen-name">Preview Stage</span>
+                  <span class="symbol-specimen-id">#sym-mode-preview</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-audit"></use></svg>
+                  <span class="symbol-specimen-name">Algorithm Audit</span>
+                  <span class="symbol-specimen-id">#sym-mode-audit</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-media"></use></svg>
+                  <span class="symbol-specimen-name">Visual Studio</span>
+                  <span class="symbol-specimen-id">#sym-mode-media</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-prompt"></use></svg>
+                  <span class="symbol-specimen-name">Copilot Prompt</span>
+                  <span class="symbol-specimen-id">#sym-mode-prompt</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-clean"></use></svg>
+                  <span class="symbol-specimen-name">Zero Em-Dash</span>
+                  <span class="symbol-specimen-id">#sym-act-clean</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-trim"></use></svg>
+                  <span class="symbol-specimen-name">Fold Trimmer</span>
+                  <span class="symbol-specimen-id">#sym-act-trim</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-eject"></use></svg>
+                  <span class="symbol-specimen-name">Link Egress</span>
+                  <span class="symbol-specimen-id">#sym-act-eject</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-rhythm"></use></svg>
+                  <span class="symbol-specimen-name">Pacing Rhythm</span>
+                  <span class="symbol-specimen-id">#sym-act-rhythm</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-tag"></use></svg>
+                  <span class="symbol-specimen-name">Tag Limiter</span>
+                  <span class="symbol-specimen-id">#sym-act-tag</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-lock"></use></svg>
+                  <span class="symbol-specimen-name">Vault Lock</span>
+                  <span class="symbol-specimen-id">#sym-act-lock</span>
+                </div>
+                <div class="symbol-specimen-card">
+                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-spark"></use></svg>
+                  <span class="symbol-specimen-name">Command Spark</span>
+                  <span class="symbol-specimen-id">#sym-act-spark</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ==============================================
+             Section 10: Dockable Contextual Inspector
+             ============================================== -->
+        <aside class="dockable-inspector" id="studio-inspector">
+          <div class="inspector-header">
+            <div class="inspector-tabs">
+              <button type="button" class="inspector-tab-btn active" data-mode="preview">
+                <svg class="app-symbol app-symbol-xs"><use href="#sym-mode-preview"></use></svg>
+                <span>Preview</span>
+              </button>
+              <button type="button" class="inspector-tab-btn" data-mode="audit">
+                <svg class="app-symbol app-symbol-xs"><use href="#sym-mode-audit"></use></svg>
+                <span>Audit</span>
+              </button>
+              <button type="button" class="inspector-tab-btn" data-mode="media">
+                <svg class="app-symbol app-symbol-xs"><use href="#sym-mode-media"></use></svg>
+                <span>Media</span>
+              </button>
+              <button type="button" class="inspector-tab-btn" data-mode="brand">
+                <svg class="app-symbol app-symbol-xs"><use href="#sym-mode-brand"></use></svg>
+                <span>Brand</span>
+              </button>
+              <button type="button" class="inspector-tab-btn" data-mode="prompt">
+                <svg class="app-symbol app-symbol-xs"><use href="#sym-mode-prompt"></use></svg>
+                <span>Prompt</span>
+              </button>
+            </div>
+            <button class="btn btn-subtle btn-xs" id="btn-close-inspector" title="Collapse Inspector (Cmd+\)"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+          </div>
+
+          <div class="inspector-body">
+            
+            <!-- MODE 1: PREVIEW STAGE (Section 9) -->
+            <div class="inspector-mode-pane active" id="inspector-pane-preview">
+              <div class="preview-stage">
+                
+                <!-- Stage Header Toolbar: Mode Switcher + Zoom Scale Controls -->
+                <div class="stage-toolbar-row">
+                  <div class="stage-toggle-group">
+                    <button type="button" class="stage-toggle-btn active" data-stage="mobile">Mobile</button>
+                    <button type="button" class="stage-toggle-btn" data-stage="desktop">Desktop</button>
+                    <button type="button" class="stage-toggle-btn" data-stage="carousel">Carousel</button>
+                  </div>
+                  <div class="stage-zoom-group">
+                    <button type="button" class="zoom-btn" id="btn-zoom-out" title="Zoom Out">−</button>
+                    <span class="zoom-level-text" id="stage-zoom-level">100%</span>
+                    <button type="button" class="zoom-btn" id="btn-zoom-in" title="Zoom In">+</button>
+                    <button type="button" class="zoom-btn fit" id="btn-zoom-fit" title="Fit to Panel">Fit</button>
+                  </div>
+                </div>
+
+                <!-- Scalable Stage Viewport -->
+                <div class="preview-stage-viewport" id="preview-stage-viewport">
+                  <div class="preview-stage-scalable-wrapper" id="sim-stage-scalable-wrapper">
+                    
+                    <!-- 1. MOBILE FEED POST (data-stage="mobile") -->
+                    <div class="mobile-device-frame" id="sim-device-frame">
+                      <div class="device-speaker-notch"></div>
+                      <div class="device-screen-inner">
+                        <div class="feed-post-card authentic-mobile-card">
+                          
+                          <!-- Author Header -->
+                          <div class="feed-author-header">
+                            <div class="feed-author-avatar-wrapper">
+                              <div class="feed-author-avatar" id="sim-mobile-avatar">DS</div>
+                              <span class="avatar-online-dot"></span>
+                            </div>
+                            <div class="feed-author-details">
+                              <div class="feed-name-line">
+                                <span class="feed-author-name" id="sim-mobile-author-name">Dharmik Shingala</span>
+                                <span class="feed-author-degree">• 1st</span>
+                              </div>
+                              <span class="feed-author-headline" id="sim-mobile-headline">AI Systems Engineer & Full-Stack Architect</span>
+                              <div class="feed-timestamp-row">
+                                <span id="sim-mobile-timestamp">Just now</span>
+                                <span class="feed-dot">•</span>
+                                <svg class="feed-globe-icon" width="11" height="11" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 1 0 8 8 8.01 8.01 0 0 0-8-8zM7 1.07v1.07A4.89 4.89 0 0 0 4.14 4H2.43A6.97 6.97 0 0 1 7 1.07zM1.46 7h2.61a9.23 9.23 0 0 0 .34 3H1.81A6.97 6.97 0 0 1 1.46 7zm.35 4h2.6a6.83 6.83 0 0 0 1.5 2.65A7.03 7.03 0 0 1 1.81 11zm3.89 3.82c-.63-.9-1.12-2.1-1.36-3.82h3.32v4.86a7.1 7.1 0 0 1-1.96-1.04zm2.3-5.82H4.31a8.31 8.31 0 0 1-.31-2h4v2zm0-3H4.07a8.31 8.31 0 0 1 .31-2h3.62v2zm0-3H4.42c.24-1.72.73-2.92 1.36-3.82A7.1 7.1 0 0 1 8 2.18V3zm1-1.93c.63.9 1.12 2.1 1.36 3.82H9V1.07zm0 2.93h3.62c.16.64.27 1.31.31 2H9V4zm0 3h3.93c-.04.69-.15 1.36-.31 2H9V7zm0 3h3.69c-.24 1.72-.73 2.92-1.36 3.82A7.1 7.1 0 0 1 9 14.86V10zm5.19 1h-2.6a6.83 6.83 0 0 0-1.5 2.65 7.03 7.03 0 0 0 4.1-2.65zm.35-4h-2.61a9.23 9.23 0 0 0-.34-3h2.6a6.97 6.97 0 0 1 .35 3zm-.35-4h-2.6A6.83 6.83 0 0 0 10.09 1.35 7.03 7.03 0 0 1 14.19 4z"/></svg>
+                              </div>
+                            </div>
+                            <div class="feed-header-actions">
+                              <button type="button" class="feed-follow-btn">+ Follow</button>
+                              <button type="button" class="feed-more-btn" title="More options">···</button>
+                            </div>
+                          </div>
+
+                          <!-- Post Text Content -->
+                          <div class="feed-post-text-box" id="sim-post-box">
+                            <span class="sim-above-fold" id="simulated-above-fold">Stepping into enterprise architecture and modern systems requires discipline.</span>
+                            <span class="sim-see-more-toggle" id="simulated-see-more">...see more</span>
+                            <div class="sim-below-fold" id="simulated-below-fold" style="display: none;"></div>
+                            <div class="sim-see-less-wrapper" id="sim-see-less-wrapper" style="display: none;">
+                              <span class="sim-see-less-toggle" id="simulated-see-less">...see less</span>
+                            </div>
+                          </div>
+
+                          <!-- Attached Media -->
+                          <div class="feed-post-media" id="simulated-media-container" style="display: none;">
+                            <img id="simulated-media-img" src="" alt="Post Visual" style="display: none;">
+                            <div id="simulated-media-pdf" class="sim-pdf-card" style="display: none;">
+                              <div class="sim-pdf-icon-box">
+                                <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
+                              </div>
+                              <div class="sim-pdf-details">
+                                <div class="sim-pdf-title" id="sim-pdf-title">Executive Presentation.pdf</div>
+                                <div class="sim-pdf-subtitle" id="sim-pdf-subtitle">Multi-Slide Document • Tap to Swipe</div>
+                              </div>
+                            </div>
+                            <video id="simulated-media-video" controls style="display: none; width: 100%; border-radius: 4px; max-height: 200px; background: #000;"></video>
+                          </div>
+
+                          <!-- Social Proof Reactions Strip -->
+                          <div class="feed-social-counter-strip">
+                            <div class="reaction-icons-cluster">
+                              <span class="reaction-icon like">👍</span>
+                              <span class="reaction-icon celebrate">👏</span>
+                              <span class="reaction-icon love">💡</span>
+                              <span class="reaction-count" id="sim-reaction-count">148</span>
+                            </div>
+                            <div class="reaction-meta-counts">
+                              <span>32 comments</span>
+                              <span>•</span>
+                              <span>12 reposts</span>
+                            </div>
+                          </div>
+
+                          <!-- Action Buttons Row -->
+                          <div class="feed-engagement-bar">
+                            <button type="button" class="action-bar-btn" id="sim-btn-like">
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+                              <span>Like</span>
+                            </button>
+                            <button type="button" class="action-bar-btn">
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                              <span>Comment</span>
+                            </button>
+                            <button type="button" class="action-bar-btn">
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+                              <span>Repost</span>
+                            </button>
+                            <button type="button" class="action-bar-btn">
+                              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                              <span>Send</span>
+                            </button>
+                          </div>
+
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 2. DESKTOP WEB POST CARD (data-stage="desktop") -->
+                    <div class="desktop-post-frame" id="sim-desktop-frame" style="display: none;">
+                      <div class="desktop-post-card">
+                        <div class="desktop-post-eyebrow">
+                          <span class="desktop-eyebrow-text"><strong id="sim-desktop-author-eyebrow">Dharmik Shingala</strong> posted this</span>
+                          <span class="desktop-eyebrow-dots">···</span>
+                        </div>
+                        <div class="desktop-author-row">
+                          <div class="desktop-author-avatar" id="sim-desktop-avatar">DS</div>
+                          <div class="desktop-author-meta">
+                            <div class="desktop-name-line">
+                              <strong id="sim-desktop-name">Dharmik Shingala</strong>
+                              <span class="desktop-degree-badge">• 1st</span>
+                            </div>
+                            <div class="desktop-headline" id="sim-desktop-headline">AI Systems Engineer & Full-Stack Architect</div>
+                            <div class="desktop-timestamp">Just now • Edited • <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: -1px; display: inline-block;"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div>
+                          </div>
+                          <button type="button" class="desktop-follow-btn">+ Follow</button>
+                        </div>
+                        
+                        <div class="desktop-body-box" id="sim-desktop-body">
+                          <!-- Mirrors text content -->
+                        </div>
+
+                        <div class="desktop-media-container" id="sim-desktop-media" style="display: none;">
+                          <!-- Mirrors media content -->
+                        </div>
+
+                        <div class="desktop-reactions-strip">
+                          <span class="desktop-reactions-bubble">👍💡👏 234</span>
+                          <span class="desktop-comments-bubble">48 comments • 19 reposts</span>
+                        </div>
+
+                        <div class="desktop-action-bar">
+                          <button type="button" class="desktop-act-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+                            <span>Like</span>
+                          </button>
+                          <button type="button" class="desktop-act-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                            <span>Comment</span>
+                          </button>
+                          <button type="button" class="desktop-act-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>
+                            <span>Repost</span>
+                          </button>
+                          <button type="button" class="desktop-act-btn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" x2="11" y1="2" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                            <span>Send</span>
+                          </button>
+                        </div>
+
+                        <div class="desktop-comment-box-mock">
+                          <div class="comment-user-avatar">DS</div>
+                          <div class="comment-input-placeholder">Add a comment...</div>
+                          <div class="comment-emojis-mock"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg> <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg></div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- 3. CAROUSEL SLIDE DECK (data-stage="carousel") -->
+                    <div class="carousel-deck-frame" id="sim-carousel-frame" style="display: none;">
+                      <div class="carousel-deck-card" id="carousel-deck-card">
+                        <div class="carousel-deck-header">
+                          <span class="carousel-deck-brand" id="carousel-deck-handle">@dharmik136</span>
+                          <span class="carousel-deck-badge" id="carousel-slide-counter">Slide 1 of 4</span>
+                        </div>
+                        <div class="carousel-slide-content" id="carousel-slide-content">
+                          <div class="carousel-slide-index" id="carousel-slide-number">01</div>
+                          <div class="carousel-slide-headline" id="carousel-slide-headline">The Architecture Flaw in Production AI</div>
+                          <div class="carousel-slide-body" id="carousel-slide-body">
+                            Most enterprise systems fail not because LLMs are weak, but because context routing is brittle.
+                          </div>
+                        </div>
+                        <div class="carousel-deck-footer">
+                          <div class="carousel-dots-row" id="carousel-dots-row">
+                            <span class="carousel-dot active"></span>
+                            <span class="carousel-dot"></span>
+                            <span class="carousel-dot"></span>
+                            <span class="carousel-dot"></span>
+                          </div>
+                          <span class="carousel-swipe-cta" style="display: inline-flex; align-items: center; gap: 4px;">Swipe <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-apply"></use></svg></span>
+                        </div>
+                      </div>
+                      <div class="carousel-nav-controls">
+                        <button type="button" class="btn btn-outline btn-xs" id="btn-carousel-prev">Previous</button>
+                        <button type="button" class="btn btn-subtle btn-xs" id="btn-carousel-theme">Toggle Theme</button>
+                        <button type="button" class="btn btn-outline btn-xs" id="btn-carousel-next">Next</button>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+
+                <!-- Preview Stage Footer Guideline Bar -->
+                <div class="preview-stage-footer">
+                  <div class="stage-footer-status">
+                    <span class="status-indicator-dot" id="sim-fold-dot"></span>
+                    <span id="sim-fold-status">Fold Safe (&lt; 180 chars)</span>
+                  </div>
+                  <button type="button" class="btn btn-subtle btn-xs" id="btn-toggle-sim-guide" title="Toggle fold threshold guideline">
+                    <span>Guideline Ruler</span>
+                  </button>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- MODE 2: AUDIT (Section 10.B: ReUI Structured Matrix with 1-Click Fixes) -->
+            <div class="inspector-mode-pane" id="inspector-pane-audit">
+              <div class="algo-safety-card">
+                
+                <!-- Score Summary Row -->
+                <div class="algo-card-header">
+                  <div>
+                    <span class="algo-card-title">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                      Algorithmic Safety Matrix
+                    </span>
+                    <span class="algo-card-sub">Real-time distribution & dwell safety audit</span>
+                  </div>
+                  <div class="algo-gauge-container" title="Algorithm Reach Score">
+                    <svg class="algo-gauge-svg" width="44" height="44" viewBox="0 0 48 48">
+                      <circle class="gauge-bg" cx="24" cy="24" r="19" fill="none" stroke-width="3.5" />
+                      <circle class="gauge-fill" id="algo-gauge-circle" cx="24" cy="24" r="19" fill="none" stroke-width="3.5" stroke-dasharray="119.38" stroke-dashoffset="7.16" />
+                    </svg>
+                    <span class="gauge-number" id="algo-gauge-number">94</span>
+                  </div>
+                </div>
+
+                <!-- ReUI Structured Diagnostic Cards with 1-Click Fix Actions -->
+                <div class="reui-audit-grid" id="algo-dimension-list">
+                  
+                  <!-- 1. Zero Em-Dash Rule -->
+                  <div class="reui-audit-card" data-rule="emdash">
+                    <div class="reui-audit-row">
+                      <div class="reui-audit-info">
+                        <div class="reui-audit-title-row">
+                          <span class="reui-audit-title">Zero Em-Dash Rule</span>
+                          <span class="reui-audit-badge pass" id="dim-emdash-status">Pass (0)</span>
+                        </div>
+                        <div class="reui-audit-desc" id="audit-emdash-desc">Zero em-dashes detected (Clean editorial law)</div>
+                      </div>
+                    </div>
+                    <div class="reui-audit-fix-action" id="audit-emdash-fix-row" style="display: none;">
+                      <button type="button" class="btn btn-xs btn-primary" id="btn-fix-emdash">
+                        <svg class="app-symbol"><use href="#sym-act-clean"></use></svg> Auto-Scrub Em-Dashes
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 2. Pre-Fold Hook Retention -->
+                  <div class="reui-audit-card" data-rule="hook">
+                    <div class="reui-audit-row">
+                      <div class="reui-audit-info">
+                        <div class="reui-audit-title-row">
+                          <span class="reui-audit-title">Pre-Fold Hook Retention</span>
+                          <span class="reui-audit-badge pass" id="dim-hook-status">Fold Safe (&lt; 180)</span>
+                        </div>
+                        <div class="reui-audit-desc" id="audit-hook-desc">Hook is fully visible before the mobile fold cutoff.</div>
+                        <div class="reui-progress-meter">
+                          <div class="reui-progress-bar" id="audit-hook-progress-bar" style="width: 50%;"></div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="reui-audit-fix-action" id="audit-hook-fix-row" style="display: none;">
+                      <button type="button" class="btn btn-xs btn-outline" id="btn-fix-hook">
+                        <svg class="app-symbol"><use href="#sym-act-trim"></use></svg> Trim Hook to Fold
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 3. Outbound Link Egress -->
+                  <div class="reui-audit-card" data-rule="links">
+                    <div class="reui-audit-row">
+                      <div class="reui-audit-info">
+                        <div class="reui-audit-title-row">
+                          <span class="reui-audit-title">Outbound Link Egress</span>
+                          <span class="reui-audit-badge pass" id="dim-link-status">Safe (0 in body)</span>
+                        </div>
+                        <div class="reui-audit-desc" id="audit-link-desc">No external URLs in post body. Zero reach penalty.</div>
+                      </div>
+                    </div>
+                    <div class="reui-audit-fix-action" id="audit-link-fix-row" style="display: none;">
+                      <button type="button" class="btn btn-xs btn-outline" id="btn-fix-links">
+                        <svg class="app-symbol"><use href="#sym-act-eject"></use></svg> Move Links to First Comment
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 4. Engagement-Bait Filter -->
+                  <div class="reui-audit-card" data-rule="bait">
+                    <div class="reui-audit-row">
+                      <div class="reui-audit-info">
+                        <div class="reui-audit-title-row">
+                          <span class="reui-audit-title">Engagement-Bait Filter</span>
+                          <span class="reui-audit-badge pass" id="dim-bait-status">Clean (0 flags)</span>
+                        </div>
+                        <div class="reui-audit-desc" id="audit-bait-desc">Free of algorithmic bait triggers like 'comment below'.</div>
+                      </div>
+                    </div>
+                    <div class="reui-audit-fix-action" id="audit-bait-fix-row" style="display: none;">
+                      <button type="button" class="btn btn-xs btn-outline" id="btn-fix-bait">
+                        <svg class="app-symbol"><use href="#sym-act-clean"></use></svg> Scrub Bait Phrases
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 5. Pacing & Whitespace -->
+                  <div class="reui-audit-card" data-rule="pacing">
+                    <div class="reui-audit-row">
+                      <div class="reui-audit-info">
+                        <div class="reui-audit-title-row">
+                          <span class="reui-audit-title">Pacing & Whitespace</span>
+                          <span class="reui-audit-badge pass" id="dim-pacing-status">Well-spaced</span>
+                        </div>
+                        <div class="reui-audit-desc" id="audit-pacing-desc">Rhythm is optimal with 1-3 line breathable paragraphs.</div>
+                      </div>
+                    </div>
+                    <div class="reui-audit-fix-action" id="audit-pacing-fix-row" style="display: none;">
+                      <button type="button" class="btn btn-xs btn-outline" id="btn-fix-pacing">
+                        <svg class="app-symbol"><use href="#sym-act-rhythm"></use></svg> Format 2-Line Rhythm
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 6. Hashtag Density -->
+                  <div class="reui-audit-card" data-rule="hashtag">
+                    <div class="reui-audit-row">
+                      <div class="reui-audit-info">
+                        <div class="reui-audit-title-row">
+                          <span class="reui-audit-title">Hashtag Density</span>
+                          <span class="reui-audit-badge pass" id="dim-hashtag-status">Optimal (0-3)</span>
+                        </div>
+                        <div class="reui-audit-desc" id="audit-hashtag-desc">Optimal hashtag density for enterprise authority.</div>
+                      </div>
+                    </div>
+                    <div class="reui-audit-fix-action" id="audit-hashtag-fix-row" style="display: none;">
+                      <button type="button" class="btn btn-xs btn-outline" id="btn-fix-hashtag">
+                        <svg class="app-symbol"><use href="#sym-act-tag"></use></svg> Trim Tags
+                      </button>
+                    </div>
+                  </div>
+
+                </div>
+
+                <!-- Dwell Time & Reach Forecast -->
+                <div class="dwell-pacing-grid">
+                  <div class="dwell-metric-box">
+                    <span class="dwell-metric-label">Estimated Dwell</span>
+                    <span class="dwell-metric-val" id="dwell-display">~26 sec</span>
+                  </div>
+                  <div class="dwell-metric-box">
+                    <span class="dwell-metric-label">Algorithm Verdict</span>
+                    <span class="dwell-metric-val" id="verdict-display" style="color: var(--signal-green);">High Reach</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- MODE 3: MEDIA (Unified Visual Studio in Drawer) -->
+            <div class="inspector-mode-pane" id="inspector-pane-media">
+              <div class="inspector-media-container">
+                
+                <!-- Active Attached Media Card -->
+                <div class="inspector-section-label">Active Post Visual</div>
+                <div class="inspector-asset-card" id="inspector-active-media-card">
+                  <div class="inspector-asset-thumb" id="inspector-media-thumb">
+                    <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-mode-media"></use></svg>
+                  </div>
+                  <div class="inspector-asset-meta">
+                    <div class="inspector-asset-title" id="inspector-media-name">No visual attached</div>
+                    <div class="inspector-asset-subtitle" id="inspector-media-meta">Drop an image, PDF or video</div>
+                    <span class="sidebar-badge" id="inspector-media-badge" style="display: inline-block; margin-top: 4px;">NONE</span>
+                  </div>
+                  <button type="button" class="btn btn-subtle btn-xs btn-danger" id="inspector-media-remove" style="display: none;"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+                </div>
+
+                <!-- Aspect Ratio Selector -->
+                <div class="inspector-section-label">Aspect Ratio Preset</div>
+                <div class="ratio-preset-grid">
+                  <button type="button" class="ratio-btn active" data-ratio="1:1">
+                    <span class="ratio-box square"></span>
+                    <strong>1:1</strong>
+                    <span>Square</span>
+                  </button>
+                  <button type="button" class="ratio-btn" data-ratio="4:5">
+                    <span class="ratio-box portrait"></span>
+                    <strong>4:5</strong>
+                    <span>Portrait</span>
+                  </button>
+                  <button type="button" class="ratio-btn" data-ratio="16:9">
+                    <span class="ratio-box landscape"></span>
+                    <strong>16:9</strong>
+                    <span>Landscape</span>
+                  </button>
+                </div>
+
+                <!-- AI Visual Generator in Drawer -->
+                <div class="inspector-section-label" style="display: flex; align-items: center; gap: 6px;">
+                  <svg class="app-symbol app-symbol-xs"><use href="#sym-sec-ai-command"></use></svg> Agno AI Visual Synthesizer
+                </div>
+                <div class="ai-visual-generator-box">
+                  <div class="visual-style-pills">
+                    <button type="button" class="style-pill active" data-style="photorealistic">Photorealistic</button>
+                    <button type="button" class="style-pill" data-style="blueprint">Blueprint</button>
+                    <button type="button" class="style-pill" data-style="vector">Vector</button>
+                    <button type="button" class="style-pill" data-style="glass">3D Glass</button>
+                  </div>
+                  <textarea class="media-path-field" id="inspector-img-prompt" placeholder="Describe the visual concept, or click synthesize from post..." style="min-height: 70px; font-size: 12.5px;"></textarea>
+                  <div style="display: flex; gap: 6px;">
+                    <button type="button" class="btn btn-outline btn-xs" id="btn-inspector-synthesize-prompt" style="flex: 1;">
+                      <svg class="app-symbol"><use href="#sym-act-hooks"></use></svg> Synthesize from Post
+                    </button>
+                    <button type="button" class="btn btn-primary btn-xs" id="btn-inspector-generate-image">
+                      <svg class="app-symbol"><use href="#sym-act-image"></use></svg> Generate Visual
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Quick Dropzone Target -->
+                <div class="inspector-quick-dropzone" id="inspector-quick-dropzone">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span>Drop image or <a href="#" id="inspector-dropzone-browse" style="color: var(--signal-orange); text-decoration: underline;">browse files</a></span>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- MODE 4: BRAND (Live Watermark & Identity Studio) -->
+            <div class="inspector-mode-pane" id="inspector-pane-brand">
+              <div class="inspector-brand-container">
+                
+                <!-- Creator Identity Card -->
+                <div class="brand-identity-card">
+                  <div class="brand-avatar-big" id="inspector-brand-avatar-display">DS</div>
+                  <div class="brand-identity-info">
+                    <div class="brand-identity-name" id="inspector-brand-name">Dharmik Shingala</div>
+                    <div class="brand-identity-sub" id="inspector-brand-headline">AI Systems Engineer & Full-Stack Architect</div>
+                    <div class="brand-identity-handle" id="inspector-brand-handle-display">@dharmik136</div>
+                  </div>
+                </div>
+
+                <!-- Watermark Position & Style Controls -->
+                <div class="inspector-section-label">Visual Signature Stamp</div>
+                
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-size: 12px; font-weight: 500;">Enable Watermark</span>
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="inspector-watermark-toggle" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Signature Handle</label>
+                  <input type="text" class="media-path-field" id="inspector-brand-handle" value="@dharmik136">
+                </div>
+
+                <!-- 2x2 Corner Grid Picker -->
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Corner Position</label>
+                  <div class="corner-grid-picker" id="inspector-corner-picker">
+                    <button type="button" class="corner-btn" data-pos="top_left">Top-Left</button>
+                    <button type="button" class="corner-btn" data-pos="top_right">Top-Right</button>
+                    <button type="button" class="corner-btn" data-pos="bottom_left">Bottom-Left</button>
+                    <button type="button" class="corner-btn active" data-pos="bottom_right">Bottom-Right</button>
+                  </div>
+                </div>
+
+                <!-- Badge Style Chips -->
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Badge Styling</label>
+                  <div class="watermark-style-chips" id="inspector-style-chips">
+                    <button type="button" class="watermark-chip active" data-style="glass_pill">
+                      <strong>Glass Pill</strong>
+                      <span>Frosted blur with checkmark</span>
+                    </button>
+                    <button type="button" class="watermark-chip" data-style="minimal_text">
+                      <strong>Minimal Text</strong>
+                      <span>Crisp typography with shadow</span>
+                    </button>
+                    <button type="button" class="watermark-chip" data-style="accent_badge">
+                      <strong>Accent Badge</strong>
+                      <span>Terracotta pill badge</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Live Positioning Simulator -->
+                <div class="inspector-section-label">Live Stamp Preview</div>
+                <div class="inspector-watermark-canvas" id="inspector-watermark-preview-canvas">
+                  <div class="watermark-live-badge pos-bottom-right style-glass-pill" id="inspector-live-watermark-badge">
+                    <span class="shield-pulse-dot" style="width: 5px; height: 5px;"></span>
+                    <span id="inspector-live-watermark-text">@dharmik136</span>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- MODE 5: PROMPT (Skiper UI Inspired Expressive Copilot) -->
+            <div class="inspector-mode-pane" id="inspector-pane-prompt">
+              <div class="inspector-copilot-container">
+                
+                <div class="inspector-section-label" style="display: flex; align-items: center; gap: 6px;">
+                  <svg class="app-symbol app-symbol-xs"><use href="#sym-sec-ai-command"></use></svg> Natural Language Editor Copilot
+                </div>
+                
+                <!-- Skiper UI Shimmer Border Input -->
+                <div class="copilot-shimmer-input-wrapper">
+                  <textarea class="copilot-textarea" id="inspector-prompt-input" placeholder="Type instruction (e.g. make sharper, add contrarian angle, format bullet points, convert to carousel)..."></textarea>
+                </div>
+
+                <!-- Quick Copilot Prompt Chips -->
+                <div class="copilot-action-chips">
+                  <button type="button" class="copilot-chip" data-prompt="Sharpen the opening thesis. Make it punchy, authoritative, and under 180 characters.">Sharpen Hook</button>
+                  <button type="button" class="copilot-chip" data-prompt="Add a strong contrarian perspective that challenges conventional industry wisdom without sounding clickbaity.">Contrarian Angle</button>
+                  <button type="button" class="copilot-chip" data-prompt="Reformat into 5 clear numbered takeaways with high-density whitespace.">5 Key Rules</button>
+                  <button type="button" class="copilot-chip" data-prompt="Convert this post into a 5-slide PDF carousel script with a strong cover hook and slide-by-slide breakdowns.">Carousel Script</button>
+                  <button type="button" class="copilot-chip" data-prompt="Scrub all passive voice and replace vague corporate jargon with concrete systems vocabulary.">Scrub Jargon</button>
+                </div>
+
+                <button type="button" class="btn btn-primary" id="btn-inspector-run-prompt" style="width: 100%;">
+                  <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Execute Copilot Instruction
+                </button>
+
+                <!-- Copilot Output Card (appears when generated) -->
+                <div class="copilot-output-card" id="inspector-copilot-output-card" style="display: none;">
+                  <div class="copilot-output-header">
+                    <span>Generated AI Result</span>
+                    <button type="button" class="btn btn-subtle btn-xs" id="btn-inspector-close-output"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+                  </div>
+                  <div class="copilot-output-text" id="inspector-copilot-output-text"></div>
+                  <div class="copilot-output-actions">
+                    <button type="button" class="btn btn-primary btn-xs" id="btn-inspector-apply-prompt">
+                      <svg class="app-symbol"><use href="#sym-act-apply"></use></svg> Apply to Composer
+                    </button>
+                    <button type="button" class="btn btn-subtle btn-xs" id="btn-inspector-copy-prompt">
+                      <svg class="app-symbol"><use href="#sym-act-copy"></use></svg> Copy
+                    </button>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+        </aside>
+
       </div>
 
     </div>
+
   </div>
 
-  <!-- CONTEXTUAL DM MODAL -->
-  <div class="modal-overlay" id="dm-modal">
-    <div class="modal-card">
-      <div class="modal-header">
-        <h3 class="modal-title">⚡ Contextual Warm Outreach Starter</h3>
-        <button class="btn btn-subtle btn-sm" id="dm-close-btn">✕</button>
+  <!-- =========================================================================
+       SECTION 8: AI COMMAND ORB & FLOATING DOCK (Skiper UI Motion)
+       ========================================================================= -->
+  <div class="ai-command-orb" id="ai-command-orb" title="Summon AI Command Dock">
+    <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-act-spark"></use></svg>
+  </div>
+
+  <div class="ai-floating-dock" id="ai-floating-dock">
+    <div style="display: flex; align-items: center; justify-content: space-between;">
+      <span style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px;">
+        <svg class="app-symbol app-symbol-xs"><use href="#sym-sec-ai-command"></use></svg> AI Command Dock
+      </span>
+      <button class="btn btn-subtle btn-xs" id="btn-close-ai-dock"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+    </div>
+
+    <!-- Skiper Shimmer Border Input -->
+    <div class="shimmer-input-wrapper">
+      <textarea class="ai-dock-textarea" id="ai-dock-input" placeholder="Type instruction (e.g. make sharper, add contrarian angle, turn into carousel)..."></textarea>
+    </div>
+
+    <div class="ai-dock-pills">
+      <button type="button" class="ai-action-chip" data-action="Make Sharper">Sharpen</button>
+      <button type="button" class="ai-action-chip" data-action="Add Contrarian Angle">Contrarian</button>
+      <button type="button" class="ai-action-chip" data-action="Generate 5 Hooks">5 Hooks</button>
+      <button type="button" class="ai-action-chip" data-action="Turn into Carousel">Carousel</button>
+      <button type="button" class="ai-action-chip" data-action="Audit for Reach">Audit Reach</button>
+    </div>
+
+    <div style="display: flex; justify-content: flex-end; gap: 8px;">
+      <button class="btn btn-primary btn-sm" id="btn-dock-execute">Execute</button>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       SECTION 5.B: CENTERED COMMAND PALETTE (Cmd+K / Ctrl+K)
+       ========================================================================= -->
+  <div class="command-palette-overlay" id="command-palette-modal">
+    <div class="command-palette-card">
+      <div class="command-palette-input-row">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" class="command-palette-input" id="cmd-palette-input" placeholder="Type a command or search action...">
+        <span style="font-family: var(--font-mono); font-size: 10.5px; color: var(--text-muted);">ESC to close</span>
       </div>
-      <p style="font-size: 13px; color: var(--text-muted);">
-        Personalized, conversational DM draft referencing the prospect's profile and the exact post they engaged with.
+
+      <div class="command-palette-results" id="cmd-palette-results">
+        <div class="command-palette-group-title">Write & Compose</div>
+        <div class="command-palette-item" data-action="generate-hooks">
+          <span>Generate 10x Hooks</span>
+          <span class="command-palette-item-shortcut">H</span>
+        </div>
+        <div class="command-palette-item" data-action="clean-formatting">
+          <span>Scrub Em-Dashes & Whitespace</span>
+          <span class="command-palette-item-shortcut">C</span>
+        </div>
+        <div class="command-palette-item" data-action="open-image-studio">
+          <span>Open AI Image Studio</span>
+          <span class="command-palette-item-shortcut">I</span>
+        </div>
+
+        <div class="command-palette-group-title">Navigation</div>
+        <div class="command-palette-item" data-nav="tab-studio">
+          <span>Go to Composer</span>
+          <span class="command-palette-item-shortcut">1</span>
+        </div>
+        <div class="command-palette-item" data-nav="tab-crm">
+          <span>Go to Inbound CRM</span>
+          <span class="command-palette-item-shortcut">2</span>
+        </div>
+        <div class="command-palette-item" data-nav="tab-inspirations">
+          <span>Go to Swipe File</span>
+          <span class="command-palette-item-shortcut">3</span>
+        </div>
+        <div class="command-palette-item" data-nav="tab-analytics">
+          <span>Go to Analytics</span>
+          <span class="command-palette-item-shortcut">4</span>
+        </div>
+        <div class="command-palette-item" data-nav="tab-settings">
+          <span>Go to Brand Studio</span>
+          <span class="command-palette-item-shortcut">5</span>
+        </div>
+
+        <div class="command-palette-group-title">Actions</div>
+        <div class="command-palette-item" data-action="save-draft">
+          <span>Save Current Draft</span>
+          <span class="command-palette-item-shortcut">Ctrl+S</span>
+        </div>
+        <div class="command-palette-item" data-action="toggle-theme">
+          <span>Toggle Dark / Light Theme</span>
+          <span class="command-palette-item-shortcut">T</span>
+        </div>
+        <div class="command-palette-item" data-action="toggle-inspector">
+          <span>Toggle Inspector Drawer</span>
+          <span class="command-palette-item-shortcut">Ctrl+\</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODALS: CONTEXTUAL DM STARTER, PROSPECT, AGNO DOSSIER, IMAGE STUDIO
+       ========================================================================= -->
+
+  <!-- CONTEXTUAL DM MODAL -->
+  <div class="modal-overlay" id="dm-modal" style="display: none;">
+    <div class="modal-card" style="max-width: 580px;">
+      <div class="modal-header">
+        <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-act-apply"></use></svg>
+          Contextual Anti-Slop Outreach
+        </h3>
+        <button class="btn btn-subtle btn-sm" id="dm-close-btn"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
+        Deterministic 1-to-1 conversation starters quoting the exact comment excerpt. Zero salesy cliches or em-dashes.
       </p>
 
-      <!-- DM Style Selector Chips -->
-      <div class="topic-chips-row" id="dm-style-chips" style="margin-bottom: 6px;">
-        <button class="topic-chip active" data-style="value_add">💡 Value Add (Technical Question)</button>
-        <button class="topic-chip" data-style="resource_share">📑 Resource Share (Blueprint)</button>
-        <button class="topic-chip" data-style="quick_chat">☕ Quick Chat (15-min Coffee)</button>
+      <!-- 3-Angle Strategic Selector Tabs -->
+      <div class="topic-chips-row" id="dm-angle-chips" style="margin-bottom: 8px;">
+        <button class="topic-chip active" data-angle-index="0" id="dm-chip-angle-0">Direct Technical</button>
+        <button class="topic-chip" data-angle-index="1" id="dm-chip-angle-1">Architecture Teardown</button>
+        <button class="topic-chip" data-angle-index="2" id="dm-chip-angle-2">Peer-to-Peer Exchange</button>
       </div>
 
-      <textarea class="main-writing-textarea" id="dm-script-textarea" style="min-height: 160px; background: var(--bg-subtle); padding: 12px; border-radius: 8px; border: 1px solid var(--border-light); font-size: 14px;"></textarea>
-      <div style="display: flex; justify-content: flex-end; gap: 8px;">
-        <button class="btn btn-outline btn-sm" id="dm-cancel-btn">Cancel</button>
-        <button class="btn btn-primary btn-sm" id="btn-copy-dm">📋 Copy to Clipboard</button>
+      <textarea class="main-writing-textarea" id="dm-script-textarea" style="min-height: 160px; background: var(--bg-ink); padding: 12px; border-radius: 8px; border: 1px solid var(--border-subtle); font-size: 13.5px; line-height: 1.5;"></textarea>
+      
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+        <span style="font-size: 11px; color: var(--text-muted);" id="dm-angle-indicator">Angle: Direct Technical Perspective</span>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-outline btn-sm" id="dm-cancel-btn">Close</button>
+          <button class="btn btn-outline btn-sm" id="btn-open-linkedin-chat" title="Copies message and opens LinkedIn Messaging">
+            <svg class="app-symbol"><use href="#sym-sec-chat"></use></svg> Open LinkedIn Chat
+          </button>
+          <button class="btn btn-primary btn-sm" id="btn-copy-dm">
+            <svg class="app-symbol"><use href="#sym-act-copy"></use></svg> Copy DM
+          </button>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- ADD PROSPECT MODAL -->
-  <div class="modal-overlay" id="prospect-modal">
+  <div class="modal-overlay" id="prospect-modal" style="display: none;">
     <div class="modal-card" style="max-width: 480px;">
       <div class="modal-header">
-        <h3 class="modal-title">👤 Add Warm Inbound Prospect</h3>
-        <button class="btn btn-subtle btn-sm" id="prospect-modal-close">✕</button>
+        <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
+          Add Warm Prospect
+        </h3>
+        <button class="btn btn-subtle btn-sm" id="prospect-modal-close"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
       </div>
       <div style="display: flex; flex-direction: column; gap: 12px;">
         <div>
-          <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Full Name *</label>
-          <input type="text" id="add-lead-name" class="media-path-field" placeholder="e.g. David Lin" style="width: 100%;">
+          <label class="settings-field-label">Full Name *</label>
+          <input type="text" id="add-lead-name" class="media-path-field" placeholder="e.g. David Lin">
         </div>
         <div>
-          <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Headline / Title</label>
-          <input type="text" id="add-lead-headline" class="media-path-field" placeholder="e.g. VP of Infrastructure at Nexus" style="width: 100%;">
+          <label class="settings-field-label">Headline / Title</label>
+          <input type="text" id="add-lead-headline" class="media-path-field" placeholder="e.g. VP of Infrastructure at Nexus">
         </div>
         <div>
-          <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Company</label>
-          <input type="text" id="add-lead-company" class="media-path-field" placeholder="e.g. Nexus Tech" style="width: 100%;">
+          <label class="settings-field-label">Company</label>
+          <input type="text" id="add-lead-company" class="media-path-field" placeholder="e.g. Nexus Tech">
         </div>
         <div>
-          <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">LinkedIn Profile URL</label>
-          <input type="text" id="add-lead-url" class="media-path-field" placeholder="https://www.linkedin.com/in/username" style="width: 100%;">
+          <label class="settings-field-label">LinkedIn Profile URL</label>
+          <input type="text" id="add-lead-url" class="media-path-field" placeholder="https://www.linkedin.com/in/username">
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
           <div>
-            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Engagement</label>
-            <select id="add-lead-engagement" class="media-path-field" style="width: 100%;">
+            <label class="settings-field-label">Engagement</label>
+            <select id="add-lead-engagement" class="media-path-field">
               <option value="Commented">Commented</option>
               <option value="Liked">Liked</option>
               <option value="Reposted">Reposted</option>
             </select>
           </div>
           <div>
-            <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Status</label>
-            <select id="add-lead-status" class="media-path-field" style="width: 100%;">
+            <label class="settings-field-label">Status</label>
+            <select id="add-lead-status" class="media-path-field">
               <option value="New Lead">New Lead</option>
               <option value="Outreach Sent">Outreach Sent</option>
               <option value="Connected">Connected</option>
@@ -624,18 +2056,338 @@ Highlight text anytime to format with sans-bold or clean formatting. Watch the g
           </div>
         </div>
         <div>
-          <label style="font-size: 12px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Context Notes</label>
-          <textarea id="add-lead-notes" class="media-path-field" placeholder="e.g. Commented on enterprise decoupling post." style="width: 100%; min-height: 60px; resize: vertical;"></textarea>
+          <label class="settings-field-label">Context Notes</label>
+          <textarea id="add-lead-notes" class="media-path-field" placeholder="e.g. Commented on enterprise decoupling post." style="min-height: 60px;"></textarea>
         </div>
       </div>
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
         <button class="btn btn-outline btn-sm" id="prospect-modal-cancel">Cancel</button>
-        <button class="btn btn-primary btn-sm" id="btn-save-prospect">Save Prospect</button>
+        <button class="btn btn-primary btn-sm" id="btn-save-prospect">
+          <svg class="app-symbol"><use href="#sym-act-save"></use></svg> Save Prospect
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- TOAST CONTAINER -->
+  <!-- POST-TO-LEAD ATTRIBUTION DOSSIER MODAL -->
+  <div class="modal-overlay" id="post-attribution-modal" style="display: none;">
+    <div class="modal-card" style="max-width: 720px; max-height: 88vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+            <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
+            Post-to-Lead Attribution Dossier
+          </h3>
+          <span class="sidebar-badge" id="post-attr-badge" style="display: inline-block;">REVERSE CRM</span>
+        </div>
+        <button class="btn btn-subtle btn-sm" id="post-attribution-modal-close"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+      </div>
+      
+      <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;" id="post-attr-hook">
+        Loading post attribution...
+      </div>
+
+      <!-- Attribution KPI row -->
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px;">
+        <div class="crm-telemetry-card" style="padding: 10px;">
+          <div class="crm-telemetry-label">Attributed Leads</div>
+          <div class="crm-telemetry-value" id="post-attr-total-leads">0</div>
+        </div>
+        <div class="crm-telemetry-card" style="padding: 10px;">
+          <div class="crm-telemetry-label">VIP Engagers</div>
+          <div class="crm-telemetry-value" id="post-attr-vip-leads" style="color: var(--brand-primary, #6366f1);">0</div>
+        </div>
+        <div class="crm-telemetry-card" style="padding: 10px;">
+          <div class="crm-telemetry-label">Avg ICP Score</div>
+          <div class="crm-telemetry-value" id="post-attr-avg-icp">0.0</div>
+        </div>
+        <div class="crm-telemetry-card" style="padding: 10px;">
+          <div class="crm-telemetry-label">Questions Asked</div>
+          <div class="crm-telemetry-value" id="post-attr-questions">0</div>
+        </div>
+      </div>
+
+      <!-- Attributed leads scrollable list -->
+      <div style="flex: 1; overflow-y: auto; border: 1px solid var(--border-subtle, #27272a); border-radius: 6px; padding: 4px;">
+        <table class="clean-table" style="margin: 0;">
+          <thead>
+            <tr>
+              <th>Lead Name & Headline</th>
+              <th>ICP Score</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="post-attr-leads-tbody">
+            <tr><td colspan="4" style="text-align: center; color: var(--text-muted); padding: 24px;">Loading attributed leads...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px;">
+        <button class="btn btn-outline btn-sm" id="post-attribution-modal-dismiss">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AGNO AUTONOMOUS ENRICHMENT DOSSIER MODAL -->
+  <div class="modal-overlay" id="agno-modal" style="display: none;">
+    <div class="modal-card" style="max-width: 620px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+            <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
+            Agno Autonomous Lead Dossier
+          </h3>
+          <span class="sidebar-badge" id="agno-badge-provider" style="display: inline-block;">AGNO LOCAL</span>
+        </div>
+        <button class="btn btn-subtle btn-sm" id="agno-modal-close"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+      </div>
+      <div style="font-size: 13px; color: var(--text-muted);" id="agno-lead-subtitle">
+        Deep multi-agent enterprise research, tech stack discovery, and friction analysis.
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div class="dossier-card">
+          <div class="dossier-card-title">Company Intelligence</div>
+          <div id="agno-company-intel" style="font-size: 13px; line-height: 1.5;"></div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div class="dossier-card">
+            <div class="dossier-card-title">Estimated Tech Stack</div>
+            <div id="agno-tech-stack" style="font-size: 12.5px; line-height: 1.4;"></div>
+          </div>
+          <div class="dossier-card">
+            <div class="dossier-card-title">High-Signal Topics</div>
+            <div id="agno-topics" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;"></div>
+          </div>
+        </div>
+
+        <div class="dossier-card">
+          <div class="dossier-card-title">Enterprise Friction Points</div>
+          <div id="agno-friction" style="font-size: 13px; line-height: 1.5;"></div>
+        </div>
+
+        <div>
+          <div class="dossier-card-title">3 Contextual Icebreakers (Zero Em-Dash Verified)</div>
+          <div id="agno-icebreakers-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+        <button class="btn btn-outline btn-sm" id="agno-modal-dismiss">Close Dossier</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AGNO AI IMAGE STUDIO MODAL -->
+  <div class="modal-overlay" id="image-studio-modal" style="display: none;">
+    <div class="modal-card image-studio-card">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div class="section-logo-badge" style="width: 32px; height: 32px;">
+            <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-act-image"></use></svg>
+          </div>
+          <div>
+            <h3 class="modal-title">Generative AI Image Studio</h3>
+            <span style="font-size: 11.5px; color: var(--text-muted);">Agno Multi-Agent Orchestration • High-Res Visual Synthesizer</span>
+          </div>
+        </div>
+        <button class="btn btn-subtle btn-sm" id="image-studio-close-btn"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+      </div>
+
+      <div class="image-studio-body">
+        <div class="image-studio-controls">
+          
+          <!-- 1. Aspect Ratio -->
+          <div class="studio-form-section">
+            <label class="studio-form-label">Target Aspect Ratio</label>
+            <div class="chip-selector-group" id="studio-aspect-ratio-group">
+              <button type="button" class="studio-chip active" data-value="1:1">
+                <span class="chip-ratio-box ratio-1-1"></span>
+                1:1 Square Feed
+              </button>
+              <button type="button" class="studio-chip" data-value="4:5">
+                <span class="chip-ratio-box ratio-4-5"></span>
+                4:5 Portrait Feed
+              </button>
+              <button type="button" class="studio-chip" data-value="16:9">
+                <span class="chip-ratio-box ratio-16-9"></span>
+                16:9 Landscape
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. Visual Style Archetype -->
+          <div class="studio-form-section">
+            <label class="studio-form-label">Visual Style Archetype</label>
+            <div class="chip-selector-group" id="studio-style-group">
+              <button type="button" class="studio-chip active" data-value="photorealistic">Photorealistic Executive</button>
+              <button type="button" class="studio-chip" data-value="blueprint">Engineering Blueprint</button>
+              <button type="button" class="studio-chip" data-value="editorial">Editorial Magazine</button>
+              <button type="button" class="studio-chip" data-value="3d_isometric">3D Isometric Tech</button>
+              <button type="button" class="studio-chip" data-value="minimalist_sketch">Minimalist Architecture</button>
+            </div>
+          </div>
+
+          <!-- 3. Color Mood & Lighting -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="studio-form-section">
+              <label class="studio-form-label">Color Mood</label>
+              <select class="media-path-field" id="studio-palette-select">
+                <option value="navy_cyan">Navy & Electric Cyan</option>
+                <option value="slate_emerald">Slate & Emerald Tech</option>
+                <option value="obsidian_monochrome">Obsidian Monochrome</option>
+                <option value="amber_warmth">Warm Amber & Charcoal</option>
+                <option value="sunset_gradient">Deep Indigo & Sunset</option>
+              </select>
+            </div>
+            <div class="studio-form-section">
+              <label class="studio-form-label">Lighting Environment</label>
+              <select class="media-path-field" id="studio-lighting-select">
+                <option value="studio">Volumetric Studio Softbox</option>
+                <option value="dramatic_rim">Dramatic Rim Lighting</option>
+                <option value="neon_cyber">Subtle Cyber Glow</option>
+                <option value="golden_hour">Warm Ambient Glow</option>
+                <option value="cinematic">Cinematic Diffused 35mm</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- 4. Creative Concept Textarea -->
+          <div class="studio-form-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <label class="studio-form-label" style="margin-bottom: 0;">Creative Concept & Metaphor</label>
+              <button type="button" class="btn btn-subtle btn-xs" id="btn-use-draft-as-concept">
+                <svg class="app-symbol"><use href="#sym-act-eject"></use></svg> Pull from Draft
+              </button>
+            </div>
+            <textarea class="studio-concept-textarea" id="studio-concept-input" placeholder="e.g. Distributed database nodes synchronizing across global cloud data centers with luminous fiber optic connections, clean minimalist composition..."></textarea>
+          </div>
+
+          <!-- Watermark Defense & Branding Controls -->
+          <div class="settings-card" style="padding: 12px;">
+            <span class="studio-form-label" style="margin-bottom: 6px;">Watermark & Brand Defense</span>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
+              <div>
+                <div style="font-size: 12px; font-weight: 600;">Eliminate AI Provider Watermark</div>
+                <div style="font-size: 10.5px; color: var(--text-muted);">Slices bottom margin to discard model logos</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="img-eliminate-watermark" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-top: 1px solid var(--border-subtle); margin-top: 4px;">
+              <div>
+                <div style="font-size: 12px; font-weight: 600;">Apply Creator Watermark (<span id="modal-brand-handle-text">@dharmik136</span>)</div>
+                <div style="font-size: 10.5px; color: var(--text-muted);">Stamps personal handle badge in the corner</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="img-apply-personal-watermark">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+
+            <div id="modal-personal-watermark-options" style="display: none; margin-top: 6px; padding: 8px; background: var(--bg-soft); border-radius: 6px;">
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <input type="text" class="media-path-field" id="img-personal-watermark-text" value="@dharmik136" style="flex: 2; height: 30px; font-size: 11.5px;">
+                <select class="media-path-field" id="img-personal-watermark-position" style="flex: 1.5; height: 30px; font-size: 11px;">
+                  <option value="bottom_right" selected>Bottom-Right</option>
+                  <option value="bottom_left">Bottom-Left</option>
+                  <option value="top_right">Top-Right</option>
+                  <option value="top_left">Top-Left</option>
+                </select>
+                <select class="media-path-field" id="img-personal-watermark-style" style="flex: 1.5; height: 30px; font-size: 11px;">
+                  <option value="glass_pill" selected>Glass Pill</option>
+                  <option value="minimal_text">Minimal Text</option>
+                  <option value="accent_badge">Accent Badge</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Typographic Quote Switch -->
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-top: 1px solid var(--border-subtle); margin-top: 4px;">
+              <div>
+                <div style="font-size: 12px; font-weight: 600;">Format Typographic Quote Overlay</div>
+                <div style="font-size: 10.5px; color: var(--text-muted);">Composites authority typography card</div>
+              </div>
+              <label class="toggle-switch">
+                <input type="checkbox" id="studio-quote-toggle" checked>
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div id="studio-quote-fields" style="margin-top: 4px; display: flex; gap: 8px;">
+              <input type="text" class="media-path-field" id="studio-custom-quote-text" placeholder="Custom quote text..." style="flex: 2; height: 30px; font-size: 11.5px;">
+              <input type="text" class="media-path-field" id="studio-custom-quote-author" placeholder="Author..." style="flex: 1; height: 30px; font-size: 11.5px;">
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <button type="button" class="btn btn-outline btn-xs" id="btn-synthesize-prompt">
+              <svg class="app-symbol"><use href="#sym-act-hooks"></use></svg> Synthesize Master Prompt
+            </button>
+            <span style="font-size: 11px; color: var(--text-muted);" id="studio-provider-badge">Orchestration: Agno AgentOS</span>
+          </div>
+
+          <div class="studio-form-section" id="studio-master-prompt-container" style="display: none; margin-top: 6px;">
+            <label class="studio-form-label">Engineered Prompt (Zero Em-Dash)</label>
+            <textarea class="studio-concept-textarea" id="studio-master-prompt-display" style="min-height: 60px; font-family: var(--font-mono); font-size: 11.5px;"></textarea>
+          </div>
+        </div>
+
+        <!-- RIGHT COLUMN: Generation Stage -->
+        <div class="image-studio-preview-pane">
+          <div>
+            <button type="button" class="btn btn-primary" id="btn-start-image-generation" style="width: 100%; padding: 10px; font-weight: 600;">
+              <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Launch AI Generation
+            </button>
+          </div>
+
+          <!-- Progress Card -->
+          <div class="image-gen-progress-card" id="image-gen-progress-card" style="display: none;">
+            <div class="progress-card-header">
+              <span id="progress-phase-label">Initializing pipeline...</span>
+              <span id="progress-percent-display">1%</span>
+            </div>
+            <div class="image-gen-progress-track">
+              <div class="image-gen-progress-bar" id="image-gen-progress-fill" style="width: 1%;"></div>
+            </div>
+            <div class="progress-subtext" id="progress-status-detail">Composing visual elements...</div>
+          </div>
+
+          <!-- Result Container -->
+          <div class="image-gen-result-container" id="image-gen-result-container">
+            <div class="image-gen-empty-state" id="image-gen-empty-state">
+              <div style="display: flex; justify-content: center; margin-bottom: 8px;">
+                <svg class="app-symbol app-symbol-xl app-symbol-no-margin" style="opacity: 0.35;"><use href="#sym-mode-media"></use></svg>
+              </div>
+              <div style="font-weight: 600; font-size: 13px; text-align: center;">No Visual Generated Yet</div>
+              <div style="font-size: 11.5px; color: var(--text-muted); text-align: center; max-width: 220px; margin-top: 4px;">Select options and click Launch AI Generation.</div>
+            </div>
+
+            <div class="image-gen-image-wrapper" id="image-gen-image-wrapper" style="display: none;">
+              <img id="image-gen-result-img" src="" alt="Generated Asset">
+              <div class="image-gen-overlay-actions">
+                <button type="button" class="btn btn-primary btn-xs" id="btn-attach-to-draft">
+                  <svg class="app-symbol"><use href="#sym-act-apply"></use></svg> Attach to Post
+                </button>
+                <a href="#" target="_blank" download="linkedin_visual.png" class="btn btn-outline btn-xs" id="btn-download-generated-image">
+                  <svg class="app-symbol"><use href="#sym-act-export"></use></svg> Download
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toast-container"></div>
 
   <!-- Main Application Script -->

@@ -125,11 +125,11 @@ def test_unicode_sans_bold_formatter():
 
 
 def test_clean_text_scrubber():
-    dirty_text = "Scaling enterprise systems — zero downtime – resilient architecture."
+    dirty_text = "Scaling enterprise systems \u2014 zero downtime – resilient architecture."
     resp = client.post("/api/format/clean", json={"text": dirty_text})
     assert resp.status_code == 200
     cleaned = resp.json()["cleaned"]
-    assert "—" not in cleaned
+    assert "\u2014" not in cleaned
     assert "–" not in cleaned
 
 
@@ -182,7 +182,7 @@ def test_crm_leads_contract():
         dm_data = dm_resp.json()
         assert dm_data["status"] == "success"
         script = dm_data["dm_script"]
-        assert "—" not in script
+        assert "\u2014" not in script
         assert "--" not in script
         assert len(script) > 40
 
@@ -211,7 +211,7 @@ def test_ai_command_execution():
     data = resp.json()
     assert data["status"] == "success"
     assert "output" in data
-    assert "—" not in data["output"]
+    assert "\u2014" not in data["output"]
 
 
 # -------------------------------------------------------------

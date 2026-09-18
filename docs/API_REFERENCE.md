@@ -189,3 +189,123 @@ Performs real-time 2026 algorithmic distribution safety audit.
 
 ### `POST /api/format/bold`, `/italic`, `/monospace`, `/clean`
 Transforms text into Unicode mathematical styles or scrubs em-dashes.
+
+---
+
+## 6. Vector Carousel Generator (Swiss Typography)
+
+### `POST /api/v1/carousel/deck/generate`
+Generates pure vector SVG slides adhering to 4:5 vertical (1080x1350) or 1:1 square (1080x1080) formats with Swiss typography principles ('Plus Jakarta Sans' headlines, 'Inter' body, 'JetBrains Mono' badges).
+* **Request Body**:
+```json
+{
+  "title": "Decoupled Architecture",
+  "author_name": "Dharmik Shingala",
+  "author_handle": "@dharmikshingala",
+  "slides": [
+    {
+      "slide_number": 1,
+      "tag": "FOUNDATION",
+      "headline": "Decoupled Architecture",
+      "body": "Why schemas must be decoupled from business logic in high-scale systems.",
+      "takeaway": "Clean separation ensures longevity"
+    }
+  ],
+  "theme": "dark_slate",
+  "aspect_ratio": "4:5"
+}
+```
+* **Response (200 OK)**:
+```json
+{
+  "status": "success",
+  "deck_id": "deck_20260918_...",
+  "slide_count": 1,
+  "aspect_ratio": "4:5",
+  "dimensions": { "width": 1080, "height": 1350 },
+  "slides": [
+    { "slide_number": 1, "svg_content": "<svg ...>...</svg>" }
+  ]
+}
+```
+
+---
+
+## 7. FTS5 Full-Text Documentation Search
+
+### `GET /api/docs/search`
+Queries the SQLite FTS5 documentation search index with BM25 ranking and snippet highlighting. Latency is sub-15ms.
+* **Query Parameters**:
+  * `q` (string, required): Search query (e.g., `rate limiter`, `circuit breaker`).
+  * `limit` (int, optional): Max results (default 10).
+* **Response (200 OK)**:
+```json
+{
+  "status": "success",
+  "query": "rate limiter",
+  "count": 4,
+  "results": [
+    {
+      "module_id": "02_SCHEDULE_AND_QUEUE",
+      "section_title": "Gaussian Jitter Rate Limiter",
+      "snippet": "...implements a Gaussian rate limiter with token bucket...",
+      "score": -5.21
+    }
+  ]
+}
+```
+
+---
+
+## 8. Inbound CRM Ingestion & Anti-Slop DMs
+
+### `POST /api/v1/crm/interactions/ingest`
+Ingests passive commenter interactions from the Chrome extension or manual entry, normalizes profile URLs, executes deterministic 4-factor ICP scoring, and triggers lead pipeline placement.
+* **Request Body**:
+```json
+{
+  "lead_name": "Aravind Subramanian",
+  "profile_url": "https://www.linkedin.com/in/aravind-subramanian",
+  "headline": "VP of Engineering at Enterprise Scale",
+  "company": "Enterprise Scale",
+  "interaction_type": "COMMENT",
+  "comment_text": "Decoupling storage from compute was our biggest leap this year.",
+  "post_urn": "urn:li:activity:7123456789012345678"
+}
+```
+* **Response (200 OK)**:
+```json
+{
+  "status": "success",
+  "lead_id": 42,
+  "icp_score": 85,
+  "qualification_tier": "Tier 1 - Executive / Decision Maker",
+  "intent_signals": ["TECH_TERMS:decoupling"],
+  "variants": [
+    {
+      "style": "Executive Peer (Direct & Respectful)",
+      "text": "Aravind: saw your comment on decoupling storage and compute..."
+    }
+  ]
+}
+```
+
+---
+
+## 9. Asymmetric Intelligence Sync (ETag Cached)
+
+### `GET /api/v1/intelligence/bundle/export`
+Exports viral hook blueprints and algorithmic rules as a deterministic JSON bundle. Supports HTTP conditional requests with `If-None-Match` and `304 Not Modified`.
+
+### `POST /api/v1/intelligence/bundle/import`
+Imports a synchronized intelligence bundle directly for 100% air-gapped workstations.
+
+---
+
+## 10. Rate Limiter & Single-Writer Diagnostics
+
+### `GET /api/v1/rate-limiter/status`
+Returns real-time diagnostics for the Gaussian jitter rate limiter, token bucket capacity, and time-to-next-token.
+
+### `POST /api/v1/rate-limiter/acquire`
+Attempts to acquire rate-limited permission for passive API/session requests.
