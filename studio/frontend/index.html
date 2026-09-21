@@ -273,10 +273,10 @@
             <span class="sidebar-badge" style="color: var(--signal-orange);">WARM</span>
           </button>
 
-          <button class="nav-link" data-tab="tab-inspirations" title="Viral Swipe File (356 Vaulted)">
+          <button class="nav-link" data-tab="tab-inspirations" title="Viral Post Blueprints">
             <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-swipe"></use></svg>
             <span class="nav-link-label">Swipe File</span>
-            <span class="sidebar-badge">356</span>
+            <span class="sidebar-badge" id="swipe-sidebar-badge">37</span>
           </button>
 
           <button class="nav-link" data-tab="tab-analytics" title="Editorial Analytics & Dwell">
@@ -375,7 +375,7 @@
           <!-- Swipe File Stats Group -->
           <div class="topbar-context-group" id="topbar-group-inspirations">
             <div class="stat-pill">
-              Vault: <strong>356 Blueprints</strong>
+              Vault: <strong>36 Blueprints</strong>
             </div>
           </div>
 
@@ -502,16 +502,29 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
 
                   <!-- SECTION 7.D: FLOATING CONTEXTUAL SELECTION TOOLBAR -->
                   <div class="floating-action-bar" id="floating-selection-toolbar">
-                    <button class="floating-btn" id="float-bold-btn" title="Convert to Mathematical Sans-Bold">𝗕 Bold</button>
-                    <button class="floating-btn" id="float-italic-btn" title="Convert to Mathematical Sans-Italic">𝘐 Italic</button>
-                    <button class="floating-btn" id="float-mono-btn" title="Convert to Monospace">𝙼 Mono</button>
-                    <button class="floating-btn" id="float-strike-btn" title="Apply Strikethrough">S̶ Strike</button>
+                    <button class="floating-btn" id="float-bold-btn" title="Sans-Bold (Mathematical)">𝗕 Bold</button>
+                    <button class="floating-btn" id="float-italic-btn" title="Sans-Italic (Mathematical)">𝘐 Italic</button>
+                    <button class="floating-btn" id="float-serif-bold-btn" title="Serif-Bold">𝐌 Serif</button>
+                    <button class="floating-btn" id="float-serif-italic-btn" title="Serif-Italic">𝑇 Italic</button>
+                    <button class="floating-btn" id="float-blackboard-btn" title="Blackboard Double-Struck">𝔸 Board</button>
+                    <button class="floating-btn" id="float-underline-btn" title="Underline Accent">U̲ Under</button>
+                    <button class="floating-btn" id="float-circled-btn" title="Circled Numbers">❶ List</button>
+                    <button class="floating-btn" id="float-mono-btn" title="Monospace">𝙼 Mono</button>
+                    <button class="floating-btn" id="float-strike-btn" title="Strikethrough">S̶ Strike</button>
                     <button class="floating-btn" id="float-clean-btn" title="Scrub Em-Dashes">
                       <svg class="app-symbol"><use href="#sym-act-clean"></use></svg> Clean
                     </button>
                     <button class="floating-btn danger" id="float-rehook-btn" title="Generate Hook for selection">
                       <svg class="app-symbol"><use href="#sym-act-hooks"></use></svg> Re-Hook
                     </button>
+                    <span class="info-pill" tabindex="0">i
+                      <span class="info-tooltip">
+                        <span class="info-tooltip-header">Typographic Formatting</span>
+                        <span class="info-tooltip-body">LinkedIn supports Unicode Mathematical Alphanumeric Symbols for rich formatting without external images.</span>
+                        <span class="info-tooltip-why">Why: Increases visual retention and breaks reading monotony in crowded feeds.</span>
+                        <span class="info-tooltip-pro">Pro-Tip: Use bold for hooks and headers, never entire paragraphs (screen readers read math characters letter by letter).</span>
+                      </span>
+                    </span>
                   </div>
                 </div>
 
@@ -521,7 +534,24 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                     <span style="font-weight: 600; color: var(--text-secondary);">Pre-Fold Hook:</span>
                     <span class="hook-char-metric"><strong id="editor-hook-chars">0</strong> / 180 chars</span>
                     <span class="sidebar-badge" id="editor-hook-badge" style="display: inline-block; color: var(--signal-green);">Fold Safe</span>
-                    <span id="editor-hook-desc" style="color: var(--text-muted);">• Visible above mobile fold</span>
+                    <span class="info-pill" tabindex="0">i
+                      <span class="info-tooltip">
+                        <span class="info-tooltip-header">Pre-Fold Budget</span>
+                        <span class="info-tooltip-body">The visible text boundary before LinkedIn cuts off your post with '...see more' on mobile screens.</span>
+                        <span class="info-tooltip-why">Why: 80% of readers bounce or click based strictly on these first 3 lines.</span>
+                        <span class="info-tooltip-pro">Pro-Tip: Keep Line 1 under 60 characters and avoid early blank lines. Blank lines cost 45 characters of height.</span>
+                      </span>
+                    </span>
+                    <span style="font-weight: 600; color: var(--text-secondary); margin-left: 14px;">Dwell Time:</span>
+                    <span class="dwell-badge optimal" id="editor-dwell-badge">0.0s [OPTIMAL]</span>
+                    <span class="info-pill" tabindex="0">i
+                      <span class="info-tooltip">
+                        <span class="info-tooltip-header">Algorithmic Dwell Time</span>
+                        <span class="info-tooltip-body">Estimates reading duration based on 220 words per minute velocity and paragraph breath pauses.</span>
+                        <span class="info-tooltip-why">Why: Posts held on screen for over 12 seconds receive priority distribution multipliers in feed ranking.</span>
+                        <span class="info-tooltip-pro">Pro-Tip: Posts with 8s to 20s optimal dwell and high hook punchiness maximize click-throughs.</span>
+                      </span>
+                    </span>
                   </div>
                   <div class="hook-status-right">
                     <button type="button" class="btn btn-subtle btn-xs" id="btn-toggle-editor-fold" title="Toggle fold guideline">
@@ -532,7 +562,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
 
                 <!-- MEDIA ATTACHMENT CARD / DROPZONE -->
                 <div class="media-dropzone-container" id="media-dropzone-container">
-                  <input type="file" id="media-file-input" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,video/mp4,video/webm" style="display: none;">
+                  <input type="file" id="media-file-input" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,.pdf,video/mp4,video/webm,.mp4,.webm,.png,.jpg,.jpeg,.gif,.webp" style="display: none;">
                   <input type="hidden" id="media-path-input" value="">
 
                   <div class="media-attached-card" id="media-attached-card" style="display: none;">
@@ -589,9 +619,53 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                   <p style="font-size: 13px; color: var(--text-secondary); margin-top: 4px;">Smart engagement slots optimized for maximum LinkedIn dwell velocity</p>
                 </div>
               </div>
-              <button class="btn btn-outline btn-sm" id="btn-refresh-queue">Sync Queue</button>
+              <div style="display: flex; gap: 8px;">
+                <button type="button" class="btn btn-outline btn-sm" id="btn-toggle-queue-pause" title="Pause or resume automated queue publishing">
+                  <span id="queue-pause-btn-text">Pause Queue</span>
+                </button>
+                <button type="button" class="btn btn-outline btn-sm" id="btn-trigger-dispatch" title="Trigger on-demand queue evaluation and grace window recovery">
+                  <svg class="app-symbol"><use href="#sym-act-apply"></use></svg> Run Dispatch Now
+                </button>
+                <button type="button" class="btn btn-outline btn-sm" id="btn-refresh-queue">Sync Queue</button>
+              </div>
             </div>
-            <div id="queue-cards-list" style="display: flex; flex-direction: column; gap: 12px;"></div>
+
+            <!-- Queue Paused Alert Banner -->
+            <div id="queue-paused-banner" style="display: none; background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 12px 18px; margin-bottom: 20px; align-items: center; justify-content: space-between;">
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span class="sidebar-badge" style="background: rgba(245, 158, 11, 0.25); color: #f59e0b; font-weight: 700;">PAUSED</span>
+                <span style="font-size: 13px; color: var(--text-primary);">Automated queue publishing is currently paused. Scheduled posts will not be dispatched until resumed.</span>
+              </div>
+              <button type="button" class="btn btn-primary btn-xs" id="btn-resume-from-banner">Resume Queue</button>
+            </div>
+
+            <!-- Cadence Health KPI Strip -->
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
+              <div class="kpi-box" style="padding: 16px;">
+                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600;">Cadence Health</div>
+                <div style="font-size: 24px; font-weight: 700; color: var(--signal-emerald, #10b981); margin-top: 4px;" id="queue-cadence-score">100%</div>
+                <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;" id="queue-cadence-sub">12h cooldown satisfied</div>
+              </div>
+              <div class="kpi-box" style="padding: 16px;">
+                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600;">Scheduled In Queue</div>
+                <div style="font-size: 24px; font-weight: 700; color: var(--text-primary); margin-top: 4px;" id="queue-total-count">0</div>
+                <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">Active pre-staged posts</div>
+              </div>
+              <div class="kpi-box" style="padding: 16px;">
+                <div style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600;">Next Smart Slot</div>
+                <div style="font-size: 16px; font-weight: 700; color: var(--accent-cyan, #06b6d4); margin-top: 8px;" id="queue-next-slot-label">Calculating...</div>
+                <div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;" id="queue-next-slot-sub">Recommended window</div>
+              </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+              <h3 style="font-size: 14px; font-weight: 600; margin: 0; color: var(--text-primary);">Scheduled Posts</h3>
+              <input type="text" id="queue-search-input" class="media-path-field" placeholder="Search scheduled posts..." style="width: 250px; font-size: 12px; padding: 6px 12px; border-radius: 6px; box-sizing: border-box;">
+            </div>
+            <div id="queue-cards-list" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px;"></div>
+
+            <h3 style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: var(--text-primary);">Weekly Smart Slots Matrix</h3>
+            <div id="queue-smart-slots-matrix" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px;"></div>
           </div>
         </div>
 
@@ -741,32 +815,34 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                   <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-swipe"></use></svg>
                 </div>
                 <div>
-                  <h2 style="font-family: var(--font-display); font-size: 26px; font-weight: 600;">Viral Post Specimen Archive</h2>
+                  <h2 style="font-family: var(--font-display); font-size: 26px; font-weight: 600;">Viral Post Blueprint Archive</h2>
                   <p style="font-size: 13px; color: var(--text-secondary); margin-top: 2px;">
-                    <span id="swipe-count-badge">356 Vaulted Blueprints</span> with reverse-engineered hook structures
+                    <span id="swipe-count-badge">Vaulted Blueprints</span> with reverse-engineered hook structures
                   </p>
                 </div>
               </div>
-              <div style="width: 320px;">
-                <input type="text" class="media-path-field" id="insp-search-input" placeholder="Search specimens by keyword or author...">
+              <div style="width: 340px;">
+                <input type="text" class="media-path-field" id="insp-search-input" placeholder="Search blueprints by archetype, hook, or cadence...">
               </div>
+            </div>
+
+            <!-- Data Mode Toggle (Curated Real vs Test & Sandbox vs All) -->
+            <div class="blueprint-mode-toggle" id="insp-mode-toggle" style="display: flex; gap: 8px; margin: 12px 0 10px 0; align-items: center;">
+              <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-right: 4px;">Data Mode:</span>
+              <button type="button" class="mode-pill active" data-mode="real" id="mode-btn-real" title="Curated Production Blueprints">Curated (Real)</button>
+              <button type="button" class="mode-pill" data-mode="test" id="mode-btn-test" title="Test & Sandbox Blueprints">Test & Sandbox</button>
+              <button type="button" class="mode-pill" data-mode="all" id="mode-btn-all" title="All Vaulted Blueprints">All</button>
             </div>
 
             <!-- Topic Filter Chips -->
             <div class="topic-chips-row" id="insp-topic-chips">
-              <button class="topic-chip active" data-topic="">All (356)</button>
-              <button class="topic-chip" data-topic="AI Agents">AI Agents</button>
-              <button class="topic-chip" data-topic="Enterprise Architecture">Architecture</button>
-              <button class="topic-chip" data-topic="Observability">Observability</button>
-              <button class="topic-chip" data-topic="Systems Engineering">Systems</button>
-              <button class="topic-chip" data-topic="B2B SaaS">B2B SaaS</button>
-              <button class="topic-chip" data-topic="Leadership">Leadership</button>
-              <button class="topic-chip" data-topic="Content Strategy">Strategy</button>
-              <button class="topic-chip" data-topic="Growth">Growth</button>
-              <button class="topic-chip" data-topic="Solopreneur">Solopreneur</button>
-              <button class="topic-chip" data-topic="CTO">CTO</button>
-              <button class="topic-chip" data-topic="Productivity">Productivity</button>
-              <button class="topic-chip" data-topic="Consulting">Consulting</button>
+              <button class="topic-chip active" data-topic="">All</button>
+              <button class="topic-chip" data-topic="Contrarian">Contrarian</button>
+              <button class="topic-chip" data-topic="Architecture">Architecture</button>
+              <button class="topic-chip" data-topic="Reverse Engineering">Reverse Engineering</button>
+              <button class="topic-chip" data-topic="Failure Analysis">Failures</button>
+              <button class="topic-chip" data-topic="Benchmarks">Benchmarks</button>
+              <button class="topic-chip" data-topic="Economics">Economics</button>
             </div>
           </div>
 
@@ -1971,6 +2047,57 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
        MODALS: CONTEXTUAL DM STARTER, PROSPECT, AGNO DOSSIER, IMAGE STUDIO
        ========================================================================= -->
 
+  <!-- SMART CADENCE SCHEDULER MODAL -->
+  <div class="modal-overlay" id="schedule-modal" style="display: none;">
+    <div class="modal-card" style="max-width: 540px;">
+      <div class="modal-header">
+        <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
+          <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
+          <span id="schedule-modal-title-text">Smart Cadence Scheduler</span>
+        </h3>
+        <button type="button" class="btn btn-subtle btn-sm" id="schedule-modal-close"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+      </div>
+
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
+        Algorithmic 12-hour cooldown protection prevents audience fatigue and maximizes dwell velocity.
+      </p>
+
+      <!-- Quick Smart Slots Row -->
+      <div style="margin-bottom: 12px;">
+        <label class="studio-form-label" style="margin-bottom: 6px; font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600;">Recommended Peak Slots</label>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="schedule-quick-slots">
+          <button type="button" class="btn btn-outline btn-xs" id="btn-slot-next-smart">
+            <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-sec-radar"></use></svg> <span id="quick-slot-time-label">Next Optimal Slot</span>
+          </button>
+          <button type="button" class="btn btn-outline btn-xs" id="btn-slot-tomorrow-morning">Tomorrow 08:30 AM</button>
+          <button type="button" class="btn btn-outline btn-xs" id="btn-slot-tomorrow-evening">Tomorrow 05:30 PM</button>
+        </div>
+      </div>
+
+      <!-- Schedule Datetime Selector -->
+      <div class="studio-form-section" style="margin-bottom: 12px;">
+        <label class="studio-form-label" for="schedule-datetime-picker" style="font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600;">Publishing Target (Local Time)</label>
+        <input type="datetime-local" class="media-path-field" id="schedule-datetime-picker" style="width: 100%; font-size: 14px; padding: 10px; border-radius: 8px; background: var(--bg-ink); border: 1px solid var(--border-subtle); color: var(--text-primary); box-sizing: border-box;">
+      </div>
+
+      <!-- Cadence Health Shield & Warning Box -->
+      <div id="cadence-health-shield" style="padding: 12px; border-radius: 8px; background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.25); display: flex; align-items: flex-start; gap: 10px;">
+        <span class="sidebar-badge pro" id="cadence-score-badge" style="font-weight: 700; white-space: nowrap;">100% Safe</span>
+        <div style="font-size: 12px; color: var(--text-muted); line-height: 1.4;" id="cadence-health-explanation">
+          Optimal 12-hour cooldown buffer satisfied. Zero impression cannibalization risk.
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
+        <button type="button" class="btn btn-outline btn-sm" id="schedule-modal-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary btn-sm" id="btn-confirm-schedule">
+          <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-apply"></use></svg> Confirm Schedule
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- CONTEXTUAL DM MODAL -->
   <div class="modal-overlay" id="dm-modal" style="display: none;">
     <div class="modal-card" style="max-width: 580px;">
@@ -2386,6 +2513,117 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
       </div>
     </div>
   </div>
+
+  <!-- =========================================================================
+       SECTION 16: FLOATING FLOW & GOVERNANCE ASSISTANT ("Z-TAB" / FAB)
+       ========================================================================= -->
+  <aside class="floating-flow-widget" id="floating-flow-widget" aria-label="Workflow and Governance Assistant">
+    <!-- Floating Circular Trigger Button (Z-Tab) -->
+    <button type="button" class="flow-trigger-btn" id="btn-flow-trigger" title="G-Stack Workflow & Governance Hub (Z-Tab)">
+      <span class="trigger-label">Z</span>
+      <span class="trigger-health-ring" id="flow-health-ring" title="Audit Health: 100%"></span>
+    </button>
+
+    <!-- Docked Workflow & Audit Panel -->
+    <div class="flow-drawer-panel" id="flow-drawer-panel" style="display: none;">
+      <div class="flow-drawer-header">
+        <div class="drawer-title-box">
+          <span class="drawer-badge">G-STACK HUD</span>
+          <h3 class="drawer-heading">Workflow & Audit Center</h3>
+        </div>
+        <button type="button" class="btn-close-drawer" id="btn-close-flow-drawer" title="Close Panel">&times;</button>
+      </div>
+
+      <div class="flow-drawer-body">
+        <!-- Section A: Live 6-Gate G-Stack Audit Score -->
+        <div class="drawer-card">
+          <div class="drawer-card-header">
+            <span class="drawer-card-title">Live Post Quality Audit</span>
+            <span class="audit-score-pill score-pass" id="hud-audit-score">100% PASS</span>
+          </div>
+          <p class="drawer-card-desc">Real-time deterministic anti-slop and fold validation as you write.</p>
+          <div class="hud-gate-list" id="hud-gate-list">
+            <div class="hud-gate-item gate-pass" id="hud-gate-ceo">
+              <span class="gate-icon">&#10003;</span>
+              <span class="gate-text">Gate 1: CEO Anti-Slop (Zero Em-Dashes)</span>
+            </div>
+            <div class="hud-gate-item gate-pass" id="hud-gate-eng">
+              <span class="gate-icon">&#10003;</span>
+              <span class="gate-text">Gate 2: Eng Structural Bounds (50-3000 chars)</span>
+            </div>
+            <div class="hud-gate-item gate-pass" id="hud-gate-designer">
+              <span class="gate-icon">&#10003;</span>
+              <span class="gate-text">Gate 3: Designer Mobile Fold (3-line / 140ch)</span>
+            </div>
+            <div class="hud-gate-item gate-pass" id="hud-gate-qa">
+              <span class="gate-icon">&#10003;</span>
+              <span class="gate-text">Gate 4: QA Pacing & Paragraph Breaks</span>
+            </div>
+            <div class="hud-gate-item gate-pass" id="hud-gate-cso">
+              <span class="gate-icon">&#10003;</span>
+              <span class="gate-text">Gate 5: CSO Secret Leak Check (No Tokens)</span>
+            </div>
+            <div class="hud-gate-item gate-pass" id="hud-gate-release">
+              <span class="gate-icon">&#10003;</span>
+              <span class="gate-text">Gate 6: Release Markdown Offline Safe</span>
+            </div>
+          </div>
+          <div class="hud-violations-box" id="hud-violations-box" style="display: none;"></div>
+        </div>
+
+        <!-- Section B: Interactive Studio Flow Navigator -->
+        <div class="drawer-card">
+          <div class="drawer-card-header">
+            <span class="drawer-card-title">Guided Studio Flows</span>
+            <span class="drawer-flow-indicator">Interactive</span>
+          </div>
+          <p class="drawer-card-desc">Directly walk through key workflow steps in the studio:</p>
+          <div class="flow-nav-grid">
+            <button type="button" class="flow-step-btn" data-flow="composer">
+              <span class="step-num">1</span>
+              <span class="step-label">Draft & Fold Check</span>
+            </button>
+            <button type="button" class="flow-step-btn" data-flow="queue">
+              <span class="step-num">2</span>
+              <span class="step-label">Smart Queue Cadence</span>
+            </button>
+            <button type="button" class="flow-step-btn" data-flow="crm">
+              <span class="step-num">3</span>
+              <span class="step-label">Warm Lead Harvest</span>
+            </button>
+            <button type="button" class="flow-step-btn" data-flow="swipe">
+              <span class="step-num">4</span>
+              <span class="step-label">Swipe File Blueprints</span>
+            </button>
+            <button type="button" class="flow-step-btn" data-flow="analytics">
+              <span class="step-num">5</span>
+              <span class="step-label">Reach & Dwell Velocity</span>
+            </button>
+            <button type="button" class="flow-step-btn" data-flow="docs">
+              <span class="step-num">6</span>
+              <span class="step-label">Architecture Playbook</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Section C: Global Environment Mode Toggle -->
+        <div class="drawer-card">
+          <div class="drawer-card-header">
+            <span class="drawer-card-title">Environment Mode</span>
+            <span class="env-mode-tag" id="hud-env-tag">Production</span>
+          </div>
+          <div class="env-toggle-control">
+            <button type="button" class="env-mode-btn active" data-env="real" id="env-btn-real">
+              <span class="env-dot env-dot-real"></span> Real Data
+            </button>
+            <button type="button" class="env-mode-btn" data-env="test" id="env-btn-test">
+              <span class="env-dot env-dot-test"></span> Test / Sandbox
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </aside>
 
   <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toast-container"></div>

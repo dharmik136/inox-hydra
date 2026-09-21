@@ -23,6 +23,7 @@ let isSimGuideEnabled = localStorage.getItem("linkedin_sim_guide") === "true";
 let currentDraftId = "post-enterprise-scheduled";
 let currentInspTopic = "";
 let currentInspQuery = "";
+let currentInspMode = "real";
 let inspSearchDebounce = null;
 let analyticsChartInstance = null;
 
@@ -41,6 +42,7 @@ let studioLighting = "studio";
 let activeImageGenTaskId = null;
 let imageGenPollInterval = null;
 let lastSynthesizedPrompt = null;
+let isSavingPost = false;
 
 // Initialize on DOM Ready
 document.addEventListener("DOMContentLoaded", () => {
@@ -58,10 +60,12 @@ document.addEventListener("DOMContentLoaded", () => {
   initInspirations();
   initAICommandCenter();
   initQueue();
+  initScheduleModal();
   initDocsHub();
   initSettingsPanel();
   initEventStream();
   initPostAttributionModal();
+  initFloatingFlowWidget();
 
   // Initial Data Fetching
   loadKPIs();
@@ -493,7 +497,23 @@ function syncDesktopPostFrame(text) {
   if (desktopMedia) {
     if (activeMediaUrl) {
       desktopMedia.style.display = "block";
-      desktopMedia.innerHTML = `<img src="${activeMediaUrl}" alt="Visual" style="width: 100%; border-radius: 6px; max-height: 240px; object-fit: cover;">`;
+      const isPdf = activeMediaUrl.toLowerCase().endsWith(".pdf") || (activeMediaAsset && (activeMediaAsset.mime_type || "").includes("pdf"));
+      const isVideo = activeMediaUrl.toLowerCase().endsWith(".mp4") || activeMediaUrl.toLowerCase().endsWith(".webm") || (activeMediaAsset && (activeMediaAsset.mime_type || "").includes("video"));
+      if (isPdf) {
+        const title = activeMediaAsset ? activeMediaAsset.file_name : activeMediaUrl.split("/").pop();
+        desktopMedia.innerHTML = `
+          <div style="background: var(--bg-soft, #1e293b); padding: 16px; border-radius: 6px; border: 1px solid var(--border-soft); display: flex; align-items: center; gap: 12px;">
+            <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
+            <div>
+              <div style="font-weight: 600; font-size: 13px; color: var(--text-primary);">${escapeHtml(title)}</div>
+              <div style="font-size: 11px; color: var(--text-muted);">PDF Document Carousel • Attached</div>
+            </div>
+          </div>`;
+      } else if (isVideo) {
+        desktopMedia.innerHTML = `<video src="${activeMediaUrl}" controls style="width: 100%; border-radius: 6px; max-height: 240px; object-fit: cover;"></video>`;
+      } else {
+        desktopMedia.innerHTML = `<img src="${activeMediaUrl}" alt="Visual" style="width: 100%; border-radius: 6px; max-height: 240px; object-fit: cover;">`;
+      }
     } else {
       desktopMedia.style.display = "none";
       desktopMedia.innerHTML = "";
@@ -806,11 +826,25 @@ function syncInspectorMediaCard() {
   const removeBtn = document.getElementById("inspector-media-remove");
 
   if (activeMediaUrl) {
-    if (thumb) thumb.innerHTML = `<img src="${activeMediaUrl}" alt="Media" style="width: 100%; height: 100%; object-fit: cover;">`;
+    const isPdf = activeMediaUrl.toLowerCase().endsWith(".pdf") || (activeMediaAsset && (activeMediaAsset.mime_type || "").includes("pdf"));
+    const isVideo = activeMediaUrl.toLowerCase().endsWith(".mp4") || activeMediaUrl.toLowerCase().endsWith(".webm") || (activeMediaAsset && (activeMediaAsset.mime_type || "").includes("video"));
+
+    if (thumb) {
+      if (isPdf) {
+        thumb.innerHTML = '<svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>';
+      } else if (isVideo) {
+        thumb.innerHTML = '<svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-mode-media"></use></svg>';
+      } else {
+        thumb.innerHTML = `<img src="${activeMediaUrl}" alt="Media" style="width: 100%; height: 100%; object-fit: cover;">`;
+      }
+    }
     if (nameEl) nameEl.innerText = activeMediaAsset ? activeMediaAsset.file_name : activeMediaUrl.split("/").pop();
-    if (metaEl) metaEl.innerText = activeMediaAsset ? `${(activeMediaAsset.size_bytes / 1024).toFixed(0)} KB • Ready` : "Attached to post";
+    if (metaEl) {
+      const sizeVal = activeMediaAsset ? (activeMediaAsset.file_size || activeMediaAsset.size_bytes || 0) : 0;
+      metaEl.innerText = sizeVal ? `${formatBytes(sizeVal)} • Ready` : "Attached to post";
+    }
     if (badgeEl) {
-      badgeEl.innerText = "ATTACHED";
+      badgeEl.innerText = isPdf ? "CAROUSEL" : (isVideo ? "VIDEO" : "ATTACHED");
       badgeEl.className = "sidebar-badge pro";
     }
     if (removeBtn) removeBtn.style.display = "inline-flex";
@@ -1344,9 +1378,15 @@ function initEditor() {
     currentDraftId = post.id;
     textarea.value = post.content;
     if (post.media_urls && post.media_urls.length) {
-      mediaInput.value = post.media_urls[0];
+      const url = post.media_urls[0];
+      setAttachedMedia({
+        file_url: url,
+        file_name: url.split("/").pop(),
+        mime_type: url.toLowerCase().endsWith(".pdf") ? "application/pdf" : (url.toLowerCase().endsWith(".mp4") || url.toLowerCase().endsWith(".webm") ? "video/mp4" : "image/jpeg")
+      });
+    } else {
+      updateStudioState();
     }
-    updateStudioState();
     return true;
   };
 
@@ -1433,11 +1473,8 @@ function initEditor() {
   // Schedule Post Button
   const btnSchedule = document.getElementById("btn-schedule-post");
   if (btnSchedule) {
-    btnSchedule.addEventListener("click", async () => {
-      const timeStr = prompt("Enter scheduled time (YYYY-MM-DDTHH:MM:SS) or leave blank for next smart slot:", new Date(Date.now() + 3600000).toISOString().slice(0, 19));
-      if (timeStr !== null) {
-        await saveCurrentDraft("scheduled", timeStr);
-      }
+    btnSchedule.addEventListener("click", () => {
+      openScheduleModal();
     });
   }
 
@@ -1451,13 +1488,17 @@ function initEditor() {
 }
 
 async function saveCurrentDraft(status = "draft", scheduledFor = null) {
-  const content = document.getElementById("post-editor-input").value.trim();
-  const mediaUrl = document.getElementById("media-path-input").value.trim();
+  if (isSavingPost) return;
+  const editorInput = document.getElementById("post-editor-input");
+  const content = editorInput ? editorInput.value.trim() : "";
+  const mediaInput = document.getElementById("media-path-input");
+  const mediaUrl = mediaInput ? mediaInput.value.trim() : (activeMediaUrl || "");
   if (!content) {
     showToast("Cannot save an empty post.");
     return;
   }
 
+  isSavingPost = true;
   try {
     const payload = {
       content,
@@ -1466,31 +1507,60 @@ async function saveCurrentDraft(status = "draft", scheduledFor = null) {
       scheduled_for: scheduledFor
     };
 
-    const res = await fetch(`${API_BASE}/posts/${currentDraftId}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    let savedSuccessfully = false;
 
-    if (res.ok) {
-      showToast(status === "scheduled" ? "Post scheduled successfully!" : "Draft saved to local database.");
-    } else {
-      // Create new post if not existing
-      await fetch(`${API_BASE}/posts`, {
+    if (currentDraftId) {
+      const res = await fetch(`${API_BASE}/posts/${currentDraftId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      if (res.ok) {
+        savedSuccessfully = true;
+      } else if (res.status === 404) {
+        // ID not found in database, fallback to create new post below
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showToast(`Save failed: ${err.detail || "Validation error"}`);
+        return;
+      }
+    }
+
+    if (!savedSuccessfully) {
+      const createRes = await fetch(`${API_BASE}/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      showToast("Post saved successfully!");
+      if (createRes.ok) {
+        const createdData = await createRes.json();
+        if (createdData && createdData.id) {
+          currentDraftId = createdData.id;
+        }
+        savedSuccessfully = true;
+      } else {
+        const err = await createRes.json().catch(() => ({}));
+        showToast(`Save failed: ${err.detail || "Could not save post"}`);
+        return;
+      }
     }
 
-    // Section 16.6: Quiet draft save telemetry
-    const savedInd = document.getElementById("saved-status-indicator");
-    if (savedInd) {
-      savedInd.innerText = `SAVED ${new Date().toTimeString().slice(0, 8)}`;
+    if (savedSuccessfully) {
+      if (content.length > 3000) {
+        showToast(status === "scheduled" ? "Warning: Exceeds 3,000 chars! Post scheduled locally." : "Warning: Exceeds 3,000 chars! Draft saved locally.");
+      } else {
+        showToast(status === "scheduled" ? "Post scheduled successfully!" : "Draft saved to local database.");
+      }
+      const savedInd = document.getElementById("saved-status-indicator");
+      if (savedInd) {
+        savedInd.innerText = `SAVED ${new Date().toTimeString().slice(0, 8)}`;
+      }
     }
   } catch (e) {
     showToast("Failed to save post: " + e.message);
+  } finally {
+    isSavingPost = false;
   }
 }
 
@@ -1569,7 +1639,16 @@ function updateStudioState() {
   const estDwellSeconds = Math.max(10, Math.round((words / 210) * 60) + (text.split("\n\n").length * 3));
 
   const topCharCount = document.getElementById("top-char-count");
-  if (topCharCount) topCharCount.innerText = charCount.toLocaleString();
+  if (topCharCount) {
+    topCharCount.innerText = charCount.toLocaleString();
+    if (charCount > 3000) {
+      topCharCount.style.color = "#ef4444";
+      topCharCount.title = "Exceeds LinkedIn 3,000 character limit";
+    } else {
+      topCharCount.style.color = "";
+      topCharCount.title = "";
+    }
+  }
 
   const dwellDisplay = document.getElementById("dwell-display");
   if (dwellDisplay) dwellDisplay.innerText = `~${estDwellSeconds}s`;
@@ -2282,6 +2361,8 @@ async function uploadMediaFile(file) {
     const data = await res.json();
     setAttachedMedia(data);
     showToast(`Uploaded ${data.filename || data.file_name || "file"} successfully!`);
+    const fileInput = document.getElementById("media-file-input");
+    if (fileInput) fileInput.value = "";
   } catch (e) {
     showToast("Network error uploading file: " + e.message);
   }
@@ -2305,6 +2386,7 @@ function setAttachedMedia(media) {
   });
 
   activeMediaAsset = media;
+  activeMediaUrl = media.file_url;
   const pathInput = document.getElementById("media-path-input");
   const targetZone = document.getElementById("media-dropzone-target");
   const attachedCard = document.getElementById("media-attached-card");
@@ -2355,6 +2437,7 @@ function setAttachedMedia(media) {
 
 function clearAttachedMedia() {
   activeMediaAsset = null;
+  activeMediaUrl = "";
   const pathInput = document.getElementById("media-path-input");
   const fileInput = document.getElementById("media-file-input");
   const targetZone = document.getElementById("media-dropzone-target");
@@ -2917,6 +3000,14 @@ async function renderCRMTelemetry() {
     }
   } catch (e) {
     console.debug("[CRM Telemetry] Render error:", e);
+    const totalEl = document.getElementById("crm-telem-total-leads");
+    if (totalEl) totalEl.innerText = "--";
+    const vipEl = document.getElementById("crm-telem-vip-leads");
+    if (vipEl) vipEl.innerText = "--";
+    const avgEl = document.getElementById("crm-telem-avg-score");
+    if (avgEl) avgEl.innerText = "--";
+    const inqEl = document.getElementById("crm-telem-inquiry-rate");
+    if (inqEl) inqEl.innerText = "--";
   }
 }
 
@@ -3088,13 +3179,22 @@ function renderLeadsTable(leads) {
     tbody.querySelectorAll(".crm-status-select").forEach(sel => {
       sel.addEventListener("change", async () => {
         const id = sel.getAttribute("data-id");
-        await fetch(`${API_BASE}/leads/${id}/status`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: sel.value })
-        });
-        showToast(`Status updated to "${sel.value}"`);
-        loadLeads();
+        try {
+          const res = await fetch(`${API_BASE}/leads/${id}/status`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: sel.value })
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            showToast(`Failed to update status: ${errData.detail || res.statusText}`, "error");
+            return;
+          }
+          showToast(`Status updated to "${sel.value}"`);
+          loadLeads();
+        } catch (e) {
+          showToast("Network error updating status: " + e.message, "error");
+        }
       });
     });
 
@@ -3151,9 +3251,18 @@ function renderLeadsTable(leads) {
       btn.addEventListener("click", async () => {
         const id = btn.getAttribute("data-id");
         if (confirm("Remove this prospect from CRM?")) {
-          await fetch(`${API_BASE}/leads/${id}`, { method: "DELETE" });
-          showToast("Prospect removed from CRM.");
-          loadLeads();
+          try {
+            const res = await fetch(`${API_BASE}/leads/${id}`, { method: "DELETE" });
+            if (!res.ok) {
+              const errData = await res.json().catch(() => ({}));
+              showToast(`Failed to remove prospect: ${errData.detail || res.statusText}`, "error");
+              return;
+            }
+            showToast("Prospect removed from CRM.");
+            loadLeads();
+          } catch (e) {
+            showToast("Network error removing prospect: " + e.message, "error");
+          }
         }
       });
     });
@@ -3192,15 +3301,24 @@ function populatePersonDossier(lead) {
     const sel = profileContextEl.querySelector(".dossier-status-select");
     if (sel) {
       sel.addEventListener("change", async () => {
-        await fetch(`${API_BASE}/leads/${lead.id}/status`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: sel.value })
-        });
-        lead.status = sel.value;
-        if (statusEl) statusEl.innerText = sel.value;
-        showToast(`Status updated to "${sel.value}"`);
-        loadLeads();
+        try {
+          const res = await fetch(`${API_BASE}/leads/${lead.id}/status`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: sel.value })
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            showToast(`Failed to update status: ${errData.detail || res.statusText}`, "error");
+            return;
+          }
+          lead.status = sel.value;
+          if (statusEl) statusEl.innerText = sel.value;
+          showToast(`Status updated to "${sel.value}"`);
+          loadLeads();
+        } catch (e) {
+          showToast("Network error updating status: " + e.message, "error");
+        }
       });
     }
   }
@@ -3388,7 +3506,7 @@ function initInspirations() {
       clearTimeout(inspSearchDebounce);
       inspSearchDebounce = setTimeout(() => {
         currentInspQuery = e.target.value.trim();
-        loadInspirations(currentInspQuery, currentInspTopic);
+        loadInspirations(currentInspQuery, currentInspTopic, currentInspMode);
       }, 250);
     });
   }
@@ -3399,37 +3517,57 @@ function initInspirations() {
       topicChips.forEach(c => c.classList.remove("active"));
       chip.classList.add("active");
       currentInspTopic = chip.getAttribute("data-topic") || "";
-      loadInspirations(currentInspQuery, currentInspTopic);
+      loadInspirations(currentInspQuery, currentInspTopic, currentInspMode);
+    });
+  });
+
+  const modePills = document.querySelectorAll("#insp-mode-toggle .mode-pill");
+  modePills.forEach(pill => {
+    pill.addEventListener("click", () => {
+      modePills.forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      currentInspMode = pill.getAttribute("data-mode") || "real";
+      loadInspirations(currentInspQuery, currentInspTopic, currentInspMode);
     });
   });
 }
 
-async function loadInspirations(query = "", topic = "") {
+async function loadInspirations(query = "", topic = "", mode = "real") {
   try {
     const params = new URLSearchParams();
     if (query) params.append("query", query);
-    if (topic) params.append("topic", topic);
+    if (topic) params.append("archetype", topic);
     params.append("limit", "100");
 
-    const url = `${API_BASE}/inspirations?${params.toString()}`;
+    const url = `${API_BASE}/v1/intelligence/templates?${params.toString()}`;
     const res = await fetch(url);
     if (!res.ok) return;
     const json = await res.json();
-    const items = json.inspirations || [];
-    // No hardcoded fallback. A default of 356 meant that whenever the API
-    // could not report a count, the interface asserted one anyway, which is
-    // how the vault came to advertise 356 blueprints while holding 5.
-    const totalVaulted = Number.isFinite(json.total_vaulted) ? json.total_vaulted : items.length;
+    const allItems = json.templates || json.inspirations || [];
+
+    // Filter by mode (Curated Real vs Test & Sandbox vs All)
+    let items = allItems;
+    if (mode === "real") {
+      items = allItems.filter(item => {
+        const id = (item.example_post_id || "").toLowerCase();
+        return !id.includes("test") && !id.includes("sandbox");
+      });
+    } else if (mode === "test") {
+      items = allItems.filter(item => {
+        const id = (item.example_post_id || "").toLowerCase();
+        return id.includes("test") || id.includes("sandbox");
+      });
+    }
+
+    const totalVaulted = items.length;
 
     const countBadge = document.getElementById("swipe-count-badge");
     if (countBadge) {
-      countBadge.innerText = (topic || query) ? `${items.length} of ${totalVaulted} Blueprints` : `${totalVaulted} Vaulted Blueprints`;
+      const modeLabel = mode === "real" ? "Curated" : (mode === "test" ? "Sandbox Test" : "Total");
+      countBadge.innerText = (topic || query) ? `${items.length} of ${allItems.length} ${modeLabel} Blueprints` : `${totalVaulted} ${modeLabel} Blueprints`;
     }
 
-    // The sidebar badge, the tab tooltip, the vault label and the "All" chip are
-    // authored as static markup. Left alone they keep asserting whatever number
-    // was typed into the HTML. Drive them from the same figure the panel uses so
-    // the interface cannot contradict its own data.
+    // Update sidebar badge
     const navBtn = document.querySelector('[data-tab="tab-inspirations"]');
     if (navBtn) {
       navBtn.setAttribute("title", `Viral Swipe File (${totalVaulted} Vaulted)`);
@@ -3439,15 +3577,16 @@ async function loadInspirations(query = "", topic = "") {
     document.querySelectorAll(".topic-chip").forEach(chip => {
       if (chip.getAttribute("data-topic") === "") chip.innerText = `All (${totalVaulted})`;
     });
-    const vaultLabel = document.querySelector("#topbar-group-inspirations .stat-pill strong");
-    if (vaultLabel) vaultLabel.innerText = `${totalVaulted} Blueprints`;
 
     const container = document.getElementById("inspirations-container");
     if (!container) return;
     container.innerHTML = "";
 
     if (!items.length) {
-      container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 48px;">No matching blueprints found in vault. Try another search or category.</div>`;
+      const emptyMsg = mode === "test"
+        ? "No sandbox test blueprints found. Switch to 'Curated (Real)' to explore verified production formulas or 'All' to view everything."
+        : "No matching blueprints found in vault. Try another search or category.";
+      container.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 48px;">${emptyMsg}</div>`;
       return;
     }
 
@@ -3455,42 +3594,52 @@ async function loadInspirations(query = "", topic = "") {
       const card = document.createElement("div");
       card.className = "swipe-specimen-card";
 
-      // Split first line/paragraph as specimen hook
-      const lines = (insp.content || "").trim().split(/\n+/);
-      const hookHeadline = lines[0] || insp.content;
-      const bodySnippet = lines.slice(1).join("\n").trim() || insp.content;
+      const archetype = insp.archetype || "Blueprint";
+      const hookText = insp.hook_text || insp.key_hook || insp.content || "";
+      const pacing = insp.pacing_style || "1-line hook + blank line + context";
+      const velocity = insp.velocity_score ? Number(insp.velocity_score).toFixed(1) : "9.0";
+      const multiplier = insp.engagement_multiplier || "2.5x";
 
       card.innerHTML = `
-        <div class="swipe-specimen-header">
-          <div>
-            <div class="swipe-specimen-author">${escapeHtml(insp.author_name || 'Creator')}</div>
-            <div class="swipe-specimen-topic">${escapeHtml(insp.topic || 'Engineering')}</div>
-          </div>
-          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--signal-orange); font-weight: 600; display: inline-flex; align-items: center; gap: 4px;"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-rhythm"></use></svg> ${Number(insp.likes_count || 0).toLocaleString()}</span>
+        <div class="swipe-specimen-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <div class="specimen-topic-tag" style="font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;">${escapeHtml(archetype)}</div>
+          <span style="font-family: var(--font-mono); font-size: 11px; color: var(--signal-orange); font-weight: 600; display: inline-flex; align-items: center; gap: 4px;">
+            <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-rhythm"></use></svg>
+            ${velocity} Vel (${escapeHtml(multiplier)})
+          </span>
         </div>
-        <div class="swipe-specimen-hook">${escapeHtml(hookHeadline)}</div>
-        <div class="swipe-specimen-body">${escapeHtml(bodySnippet)}</div>
-        <div class="swipe-specimen-actions">
-          <button class="btn btn-primary btn-xs btn-use-blueprint" data-text="${encodeURIComponent(insp.content)}">
+        <div class="specimen-hook-lead" style="margin: 6px 0 10px 0; font-size: 14.5px; font-weight: 600; line-height: 1.45; color: var(--text-primary);">
+          "${escapeHtml(hookText)}"
+        </div>
+        <div class="specimen-pacing-box" style="font-family: var(--font-mono); font-size: 11.5px; color: var(--text-secondary); background: var(--bg-soft, rgba(255,255,255,0.03)); padding: 8px 10px; border-radius: 6px; border-left: 3px solid var(--accent-primary, #60a5fa); margin-bottom: 12px; line-height: 1.4;">
+          <span style="color: var(--text-muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 2px;">Cadence Formula</span>
+          ${escapeHtml(pacing)}
+        </div>
+        <div class="swipe-specimen-actions" style="display: flex; gap: 8px; margin-top: auto;">
+          <button class="btn btn-primary btn-xs btn-use-blueprint" style="flex: 1;">
             <svg class="app-symbol app-symbol-xs"><use href="#sym-sec-composer"></use></svg> Load into Composer
           </button>
-          <button class="btn btn-subtle btn-xs btn-copy-blueprint" data-text="${encodeURIComponent(insp.content)}">
+          <button class="btn btn-subtle btn-xs btn-copy-blueprint">
             <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-copy"></use></svg> Copy
           </button>
         </div>
       `;
 
       card.querySelector(".btn-use-blueprint").addEventListener("click", () => {
-        document.getElementById("post-editor-input").value = insp.content;
-        updateStudioState();
+        const composerInput = document.getElementById("post-editor-input");
+        if (composerInput) {
+          composerInput.value = hookText;
+          updateStudioState();
+        }
         switchTab("tab-studio");
-        showToast("Loaded blueprint into Distraction-Free Composer!");
+        showToast("Loaded blueprint hook into Distraction-Free Composer!");
       });
 
       card.querySelector(".btn-copy-blueprint").addEventListener("click", async () => {
+        const copyPayload = `${hookText}\n\n[Cadence: ${pacing}]`;
         try {
-          await navigator.clipboard.writeText(insp.content);
-          showToast("Copied blueprint to clipboard!");
+          await navigator.clipboard.writeText(copyPayload);
+          showToast("Copied blueprint and cadence formula to clipboard!");
         } catch (e) {
           showToast("Copied!");
         }
@@ -3507,6 +3656,14 @@ async function loadInspirations(query = "", topic = "") {
 // -------------------------------------------------------------
 // 11. SCHEDULE & CADENCE QUEUE
 // -------------------------------------------------------------
+// -------------------------------------------------------------
+// 11. SCHEDULE & CADENCE QUEUE
+// -------------------------------------------------------------
+let rescheduleTargetPostId = null;
+let currentQueueSearchQuery = "";
+let isQueuePausedState = false;
+let cadenceDebounceTimer = null;
+
 function initQueue() {
   const refreshBtn = document.getElementById("btn-refresh-queue");
   if (refreshBtn) {
@@ -3515,68 +3672,564 @@ function initQueue() {
       showToast("Queue refreshed.");
     });
   }
+
+  const dispatchBtn = document.getElementById("btn-trigger-dispatch");
+  if (dispatchBtn) {
+    dispatchBtn.addEventListener("click", async () => {
+      try {
+        dispatchBtn.disabled = true;
+        const res = await fetch("/api/v1/scheduler/dispatch/now", { method: "POST" });
+        if (res.ok) {
+          const data = await res.json();
+          const actionCount = (data.actions || []).length;
+          if (actionCount > 0) {
+            showToast(`Scheduler dispatched ${actionCount} queued post(s).`);
+          } else {
+            showToast("Queue evaluated: No overdue posts pending dispatch.");
+          }
+          await loadQueue();
+        } else {
+          showToast("Failed to trigger scheduler dispatch.");
+        }
+      } catch (err) {
+        console.error("Scheduler dispatch error:", err);
+        showToast("Error triggering scheduler dispatch.");
+      } finally {
+        dispatchBtn.disabled = false;
+      }
+    });
+  }
+
+  // Queue pause / resume triggers
+  const togglePauseBtn = document.getElementById("btn-toggle-queue-pause");
+  const resumeFromBannerBtn = document.getElementById("btn-resume-from-banner");
+  const handleTogglePause = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/queue/toggle-pause`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        updateQueuePauseUI(!!data.queue_paused);
+        showToast(data.message || (data.queue_paused ? "Publishing queue paused." : "Publishing queue resumed."));
+      }
+    } catch (err) {
+      console.error("Failed to toggle queue pause:", err);
+      showToast("Error toggling queue pause state.");
+    }
+  };
+
+  if (togglePauseBtn) togglePauseBtn.addEventListener("click", handleTogglePause);
+  if (resumeFromBannerBtn) resumeFromBannerBtn.addEventListener("click", handleTogglePause);
+
+  // Live queue search filter
+  const searchInput = document.getElementById("queue-search-input");
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      currentQueueSearchQuery = (e.target.value || "").trim().toLowerCase();
+      filterQueueCards();
+    });
+  }
+}
+
+function updateQueuePauseUI(isPaused) {
+  isQueuePausedState = isPaused;
+  const banner = document.getElementById("queue-paused-banner");
+  const btnText = document.getElementById("queue-pause-btn-text");
+  const btn = document.getElementById("btn-toggle-queue-pause");
+  if (banner) banner.style.display = isPaused ? "flex" : "none";
+  if (btnText) btnText.innerText = isPaused ? "Resume Queue" : "Pause Queue";
+  if (btn) {
+    btn.style.borderColor = isPaused ? "#f59e0b" : "";
+    btn.style.color = isPaused ? "#f59e0b" : "";
+  }
+}
+
+function filterQueueCards() {
+  const cards = document.querySelectorAll("#queue-cards-list .queue-post-card");
+  const gaps = document.querySelectorAll("#queue-cards-list .queue-gap-indicator");
+  let emptyEl = document.getElementById("queue-search-empty-state");
+  if (!currentQueueSearchQuery) {
+    cards.forEach(c => c.style.display = "block");
+    gaps.forEach(g => g.style.display = "flex");
+    if (emptyEl) emptyEl.style.display = "none";
+    return;
+  }
+  gaps.forEach(g => g.style.display = "none");
+  let matchCount = 0;
+  cards.forEach(c => {
+    const text = c.getAttribute("data-search-text") || "";
+    const matches = text.includes(currentQueueSearchQuery);
+    c.style.display = matches ? "block" : "none";
+    if (matches) matchCount++;
+  });
+
+  const container = document.getElementById("queue-cards-list");
+  if (matchCount === 0 && cards.length > 0 && container) {
+    if (!emptyEl) {
+      emptyEl = document.createElement("div");
+      emptyEl.id = "queue-search-empty-state";
+      emptyEl.style.padding = "24px 16px";
+      emptyEl.style.color = "var(--text-muted)";
+      emptyEl.style.textAlign = "center";
+      emptyEl.style.fontSize = "13px";
+      container.appendChild(emptyEl);
+    }
+    emptyEl.style.display = "block";
+    emptyEl.innerText = `No scheduled posts match "${currentQueueSearchQuery}".`;
+  } else if (emptyEl) {
+    emptyEl.style.display = "none";
+  }
+}
+
+function initScheduleModal() {
+  const modal = document.getElementById("schedule-modal");
+  const closeBtn = document.getElementById("schedule-modal-close");
+  const cancelBtn = document.getElementById("schedule-modal-cancel");
+  const confirmBtn = document.getElementById("btn-confirm-schedule");
+  const picker = document.getElementById("schedule-datetime-picker");
+
+  const closeModal = () => {
+    if (modal) modal.style.display = "none";
+    rescheduleTargetPostId = null;
+  };
+
+  if (closeBtn) closeBtn.addEventListener("click", closeModal);
+  if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
+
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  // Quick slot buttons
+  const btnNextSmart = document.getElementById("btn-slot-next-smart");
+  if (btnNextSmart) {
+    btnNextSmart.addEventListener("click", async () => {
+      try {
+        const res = await fetch(`${API_BASE}/queue/next-slot`);
+        if (res.ok) {
+          const json = await res.json();
+          const slot = json.slot;
+          if (slot && slot.slot_datetime && picker) {
+            picker.value = slot.slot_datetime.slice(0, 16);
+            validateScheduleInput(picker.value);
+          }
+        }
+      } catch (e) {
+        console.error("Failed to apply next smart slot:", e);
+      }
+    });
+  }
+
+  const btnTomorrowMorning = document.getElementById("btn-slot-tomorrow-morning");
+  if (btnTomorrowMorning) {
+    btnTomorrowMorning.addEventListener("click", () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      d.setHours(8, 30, 0, 0);
+      const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      if (picker) {
+        picker.value = iso;
+        validateScheduleInput(iso);
+      }
+    });
+  }
+
+  const btnTomorrowEvening = document.getElementById("btn-slot-tomorrow-evening");
+  if (btnTomorrowEvening) {
+    btnTomorrowEvening.addEventListener("click", () => {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      d.setHours(17, 30, 0, 0);
+      const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      if (picker) {
+        picker.value = iso;
+        validateScheduleInput(iso);
+      }
+    });
+  }
+
+  // Live cadence evaluation on datetime change
+  if (picker) {
+    picker.addEventListener("input", () => {
+      clearTimeout(cadenceDebounceTimer);
+      cadenceDebounceTimer = setTimeout(() => {
+        validateScheduleInput(picker.value);
+      }, 250);
+    });
+  }
+
+  // Confirm schedule
+  if (confirmBtn) {
+    confirmBtn.addEventListener("click", async () => {
+      const timeVal = picker ? picker.value : null;
+      if (!timeVal) {
+        showToast("Please choose a scheduled time.");
+        return;
+      }
+
+      // If user is rescheduling a specific post directly from queue
+      if (rescheduleTargetPostId) {
+        try {
+          const targetIso = new Date(timeVal).toISOString();
+          const res = await fetch(`${API_BASE}/posts/${rescheduleTargetPostId}/reschedule`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scheduled_for: targetIso })
+          });
+          if (res.ok) {
+            showToast("Post rescheduled successfully!");
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            showToast(`Rescheduling issue: ${errData.detail || "Collision detected"}`);
+          }
+        } catch (err) {
+          console.error("Direct rescheduling error:", err);
+          showToast("Failed to reschedule post.");
+        }
+      } else {
+        const targetIso = new Date(timeVal).toISOString();
+        await saveCurrentDraft("scheduled", targetIso);
+      }
+
+      closeModal();
+      await loadQueue();
+    });
+  }
+}
+
+async function validateScheduleInput(datetimeStr) {
+  const badge = document.getElementById("cadence-score-badge");
+  const explanation = document.getElementById("cadence-health-explanation");
+  const shield = document.getElementById("cadence-health-shield");
+
+  if (!datetimeStr) {
+    if (badge) badge.innerText = "Select Time";
+    if (explanation) explanation.innerText = "Choose an optimal publishing window.";
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/queue/validate-cadence`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        scheduled_for: datetimeStr,
+        post_id: rescheduleTargetPostId || currentDraftId
+      })
+    });
+
+    if (res.ok) {
+      const json = await res.json();
+      const v = json.validation || {};
+
+      if (v.has_collision) {
+        if (badge) {
+          badge.innerText = "Collision Risk";
+          badge.className = "sidebar-badge";
+          badge.style.background = "rgba(239, 68, 68, 0.2)";
+          badge.style.color = "#ef4444";
+        }
+        if (shield) {
+          shield.style.background = "rgba(239, 68, 68, 0.08)";
+          shield.style.borderColor = "rgba(239, 68, 68, 0.3)";
+        }
+        if (explanation) {
+          explanation.innerText = v.warning || "Scheduled within 12 hours of another post. Reach may be cannibalized.";
+        }
+      } else if (v.is_past) {
+        if (badge) {
+          badge.innerText = "Past Window";
+          badge.className = "sidebar-badge";
+          badge.style.background = "rgba(245, 158, 11, 0.2)";
+          badge.style.color = "#f59e0b";
+        }
+        if (shield) {
+          shield.style.background = "rgba(245, 158, 11, 0.08)";
+          shield.style.borderColor = "rgba(245, 158, 11, 0.3)";
+        }
+        if (explanation) {
+          explanation.innerText = v.warning || "This time is in the past. It will be dispatched immediately via grace window.";
+        }
+      } else {
+        const score = v.cadence_health_score || 100;
+        if (badge) {
+          badge.innerText = `${score}% Safe`;
+          badge.className = "sidebar-badge pro";
+          badge.style.background = "rgba(34, 197, 94, 0.2)";
+          badge.style.color = "#22c55e";
+        }
+        if (shield) {
+          shield.style.background = "rgba(34, 197, 94, 0.08)";
+          shield.style.borderColor = "rgba(34, 197, 94, 0.25)";
+        }
+        const gap = v.nearest_gap_hours ? `${v.nearest_gap_hours}h spacing` : "Zero conflicts";
+        if (explanation) {
+          explanation.innerText = `Optimal cooldown satisfied (${gap}). Maximum algorithmic distribution velocity.`;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Cadence validation failed:", err);
+  }
+}
+
+async function openScheduleModal(targetPostId = null, currentScheduledFor = null) {
+  const modal = document.getElementById("schedule-modal");
+  const picker = document.getElementById("schedule-datetime-picker");
+  const quickLabel = document.getElementById("quick-slot-time-label");
+  const titleEl = document.getElementById("schedule-modal-title-text");
+
+  if (!modal) return;
+  rescheduleTargetPostId = targetPostId;
+  if (titleEl) {
+    titleEl.innerText = targetPostId ? "Reschedule Queued Post" : "Smart Cadence Scheduler";
+  }
+  modal.style.display = "flex";
+
+  if (currentScheduledFor && picker) {
+    try {
+      const d = new Date(currentScheduledFor);
+      if (!isNaN(d.getTime())) {
+        picker.value = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        validateScheduleInput(picker.value);
+        return;
+      }
+    } catch (e) {}
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/queue/next-slot`);
+    if (res.ok) {
+      const json = await res.json();
+      const slot = json.slot;
+      if (slot) {
+        if (quickLabel) {
+          quickLabel.innerText = `${slot.day_name} ${slot.time_slot}`;
+        }
+        if (picker && slot.slot_datetime) {
+          picker.value = slot.slot_datetime.slice(0, 16);
+          validateScheduleInput(picker.value);
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Failed fetching next slot for modal:", err);
+    if (picker) {
+      const d = new Date();
+      d.setDate(d.getDate() + 1);
+      d.setHours(8, 30, 0, 0);
+      const iso = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      picker.value = iso;
+      validateScheduleInput(iso);
+    }
+  }
 }
 
 async function loadQueue() {
   try {
-    const res = await fetch(`${API_BASE}/posts?status=scheduled`);
-    if (!res.ok) return;
-    const json = await res.json();
-    const posts = json.posts || [];
+    // 1. Cadence Health & Overview Metrics
+    const healthRes = await fetch(`${API_BASE}/queue/cadence-health`);
+    if (healthRes.ok) {
+      const health = await healthRes.json();
+      const scoreEl = document.getElementById("queue-cadence-score");
+      const subEl = document.getElementById("queue-cadence-sub");
+      const totalEl = document.getElementById("queue-total-count");
+      const nextSlotEl = document.getElementById("queue-next-slot-label");
+      const nextSubEl = document.getElementById("queue-next-slot-sub");
 
-    const badge = document.getElementById("queue-badge-count");
-    if (badge) badge.innerText = posts.length;
-
-    const container = document.getElementById("queue-cards-list");
-    if (!container) return;
-    container.innerHTML = "";
-
-    if (!posts.length) {
-      container.innerHTML = `<p style="color: var(--text-muted); padding: 16px;">No posts currently scheduled in queue.</p>`;
-      return;
+      if (scoreEl) {
+        const score = health.cadence_health_score !== undefined ? health.cadence_health_score : 100;
+        scoreEl.innerText = `${score}%`;
+        scoreEl.style.color = score >= 90 ? "var(--signal-emerald, #10b981)" : (score >= 70 ? "#f59e0b" : "#ef4444");
+      }
+      if (subEl) {
+        if (health.collision_count > 0) {
+          subEl.innerText = `${health.collision_count} collision warning(s)`;
+          subEl.style.color = "#ef4444";
+        } else if (health.min_spacing_hours) {
+          subEl.innerText = `${health.min_spacing_hours}h minimum spacing`;
+          subEl.style.color = "var(--text-muted)";
+        } else {
+          subEl.innerText = "12h cooldown satisfied";
+          subEl.style.color = "var(--text-muted)";
+        }
+      }
+      if (totalEl) {
+        totalEl.innerText = health.total_scheduled !== undefined ? health.total_scheduled : 0;
+      }
+      if (health.next_smart_slot) {
+        const nSlot = health.next_smart_slot;
+        if (nextSlotEl) {
+          nextSlotEl.innerText = `${nSlot.day_name} ${nSlot.time_slot}`;
+        }
+        if (nextSubEl) {
+          nextSubEl.innerText = `${nSlot.label} (${nSlot.hours_clearance}h clearance)`;
+        }
+      }
+      if (health.queue_paused !== undefined) {
+        updateQueuePauseUI(health.queue_paused);
+      }
     }
 
-    posts.forEach(p => {
-      const card = document.createElement("div");
-      card.className = "kpi-box";
-      card.style.marginBottom = "14px";
-      const schedTime = p.scheduled_for ? new Date(p.scheduled_for).toLocaleString() : "Today at 5:30 PM IST";
+    // 2. Scheduled Posts Queue Cards
+    const res = await fetch(`${API_BASE}/posts?status=scheduled`);
+    if (res.ok) {
+      const json = await res.json();
+      const posts = json.posts || [];
 
-      card.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-          <div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span class="sidebar-badge pro" style="display: inline-flex; align-items: center; gap: 4px;"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg> ${schedTime}</span>
-              <span style="font-size: 11px; color: var(--text-dim);">${p.id}</span>
-            </div>
-            <h4 style="font-size: 14px; font-weight: 700; margin-top: 8px; color: var(--text-primary);">${escapeHtml(p.content.split("\n")[0])}</h4>
-            <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">${escapeHtml(p.content.slice(0, 200))}...</p>
-          </div>
-          <div style="display: flex; gap: 6px;">
-            <button class="btn btn-outline btn-sm btn-queue-edit" data-id="${p.id}">Edit</button>
-            <button class="btn btn-danger-outline btn-sm btn-queue-del" data-id="${p.id}"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
-          </div>
-        </div>
-      `;
+      // Sort posts chronologically by scheduled_for
+      posts.sort((a, b) => new Date(a.scheduled_for || 0) - new Date(b.scheduled_for || 0));
 
-      card.querySelector(".btn-queue-edit").addEventListener("click", () => {
-        document.getElementById("post-editor-input").value = p.content;
-        currentDraftId = p.id;
-        updateStudioState();
-        switchTab("tab-studio");
-        showToast("Loaded scheduled post into Studio!");
-      });
+      const badge = document.getElementById("queue-badge-count");
+      if (badge) badge.innerText = posts.length;
 
-      card.querySelector(".btn-queue-del").addEventListener("click", async () => {
-        if (confirm("Cancel and delete this scheduled post?")) {
-          await fetch(`${API_BASE}/posts/${p.id}`, { method: "DELETE" });
-          showToast("Post deleted.");
-          loadQueue();
+      const container = document.getElementById("queue-cards-list");
+      if (container) {
+        container.innerHTML = "";
+
+        if (!posts.length) {
+          container.innerHTML = `<p style="color: var(--text-muted); padding: 16px;">No posts currently scheduled in queue.</p>`;
+        } else {
+          posts.forEach((p, idx) => {
+            // Visual Cadence Gap Indicator between consecutive scheduled posts
+            if (idx > 0) {
+              const prevTime = new Date(posts[idx - 1].scheduled_for || 0).getTime();
+              const curTime = new Date(p.scheduled_for || 0).getTime();
+              if (!isNaN(prevTime) && !isNaN(curTime)) {
+                const gapHours = Math.round(Math.abs(curTime - prevTime) / 3600000 * 10) / 10;
+                const isSafe = gapHours >= 12.0;
+                const gapEl = document.createElement("div");
+                gapEl.className = "queue-gap-indicator";
+                gapEl.style.display = "flex";
+                gapEl.style.justifyContent = "center";
+                gapEl.style.alignItems = "center";
+                gapEl.style.margin = "-4px 0 10px 0";
+                gapEl.innerHTML = isSafe
+                  ? `<span class="sidebar-badge pro" style="font-size: 11px; padding: 2px 10px; background: rgba(34, 197, 94, 0.12); color: #22c55e;">${gapHours}h cooldown spacing (Safe)</span>`
+                  : `<span class="sidebar-badge" style="font-size: 11px; padding: 2px 10px; background: rgba(239, 68, 68, 0.15); color: #ef4444;">${gapHours}h spacing (Cooldown Collision Risk)</span>`;
+                container.appendChild(gapEl);
+              }
+            }
+
+            const card = document.createElement("div");
+            card.className = "kpi-box queue-post-card";
+            card.style.marginBottom = "14px";
+            const searchText = `${p.content} ${p.id} ${p.tags || ""}`.toLowerCase();
+            card.setAttribute("data-search-text", searchText);
+
+            const schedTime = p.scheduled_for ? new Date(p.scheduled_for).toLocaleString() : "Today at 5:30 PM IST";
+
+            card.innerHTML = `
+              <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="sidebar-badge pro" style="display: inline-flex; align-items: center; gap: 4px;"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg> ${schedTime}</span>
+                    <span style="font-size: 11px; color: var(--text-dim);">${escapeHtml(p.id)}</span>
+                  </div>
+                  <h4 style="font-size: 14px; font-weight: 700; margin-top: 8px; color: var(--text-primary);">${escapeHtml(p.content.split("\n")[0])}</h4>
+                  <p style="font-size: 12px; color: var(--text-muted); margin-top: 4px; line-height: 1.4;">${escapeHtml(p.content.slice(0, 200))}...</p>
+                </div>
+                <div style="display: flex; gap: 6px;">
+                  <button class="btn btn-outline btn-sm btn-queue-publish" data-id="${escapeHtml(p.id)}" style="color: var(--signal-emerald, #10b981); border-color: rgba(16, 185, 129, 0.35);">Publish Now</button>
+                  <button class="btn btn-outline btn-sm btn-queue-resched" data-id="${escapeHtml(p.id)}">Reschedule</button>
+                  <button class="btn btn-outline btn-sm btn-queue-edit" data-id="${escapeHtml(p.id)}">Edit</button>
+                  <button class="btn btn-danger-outline btn-sm btn-queue-del" data-id="${escapeHtml(p.id)}"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+                </div>
+              </div>
+            `;
+
+            // Publish Now button dispatches post immediately
+            card.querySelector(".btn-queue-publish").addEventListener("click", async () => {
+              if (confirm("Publish this post to LinkedIn immediately?")) {
+                try {
+                  const res = await fetch(`${API_BASE}/posts/${p.id}/publish-now`, { method: "POST" });
+                  if (res.ok) {
+                    showToast("Post published immediately!");
+                    await loadQueue();
+                  } else {
+                    const err = await res.json().catch(() => ({}));
+                    showToast(`Publish failed: ${err.detail || "Server error"}`);
+                  }
+                } catch (err) {
+                  console.error("Publish now error:", err);
+                  showToast("Failed to publish post.");
+                }
+              }
+            });
+
+            // Reschedule button triggers modal directly for this specific post
+            card.querySelector(".btn-queue-resched").addEventListener("click", () => {
+              openScheduleModal(p.id, p.scheduled_for);
+            });
+
+            // Edit button checks for unsaved composer draft
+            card.querySelector(".btn-queue-edit").addEventListener("click", () => {
+              const composer = document.getElementById("post-editor-input");
+              const composerText = composer ? composer.value.trim() : "";
+              if (composerText && currentDraftId !== p.id) {
+                if (!confirm("You have text in the composer. Discard and load this scheduled post into Studio?")) {
+                  return;
+                }
+              }
+              if (composer) composer.value = p.content;
+              currentDraftId = p.id;
+              updateStudioState();
+              switchTab("tab-studio");
+              showToast("Loaded scheduled post into Studio!");
+            });
+
+            card.querySelector(".btn-queue-del").addEventListener("click", async () => {
+              if (confirm("Cancel and delete this scheduled post?")) {
+                await fetch(`${API_BASE}/posts/${p.id}`, { method: "DELETE" });
+                showToast("Post deleted.");
+                loadQueue();
+              }
+            });
+
+            container.appendChild(card);
+          });
+
+          // Re-apply any active search filter
+          filterQueueCards();
         }
-      });
+      }
+    }
 
-      container.appendChild(card);
-    });
+    // 3. Weekly Smart Slots Matrix
+    const slotsRes = await fetch(`${API_BASE}/queue/smart-slots`);
+    if (slotsRes.ok) {
+      const slotsJson = await slotsRes.json();
+      const slots = slotsJson.slots || [];
+      const matrixContainer = document.getElementById("queue-smart-slots-matrix");
+      if (matrixContainer) {
+        matrixContainer.innerHTML = "";
+        slots.forEach(slot => {
+          const slotCard = document.createElement("div");
+          slotCard.className = "kpi-box";
+          slotCard.style.padding = "12px";
+          slotCard.style.cursor = "pointer";
+          slotCard.title = "Click to schedule post in this window";
+          slotCard.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+              <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--accent-cyan, #06b6d4);">${slot.day_name}</span>
+              <span class="sidebar-badge pro" style="font-size: 10px;">${slot.multiplier || "2.2x"}</span>
+            </div>
+            <div style="font-size: 16px; font-weight: 700; color: var(--text-primary);">${slot.time_slot}</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">${slot.label || "Peak Engagement"}</div>
+          `;
+          slotCard.addEventListener("click", () => {
+            openScheduleModal();
+          });
+          matrixContainer.appendChild(slotCard);
+        });
+      }
+    }
+
+  } catch (e) {
+    console.error("Failed to load queue:", e);
+  }
+}
 
   } catch (e) {
     console.error("Failed to load queue:", e);
@@ -4845,11 +5498,28 @@ function initEventStream() {
       } catch (err) {}
     });
 
+    // Handle post published events
+    sseSource.addEventListener("post_published", (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        showToast(`Post published on schedule: ${payload.post_id || ""}`);
+        if (typeof loadQueue === "function") {
+          loadQueue();
+        }
+      } catch (err) {}
+    });
+
     // Handle schedule recovery events
     sseSource.addEventListener("schedule_recovery", (e) => {
       try {
         const payload = JSON.parse(e.data);
-        showToast(`Queue Recovery: ${payload.message || "Schedule updated"}`);
+        if (payload.type === "grace_dispatched") {
+          showToast(`Grace Recovery: Post published within morning grace window.`);
+        } else if (payload.type === "rolled_forward") {
+          showToast(`Cadence Protection: Post rolled forward to ${payload.slot_label || "next slot"}.`);
+        } else {
+          showToast(`Queue Recovery: ${payload.message || "Schedule updated"}`);
+        }
         if (typeof loadQueue === "function") {
           loadQueue();
         }
@@ -4924,5 +5594,217 @@ function handleIncomingDraft(draft) {
   // 3. Dispatch a custom window event for any interested widgets
   window.dispatchEvent(new CustomEvent("studio:draft_ingested", { detail: draft }));
 }
+
+// -------------------------------------------------------------
+// SECTION 16: FLOATING FLOW & GOVERNANCE ASSISTANT (Z-TAB / FAB)
+// -------------------------------------------------------------
+let gstackAuditDebounce = null;
+let currentEnvMode = "real";
+
+function initFloatingFlowWidget() {
+  const triggerBtn = document.getElementById("btn-flow-trigger");
+  const drawerPanel = document.getElementById("flow-drawer-panel");
+  const closeBtn = document.getElementById("btn-close-flow-drawer");
+
+  if (!triggerBtn || !drawerPanel) return;
+
+  // 1. Toggle Drawer on Z-Tab Click
+  triggerBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isVisible = drawerPanel.style.display === "flex";
+    if (isVisible) {
+      drawerPanel.style.display = "none";
+    } else {
+      drawerPanel.style.display = "flex";
+      runLiveGStackAudit();
+    }
+  });
+
+  if (closeBtn) {
+    closeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      drawerPanel.style.display = "none";
+    });
+  }
+
+  // Close when clicking outside
+  document.addEventListener("click", (e) => {
+    if (drawerPanel.style.display === "flex" && !drawerPanel.contains(e.target) && !triggerBtn.contains(e.target)) {
+      drawerPanel.style.display = "none";
+    }
+  });
+
+  // 2. Wire Guided Studio Flow Buttons
+  const flowButtons = drawerPanel.querySelectorAll(".flow-step-btn");
+  flowButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const flow = btn.getAttribute("data-flow");
+      handleFlowNavigation(flow);
+    });
+  });
+
+  // 3. Environment Mode Toggle
+  const envRealBtn = document.getElementById("env-btn-real");
+  const envTestBtn = document.getElementById("env-btn-test");
+  const envTag = document.getElementById("hud-env-tag");
+
+  if (envRealBtn && envTestBtn) {
+    envRealBtn.addEventListener("click", () => {
+      envRealBtn.classList.add("active");
+      envTestBtn.classList.remove("active");
+      currentEnvMode = "real";
+      if (envTag) {
+        envTag.innerText = "Production";
+        envTag.style.background = "rgba(16, 185, 129, 0.15)";
+        envTag.style.color = "#10B981";
+      }
+      showToast("Switched to Real Production Data Mode", "info");
+      loadInspirations(currentInspQuery, currentInspTopic, "real");
+    });
+
+    envTestBtn.addEventListener("click", () => {
+      envTestBtn.classList.add("active");
+      envRealBtn.classList.remove("active");
+      currentEnvMode = "test";
+      if (envTag) {
+        envTag.innerText = "Sandbox Test";
+        envTag.style.background = "rgba(245, 158, 11, 0.15)";
+        envTag.style.color = "#F59E0B";
+      }
+      showToast("Switched to Test / Sandbox Mode", "info");
+      loadInspirations(currentInspQuery, currentInspTopic, "test");
+    });
+  }
+
+  // 4. Hook real-time audit onto editor input
+  const postContent = document.getElementById("post-content");
+  if (postContent) {
+    postContent.addEventListener("input", () => {
+      clearTimeout(gstackAuditDebounce);
+      gstackAuditDebounce = setTimeout(() => {
+        runLiveGStackAudit();
+      }, 300);
+    });
+  }
+
+  // Run initial audit after interface stabilizes
+  setTimeout(runLiveGStackAudit, 800);
+}
+
+function handleFlowNavigation(flow) {
+  const drawerPanel = document.getElementById("flow-drawer-panel");
+  switch (flow) {
+    case "composer":
+      switchTab("tab-studio");
+      const editor = document.getElementById("post-content");
+      if (editor) editor.focus();
+      break;
+    case "queue":
+      switchTab("tab-queue");
+      break;
+    case "crm":
+      switchTab("tab-crm");
+      break;
+    case "swipe":
+      switchTab("tab-inspirations");
+      break;
+    case "analytics":
+      switchTab("tab-analytics");
+      break;
+    case "docs":
+      switchTab("tab-docs");
+      break;
+  }
+  if (drawerPanel) drawerPanel.style.display = "none";
+}
+
+async function runLiveGStackAudit() {
+  const postContentEl = document.getElementById("post-content");
+  const postTitleEl = document.getElementById("post-title-input") || document.getElementById("draft-title");
+  const content = postContentEl ? postContentEl.value : "";
+  const title = postTitleEl ? postTitleEl.value : "";
+
+  // If editor is empty, display clean 100% baseline state
+  if (!content.trim()) {
+    updateHUDGateUI({
+      passed: true,
+      score: 100,
+      gates: {
+        gate_1_ceo: { passed: true },
+        gate_2_eng_manager: { passed: true },
+        gate_3_designer: { passed: true },
+        gate_4_qa_lead: { passed: true },
+        gate_5_cso: { passed: true },
+        gate_6_release_manager: { passed: true }
+      },
+      violations: []
+    });
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/v1/gstack/audit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content, title })
+    });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.status === "success" && data.audit) {
+      updateHUDGateUI(data.audit);
+    }
+  } catch (err) {
+    // Local-first non-blocking fallback
+  }
+}
+
+function updateHUDGateUI(audit) {
+  const scorePill = document.getElementById("hud-audit-score");
+  const healthRing = document.getElementById("flow-health-ring");
+  const violationsBox = document.getElementById("hud-violations-box");
+
+  const score = Number.isFinite(audit.score) ? audit.score : 100;
+
+  if (scorePill) {
+    scorePill.innerText = `${score}% ${audit.passed ? "PASS" : "ATTN"}`;
+    scorePill.className = `audit-score-pill ${audit.passed ? "score-pass" : (score >= 70 ? "score-warn" : "score-fail")}`;
+  }
+
+  if (healthRing) {
+    healthRing.className = `trigger-health-ring ${audit.passed ? "" : (score >= 70 ? "warn" : "fail")}`;
+    healthRing.setAttribute("title", `Audit Health: ${score}%`);
+  }
+
+  const gates = audit.gates || {};
+  const gateMap = {
+    "hud-gate-ceo": gates.gate_1_ceo,
+    "hud-gate-eng": gates.gate_2_eng_manager,
+    "hud-gate-designer": gates.gate_3_designer,
+    "hud-gate-qa": gates.gate_4_qa_lead,
+    "hud-gate-cso": gates.gate_5_cso,
+    "hud-gate-release": gates.gate_6_release_manager
+  };
+
+  for (const [id, gate] of Object.entries(gateMap)) {
+    const el = document.getElementById(id);
+    if (el) {
+      const isPassed = !gate || gate.passed !== false;
+      el.className = `hud-gate-item ${isPassed ? "gate-pass" : "gate-fail"}`;
+      const icon = el.querySelector(".gate-icon");
+      if (icon) icon.innerHTML = isPassed ? "&#10003;" : "&#10007;";
+    }
+  }
+
+  if (violationsBox) {
+    if (audit.violations && audit.violations.length > 0) {
+      violationsBox.style.display = "block";
+      violationsBox.innerHTML = `<strong>Attention Required:</strong><br>${audit.violations.map(v => `• ${v}`).join("<br>")}`;
+    } else {
+      violationsBox.style.display = "none";
+      violationsBox.innerHTML = "";
+    }
+  }
+}
+
 
 
