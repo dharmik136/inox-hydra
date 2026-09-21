@@ -27,6 +27,65 @@ except ImportError:
     from rate_limiter import rate_limiter
 
 
+# -------------------------------------------------------------
+# The passive-observer boundary
+# -------------------------------------------------------------
+# This product observes pages the creator's own browser already loaded. It does
+# not fetch on their behalf. That distinction is the product's stated design and
+# it is worth enforcing in code rather than in a document, because three call
+# sites in this file had already crossed it: a GET /me fired from a webRequest
+# listener, a second GET behind the stats sync, and a live POST to
+# contentcreation/normShares.
+#
+# Every outbound request to LinkedIn from this process now passes through
+# egress_guard(). It refuses by default. Setting INOX_ALLOW_LINKEDIN_EGRESS=1
+# opts back in deliberately, which is a decision someone has to make on purpose
+# rather than one that happens by accident.
+#
+# egress_performed is what a test asserts against. Zero is the contract.
+EGRESS_ENV_FLAG = "INOX_ALLOW_LINKEDIN_EGRESS"
+
+egress_stats = {"refused": 0, "performed": 0, "last_refused_endpoint": None}
+
+
+def egress_allowed() -> bool:
+    """True only when the operator has explicitly opted into active requests."""
+    return os.environ.get(EGRESS_ENV_FLAG, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def egress_guard(endpoint: str) -> Optional[Dict[str, Any]]:
+    """
+    Call before any outbound request to LinkedIn.
+
+    Returns None when the request may proceed. Returns a result dict describing
+    the refusal when it may not, which callers return to their own caller
+    unchanged so the refusal is visible rather than silent.
+    """
+    if egress_allowed():
+        egress_stats["performed"] += 1
+        return None
+    egress_stats["refused"] += 1
+    egress_stats["last_refused_endpoint"] = endpoint
+    return {
+        "status": "egress_refused",
+        # Not healthy, and not unhealthy: unknown. Answering True here meant
+        # /api/v1/session/health certified an expired session it had never
+        # checked. Callers must be able to tell "we did not look" apart from
+        # "we looked and it was fine".
+        "healthy": None,
+        "checked": False,
+        "endpoint": endpoint,
+        # Every other branch of check_session_health returns this key. Dropping
+        # it made callers that read circuit_breaker.state raise KeyError.
+        "circuit_breaker": None,
+        "message": (
+            "This studio observes LinkedIn pages you open yourself and does not "
+            "request data on your behalf, so the session was not checked. Set "
+            f"{EGRESS_ENV_FLAG}=1 to allow active requests."
+        ),
+    }
+
+
 class CircuitBreaker:
     """
     Safeguards LinkedIn account against rate-limiting and challenge checkpoints.
@@ -174,6 +233,47 @@ class LinkedInClient:
         Ingests Creator Analytics JSON payload (intercepted from browser extension
         or directly queried from Voyager) and stores it in SQLite.
         """
+        # A daily row must hold a daily figure.
+        #
+        # The creator analytics page reports whatever window its range selector
+        # is set to. Writing a 28 day total into a row keyed by today's date
+        # made every downstream aggregate wrong in a way no later fix could
+        # detect, so a positively identified multi-day window is refused here
+        # rather than stored.
+        #
+        # An unknown window is still stored. Refusing it would mean capturing
+        # nothing whenever the selector markup changes, and a row labelled
+        # "period unknown" is more useful than no row at all.
+        DAILY_WINDOWS = {"1d", "1D", "day", "daily"}
+        declared_period = raw_data.get("period_label")
+
+        # Check the buckets as well as the envelope. A payload that declared its
+        # window only per bucket slipped past a top-level-only check and then had
+        # that same multi-day label written onto the row.
+        def _mismatched(label):
+            return bool(label) and label not in DAILY_WINDOWS
+
+        offending = declared_period if _mismatched(declared_period) else None
+        if offending is None:
+            for _b in (raw_data.get("series") or raw_data.get("data", {}).get("series") or []):
+                if isinstance(_b, dict) and _mismatched(_b.get("period_label")):
+                    offending = _b.get("period_label")
+                    break
+
+        if offending:
+            return {
+                "status": "window_mismatch",
+                "saved": 0,
+                "period_label": offending,
+                "message": (
+                    f"These figures cover {offending}, not a single day. "
+                    f"Storing them as today's numbers would make every total "
+                    f"that sums across days wrong."
+                ),
+            }
+
+        declared_precision = raw_data.get("precision")
+
         conn = get_db()
         cursor = conn.cursor()
         saved_count = 0
@@ -186,25 +286,47 @@ class LinkedInClient:
             if not dt:
                 continue
 
-            imp = metrics.get("impressions", 0) or 0
-            lk = metrics.get("likes", 0) or metrics.get("reactions", 0) or 0
-            cm = metrics.get("comments", 0) or 0
-            sh = metrics.get("shares", 0) or 0
+            # A metric that was not read is None, not zero. Coercing it meant a
+            # payload where only the follower card had rendered wrote a zero over
+            # the impressions figure captured earlier the same day, stamped
+            # 'observed'. None flows into COALESCE below, which keeps what is
+            # already stored.
+            def _metric(*keys):
+                for k in keys:
+                    v = metrics.get(k)
+                    if v is not None:
+                        return v
+                return None
+
+            imp = _metric("impressions")
+            lk = _metric("likes", "reactions")
+            cm = _metric("comments")
+            sh = _metric("shares")
             fl = metrics.get("followers")
             cn = metrics.get("connections")
             pv = metrics.get("profile_views")
 
-            eng_rate = round(((lk + cm + sh) / imp * 100), 2) if imp > 0 else 0.0
+            engaged = sum(v for v in (lk, cm, sh) if v is not None)
+            eng_rate = round((engaged / imp * 100), 2) if (imp or 0) > 0 else None
+            row_period = bucket.get("period_label") or declared_period
+            row_precision = bucket.get("precision") or declared_precision
 
             cursor.execute("""
             INSERT OR REPLACE INTO analytics_daily 
-            (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate)
+            (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source, period_label, precision)
             VALUES (?, 
                     COALESCE(?, (SELECT followers FROM analytics_daily WHERE date = ?)),
                     COALESCE(?, (SELECT connections FROM analytics_daily WHERE date = ?)),
                     COALESCE(?, (SELECT profile_views FROM analytics_daily WHERE date = ?)),
-                    ?, ?, ?, ?, ?)
-            """, (dt, fl, dt, cn, dt, pv, dt, imp, lk, cm, sh, eng_rate))
+                    COALESCE(?, (SELECT impressions FROM analytics_daily WHERE date = ?), 0),
+                    COALESCE(?, (SELECT reactions FROM analytics_daily WHERE date = ?), 0),
+                    COALESCE(?, (SELECT comments FROM analytics_daily WHERE date = ?), 0),
+                    COALESCE(?, (SELECT shares FROM analytics_daily WHERE date = ?), 0),
+                    COALESCE(?, (SELECT engagement_rate FROM analytics_daily WHERE date = ?), 0.0),
+                    'observed', ?, ?)
+            """, (dt, fl, dt, cn, dt, pv, dt,
+                  imp, dt, lk, dt, cm, dt, sh, dt, eng_rate, dt,
+                  row_period, row_precision))
             saved_count += 1
 
         # Handle top-level profile views from identity profile responses
@@ -218,7 +340,7 @@ class LinkedInClient:
             # TypeError on None.
             cursor.execute("""
             INSERT OR REPLACE INTO analytics_daily 
-            (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate)
+            (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source, period_label, precision, unique_members_reached)
             VALUES (?, 
                     COALESCE((SELECT followers FROM analytics_daily WHERE date = ?),
                              (SELECT followers FROM analytics_daily WHERE followers IS NOT NULL ORDER BY date DESC LIMIT 1), 0),
@@ -229,8 +351,13 @@ class LinkedInClient:
                     COALESCE((SELECT reactions FROM analytics_daily WHERE date = ?), 0),
                     COALESCE((SELECT comments FROM analytics_daily WHERE date = ?), 0),
                     COALESCE((SELECT shares FROM analytics_daily WHERE date = ?), 0),
-                    COALESCE((SELECT engagement_rate FROM analytics_daily WHERE date = ?), 0.0))
-            """, (today_str, today_str, today_str, int(top_pv), today_str, today_str, today_str, today_str, today_str))
+                    COALESCE((SELECT engagement_rate FROM analytics_daily WHERE date = ?), 0.0),
+                    'observed',
+                    (SELECT period_label FROM analytics_daily WHERE date = ?),
+                    (SELECT precision FROM analytics_daily WHERE date = ?),
+                    COALESCE((SELECT unique_members_reached FROM analytics_daily WHERE date = ?), 0))
+            """, (today_str, today_str, today_str, int(top_pv), today_str, today_str,
+                  today_str, today_str, today_str, today_str, today_str, today_str))
             saved_count += 1
 
         # Handle demographics and viewer seniority if present
@@ -253,8 +380,8 @@ class LinkedInClient:
                 if dim and lbl:
                     cursor.execute("DELETE FROM audience_demographics WHERE dimension = ? AND label = ?", (dim, lbl))
                     cursor.execute("""
-                    INSERT INTO audience_demographics (dimension, label, percentage)
-                    VALUES (?, ?, ?)
+                    INSERT INTO audience_demographics (dimension, label, percentage, source)
+                    VALUES (?, ?, ?, 'observed')
                     """, (dim, lbl, pct))
 
         # Handle live posts updates from LinkedIn feed (updatesV2 or elements)
@@ -402,6 +529,10 @@ class LinkedInClient:
                 "circuit_breaker": cb_status
             }
 
+        refusal = egress_guard("voyager/api/me (profile sync)")
+        if refusal is not None:
+            return refusal
+
         headers = self.build_headers(tokens)
         cookies = {"li_at": li_at, "JSESSIONID": jsessionid}
         results = {"profile": None, "synced_at": datetime.now(timezone.utc).isoformat()}
@@ -485,6 +616,10 @@ class LinkedInClient:
                 "message": f"Circuit breaker is OPEN. Calls paused for {cb_status['cooldown_remaining_seconds']}s.",
                 "circuit_breaker": cb_status
             }
+
+        refusal = egress_guard("voyager/api/me")
+        if refusal is not None:
+            return refusal
 
         headers = self.build_headers(tokens)
         cookies = {"li_at": li_at, "JSESSIONID": jsessionid}
@@ -657,6 +792,10 @@ class LinkedInClient:
         cookies = {"li_at": li_at, "JSESSIONID": jsessionid}
 
         url = f"{self.base_url}/contentcreation/normShares"
+        refusal = egress_guard("voyager/api/contentcreation/normShares")
+        if refusal is not None:
+            return refusal
+
         try:
             res = requests.post(url, json=payload, headers=headers, cookies=cookies, timeout=10)
             if res.status_code in (200, 201):

@@ -30,6 +30,21 @@ MAX_NOTES_LENGTH = 2000
 MAX_BATCH_SIZE = 500
 VALID_LEAD_STATUSES = {"New Lead", "Outreach Sent", "Connected", "Meeting Booked"}
 
+# The same entity carries two status vocabularies. `status` is what the CRM
+# screen shows a person; `lead_status` is what every analytic reads, including
+# the funnel and conversion_rate_pct. They were written by different code paths
+# and never by the same one, so moving a lead to "Meeting Booked" changed
+# nothing any chart could see.
+#
+# This mapping is the one already used by the schema migration in
+# database.py:283-287. It lives here so the two stay in step.
+LEAD_STATUS_TO_PIPELINE = {
+    "New Lead": "NEW",
+    "Outreach Sent": "DM_SENT",
+    "Connected": "ENGAGED",
+    "Meeting Booked": "CONVERTED",
+}
+
 
 def list_leads(status: Optional[str] = None, search: Optional[str] = None) -> List[Dict[str, Any]]:
     conn = get_db()
@@ -84,9 +99,14 @@ def add_lead(lead_data: Dict) -> Dict:
             conn.close()
             return {"status": "success", "id": existing["id"], "action": "updated"}
             
+    # Both status columns, for the same reason update_lead_status writes both:
+    # the CRM list reads `status` and every analytic reads `lead_status`. Setting
+    # only the first meant a lead created as "Meeting Booked" showed as converted
+    # in the list and NEW in the funnel.
+    initial_status = lead_data.get("status", "New Lead")
     c.execute("""
-    INSERT INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, lead_status, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         lead_id,
         name,
@@ -95,7 +115,8 @@ def add_lead(lead_data: Dict) -> Dict:
         profile_url,
         lead_data.get("engagement_type", "Commented"),
         lead_data.get("post_id", ""),
-        lead_data.get("status", "New Lead"),
+        initial_status,
+        LEAD_STATUS_TO_PIPELINE.get(initial_status, "NEW"),
         notes
     ))
     conn.commit()
@@ -187,11 +208,23 @@ def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = Non
         }
     conn = get_db()
     c = conn.cursor()
+    # Dual write for one release. `status` is the older human-facing vocabulary
+    # ("Meeting Booked"); `lead_status` is the machine vocabulary every analytic
+    # reads. Writing only the first meant the funnel and the conversion rate
+    # could never move no matter what the creator did. `status` is scheduled for
+    # removal once nothing reads it.
+    mapped_status = LEAD_STATUS_TO_PIPELINE.get(new_status, "NEW")
     if notes is not None:
         sanitized_notes = notes.strip()[:MAX_NOTES_LENGTH]
-        c.execute("UPDATE leads SET status = ?, notes = ? WHERE id = ?", (new_status, sanitized_notes, lead_id))
+        c.execute(
+            "UPDATE leads SET status = ?, lead_status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_status, mapped_status, sanitized_notes, lead_id),
+        )
     else:
-        c.execute("UPDATE leads SET status = ? WHERE id = ?", (new_status, lead_id))
+        c.execute(
+            "UPDATE leads SET status = ?, lead_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (new_status, mapped_status, lead_id),
+        )
     updated = c.rowcount
     conn.commit()
     conn.close()
