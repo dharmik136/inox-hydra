@@ -106,9 +106,10 @@ def test_ingress_parser_em_dash_sanitized():
     assert " -- " in parsed["raw_content"]
 
 
-def test_ingress_daemon_stop_worker_responsive():
+def test_ingress_daemon_stop_worker_responsive(monkeypatch):
     """Ingress daemon worker terminates immediately when stop_worker() is called."""
     daemon = TelegramIngressDaemon(bot_token="fake-token-test")
+    monkeypatch.setattr(daemon, "poll_once", lambda: time.sleep(0.01))
     daemon.start_worker()
     assert daemon.is_running is True
 
@@ -119,6 +120,7 @@ def test_ingress_daemon_stop_worker_responsive():
     assert daemon.is_running is False
     # Stopping should take less than 1.5 seconds, proving responsive stop_event
     assert stop_duration < 1.5
+
 
 
 def test_ingress_daemon_429_rate_limit_handled():
