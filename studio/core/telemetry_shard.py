@@ -231,7 +231,8 @@ class TelemetryBuffer:
         self,
         engine: Optional[TelemetryEngine] = None,
         batch_size: int = 25,
-        max_buffer_size: int = 1000
+        max_buffer_size: int = 1000,
+        failure_cooldown_seconds: float = 5.0
     ):
         self.engine = engine or TelemetryEngine()
         self.max_buffer_size = max(10, int(max_buffer_size))
@@ -239,7 +240,12 @@ class TelemetryBuffer:
         self._events_buffer: List[Tuple[str, str, str]] = []
         self._dwell_buffer: List[Tuple[str, float, float, float]] = []
         self._lock = threading.Lock()
+        # Serializes flushes so two overlapping failures cannot splice their
+        # restored batches back in out of chronological order.
+        self._flush_lock = threading.Lock()
         self._last_flush_time = time.time()
+        self._last_failure_time = 0.0
+        self.failure_cooldown_seconds = float(failure_cooldown_seconds)
 
     def ingest(self, event_type: Any, payload: Any, source: str = "extension") -> bool:
         """
@@ -264,7 +270,7 @@ class TelemetryBuffer:
             if len(self._events_buffer) >= self.batch_size:
                 flush_needed = True
 
-        if flush_needed:
+        if flush_needed and self._auto_flush_allowed():
             self.flush()
         return True
 
@@ -301,9 +307,22 @@ class TelemetryBuffer:
             if len(self._dwell_buffer) >= self.batch_size:
                 flush_needed = True
 
-        if flush_needed:
+        if flush_needed and self._auto_flush_allowed():
             self.flush()
         return True
+
+    def _auto_flush_allowed(self) -> bool:
+        """
+        Suppresses automatic flushes for a cooldown after a failed write.
+        Without this, a broken engine turns every ingest() into a blocking
+        failed write, and ingestion stops being the non-blocking RAM staging
+        the buffer exists to provide. Explicit flush() calls are never gated.
+        """
+        with self._lock:
+            last_failure = self._last_failure_time
+        if not last_failure:
+            return True
+        return (time.time() - last_failure) >= self.failure_cooldown_seconds
 
     def flush(self) -> Dict[str, Any]:
         """
@@ -312,41 +331,48 @@ class TelemetryBuffer:
         evicted first) so a transient SQLite error does not silently lose data.
         Returns the counts of flushed records, plus an "error" key on failure.
         """
-        with self._lock:
-            events_to_flush = self._events_buffer
-            dwells_to_flush = self._dwell_buffer
-            self._events_buffer = []
-            self._dwell_buffer = []
-            self._last_flush_time = time.time()
+        # One flush at a time: concurrent restores would otherwise interleave
+        # and leave the buffer out of chronological order, so the bounded
+        # eviction in ingest() could drop a newer event than one it keeps.
+        with self._flush_lock:
+            with self._lock:
+                events_to_flush = self._events_buffer
+                dwells_to_flush = self._dwell_buffer
+                self._events_buffer = []
+                self._dwell_buffer = []
+                self._last_flush_time = time.time()
 
-        flushed_events = 0
-        flushed_dwells = 0
-        errors = []
+            flushed_events = 0
+            flushed_dwells = 0
+            errors = []
 
-        if events_to_flush:
-            try:
-                flushed_events = self.engine.record_events_batch(events_to_flush)
-            except Exception as err:
-                errors.append(str(err))
-                with self._lock:
-                    self._events_buffer = (events_to_flush + self._events_buffer)[-self.max_buffer_size:]
+            if events_to_flush:
+                try:
+                    flushed_events = self.engine.record_events_batch(events_to_flush)
+                except Exception as err:
+                    errors.append(str(err))
+                    with self._lock:
+                        self._events_buffer = (events_to_flush + self._events_buffer)[-self.max_buffer_size:]
 
-        if dwells_to_flush:
-            try:
-                flushed_dwells = self.engine.record_dwell_batch(dwells_to_flush)
-            except Exception as err:
-                errors.append(str(err))
-                with self._lock:
-                    self._dwell_buffer = (dwells_to_flush + self._dwell_buffer)[-self.max_buffer_size:]
+            if dwells_to_flush:
+                try:
+                    flushed_dwells = self.engine.record_dwell_batch(dwells_to_flush)
+                except Exception as err:
+                    errors.append(str(err))
+                    with self._lock:
+                        self._dwell_buffer = (dwells_to_flush + self._dwell_buffer)[-self.max_buffer_size:]
 
-        result: Dict[str, Any] = {
-            "flushed_events": flushed_events,
-            "flushed_dwells": flushed_dwells
-        }
-        if errors:
-            logger.warning("Telemetry flush failed, staged items restored to buffer: %s", "; ".join(errors))
-            result["error"] = "; ".join(errors)
-        return result
+            with self._lock:
+                self._last_failure_time = time.time() if errors else 0.0
+
+            result: Dict[str, Any] = {
+                "flushed_events": flushed_events,
+                "flushed_dwells": flushed_dwells
+            }
+            if errors:
+                logger.warning("Telemetry flush failed, staged items restored to buffer: %s", "; ".join(errors))
+                result["error"] = "; ".join(errors)
+            return result
 
     def pending_count(self) -> int:
         """Returns total items currently in-memory waiting for flush."""

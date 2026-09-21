@@ -502,12 +502,15 @@ class IntelligenceSyncEngine:
                     ))
 
                 if not cleaned_rows:
-                    # The ETag is deliberately not saved: a later corrected
-                    # release must not be masked by a 304 for this bad one.
+                    # Not a client error: the request succeeded and the local
+                    # cache is intact, so this reports as a successful no-op.
+                    # The ETag is deliberately not saved, so a later corrected
+                    # release is not masked by a 304 for this bad one.
                     return {
-                        "status": "error",
+                        "status": "no_valid_templates",
                         "http_code": 200,
                         "hooks_count": 0,
+                        "templates_available": self.get_total_count(),
                         "message": "CDN payload contained no valid templates. Local intelligence cache preserved."
                     }
 
