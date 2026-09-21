@@ -28,6 +28,7 @@ import io
 import json
 import os
 import platform
+import re
 import shutil
 import sqlite3
 import sys
@@ -191,10 +192,11 @@ def create_backup(label: str = "manual") -> str:
     The database is copied through the SQLite backup API first so the captured
     file is internally consistent under WAL, rather than a torn file copy.
     """
+    clean_label = re.sub(r"[^a-zA-Z0-9_-]", "_", str(label))[:40] or "manual"
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    archive = os.path.join(paths.get_backups_dir(), f"inox_backup_{label}_{stamp}.zip")
+    archive = os.path.join(paths.get_backups_dir(), f"inox_backup_{clean_label}_{stamp}.zip")
 
-    consistent_db = backup_database(reason=f"snapshot_{label}")
+    consistent_db = backup_database(reason=f"snapshot_{clean_label}")
 
     with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
         if consistent_db and os.path.exists(consistent_db):
@@ -208,7 +210,7 @@ def create_backup(label: str = "manual") -> str:
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "app_version": __version__,
             "schema": describe_schema(),
-            "label": label,
+            "label": clean_label,
         }, indent=2, default=str))
 
     # The intermediate consistent copy is now inside the archive.
@@ -219,6 +221,13 @@ def create_backup(label: str = "manual") -> str:
 
 def inspect_backup(archive: str) -> Dict[str, Any]:
     """Reads a backup's manifest without restoring it, so a user can check first."""
+    if not os.path.exists(archive) or not zipfile.is_zipfile(archive):
+        return {
+            "archive": archive,
+            "has_database": False,
+            "asset_count": 0,
+            "manifest": {},
+        }
     with zipfile.ZipFile(archive) as z:
         names = z.namelist()
         manifest = {}
@@ -240,6 +249,9 @@ def restore_backup(archive: str, take_safety_backup: bool = True) -> Dict[str, A
     the wrong archive would otherwise have destroyed their present data with no
     way back. That is the exact situation nobody can rescue them from.
     """
+    if not os.path.exists(archive) or not zipfile.is_zipfile(archive):
+        raise ValueError(f"{archive} does not exist or is not a valid zip archive")
+
     info = inspect_backup(archive)
     if not info["has_database"]:
         raise ValueError(f"{archive} contains no database and cannot be restored")
@@ -252,17 +264,23 @@ def restore_backup(archive: str, take_safety_backup: bool = True) -> Dict[str, A
         # Remove WAL sidecars so the restored file is not merged with stale pages.
         for sidecar in (target_db + "-wal", target_db + "-shm"):
             if os.path.exists(sidecar):
-                os.remove(sidecar)
+                try:
+                    os.remove(sidecar)
+                except OSError:
+                    pass
         with open(target_db, "wb") as f:
             f.write(db_bytes)
 
         assets_root = paths.get_assets_dir()
+        abs_assets_root = os.path.abspath(assets_root)
         restored_assets = 0
         for name in z.namelist():
             if not name.startswith("assets/") or name.endswith("/"):
                 continue
             relative = name[len("assets/"):]
-            destination = os.path.join(assets_root, relative.replace("/", os.sep))
+            destination = os.path.abspath(os.path.join(assets_root, relative.replace("/", os.sep)))
+            if not destination.startswith(abs_assets_root + os.sep) and destination != abs_assets_root:
+                continue  # Skip Zip Slip directory traversal
             os.makedirs(os.path.dirname(destination), exist_ok=True)
             with open(destination, "wb") as f:
                 f.write(z.read(name))

@@ -22,6 +22,14 @@ except ImportError:
 
 logger = logging.getLogger("studio.crm")
 
+# -- Validation constants --------------------------------------------------
+MAX_CRM_NAME_LENGTH = 200
+MAX_CRM_HEADLINE_LENGTH = 500
+MAX_CRM_COMPANY_LENGTH = 300
+MAX_CRM_COMMENT_LENGTH = 5000
+MIN_ARCHIVE_INACTIVE_DAYS = 7
+MAX_HIGH_VALUE_QUERY_LIMIT = 500
+
 
 class ICPScoringEngine:
     """Calculates Ideal Customer Profile (ICP) fit score (0.0 to 100.0) from profile and engagement data."""
@@ -309,6 +317,12 @@ class ReverseCRMManager:
         post_topic: str = "sovereign creator stack",
     ) -> Dict[str, Any]:
         """Ingest or update a lead and record an interaction."""
+        # Sanitize field lengths to prevent abuse
+        full_name = (full_name or "").strip()[:MAX_CRM_NAME_LENGTH]
+        headline = (headline or "").strip()[:MAX_CRM_HEADLINE_LENGTH]
+        company = (company or "").strip()[:MAX_CRM_COMPANY_LENGTH] if company else company
+        comment_text = comment_text[:MAX_CRM_COMMENT_LENGTH] if comment_text else comment_text
+
         seniority = ICPScoringEngine.classify_seniority(headline)
         icp_score = ICPScoringEngine.calculate_icp_score(headline, company, comment_text, interaction_type)
         suggested_dm = ICPScoringEngine.generate_contextual_dm(full_name, comment_text or "", post_topic)
@@ -372,6 +386,7 @@ class ReverseCRMManager:
 
     def list_high_value_leads(self, min_icp_score: float = 60.0, limit: int = 50) -> List[Dict[str, Any]]:
         """Query top ICP-matching leads."""
+        limit = min(limit, MAX_HIGH_VALUE_QUERY_LIMIT)
         conn = get_db()
         try:
             cursor = conn.cursor()
@@ -420,7 +435,13 @@ class ReverseCRMManager:
         """
         Bulk archival of stale leads.
         Marks leads inactive if no updates within inactive_days (default 90).
+        Minimum threshold: MIN_ARCHIVE_INACTIVE_DAYS (7) to prevent accidental mass-archival.
         """
+        if inactive_days < MIN_ARCHIVE_INACTIVE_DAYS:
+            return {
+                "status": "error",
+                "message": f"inactive_days must be >= {MIN_ARCHIVE_INACTIVE_DAYS} to prevent accidental mass-archival"
+            }
         conn = get_db()
         archived_count = 0
         try:

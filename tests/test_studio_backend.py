@@ -10,10 +10,16 @@ from database import init_db, seed_initial_data, get_db
 from formatters import (
     to_sans_bold,
     to_sans_italic,
+    to_serif_bold,
+    to_serif_italic,
+    to_blackboard_bold,
+    to_underline,
+    to_circled_numbers,
     to_monospace,
     to_strikethrough,
     clean_text_formatting,
-    analyze_hook
+    analyze_hook,
+    calculate_dwell_metrics
 )
 from carousel_generator import generate_carousel_pdf
 from repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content
@@ -54,6 +60,32 @@ def test_database_and_seed():
 def test_formatters_and_rehooker():
     bold_res = to_sans_bold("Hello World 123")
     assert "𝗛𝗲𝗹𝗹𝗼" in bold_res
+
+    # Test Extended Unicode Formatters
+    serif_bold = to_serif_bold("Hello World 123")
+    assert "𝐇𝐞𝐥𝐥𝐨" in serif_bold
+
+    serif_italic = to_serif_italic("Hello World")
+    assert "𝐻𝑒𝑙𝑙𝑜" in serif_italic
+
+    blackboard = to_blackboard_bold("ABC 123")
+    assert "\u2102" in blackboard  # Special cap C
+
+    underline = to_underline("Hello")
+    assert "\u0332" in underline
+
+    circled = to_circled_numbers("1 2 3")
+    assert "❶ ❷ ❸" in circled
+
+    # Test Dwell Time Metrics Calculation
+    dwell_short = calculate_dwell_metrics("Quick hook sentence.")
+    assert dwell_short["dwell_status"] == "LOW_VELOCITY"
+
+    sample_post = "First paragraph analyzing high-retention creator dynamics and local-first software.\n\nSecond paragraph explaining why SQLite WAL mode achieves microsecond latency.\n\nThird paragraph detailing how modern anti-bot heuristics detect headless browsers."
+    dwell_optimal = calculate_dwell_metrics(sample_post)
+    assert dwell_optimal["dwell_status"] in ("OPTIMAL_HOOK", "DEEP_DWELL")
+    assert dwell_optimal["word_count"] > 20
+    assert float(dwell_optimal["estimated_reading_sec"]) > 5.0
 
     hooks = generate_10x_hooks("enterprise observability and systems architecture")
     assert len(hooks) == 10, f"Expected 10 hooks, got {len(hooks)}"

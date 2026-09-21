@@ -14,6 +14,7 @@ Design Constraints:
 import os
 import json
 import sqlite3
+import urllib.parse
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import requests
@@ -35,54 +36,315 @@ except ImportError:
 
 CACHE_ETAG_FILE = os.path.join(get_data_dir(), ".intelligence_etag")
 
+# -- Validation & Boundary Constants ----------------------------------------
+MAX_HOOK_TEXT_LENGTH = 1000
+MAX_ARCHETYPE_LENGTH = 100
+MAX_PACING_LENGTH = 300
+MAX_EXAMPLE_ID_LENGTH = 100
+MAX_MULTIPLIER_LENGTH = 50
+MAX_TEMPLATES_LIMIT = 500
+MAX_SYNC_TEMPLATES_BATCH = 1000
+ALLOWED_CDN_SCHEMES = ("https",)
+
 FALLBACK_TEMPLATES = [
+    # Taxonomy 1: Contrarian Truths & Paradigm Shifts
     {
-        "archetype": "The Contrarian Confession",
+        "archetype": "Contrarian Truths",
         "hook_text": "I spent $2,400 on creator SaaS before realizing this one uncomfortable truth.",
-        "velocity_score": 9.4,
-        "engagement_multiplier": "3.2x",
-        "pacing_style": "1-line hook + blank line + 2-line context",
-        "example_post_id": "urn:li:activity:7234981"
+        "velocity_score": 9.8,
+        "engagement_multiplier": "3.5x",
+        "pacing_style": "1-line confession hook + blank line + 2-line context + 3-point revelation",
+        "example_post_id": "blueprint-contrarian-01"
     },
     {
-        "archetype": "The Architecture Breakdown",
+        "archetype": "Contrarian Truths",
+        "hook_text": "Most engineering leaders measure lines of code or commit velocity. Here is why that metric is silently destroying your team:",
+        "velocity_score": 9.6,
+        "engagement_multiplier": "3.3x",
+        "pacing_style": "Provocative premise + diagnostic proof + alternate metric framework",
+        "example_post_id": "blueprint-contrarian-02"
+    },
+    {
+        "archetype": "Contrarian Truths",
+        "hook_text": "Everyone tells early-stage founders to build in public. For 95% of technical products, it is completely lethal advice.",
+        "velocity_score": 9.3,
+        "engagement_multiplier": "3.0x",
+        "pacing_style": "Counter-narrative thesis + 3 failure modes + sovereign alternative",
+        "example_post_id": "blueprint-contrarian-03"
+    },
+    {
+        "archetype": "Contrarian Truths",
+        "hook_text": "The best software engineers write the fewest lines of code. Here is how top 1% principals actually allocate their 40 hours:",
+        "velocity_score": 9.0,
+        "engagement_multiplier": "2.7x",
+        "pacing_style": "Inverted hierarchy declaration + weekly time-budget breakdown",
+        "example_post_id": "blueprint-contrarian-04"
+    },
+    {
+        "archetype": "Contrarian Truths",
+        "hook_text": "Microservices did not solve your architectural bottlenecks. They just moved your function calls across an expensive network layer.",
+        "velocity_score": 8.8,
+        "engagement_multiplier": "2.5x",
+        "pacing_style": "Direct reality check + cost comparison + monolithic reconciliation",
+        "example_post_id": "blueprint-contrarian-05"
+    },
+    {
+        "archetype": "Contrarian Truths",
+        "hook_text": "An unmoderated Slack channel is where engineering focus goes to die. Our 3 strict async communication rules:",
+        "velocity_score": 8.6,
+        "engagement_multiplier": "2.4x",
+        "pacing_style": "Strong opinion clearly stated + 3 actionable operational rules",
+        "example_post_id": "blueprint-contrarian-06"
+    },
+
+    # Taxonomy 2: Architecture & Systems Engineering
+    {
+        "archetype": "Architecture",
         "hook_text": "90% of software engineers misunderstand local-first architectures. Here is how it actually works:",
-        "velocity_score": 9.1,
-        "engagement_multiplier": "2.8x",
-        "pacing_style": "Contrarian statistic + direct colon promise",
-        "example_post_id": "urn:li:activity:7234992"
+        "velocity_score": 9.5,
+        "engagement_multiplier": "3.2x",
+        "pacing_style": "Contrarian statistic + direct colon promise + ASCII sequence diagram",
+        "example_post_id": "blueprint-arch-01"
     },
     {
-        "archetype": "The Reverse Engineering Deep Dive",
-        "hook_text": "Stop scraping the DOM. Here is how to passively extract LinkedIn creator telemetry without bot risk:",
+        "archetype": "Architecture",
+        "hook_text": "How we eliminated cloud egress bills entirely by pushing intelligence caching to client-side SQLite WAL:",
+        "velocity_score": 9.2,
+        "engagement_multiplier": "2.9x",
+        "pacing_style": "Problem statement + architecture diff before/after + exact latency impact",
+        "example_post_id": "blueprint-arch-02"
+    },
+    {
+        "archetype": "Architecture",
+        "hook_text": "Moving from a multi-tenant cloud API to local loopback IPC cut our tail latency from 850ms to 4ms. The architectural anatomy:",
         "velocity_score": 8.9,
         "engagement_multiplier": "2.6x",
-        "pacing_style": "Expository problem + 3-step solution",
-        "example_post_id": "urn:li:activity:7235003"
+        "pacing_style": "Benchmark hook + subsystem pipeline walkthrough + key tradeoffs",
+        "example_post_id": "blueprint-arch-03"
     },
     {
-        "archetype": "The Failure-to-Scale Lesson",
-        "hook_text": "Our first ingestion worker crashed at 10,000 events. Here is what broke and how we fixed it:",
+        "archetype": "Architecture",
+        "hook_text": "You probably do not need Kafka, Redis, and a Kubernetes cluster. A single NVMe drive with SQLite WAL handles 45,000 writes/sec:",
         "velocity_score": 8.7,
         "engagement_multiplier": "2.4x",
-        "pacing_style": "Vulnerable milestone + systemic reflection",
-        "example_post_id": "urn:li:activity:7235014"
+        "pacing_style": "Complexity contrast + raw capability benchmark + simplification guide",
+        "example_post_id": "blueprint-arch-04"
     },
     {
-        "archetype": "The Teardown Benchmark",
-        "hook_text": "We benchmarked SQLite WAL vs Postgres connection pool on localhost. The numbers surprised us:",
-        "velocity_score": 8.6,
+        "archetype": "Architecture",
+        "hook_text": "How to design developer tools that operate in fully air-gapped corporate environments without losing feature parity:",
+        "velocity_score": 8.5,
         "engagement_multiplier": "2.3x",
-        "pacing_style": "Numerical comparison table + actionable takeaway",
-        "example_post_id": "urn:li:activity:7235025"
+        "pacing_style": "Enterprise requirement hook + 4 zero-trust primitives + offline fallback",
+        "example_post_id": "blueprint-arch-05"
     },
     {
-        "archetype": "The Asymmetric Advantage",
-        "hook_text": "Why $0/month infrastructure beats a $500/month cloud cluster for desktop developer tools:",
-        "velocity_score": 8.4,
+        "archetype": "Architecture",
+        "hook_text": "Why Python memory bloat is rarely a garbage collection issue, and how ring buffers saved our background ingestion pipeline:",
+        "velocity_score": 8.3,
+        "engagement_multiplier": "2.2x",
+        "pacing_style": "Diagnostic insight + memory profile analysis + ring buffer solution",
+        "example_post_id": "blueprint-arch-06"
+    },
+
+    # Taxonomy 3: Reverse Engineering & Telemetry
+    {
+        "archetype": "Reverse Engineering",
+        "hook_text": "Stop scraping the DOM. Here is how to passively extract LinkedIn creator telemetry without bot risk:",
+        "velocity_score": 9.7,
+        "engagement_multiplier": "3.5x",
+        "pacing_style": "Expository problem + 3-step passive interception solution + ban safety",
+        "example_post_id": "blueprint-re-01"
+    },
+    {
+        "archetype": "Reverse Engineering",
+        "hook_text": "Synthetic browser automation triggers Cloudflare and LinkedIn bot heuristics within 48 hours. Here is the sovereign alternative:",
+        "velocity_score": 9.4,
+        "engagement_multiplier": "3.1x",
+        "pacing_style": "Heuristic vulnerability alert + hardware interrupt bridge explanation",
+        "example_post_id": "blueprint-re-02"
+    },
+    {
+        "archetype": "Reverse Engineering",
+        "hook_text": "What we learned inspecting undocumented private enterprise APIs after capturing 100,000 live payload frames:",
+        "velocity_score": 9.2,
+        "engagement_multiplier": "2.9x",
+        "pacing_style": "Intriguing field study + 4 hidden protocol patterns + sanitization protocol",
+        "example_post_id": "blueprint-re-03"
+    },
+    {
+        "archetype": "Reverse Engineering",
+        "hook_text": "Why programmatic DOM dispatchEvent fails modern anti-bot gates, and why OS-level clipboard interrupts are 100% ban-proof:",
+        "velocity_score": 8.9,
+        "engagement_multiplier": "2.6x",
+        "pacing_style": "Technical deep dive on event.isTrusted + clean 2-step verification protocol",
+        "example_post_id": "blueprint-re-04"
+    },
+    {
+        "archetype": "Reverse Engineering",
+        "hook_text": "Decompiling client-side fingerprinting scripts: The 5 canvas and audio context traps every engineer should understand:",
+        "velocity_score": 8.7,
+        "engagement_multiplier": "2.4x",
+        "pacing_style": "Security audit breakdown + canvas trap explanation + ethical passive defense",
+        "example_post_id": "blueprint-re-05"
+    },
+    {
+        "archetype": "Reverse Engineering",
+        "hook_text": "Building an asynchronous telemetry shard that captures live network streams with 0.00ms main thread blocking:",
+        "velocity_score": 8.5,
+        "engagement_multiplier": "2.3x",
+        "pacing_style": "Concurrency challenge + thread boundary decoupling + SQLite WAL flusher",
+        "example_post_id": "blueprint-re-06"
+    },
+
+    # Taxonomy 4: Failure Analysis & War Stories
+    {
+        "archetype": "Failure Analysis",
+        "hook_text": "Our first ingestion worker crashed at 10,000 events. Here is what broke and how we fixed it:",
+        "velocity_score": 9.4,
+        "engagement_multiplier": "3.1x",
+        "pacing_style": "Vulnerable milestone + systemic root-cause breakdown + recovery recipe",
+        "example_post_id": "blueprint-failure-01"
+    },
+    {
+        "archetype": "Failure Analysis",
+        "hook_text": "At 3:14 AM, our database locked up completely under 200 concurrent writes. Here is the postmortem:",
+        "velocity_score": 9.1,
+        "engagement_multiplier": "2.8x",
+        "pacing_style": "High-stakes timeline + root cause analysis + concurrency locks fix",
+        "example_post_id": "blueprint-failure-02"
+    },
+    {
+        "archetype": "Failure Analysis",
+        "hook_text": "We spent 3 weeks building a distributed consensus layer before having 50 active users. What we learned the hard way:",
+        "velocity_score": 8.9,
+        "engagement_multiplier": "2.6x",
+        "pacing_style": "Founder confession + wasted effort calculus + lean refactoring rule",
+        "example_post_id": "blueprint-failure-03"
+    },
+    {
+        "archetype": "Failure Analysis",
+        "hook_text": "A silent schema mismatch corrupted 400 user databases during an automatic update. How we redesigned our migration ledger:",
+        "velocity_score": 8.7,
+        "engagement_multiplier": "2.4x",
+        "pacing_style": "Nightmare scenario + PRAGMA user_version solution + immutable ledger rule",
+        "example_post_id": "blueprint-failure-04"
+    },
+    {
+        "archetype": "Failure Analysis",
+        "hook_text": "A single unclosed database cursor leaked 4GB of RAM in 6 hours on Windows desktop clients. The debugging walkthrough:",
+        "velocity_score": 8.5,
+        "engagement_multiplier": "2.3x",
+        "pacing_style": "Mystery symptom + heap snapshot trace + context manager enforcement",
+        "example_post_id": "blueprint-failure-05"
+    },
+    {
+        "archetype": "Failure Analysis",
+        "hook_text": "When a third-party CDN experienced 2000ms jitter, our synchronous UI thread froze. How we instituted circuit breakers:",
+        "velocity_score": 8.3,
         "engagement_multiplier": "2.1x",
-        "pacing_style": "Paradox declaration + economic proof",
-        "example_post_id": "urn:li:activity:7235036"
+        "pacing_style": "Cascading failure cascade + circuit breaker state machine + local fallbacks",
+        "example_post_id": "blueprint-failure-06"
+    },
+
+    # Taxonomy 5: Benchmarks & Teardowns
+    {
+        "archetype": "Benchmarks",
+        "hook_text": "We benchmarked SQLite WAL vs Postgres connection pool on localhost. The numbers surprised us:",
+        "velocity_score": 9.3,
+        "engagement_multiplier": "3.0x",
+        "pacing_style": "Numerical comparison table + test parameters + actionable takeaway",
+        "example_post_id": "blueprint-bench-01"
+    },
+    {
+        "archetype": "Benchmarks",
+        "hook_text": "Measuring local IPC latency across 4 approaches: Unix domain sockets, HTTP loopback, named pipes, and shared memory:",
+        "velocity_score": 9.1,
+        "engagement_multiplier": "2.8x",
+        "pacing_style": "Structured methodology + p50/p99 latency charts + recommendation guide",
+        "example_post_id": "blueprint-bench-02"
+    },
+    {
+        "archetype": "Benchmarks",
+        "hook_text": "Adding this single composite index reduced our SQLite analytics scan time from 420ms to 1.1ms:",
+        "velocity_score": 8.8,
+        "engagement_multiplier": "2.5x",
+        "pacing_style": "EXPLAIN QUERY PLAN diff + index structure explanation + verification query",
+        "example_post_id": "blueprint-bench-03"
+    },
+    {
+        "archetype": "Benchmarks",
+        "hook_text": "Desktop app launch speed teardown: Electron (2.4s) vs Tauri (380ms) vs Local Python FastAPI + WebView (120ms):",
+        "velocity_score": 8.6,
+        "engagement_multiplier": "2.4x",
+        "pacing_style": "Hardware setup specs + startup phase waterfall chart + resource usage",
+        "example_post_id": "blueprint-bench-04"
+    },
+    {
+        "archetype": "Benchmarks",
+        "hook_text": "How SQLite WAL checkpoint sizing affects SSD write endurance when handling 500,000 background events per day:",
+        "velocity_score": 8.4,
+        "engagement_multiplier": "2.2x",
+        "pacing_style": "Hardware wear calculations + pragma wal_autocheckpoint tuning + recommendations",
+        "example_post_id": "blueprint-bench-05"
+    },
+    {
+        "archetype": "Benchmarks",
+        "hook_text": "We pushed our in-memory ring buffer to its absolute limit on a standard developer laptop. Here is where it broke:",
+        "velocity_score": 8.2,
+        "engagement_multiplier": "2.0x",
+        "pacing_style": "Stress test parameters + breaking point metrics + backpressure mechanism",
+        "example_post_id": "blueprint-bench-06"
+    },
+
+    # Taxonomy 6: Asymmetric Economics & Leverage
+    {
+        "archetype": "Economics",
+        "hook_text": "Why $0/month infrastructure beats a $500/month cloud cluster for desktop developer tools:",
+        "velocity_score": 9.5,
+        "engagement_multiplier": "3.3x",
+        "pacing_style": "Paradox declaration + economic breakdown + sovereignty dividends",
+        "example_post_id": "blueprint-econ-01"
+    },
+    {
+        "archetype": "Economics",
+        "hook_text": "How microservices quietly convert your software engineering payroll into an Amazon AWS monthly invoice:",
+        "velocity_score": 9.0,
+        "engagement_multiplier": "2.7x",
+        "pacing_style": "Unit economics comparison + architectural simplification + margin impact",
+        "example_post_id": "blueprint-econ-02"
+    },
+    {
+        "archetype": "Economics",
+        "hook_text": "How a single engineer can operate an enterprise-grade SaaS with zero full-time ops personnel:",
+        "velocity_score": 8.8,
+        "engagement_multiplier": "2.5x",
+        "pacing_style": "Automated tooling stack + maintenance-free patterns + weekly time budget",
+        "example_post_id": "blueprint-econ-03"
+    },
+    {
+        "archetype": "Economics",
+        "hook_text": "Why the future of professional software is moving back from browser tabs to sovereign desktop runtimes:",
+        "velocity_score": 8.6,
+        "engagement_multiplier": "2.4x",
+        "pacing_style": "Macro shift observation + privacy/performance comparison + roadmap",
+        "example_post_id": "blueprint-econ-04"
+    },
+    {
+        "archetype": "Economics",
+        "hook_text": "Giving away your core engine for free while monetizing local enterprise intelligence: The economic formula:",
+        "velocity_score": 8.4,
+        "engagement_multiplier": "2.2x",
+        "pacing_style": "Business model breakdown + distribution math + sustainable developer economics",
+        "example_post_id": "blueprint-econ-05"
+    },
+    {
+        "archetype": "Economics",
+        "hook_text": "Rules for building software that still compiles, runs, and serves customers 5 years from now with zero patches:",
+        "velocity_score": 8.2,
+        "engagement_multiplier": "2.0x",
+        "pacing_style": "5 golden constraints + dependency minimization + durability philosophy",
+        "example_post_id": "blueprint-econ-06"
     }
 ]
 
@@ -100,6 +362,7 @@ class IntelligenceSyncEngine:
 
     def _ensure_offline_seeded(self) -> None:
         """Seeds offline fallback templates if viral_templates table is empty."""
+        conn = None
         try:
             conn = get_db()
             cursor = conn.cursor()
@@ -107,34 +370,43 @@ class IntelligenceSyncEngine:
             count = cursor.fetchone()[0]
             if count == 0:
                 self.seed_offline_templates(conn)
-            conn.close()
         except Exception:
             pass
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def seed_offline_templates(self, conn: Optional[sqlite3.Connection] = None) -> int:
-        """Inserts built-in fallback viral templates into the local SQLite store."""
+        """Inserts built-in fallback viral templates idempotently into the local SQLite store."""
         should_close = False
         if conn is None:
             conn = get_db()
             should_close = True
         try:
             cursor = conn.cursor()
+            cursor.execute("SELECT hook_text FROM viral_templates")
+            existing_hooks = {row[0] for row in cursor.fetchall()}
             inserted = 0
             for t in FALLBACK_TEMPLATES:
-                cursor.execute("""
-                INSERT INTO viral_templates (
-                    archetype, hook_text, velocity_score, engagement_multiplier,
-                    pacing_style, example_post_id, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """, (
-                    t["archetype"],
-                    t["hook_text"],
-                    t["velocity_score"],
-                    t["engagement_multiplier"],
-                    t["pacing_style"],
-                    t["example_post_id"]
-                ))
-                inserted += 1
+                if t["hook_text"] not in existing_hooks:
+                    cursor.execute("""
+                    INSERT INTO viral_templates (
+                        archetype, hook_text, velocity_score, engagement_multiplier,
+                        pacing_style, example_post_id, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """, (
+                        t["archetype"],
+                        t["hook_text"],
+                        t["velocity_score"],
+                        t["engagement_multiplier"],
+                        t["pacing_style"],
+                        t["example_post_id"]
+                    ))
+                    existing_hooks.add(t["hook_text"])
+                    inserted += 1
             conn.commit()
             return inserted
         finally:
@@ -164,7 +436,14 @@ class IntelligenceSyncEngine:
         - 200 OK: Ingests new templates and records new ETag.
         - Network Error: Graceful fallback to offline cached templates.
         """
-        target_url = cdn_url or self.cdn_url
+        target_url = (cdn_url or self.cdn_url).strip()
+        parsed = urllib.parse.urlparse(target_url)
+        if parsed.scheme not in ALLOWED_CDN_SCHEMES:
+            return {
+                "status": "error",
+                "message": f"Disallowed URL scheme '{parsed.scheme}'. Only HTTPS is permitted."
+            }
+
         etag = None if force else self.get_cached_etag()
 
         headers = {
@@ -188,38 +467,78 @@ class IntelligenceSyncEngine:
 
             if res.status_code == 200:
                 payload = res.json()
-                categories = payload.get("categories") or payload.get("templates") or []
+                if not isinstance(payload, dict):
+                    return {
+                        "status": "error",
+                        "message": "Invalid CDN payload: expected JSON object."
+                    }
+
+                raw_categories = payload.get("categories") or payload.get("templates") or []
+                if not isinstance(raw_categories, list):
+                    raw_categories = []
+
                 new_etag = res.headers.get("ETag") or res.headers.get("etag")
 
-                conn = get_db()
-                cursor = conn.cursor()
-
-                # Clean existing and insert fresh synced templates
-                cursor.execute("DELETE FROM viral_templates")
-                for h in categories:
-                    cursor.execute("""
-                    INSERT INTO viral_templates (
-                        archetype, hook_text, velocity_score, engagement_multiplier,
-                        pacing_style, example_post_id, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                    """, (
-                        h.get("archetype", "General"),
-                        h.get("hook_text") or h.get("hook", ""),
-                        float(h.get("velocity_score") or h.get("velocity", 8.0)),
-                        h.get("engagement_multiplier", "1.0x"),
-                        h.get("pacing_style") or h.get("pacing", "Standard"),
-                        h.get("example_post_id", "synced-remote")
+                # Validate the payload fully before touching the database so a
+                # release with zero usable templates cannot wipe the local cache.
+                cleaned_rows = []
+                for h in raw_categories[:MAX_SYNC_TEMPLATES_BATCH]:
+                    if not isinstance(h, dict):
+                        continue
+                    hook_text = str(h.get("hook_text") or h.get("hook") or "").strip()[:MAX_HOOK_TEXT_LENGTH]
+                    if not hook_text:
+                        continue
+                    try:
+                        velocity = float(h.get("velocity_score") or h.get("velocity") or 8.0)
+                    except (ValueError, TypeError):
+                        velocity = 8.0
+                    cleaned_rows.append((
+                        str(h.get("archetype", "General"))[:MAX_ARCHETYPE_LENGTH],
+                        hook_text,
+                        velocity,
+                        str(h.get("engagement_multiplier", "1.0x"))[:MAX_MULTIPLIER_LENGTH],
+                        str(h.get("pacing_style") or h.get("pacing", "Standard"))[:MAX_PACING_LENGTH],
+                        str(h.get("example_post_id", "synced-remote"))[:MAX_EXAMPLE_ID_LENGTH]
                     ))
-                conn.commit()
-                conn.close()
 
+                if not cleaned_rows:
+                    # The ETag is deliberately not saved: a later corrected
+                    # release must not be masked by a 304 for this bad one.
+                    return {
+                        "status": "error",
+                        "http_code": 200,
+                        "hooks_count": 0,
+                        "message": "CDN payload contained no valid templates. Local intelligence cache preserved."
+                    }
+
+                conn = None
+                try:
+                    conn = get_db()
+                    with conn:
+                        cursor = conn.cursor()
+                        cursor.execute("DELETE FROM viral_templates")
+                        cursor.executemany("""
+                        INSERT INTO viral_templates (
+                            archetype, hook_text, velocity_score, engagement_multiplier,
+                            pacing_style, example_post_id, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        """, cleaned_rows)
+                finally:
+                    if conn:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+
+                # Save the ETag only after the transaction committed, so a
+                # failed write leaves the cache eligible for a clean re-sync.
                 if new_etag:
                     self.save_etag(new_etag)
 
                 return {
                     "status": "updated",
                     "http_code": 200,
-                    "hooks_count": len(categories),
+                    "hooks_count": len(cleaned_rows),
                     "etag": new_etag,
                     "version": payload.get("version", "2026.09.1"),
                     "generated_at": payload.get("generated_at")
@@ -241,46 +560,93 @@ class IntelligenceSyncEngine:
                 "templates_available": len(self.get_templates())
             }
 
-    def get_templates(self, archetype: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_templates(self, archetype: Optional[str] = None, query: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
         """
         Retrieves ranked viral hook archetypes ordered by velocity score descending.
+        Supports filtering by archetype (exact or substring) and free-text query.
+        Clamps limit between 1 and MAX_TEMPLATES_LIMIT (500).
         """
         self._ensure_offline_seeded()
-        conn = get_db()
-        cursor = conn.cursor()
-        if archetype:
-            cursor.execute("""
-            SELECT id, archetype, hook_text, velocity_score, engagement_multiplier,
-                   pacing_style, example_post_id, updated_at
-            FROM viral_templates
-            WHERE archetype = ?
-            ORDER BY velocity_score DESC
-            LIMIT ?
-            """, (archetype, limit))
-        else:
-            cursor.execute("""
-            SELECT id, archetype, hook_text, velocity_score, engagement_multiplier,
-                   pacing_style, example_post_id, updated_at
-            FROM viral_templates
-            ORDER BY velocity_score DESC
-            LIMIT ?
-            """, (limit,))
+        clamped_limit = max(1, min(int(limit) if isinstance(limit, (int, float)) else 100, MAX_TEMPLATES_LIMIT))
 
-        rows = cursor.fetchall()
-        results = [dict(r) for r in rows]
-        conn.close()
-        return results
+        conn = None
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            conditions = []
+            params = []
+
+            if archetype and str(archetype).strip() and str(archetype).strip().lower() != "all":
+                arch_val = str(archetype).strip()[:MAX_ARCHETYPE_LENGTH]
+                conditions.append("(archetype LIKE ? OR archetype = ?)")
+                params.extend([f"%{arch_val}%", arch_val])
+
+            if query and str(query).strip():
+                q_val = f"%{str(query).strip()[:100]}%"
+                conditions.append("(hook_text LIKE ? OR archetype LIKE ? OR pacing_style LIKE ?)")
+                params.extend([q_val, q_val, q_val])
+
+            where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+            sql = f"""
+            SELECT id, archetype, hook_text, velocity_score, engagement_multiplier,
+                   pacing_style, example_post_id, updated_at
+            FROM viral_templates
+            {where_clause}
+            ORDER BY velocity_score DESC
+            LIMIT ?
+            """
+            params.append(clamped_limit)
+            cursor.execute(sql, tuple(params))
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+        except Exception:
+            return []
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def get_total_count(self) -> int:
+        """Returns total count of viral templates in the local SQLite store."""
+        conn = None
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM viral_templates")
+            count = cursor.fetchone()[0]
+            return int(count)
+        except Exception:
+            return len(FALLBACK_TEMPLATES)
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def get_status(self) -> Dict[str, Any]:
         """Returns intelligence sync diagnostics and local cache freshness."""
         etag = self.get_cached_etag()
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM viral_templates")
-        total_count = cursor.fetchone()[0]
-        cursor.execute("SELECT MAX(updated_at) FROM viral_templates")
-        last_updated = cursor.fetchone()[0]
-        conn.close()
+        total_count = 0
+        last_updated = None
+        conn = None
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM viral_templates")
+            total_count = cursor.fetchone()[0]
+            cursor.execute("SELECT MAX(updated_at) FROM viral_templates")
+            last_updated = cursor.fetchone()[0]
+        except Exception:
+            pass
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
         return {
             "status": "success",
@@ -307,43 +673,64 @@ class IntelligenceSyncEngine:
             "templates": templates
         }
 
-    def import_local_bundle(self, bundle: Dict[str, Any]) -> Dict[str, Any]:
+    def import_local_bundle(self, bundle: Any) -> Dict[str, Any]:
         """
         Imports an asymmetric intelligence bundle directly into local SQLite,
         supporting 100% offline, air-gapped workstations without external network requests.
         """
-        templates = bundle.get("templates") or bundle.get("categories") or []
-        if not templates:
+        if not isinstance(bundle, dict):
             return {"status": "error", "message": "Empty or invalid intelligence bundle format."}
 
-        conn = get_db()
-        cursor = conn.cursor()
+        templates = bundle.get("templates") or bundle.get("categories") or []
+        if not isinstance(templates, list) or not templates:
+            return {"status": "error", "message": "Empty or invalid intelligence bundle format."}
+
+        conn = None
         inserted = 0
         try:
+            conn = get_db()
             with conn:
+                cursor = conn.cursor()
                 cursor.execute("DELETE FROM viral_templates")
-                for h in templates:
+                for h in templates[:MAX_SYNC_TEMPLATES_BATCH]:
+                    if not isinstance(h, dict):
+                        continue
+                    hook_text = str(h.get("hook_text") or h.get("hook") or "").strip()[:MAX_HOOK_TEXT_LENGTH]
+                    if not hook_text:
+                        continue
+                    try:
+                        velocity = float(h.get("velocity_score") or h.get("velocity") or 8.0)
+                    except (ValueError, TypeError):
+                        velocity = 8.0
+
                     cursor.execute("""
                     INSERT INTO viral_templates (
                         archetype, hook_text, velocity_score, engagement_multiplier,
                         pacing_style, example_post_id, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     """, (
-                        h.get("archetype", "General"),
-                        h.get("hook_text") or h.get("hook", ""),
-                        float(h.get("velocity_score") or h.get("velocity", 8.0)),
-                        h.get("engagement_multiplier", "1.0x"),
-                        h.get("pacing_style") or h.get("pacing", "Standard"),
-                        h.get("example_post_id", "imported-bundle")
+                        str(h.get("archetype", "General"))[:MAX_ARCHETYPE_LENGTH],
+                        hook_text,
+                        velocity,
+                        str(h.get("engagement_multiplier", "1.0x"))[:MAX_MULTIPLIER_LENGTH],
+                        str(h.get("pacing_style") or h.get("pacing", "Standard"))[:MAX_PACING_LENGTH],
+                        str(h.get("example_post_id", "imported-bundle"))[:MAX_EXAMPLE_ID_LENGTH]
                     ))
                     inserted += 1
+
             return {
                 "status": "success",
                 "imported_count": inserted,
                 "version": bundle.get("version", "2026.09.1")
             }
+        except Exception as e:
+            return {"status": "error", "message": f"Failed to import bundle: {str(e)}"}
         finally:
-            conn.close()
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
 
 # Global singleton instance

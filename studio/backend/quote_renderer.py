@@ -23,6 +23,10 @@ def remove_watermark_crop(
     Strips bottom-margin watermarks (e.g. from Pollinations or trial endpoints)
     by slicing off the oversampled bottom buffer and resizing to target dimensions.
     """
+    # Clamp target dimensions to prevent ZeroDivisionError and decompression bombs
+    target_width = max(64, min(int(target_width) if target_width else 1080, 4096))
+    target_height = max(64, min(int(target_height) if target_height else 1080, 4096))
+
     img = Image.open(io.BytesIO(raw_image_bytes))
     act_w, act_h = img.size
     target_ratio = float(target_width) / float(target_height)

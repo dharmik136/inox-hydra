@@ -15,7 +15,7 @@ import sqlite3
 import os
 import threading
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 try:
     from .database import get_db
@@ -48,7 +48,7 @@ class CircuitBreaker:
                 return True
             if self.state == "OPEN":
                 if self.last_failure_time:
-                    elapsed = (datetime.utcnow() - self.last_failure_time).total_seconds()
+                    elapsed = (datetime.now(timezone.utc) - self.last_failure_time).total_seconds()
                     if elapsed >= self.cooldown_seconds:
                         self.state = "HALF_OPEN"
                         return True
@@ -65,7 +65,7 @@ class CircuitBreaker:
     def record_failure(self, status_code: Optional[int] = None, reason: str = ""):
         with self._lock:
             self.failure_count += 1
-            self.last_failure_time = datetime.utcnow()
+            self.last_failure_time = datetime.now(timezone.utc)
             desc = reason or f"HTTP status {status_code}"
             # Immediate trip on explicit security challenges (401, 403, checkpoint)
             if status_code in (401, 403) or "checkpoint" in desc.lower() or "challenge" in desc.lower():
@@ -78,7 +78,7 @@ class CircuitBreaker:
     def trip(self, reason: str = "Manual security trip"):
         with self._lock:
             self.state = "OPEN"
-            self.last_failure_time = datetime.utcnow()
+            self.last_failure_time = datetime.now(timezone.utc)
             self.last_trip_reason = reason
 
     def reset(self):
@@ -92,7 +92,7 @@ class CircuitBreaker:
         with self._lock:
             cooldown_remaining = 0.0
             if self.state == "OPEN" and self.last_failure_time:
-                elapsed = (datetime.utcnow() - self.last_failure_time).total_seconds()
+                elapsed = (datetime.now(timezone.utc) - self.last_failure_time).total_seconds()
                 cooldown_remaining = max(0.0, self.cooldown_seconds - elapsed)
             return {
                 "state": self.state,
@@ -114,11 +114,20 @@ class LinkedInClient:
         self.circuit_breaker = CircuitBreaker()
 
     def get_tokens(self) -> dict:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT key, value FROM settings WHERE key IN ('li_at', 'JSESSIONID')")
-        rows = dict(cursor.fetchall())
-        conn.close()
+        conn = None
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT key, value FROM settings WHERE key IN ('li_at', 'JSESSIONID')")
+            rows = dict(cursor.fetchall())
+        except Exception:
+            rows = {}
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         decrypted = {}
         for k, v in rows.items():
             decrypted[k] = decrypt_token(v) if v else v
@@ -129,19 +138,24 @@ class LinkedInClient:
         return bool(tokens.get("li_at") and tokens.get("JSESSIONID"))
 
     def save_tokens(self, li_at: str, jsessionid: str):
-        conn = get_db()
         enc_li_at = encrypt_token(li_at)
         enc_jsessionid = encrypt_token(jsessionid)
+        conn = None
         try:
+            conn = get_db()
             with conn:
                 cursor = conn.cursor()
-                now_iso = datetime.utcnow().isoformat()
+                now_iso = datetime.now(timezone.utc).isoformat()
                 cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('li_at', ?)", (enc_li_at,))
                 cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('JSESSIONID', ?)", (enc_jsessionid,))
                 cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('session_status', 'connected')")
                 cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_token_update', ?)", (now_iso,))
         finally:
-            conn.close()
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
         self.circuit_breaker.reset()
         print("Session tokens encrypted and saved successfully!")
 
@@ -193,8 +207,37 @@ class LinkedInClient:
             """, (dt, fl, dt, cn, dt, pv, dt, imp, lk, cm, sh, eng_rate))
             saved_count += 1
 
-        # Handle demographics if present
-        demographics = raw_data.get("demographics") or []
+        # Handle top-level profile views from identity profile responses
+        top_pv = raw_data.get("profile_views")
+        if top_pv is not None and not series:
+            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            cursor.execute("""
+            INSERT OR REPLACE INTO analytics_daily 
+            (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate)
+            VALUES (?, 
+                    (SELECT followers FROM analytics_daily WHERE date = ?),
+                    (SELECT connections FROM analytics_daily WHERE date = ?),
+                    ?,
+                    COALESCE((SELECT impressions FROM analytics_daily WHERE date = ?), 0),
+                    COALESCE((SELECT reactions FROM analytics_daily WHERE date = ?), 0),
+                    COALESCE((SELECT comments FROM analytics_daily WHERE date = ?), 0),
+                    COALESCE((SELECT shares FROM analytics_daily WHERE date = ?), 0),
+                    COALESCE((SELECT engagement_rate FROM analytics_daily WHERE date = ?), 0.0))
+            """, (today_str, today_str, today_str, int(top_pv), today_str, today_str, today_str, today_str, today_str))
+            saved_count += 1
+
+        # Handle demographics and viewer seniority if present
+        demographics = list(raw_data.get("demographics") or [])
+        seniority = raw_data.get("viewer_seniority") or raw_data.get("seniority") or []
+        if seniority and isinstance(seniority, list):
+            for s in seniority:
+                if isinstance(s, dict):
+                    demographics.append({
+                        "dimension": "seniority",
+                        "label": s.get("label") or s.get("title") or s.get("level", "Senior"),
+                        "percentage": float(s.get("percentage") or s.get("pct", 0.0))
+                    })
+
         if demographics:
             for d in demographics:
                 dim = d.get("dimension")
@@ -207,8 +250,10 @@ class LinkedInClient:
                     VALUES (?, ?, ?)
                     """, (dim, lbl, pct))
 
-        # Handle live posts updates from LinkedIn feed
-        posts = raw_data.get("posts") or []
+        # Handle live posts updates from LinkedIn feed (updatesV2 or elements)
+        posts = raw_data.get("posts") or raw_data.get("feed_updates") or []
+        if not posts and isinstance(raw_data.get("elements"), list):
+            posts = raw_data.get("elements", [])
         posts_updated = 0
         for p in posts:
             p_id = p.get("id") or p.get("urn")
@@ -318,7 +363,7 @@ class LinkedInClient:
 
         # Offline / Sandbox Mock Fast-Path
         if mock or li_at.startswith(("mock_", "sandbox_", "test_")):
-            now_iso = datetime.utcnow().isoformat()
+            now_iso = datetime.now(timezone.utc).isoformat()
             mock_profile = {
                 "name": "Dharmik Shingala",
                 "headline": "Enterprise Systems Architect & Content Strategist",
@@ -352,7 +397,7 @@ class LinkedInClient:
 
         headers = self.build_headers(tokens)
         cookies = {"li_at": li_at, "JSESSIONID": jsessionid}
-        results = {"profile": None, "synced_at": datetime.utcnow().isoformat()}
+        results = {"profile": None, "synced_at": datetime.now(timezone.utc).isoformat()}
 
         try:
             # Fetch authenticated user info
@@ -381,7 +426,7 @@ class LinkedInClient:
                             cur.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('user_headline', ?)", (headline,))
                         if vanity:
                             cur.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('user_vanity', ?)", (vanity,))
-                        cur.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_sync', ?)", (datetime.utcnow().isoformat(),))
+                        cur.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_sync', ?)", (datetime.now(timezone.utc).isoformat(),))
                 finally:
                     conn.close()
 
@@ -495,7 +540,7 @@ class LinkedInClient:
         Generates and ingests a simulated telemetry payload for local testing
         and contract verification without requiring external LinkedIn credentials.
         """
-        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         payload = {
             "series": [
                 {

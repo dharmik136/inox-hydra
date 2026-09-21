@@ -27,6 +27,7 @@ Strict Invariants:
 import json
 import os
 import sqlite3
+import urllib.parse
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
@@ -43,6 +44,8 @@ DEFAULT_MANIFEST_URL = os.environ.get(
     "INOX_UPDATE_MANIFEST_URL",
     "https://raw.githubusercontent.com/dharmik136/inox-hydra/main/release/latest.json",
 )
+
+ALLOWED_UPDATE_SCHEMES = ("https",)
 
 PREFERENCE_KEY = "update_check_enabled"
 LAST_CHECKED_KEY = "update_last_checked"
@@ -110,10 +113,12 @@ def parse_version(value: str) -> Tuple[int, ...]:
 
     Anything non-numeric is dropped rather than raising, because the remote
     value is untrusted input and a malformed manifest must not crash startup.
+    Limits input string length and number of segments.
     """
     parts = []
-    for chunk in str(value).strip().split("."):
-        digits = "".join(c for c in chunk if c.isdigit())
+    chunks = str(value)[:100].strip().split(".")[:10]
+    for chunk in chunks:
+        digits = "".join(c for c in chunk if c.isdigit())[:10]
         parts.append(int(digits) if digits else 0)
     return tuple(parts or [0])
 
@@ -144,7 +149,16 @@ def check_for_update(force: bool = False, url: Optional[str] = None) -> Dict[str
 
     import requests  # imported lazily so a disabled check touches no network stack
 
-    target = url or DEFAULT_MANIFEST_URL
+    target = (url or DEFAULT_MANIFEST_URL).strip()
+    parsed = urllib.parse.urlparse(target)
+    if parsed.scheme not in ALLOWED_UPDATE_SCHEMES:
+        return {
+            "checked": False,
+            "enabled": True,
+            "error": f"Disallowed URL scheme '{parsed.scheme}'. Only HTTPS is permitted.",
+            "current_version": __version__,
+        }
+
     headers = {"Accept": "application/json", "User-Agent": f"InoxHydra/{__version__}"}
 
     cached_etag = None

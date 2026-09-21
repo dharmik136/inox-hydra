@@ -10,7 +10,7 @@ Strict Invariants:
 - Zero em-dashes in any generated or parsed text.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 import asyncio
 import json
@@ -40,12 +40,20 @@ class IngressMessageParser:
     """Parses raw text and structured creator instructions from mobile messaging."""
 
     @staticmethod
-    def calculate_fold_metrics(text: str) -> Dict[str, Any]:
+    def calculate_fold_metrics(text: Any) -> Dict[str, Any]:
         """Calculates deterministic mobile fold lines (3 lines or 140 characters).
         
         Blank lines count as 45 characters.
         """
-        lines = text.splitlines()
+        if text is None:
+            safe_text = ""
+        elif not isinstance(text, str):
+            safe_text = str(text)
+        else:
+            safe_text = text
+
+        safe_text = safe_text[:50000]
+        lines = safe_text.splitlines()
         char_count = 0
         fold_line_index = -1
         fold_char_index = -1
@@ -60,7 +68,7 @@ class IngressMessageParser:
                 break
 
         return {
-            "total_chars": len(text),
+            "total_chars": len(safe_text),
             "lines_count": len(lines),
             "is_pre_fold_safe": fold_line_index == -1 and char_count <= MOBILE_FOLD_CHAR_LIMIT,
             "pre_fold_chars": char_count if fold_char_index == -1 else fold_char_index,
@@ -68,9 +76,21 @@ class IngressMessageParser:
         }
 
     @classmethod
-    def parse_message(cls, raw_text: str) -> Dict[str, Any]:
+    def parse_message(cls, raw_text: Any) -> Dict[str, Any]:
         """Extracts intent, content, scheduling directives, and tags from incoming message."""
-        cleaned = raw_text.strip()
+        if raw_text is None:
+            text = ""
+        elif not isinstance(raw_text, str):
+            text = str(raw_text)
+        else:
+            text = raw_text
+
+        # Sanitize em-dash characters dynamically to preserve the zero em-dash rule
+        em_dash = chr(0x2014)
+        en_dash = chr(0x2013)
+        sanitized_text = text.replace(em_dash, " -- ").replace(en_dash, "-")
+
+        cleaned = sanitized_text.strip()[:50000]
         archetype = "Direct"
         tags = ["mobile-ingress"]
         schedule_target: Optional[str] = None
@@ -88,15 +108,15 @@ class IngressMessageParser:
         elif lower.startswith("schedule"):
             match = re.match(r"^schedule\s+([\w\s:\-]+)[:|]\s*(.*)$", cleaned, re.IGNORECASE)
             if match:
-                schedule_target = match.group(1).strip()
+                schedule_target = match.group(1).strip()[:100]
                 content = match.group(2).strip()
                 archetype = "Scheduled Post"
                 tags.append("scheduled")
 
-        # Extract hashtags from text
-        hashtags = re.findall(r"#(\w+)", content)
-        if hashtags:
-            tags.extend(hashtags)
+        # Extract hashtags from text (capped to 30 unique tags, max 50 chars each)
+        raw_hashtags = re.findall(r"#(\w+)", content)
+        if raw_hashtags:
+            tags.extend([h[:50] for h in raw_hashtags[:30]])
 
         # Generate title from the first non-empty line (truncated to 60 chars)
         lines = [l.strip() for l in content.splitlines() if l.strip()]
@@ -129,6 +149,7 @@ class TelegramIngressDaemon:
         self.bot_token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", "") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN", "")
         self.authorized_chat_id = authorized_chat_id or os.environ.get("TELEGRAM_CHAT_ID", "") or os.environ.get("PRUDENT_TELEGRAM_CHAT_ID", "")
         self.is_running = False
+        self._stop_event = threading.Event()
         self.last_update_id = 0
         self._thread: Optional[threading.Thread] = None
         self.base_delay = 2.0
@@ -189,7 +210,13 @@ class TelegramIngressDaemon:
 
     def process_incoming_update(self, update: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Process a single Telegram update dictionary."""
+        if not isinstance(update, dict):
+            return None
+
         message = update.get("message", {})
+        if not isinstance(message, dict):
+            return None
+
         chat_id = str(message.get("chat", {}).get("id", ""))
         text = message.get("text", "")
 
@@ -225,8 +252,9 @@ class TelegramIngressDaemon:
             return None
 
         # Also store into posts table for seamless integration with legacy post studio
-        conn = get_db()
+        conn = None
         try:
+            conn = get_db()
             with conn:
                 post_id = f"post-tg-{draft_id}"
                 conn.execute("""
@@ -236,7 +264,11 @@ class TelegramIngressDaemon:
         except Exception as e:
             logger.error(f"Error syncing post to posts table: {e}")
         finally:
-            conn.close()
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
         # Broadcast live to UI via SSE bus
         event_payload = {
@@ -267,7 +299,7 @@ class TelegramIngressDaemon:
         }
 
         self.total_polls += 1
-        self.last_poll_at = datetime.utcnow().isoformat()
+        self.last_poll_at = datetime.now(timezone.utc).isoformat()
 
         try:
             res = requests.get(url, params=params, timeout=35)
@@ -277,8 +309,10 @@ class TelegramIngressDaemon:
                     results = data.get("result", [])
                     processed = []
                     for update in results:
+                        if not isinstance(update, dict):
+                            continue
                         update_id = update.get("update_id", 0)
-                        if update_id > self.last_update_id:
+                        if isinstance(update_id, int) and update_id > self.last_update_id:
                             self.last_update_id = update_id
                         p = self.process_incoming_update(update)
                         if p:
@@ -288,6 +322,15 @@ class TelegramIngressDaemon:
                     return processed
                 else:
                     self.last_error = f"Telegram API error: {data.get('description', 'Unknown')}"
+            elif res.status_code == 429:
+                try:
+                    data = res.json()
+                    retry_after = data.get("parameters", {}).get("retry_after")
+                    if retry_after:
+                        self.current_delay = max(float(retry_after), self.current_delay)
+                except Exception:
+                    pass
+                self.last_error = f"HTTP 429: Rate limited by Telegram API"
             else:
                 self.last_error = f"HTTP {res.status_code}: {res.text[:100]}"
         except Exception as err:
@@ -301,17 +344,25 @@ class TelegramIngressDaemon:
         if self.is_running:
             return
         self.is_running = True
+        self._stop_event.clear()
 
         def _loop():
-            while self.is_running:
+            while self.is_running and not self._stop_event.is_set():
+                if not self.bot_token:
+                    if self._stop_event.wait(30.0):
+                        break
+                    continue
+
                 has_err = False
                 try:
                     self.poll_once()
                 except Exception as e:
                     has_err = True
                     logger.error(f"Worker loop error: {e}")
+
                 delay = self.calculate_next_poll_interval(has_error=has_err)
-                time.sleep(delay)
+                if self._stop_event.wait(delay):
+                    break
 
         self._thread = threading.Thread(target=_loop, daemon=True, name="TelegramIngressWorker")
         self._thread.start()
@@ -319,6 +370,7 @@ class TelegramIngressDaemon:
     def stop_worker(self):
         """Stop background worker gracefully."""
         self.is_running = False
+        self._stop_event.set()
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=3)
 

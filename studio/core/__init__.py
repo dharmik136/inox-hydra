@@ -8,9 +8,14 @@ Strict Invariants:
 """
 
 from .rate_limiter import GaussianRateLimiter, SingleWriterActor, generate_gaussian_interval
+from .telemetry_shard import TelemetryEngine, TelemetryBuffer, telemetry_engine, telemetry_buffer
 
 __all__ = [
     "GaussianRateLimiter",
     "SingleWriterActor",
     "generate_gaussian_interval",
+    "TelemetryEngine",
+    "TelemetryBuffer",
+    "telemetry_engine",
+    "telemetry_buffer",
 ]

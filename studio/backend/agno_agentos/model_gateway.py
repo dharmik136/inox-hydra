@@ -151,6 +151,7 @@ def get_current_ai_config() -> AIProviderConfig:
     status = "active"
 
     if get_db:
+        conn = None
         try:
             conn = get_db()
             cursor = conn.cursor()
@@ -171,9 +172,14 @@ def get_current_ai_config() -> AIProviderConfig:
                 base_url = rows.get("ai_base_url", "")
                 verified_at = rows.get("ai_verified_at", "")
                 status = rows.get("ai_status", "active")
-            conn.close()
         except Exception:
             pass
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     # Check environment fallback if not set in DB
     if not api_key:
@@ -233,6 +239,7 @@ def save_ai_config(
         )
 
     if get_db:
+        conn = None
         try:
             conn = get_db()
             with conn:
@@ -257,9 +264,14 @@ def save_ai_config(
                     INSERT OR REPLACE INTO settings (key, value, updated_at)
                     VALUES ('gemini_api_key', ?, CURRENT_TIMESTAMP)
                     """, (config.api_key,))
-            conn.close()
         except Exception as e:
             print(f"[ModelGateway] SQLite save failed: {e}")
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     return config
 

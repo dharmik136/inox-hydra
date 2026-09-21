@@ -1,8 +1,51 @@
 // -------------------------------------------------------------
-// LinkedIn Studio Bridge - Background Service Worker (Manifest V3)
+// LinkedIn Studio Bridge: Background Service Worker (Manifest V3)
 // -------------------------------------------------------------
 const LOCAL_API_AUTH = "http://127.0.0.1:8000/api/auth/cookies";
 const LOCAL_INGEST_URL = "http://127.0.0.1:8000/api/analytics/ingest";
+
+// Sensitive authentication token keys to sanitize from telemetry
+const SENSITIVE_AUTH_KEYS = new Set([
+  "li_at",
+  "JSESSIONID",
+  "bcookie",
+  "bscookie",
+  "lidc",
+  "authorization",
+  "x-li-track",
+  "csrf-token",
+  "csrftoken",
+  "cookie",
+  "cookies",
+  "sessionkey",
+  "authtoken",
+  "accesstoken"
+]);
+
+/**
+ * Recursively strips authentication credentials and sensitive tokens from payloads.
+ */
+function sanitizeTelemetryPayload(obj) {
+  if (!obj || typeof obj !== "object") {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(sanitizeTelemetryPayload);
+  }
+  const clean = {};
+  for (const [key, val] of Object.entries(obj)) {
+    const lowerKey = key.toLowerCase();
+    if (SENSITIVE_AUTH_KEYS.has(key) || SENSITIVE_AUTH_KEYS.has(lowerKey)) {
+      continue;
+    }
+    if (typeof val === "object" && val !== null) {
+      clean[key] = sanitizeTelemetryPayload(val);
+    } else {
+      clean[key] = val;
+    }
+  }
+  return clean;
+}
 
 // Configure alarms on installation
 chrome.runtime.onInstalled.addListener(() => {
@@ -48,13 +91,63 @@ function getCookie(name) {
   });
 }
 
-// Intercept LinkedIn Voyager Creator Analytics responses
+/**
+ * Forwards sanitized passive telemetry events to the local sharded ingress endpoint.
+ */
+async function forwardPassiveTelemetry(eventType, metadata) {
+  try {
+    const cleanPayload = sanitizeTelemetryPayload({
+      event_type: eventType,
+      source: "chrome_mv3_observer",
+      timestamp: new Date().toISOString(),
+      metadata: metadata || {}
+    });
+
+    await fetch(LOCAL_INGEST_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cleanPayload)
+    });
+    console.log(`[Studio Bridge] Passive telemetry dispatched for ${eventType}`);
+  } catch (err) {
+    console.debug("[Studio Bridge] Telemetry dispatch skipped (studio offline):", err.message);
+  }
+}
+
+// Intercept LinkedIn Voyager API responses passively
 chrome.webRequest.onCompleted.addListener(
   (details) => {
-    if (details.url.includes("voyager/api/identity/dash/creatorAnalytics") || 
-        (details.url.includes("voyager/api/graphql") && details.url.includes("creator"))) {
-      console.log("[Studio Bridge] Intercepted Creator Analytics response:", details.url);
+    const url = details.url;
+
+    // 1. Post impressions and feed analytics
+    if (url.includes("/voyager/api/feed/updatesV2")) {
+      console.log("[Studio Bridge] Passively intercepted Feed Updates response:", url);
+      forwardPassiveTelemetry("feed_updates_v2", {
+        url: url.split("?")[0],
+        statusCode: details.statusCode,
+        method: details.method
+      });
+    }
+
+    // 2. Profile views and viewer seniority
+    else if (url.includes("/voyager/api/identity/profiles")) {
+      console.log("[Studio Bridge] Passively intercepted Profile Telemetry response:", url);
+      forwardPassiveTelemetry("profile_views_seniority", {
+        url: url.split("?")[0],
+        statusCode: details.statusCode,
+        method: details.method
+      });
+    }
+
+    // 3. Creator Analytics and GraphQL creator telemetry
+    else if (url.includes("voyager/api/identity/dash/creatorAnalytics") || 
+        (url.includes("voyager/api/graphql") && url.includes("creator"))) {
+      console.log("[Studio Bridge] Intercepted Creator Analytics response:", url);
       syncActiveSessionToStudio();
+      forwardPassiveTelemetry("creator_analytics", {
+        url: url.split("?")[0],
+        statusCode: details.statusCode
+      });
     }
   },
   { urls: ["https://www.linkedin.com/voyager/api/*"] }
@@ -77,10 +170,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "INGEST_ANALYTICS") {
+    const cleanPayload = sanitizeTelemetryPayload(message.payload);
     fetch(LOCAL_INGEST_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(message.payload)
+      body: JSON.stringify(cleanPayload)
     })
       .then(res => res.json())
       .then(data => sendResponse({ status: "success", data }))

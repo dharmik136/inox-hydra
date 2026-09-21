@@ -17,14 +17,15 @@ import json
 import uuid
 import re
 from typing import Optional, List, Dict, Any
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from contextlib import asynccontextmanager
 import time
 
 from fastapi import FastAPI, HTTPException, Response, UploadFile, File, Form, Request, Header
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 try:
     from ..__version__ import __version__
@@ -38,15 +39,23 @@ try:
     from .formatters import (
         to_sans_bold,
         to_sans_italic,
+        to_serif_bold,
+        to_serif_italic,
+        to_blackboard_bold,
+        to_underline,
+        to_circled_numbers,
         to_monospace,
         to_strikethrough,
         clean_text_formatting,
-        analyze_hook
+        analyze_hook,
+        calculate_dwell_metrics
     )
     from .repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from .leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from .linkedin_client import linkedin_client
-    from .scheduler import start_scheduler, shutdown_scheduler
+    from .scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
+                            parse_datetime_flexible, normalize_datetime_to_utc_iso,
+                            is_queue_paused, set_queue_paused)
     from .agno_agent import agno_orchestrator
     from .agno_agentos import orchestrator
     from .image_studio import image_studio_manager
@@ -64,20 +73,36 @@ try:
                         describe as describe_paths)
     from .docs_engine import search_docs_fts, init_docs_search_index
     from .carousel_engine import carousel_engine
+    try:
+        from studio.core.telemetry_shard import telemetry_engine, telemetry_buffer
+    except ImportError:
+        try:
+            from core.telemetry_shard import telemetry_engine, telemetry_buffer
+        except ImportError:
+            telemetry_engine = None
+            telemetry_buffer = None
 except ImportError:
     from database import get_db, init_db, seed_initial_data, create_draft, get_draft, list_drafts, schedule_draft, checkpoint_db
     from formatters import (
         to_sans_bold,
         to_sans_italic,
+        to_serif_bold,
+        to_serif_italic,
+        to_blackboard_bold,
+        to_underline,
+        to_circled_numbers,
         to_monospace,
         to_strikethrough,
         clean_text_formatting,
-        analyze_hook
+        analyze_hook,
+        calculate_dwell_metrics
     )
     from repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from linkedin_client import linkedin_client
-    from scheduler import start_scheduler, shutdown_scheduler
+    from scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
+                           parse_datetime_flexible, normalize_datetime_to_utc_iso,
+                           is_queue_paused, set_queue_paused)
     from agno_agent import agno_orchestrator
     from agno_agentos import orchestrator
     from image_studio import image_studio_manager
@@ -95,6 +120,14 @@ except ImportError:
                         describe as describe_paths)
     from docs_engine import search_docs_fts, init_docs_search_index
     from carousel_engine import carousel_engine
+    try:
+        from studio.core.telemetry_shard import telemetry_engine, telemetry_buffer
+    except ImportError:
+        try:
+            from core.telemetry_shard import telemetry_engine, telemetry_buffer
+        except ImportError:
+            telemetry_engine = None
+            telemetry_buffer = None
 
 OPENAPI_TAGS = [
     {"name": "Analytics", "description": "Creator metrics, impressions, period deltas, demographics, and CSV exports."},
@@ -118,11 +151,24 @@ OPENAPI_TAGS = [
     {"name": "G-Stack Multi-Agent Governance", "description": "Garry Tan 6-role virtual team governance, role backlogs, and multi-gate anti-slop audits."}
 ]
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    seed_initial_data()
+    start_scheduler()
+    if os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN"):
+        ingress_daemon.start_worker()
+    yield
+    shutdown_scheduler()
+    ingress_daemon.stop_worker()
+
+
 app = FastAPI(
     title="LinkedIn Studio Enterprise",
     description="A 100% self-hosted, air-gapped, privacy-first alternative to $199/month SaaS creator tools running on localhost.",
     version=__version__,
-    openapi_tags=OPENAPI_TAGS
+    openapi_tags=OPENAPI_TAGS,
+    lifespan=lifespan
 )
 
 # Enable CORS for local extension and browser UI
@@ -133,21 +179,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def on_startup():
-    init_db()
-    seed_initial_data()
-    start_scheduler()
-    if os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN"):
-        ingress_daemon.start_worker()
-
-
-@app.on_event("shutdown")
-def on_shutdown():
-    shutdown_scheduler()
-    ingress_daemon.stop_worker()
 
 
 # -------------------------------------------------------------
@@ -174,11 +205,11 @@ class ReschedulePayload(BaseModel):
 
 
 class FormatRequest(BaseModel):
-    text: str
+    text: str = Field(..., max_length=20000)
 
 
 class ImageGenerateRequest(BaseModel):
-    concept: str
+    concept: str = Field(..., max_length=2000)
     aspect_ratio: Optional[str] = "1:1"
     visual_style: Optional[str] = "photorealistic"
     color_palette: Optional[str] = "navy_cyan"
@@ -191,6 +222,14 @@ class ImageGenerateRequest(BaseModel):
     personal_watermark_text: Optional[str] = None
     personal_watermark_position: Optional[str] = "bottom_right"
     personal_watermark_style: Optional[str] = "glass_pill"
+
+    @field_validator("concept")
+    @classmethod
+    def validate_concept_non_empty(cls, v: str) -> str:
+        s = v.strip() if isinstance(v, str) else ""
+        if not s:
+            raise ValueError("concept cannot be empty or only whitespace")
+        return s[:2000]
 
 
 class CreatorProfilePayload(BaseModel):
@@ -504,6 +543,22 @@ def list_posts(status: Optional[str] = None):
 
 @app.post("/api/posts")
 def create_post(post: PostCreate):
+    if len(post.content) > 5000:
+        raise HTTPException(status_code=400, detail="Post content exceeds maximum 5,000 character limit.")
+
+    cadence_info = None
+    sched_for = post.scheduled_for
+    if post.status == "scheduled" and sched_for:
+        val = native_scheduler.validate_schedule_cadence(sched_for)
+        if not val["valid"]:
+            raise HTTPException(status_code=400, detail=val["error"])
+        cadence_info = {
+            "has_collision": val.get("has_collision", False),
+            "warning": val.get("warning"),
+            "cadence_health_score": val.get("cadence_health_score", 100)
+        }
+        sched_for = normalize_datetime_to_utc_iso(sched_for) or sched_for
+
     post_id = f"post_{uuid.uuid4().hex[:10]}"
     conn = get_db()
     cursor = conn.cursor()
@@ -515,16 +570,22 @@ def create_post(post: PostCreate):
         post.content,
         json.dumps(post.media_urls),
         post.status,
-        post.scheduled_for,
+        sched_for,
         json.dumps(post.tags)
     ))
     conn.commit()
     conn.close()
-    return {"status": "success", "id": post_id, "message": "Post created successfully"}
+    resp = {"status": "success", "id": post_id, "message": "Post created successfully"}
+    if cadence_info:
+        resp["cadence"] = cadence_info
+    return resp
 
 
 @app.put("/api/posts/{post_id}")
 def update_post(post_id: str, updates: PostUpdate):
+    if updates.content is not None and len(updates.content) > 5000:
+        raise HTTPException(status_code=400, detail="Post content exceeds maximum 5,000 character limit.")
+
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM posts WHERE id = ?", (post_id,))
@@ -539,6 +600,19 @@ def update_post(post_id: str, updates: PostUpdate):
     scheduled_for = updates.scheduled_for if updates.scheduled_for is not None else existing["scheduled_for"]
     tags = json.dumps(updates.tags) if updates.tags is not None else existing["tags"]
 
+    cadence_info = None
+    if status == "scheduled" and scheduled_for:
+        val = native_scheduler.validate_schedule_cadence(scheduled_for, post_id=post_id)
+        if not val["valid"]:
+            conn.close()
+            raise HTTPException(status_code=400, detail=val["error"])
+        cadence_info = {
+            "has_collision": val.get("has_collision", False),
+            "warning": val.get("warning"),
+            "cadence_health_score": val.get("cadence_health_score", 100)
+        }
+        scheduled_for = normalize_datetime_to_utc_iso(scheduled_for) or scheduled_for
+
     cursor.execute("""
     UPDATE posts
     SET content = ?, media_urls = ?, status = ?, scheduled_for = ?, tags = ?
@@ -546,11 +620,48 @@ def update_post(post_id: str, updates: PostUpdate):
     """, (content, media_urls, status, scheduled_for, tags, post_id))
     conn.commit()
     conn.close()
-    return {"status": "success", "message": "Post updated successfully"}
+    resp = {"status": "success", "message": "Post updated successfully"}
+    if cadence_info:
+        resp["cadence"] = cadence_info
+    return resp
 
 
 @app.post("/api/posts/{post_id}/reschedule")
 def reschedule_post(post_id: str, payload: ReschedulePayload):
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posts WHERE id = ?", (post_id,))
+        existing = cursor.fetchone()
+        if not existing:
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        cadence_val = native_scheduler.validate_schedule_cadence(payload.scheduled_for, post_id=post_id)
+        if not cadence_val["valid"]:
+            raise HTTPException(status_code=400, detail=cadence_val["error"])
+
+        normalized_sched = normalize_datetime_to_utc_iso(payload.scheduled_for) or payload.scheduled_for
+        cursor.execute("UPDATE posts SET scheduled_for = ?, status = 'scheduled' WHERE id = ?", (normalized_sched, post_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "message": f"Post rescheduled to {payload.scheduled_for}",
+        "cadence_warning": cadence_val.get("warning"),
+        "has_collision": cadence_val.get("has_collision", False),
+        "cadence_health_score": cadence_val.get("cadence_health_score", 100)
+    }
+
+
+@app.post("/api/posts/{post_id}/publish-now", tags=["LinkedIn Native Scheduler"])
+async def publish_post_now(post_id: str):
+    """
+    Immediately dispatches a scheduled post or draft as published.
+    Normalizes status to published, records UTC published_at,
+    and broadcasts the post_published event across the real-time event bus.
+    """
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM posts WHERE id = ?", (post_id,))
@@ -559,10 +670,32 @@ def reschedule_post(post_id: str, payload: ReschedulePayload):
         conn.close()
         raise HTTPException(status_code=404, detail="Post not found")
 
-    cursor.execute("UPDATE posts SET scheduled_for = ?, status = 'scheduled' WHERE id = ?", (payload.scheduled_for, post_id))
+    if existing["status"] == "published":
+        conn.close()
+        raise HTTPException(status_code=400, detail="Post is already published")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor.execute("""
+    UPDATE posts
+    SET status = 'published', published_at = ?
+    WHERE id = ?
+    """, (now_iso, post_id))
     conn.commit()
     conn.close()
-    return {"status": "success", "message": f"Post rescheduled to {payload.scheduled_for}"}
+
+    await event_bus.publish("post_published", {
+        "post_id": post_id,
+        "content": existing["content"][:80],
+        "action": "published_now",
+        "published_at": now_iso
+    })
+
+    return {
+        "status": "success",
+        "message": "Post published immediately.",
+        "post_id": post_id,
+        "published_at": now_iso
+    }
 
 
 @app.delete("/api/posts/{post_id}")
@@ -613,6 +746,44 @@ async def upload_media_file(file: UploadFile = File(...)):
 
     content = await file.read()
     size_bytes = len(content)
+
+    if size_bytes == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Uploaded file is empty (0 bytes). Please upload a valid media file."
+        )
+
+    # Validate file signatures against declared extension
+    if ext == ".pdf":
+        if b"%PDF-" not in content[:1024]:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid PDF format. The file content does not match the .pdf extension."
+            )
+    elif ext == ".png":
+        if not content.startswith(b"\x89PNG\r\n\x1a\n"):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid PNG format. The file content does not match the .png extension."
+            )
+    elif ext in {".jpg", ".jpeg"}:
+        if not content.startswith(b"\xff\xd8"):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid JPEG format. The file content does not match the image extension."
+            )
+    elif ext == ".webp":
+        if not (content.startswith(b"RIFF") and b"WEBP" in content[:16]):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid WEBP format. The file content does not match the .webp extension."
+            )
+    elif ext == ".mp4":
+        if b"ftyp" not in content[:64] and not content.startswith(b"\x00\x00\x00"):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid MP4 format. The file content does not match the .mp4 extension."
+            )
 
     with open(file_path, "wb") as f:
         f.write(content)
@@ -767,11 +938,20 @@ def legacy_carousel_stub(req: CarouselRequest):
 
 
 class CarouselDeckRequest(BaseModel):
-    slides: List[Dict[str, Any]]
+    slides: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)
     theme: Optional[str] = "dark_obsidian"
     aspect_ratio: Optional[str] = "4:5"
     author_name: Optional[str] = "Dharmik Shingala"
     author_title: Optional[str] = "Enterprise Systems Practitioner"
+
+    @field_validator("slides")
+    @classmethod
+    def validate_slides_list(cls, v: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not v or len(v) < 1:
+            raise ValueError("Carousel requires at least 1 slide")
+        if len(v) > 50:
+            raise ValueError("Carousel cannot exceed 50 slides")
+        return v
 
 
 @app.post("/api/v1/carousel/deck/generate", tags=["Media Studio & Dropzone"])
@@ -780,13 +960,16 @@ def generate_vector_carousel_deck(req: CarouselDeckRequest):
     Day 13: Compiles structured slide cards into 4:5 vertical (1080x1350)
     or 1:1 square vector SVG slides with Swiss typography.
     """
-    return carousel_engine.compile_carousel_deck(
+    res = carousel_engine.compile_carousel_deck(
         slides=req.slides,
         theme=req.theme or "dark_obsidian",
         aspect_ratio=req.aspect_ratio or "4:5",
         author_name=req.author_name or "Dharmik Shingala",
         author_title=req.author_title or "Enterprise Systems Practitioner"
     )
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message", "Failed to compile carousel deck"))
+    return res
 
 
 # -------------------------------------------------------------
@@ -935,6 +1118,36 @@ def format_analyze(req: FormatRequest):
     return analyze_hook(req.text)
 
 
+@app.post("/api/format/serif-bold")
+def format_serif_bold(req: FormatRequest):
+    return {"formatted": to_serif_bold(req.text)}
+
+
+@app.post("/api/format/serif-italic")
+def format_serif_italic(req: FormatRequest):
+    return {"formatted": to_serif_italic(req.text)}
+
+
+@app.post("/api/format/blackboard")
+def format_blackboard(req: FormatRequest):
+    return {"formatted": to_blackboard_bold(req.text)}
+
+
+@app.post("/api/format/underline")
+def format_underline(req: FormatRequest):
+    return {"formatted": to_underline(req.text)}
+
+
+@app.post("/api/format/circled-numbers")
+def format_circled_numbers(req: FormatRequest):
+    return {"formatted": to_circled_numbers(req.text)}
+
+
+@app.post("/api/format/dwell")
+def format_dwell(req: FormatRequest):
+    return calculate_dwell_metrics(req.text)
+
+
 # -------------------------------------------------------------
 # Taplio Pro ($199/mo) Feature 5: Lead Database & Relationship CRM
 # -------------------------------------------------------------
@@ -956,23 +1169,35 @@ def export_leads_csv_route(status: Optional[str] = None, search: Optional[str] =
 
 @app.post("/api/leads")
 def create_lead(lead: LeadCreate):
-    return add_lead(lead.dict())
+    data = lead.model_dump() if hasattr(lead, "model_dump") else lead.dict()
+    return add_lead(data)
 
 
 @app.post("/api/leads/batch")
 def create_leads_batch(payload: Dict[str, Any]):
     leads_list = payload.get("leads", [])
-    return batch_add_leads(leads_list)
+    result = batch_add_leads(leads_list)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
 
 
 @app.put("/api/leads/{lead_id}/status")
 def update_lead(lead_id: str, payload: LeadStatusUpdate):
-    return update_lead_status(lead_id, payload.status, payload.notes)
+    result = update_lead_status(lead_id, payload.status, payload.notes)
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=f"Lead '{lead_id}' not found")
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
 
 
 @app.delete("/api/leads/{lead_id}")
 def remove_lead(lead_id: str):
-    return delete_lead(lead_id)
+    result = delete_lead(lead_id)
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=f"Lead '{lead_id}' not found")
+    return result
 
 
 @app.get("/api/leads/{lead_id}/dm-script")
@@ -1026,6 +1251,69 @@ def get_smart_slots():
     }
 
 
+class CadenceValidationPayload(BaseModel):
+    scheduled_for: str
+    post_id: Optional[str] = None
+
+
+@app.get("/api/queue/next-slot", tags=["Smart Queue"])
+def get_next_smart_slot(from_time: Optional[str] = None):
+    """Calculates the chronologically next optimal smart slot with 12h cooldown clearance."""
+    cursor_dt = parse_datetime_flexible(from_time) if from_time else None
+    slot = native_scheduler.calculate_next_smart_slot(from_time=cursor_dt)
+    return {"status": "success", "slot": slot}
+
+
+@app.get("/api/queue/cadence-health", tags=["Smart Queue"])
+def get_cadence_health():
+    """Returns global cadence health score (0-100%) and queue collision analysis."""
+    overview = native_scheduler.get_cadence_overview()
+    return overview
+
+
+@app.post("/api/queue/validate-cadence", tags=["Smart Queue"])
+def validate_queue_cadence(payload: CadenceValidationPayload):
+    """Validates proposed scheduling timestamp against the 12-hour cooldown rule."""
+    result = native_scheduler.validate_schedule_cadence(payload.scheduled_for, post_id=payload.post_id)
+    return {"status": "success", "validation": result}
+
+
+@app.post("/api/v1/scheduler/dispatch/now", tags=["LinkedIn Native Scheduler"])
+def trigger_scheduler_dispatch():
+    """Forces an immediate on-demand evaluation of the scheduled queue and grace window recovery."""
+    actions = native_scheduler.check_scheduled_queue()
+    return {"status": "success", "actions": actions, "executed_at": datetime.now(timezone.utc).isoformat()}
+
+
+@app.get("/api/queue/status", tags=["Smart Queue"])
+def get_queue_status():
+    """Returns whether the automated publishing queue is active or paused."""
+    return {
+        "status": "success",
+        "queue_paused": native_scheduler.is_queue_paused()
+    }
+
+
+class QueuePausePayload(BaseModel):
+    paused: Optional[bool] = None
+
+
+@app.post("/api/queue/toggle-pause", tags=["Smart Queue"])
+async def toggle_queue_pause(payload: Optional[QueuePausePayload] = None):
+    """Toggles or sets the automated publishing queue pause state."""
+    current = native_scheduler.is_queue_paused()
+    new_state = payload.paused if (payload and payload.paused is not None) else not current
+    native_scheduler.set_queue_paused(new_state)
+    await event_bus.publish("queue_status_changed", {"queue_paused": new_state})
+    msg = "Publishing queue paused." if new_state else "Publishing queue resumed."
+    return {
+        "status": "success",
+        "queue_paused": new_state,
+        "message": msg
+    }
+
+
+
 # -------------------------------------------------------------
 # Viral Inspirations Hub (356 Vaulted High-Performing Blueprints)
 # -------------------------------------------------------------
@@ -1033,6 +1321,37 @@ def get_smart_slots():
 def search_inspirations(query: Optional[str] = None, topic: Optional[str] = None, limit: Optional[int] = 100):
     conn = get_db()
     cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspirations'")
+    has_inspirations = cursor.fetchone() is not None
+
+    if not has_inspirations:
+        conn.close()
+        templates = intelligence_sync_engine.get_templates(archetype=topic, query=query, limit=limit or 100)
+        total_vaulted = intelligence_sync_engine.get_total_count()
+        adapted_rows = [
+            {
+                "id": f"tpl-{t.get('id', idx)}",
+                "author_name": "Blueprint",
+                "author_headline": t.get("archetype", "Engineering"),
+                "topic": t.get("archetype", "Engineering"),
+                "content": (t.get("hook_text") or "") + "\n\n" + (t.get("pacing_style") or ""),
+                "likes_count": int(float(t.get("velocity_score") or 8.0) * 1000),
+                "comments_count": 50,
+                "key_hook": t.get("hook_text", ""),
+                "archetype": t.get("archetype", "Engineering"),
+                "velocity_score": t.get("velocity_score", 8.0),
+                "engagement_multiplier": t.get("engagement_multiplier", "2.0x"),
+                "pacing_style": t.get("pacing_style", "")
+            }
+            for idx, t in enumerate(templates)
+        ]
+        return {
+            "status": "success",
+            "total_vaulted": total_vaulted,
+            "count": len(adapted_rows),
+            "inspirations": adapted_rows
+        }
+
     conditions = []
     params = []
 
@@ -1095,10 +1414,38 @@ def get_auth_status():
     }
 
 
-@app.post("/api/analytics/ingest")
+@app.post("/api/analytics/ingest", tags=["Analytics"])
 def ingest_live_analytics(payload: dict):
+    # Asynchronously record in telemetry shard ring buffer without blocking
+    if telemetry_buffer:
+        try:
+            event_type = payload.get("event_type") or ("feed_updates" if "posts" in payload or "feed_updates" in payload else "analytics_ingest")
+            source = payload.get("source", "extension")
+            telemetry_buffer.ingest(event_type=event_type, payload=payload, source=source)
+        except Exception:
+            pass
+
     result = linkedin_client.ingest_analytics_payload(payload)
     return result
+
+
+@app.get("/api/v1/telemetry/status", tags=["Analytics"])
+def get_telemetry_shard_status():
+    """Returns telemetry shard diagnostics, event counts, and WAL metrics."""
+    if not telemetry_engine:
+        return {"status": "unavailable", "message": "Telemetry shard not initialized"}
+    status = telemetry_engine.get_status()
+    if telemetry_buffer:
+        status["pending_in_buffer"] = telemetry_buffer.pending_count()
+    return status
+
+
+@app.post("/api/v1/telemetry/flush", tags=["Analytics"])
+def flush_telemetry_shard():
+    """Flushes in-memory staged telemetry events to SQLite."""
+    if not telemetry_buffer:
+        return {"flushed_events": 0, "flushed_dwells": 0}
+    return telemetry_buffer.flush()
 
 
 # -------------------------------------------------------------
@@ -1264,10 +1611,15 @@ def search_documentation(q: str, limit: int = 10):
     """
     Sub-millisecond full-text search across all offline Markdown playbooks using SQLite FTS5 (Day 09).
     """
-    results = search_docs_fts(q, limit=limit)
+    safe_q = str(q or "")[:300].strip()
+    try:
+        safe_limit = max(1, min(int(limit), 100))
+    except (TypeError, ValueError):
+        safe_limit = 10
+    results = search_docs_fts(safe_q, limit=safe_limit)
     return {
         "status": "success",
-        "query": q,
+        "query": safe_q,
         "count": len(results),
         "results": results
     }
@@ -1278,14 +1630,18 @@ def get_doc_module(module_id: str):
     """
     Retrieves the full markdown content of a documentation module by ID or number.
     """
+    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(module_id or ""))[:60]
+    if not safe_id:
+        raise HTTPException(status_code=400, detail="Invalid documentation module ID.")
+
     target = None
     for m in DOCS_MODULES:
-        if m["id"].lower() == module_id.lower() or m["number"] == module_id:
+        if m["id"].lower() == safe_id.lower() or m["number"] == safe_id:
             target = m
             break
 
     if not target:
-        raise HTTPException(status_code=404, detail=f"Documentation module '{module_id}' not found.")
+        raise HTTPException(status_code=404, detail=f"Documentation module '{safe_id}' not found.")
 
     # Locate the file (either in modules/ or directly in docs/)
     file_path = os.path.join(MODULES_DIR, target["file"])
@@ -1340,14 +1696,17 @@ def get_stream_history():
 
 
 class BroadcastEventRequest(BaseModel):
-    event: str
-    data: Dict[str, Any]
+    event: str = Field(..., min_length=1, max_length=100)
+    data: Dict[str, Any] = Field(default_factory=dict)
 
 
 @app.post("/api/v1/stream/broadcast", tags=["Real-Time Event Stream"])
 async def broadcast_event(req: BroadcastEventRequest):
     """Manually broadcasts an event across the SSE stream."""
-    payload = await event_bus.publish(req.event, req.data)
+    clean_event = re.sub(r"[\r\n]+", "", req.event).strip()
+    if not clean_event:
+        raise HTTPException(status_code=400, detail="Event name cannot be empty or pure whitespace.")
+    payload = await event_bus.publish(clean_event, req.data)
     return {"status": "success", "published": payload}
 
 
@@ -1580,7 +1939,10 @@ class ArchiveInactiveRequest(BaseModel):
 def archive_inactive_crm_leads(req: Optional[ArchiveInactiveRequest] = None):
     """Archives leads with no activity for more than specified days (default 90)."""
     days = req.inactive_days if req else 90
-    return reverse_crm.archive_inactive_leads(days)
+    result = reverse_crm.archive_inactive_leads(days)
+    if result.get("status") == "error":
+        raise HTTPException(status_code=400, detail=result["message"])
+    return result
 
 
 @app.get("/api/v1/crm/leads/{lead_id}/timeline", tags=["Enterprise Reverse CRM"])
@@ -1620,9 +1982,9 @@ def get_rate_limiter_status():
 
 
 class RateLimiterAcquireRequest(BaseModel):
-    tokens: float = 1.0
-    block: bool = False
-    timeout: Optional[float] = None
+    tokens: float = Field(default=1.0, ge=0.0, le=100.0)
+    block: bool = Field(default=False)
+    timeout: Optional[float] = Field(default=None, ge=0.0, le=30.0)
 
 
 @app.post("/api/v1/rate-limiter/acquire", tags=["Anti-Bot & Rate Limiting"])
@@ -1631,6 +1993,8 @@ def acquire_rate_limit_token(req: Optional[RateLimiterAcquireRequest] = None):
     t = req.tokens if req else 1.0
     b = req.block if req else False
     timeout = req.timeout if req else None
+    if b and timeout is None:
+        timeout = 10.0  # Defensive cap to prevent blocking FastAPI thread indefinitely
     success = rate_limiter.acquire(tokens=t, block=b, timeout=timeout)
     wait_time = rate_limiter.wait_time_seconds(tokens=t)
     return {
@@ -1660,17 +2024,22 @@ def trigger_intelligence_sync(req: Optional[IntelligenceSyncRequest] = None):
     """Triggers asymmetric ETag-based intelligence sync against the GitHub CDN."""
     force = req.force if req else False
     cdn_url = req.cdn_url if req else None
-    return intelligence_sync_engine.sync(force=force, cdn_url=cdn_url)
+    res = intelligence_sync_engine.sync(force=force, cdn_url=cdn_url)
+    if isinstance(res, dict) and res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message", "Sync failed"))
+    return res
 
 
 @app.get("/api/v1/intelligence/templates", tags=["Intelligence Sync & Radar"])
-def get_viral_templates(archetype: Optional[str] = None, limit: int = 50):
+def get_viral_templates(archetype: Optional[str] = None, query: Optional[str] = None, limit: int = 100):
     """Returns ranked viral hook archetypes ordered by algorithmic velocity score."""
-    templates = intelligence_sync_engine.get_templates(archetype=archetype, limit=limit)
+    templates = intelligence_sync_engine.get_templates(archetype=archetype, query=query, limit=limit)
+    total_vaulted = intelligence_sync_engine.get_total_count()
     return {
         "status": "success",
         "templates": templates,
-        "count": len(templates)
+        "count": len(templates),
+        "total_vaulted": total_vaulted
     }
 
 
@@ -1703,23 +2072,26 @@ class ImportBundleRequest(BaseModel):
 @app.post("/api/v1/intelligence/bundle/import", tags=["Intelligence Sync & Radar"])
 def import_intelligence_bundle(req: ImportBundleRequest):
     """Imports an asymmetric intelligence bundle directly for air-gapped workstations."""
-    return intelligence_sync_engine.import_local_bundle(req.bundle)
+    res = intelligence_sync_engine.import_local_bundle(req.bundle)
+    if isinstance(res, dict) and res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message", "Bundle import failed"))
+    return res
 
 
 class GStackBacklogTaskCreate(BaseModel):
-    role: str
-    title: str
-    specification: str
-    status: Optional[str] = "PENDING"
+    role: str = Field(..., max_length=50)
+    title: str = Field(..., min_length=1, max_length=300)
+    specification: str = Field(..., min_length=1, max_length=10000)
+    status: Optional[str] = Field("PENDING", max_length=50)
 
 
 class GStackBacklogStatusUpdate(BaseModel):
-    status: str
+    status: str = Field(..., min_length=1, max_length=50)
 
 
 class GStackAuditRequest(BaseModel):
-    content: str
-    title: Optional[str] = None
+    content: str = Field(..., max_length=50000)
+    title: Optional[str] = Field(None, max_length=300)
 
 
 @app.get("/api/v1/schema/status", tags=["Settings & Creator Profile"])
@@ -1827,9 +2199,9 @@ def get_gstack_roles():
 
 
 @app.get("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"])
-def get_gstack_backlog(role: Optional[str] = None, status: Optional[str] = None):
+def get_gstack_backlog(role: Optional[str] = None, status: Optional[str] = None, limit: int = 500):
     """Lists backlog tasks filtered by G-Stack role or status."""
-    tasks = gstack_engine.get_backlog(role=role, status=status)
+    tasks = gstack_engine.get_backlog(role=role, status=status, limit=limit)
     return {
         "status": "success",
         "tasks": tasks,
@@ -1840,26 +2212,32 @@ def get_gstack_backlog(role: Optional[str] = None, status: Optional[str] = None)
 @app.post("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"])
 def add_gstack_task(req: GStackBacklogTaskCreate):
     """Appends a new engineering task to the G-Stack governance backlog."""
-    task_id = gstack_engine.add_backlog_task(
-        role=req.role,
-        title=req.title,
-        specification=req.specification,
-        status=req.status or "PENDING"
-    )
-    return {
-        "status": "success",
-        "task_id": task_id
-    }
+    try:
+        task_id = gstack_engine.add_backlog_task(
+            role=req.role,
+            title=req.title,
+            specification=req.specification,
+            status=req.status or "PENDING"
+        )
+        return {
+            "status": "success",
+            "task_id": task_id
+        }
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
 
 
 @app.patch("/api/v1/gstack/backlog/{task_id}", tags=["G-Stack Multi-Agent Governance"])
 def update_gstack_task_status(task_id: int, req: GStackBacklogStatusUpdate):
     """Updates the execution status of a G-Stack backlog item."""
-    updated = gstack_engine.update_backlog_status(task_id=task_id, status=req.status)
-    return {
-        "status": "success" if updated else "not_found",
-        "updated": updated
-    }
+    try:
+        updated = gstack_engine.update_backlog_status(task_id=task_id, status=req.status)
+        return {
+            "status": "success" if updated else "not_found",
+            "updated": updated
+        }
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
 
 
 @app.post("/api/v1/gstack/audit", tags=["G-Stack Multi-Agent Governance"])

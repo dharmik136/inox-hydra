@@ -67,7 +67,12 @@ studio/docs/
 # Live user database. Holds real drafts, leads and an encrypted LinkedIn
 # session. It is user state, not source, and it is recreated by init_db().
 studio/data/*.db
+studio/backups/
+studio/logs/
+# ETag cache written by the intelligence sync engine at runtime.
+studio/data/.intelligence_etag
 # Harvested third party content. 390 LinkedIn posts from 240 named authors.
 # Nothing reads it at runtime (inspirations are seeded from database.py), and
 # it is not ours to redistribute.
 studio/data/taplio_vault_archive_backup.json
+

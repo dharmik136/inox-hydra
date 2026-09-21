@@ -16,6 +16,9 @@ Implements the Agno multi-agent inbound pipeline specified in docs/modules/04_VI
    - Coordinates agents and persists enriched dossiers into SQLite (lead_enrichments table).
    - Dual-mode intelligence: Local deterministic intelligence engine by default;
      automatically upgrades to Gemini 2.5 Flash if an API key is present in local settings.
+
+Strict Invariants:
+- Zero em-dashes across all generated text, prompts, and docstrings.
 """
 
 import os
@@ -23,7 +26,7 @@ import sys
 import json
 import sqlite3
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     from .database import get_db
@@ -31,21 +34,24 @@ except ImportError:
     from database import get_db
 
 
-def clean_no_em_dashes(text: str) -> str:
+def clean_no_em_dashes(text: Any) -> str:
     """
     Enforces strict zero em-dash compliance.
     Replaces em-dashes and double dashes with clean natural punctuation.
     """
-    if not text:
+    if text is None:
         return ""
-    text = text.replace("\u2014", ", ")
-    text = text.replace("–", ", ")
-    text = text.replace(" -- ", ", ")
-    text = text.replace("--", ", ")
+    s = str(text)
+    em_dash = chr(0x2014)
+    en_dash = chr(0x2013)
+    s = s.replace(em_dash, ", ")
+    s = s.replace(en_dash, ", ")
+    s = s.replace(" -- ", ", ")
+    s = s.replace("--", ", ")
     # Clean up double spaces
-    while "  " in text:
-        text = text.replace("  ", " ")
-    return text.strip()
+    while "  " in s:
+        s = s.replace("  ", " ")
+    return s.strip()
 
 
 class LeadResearchAgent:
@@ -81,11 +87,14 @@ class LeadResearchAgent:
         """
         Analyzes prospect metadata and returns structured research intelligence.
         """
-        name = lead.get("name", "Prospect")
-        headline = (lead.get("headline") or "").lower()
-        company = lead.get("company") or "Enterprise Organization"
-        notes = (lead.get("notes") or "").lower()
-        engagement = lead.get("engagement_type") or "Engaged"
+        if not isinstance(lead, dict):
+            lead = {}
+
+        name = str(lead.get("name") or "Prospect")[:100]
+        headline = (str(lead.get("headline") or "")).lower()[:200]
+        company = str(lead.get("company") or "Enterprise Organization")[:100]
+        notes = (str(lead.get("notes") or "")).lower()[:1000]
+        engagement = str(lead.get("engagement_type") or "Engaged")[:50]
 
         # Categorize role
         role_category = "architects"
@@ -174,13 +183,15 @@ class IcebreakerAgent:
         """
         Generates 3 tailored icebreakers based on research findings.
         """
-        name = research_data.get("name", "there").split()[0]
-        company = research_data.get("company", "your team")
-        topics = research_data.get("key_topics", ["Distributed Systems"])
-        primary_topic = topics[0] if topics else "systems architecture"
-        secondary_topic = topics[1] if len(topics) > 1 else "clean service boundaries"
-        friction = research_data.get("friction_points", "")
-        tech_stack = research_data.get("estimated_tech_stack", "distributed systems")
+        if not isinstance(research_data, dict):
+            research_data = {}
+
+        name = str(research_data.get("name") or "there").split()[0][:50]
+        company = str(research_data.get("company") or "your team")[:80]
+        topics = research_data.get("key_topics") or ["Distributed Systems"]
+        primary_topic = str(topics[0] if topics else "systems architecture")
+        secondary_topic = str(topics[1] if len(topics) > 1 else "clean service boundaries")
+        tech_stack = str(research_data.get("estimated_tech_stack") or "distributed systems")
 
         # Angle 1: Architecture & Technical Friction Angle
         angle_1 = (
@@ -225,28 +236,30 @@ class EnrichmentOrchestrator:
     def get_gemini_api_key(self) -> Optional[str]:
         """Retrieves stored Gemini API key from SQLite settings table."""
         conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = 'gemini_api_key'")
-        row = cursor.fetchone()
-        conn.close()
-        if row and row["value"] and row["value"].strip():
-            return row["value"].strip()
-        return os.environ.get("GEMINI_API_KEY")
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM settings WHERE key = 'gemini_api_key'")
+            row = cursor.fetchone()
+            if row and row["value"] and str(row["value"]).strip():
+                return str(row["value"]).strip()
+            return os.environ.get("GEMINI_API_KEY")
+        finally:
+            conn.close()
 
     def enrich_lead(self, lead_id: str) -> Dict[str, Any]:
         """
         Runs autonomous Agno enrichment on a lead by ID and stores the resulting dossier.
         """
         conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
-        row = cursor.fetchone()
-        if not row:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM leads WHERE id = ?", (lead_id,))
+            row = cursor.fetchone()
+            if not row:
+                raise ValueError(f"Lead with ID '{lead_id}' not found in CRM database.")
+            lead_dict = dict(row)
+        finally:
             conn.close()
-            raise ValueError(f"Lead with ID '{lead_id}' not found in CRM database.")
-
-        lead_dict = dict(row)
-        conn.close()
 
         return self.enrich_lead_payload(lead_dict)
 
@@ -254,7 +267,10 @@ class EnrichmentOrchestrator:
         """
         Executes multi-agent enrichment on a lead dictionary and persists to SQLite.
         """
-        lead_id = lead.get("id") or f"lead-gen-{abs(hash(lead.get('name', ''))) % 100000}"
+        if not isinstance(lead, dict):
+            raise TypeError("lead must be a dictionary")
+
+        lead_id = str(lead.get("id") or f"lead-gen-{abs(hash(str(lead.get('name', '')))) % 100000}")[:100]
         research = self.researcher.research(lead)
 
         api_key = self.get_gemini_api_key()
@@ -274,7 +290,7 @@ class EnrichmentOrchestrator:
                     f"Tech Stack: {research['estimated_tech_stack']}\n"
                     f"Friction Point: {research['friction_points']}\n\n"
                     f"Generate exactly 3 high-signal, conversational, punchy 2-sentence LinkedIn outreach icebreakers.\n"
-                    f"CRITICAL RULE: DO NOT USE ANY EM-DASHES (\u2014) OR DOUBLE DASHES (--). STRICT ZERO EM-DASHES.\n"
+                    f"CRITICAL RULE: DO NOT USE ANY EM-DASHES ({chr(0x2014)}) OR DOUBLE DASHES (--). STRICT ZERO EM-DASHES.\n"
                     f"Return as a JSON array of 3 strings."
                 )
                 res = model.generate_content(prompt)
@@ -288,7 +304,6 @@ class EnrichmentOrchestrator:
                         provider = "gemini_2_5_flash"
             except Exception as e:
                 # Graceful fallback to deterministic local engine
-                print(f"[Agno] Gemini API call skipped/failed ({e}), using local deterministic engine.")
                 icebreakers = []
 
         # Fallback to local deterministic agent if offline or no API key
@@ -306,7 +321,7 @@ class EnrichmentOrchestrator:
             "friction_points": research["friction_points"],
             "icebreakers": icebreakers,
             "enriched_by": provider,
-            "enriched_at": datetime.utcnow().isoformat()
+            "enriched_at": datetime.now(timezone.utc).isoformat()
         }
 
         # Persist into SQLite
@@ -341,25 +356,26 @@ class EnrichmentOrchestrator:
         Retrieves existing enriched profile dossier from SQLite.
         """
         conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM lead_enrichments WHERE lead_id = ?", (lead_id,))
-        row = cursor.fetchone()
-        conn.close()
-
-        if not row:
-            return None
-
-        data = dict(row)
         try:
-            data["key_topics"] = json.loads(data["key_topics"]) if data.get("key_topics") else []
-        except Exception:
-            data["key_topics"] = []
-        try:
-            data["icebreakers"] = json.loads(data["icebreakers"]) if data.get("icebreakers") else []
-        except Exception:
-            data["icebreakers"] = []
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM lead_enrichments WHERE lead_id = ?", (lead_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
 
-        return data
+            data = dict(row)
+            try:
+                data["key_topics"] = json.loads(data["key_topics"]) if data.get("key_topics") else []
+            except Exception:
+                data["key_topics"] = []
+            try:
+                data["icebreakers"] = json.loads(data["icebreakers"]) if data.get("icebreakers") else []
+            except Exception:
+                data["icebreakers"] = []
+
+            return data
+        finally:
+            conn.close()
 
 
 agno_orchestrator = EnrichmentOrchestrator()

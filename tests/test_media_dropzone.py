@@ -101,3 +101,27 @@ def test_list_and_delete_media():
     # Confirm removed
     list_resp_after = client.get("/api/media")
     assert not any(a["id"] == asset_id for a in list_resp_after.json()["assets"])
+
+
+def test_upload_zero_byte_file_rejected():
+    """Verifies that an empty 0-byte file is rejected with 400 Bad Request."""
+    files = {"file": ("empty.pdf", io.BytesIO(b""), "application/pdf")}
+    resp = client.post("/api/media/upload", files=files)
+    assert resp.status_code == 400
+    assert "empty (0 bytes)" in resp.json()["detail"]
+
+
+def test_upload_disguised_file_rejected():
+    """Verifies that a text file renamed to .pdf or .png is rejected by signature validation."""
+    fake_pdf = b"This is plain text pretending to be a PDF."
+    files_pdf = {"file": ("fake_doc.pdf", io.BytesIO(fake_pdf), "application/pdf")}
+    resp_pdf = client.post("/api/media/upload", files=files_pdf)
+    assert resp_pdf.status_code == 400
+    assert "Invalid PDF format" in resp_pdf.json()["detail"]
+
+    fake_png = b"Not a PNG image at all."
+    files_png = {"file": ("fake_image.png", io.BytesIO(fake_png), "image/png")}
+    resp_png = client.post("/api/media/upload", files=files_png)
+    assert resp_png.status_code == 400
+    assert "Invalid PNG format" in resp_png.json()["detail"]
+

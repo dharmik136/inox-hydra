@@ -135,6 +135,12 @@ def test_analytics_ingest_endpoint():
     l_row = c.fetchone()
     assert l_row is not None
     assert l_row[0] == "Arun Kothari"
+
+    # Clean up test artifacts to preserve test isolation
+    c.execute("DELETE FROM analytics_daily WHERE date = ?", (test_date,))
+    c.execute("DELETE FROM posts WHERE id = 'post-ingest-verify'")
+    c.execute("DELETE FROM leads WHERE id = 'lead-ingest-verify'")
+    conn.commit()
     conn.close()
 
 
@@ -144,3 +150,15 @@ def test_mock_ingestion_verification_helper():
     assert res["buckets_ingested"] >= 1
     assert res["posts_updated"] >= 1
     assert (res["leads_added"] + res.get("leads_updated", 0)) >= 1
+
+    # Clean up test artifacts to preserve test isolation
+    from datetime import datetime, timezone
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM analytics_daily WHERE date = ?", (today_str,))
+    c.execute("DELETE FROM posts WHERE id = 'post-mock-verification'")
+    c.execute("DELETE FROM leads WHERE id = 'lead-mock-verify'")
+    conn.commit()
+    conn.close()
+

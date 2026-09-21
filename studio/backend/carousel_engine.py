@@ -44,13 +44,23 @@ THEMES = {
 }
 
 
+# -- Validation & Boundary Constants ----------------------------------------
+MAX_CAROUSEL_SLIDES = 50
+MIN_CAROUSEL_SLIDES = 1
+MAX_SLIDE_TITLE_LENGTH = 300
+MAX_SLIDE_BODY_LENGTH = 2000
+MAX_SLIDE_TAG_LENGTH = 50
+MAX_AUTHOR_NAME_LENGTH = 100
+MAX_AUTHOR_TITLE_LENGTH = 150
+
+
 class CarouselDeckEngine:
     """High-performance vector carousel and slide deck compiler."""
 
     @classmethod
     def render_slide_svg(
         cls,
-        slide: Dict[str, Any],
+        slide: Optional[Dict[str, Any]],
         slide_index: int,
         total_slides: int,
         theme_name: str = "dark_obsidian",
@@ -60,20 +70,40 @@ class CarouselDeckEngine:
     ) -> str:
         """
         Renders a standalone 1080x1350 (4:5) or 1080x1080 (1:1) SVG vector slide.
+        Guarded against zero division, missing fields, and excessive string lengths.
         """
-        is_4_5 = (aspect_ratio == "4:5")
+        aspect_ratio_clean = "1:1" if str(aspect_ratio).strip() == "1:1" else "4:5"
+        is_4_5 = (aspect_ratio_clean == "4:5")
         width = 1080
         height = 1350 if is_4_5 else 1080
 
-        th = THEMES.get(theme_name, THEMES["dark_obsidian"])
+        theme_key = str(theme_name or "").strip().lower()
+        th = THEMES.get(theme_key, THEMES["dark_obsidian"])
 
-        tag = html.escape(slide.get("tag") or slide.get("category") or "ARCHITECTURE")
-        title = html.escape(slide.get("title") or slide.get("headline") or "")
-        body = html.escape(slide.get("body") or slide.get("content") or "")
-        num_str = f"{slide_index + 1:02d} / {total_slides:02d}"
+        if not isinstance(slide, dict):
+            slide = {}
 
-        # Progress bar width calculation
-        progress_pct = ((slide_index + 1) / total_slides) * 100
+        # Safe bounds on slide numbers to prevent ZeroDivisionError
+        safe_total = max(1, int(total_slides) if isinstance(total_slides, (int, float)) else 1)
+        safe_index = max(0, min(int(slide_index) if isinstance(slide_index, (int, float)) else 0, safe_total - 1))
+
+        raw_tag = slide.get("tag") or slide.get("category") or "ARCHITECTURE"
+        tag = html.escape(str(raw_tag)[:MAX_SLIDE_TAG_LENGTH])
+
+        raw_title = slide.get("title") or slide.get("headline") or ""
+        title = html.escape(str(raw_title)[:MAX_SLIDE_TITLE_LENGTH])
+
+        raw_body = slide.get("body") or slide.get("content") or ""
+        body = html.escape(str(raw_body)[:MAX_SLIDE_BODY_LENGTH])
+
+        author_name_safe = html.escape(str(author_name or "Creator")[:MAX_AUTHOR_NAME_LENGTH])
+        author_title_safe = html.escape(str(author_title or "")[:MAX_AUTHOR_TITLE_LENGTH])
+
+        num_str = f"{safe_index + 1:02d} / {safe_total:02d}"
+
+        # Progress bar calculation clamped to [0, 100]
+        progress_pct = min(100.0, max(0.0, ((safe_index + 1) / safe_total) * 100))
+        bar_width = max(0, min(width, int(width * progress_pct / 100)))
 
         svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   <defs>
@@ -99,7 +129,7 @@ class CarouselDeckEngine:
 
   <!-- Top Progress Bar -->
   <rect x="0" y="0" width="{width}" height="8" fill="{th['border']}"/>
-  <rect x="0" y="0" width="{int(width * progress_pct / 100)}" height="8" fill="{th['accent']}"/>
+  <rect x="0" y="0" width="{bar_width}" height="8" fill="{th['accent']}"/>
 
   <!-- Slide Header -->
   <g transform="translate(90, 110)">
@@ -120,8 +150,8 @@ class CarouselDeckEngine:
   <!-- Slide Footer -->
   <line x1="90" y1="{height - 130}" x2="{width - 90}" y2="{height - 130}" stroke="{th['border']}" stroke-width="2"/>
   <g transform="translate(90, {height - 85})">
-    <text x="0" y="0" class="author">{html.escape(author_name)}</text>
-    <text x="0" y="26" class="author-sub">{html.escape(author_title)}</text>
+    <text x="0" y="0" class="author">{author_name_safe}</text>
+    <text x="0" y="26" class="author-sub">{author_title_safe}</text>
     <text x="{width - 180}" y="12" text-anchor="end" class="swipe-cta">Swipe &gt;&gt;</text>
   </g>
 </svg>"""
@@ -138,34 +168,59 @@ class CarouselDeckEngine:
     ) -> Dict[str, Any]:
         """
         Compiles all slides into individual SVGs and a combined HTML printable deck.
+        Enforces 1..50 slide boundaries.
         """
+        if not isinstance(slides, list) or len(slides) < MIN_CAROUSEL_SLIDES:
+            return {
+                "status": "error",
+                "message": f"Carousel requires at least {MIN_CAROUSEL_SLIDES} slide",
+                "slides_count": 0,
+                "slides": []
+            }
+
+        if len(slides) > MAX_CAROUSEL_SLIDES:
+            return {
+                "status": "error",
+                "message": f"Slides count ({len(slides)}) exceeds maximum allowed of {MAX_CAROUSEL_SLIDES}",
+                "slides_count": len(slides),
+                "slides": []
+            }
+
         total = len(slides)
         rendered_svgs = []
 
+        norm_aspect = "1:1" if str(aspect_ratio).strip() == "1:1" else "4:5"
+        norm_theme = str(theme or "").strip().lower()
+        if norm_theme not in THEMES:
+            norm_theme = "dark_obsidian"
+
         for idx, s in enumerate(slides):
+            slide_dict = s if isinstance(s, dict) else {}
             svg_content = cls.render_slide_svg(
-                slide=s,
+                slide=slide_dict,
                 slide_index=idx,
                 total_slides=total,
-                theme_name=theme,
-                aspect_ratio=aspect_ratio,
+                theme_name=norm_theme,
+                aspect_ratio=norm_aspect,
                 author_name=author_name,
                 author_title=author_title
             )
+            raw_tag = slide_dict.get("tag") or slide_dict.get("category") or "SLIDE"
+            raw_title = slide_dict.get("title") or slide_dict.get("headline") or ""
             rendered_svgs.append({
                 "slide_index": idx,
                 "slide_number": f"{idx + 1:02d} / {total:02d}",
-                "tag": s.get("tag", "SLIDE"),
-                "title": s.get("title", ""),
+                "tag": str(raw_tag)[:MAX_SLIDE_TAG_LENGTH],
+                "title": str(raw_title)[:MAX_SLIDE_TITLE_LENGTH],
                 "svg": svg_content
             })
 
         return {
             "status": "success",
             "slides_count": total,
-            "theme": theme,
-            "aspect_ratio": aspect_ratio,
-            "dimensions": {"width": 1080, "height": 1350 if aspect_ratio == "4:5" else 1080},
+            "theme": norm_theme,
+            "aspect_ratio": norm_aspect,
+            "dimensions": {"width": 1080, "height": 1350 if norm_aspect == "4:5" else 1080},
             "slides": rendered_svgs
         }
 

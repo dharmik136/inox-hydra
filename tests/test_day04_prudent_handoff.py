@@ -144,18 +144,25 @@ def test_gstack_governance_engine_roles_and_backlog():
         title="Benchmark SQLite Write Actor",
         specification="Measure latency of 100 serialized writes"
     )
-    assert task_id > 0
+    try:
+        assert task_id > 0
 
-    # Test updating task status
-    updated = gstack_engine.update_backlog_status(task_id, "IN_PROGRESS")
-    assert updated is True
+        # Test updating task status
+        updated = gstack_engine.update_backlog_status(task_id, "IN_PROGRESS")
+        assert updated is True
 
-    # Test invalid role or status raises ValueError
-    with pytest.raises(ValueError):
-        gstack_engine.add_backlog_task("INVALID_ROLE", "Bad", "Spec")
+        # Test invalid role or status raises ValueError
+        with pytest.raises(ValueError):
+            gstack_engine.add_backlog_task("INVALID_ROLE", "Bad", "Spec")
 
-    with pytest.raises(ValueError):
-        gstack_engine.update_backlog_status(task_id, "INVALID_STATUS")
+        with pytest.raises(ValueError):
+            gstack_engine.update_backlog_status(task_id, "INVALID_STATUS")
+    finally:
+        conn = get_db()
+        with conn:
+            conn.execute("DELETE FROM gstack_backlog WHERE id = ?", (task_id,))
+        conn.close()
+
 
 
 # -------------------------------------------------------------
@@ -225,10 +232,17 @@ def test_gstack_api_endpoints():
     task_id = res_add.json()["task_id"]
     assert task_id > 0
 
-    # 4. PATCH /api/v1/gstack/backlog/{id}
-    res_patch = client.patch(f"/api/v1/gstack/backlog/{task_id}", json={"status": "IN_PROGRESS"})
-    assert res_patch.status_code == 200
-    assert res_patch.json()["updated"] is True
+    try:
+        # 4. PATCH /api/v1/gstack/backlog/{id}
+        res_patch = client.patch(f"/api/v1/gstack/backlog/{task_id}", json={"status": "IN_PROGRESS"})
+        assert res_patch.status_code == 200
+        assert res_patch.json()["updated"] is True
+    finally:
+        conn = get_db()
+        with conn:
+            conn.execute("DELETE FROM gstack_backlog WHERE id = ?", (task_id,))
+        conn.close()
+
 
     # 5. POST /api/v1/gstack/audit
     audit_payload = {

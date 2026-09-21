@@ -122,7 +122,7 @@ class LinkedInContentCopilotAgent:
             f"for this post draft on '{topic}'.\n\n"
             f"Post draft:\n{content[:500]}\n\n"
             f"Rules:\n"
-            f"1. Zero em-dashes (\u2014 or – or --). Use commas or periods.\n"
+            f"1. Zero em-dashes, en-dashes, or double dashes. Use commas or periods.\n"
             f"2. Return ONLY the 5 hooks numbered 1 to 5, nothing else."
         )
         system_prompt = "You are an elite LinkedIn copywriter. Strictly follow formatting rules and return only numbered hooks."

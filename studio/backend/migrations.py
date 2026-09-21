@@ -50,16 +50,53 @@ BASELINE_VERSION = 1
 # dropping support for very old databases, and say so in the changelog.
 MIN_SUPPORTED_SCHEMA = 1
 
+def _migrate_inspirations(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 2:
+    Migrates legacy inspirations records into viral_templates,
+    then drops the inspirations table to eliminate third-party
+    scraping liabilities and enforce structural blueprint curation.
+    """
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspirations'")
+    if not cursor.fetchone():
+        return
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS viral_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        archetype TEXT NOT NULL,
+        hook_text TEXT NOT NULL,
+        velocity_score REAL DEFAULT 0.0,
+        engagement_multiplier TEXT,
+        pacing_style TEXT,
+        example_post_id TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+    cursor.execute("SELECT topic, key_hook, content, likes_count, comments_count, id FROM inspirations")
+    rows = cursor.fetchall()
+    for row in rows:
+        topic = (row[0] or "General").replace("\u2014", " - ")
+        hook = (row[1] or (row[2].split("\n")[0] if row[2] else "Structural Hook")).replace("\u2014", " - ")
+        cursor.execute("SELECT id FROM viral_templates WHERE hook_text = ?", (hook,))
+        if not cursor.fetchone():
+            cursor.execute("""
+            INSERT INTO viral_templates (
+                archetype, hook_text, velocity_score, engagement_multiplier,
+                pacing_style, example_post_id, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, (topic, hook, 8.5, "2.5x", "Legacy specimen structure", f"migrated-{row[5]}"))
+
+    cursor.execute("DROP TABLE IF EXISTS inspirations")
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
 Payload = Union[Sequence[str], Callable[[sqlite3.Cursor], None]]
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
-    # Example of the shape future entries take:
-    # (2, "Add dwell_seconds to posts", [
-    #     "ALTER TABLE posts ADD COLUMN dwell_seconds REAL DEFAULT 0.0",
-    #     "CREATE INDEX IF NOT EXISTS idx_posts_dwell ON posts(dwell_seconds DESC)",
-    # ]),
+    (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

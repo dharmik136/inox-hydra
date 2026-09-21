@@ -19,24 +19,40 @@ except ImportError:
         AIProviderConfig = None
 
 
+# -- Validation & Boundary Constants ----------------------------------------
+MAX_COMMAND_LENGTH = 5000
+MAX_CONTEXT_LENGTH = 10000
+MAX_TOPIC_LENGTH = 1000
+MAX_AUDIT_TEXT_LENGTH = 20000
+MAX_REPURPOSE_INPUT_LENGTH = 10000
+MAX_PROMPT_LENGTH = 15000
+
+
 def get_gemini_api_key() -> Optional[str]:
     """
     Retrieves the Gemini API key from environment variables or the local SQLite settings table.
+    Guarantees SQLite connection is closed even on query failure.
     """
     key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     if key and len(key.strip()) > 10:
         return key.strip()
 
+    conn = None
     try:
         conn = get_db()
         cursor = conn.cursor()
         cursor.execute("SELECT value FROM settings WHERE key = 'gemini_api_key'")
         row = cursor.fetchone()
-        conn.close()
         if row and row["value"] and len(row["value"].strip()) > 10:
             return row["value"].strip()
     except Exception:
         pass
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     return None
 
@@ -46,6 +62,10 @@ def call_gemini_api(prompt: str, system_instruction: str = "") -> Optional[str]:
     Direct, lightweight HTTP call to Google Gemini 2.5 Flash with zero heavy dependencies.
     Falls back gracefully if no key is configured or on network timeout.
     """
+    prompt_safe = (prompt or "")[:MAX_PROMPT_LENGTH]
+    if not prompt_safe.strip():
+        return None
+
     api_key = get_gemini_api_key()
     if not api_key:
         return None
@@ -55,7 +75,7 @@ def call_gemini_api(prompt: str, system_instruction: str = "") -> Optional[str]:
         "contents": [
             {
                 "role": "user",
-                "parts": [{"text": prompt}]
+                "parts": [{"text": prompt_safe}]
             }
         ]
     }
@@ -122,12 +142,24 @@ def get_ai_status() -> Dict[str, Any]:
     }
 
 
-def command_ai_engine(command: str, context: Optional[str] = None) -> Dict[str, Any]:
+def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> Dict[str, Any]:
     """
     Executes a high-level command against the configured AI Engine (Gemini, OpenAI, Claude, Groq, Ollama,
     or Antigravity Local Engine fallback).
     Strictly enforces zero em-dashes and mathematical bolding standards.
     """
+    raw_cmd = command if isinstance(command, str) else str(command or "")
+    command_clean = raw_cmd.strip()[:MAX_COMMAND_LENGTH]
+    if not command_clean:
+        command_clean = "Draft a high-signal, punchy systems post"
+
+    context_clean = None
+    if context:
+        raw_ctx = context if isinstance(context, str) else str(context)
+        context_clean = raw_ctx.strip()[:MAX_CONTEXT_LENGTH]
+        if not context_clean:
+            context_clean = None
+
     system_prompt = (
         "You are the elite AI Copilot for a high-performing Content Strategist and Enterprise Systems Practitioner on LinkedIn.\n"
         "Your writing style is punchy, high-signal, authentic, and authoritative.\n"
@@ -139,9 +171,9 @@ def command_ai_engine(command: str, context: Optional[str] = None) -> Dict[str, 
         "5. Conclude with an authentic, thoughtful question or takeaway."
     )
 
-    full_prompt = f"Command: {command}\n\n"
-    if context:
-        full_prompt += f"Context/Draft:\n{context}\n\n"
+    full_prompt = f"Command: {command_clean}\n\n"
+    if context_clean:
+        full_prompt += f"Context/Draft:\n{context_clean}\n\n"
     full_prompt += "Generate the optimized response. Remember: NEVER use em-dashes."
 
     ai_out = None
@@ -174,7 +206,8 @@ def command_ai_engine(command: str, context: Optional[str] = None) -> Dict[str, 
         }
 
     # Deterministic Antigravity Local Fallback
-    lines = [l.strip() for l in (context or command).splitlines() if l.strip()]
+    source_text = context_clean or command_clean
+    lines = [l.strip() for l in source_text.splitlines() if l.strip()]
     topic = lines[0] if lines else "enterprise systems and content strategy"
     topic_clean = re.sub(r'^(write|create|draft|stepping into|how to|why)\s*', '', topic, flags=re.IGNORECASE).strip()
 
@@ -199,13 +232,15 @@ def command_ai_engine(command: str, context: Optional[str] = None) -> Dict[str, 
     }
 
 
-def generate_10x_hooks(topic_or_draft: str) -> List[Dict[str, Any]]:
+def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
     """
     Generates 10 proven, high-converting LinkedIn hook archetypes for any topic or existing draft.
     Uses Gemini 2.5 Flash if configured; falls back to instantaneous deterministic templates.
     """
-    lines = [l.strip() for l in topic_or_draft.splitlines() if l.strip()]
-    first_line = lines[0] if lines else topic_or_draft
+    raw_topic = topic_or_draft if isinstance(topic_or_draft, str) else str(topic_or_draft or "")
+    clean_topic = raw_topic.strip()[:MAX_TOPIC_LENGTH]
+    lines = [l.strip() for l in clean_topic.splitlines() if l.strip()]
+    first_line = lines[0] if lines else clean_topic
     subject = re.sub(r'^(stepping into|how to|why|stop doing|the truth about|the secret to|lessons from)\s*', '', first_line, flags=re.IGNORECASE).strip()
     if not subject:
         subject = "enterprise systems and observability"
@@ -332,7 +367,7 @@ def generate_10x_hooks(topic_or_draft: str) -> List[Dict[str, Any]]:
     return out
 
 
-def audit_linkedin_algorithm_safety(text: str) -> Dict[str, Any]:
+def audit_linkedin_algorithm_safety(text: Optional[str]) -> Dict[str, Any]:
     """
     Evaluates draft content against 2026 LinkedIn newsfeed algorithmic distribution guidelines:
     1. Outbound link in post body (incurs -40% distribution penalty)
@@ -341,21 +376,38 @@ def audit_linkedin_algorithm_safety(text: str) -> Dict[str, Any]:
     4. Em-dash and unnatural corporate syntax
     5. Tagging spam (>3 @mentions)
     6. Estimated dwell time (reading speed ~200 wpm)
+    Guarded against null inputs and truncated to MAX_AUDIT_TEXT_LENGTH.
     """
+    raw_text = text if isinstance(text, str) else str(text or "")
+    text_clean = raw_text[:MAX_AUDIT_TEXT_LENGTH]
+
+    if not text_clean.strip():
+        return {
+            "safety_score": 100,
+            "status_label": "Empty Draft",
+            "word_count": 0,
+            "estimated_dwell_seconds": 0,
+            "penalties": [],
+            "recommendations": ["Draft is empty. Add draft content to run algorithmic distribution safety analysis."],
+            "has_outbound_links": False,
+            "hashtag_count": 0,
+            "mention_count": 0
+        }
+
     penalties = []
     recommendations = []
     safety_score = 100
 
     # 1. Outbound link check
     url_pattern = r'https?://[^\s]+|www\.[^\s]+'
-    urls_found = re.findall(url_pattern, text)
+    urls_found = re.findall(url_pattern, text_clean)
     if urls_found:
         safety_score -= 35
         penalties.append("Outbound URL detected in post body (-40% algorithmic reach penalty).")
         recommendations.append("Move external links to the 1st comment or profile banner to maximize organic feed impressions.")
 
     # 2. Hashtags check
-    hashtags = re.findall(r'#\w+', text)
+    hashtags = re.findall(r'#\w+', text_clean)
     if len(hashtags) > 5:
         safety_score -= 15
         penalties.append(f"Hashtag stuffing ({len(hashtags)} tags detected; maximum optimal is 3-5).")
@@ -364,7 +416,7 @@ def audit_linkedin_algorithm_safety(text: str) -> Dict[str, Any]:
         recommendations.append("Consider adding 2-3 focused hashtags (e.g. #Enterprise #Systems #Architecture) to aid discovery.")
 
     # 3. Wall of text check (dense paragraphs > 3 lines without double line breaks)
-    paragraphs = text.split("\n\n")
+    paragraphs = text_clean.split("\n\n")
     dense_paragraphs = [p for p in paragraphs if len(p.splitlines()) > 3]
     if dense_paragraphs:
         safety_score -= 15
@@ -372,23 +424,23 @@ def audit_linkedin_algorithm_safety(text: str) -> Dict[str, Any]:
         recommendations.append("Insert line breaks after 1-2 sentences for clean visual cadence.")
 
     # 4. Em-dashes check
-    if "\u2014" in text or "–" in text:
+    if chr(0x2014) in text_clean or chr(0x2013) in text_clean:
         safety_score -= 5
         penalties.append("Em-dashes detected (unnatural punctuation).")
-        recommendations.append("Click '🧹 Clean Formatting' to use clean commas or periods.")
+        recommendations.append("Click 'Clean Formatting' to use clean commas or periods.")
 
     # 5. Mentions check
-    mentions = re.findall(r'@\w+', text)
+    mentions = re.findall(r'@\w+', text_clean)
     if len(mentions) > 3:
         safety_score -= 10
         penalties.append(f"Excessive tags ({len(mentions)} @mentions).")
         recommendations.append("Tagging >3 people who do not reply within 60 minutes demotes post reach.")
 
     # 6. Dwell time estimation
-    words = len(re.findall(r'\b\w+\b', text))
+    words = len(re.findall(r'\b\w+\b', text_clean))
     est_seconds = int((words / 200) * 60)
 
-    if est_seconds < 15 and len(text.strip()) > 0:
+    if est_seconds < 15 and len(text_clean.strip()) > 0:
         recommendations.append("Post is brief (<15s read time). Expand on 1-2 core actionable points to boost dwell time.")
     elif 45 <= est_seconds <= 90:
         recommendations.append("Optimal dwell time window (45-90 seconds). High algorithmic retention potential.")
@@ -409,12 +461,16 @@ def audit_linkedin_algorithm_safety(text: str) -> Dict[str, Any]:
     }
 
 
-def repurpose_content(raw_text: str) -> List[Dict[str, str]]:
+def repurpose_content(raw_text: Optional[str]) -> List[Dict[str, str]]:
     """
     Transforms raw notes or existing draft into 5 distinct high-performing LinkedIn frameworks.
     Uses Gemini 2.5 Flash if available, with instantaneous fallback to deterministic templates.
+    Guarded against null inputs and truncated to MAX_REPURPOSE_INPUT_LENGTH.
     """
-    clean_input = clean_text_formatting(raw_text.strip())
+    text_str = raw_text if isinstance(raw_text, str) else str(raw_text or "")
+    clean_input = clean_text_formatting(text_str.strip()[:MAX_REPURPOSE_INPUT_LENGTH])
+    if not clean_input:
+        clean_input = "Zero manual intervention and deterministic systems architecture."
 
     # Attempt AI generation if provider configured
     resp = None

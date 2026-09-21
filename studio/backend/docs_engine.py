@@ -7,13 +7,13 @@ from local embedded markdown files via SQLite FTS5 virtual tables.
 Guarantees:
 1. Zero Network Egress: Operates 100% offline with zero external cloud calls.
 2. BM25 Relevance: Uses SQLite native FTS5 ranking and snippet generation.
-3. Zero Em-Dashes: The character \\u2014 is strictly prohibited.
+3. Zero Em-Dashes: Strict enforcement across all indexed text and docstrings.
 """
 
 import os
 import re
 import sqlite3
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional
 
 try:
     from .database import get_db
@@ -26,12 +26,14 @@ except ImportError:
     from paths import get_docs_dir
 
 DOCS_DIR = get_docs_dir()
+MAX_DOCS_INDEX_FILE_SIZE = 2 * 1024 * 1024  # 2MB per document file
+MAX_DOCS_SEARCH_QUERY_LENGTH = 300
 
 
 def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: Optional[str] = None) -> int:
     """
     Initializes and refreshes the SQLite FTS5 virtual table for offline documentation.
-    Scans all .md files in docs_dir and inserts section records.
+    Scans all .md files in docs_dir and inserts section records with em-dash sanitization.
     """
     target_dir = docs_dir or DOCS_DIR
     if not os.path.exists(target_dir):
@@ -41,6 +43,9 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
     if conn is None:
         conn = get_db()
         should_close = True
+
+    em_dash = chr(0x2014)
+    en_dash = chr(0x2013)
 
     try:
         cur = conn.cursor()
@@ -53,8 +58,12 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
                 if f.endswith(".md"):
                     file_path = os.path.join(root, f)
                     try:
-                        with open(file_path, "r", encoding="utf-8") as doc_file:
-                            content = doc_file.read()
+                        # Defensive check: skip unusually huge files
+                        if os.path.getsize(file_path) > MAX_DOCS_INDEX_FILE_SIZE:
+                            continue
+
+                        with open(file_path, "r", encoding="utf-8", errors="replace") as doc_file:
+                            content = doc_file.read(MAX_DOCS_INDEX_FILE_SIZE)
 
                         # Split document into logical sections by Markdown headers
                         sections = re.split(r'\n(?=#{1,3}\s+)', content)
@@ -69,9 +78,13 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
                             if not sec_title:
                                 sec_title = f.replace(".md", "").replace("_", " ").title()
 
+                            # Sanitize em-dashes dynamically before indexing
+                            clean_title = sec_title.replace(em_dash, " -- ").replace(en_dash, "-")
+                            clean_sec = sec.replace(em_dash, " -- ").replace(en_dash, "-")
+
                             cur.execute(
                                 "INSERT INTO docs_index (filename, section, content) VALUES (?, ?, ?)",
-                                (rel_path, sec_title, sec)
+                                (rel_path, clean_title, clean_sec)
                             )
                             indexed_count += 1
                     except Exception:
@@ -79,22 +92,37 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
 
         conn.commit()
         return indexed_count
+    except Exception:
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        raise
     finally:
-        if should_close:
-            conn.close()
+        if should_close and conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 
-def search_docs_fts(query: str, limit: int = 10, conn: Optional[sqlite3.Connection] = None) -> List[Dict[str, Any]]:
+def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connection] = None) -> List[Dict[str, Any]]:
     """
     Executes a sub-millisecond BM25 full-text search against the docs_index virtual table.
     Returns matched snippets with <mark> keyword highlights.
     """
-    if not query or not query.strip():
+    if query is None or not isinstance(query, str):
         return []
 
-    clean_q = re.sub(r'[^a-zA-Z0-9_\s]', ' ', query).strip()
+    clean_q = re.sub(r'[^a-zA-Z0-9_\s]', ' ', query).strip()[:MAX_DOCS_SEARCH_QUERY_LENGTH]
     if not clean_q:
         return []
+
+    try:
+        bounded_limit = max(1, min(int(limit), 100))
+    except (TypeError, ValueError):
+        bounded_limit = 10
 
     # Format words for FTS5 prefix / token matching
     tokens = clean_q.split()
@@ -118,7 +146,7 @@ def search_docs_fts(query: str, limit: int = 10, conn: Optional[sqlite3.Connecti
         WHERE docs_index MATCH ?
         ORDER BY rank
         LIMIT ?
-        """, (fts_query, limit))
+        """, (fts_query, bounded_limit))
 
         rows = cur.fetchall()
         results = []
@@ -130,7 +158,7 @@ def search_docs_fts(query: str, limit: int = 10, conn: Optional[sqlite3.Connecti
                 "relevance_rank": float(r[3])
             })
         return results
-    except Exception as err:
+    except Exception:
         # Fallback to basic LIKE query if FTS5 syntax fails
         try:
             cur.execute("""
@@ -138,7 +166,7 @@ def search_docs_fts(query: str, limit: int = 10, conn: Optional[sqlite3.Connecti
             FROM docs_index
             WHERE content LIKE ? OR section LIKE ?
             LIMIT ?
-            """, (f"%{clean_q}%", f"%{clean_q}%", limit))
+            """, (f"%{clean_q}%", f"%{clean_q}%", bounded_limit))
             rows = cur.fetchall()
             return [
                 {
@@ -152,5 +180,8 @@ def search_docs_fts(query: str, limit: int = 10, conn: Optional[sqlite3.Connecti
         except Exception:
             return []
     finally:
-        if should_close:
-            conn.close()
+        if should_close and conn:
+            try:
+                conn.close()
+            except Exception:
+                pass

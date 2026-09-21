@@ -10,7 +10,7 @@ Strict Invariants:
 - Zero em-dashes in any text or logs.
 """
 
-from typing import Optional
+from typing import Optional, Any
 import base64
 import ctypes
 import hashlib
@@ -19,6 +19,7 @@ import platform
 
 DPAPI_PREFIX = "dpapi:"
 LOCAL_ENC_PREFIX = "locenc:"
+MAX_PLAINTEXT_LENGTH = 65536
 
 
 def _get_machine_key() -> bytes:
@@ -29,13 +30,34 @@ def _get_machine_key() -> bytes:
     return hashlib.pbkdf2_hmac("sha256", f"{node_id}:{user}".encode("utf-8"), salt, 100000)
 
 
-def encrypt_token(plaintext: str) -> str:
+def get_vault_backend() -> str:
+    """Reports the active encryption backend without performing cryptographic operations."""
+    if platform.system() == "Windows":
+        return "DPAPI"
+    return "MACHINE_KEYED"
+
+
+def encrypt_token(plaintext: Any) -> str:
     """
     Encrypts a token string at rest before saving to SQLite settings table.
     Returns ciphertext prefixed with encryption scheme identifier.
+    Guards against nulls, non-string types, and oversized payloads.
     """
-    if not plaintext:
+    if plaintext is None:
         return ""
+
+    if isinstance(plaintext, bytes):
+        raw_text = plaintext.decode("utf-8", errors="replace")
+    elif not isinstance(plaintext, str):
+        raw_text = str(plaintext)
+    else:
+        raw_text = plaintext
+
+    if not raw_text:
+        return ""
+
+    # Bound plaintext length to prevent memory exhaustion
+    bounded_text = raw_text[:MAX_PLAINTEXT_LENGTH]
 
     # Windows DPAPI Implementation
     if platform.system() == "Windows":
@@ -51,7 +73,7 @@ def encrypt_token(plaintext: str) -> str:
             crypt32 = ctypes.windll.crypt32
             kernel32 = ctypes.windll.kernel32
 
-            raw_bytes = plaintext.encode("utf-8")
+            raw_bytes = bounded_text.encode("utf-8")
             in_blob = DATA_BLOB(
                 len(raw_bytes),
                 ctypes.cast(ctypes.create_string_buffer(raw_bytes), ctypes.POINTER(ctypes.c_char))
@@ -67,33 +89,45 @@ def encrypt_token(plaintext: str) -> str:
                 0,
                 ctypes.byref(out_blob)
             ):
-                cipher_bytes = ctypes.string_at(out_blob.pbData, out_blob.cbData)
-                kernel32.LocalFree(out_blob.pbData)
-                return DPAPI_PREFIX + base64.b64encode(cipher_bytes).decode("utf-8")
+                try:
+                    cipher_bytes = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+                    return DPAPI_PREFIX + base64.b64encode(cipher_bytes).decode("utf-8")
+                finally:
+                    if out_blob.pbData:
+                        kernel32.LocalFree(out_blob.pbData)
         except Exception:
             pass  # Fall through to machine-keyed fallback
 
     # Cross-Platform Machine-Keyed XOR Stream Fallback
     key = _get_machine_key()
-    raw_bytes = plaintext.encode("utf-8")
+    raw_bytes = bounded_text.encode("utf-8")
     cipher_bytes = bytes([b ^ key[i % len(key)] for i, b in enumerate(raw_bytes)])
     return LOCAL_ENC_PREFIX + base64.b64encode(cipher_bytes).decode("utf-8")
 
 
-def decrypt_token(ciphertext: str) -> str:
+def decrypt_token(ciphertext: Any) -> str:
     """
     Decrypts a stored ciphertext string into plaintext.
     Handles unencrypted legacy strings transparently for backward compatibility.
+    Guards against malformed base64, nulls, and non-string inputs.
     """
-    if not ciphertext:
+    if ciphertext is None:
+        return ""
+
+    if not isinstance(ciphertext, str):
+        raw_cipher = str(ciphertext)
+    else:
+        raw_cipher = ciphertext
+
+    if not raw_cipher:
         return ""
 
     # Check if already plaintext (backward compatibility with legacy unencrypted DBs)
-    if not ciphertext.startswith((DPAPI_PREFIX, LOCAL_ENC_PREFIX)):
-        return ciphertext
+    if not raw_cipher.startswith((DPAPI_PREFIX, LOCAL_ENC_PREFIX)):
+        return raw_cipher
 
     # Windows DPAPI Decryption
-    if ciphertext.startswith(DPAPI_PREFIX) and platform.system() == "Windows":
+    if raw_cipher.startswith(DPAPI_PREFIX) and platform.system() == "Windows":
         try:
             from ctypes import wintypes
 
@@ -106,7 +140,7 @@ def decrypt_token(ciphertext: str) -> str:
             crypt32 = ctypes.windll.crypt32
             kernel32 = ctypes.windll.kernel32
 
-            raw_bytes = base64.b64decode(ciphertext[len(DPAPI_PREFIX):])
+            raw_bytes = base64.b64decode(raw_cipher[len(DPAPI_PREFIX):])
             in_blob = DATA_BLOB(
                 len(raw_bytes),
                 ctypes.cast(ctypes.create_string_buffer(raw_bytes), ctypes.POINTER(ctypes.c_char))
@@ -122,20 +156,23 @@ def decrypt_token(ciphertext: str) -> str:
                 0,
                 ctypes.byref(out_blob)
             ):
-                plain_bytes = ctypes.string_at(out_blob.pbData, out_blob.cbData)
-                kernel32.LocalFree(out_blob.pbData)
-                return plain_bytes.decode("utf-8")
+                try:
+                    plain_bytes = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+                    return plain_bytes.decode("utf-8")
+                finally:
+                    if out_blob.pbData:
+                        kernel32.LocalFree(out_blob.pbData)
         except Exception:
             return ""
 
     # Machine-Keyed Decryption
-    if ciphertext.startswith(LOCAL_ENC_PREFIX):
+    if raw_cipher.startswith(LOCAL_ENC_PREFIX):
         try:
             key = _get_machine_key()
-            cipher_bytes = base64.b64decode(ciphertext[len(LOCAL_ENC_PREFIX):])
+            cipher_bytes = base64.b64decode(raw_cipher[len(LOCAL_ENC_PREFIX):])
             plain_bytes = bytes([b ^ key[i % len(key)] for i, b in enumerate(cipher_bytes)])
             return plain_bytes.decode("utf-8")
         except Exception:
             return ""
 
-    return ciphertext
+    return raw_cipher
