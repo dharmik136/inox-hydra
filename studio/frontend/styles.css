@@ -962,6 +962,165 @@ body {
   background-color: var(--signal-orange-subtle);
 }
 
+/* -----------------------------------------------------------------------------
+   Ubiquitous Context Engine: Floating Info Pills and Tooltips
+   ----------------------------------------------------------------------------- */
+.info-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background-color: var(--bg-surface-elevated, #161D2E);
+  border: 1px solid var(--border-subtle);
+  cursor: help;
+  position: relative;
+  vertical-align: middle;
+  margin-left: 5px;
+  user-select: none;
+  transition: all var(--motion-fast);
+}
+
+.info-pill:hover,
+.info-pill:focus-within {
+  color: var(--text-primary);
+  border-color: var(--accent-indigo, #6366F1);
+  background-color: rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 8px rgba(99, 102, 241, 0.25);
+}
+
+.info-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  min-width: 240px;
+  max-width: 320px;
+  background-color: var(--bg-surface-elevated, #161D2E);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 10000;
+  text-align: left;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.info-pill:hover .info-tooltip,
+.info-pill:focus-within .info-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+
+.info-tooltip.tooltip-right {
+  left: 0;
+  transform: translateX(0) translateY(4px);
+}
+.info-pill:hover .info-tooltip.tooltip-right {
+  transform: translateX(0) translateY(0);
+}
+
+.info-tooltip-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent-indigo, #6366F1);
+  margin-bottom: 5px;
+}
+
+.info-tooltip-body {
+  font-family: var(--font-body, -apple-system, sans-serif);
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.info-tooltip-why {
+  font-size: 11px;
+  color: var(--text-muted);
+  border-left: 2px solid var(--accent-indigo, #6366F1);
+  padding-left: 6px;
+  margin-bottom: 5px;
+}
+
+.info-tooltip-pro {
+  font-size: 11px;
+  color: var(--signal-green, #10B981);
+  font-weight: 500;
+}
+
+/* Dwell Time & Reading Velocity Badges */
+.dwell-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  border: 1px solid var(--border-subtle);
+  background-color: var(--bg-ink);
+  color: var(--text-muted);
+}
+
+.dwell-badge.optimal {
+  color: var(--signal-green, #10B981);
+  border-color: rgba(16, 185, 129, 0.35);
+  background-color: rgba(16, 185, 129, 0.08);
+}
+
+.dwell-badge.warning {
+  color: var(--signal-orange, #F59E0B);
+  border-color: rgba(245, 158, 11, 0.35);
+  background-color: rgba(245, 158, 11, 0.08);
+}
+
+.dwell-badge.deep {
+  color: var(--accent-indigo, #6366F1);
+  border-color: rgba(99, 102, 241, 0.35);
+  background-color: rgba(99, 102, 241, 0.08);
+}
+
+/* Interactive Mobile Simulator Fold Controls */
+.mobile-see-more-interactive {
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--motion-fast);
+  display: inline-block;
+  margin-top: 4px;
+}
+
+.mobile-see-more-interactive:hover {
+  color: var(--accent-indigo, #6366F1);
+  text-decoration: underline;
+}
+
+.mobile-post-body.collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mobile-post-body.expanded {
+  display: block;
+}
+
 /* Pre-fold Hook Status Strip */
 .editor-hook-status-bar {
   display: flex;
@@ -4348,4 +4507,384 @@ input:checked + .toggle-slider:before {
   border-color: #ef4444;
   color: #f87171;
 }
+
+/* =========================================================================
+   SECTION 16: DATA MODE PILLS & FLOATING FLOW ASSISTANT (Z-TAB / FAB)
+   ========================================================================= */
+
+/* Data Mode Filter Pills (Inspirations) */
+.blueprint-mode-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mode-pill {
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 500;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface, #0E131F);
+  color: var(--text-secondary, #94A3B8);
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.mode-pill:hover {
+  border-color: var(--accent-indigo, #6366F1);
+  color: var(--text-primary, #F8FAFC);
+}
+
+.mode-pill.active {
+  background: var(--accent-indigo, #6366F1);
+  border-color: var(--accent-indigo, #6366F1);
+  color: #FFFFFF;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35);
+}
+
+/* Floating Flow Trigger Button (Z-Tab) */
+.floating-flow-widget {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+}
+
+.flow-trigger-btn {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #0E131F;
+  border: 2px solid #6366F1;
+  color: #FFFFFF;
+  font-family: var(--font-editorial, 'Inter', sans-serif);
+  font-size: 19px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.45);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.flow-trigger-btn:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 28px rgba(99, 102, 241, 0.65);
+  border-color: #818CF8;
+}
+
+.trigger-label {
+  letter-spacing: -0.02em;
+}
+
+.trigger-health-ring {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #10B981;
+  border: 2px solid #0E131F;
+  box-shadow: 0 0 8px #10B981;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.trigger-health-ring.warn {
+  background: #F59E0B;
+  box-shadow: 0 0 8px #F59E0B;
+}
+
+.trigger-health-ring.fail {
+  background: #F43F5E;
+  box-shadow: 0 0 8px #F43F5E;
+}
+
+/* Docked Workflow & Audit Panel */
+.flow-drawer-panel {
+  position: fixed;
+  bottom: 86px;
+  right: 24px;
+  width: 380px;
+  max-height: 82vh;
+  background: #0E131F;
+  border: 1px solid #1E293B;
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 10000;
+  animation: flowDrawerPop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes flowDrawerPop {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.flow-drawer-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid #1E293B;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #161D2E;
+}
+
+.drawer-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  background: rgba(99, 102, 241, 0.25);
+  color: #818CF8;
+  border-radius: 4px;
+  display: inline-block;
+  margin-bottom: 2px;
+}
+
+.drawer-heading {
+  font-family: var(--font-display, serif);
+  font-size: 16px;
+  font-weight: 600;
+  color: #F8FAFC;
+  margin: 0;
+}
+
+.btn-close-drawer {
+  background: transparent;
+  border: none;
+  color: #94A3B8;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.btn-close-drawer:hover {
+  color: #F8FAFC;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.flow-drawer-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.drawer-card {
+  background: #121826;
+  border: 1px solid #1E293B;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.drawer-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+
+.drawer-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #F1F5F9;
+}
+
+.drawer-card-desc {
+  font-size: 11.5px;
+  color: #94A3B8;
+  margin: 0 0 10px 0;
+  line-height: 1.4;
+}
+
+/* Audit Score Badge */
+.audit-score-pill {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.audit-score-pill.score-pass {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.audit-score-pill.score-warn {
+  background: rgba(245, 158, 11, 0.15);
+  color: #F59E0B;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.audit-score-pill.score-fail {
+  background: rgba(244, 63, 94, 0.15);
+  color: #F43F5E;
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+/* Gate items */
+.hud-gate-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hud-gate-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-family: var(--font-mono, monospace);
+  transition: all 0.15s ease;
+}
+
+.hud-gate-item.gate-pass {
+  background: rgba(16, 185, 129, 0.08);
+  color: #10B981;
+}
+
+.hud-gate-item.gate-fail {
+  background: rgba(244, 63, 94, 0.12);
+  color: #F43F5E;
+}
+
+.gate-icon {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.hud-violations-box {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(244, 63, 94, 0.08);
+  border: 1px solid rgba(244, 63, 94, 0.25);
+  border-radius: 6px;
+  font-size: 11px;
+  color: #FCA5A5;
+  line-height: 1.45;
+}
+
+/* Flow Nav Grid */
+.flow-nav-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.flow-step-btn {
+  background: #161D2E;
+  border: 1px solid #1E293B;
+  border-radius: 6px;
+  padding: 7px 9px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #E2E8F0;
+  font-size: 11.5px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.flow-step-btn:hover {
+  background: #1E293B;
+  border-color: #6366F1;
+  color: #FFFFFF;
+}
+
+.step-num {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.2);
+  color: #818CF8;
+  font-size: 10px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.drawer-flow-indicator {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #818CF8;
+  background: rgba(99, 102, 241, 0.12);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+/* Environment Mode Control */
+.env-mode-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.15);
+  color: #10B981;
+}
+
+.env-toggle-control {
+  display: flex;
+  gap: 8px;
+}
+
+.env-mode-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #161D2E;
+  border: 1px solid #1E293B;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #94A3B8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.env-mode-btn.active {
+  background: #1E293B;
+  border-color: #6366F1;
+  color: #F8FAFC;
+  font-weight: 600;
+}
+
+.env-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.env-dot-real {
+  background: #10B981;
+}
+
+.env-dot-test {
+  background: #F59E0B;
+}
+
 
