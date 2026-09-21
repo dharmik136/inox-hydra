@@ -3559,12 +3559,17 @@ async function loadInspirations(query = "", topic = "", mode = "real") {
       });
     }
 
-    const totalVaulted = items.length;
+    // The vault wide figure has to come from the API. items is one filtered,
+    // limit capped page, so counting it asserts a number again, which is the
+    // exact defect the swipe file count fix removed.
+    const totalVaulted = Number.isFinite(json.total_vaulted) ? json.total_vaulted : allItems.length;
 
     const countBadge = document.getElementById("swipe-count-badge");
     if (countBadge) {
       const modeLabel = mode === "real" ? "Curated" : (mode === "test" ? "Sandbox Test" : "Total");
-      countBadge.innerText = (topic || query) ? `${items.length} of ${allItems.length} ${modeLabel} Blueprints` : `${totalVaulted} ${modeLabel} Blueprints`;
+      countBadge.innerText = (topic || query)
+        ? `${items.length} of ${allItems.length} ${modeLabel} Blueprints`
+        : `${items.length} ${modeLabel} Blueprints`;
     }
 
     // Update sidebar badge
@@ -3577,6 +3582,10 @@ async function loadInspirations(query = "", topic = "", mode = "real") {
     document.querySelectorAll(".topic-chip").forEach(chip => {
       if (chip.getAttribute("data-topic") === "") chip.innerText = `All (${totalVaulted})`;
     });
+    // Authored as static markup, so left alone it keeps asserting whatever
+    // number was typed into the HTML.
+    const vaultLabel = document.querySelector("#topbar-group-inspirations .stat-pill strong");
+    if (vaultLabel) vaultLabel.innerText = `${totalVaulted} Blueprints`;
 
     const container = document.getElementById("inspirations-container");
     if (!container) return;
@@ -3656,9 +3665,6 @@ async function loadInspirations(query = "", topic = "", mode = "real") {
 // -------------------------------------------------------------
 // 11. SCHEDULE & CADENCE QUEUE
 // -------------------------------------------------------------
-// -------------------------------------------------------------
-// 11. SCHEDULE & CADENCE QUEUE
-// -------------------------------------------------------------
 let rescheduleTargetPostId = null;
 let currentQueueSearchQuery = "";
 let isQueuePausedState = false;
@@ -3678,7 +3684,7 @@ function initQueue() {
     dispatchBtn.addEventListener("click", async () => {
       try {
         dispatchBtn.disabled = true;
-        const res = await fetch("/api/v1/scheduler/dispatch/now", { method: "POST" });
+        const res = await fetch(`${API_BASE}/v1/scheduler/dispatch/now`, { method: "POST" });
         if (res.ok) {
           const data = await res.json();
           const actionCount = (data.actions || []).length;
@@ -3886,7 +3892,10 @@ function initScheduleModal() {
     confirmBtn.addEventListener("click", async () => {
       const timeVal = picker ? picker.value : null;
       if (!timeVal) {
-        showToast("Please choose a scheduled time.");
+        showToast("Please choose a scheduled time.", "error");
+        return;
+      }
+      if (confirmBtn.disabled) {
         return;
       }
 
@@ -3920,6 +3929,14 @@ function initScheduleModal() {
   }
 }
 
+function setScheduleConfirmEnabled(enabled) {
+  const confirmBtn = document.getElementById("btn-confirm-schedule");
+  if (!confirmBtn) return;
+  confirmBtn.disabled = !enabled;
+  confirmBtn.style.opacity = enabled ? "" : "0.5";
+  confirmBtn.style.cursor = enabled ? "" : "not-allowed";
+}
+
 async function validateScheduleInput(datetimeStr) {
   const badge = document.getElementById("cadence-score-badge");
   const explanation = document.getElementById("cadence-health-explanation");
@@ -3928,6 +3945,7 @@ async function validateScheduleInput(datetimeStr) {
   if (!datetimeStr) {
     if (badge) badge.innerText = "Select Time";
     if (explanation) explanation.innerText = "Choose an optimal publishing window.";
+    setScheduleConfirmEnabled(true);
     return;
   }
 
@@ -3944,8 +3962,23 @@ async function validateScheduleInput(datetimeStr) {
     if (res.ok) {
       const json = await res.json();
       const v = json.validation || {};
+      setScheduleConfirmEnabled(v.valid !== false);
 
-      if (v.has_collision) {
+      if (v.valid === false) {
+        if (badge) {
+          badge.innerText = "Invalid Time";
+          badge.className = "sidebar-badge";
+          badge.style.background = "rgba(245, 158, 11, 0.2)";
+          badge.style.color = "#f59e0b";
+        }
+        if (shield) {
+          shield.style.background = "rgba(245, 158, 11, 0.08)";
+          shield.style.borderColor = "rgba(245, 158, 11, 0.3)";
+        }
+        if (explanation) {
+          explanation.innerText = v.error || "This time cannot be scheduled.";
+        }
+      } else if (v.has_collision) {
         if (badge) {
           badge.innerText = "Collision Risk";
           badge.className = "sidebar-badge";
@@ -3959,22 +3992,11 @@ async function validateScheduleInput(datetimeStr) {
         if (explanation) {
           explanation.innerText = v.warning || "Scheduled within 12 hours of another post. Reach may be cannibalized.";
         }
-      } else if (v.is_past) {
-        if (badge) {
-          badge.innerText = "Past Window";
-          badge.className = "sidebar-badge";
-          badge.style.background = "rgba(245, 158, 11, 0.2)";
-          badge.style.color = "#f59e0b";
-        }
-        if (shield) {
-          shield.style.background = "rgba(245, 158, 11, 0.08)";
-          shield.style.borderColor = "rgba(245, 158, 11, 0.3)";
-        }
-        if (explanation) {
-          explanation.innerText = v.warning || "This time is in the past. It will be dispatched immediately via grace window.";
-        }
       } else {
-        const score = v.cadence_health_score || 100;
+        // Nullish coalescing, not ||: a legitimate score of 0 is not 100.
+        const score = v.cadence_health_score !== undefined && v.cadence_health_score !== null
+          ? v.cadence_health_score
+          : 100;
         if (badge) {
           badge.innerText = `${score}% Safe`;
           badge.className = "sidebar-badge pro";
@@ -3985,7 +4007,9 @@ async function validateScheduleInput(datetimeStr) {
           shield.style.background = "rgba(34, 197, 94, 0.08)";
           shield.style.borderColor = "rgba(34, 197, 94, 0.25)";
         }
-        const gap = v.nearest_gap_hours ? `${v.nearest_gap_hours}h spacing` : "Zero conflicts";
+        const gap = v.distance_to_nearest_hours
+          ? `${Number(v.distance_to_nearest_hours).toFixed(1)}h spacing`
+          : "Zero conflicts";
         if (explanation) {
           explanation.innerText = `Optimal cooldown satisfied (${gap}). Maximum algorithmic distribution velocity.`;
         }
@@ -4087,7 +4111,9 @@ async function loadQueue() {
           nextSlotEl.innerText = `${nSlot.day_name} ${nSlot.time_slot}`;
         }
         if (nextSubEl) {
-          nextSubEl.innerText = `${nSlot.label} (${nSlot.hours_clearance}h clearance)`;
+          nextSubEl.innerText = nSlot.hours_clearance
+            ? `${nSlot.label} (${nSlot.hours_clearance}h clearance)`
+            : `${nSlot.label} (queue clear)`;
         }
       }
       if (health.queue_paused !== undefined) {
@@ -4794,11 +4820,14 @@ function initAICommandCenter() {
 // -------------------------------------------------------------
 // UI UTILITIES
 // -------------------------------------------------------------
-function showToast(msg) {
+function showToast(msg, type) {
   const container = document.getElementById("toast-container");
   if (!container) return;
   const t = document.createElement("div");
-  t.className = "toast";
+  // Callers have always passed a severity as the second argument. It used to
+  // be dropped on the floor, so every failure looked exactly like a success.
+  const variant = ["error", "success", "warning", "info"].includes(type) ? ` toast-${type}` : "";
+  t.className = `toast${variant}`;
   t.innerText = msg;
   container.appendChild(t);
   setTimeout(() => {
@@ -5584,12 +5613,12 @@ function handleIncomingDraft(draft) {
     const loadBtn = t.querySelector(`#btn-load-draft-${draft.draft_id}`);
     if (loadBtn) {
       loadBtn.addEventListener("click", () => {
-        const editor = document.getElementById("post-content");
+        const editor = document.getElementById("post-editor-input");
         if (editor) {
           editor.value = draft.raw_content;
           editor.dispatchEvent(new Event("input"));
-          switchTab("tab-composer");
-          showToast(`Loaded "${draft.title}" into Composer!`);
+          switchTab("tab-studio");
+          showToast(`Loaded "${draft.title}" into Composer!`, "success");
         }
         t.remove();
       });
@@ -5677,7 +5706,7 @@ function initFloatingFlowWidget() {
         envTag.style.color = "#10B981";
       }
       showToast("Switched to Real Production Data Mode", "info");
-      loadInspirations(currentInspQuery, currentInspTopic, "real");
+      syncInspirationMode("real");
     });
 
     envTestBtn.addEventListener("click", () => {
@@ -5690,12 +5719,12 @@ function initFloatingFlowWidget() {
         envTag.style.color = "#F59E0B";
       }
       showToast("Switched to Test / Sandbox Mode", "info");
-      loadInspirations(currentInspQuery, currentInspTopic, "test");
+      syncInspirationMode("test");
     });
   }
 
   // 4. Hook real-time audit onto editor input
-  const postContent = document.getElementById("post-content");
+  const postContent = document.getElementById("post-editor-input") || document.getElementById("post-content");
   if (postContent) {
     postContent.addEventListener("input", () => {
       clearTimeout(gstackAuditDebounce);
@@ -5709,12 +5738,22 @@ function initFloatingFlowWidget() {
   setTimeout(runLiveGStackAudit, 800);
 }
 
+function syncInspirationMode(mode) {
+  // Record the mode and move the pills with it. Setting only the argument
+  // meant the next search or topic click reverted to the previous mode.
+  currentInspMode = mode;
+  document.querySelectorAll("#insp-mode-toggle .mode-pill").forEach(p => {
+    p.classList.toggle("active", p.getAttribute("data-mode") === mode);
+  });
+  loadInspirations(currentInspQuery, currentInspTopic, mode);
+}
+
 function handleFlowNavigation(flow) {
   const drawerPanel = document.getElementById("flow-drawer-panel");
   switch (flow) {
     case "composer":
       switchTab("tab-studio");
-      const editor = document.getElementById("post-content");
+      const editor = document.getElementById("post-editor-input") || document.getElementById("post-content");
       if (editor) editor.focus();
       break;
     case "queue":
@@ -5737,7 +5776,7 @@ function handleFlowNavigation(flow) {
 }
 
 async function runLiveGStackAudit() {
-  const postContentEl = document.getElementById("post-content");
+  const postContentEl = document.getElementById("post-editor-input") || document.getElementById("post-content");
   const postTitleEl = document.getElementById("post-title-input") || document.getElementById("draft-title");
   const content = postContentEl ? postContentEl.value : "";
   const title = postTitleEl ? postTitleEl.value : "";
@@ -5816,7 +5855,7 @@ function updateHUDGateUI(audit) {
   if (violationsBox) {
     if (audit.violations && audit.violations.length > 0) {
       violationsBox.style.display = "block";
-      violationsBox.innerHTML = `<strong>Attention Required:</strong><br>${audit.violations.map(v => `• ${v}`).join("<br>")}`;
+      violationsBox.innerHTML = `<strong>Attention Required:</strong><br>${audit.violations.map(v => `• ${escapeHtml(v)}`).join("<br>")}`;
     } else {
       violationsBox.style.display = "none";
       violationsBox.innerHTML = "";
