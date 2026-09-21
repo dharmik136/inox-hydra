@@ -22,9 +22,7 @@ Strict Invariants:
 """
 
 import os
-import sys
 import json
-import sqlite3
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
@@ -302,7 +300,7 @@ class EnrichmentOrchestrator:
                     if isinstance(parsed, list) and len(parsed) == 3:
                         icebreakers = [clean_no_em_dashes(str(x)) for x in parsed]
                         provider = "gemini_2_5_flash"
-            except Exception as e:
+            except Exception:
                 # Graceful fallback to deterministic local engine
                 icebreakers = []
 

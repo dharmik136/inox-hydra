@@ -10,6 +10,17 @@ Features:
 - Adaptive typography wrapping, header badges, progress bars, and swipe callouts.
 - Direct in-memory PDF binary stream output.
 
+Status: SUPERSEDED, retained deliberately.
+This Pillow renderer is not wired to any route. The endpoint that used to serve
+it, POST /api/carousel/generate, now returns a notice directing callers to the
+native PDF dropzone, and vector decks are compiled by carousel_engine.py
+instead. The module and its tests are kept because the bitmap path is the only
+one that produces a true raster PDF, and removing a tested capability is a
+product decision rather than a cleanup. Nothing imports it outside the suite.
+
+The 30 slide cap below is lower than carousel_engine's 50 on purpose: this
+renderer holds full 1080x1080 bitmaps in memory, which the SVG compiler does not.
+
 Strict Invariants:
 - Zero em-dashes across all rendered slides, comments, and docstrings.
 - Bounded input slides (max 30) to prevent memory exhaustion.
@@ -17,7 +28,7 @@ Strict Invariants:
 
 import io
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 from PIL import Image, ImageDraw, ImageFont
 
 # Constants for 1080x1080 square LinkedIn carousel standard
@@ -79,10 +90,7 @@ def get_font(size: int, bold: bool = False) -> ImageFont.ImageFont:
                 return ImageFont.truetype(p, bounded_size)
             except Exception:
                 continue
-    try:
-        return ImageFont.load_default()
-    except Exception:
-        return ImageFont.load_default()
+    return ImageFont.load_default()
 
 
 def wrap_text(text: Any, font: ImageFont.ImageFont, max_width: int, draw: ImageDraw.ImageDraw) -> List[str]:
