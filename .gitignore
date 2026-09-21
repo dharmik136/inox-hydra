@@ -67,6 +67,15 @@ studio/docs/
 # Live user database. Holds real drafts, leads and an encrypted LinkedIn
 # session. It is user state, not source, and it is recreated by init_db().
 studio/data/*.db
+# Database backups. These hold the same real people the live database does:
+# names, headlines, profile URLs, the text of comments they wrote, and the
+# encrypted session vault. The rule above only covers studio/data/*.db, one
+# level deep, so backups written into a subdirectory were committed by a
+# routine `git add -A` and shipped in every clone.
+studio/data/backups/
+*.db-wal
+*.db-shm
+
 studio/backups/
 studio/logs/
 # ETag cache written by the intelligence sync engine at runtime.
