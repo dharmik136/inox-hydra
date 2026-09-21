@@ -76,3 +76,12 @@ studio/data/.intelligence_etag
 # it is not ours to redistribute.
 studio/data/taplio_vault_archive_backup.json
 
+
+# Chrome extension signing key. Whoever holds this can publish an update that
+# every installed copy of the extension will accept as genuine. It is a
+# credential, not source, and it must never enter the repository.
+*.pem
+studio/extension.pem
+# Packaged extension build output, reproducible from studio/extension/.
+*.crx
+studio/extension.crx
