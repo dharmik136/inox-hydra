@@ -15,7 +15,11 @@
        ========================================================================= -->
   <svg xmlns="http://www.w3.org/2000/svg" style="display: none;" id="editorial-symbol-catalog">
     <defs>
-      <!-- 1. Master Brand Mark: Intersecting Orthogonal Frames with Diamond Junction -->
+      <!-- Icon geometry: coolicons (Free Iconset, Community) via the Figma API,
+           file P1LOY4s7crnhhkWpmYGNDo. Per path stroke colour is stripped so each
+           symbol inherits currentColor from the element that references it. -->
+
+      <!-- 1. Master brand mark (kept: the product's own mark, not an iconset glyph) -->
       <symbol id="sym-brand-logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
         <path d="M3 8V3h5"/>
         <path d="M21 8V3h-5"/>
@@ -25,218 +29,182 @@
         <path d="M12 7v10M7 12h10"/>
       </symbol>
 
-      <!-- 2. Section: Composer / Post Studio (Drafting Stylus & Framing Mark) -->
-      <symbol id="sym-sec-composer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M3 21h7"/>
-        <path d="M14 3l7 7L8 21H3v-5L14 3z"/>
-        <path d="M11 6l7 7"/>
-        <path d="M18 18h3v3"/>
+      <!-- 2. Section: Composer / Post Studio (coolicons: Edit / Edit_Pencil_Line_01) -->
+      <symbol id="sym-sec-composer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 8.00012L4 16.0001V20.0001H20M4 20.0001L8 20.0001L16 12.0001M12 8.00012L14.8686 5.13146L14.8704 5.12976C15.2652 4.73488 15.463 4.53709 15.691 4.46301C15.8919 4.39775 16.1082 4.39775 16.3091 4.46301C16.5369 4.53704 16.7345 4.7346 17.1288 5.12892L18.8686 6.86872C19.2646 7.26474 19.4627 7.46284 19.5369 7.69117C19.6022 7.89201 19.6021 8.10835 19.5369 8.3092C19.4628 8.53736 19.265 8.73516 18.8695 9.13061L18.8686 9.13146L16 12.0001M12 8.00012L16 12.0001"/>
       </symbol>
 
-      <!-- 3. Section: Queue & Cadence (Orthogonal Stepped Rail) -->
-      <symbol id="sym-sec-queue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <rect x="3" y="4" width="18" height="16"/>
-        <path d="M3 9h18"/>
-        <path d="M8 2v4M16 2v4"/>
-        <path d="M7 13h4M7 16h7"/>
-        <rect x="15" y="13" width="3" height="3"/>
+      <!-- 3. Section: Queue and Cadence (coolicons: Calendar / Calendar_Days) -->
+      <symbol id="sym-sec-queue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 4H7.2002C6.08009 4 5.51962 4 5.0918 4.21799C4.71547 4.40973 4.40973 4.71547 4.21799 5.0918C4 5.51962 4 6.08009 4 7.2002V8M8 4H16M8 4V2M16 4H16.8002C17.9203 4 18.4796 4 18.9074 4.21799C19.2837 4.40973 19.5905 4.71547 19.7822 5.0918C20 5.5192 20 6.07899 20 7.19691V8M16 4V2M4 8V16.8002C4 17.9203 4 18.4801 4.21799 18.9079C4.40973 19.2842 4.71547 19.5905 5.0918 19.7822C5.5192 20 6.07899 20 7.19691 20H16.8031C17.921 20 18.48 20 18.9074 19.7822C19.2837 19.5905 19.5905 19.2842 19.7822 18.9079C20 18.4805 20 17.9215 20 16.8036V8M4 8H20M16 16H16.002L16.002 16.002L16 16.002V16ZM12 16H12.002L12.002 16.002L12 16.002V16ZM8 16H8.002L8.00195 16.002L8 16.002V16ZM16.002 12V12.002L16 12.002V12H16.002ZM12 12H12.002L12.002 12.002L12 12.002V12ZM8 12H8.002L8.00195 12.002L8 12.002V12Z"/>
       </symbol>
 
-      <!-- 4. Section: CRM & Inbound Leads (Nodal Convergence Vertex) -->
-      <symbol id="sym-sec-crm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <rect x="3" y="3" width="6" height="6"/>
-        <rect x="15" y="3" width="6" height="6"/>
-        <rect x="9" y="15" width="6" height="6"/>
-        <path d="M6 9v3h6M18 9v3h-6M12 12v3"/>
+      <!-- 4. Section: Reverse CRM (coolicons: User / Users_Group) -->
+      <symbol id="sym-sec-crm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 20C17 18.3431 14.7614 17 12 17C9.23858 17 7 18.3431 7 20M21 17.0004C21 15.7702 19.7659 14.7129 18 14.25M3 17.0004C3 15.7702 4.2341 14.7129 6 14.25M18 10.2361C18.6137 9.68679 19 8.8885 19 8C19 6.34315 17.6569 5 16 5C15.2316 5 14.5308 5.28885 14 5.76389M6 10.2361C5.38625 9.68679 5 8.8885 5 8C5 6.34315 6.34315 5 8 5C8.76835 5 9.46924 5.28885 10 5.76389M12 14C10.3431 14 9 12.6569 9 11C9 9.34315 10.3431 8 12 8C13.6569 8 15 9.34315 15 11C15 12.6569 13.6569 14 12 14Z"/>
       </symbol>
 
-      <!-- 5. Section: Viral Swipe File (Isometric Archival Facet) -->
-      <symbol id="sym-sec-swipe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M3 4h14l4 4v12H3V4z"/>
-        <path d="M17 4v4h4"/>
-        <path d="M7 11h10M7 15h6"/>
-        <path d="M3 8h4"/>
+      <!-- 5. Section: Analytics (coolicons: Interface / Chart_Line) -->
+      <symbol id="sym-sec-analytics" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 15.0002V16.8C3 17.9201 3 18.4798 3.21799 18.9076C3.40973 19.2839 3.71547 19.5905 4.0918 19.7822C4.5192 20 5.07899 20 6.19691 20H21.0002M3 15.0002V5M3 15.0002L6.8534 11.7891L6.85658 11.7865C7.55366 11.2056 7.90288 10.9146 8.28154 10.7964C8.72887 10.6567 9.21071 10.6788 9.64355 10.8584C10.0105 11.0106 10.3323 11.3324 10.9758 11.9759L10.9822 11.9823C11.6357 12.6358 11.9633 12.9635 12.3362 13.1153C12.7774 13.2951 13.2685 13.3106 13.7207 13.1606C14.1041 13.0334 14.4542 12.7275 15.1543 12.115L21 7"/>
       </symbol>
 
-      <!-- 6. Section: Analytics & Velocity (Orthogonal Trajectory Step) -->
-      <symbol id="sym-sec-analytics" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M3 21h18"/>
-        <path d="M3 17l6-6h4l5-5"/>
-        <path d="M18 6v5M18 6h-5"/>
-        <rect x="16" y="4" width="4" height="4"/>
+      <!-- 6. Section: Documentation Hub (coolicons: File / File_Document) -->
+      <symbol id="sym-sec-docs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 17H15M9 14H15M13.0004 3.00087C12.9048 3 12.7974 3 12.6747 3H8.2002C7.08009 3 6.51962 3 6.0918 3.21799C5.71547 3.40973 5.40973 3.71547 5.21799 4.0918C5 4.51962 5 5.08009 5 6.2002V17.8002C5 18.9203 5 19.4801 5.21799 19.9079C5.40973 20.2842 5.71547 20.5905 6.0918 20.7822C6.51921 21 7.079 21 8.19694 21L15.8031 21C16.921 21 17.48 21 17.9074 20.7822C18.2837 20.5905 18.5905 20.2842 18.7822 19.9079C19 19.4805 19 18.9215 19 17.8036V9.32568C19 9.20302 18.9999 9.09553 18.999 9M13.0004 3.00087C13.2858 3.00348 13.4657 3.01407 13.6382 3.05547C13.8423 3.10446 14.0379 3.18526 14.2168 3.29492C14.4186 3.41857 14.5918 3.59181 14.9375 3.9375L18.063 7.06298C18.4089 7.40889 18.5809 7.58136 18.7046 7.78319C18.8142 7.96214 18.8953 8.15726 18.9443 8.36133C18.9857 8.53379 18.9964 8.71454 18.999 9M13.0004 3.00087L13 5.80021C13 6.92031 13 7.48015 13.218 7.90797C13.4097 8.2843 13.7155 8.59048 14.0918 8.78223C14.5192 9 15.079 9 16.1969 9H18.999"/>
       </symbol>
 
-      <!-- 7. Section: AI Command Hub (4-Corner Reticle Diamond Star) -->
-      <symbol id="sym-sec-ai-command" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7z"/>
-        <path d="M2 2h3M2 2v3M22 2h-3M22 2v3M2 22h3M2 22v-3M22 22h-3M22 22v-3"/>
+      <!-- 7. Section: Viral Swipe File (coolicons: Interface / Bookmark) -->
+      <symbol id="sym-sec-swipe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 7.2002V16.6854C6 18.0464 6 18.7268 6.20412 19.1433C6.58245 19.9151 7.41157 20.3588 8.26367 20.2454C8.7234 20.1842 9.28964 19.8067 10.4221 19.0518L10.4248 19.0499C10.8737 18.7507 11.0981 18.6011 11.333 18.5181C11.7642 18.3656 12.2348 18.3656 12.666 18.5181C12.9013 18.6012 13.1266 18.7515 13.5773 19.0519C14.7098 19.8069 15.2767 20.1841 15.7364 20.2452C16.5885 20.3586 17.4176 19.9151 17.7959 19.1433C18 18.7269 18 18.0462 18 16.6854V7.19691C18 6.07899 18 5.5192 17.7822 5.0918C17.5905 4.71547 17.2837 4.40973 16.9074 4.21799C16.4796 4 15.9203 4 14.8002 4H9.2002C8.08009 4 7.51962 4 7.0918 4.21799C6.71547 4.40973 6.40973 4.71547 6.21799 5.0918C6 5.51962 6 6.08009 6 7.2002Z"/>
       </symbol>
 
-      <!-- 8. Section: Docs & Playbook (Technical Architectural Folio) -->
-      <symbol id="sym-sec-docs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M4 3h16v18H4V3z"/>
-        <path d="M4 7h16M9 7v14"/>
-        <path d="M13 11h4M13 15h4"/>
+      <!-- 8. Section: Brand and Media Studio (coolicons: Edit / Swatches_Palette) -->
+      <symbol id="sym-sec-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6.5 21H20.4706C20.763 21 21.0002 20.7631 21.0002 20.4707L21 14.5293M7.98047 20.6713L20.6421 14.7671C20.9071 14.6435 21.0217 14.3285 20.8981 14.0635L18.3872 8.6792C18.2636 8.41421 17.9486 8.29914 17.6836 8.42271L12.0303 11.0591M9.88182 18.4048C9.38152 20.2719 7.46235 21.38 5.59521 20.8797C3.72808 20.3794 2.61982 18.4604 3.12011 16.5933L6.73596 3.09863C6.81163 2.81621 7.10168 2.64855 7.3841 2.72422L13.1231 4.26171C13.4055 4.33738 13.5731 4.6276 13.4974 4.91002L9.88182 18.4048ZM6.5 17.6001H6.502L6.50195 17.6021L6.5 17.6021V17.6001Z"/>
       </symbol>
 
-      <!-- 9. Section: Brand Studio & Security (Framing Aperture with Seal) -->
-      <symbol id="sym-sec-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M3 7V3h4M21 7V3h-4M3 17v4h4M21 17v4h-4"/>
-        <rect x="7" y="7" width="10" height="10"/>
-        <path d="M12 10v4M10 12h4"/>
+      <!-- 9. Section: AI Command Center (coolicons: System / Terminal) -->
+      <symbol id="sym-sec-ai-command" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M17 15H12M7 10L10 12.5L7 15M3 15.8002V8.2002C3 7.08009 3 6.51962 3.21799 6.0918C3.40973 5.71547 3.71547 5.40973 4.0918 5.21799C4.51962 5 5.08009 5 6.2002 5H17.8002C18.9203 5 19.4796 5 19.9074 5.21799C20.2837 5.40973 20.5905 5.71547 20.7822 6.0918C21 6.5192 21 7.07899 21 8.19691V15.8031C21 16.921 21 17.48 20.7822 17.9074C20.5905 18.2837 20.2837 18.5905 19.9074 18.7822C19.48 19 18.921 19 17.8031 19H6.19691C5.07899 19 4.5192 19 4.0918 18.7822C3.71547 18.5905 3.40973 18.2837 3.21799 17.9074C3 17.4796 3 16.9203 3 15.8002Z"/>
       </symbol>
 
-      <!-- 10. Inspector Mode: Preview Stage (Split Orthogonal Screen) -->
-      <symbol id="sym-mode-preview" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <rect x="3" y="3" width="18" height="18"/>
-        <path d="M3 8h18M13 8v13"/>
-        <circle cx="6" cy="5.5" r="0.75" fill="currentColor"/>
+      <!-- 10. Section: Chat and Conversations (coolicons: Communication / Chat_Conversation) -->
+      <symbol id="sym-sec-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M16 8H20C20.5523 8 21 8.44772 21 9V20L17.667 17.231C17.4875 17.0818 17.2608 17 17.0273 17H9C8.44771 17 8 16.5523 8 16V13M16 8V5C16 4.44772 15.5523 4 15 4H4C3.44772 4 3 4.44772 3 5V16.0003L6.33301 13.2308C6.51255 13.0817 6.73924 13 6.97266 13H8M16 8V12C16 12.5523 15.5523 13 15 13H8"/>
       </symbol>
 
-      <!-- 11. Inspector Mode: Safety Audit Matrix (Angular Faceted Shield) -->
-      <symbol id="sym-mode-audit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M12 2l8 4v6c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-4z"/>
-        <path d="M6 12h12M12 6v12"/>
+      <!-- 11. Section: Trend Radar (coolicons: Navigation / Compass) -->
+      <symbol id="sym-sec-radar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 12C3 16.9706 7.02944 21 12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12Z"/>
+        <path d="M10.5 10.5L16 8L13.5 13.5L8 16L10.5 10.5Z"/>
       </symbol>
 
-      <!-- 12. Inspector Mode: Media Studio (Geometric Viewport with Crop Blades) -->
-      <symbol id="sym-mode-media" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <rect x="3" y="4" width="18" height="16"/>
-        <path d="M3 15l5-5 4 4 4-4 5 5"/>
-        <rect x="6" y="7" width="3" height="3"/>
+      <!-- 12. Action: Copy to clipboard (coolicons: Edit / Copy) -->
+      <symbol id="sym-act-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 9V6.2002C9 5.08009 9 4.51962 9.21799 4.0918C9.40973 3.71547 9.71547 3.40973 10.0918 3.21799C10.5196 3 11.0801 3 12.2002 3H17.8002C18.9203 3 19.4801 3 19.9079 3.21799C20.2842 3.40973 20.5905 3.71547 20.7822 4.0918C21.0002 4.51962 21.0002 5.07967 21.0002 6.19978V11.7998C21.0002 12.9199 21.0002 13.48 20.7822 13.9078C20.5905 14.2841 20.2839 14.5905 19.9076 14.7822C19.4802 15 18.921 15 17.8031 15H15M15 15L15 12.1969C15 11.079 15 10.5192 14.7822 10.0918C14.5905 9.71547 14.2842 9.40973 13.9079 9.21799C13.4801 9 12.9203 9 11.8002 9H9H6.2002C5.08009 9 4.51962 9 4.0918 9.21799C3.71547 9.40973 3.40973 9.71547 3.21799 10.0918C3 10.5196 3 11.0801 3 12.2002V17.8002C3 18.9203 3 19.4801 3.21799 19.9079C3.40973 20.2842 3.71547 20.5905 4.0918 20.7822C4.5192 21 5.07899 21 6.19691 21H11.8036C12.9215 21 13.4805 21 13.9079 20.7822C14.2842 20.5905 14.5905 20.2839 14.7822 19.9076C15 19.4802 15 18.921 15 17.8031V15Z"/>
       </symbol>
 
-      <!-- 13. Inspector Mode: Brand Identity (Signature Seal Stamp) -->
-      <symbol id="sym-mode-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <rect x="3" y="3" width="18" height="18"/>
-        <rect x="12" y="12" width="9" height="9"/>
-        <path d="M6 7h6M6 10h4"/>
+      <!-- 13. Action: Save draft (coolicons: System / Save) -->
+      <symbol id="sym-act-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 21H6.19691C5.07899 21 4.5192 21 4.0918 20.7822C3.71547 20.5905 3.40973 20.2837 3.21799 19.9074C3 19.4796 3 18.9203 3 17.8002V6.2002C3 5.08009 3 4.51962 3.21799 4.0918C3.40973 3.71547 3.71547 3.40973 4.0918 3.21799C4.51962 3 5.08009 3 6.2002 3H15.075C15.5998 3 15.8625 3 16.1073 3.06287C16.3242 3.11858 16.5303 3.21 16.7168 3.33398C16.9242 3.47181 17.0969 3.66374 17.4377 4.04241L20.1929 7.10378C20.487 7.43055 20.6366 7.59674 20.7432 7.78595C20.8393 7.95652 20.9095 8.14 20.9521 8.33105C21 8.54521 21 8.77072 21 9.21955V17.8031C21 18.921 21 19.4806 20.7822 19.908C20.5905 20.2843 20.2837 20.5905 19.9074 20.7822C19.48 21 18.921 21 17.8031 21L17 21.0002L7 21ZM17 21.0002V17.1969C17 16.079 17 15.5192 16.7822 15.0918C16.5905 14.7155 16.2837 14.4097 15.9074 14.218C15.4796 14 14.9203 14 13.8002 14H10.2002C9.08009 14 8.51962 14 8.0918 14.218C7.71547 14.4097 7.40973 14.7155 7.21799 15.0918C7 15.5196 7 16.0801 7 17.2002V21M15 7H9"/>
       </symbol>
 
-      <!-- 14. Inspector Mode: Prompt Copilot (Terminal Prompt Bracket) -->
-      <symbol id="sym-mode-prompt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <rect x="3" y="4" width="18" height="16"/>
-        <path d="M7 9l4 3-4 3M13 15h4"/>
+      <!-- 14. Action: Export / Download (coolicons: Interface / Download) -->
+      <symbol id="sym-act-export" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 21H18M12 3V17M7 12L12 17L17 12"/>
       </symbol>
 
-      <!-- 15. Action: Clean / Scrub (Orthogonal Alignment Scraper) -->
-      <symbol id="sym-act-clean" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M4 20h16"/>
-        <path d="M15 4l5 5-9 9H6v-5L15 4z"/>
-        <path d="M12 7l5 5"/>
+      <!-- 15. Action: Preview / Show (coolicons: Edit / Show) -->
+      <symbol id="sym-act-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3.5868 13.7788C5.36623 15.5478 8.46953 17.9999 12.0002 17.9999C15.5308 17.9999 18.6335 15.5478 20.413 13.7788C20.8823 13.3123 21.1177 13.0782 21.2671 12.6201C21.3738 12.2933 21.3738 11.7067 21.2671 11.3799C21.1177 10.9218 20.8823 10.6877 20.413 10.2211C18.6335 8.45208 15.5308 6 12.0002 6C8.46953 6 5.36623 8.45208 3.5868 10.2211C3.11714 10.688 2.88229 10.9216 2.7328 11.3799C2.62618 11.7067 2.62618 12.2933 2.7328 12.6201C2.88229 13.0784 3.11714 13.3119 3.5868 13.7788Z"/>
+        <path d="M10 12C10 13.1046 10.8954 14 12 14C13.1046 14 14 13.1046 14 12C14 10.8954 13.1046 10 12 10C10.8954 10 10 10.8954 10 12Z"/>
       </symbol>
 
-      <!-- 16. Action: Hooks (Angular Focal Burst) -->
-      <symbol id="sym-act-hooks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M13 2L3 14h8l-2 8 12-14h-8l2-6z"/>
+      <!-- 16. Action: Lock / Secure vault (coolicons: Interface / Lock) -->
+      <symbol id="sym-act-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9.23047 9H7.2002C6.08009 9 5.51962 9 5.0918 9.21799C4.71547 9.40973 4.40973 9.71547 4.21799 10.0918C4 10.5196 4 11.0801 4 12.2002V17.8002C4 18.9203 4 19.4801 4.21799 19.9079C4.40973 20.2842 4.71547 20.5905 5.0918 20.7822C5.5192 21 6.07902 21 7.19694 21H16.8031C17.921 21 18.48 21 18.9074 20.7822C19.2837 20.5905 19.5905 20.2842 19.7822 19.9079C20 19.4805 20 18.9215 20 17.8036V12.1969C20 11.079 20 10.5192 19.7822 10.0918C19.5905 9.71547 19.2837 9.40973 18.9074 9.21799C18.4796 9 17.9203 9 16.8002 9H14.7689M9.23047 9H14.7689M9.23047 9C9.10302 9 9 8.89668 9 8.76923V6C9 4.34315 10.3431 3 12 3C13.6569 3 15 4.34315 15 6V8.76923C15 8.89668 14.8964 9 14.7689 9"/>
       </symbol>
 
-      <!-- 17. Action: Repurpose (Orthogonal Dual Loop) -->
-      <symbol id="sym-act-repurpose" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M4 12V6h12"/>
-        <path d="M13 3l3 3-3 3"/>
-        <path d="M20 12v6H8"/>
-        <path d="M11 21l-3-3 3-3"/>
+      <!-- 17. Action: Tag (coolicons: Interface / Tag) -->
+      <symbol id="sym-act-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.74791 7.64502L4.41669 11.2885C4.36763 11.8281 4.34289 12.1001 4.3878 12.3584C4.42792 12.5892 4.50806 12.8112 4.62496 13.0142C4.7563 13.2422 4.95043 13.4363 5.33647 13.8224L10.512 18.9979C11.299 19.7849 11.6927 20.1786 12.148 20.3265C12.5496 20.4571 12.983 20.4573 13.3847 20.3268C13.8414 20.1785 14.2382 19.7821 15.0302 18.9901L18.99 15.0303C19.7821 14.2382 20.1774 13.8424 20.3258 13.3857C20.4563 12.9841 20.4555 12.5511 20.325 12.1495C20.1766 11.6928 19.7819 11.297 18.9898 10.505L13.8271 5.34229C13.4375 4.95272 13.2427 4.75792 13.0136 4.62598C12.8107 4.50908 12.5886 4.4286 12.3579 4.38848C12.0974 4.3432 11.823 4.36809 11.2743 4.41797L7.64449 4.74796C6.69973 4.83384 6.22705 4.87698 5.85738 5.08255C5.53145 5.26379 5.26277 5.53248 5.08152 5.8584C4.87698 6.22623 4.83432 6.69555 4.74929 7.63092L4.74791 7.64502Z"/>
+        <path d="M9.71259 9.71297C10.1031 9.32244 10.1031 8.68928 9.71259 8.29876C9.32206 7.90823 8.68845 7.90823 8.29792 8.29876C7.9074 8.68928 7.90702 9.32229 8.29755 9.71282C8.68807 10.1033 9.32206 10.1035 9.71259 9.71297Z"/>
       </symbol>
 
-      <!-- 18. Action: Image Studio (Geometric Lens Aperture) -->
-      <symbol id="sym-act-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <rect x="3" y="3" width="18" height="18"/>
-        <path d="M3 3l7 7M21 3l-7 7M3 21l7-7M21 21l-7-7"/>
-        <rect x="9" y="9" width="6" height="6"/>
+      <!-- 18. Action: Trim / Crop (coolicons: Edit / Crop) -->
+      <symbol id="sym-act-trim" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 21V18M18 18H9.19691C8.07899 18 7.5192 18 7.0918 17.7822C6.71547 17.5905 6.40973 17.2839 6.21799 16.9076C6 16.4798 6 15.9201 6 14.8V6M18 18H21.0002M6 6H3M6 6V3M10 6H14.8C15.9201 6 16.4798 6 16.9076 6.21799C17.2839 6.40973 17.5905 6.71547 17.7822 7.0918C18 7.5192 18 8.07899 18 9.19691V14.0002"/>
       </symbol>
 
-      <!-- 19. Action: Save (Orthogonal Data Cassette) -->
-      <symbol id="sym-act-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M4 3h13l4 4v14H4V3z"/>
-        <path d="M8 3v5h8V3M8 14h8v7H8v-7z"/>
+      <!-- 19. Action: Clean text formatting (coolicons: Edit / Text) -->
+      <symbol id="sym-act-clean" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 19H12M12 19H14M12 19V5M12 5H6V6M12 5H18V6"/>
       </symbol>
 
-      <!-- 20. Action: Publish / Launch (Orthogonal Launch Vector) -->
-      <symbol id="sym-act-publish" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M21 3L10 14M21 3l-6 18-4-8-8-4 18-6z"/>
+      <!-- 20. Action: AI spark (coolicons: Interface / Star) -->
+      <symbol id="sym-act-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2.33496 10.3368C2.02171 10.0471 2.19187 9.52339 2.61557 9.47316L8.61914 8.76107C8.79182 8.74059 8.94181 8.63215 9.01465 8.47425L11.5469 2.98446C11.7256 2.59703 12.2764 2.59695 12.4551 2.98439L14.9873 8.47413C15.0601 8.63204 15.2092 8.74077 15.3818 8.76124L21.3857 9.47316C21.8094 9.52339 21.9791 10.0472 21.6659 10.3369L17.2278 14.4419C17.1001 14.56 17.0433 14.7357 17.0771 14.9063L18.255 20.8359C18.3382 21.2544 17.8928 21.5787 17.5205 21.3703L12.2451 18.4166C12.0934 18.3317 11.9091 18.3321 11.7573 18.417L6.48144 21.3695C6.10913 21.5779 5.66294 21.2544 5.74609 20.8359L6.92414 14.9066C6.95803 14.7361 6.90134 14.5599 6.77367 14.4419L2.33496 10.3368Z"/>
       </symbol>
 
-      <!-- 21. Action: Copy (Interlocking Orthogonal Sheets) -->
-      <symbol id="sym-act-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <rect x="8" y="8" width="13" height="13"/>
-        <path d="M5 16H3V3h13v2"/>
+      <!-- 21. Action: Generate hooks (coolicons: Environment / Bulb) -->
+      <symbol id="sym-act-hooks" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 21H15M12 3C8.68629 3 6 5.68629 6 9C6 10.2145 6.36084 11.3447 6.98117 12.2893C7.93507 13.7418 8.41161 14.4676 8.47352 14.5761C9.02428 15.541 8.92287 15.2007 8.99219 16.3096C8.99998 16.4342 9 16.6229 9 17C9 17.5523 9.44772 18 10 18L14 18C14.5523 18 15 17.5523 15 17C15 16.6229 15 16.4342 15.0078 16.3096C15.0771 15.2007 14.9751 15.541 15.5259 14.5761C15.5878 14.4676 16.0651 13.7418 17.019 12.2893C17.6394 11.3447 18.0002 10.2145 18.0002 9C18.0002 5.68629 15.3137 3 12 3Z"/>
       </symbol>
 
-      <!-- 22. Action: Apply (Stylus Vector) -->
-      <symbol id="sym-act-apply" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M16 3l5 5L7 22H2v-5L16 3z"/>
-        <path d="M13 6l5 5"/>
+      <!-- 22. Action: Image (coolicons: Media / Image_01) -->
+      <symbol id="sym-act-image" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3.00005 17.0001C3 16.9355 3 16.8689 3 16.8002V7.2002C3 6.08009 3 5.51962 3.21799 5.0918C3.40973 4.71547 3.71547 4.40973 4.0918 4.21799C4.51962 4 5.08009 4 6.2002 4H17.8002C18.9203 4 19.4801 4 19.9079 4.21799C20.2842 4.40973 20.5905 4.71547 20.7822 5.0918C21 5.5192 21 6.07899 21 7.19691V16.8031C21 17.2881 21 17.6679 20.9822 17.9774M3.00005 17.0001C3.00082 17.9884 3.01337 18.5058 3.21799 18.9074C3.40973 19.2837 3.71547 19.5905 4.0918 19.7822C4.5192 20 5.07899 20 6.19691 20H17.8036C18.9215 20 19.4805 20 19.9079 19.7822C20.2842 19.5905 20.5905 19.2837 20.7822 18.9074C20.9055 18.6654 20.959 18.3813 20.9822 17.9774M3.00005 17.0001L7.76798 11.4375L7.76939 11.436C8.19227 10.9426 8.40406 10.6955 8.65527 10.6064C8.87594 10.5282 9.11686 10.53 9.33643 10.6113C9.58664 10.704 9.79506 10.9539 10.2119 11.4541L12.8831 14.6595C13.269 15.1226 13.463 15.3554 13.6986 15.4489C13.9065 15.5313 14.1357 15.5406 14.3501 15.4773C14.5942 15.4053 14.8091 15.1904 15.2388 14.7607L15.7358 14.2637C16.1733 13.8262 16.3921 13.6076 16.6397 13.5361C16.8571 13.4734 17.0896 13.4869 17.2988 13.5732C17.537 13.6716 17.7302 13.9124 18.1167 14.3955L20.9822 17.9774M20.9822 17.9774L21 17.9996M15 10C14.4477 10 14 9.55228 14 9C14 8.44772 14.4477 8 15 8C15.5523 8 16 8.44772 16 9C16 9.55228 15.5523 10 15 10Z"/>
       </symbol>
 
-      <!-- 23. Action: Trim (Precision Crop Mark) -->
-      <symbol id="sym-act-trim" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M6 2v14h16M2 6h14v16"/>
-        <path d="M18 18l3 3M18 6l3-3"/>
+      <!-- 23. Action: Velocity and rhythm (coolicons: Interface / Trending_Up) -->
+      <symbol id="sym-act-rhythm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M20.0005 7L14.1543 12.9375C14.0493 13.0441 13.9962 13.0976 13.9492 13.1396C13.1899 13.8193 12.0416 13.8193 11.2822 13.1396C11.2352 13.0976 11.1817 13.0442 11.0767 12.9375C10.9716 12.8308 10.9191 12.7774 10.8721 12.7354C10.1127 12.0557 8.96397 12.0557 8.20461 12.7354C8.15771 12.7773 8.10532 12.8305 8.00078 12.9367L4 17M14 7H20.0005L20 13"/>
       </symbol>
 
-      <!-- 24. Action: Eject / Move Links (Routed Downward Conduit) -->
-      <symbol id="sym-act-eject" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M4 4h16v10H4V4z"/>
-        <path d="M12 14v7M8 18l4 3 4-3"/>
+      <!-- 24. Action: Repurpose content (coolicons: Arrow / Arrow_Reload_02) -->
+      <symbol id="sym-act-repurpose" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 16H19V21M10 8H5V3M19.4176 9.0034C18.8569 7.61566 17.9181 6.41304 16.708 5.53223C15.4979 4.65141 14.0652 4.12752 12.5723 4.02051C11.0794 3.9135 9.58606 4.2274 8.2627 4.92661C6.93933 5.62582 5.83882 6.68254 5.08594 7.97612M4.58203 14.9971C5.14272 16.3848 6.08146 17.5874 7.29157 18.4682C8.50169 19.3491 9.93588 19.8723 11.4288 19.9793C12.9217 20.0863 14.4138 19.7725 15.7371 19.0732C17.0605 18.374 18.1603 17.3175 18.9131 16.0239"/>
       </symbol>
 
-      <!-- 25. Action: Rhythm / Whitespace (Stepped Paragraph Stairs) -->
-      <symbol id="sym-act-rhythm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M4 5h16M4 11h10M4 17h14"/>
-        <path d="M18 11v4h-3M18 15l-2-2M18 15l2-2"/>
+      <!-- 25. Action: Apply / Confirm (coolicons: Interface / Check) -->
+      <symbol id="sym-act-apply" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 12L10.2426 16.2426L18.727 7.75732"/>
       </symbol>
 
-      <!-- 26. Action: Tag / Hashtag (Chamfered Corner Tag) -->
-      <symbol id="sym-act-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M3 11l8-8h10v10l-8 8L3 11z"/>
-        <circle cx="16" cy="8" r="1.5" fill="currentColor"/>
+      <!-- 26. Action: Eject session (coolicons: Interface / Log_Out) -->
+      <symbol id="sym-act-eject" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 9L15 12L12 15M15 12H4M9 7.24859V7.2002C9 6.08009 9 5.51962 9.21799 5.0918C9.40973 4.71547 9.71547 4.40973 10.0918 4.21799C10.5196 4 11.0801 4 12.2002 4H16.8002C17.9203 4 18.4796 4 18.9074 4.21799C19.2837 4.40973 19.5905 4.71547 19.7822 5.0918C20 5.5192 20 6.07899 20 7.19691V16.8036C20 17.9215 20 18.4805 19.7822 18.9079C19.5905 19.2842 19.2837 19.5905 18.9074 19.7822C18.48 20 17.921 20 16.8031 20H12.1969C11.079 20 10.5192 20 10.0918 19.7822C9.71547 19.5905 9.40973 19.2839 9.21799 18.9076C9 18.4798 9 17.9201 9 16.8V16.75"/>
       </symbol>
 
-      <!-- 27. Action: Theme Dark (Geometric Crescent) -->
-      <symbol id="sym-act-theme-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/>
+      <!-- 27. Action: Publish now (coolicons: Communication / Paper_Plane) -->
+      <symbol id="sym-act-publish" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10.3078 13.6923L15.1539 8.84619M20.1113 5.88867L16.0207 19.1833C15.6541 20.3747 15.4706 20.9707 15.1544 21.1683C14.8802 21.3396 14.5406 21.3683 14.2419 21.2443C13.8975 21.1014 13.618 20.5433 13.0603 19.428L10.4694 14.2461C10.3809 14.0691 10.3366 13.981 10.2775 13.9043C10.225 13.8363 10.1645 13.7749 10.0965 13.7225C10.0215 13.6647 9.93486 13.6214 9.76577 13.5369L4.57192 10.9399C3.45662 10.3823 2.89892 10.1032 2.75601 9.75879C2.63207 9.4601 2.66033 9.12023 2.83169 8.84597C3.02928 8.52974 3.62523 8.34603 4.81704 7.97932L18.1116 3.88867C19.0486 3.60038 19.5173 3.45635 19.8337 3.57253C20.1094 3.67373 20.3267 3.89084 20.4279 4.16651C20.544 4.48283 20.3999 4.95126 20.1119 5.88729L20.1113 5.88867Z"/>
       </symbol>
 
-      <!-- 28. Action: Theme Light (Geometric Square Sun) -->
-      <symbol id="sym-act-theme-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <rect x="8" y="8" width="8" height="8"/>
-        <path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"/>
+      <!-- 28. Action: Dark theme (coolicons: Environment / Moon) -->
+      <symbol id="sym-act-theme-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M9 6C9 10.9706 13.0294 15 18 15C18.9093 15 19.787 14.8655 20.6144 14.6147C19.4943 18.3103 16.0613 20.9999 12 20.9999C7.02944 20.9999 3 16.9707 3 12.0001C3 7.93883 5.69007 4.50583 9.38561 3.38574C9.13484 4.21311 9 5.09074 9 6Z"/>
       </symbol>
 
-      <!-- 29. Action: Precision Spark / Reticle (Replaces generic sparkles) -->
-      <symbol id="sym-act-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M12 3v18M3 12h18"/>
-        <rect x="8" y="8" width="8" height="8"/>
+      <!-- 29. Action: Light theme (coolicons: Environment / Sun) -->
+      <symbol id="sym-act-theme-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 4V2M12 20V22M6.41421 6.41421L5 5M17.728 17.728L19.1422 19.1422M4 12H2M20 12H22M17.7285 6.41421L19.1427 5M6.4147 17.728L5.00049 19.1422M12 17C9.23858 17 7 14.7614 7 12C7 9.23858 9.23858 7 12 7C14.7614 7 17 9.23858 17 12C17 14.7614 14.7614 17 12 17Z"/>
       </symbol>
 
-      <!-- 30. Action: Lock / Vault (Orthogonal Padlock) -->
-      <symbol id="sym-act-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <rect x="5" y="10" width="14" height="11"/>
-        <path d="M8 10V6a4 4 0 0 1 8 0v4"/>
+      <!-- 30. Mode: Governance audit (coolicons: Warning / Shield_Check) -->
+      <symbol id="sym-mode-audit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 9L11 13L9 11M20 10.165C20 16.7333 15.0319 19.6781 12.9258 20.6314L12.9231 20.6325C12.7016 20.7328 12.5906 20.7831 12.3389 20.8263C12.1795 20.8537 11.8215 20.8537 11.6621 20.8263C11.4094 20.7829 11.2972 20.7325 11.074 20.6314C8.9678 19.6781 4 16.7333 4 10.165V6.2002C4 5.08009 4 4.51962 4.21799 4.0918C4.40973 3.71547 4.71547 3.40973 5.0918 3.21799C5.51962 3 6.08009 3 7.2002 3H16.8002C17.9203 3 18.4796 3 18.9074 3.21799C19.2837 3.40973 19.5905 3.71547 19.7822 4.0918C20 4.5192 20 5.07899 20 6.19691V10.165Z"/>
       </symbol>
 
-      <!-- 31. Action: Export / Download (Orthogonal Tray) -->
-      <symbol id="sym-act-export" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M4 15v5h16v-5M12 4v11M8 11l4 4 4-4"/>
+      <!-- 31. Mode: Brand watermark (coolicons: Interface / Label) -->
+      <symbol id="sym-mode-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M19.2933 9.95137L16.96 7.15137C16.6073 6.72814 16.43 6.51639 16.2139 6.36426C16.0223 6.22946 15.8084 6.12953 15.5822 6.06868C15.327 6 15.0523 6 14.5014 6H7.2002C6.08009 6 5.51962 6 5.0918 6.21799C4.71547 6.40973 4.40973 6.71547 4.21799 7.0918C4 7.51962 4 8.08009 4 9.2002V14.8002C4 15.9203 4 16.4801 4.21799 16.9079C4.40973 17.2842 4.71547 17.5905 5.0918 17.7822C5.5192 18 6.07899 18 7.19691 18H14.5014C15.0523 18 15.327 17.9998 15.5822 17.9312C15.8084 17.8703 16.0223 17.7702 16.2139 17.6354C16.43 17.4833 16.6073 17.2721 16.96 16.8488L19.2933 14.0488C19.9006 13.32 20.2036 12.9556 20.3197 12.5488C20.422 12.1902 20.422 11.8095 20.3197 11.4509C20.2036 11.0441 19.9006 10.6801 19.2933 9.95137Z"/>
       </symbol>
 
-      <!-- 32. Action: Eye / Reveal -->
-      <symbol id="sym-act-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7-10-7-10-7z"/>
-        <circle cx="12" cy="12" r="3"/>
+      <!-- 32. Mode: Media (coolicons: Media / Image_02) -->
+      <symbol id="sym-mode-media" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3.00005 18.0001C3 17.9355 3 17.8689 3 17.8002V6.2002C3 5.08009 3 4.51962 3.21799 4.0918C3.40973 3.71547 3.71547 3.40973 4.0918 3.21799C4.51962 3 5.08009 3 6.2002 3H17.8002C18.9203 3 19.4801 3 19.9079 3.21799C20.2842 3.40973 20.5905 3.71547 20.7822 4.0918C21 4.5192 21 5.07899 21 6.19691V17.8031C21 18.2881 21 18.6679 20.9822 18.9774M3.00005 18.0001C3.00082 18.9884 3.01337 19.5058 3.21799 19.9074C3.40973 20.2837 3.71547 20.5905 4.0918 20.7822C4.5192 21 5.07899 21 6.19691 21H17.8036C18.9215 21 19.4805 21 19.9079 20.7822C20.2842 20.5905 20.5905 20.2837 20.7822 19.9074C20.9055 19.6654 20.959 19.3813 20.9822 18.9774M3.00005 18.0001L7.76798 12.4375L7.76939 12.436C8.19227 11.9426 8.40406 11.6955 8.65527 11.6064C8.87594 11.5282 9.11686 11.53 9.33643 11.6113C9.58664 11.704 9.79506 11.9539 10.2119 12.4541L12.8831 15.6595C13.269 16.1226 13.463 16.3554 13.6986 16.4489C13.9065 16.5313 14.1357 16.5406 14.3501 16.4773C14.5942 16.4053 14.8091 16.1904 15.2388 15.7607L15.7358 15.2637C16.1733 14.8262 16.3921 14.6076 16.6397 14.5361C16.8571 14.4734 17.0896 14.4869 17.2988 14.5732C17.537 14.6716 17.7302 14.9124 18.1167 15.3955L20.9822 18.9774M20.9822 18.9774L21 18.9996M15 9C14.4477 9 14 8.55228 14 8C14 7.44772 14.4477 7 15 7C15.5523 7 16 7.44772 16 8C16 8.55228 15.5523 9 15 9Z"/>
       </symbol>
 
-      <!-- 33. Action: Close / Dismiss (Orthogonal Reticle Cross) -->
-      <symbol id="sym-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter">
-        <line x1="18" y1="6" x2="6" y2="18"/>
-        <line x1="6" y1="6" x2="18" y2="18"/>
+      <!-- 33. Mode: Desktop preview (coolicons: System / Monitor) -->
+      <symbol id="sym-mode-preview" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M15 20H9M4 13.8002V8.2002C4 7.08009 4 6.51962 4.21799 6.0918C4.40973 5.71547 4.71547 5.40973 5.0918 5.21799C5.51962 5 6.08009 5 7.2002 5H16.8002C17.9203 5 18.4796 5 18.9074 5.21799C19.2837 5.40973 19.5905 5.71547 19.7822 6.0918C20 6.5192 20 7.07899 20 8.19691V13.8031C20 14.921 20 15.48 19.7822 15.9074C19.5905 16.2837 19.2837 16.5905 18.9074 16.7822C18.48 17 17.921 17 16.8031 17H7.19691C6.07899 17 5.5192 17 5.0918 16.7822C4.71547 16.5905 4.40973 16.2837 4.21799 15.9074C4 15.4796 4 14.9203 4 13.8002Z"/>
       </symbol>
 
-      <!-- 34. Action: Refresh / Synchronize / Spinner (Orthogonal Dual Arc) -->
-      <symbol id="sym-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter">
-        <path d="M23 4v6h-6M1 20v-6h6"/>
-        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+      <!-- 34. Mode: Prompt (coolicons: Communication / Chat_Circle_Dots) -->
+      <symbol id="sym-mode-prompt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7.50977 19.8018C8.83126 20.5639 10.3645 21 11.9996 21C16.9702 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 13.6351 3.43604 15.1684 4.19819 16.4899L4.20114 16.495C4.27448 16.6221 4.31146 16.6863 4.32821 16.7469C4.34401 16.804 4.34842 16.8554 4.34437 16.9146C4.34003 16.9781 4.3186 17.044 4.27468 17.1758L3.50586 19.4823L3.50489 19.4853C3.34268 19.9719 3.26157 20.2152 3.31938 20.3774C3.36979 20.5187 3.48169 20.6303 3.62305 20.6807C3.78482 20.7384 4.02705 20.6577 4.51155 20.4962L4.51758 20.4939L6.82405 19.7251C6.95537 19.6813 7.02214 19.6591 7.08559 19.6548C7.14475 19.6507 7.19578 19.6561 7.25293 19.6719C7.31368 19.6887 7.37783 19.7257 7.50563 19.7994L7.50977 19.8018Z"/>
+      </symbol>
+
+      <!-- 35. Utility: Refresh (coolicons: Arrow / Arrows_Reload_01) -->
+      <symbol id="sym-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M10 16H5V21M14 8H19V3M4.58301 9.0034C5.14369 7.61566 6.08244 6.41304 7.29255 5.53223C8.50266 4.65141 9.93686 4.12752 11.4298 4.02051C12.9227 3.9135 14.4147 4.2274 15.7381 4.92661C17.0615 5.62582 18.1612 6.68254 18.9141 7.97612M19.4176 14.9971C18.8569 16.3848 17.9181 17.5874 16.708 18.4682C15.4979 19.3491 14.0652 19.8723 12.5723 19.9793C11.0794 20.0863 9.58606 19.7725 8.2627 19.0732C6.93933 18.374 5.83882 17.3175 5.08594 16.0239"/>
+      </symbol>
+
+      <!-- 36. Utility: Close (coolicons: Menu / Close_MD) -->
+      <symbol id="sym-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 18L12 12M12 12L6 6M12 12L18 6M12 12L6 18"/>
       </symbol>
     </defs>
   </svg>
@@ -250,52 +218,52 @@
       <div class="sidebar-top">
         <a href="#" class="sidebar-brand" id="brand-toggle" title="LinkedIn Studio: Editorial Motion OS">
           <div class="brand-icon-box">
-            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-brand-logo"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-brand-logo"></use></svg>
           </div>
           <span class="brand-name">LinkedIn Studio</span>
         </a>
 
         <nav class="sidebar-nav">
           <button class="nav-link active" data-tab="tab-studio" title="Composer (Writing Canvas)">
-            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-composer"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-composer"></use></svg>
             <span class="nav-link-label">Composer</span>
           </button>
 
           <button class="nav-link" data-tab="tab-queue" title="Publishing Cadence & Queue">
-            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
             <span class="nav-link-label">Queue</span>
             <span class="sidebar-badge" id="queue-badge-count">1</span>
           </button>
 
           <button class="nav-link" data-tab="tab-crm" title="Warm-Lead CRM Inbox">
-            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
             <span class="nav-link-label">Leads & CRM</span>
             <span class="sidebar-badge" style="color: var(--signal-orange);">WARM</span>
           </button>
 
           <button class="nav-link" data-tab="tab-inspirations" title="Viral Post Blueprints">
-            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-swipe"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-swipe"></use></svg>
             <span class="nav-link-label">Swipe File</span>
             <span class="sidebar-badge" id="swipe-sidebar-badge">37</span>
           </button>
 
           <button class="nav-link" data-tab="tab-analytics" title="Editorial Analytics & Dwell">
-            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
             <span class="nav-link-label">Analytics</span>
           </button>
 
           <button class="nav-link" data-tab="tab-ai-command" title="AI Command Hub">
-            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
             <span class="nav-link-label">Command Hub</span>
           </button>
 
           <button class="nav-link" data-tab="tab-docs" title="Architecture Docs & Playbook">
-            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
             <span class="nav-link-label">Docs</span>
           </button>
 
           <button class="nav-link" data-tab="tab-settings" title="Brand Studio & Security">
-            <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
             <span class="nav-link-label">Brand Studio</span>
           </button>
         </nav>
@@ -393,7 +361,7 @@
 
           <div class="topbar-actions-group active" id="topbar-actions-studio">
             <button class="btn btn-subtle btn-sm" id="btn-clean-formatting" title="Scrub em-dashes and fix spacing">
-              <svg class="app-symbol"><use href="#sym-act-clean"></use></svg> Clean
+              <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-clean"></use></svg> Clean
             </button>
             <button class="btn btn-outline btn-sm" id="btn-save-draft">
               Save
@@ -405,13 +373,13 @@
 
           <div class="topbar-actions-group" id="topbar-actions-analytics" style="display: none;">
             <button class="btn btn-primary btn-sm" id="btn-topbar-export-csv">
-              <svg class="app-symbol"><use href="#sym-act-export"></use></svg> Export CSV
+              <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-export"></use></svg> Export CSV
             </button>
           </div>
 
           <div class="topbar-actions-group" id="topbar-actions-crm" style="display: none;">
             <button class="btn btn-outline btn-sm" id="btn-topbar-crm-export">
-              <svg class="app-symbol"><use href="#sym-act-export"></use></svg> Export
+              <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-export"></use></svg> Export
             </button>
             <button class="btn btn-primary btn-sm" id="btn-topbar-add-prospect">
               + Add Lead
@@ -425,8 +393,8 @@
 
           <!-- Theme Switcher -->
           <button class="theme-toggle-btn" id="btn-theme-toggle" title="Toggle Theme (View Transition)" aria-label="Toggle Theme">
-            <svg class="app-symbol theme-icon-dark app-symbol-no-margin" style="display: none;"><use href="#sym-act-theme-dark"></use></svg>
-            <svg class="app-symbol theme-icon-light app-symbol-no-margin"><use href="#sym-act-theme-light"></use></svg>
+            <svg aria-hidden="true" class="app-symbol theme-icon-dark app-symbol-no-margin" style="display: none;"><use href="#sym-act-theme-dark"></use></svg>
+            <svg aria-hidden="true" class="app-symbol theme-icon-light app-symbol-no-margin"><use href="#sym-act-theme-light"></use></svg>
           </button>
 
           <!-- Contextual Inspector Toggle (Section 10) -->
@@ -451,14 +419,14 @@
               <div class="hook-carousel-container" id="hook-carousel-container" style="display: none;">
                 <div class="hook-carousel-header">
                   <div class="hook-carousel-title">
-                    <svg class="app-symbol"><use href="#sym-act-hooks"></use></svg>
+                    <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-hooks"></use></svg>
                     <span>Hook Specimens</span>
                     <span class="sidebar-badge" id="hook-count-pill" style="display: inline-block;">10 Options</span>
                   </div>
                   <div class="hook-carousel-actions" style="display: flex; gap: 4px;">
-                    <button class="btn btn-subtle btn-xs" id="btn-prev-hook-scroll"><svg class="app-symbol app-symbol-xs app-symbol-no-margin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
-                    <button class="btn btn-subtle btn-xs" id="btn-next-hook-scroll"><svg class="app-symbol app-symbol-xs app-symbol-no-margin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
-                    <button class="btn btn-subtle btn-xs" id="btn-close-hook-carousel" title="Dismiss"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+                    <button class="btn btn-subtle btn-xs" id="btn-prev-hook-scroll" aria-label="Previous hook"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+                    <button class="btn btn-subtle btn-xs" id="btn-next-hook-scroll" aria-label="Next hook"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+                    <button class="btn btn-subtle btn-xs" id="btn-close-hook-carousel" title="Dismiss"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
                   </div>
                 </div>
                 <div class="hook-cards-track" id="hook-cards-track">
@@ -471,20 +439,20 @@
                 <div class="editor-toolbar-row">
                   <div style="display: flex; align-items: center;">
                     <span class="section-logo-badge" style="width: 26px; height: 26px; margin-right: 8px;">
-                      <svg class="app-symbol app-symbol-xs"><use href="#sym-sec-composer"></use></svg>
+                      <svg aria-hidden="true" class="app-symbol app-symbol-xs"><use href="#sym-sec-composer"></use></svg>
                     </span>
                     <span class="editor-mode-label">Editorial Writing Canvas</span>
                   </div>
 
                   <div class="editor-quick-helpers">
                     <button type="button" class="btn btn-outline btn-xs" id="btn-trigger-rehook">
-                      <svg class="app-symbol"><use href="#sym-act-hooks"></use></svg> 10x Hooks
+                      <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-hooks"></use></svg> 10x Hooks
                     </button>
                     <button type="button" class="btn btn-outline btn-xs" id="btn-trigger-repurpose">
-                      <svg class="app-symbol"><use href="#sym-act-repurpose"></use></svg> Repurpose
+                      <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-repurpose"></use></svg> Repurpose
                     </button>
                     <button type="button" class="btn btn-primary btn-xs" id="btn-open-image-studio" title="Agno AI Image Studio">
-                      <svg class="app-symbol"><use href="#sym-act-image"></use></svg> Image Studio
+                      <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-image"></use></svg> Image Studio
                     </button>
                   </div>
                 </div>
@@ -512,10 +480,10 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                     <button class="floating-btn" id="float-mono-btn" title="Monospace">𝙼 Mono</button>
                     <button class="floating-btn" id="float-strike-btn" title="Strikethrough">S̶ Strike</button>
                     <button class="floating-btn" id="float-clean-btn" title="Scrub Em-Dashes">
-                      <svg class="app-symbol"><use href="#sym-act-clean"></use></svg> Clean
+                      <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-clean"></use></svg> Clean
                     </button>
                     <button class="floating-btn danger" id="float-rehook-btn" title="Generate Hook for selection">
-                      <svg class="app-symbol"><use href="#sym-act-hooks"></use></svg> Re-Hook
+                      <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-hooks"></use></svg> Re-Hook
                     </button>
                     <span class="info-pill" tabindex="0">i
                       <span class="info-tooltip">
@@ -575,8 +543,8 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                       <div class="media-attached-meta" id="media-attached-meta">Ready to post</div>
                     </div>
                     <div class="media-attached-actions" style="display: flex; gap: 6px;">
-                      <a href="#" target="_blank" class="btn btn-subtle btn-xs" id="media-attached-view"><svg class="app-symbol app-symbol-xs"><use href="#sym-act-eye"></use></svg> View</a>
-                      <button type="button" class="btn btn-subtle btn-xs btn-danger" id="media-attached-remove"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+                      <a href="#" target="_blank" class="btn btn-subtle btn-xs" id="media-attached-view"><svg aria-hidden="true" class="app-symbol app-symbol-xs"><use href="#sym-act-eye"></use></svg> View</a>
+                      <button type="button" class="btn btn-subtle btn-xs btn-danger" id="media-attached-remove" aria-label="Remove attached media"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
                     </div>
                   </div>
 
@@ -594,7 +562,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                     </div>
                     <div class="dropzone-ai-shortcut">
                       <button type="button" class="btn btn-outline btn-xs" id="btn-dropzone-ai-studio">
-                        <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Synthesize with AI
+                        <svg aria-hidden="true" class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Synthesize with AI
                       </button>
                     </div>
                   </div>
@@ -612,7 +580,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
             <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; border-bottom: 1px solid var(--border-subtle); padding-bottom: 16px;">
               <div style="display: flex; align-items: center; gap: 14px;">
                 <div class="section-logo-badge">
-                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
                 </div>
                 <div>
                   <h2 style="font-family: var(--font-display); font-size: 26px; font-weight: 600;">Publishing Cadence & Queue</h2>
@@ -624,7 +592,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                   <span id="queue-pause-btn-text">Pause Queue</span>
                 </button>
                 <button type="button" class="btn btn-outline btn-sm" id="btn-trigger-dispatch" title="Trigger on-demand queue evaluation and grace window recovery">
-                  <svg class="app-symbol"><use href="#sym-act-apply"></use></svg> Run Dispatch Now
+                  <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-apply"></use></svg> Run Dispatch Now
                 </button>
                 <button type="button" class="btn btn-outline btn-sm" id="btn-refresh-queue">Sync Queue</button>
               </div>
@@ -725,13 +693,13 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                 <div class="crm-stream-title-row">
                   <div style="display: flex; align-items: center; gap: 8px;">
                     <div class="section-logo-badge" style="width: 24px; height: 24px;">
-                      <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
+                      <svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
                     </div>
                     <span class="crm-stream-title">Inbound Lead Stream</span>
                   </div>
                   <div style="display: flex; gap: 6px;">
                     <button class="btn btn-subtle btn-xs" id="btn-export-crm-csv">
-                      <svg class="app-symbol"><use href="#sym-act-export"></use></svg> CSV
+                      <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-export"></use></svg> CSV
                     </button>
                     <button class="btn btn-primary btn-xs" id="btn-add-prospect-modal">+ Add Lead</button>
                   </div>
@@ -770,13 +738,13 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                 </div>
                 <div style="display: flex; gap: 8px;">
                   <button class="btn btn-danger-outline btn-sm" id="btn-dossier-purge-lead" title="GDPR Right-to-be-Forgotten: Permanent Cascade Deletion">
-                    <svg class="app-symbol"><use href="#sym-close"></use></svg> Purge
+                    <svg aria-hidden="true" class="app-symbol"><use href="#sym-close"></use></svg> Purge
                   </button>
                   <button class="btn btn-outline btn-sm" id="btn-dossier-agno-enrich">
-                    <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Agno Dossier
+                    <svg aria-hidden="true" class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Agno Dossier
                   </button>
                   <button class="btn btn-primary btn-sm" id="btn-dossier-dm-script">
-                    <svg class="app-symbol"><use href="#sym-act-apply"></use></svg> Generate DM
+                    <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-apply"></use></svg> Generate DM
                   </button>
                 </div>
               </div>
@@ -812,7 +780,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
             <div class="swipe-archive-title-row">
               <div style="display: flex; align-items: center; gap: 14px;">
                 <div class="section-logo-badge">
-                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-swipe"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-swipe"></use></svg>
                 </div>
                 <div>
                   <h2 style="font-family: var(--font-display); font-size: 26px; font-weight: 600;">Viral Post Blueprint Archive</h2>
@@ -858,7 +826,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
             <div class="newspaper-header">
               <div style="display: flex; align-items: center; gap: 14px;">
                 <div class="section-logo-badge">
-                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
                 </div>
                 <div>
                   <h1 class="newspaper-title">Audience Reach & Dwell Velocity</h1>
@@ -866,7 +834,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                 </div>
               </div>
               <button class="btn btn-outline btn-sm" id="btn-export-csv-report">
-                <svg class="app-symbol"><use href="#sym-act-export"></use></svg> Export CSV
+                <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-export"></use></svg> Export CSV
               </button>
             </div>
 
@@ -959,7 +927,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
             <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1px solid var(--border-subtle); padding-bottom: 12px;">
               <div style="display: flex; align-items: center; gap: 14px;">
                 <div class="section-logo-badge">
-                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
                 </div>
                 <div>
                   <h2 style="font-family: var(--font-display); font-size: 26px; font-weight: 600;">AI Command Hub</h2>
@@ -978,10 +946,10 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
 
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <button class="btn btn-outline btn-sm" id="btn-attach-draft-context">
-                <svg class="app-symbol"><use href="#sym-act-eject"></use></svg> Attach Current Draft
+                <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-eject"></use></svg> Attach Current Draft
               </button>
               <button class="btn btn-primary btn-sm" id="btn-run-ai-command">
-                <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Execute Command
+                <svg aria-hidden="true" class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Execute Command
               </button>
             </div>
 
@@ -990,10 +958,10 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
               <textarea class="main-writing-textarea" id="ai-command-output" readonly placeholder="Output will appear here..." style="min-height: 200px; background: var(--bg-ink); padding: 14px; border-radius: 8px; border: 1px solid var(--border-subtle); margin-top: 6px; font-size: 13.5px;"></textarea>
               <div style="display: flex; gap: 8px; margin-top: 8px;">
                 <button class="btn btn-outline btn-sm" id="btn-copy-ai-output">
-                  <svg class="app-symbol"><use href="#sym-act-copy"></use></svg> Copy
+                  <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-copy"></use></svg> Copy
                 </button>
                 <button class="btn btn-primary btn-sm" id="btn-send-output-to-editor">
-                  <svg class="app-symbol"><use href="#sym-act-apply"></use></svg> Load into Composer
+                  <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-apply"></use></svg> Load into Composer
                 </button>
               </div>
             </div>
@@ -1006,7 +974,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
             <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 14px; border-bottom: 1px solid var(--border-subtle);">
               <div style="display: flex; align-items: center; gap: 14px;">
                 <div class="section-logo-badge">
-                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
                 </div>
                 <div>
                   <h2 style="font-family: var(--font-display); font-size: 26px; font-weight: 600;">Architecture Docs & Playbook</h2>
@@ -1018,7 +986,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
               <div style="display: flex; gap: 8px;">
                 <input type="text" id="docs-search-input" class="media-path-field" placeholder="Search docs & formulas..." style="width: 240px;">
                 <button class="btn btn-outline btn-sm" id="btn-export-docs-md">
-                  <svg class="app-symbol"><use href="#sym-act-export"></use></svg> Export MD
+                  <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-export"></use></svg> Export MD
                 </button>
               </div>
             </div>
@@ -1039,7 +1007,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
             <div class="section-header-row" style="display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 16px; border-bottom: 1px solid var(--border-subtle);">
               <div style="display: flex; align-items: center; gap: 14px;">
                 <div class="section-logo-badge">
-                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
                 </div>
                 <div>
                   <h1 style="font-family: var(--font-display); font-size: 28px; font-weight: 600;">Brand Studio & Local Security</h1>
@@ -1047,7 +1015,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                 </div>
               </div>
               <button class="btn btn-primary btn-sm" id="btn-save-creator-settings">
-                <svg class="app-symbol"><use href="#sym-act-save"></use></svg> Save Settings
+                <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-save"></use></svg> Save Settings
               </button>
             </div>
 
@@ -1056,7 +1024,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
               <!-- Column 1: Identity -->
               <div class="settings-card">
                 <div class="settings-card-header">
-                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
                   <div>
                     <h3 class="settings-card-title">Creator Identity</h3>
                     <span class="settings-card-sub">Used for AI post context and DM scripts</span>
@@ -1092,7 +1060,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
               <!-- Column 2: Watermark Positioning Simulator -->
               <div class="settings-card">
                 <div class="settings-card-header">
-                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-mode-brand"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-mode-brand"></use></svg>
                   <div>
                     <h3 class="settings-card-title">Brand Watermark Canvas</h3>
                     <span class="settings-card-sub">Position your signature handle on visuals</span>
@@ -1160,7 +1128,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
               <!-- Column 3: Local Security & LinkedIn Bridge -->
               <div class="settings-card">
                 <div class="settings-card-header">
-                  <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-act-lock"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-act-lock"></use></svg>
                   <div>
                     <h3 class="settings-card-title">Local Security & Sync</h3>
                     <span class="settings-card-sub">Air-gapped SQLite & session tokens</span>
@@ -1191,8 +1159,8 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                   <label class="settings-field-label">li_at Session Cookie</label>
                   <div style="position: relative;">
                     <input type="password" id="setting-li-at" class="media-path-field" placeholder="AQED..." style="padding-right: 36px;">
-                    <button type="button" class="btn btn-subtle btn-xs" id="btn-toggle-li-at" style="position: absolute; right: 4px; top: 4px;">
-                      <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-eye"></use></svg>
+                    <button type="button" class="btn btn-subtle btn-xs" id="btn-toggle-li-at" aria-label="Show or hide the li_at token" style="position: absolute; right: 4px; top: 4px;">
+                      <svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-eye"></use></svg>
                     </button>
                   </div>
                 </div>
@@ -1201,23 +1169,23 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                   <label class="settings-field-label">JSESSIONID Token</label>
                   <div style="position: relative;">
                     <input type="password" id="setting-jsessionid" class="media-path-field" placeholder="ajax:..." style="padding-right: 36px;">
-                    <button type="button" class="btn btn-subtle btn-xs" id="btn-toggle-jsessionid" style="position: absolute; right: 4px; top: 4px;">
-                      <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-eye"></use></svg>
+                    <button type="button" class="btn btn-subtle btn-xs" id="btn-toggle-jsessionid" aria-label="Show or hide the JSESSIONID token" style="position: absolute; right: 4px; top: 4px;">
+                      <svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-eye"></use></svg>
                     </button>
                   </div>
                 </div>
 
                 <div style="display: flex; gap: 8px;">
                   <button type="button" class="btn btn-outline btn-xs" id="btn-sync-linkedin-tokens" style="flex: 1;">
-                    <svg class="app-symbol"><use href="#sym-act-save"></use></svg> Save Tokens
+                    <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-save"></use></svg> Save Tokens
                   </button>
                   <button type="button" class="btn btn-subtle btn-xs" id="btn-verify-linkedin-session" style="flex: 1;">
-                    <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Verify
+                    <svg aria-hidden="true" class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Verify
                   </button>
                 </div>
 
                 <div style="background: var(--bg-soft); border-radius: 6px; padding: 10px; font-size: 11px; color: var(--text-muted); line-height: 1.45; border: 1px solid var(--border-subtle);">
-                  <svg class="app-symbol app-symbol-xs" style="vertical-align: middle;"><use href="#sym-act-lock"></use></svg> <strong>Air-Gapped Vault:</strong> All drafts, metrics, leads, and tokens stay on your local machine. Zero external telemetry or cloud egress.
+                  <svg aria-hidden="true" class="app-symbol app-symbol-xs" style="vertical-align: middle;"><use href="#sym-act-lock"></use></svg> <strong>Air-Gapped Vault:</strong> All drafts, metrics, leads, and tokens stay on your local machine. Zero external telemetry or cloud egress.
                 </div>
               </div>
 
@@ -1226,7 +1194,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
             <!-- Proprietary Symbol Catalog Showcase (Section 15) -->
             <div class="settings-card" style="margin-top: 20px; padding: 20px;">
               <div class="settings-card-header" style="margin-bottom: 8px;">
-                <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-brand-logo"></use></svg>
+                <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-brand-logo"></use></svg>
                 <div>
                   <h3 class="settings-card-title">Proprietary Architectural Symbol Catalog</h3>
                   <span class="settings-card-sub">Bespoke vector glyphs with right-angle corner geometry, chamfered framing brackets, and monochrome line art.</span>
@@ -1235,102 +1203,102 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
 
               <div class="symbol-catalog-grid">
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-brand-logo"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-brand-logo"></use></svg>
                   <span class="symbol-specimen-name">Brand Logo</span>
                   <span class="symbol-specimen-id">#sym-brand-logo</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-composer"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-composer"></use></svg>
                   <span class="symbol-specimen-name">Composer</span>
                   <span class="symbol-specimen-id">#sym-sec-composer</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
                   <span class="symbol-specimen-name">Queue Cadence</span>
                   <span class="symbol-specimen-id">#sym-sec-queue</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
                   <span class="symbol-specimen-name">Inbound CRM</span>
                   <span class="symbol-specimen-id">#sym-sec-crm</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-swipe"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-swipe"></use></svg>
                   <span class="symbol-specimen-name">Swipe Archive</span>
                   <span class="symbol-specimen-id">#sym-sec-swipe</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
                   <span class="symbol-specimen-name">Analytics</span>
                   <span class="symbol-specimen-id">#sym-sec-analytics</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
                   <span class="symbol-specimen-name">AI Command</span>
                   <span class="symbol-specimen-id">#sym-sec-ai-command</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
                   <span class="symbol-specimen-name">Architecture Docs</span>
                   <span class="symbol-specimen-id">#sym-sec-docs</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
                   <span class="symbol-specimen-name">Brand Studio</span>
                   <span class="symbol-specimen-id">#sym-sec-brand</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-preview"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-preview"></use></svg>
                   <span class="symbol-specimen-name">Preview Stage</span>
                   <span class="symbol-specimen-id">#sym-mode-preview</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-audit"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-audit"></use></svg>
                   <span class="symbol-specimen-name">Algorithm Audit</span>
                   <span class="symbol-specimen-id">#sym-mode-audit</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-media"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-media"></use></svg>
                   <span class="symbol-specimen-name">Visual Studio</span>
                   <span class="symbol-specimen-id">#sym-mode-media</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-prompt"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-mode-prompt"></use></svg>
                   <span class="symbol-specimen-name">Copilot Prompt</span>
                   <span class="symbol-specimen-id">#sym-mode-prompt</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-clean"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-clean"></use></svg>
                   <span class="symbol-specimen-name">Zero Em-Dash</span>
                   <span class="symbol-specimen-id">#sym-act-clean</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-trim"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-trim"></use></svg>
                   <span class="symbol-specimen-name">Fold Trimmer</span>
                   <span class="symbol-specimen-id">#sym-act-trim</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-eject"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-eject"></use></svg>
                   <span class="symbol-specimen-name">Link Egress</span>
                   <span class="symbol-specimen-id">#sym-act-eject</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-rhythm"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-rhythm"></use></svg>
                   <span class="symbol-specimen-name">Pacing Rhythm</span>
                   <span class="symbol-specimen-id">#sym-act-rhythm</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-tag"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-tag"></use></svg>
                   <span class="symbol-specimen-name">Tag Limiter</span>
                   <span class="symbol-specimen-id">#sym-act-tag</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-lock"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-lock"></use></svg>
                   <span class="symbol-specimen-name">Vault Lock</span>
                   <span class="symbol-specimen-id">#sym-act-lock</span>
                 </div>
                 <div class="symbol-specimen-card">
-                  <svg class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-spark"></use></svg>
+                  <svg aria-hidden="true" class="app-symbol app-symbol-lg app-symbol-no-margin"><use href="#sym-act-spark"></use></svg>
                   <span class="symbol-specimen-name">Command Spark</span>
                   <span class="symbol-specimen-id">#sym-act-spark</span>
                 </div>
@@ -1346,27 +1314,27 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
           <div class="inspector-header">
             <div class="inspector-tabs">
               <button type="button" class="inspector-tab-btn active" data-mode="preview">
-                <svg class="app-symbol app-symbol-xs"><use href="#sym-mode-preview"></use></svg>
+                <svg aria-hidden="true" class="app-symbol app-symbol-xs"><use href="#sym-mode-preview"></use></svg>
                 <span>Preview</span>
               </button>
               <button type="button" class="inspector-tab-btn" data-mode="audit">
-                <svg class="app-symbol app-symbol-xs"><use href="#sym-mode-audit"></use></svg>
+                <svg aria-hidden="true" class="app-symbol app-symbol-xs"><use href="#sym-mode-audit"></use></svg>
                 <span>Audit</span>
               </button>
               <button type="button" class="inspector-tab-btn" data-mode="media">
-                <svg class="app-symbol app-symbol-xs"><use href="#sym-mode-media"></use></svg>
+                <svg aria-hidden="true" class="app-symbol app-symbol-xs"><use href="#sym-mode-media"></use></svg>
                 <span>Media</span>
               </button>
               <button type="button" class="inspector-tab-btn" data-mode="brand">
-                <svg class="app-symbol app-symbol-xs"><use href="#sym-mode-brand"></use></svg>
+                <svg aria-hidden="true" class="app-symbol app-symbol-xs"><use href="#sym-mode-brand"></use></svg>
                 <span>Brand</span>
               </button>
               <button type="button" class="inspector-tab-btn" data-mode="prompt">
-                <svg class="app-symbol app-symbol-xs"><use href="#sym-mode-prompt"></use></svg>
+                <svg aria-hidden="true" class="app-symbol app-symbol-xs"><use href="#sym-mode-prompt"></use></svg>
                 <span>Prompt</span>
               </button>
             </div>
-            <button class="btn btn-subtle btn-xs" id="btn-close-inspector" title="Collapse Inspector (Cmd+\)"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+            <button class="btn btn-subtle btn-xs" id="btn-close-inspector" title="Collapse Inspector (Cmd+\)"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
           </div>
 
           <div class="inspector-body">
@@ -1439,7 +1407,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                             <img id="simulated-media-img" src="" alt="Post Visual" style="display: none;">
                             <div id="simulated-media-pdf" class="sim-pdf-card" style="display: none;">
                               <div class="sim-pdf-icon-box">
-                                <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
+                                <svg aria-hidden="true" class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-docs"></use></svg>
                               </div>
                               <div class="sim-pdf-details">
                                 <div class="sim-pdf-title" id="sim-pdf-title">Executive Presentation.pdf</div>
@@ -1569,7 +1537,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                             <span class="carousel-dot"></span>
                             <span class="carousel-dot"></span>
                           </div>
-                          <span class="carousel-swipe-cta" style="display: inline-flex; align-items: center; gap: 4px;">Swipe <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-apply"></use></svg></span>
+                          <span class="carousel-swipe-cta" style="display: inline-flex; align-items: center; gap: 4px;">Swipe <svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-apply"></use></svg></span>
                         </div>
                       </div>
                       <div class="carousel-nav-controls">
@@ -1634,7 +1602,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                     </div>
                     <div class="reui-audit-fix-action" id="audit-emdash-fix-row" style="display: none;">
                       <button type="button" class="btn btn-xs btn-primary" id="btn-fix-emdash">
-                        <svg class="app-symbol"><use href="#sym-act-clean"></use></svg> Auto-Scrub Em-Dashes
+                        <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-clean"></use></svg> Auto-Scrub Em-Dashes
                       </button>
                     </div>
                   </div>
@@ -1655,7 +1623,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                     </div>
                     <div class="reui-audit-fix-action" id="audit-hook-fix-row" style="display: none;">
                       <button type="button" class="btn btn-xs btn-outline" id="btn-fix-hook">
-                        <svg class="app-symbol"><use href="#sym-act-trim"></use></svg> Trim Hook to Fold
+                        <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-trim"></use></svg> Trim Hook to Fold
                       </button>
                     </div>
                   </div>
@@ -1673,7 +1641,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                     </div>
                     <div class="reui-audit-fix-action" id="audit-link-fix-row" style="display: none;">
                       <button type="button" class="btn btn-xs btn-outline" id="btn-fix-links">
-                        <svg class="app-symbol"><use href="#sym-act-eject"></use></svg> Move Links to First Comment
+                        <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-eject"></use></svg> Move Links to First Comment
                       </button>
                     </div>
                   </div>
@@ -1691,7 +1659,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                     </div>
                     <div class="reui-audit-fix-action" id="audit-bait-fix-row" style="display: none;">
                       <button type="button" class="btn btn-xs btn-outline" id="btn-fix-bait">
-                        <svg class="app-symbol"><use href="#sym-act-clean"></use></svg> Scrub Bait Phrases
+                        <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-clean"></use></svg> Scrub Bait Phrases
                       </button>
                     </div>
                   </div>
@@ -1709,7 +1677,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                     </div>
                     <div class="reui-audit-fix-action" id="audit-pacing-fix-row" style="display: none;">
                       <button type="button" class="btn btn-xs btn-outline" id="btn-fix-pacing">
-                        <svg class="app-symbol"><use href="#sym-act-rhythm"></use></svg> Format 2-Line Rhythm
+                        <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-rhythm"></use></svg> Format 2-Line Rhythm
                       </button>
                     </div>
                   </div>
@@ -1727,7 +1695,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                     </div>
                     <div class="reui-audit-fix-action" id="audit-hashtag-fix-row" style="display: none;">
                       <button type="button" class="btn btn-xs btn-outline" id="btn-fix-hashtag">
-                        <svg class="app-symbol"><use href="#sym-act-tag"></use></svg> Trim Tags
+                        <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-tag"></use></svg> Trim Tags
                       </button>
                     </div>
                   </div>
@@ -1757,14 +1725,14 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                 <div class="inspector-section-label">Active Post Visual</div>
                 <div class="inspector-asset-card" id="inspector-active-media-card">
                   <div class="inspector-asset-thumb" id="inspector-media-thumb">
-                    <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-mode-media"></use></svg>
+                    <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-mode-media"></use></svg>
                   </div>
                   <div class="inspector-asset-meta">
                     <div class="inspector-asset-title" id="inspector-media-name">No visual attached</div>
                     <div class="inspector-asset-subtitle" id="inspector-media-meta">Drop an image, PDF or video</div>
                     <span class="sidebar-badge" id="inspector-media-badge" style="display: inline-block; margin-top: 4px;">NONE</span>
                   </div>
-                  <button type="button" class="btn btn-subtle btn-xs btn-danger" id="inspector-media-remove" style="display: none;"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+                  <button type="button" class="btn btn-subtle btn-xs btn-danger" id="inspector-media-remove" aria-label="Remove attached media" style="display: none;"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
                 </div>
 
                 <!-- Aspect Ratio Selector -->
@@ -1789,7 +1757,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
 
                 <!-- AI Visual Generator in Drawer -->
                 <div class="inspector-section-label" style="display: flex; align-items: center; gap: 6px;">
-                  <svg class="app-symbol app-symbol-xs"><use href="#sym-sec-ai-command"></use></svg> Agno AI Visual Synthesizer
+                  <svg aria-hidden="true" class="app-symbol app-symbol-xs"><use href="#sym-sec-ai-command"></use></svg> Agno AI Visual Synthesizer
                 </div>
                 <div class="ai-visual-generator-box">
                   <div class="visual-style-pills">
@@ -1801,10 +1769,10 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                   <textarea class="media-path-field" id="inspector-img-prompt" placeholder="Describe the visual concept, or click synthesize from post..." style="min-height: 70px; font-size: 12.5px;"></textarea>
                   <div style="display: flex; gap: 6px;">
                     <button type="button" class="btn btn-outline btn-xs" id="btn-inspector-synthesize-prompt" style="flex: 1;">
-                      <svg class="app-symbol"><use href="#sym-act-hooks"></use></svg> Synthesize from Post
+                      <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-hooks"></use></svg> Synthesize from Post
                     </button>
                     <button type="button" class="btn btn-primary btn-xs" id="btn-inspector-generate-image">
-                      <svg class="app-symbol"><use href="#sym-act-image"></use></svg> Generate Visual
+                      <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-image"></use></svg> Generate Visual
                     </button>
                   </div>
                 </div>
@@ -1895,7 +1863,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
               <div class="inspector-copilot-container">
                 
                 <div class="inspector-section-label" style="display: flex; align-items: center; gap: 6px;">
-                  <svg class="app-symbol app-symbol-xs"><use href="#sym-sec-ai-command"></use></svg> Natural Language Editor Copilot
+                  <svg aria-hidden="true" class="app-symbol app-symbol-xs"><use href="#sym-sec-ai-command"></use></svg> Natural Language Editor Copilot
                 </div>
                 
                 <!-- Skiper UI Shimmer Border Input -->
@@ -1913,22 +1881,22 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                 </div>
 
                 <button type="button" class="btn btn-primary" id="btn-inspector-run-prompt" style="width: 100%;">
-                  <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Execute Copilot Instruction
+                  <svg aria-hidden="true" class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Execute Copilot Instruction
                 </button>
 
                 <!-- Copilot Output Card (appears when generated) -->
                 <div class="copilot-output-card" id="inspector-copilot-output-card" style="display: none;">
                   <div class="copilot-output-header">
                     <span>Generated AI Result</span>
-                    <button type="button" class="btn btn-subtle btn-xs" id="btn-inspector-close-output"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+                    <button type="button" class="btn btn-subtle btn-xs" id="btn-inspector-close-output" aria-label="Close output panel"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
                   </div>
                   <div class="copilot-output-text" id="inspector-copilot-output-text"></div>
                   <div class="copilot-output-actions">
                     <button type="button" class="btn btn-primary btn-xs" id="btn-inspector-apply-prompt">
-                      <svg class="app-symbol"><use href="#sym-act-apply"></use></svg> Apply to Composer
+                      <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-apply"></use></svg> Apply to Composer
                     </button>
                     <button type="button" class="btn btn-subtle btn-xs" id="btn-inspector-copy-prompt">
-                      <svg class="app-symbol"><use href="#sym-act-copy"></use></svg> Copy
+                      <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-copy"></use></svg> Copy
                     </button>
                   </div>
                 </div>
@@ -1949,15 +1917,15 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
        SECTION 8: AI COMMAND ORB & FLOATING DOCK (Skiper UI Motion)
        ========================================================================= -->
   <div class="ai-command-orb" id="ai-command-orb" title="Summon AI Command Dock">
-    <svg class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-act-spark"></use></svg>
+    <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-act-spark"></use></svg>
   </div>
 
   <div class="ai-floating-dock" id="ai-floating-dock">
     <div style="display: flex; align-items: center; justify-content: space-between;">
       <span style="font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); display: inline-flex; align-items: center; gap: 6px;">
-        <svg class="app-symbol app-symbol-xs"><use href="#sym-sec-ai-command"></use></svg> AI Command Dock
+        <svg aria-hidden="true" class="app-symbol app-symbol-xs"><use href="#sym-sec-ai-command"></use></svg> AI Command Dock
       </span>
-      <button class="btn btn-subtle btn-xs" id="btn-close-ai-dock"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+      <button class="btn btn-subtle btn-xs" id="btn-close-ai-dock" aria-label="Close AI dock"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
     </div>
 
     <!-- Skiper Shimmer Border Input -->
@@ -2052,10 +2020,10 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
     <div class="modal-card" style="max-width: 540px;">
       <div class="modal-header">
         <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
-          <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
+          <svg aria-hidden="true" class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-queue"></use></svg>
           <span id="schedule-modal-title-text">Smart Cadence Scheduler</span>
         </h3>
-        <button type="button" class="btn btn-subtle btn-sm" id="schedule-modal-close"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+        <button type="button" class="btn btn-subtle btn-sm" id="schedule-modal-close" aria-label="Close scheduler"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
       </div>
 
       <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 6px;">
@@ -2067,7 +2035,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
         <label class="studio-form-label" style="margin-bottom: 6px; font-size: 11px; text-transform: uppercase; color: var(--text-dim); font-weight: 600;">Recommended Peak Slots</label>
         <div style="display: flex; gap: 8px; flex-wrap: wrap;" id="schedule-quick-slots">
           <button type="button" class="btn btn-outline btn-xs" id="btn-slot-next-smart">
-            <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-sec-radar"></use></svg> <span id="quick-slot-time-label">Next Optimal Slot</span>
+            <svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-sec-radar"></use></svg> <span id="quick-slot-time-label">Next Optimal Slot</span>
           </button>
           <button type="button" class="btn btn-outline btn-xs" id="btn-slot-tomorrow-morning">Tomorrow 08:30 AM</button>
           <button type="button" class="btn btn-outline btn-xs" id="btn-slot-tomorrow-evening">Tomorrow 05:30 PM</button>
@@ -2092,7 +2060,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
         <button type="button" class="btn btn-outline btn-sm" id="schedule-modal-cancel">Cancel</button>
         <button type="button" class="btn btn-primary btn-sm" id="btn-confirm-schedule">
-          <svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-apply"></use></svg> Confirm Schedule
+          <svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-act-apply"></use></svg> Confirm Schedule
         </button>
       </div>
     </div>
@@ -2103,10 +2071,10 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
     <div class="modal-card" style="max-width: 580px;">
       <div class="modal-header">
         <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
-          <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-act-apply"></use></svg>
+          <svg aria-hidden="true" class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-act-apply"></use></svg>
           Contextual Anti-Slop Outreach
         </h3>
-        <button class="btn btn-subtle btn-sm" id="dm-close-btn"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+        <button class="btn btn-subtle btn-sm" id="dm-close-btn" aria-label="Close message composer"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
       </div>
       <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 8px;">
         Deterministic 1-to-1 conversation starters quoting the exact comment excerpt. Zero salesy cliches or em-dashes.
@@ -2126,10 +2094,10 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
         <div style="display: flex; gap: 8px;">
           <button class="btn btn-outline btn-sm" id="dm-cancel-btn">Close</button>
           <button class="btn btn-outline btn-sm" id="btn-open-linkedin-chat" title="Copies message and opens LinkedIn Messaging">
-            <svg class="app-symbol"><use href="#sym-sec-chat"></use></svg> Open LinkedIn Chat
+            <svg aria-hidden="true" class="app-symbol"><use href="#sym-sec-chat"></use></svg> Open LinkedIn Chat
           </button>
           <button class="btn btn-primary btn-sm" id="btn-copy-dm">
-            <svg class="app-symbol"><use href="#sym-act-copy"></use></svg> Copy DM
+            <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-copy"></use></svg> Copy DM
           </button>
         </div>
       </div>
@@ -2141,10 +2109,10 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
     <div class="modal-card" style="max-width: 480px;">
       <div class="modal-header">
         <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
-          <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
+          <svg aria-hidden="true" class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-crm"></use></svg>
           Add Warm Prospect
         </h3>
-        <button class="btn btn-subtle btn-sm" id="prospect-modal-close"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+        <button class="btn btn-subtle btn-sm" id="prospect-modal-close" aria-label="Close prospect dossier"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
       </div>
       <div style="display: flex; flex-direction: column; gap: 12px;">
         <div>
@@ -2190,7 +2158,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
         <button class="btn btn-outline btn-sm" id="prospect-modal-cancel">Cancel</button>
         <button class="btn btn-primary btn-sm" id="btn-save-prospect">
-          <svg class="app-symbol"><use href="#sym-act-save"></use></svg> Save Prospect
+          <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-save"></use></svg> Save Prospect
         </button>
       </div>
     </div>
@@ -2202,12 +2170,12 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
       <div class="modal-header">
         <div style="display: flex; align-items: center; gap: 8px;">
           <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
-            <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-analytics"></use></svg>
             Post-to-Lead Attribution Dossier
           </h3>
           <span class="sidebar-badge" id="post-attr-badge" style="display: inline-block;">REVERSE CRM</span>
         </div>
-        <button class="btn btn-subtle btn-sm" id="post-attribution-modal-close"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+        <button class="btn btn-subtle btn-sm" id="post-attribution-modal-close" aria-label="Close post attribution"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
       </div>
       
       <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 12px;" id="post-attr-hook">
@@ -2263,12 +2231,12 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
       <div class="modal-header">
         <div style="display: flex; align-items: center; gap: 8px;">
           <h3 class="modal-title" style="display: flex; align-items: center; gap: 8px;">
-            <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-sec-ai-command"></use></svg>
             Agno Autonomous Lead Dossier
           </h3>
           <span class="sidebar-badge" id="agno-badge-provider" style="display: inline-block;">AGNO LOCAL</span>
         </div>
-        <button class="btn btn-subtle btn-sm" id="agno-modal-close"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+        <button class="btn btn-subtle btn-sm" id="agno-modal-close" aria-label="Close agent panel"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
       </div>
       <div style="font-size: 13px; color: var(--text-muted);" id="agno-lead-subtitle">
         Deep multi-agent enterprise research, tech stack discovery, and friction analysis.
@@ -2314,14 +2282,14 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
       <div class="modal-header">
         <div style="display: flex; align-items: center; gap: 10px;">
           <div class="section-logo-badge" style="width: 32px; height: 32px;">
-            <svg class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-act-image"></use></svg>
+            <svg aria-hidden="true" class="app-symbol app-symbol-sm app-symbol-no-margin"><use href="#sym-act-image"></use></svg>
           </div>
           <div>
             <h3 class="modal-title">Generative AI Image Studio</h3>
             <span style="font-size: 11.5px; color: var(--text-muted);">Agno Multi-Agent Orchestration • High-Res Visual Synthesizer</span>
           </div>
         </div>
-        <button class="btn btn-subtle btn-sm" id="image-studio-close-btn"><svg class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
+        <button class="btn btn-subtle btn-sm" id="image-studio-close-btn" aria-label="Close image studio"><svg aria-hidden="true" class="app-symbol app-symbol-xs app-symbol-no-margin"><use href="#sym-close"></use></svg></button>
       </div>
 
       <div class="image-studio-body">
@@ -2387,7 +2355,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
               <label class="studio-form-label" style="margin-bottom: 0;">Creative Concept & Metaphor</label>
               <button type="button" class="btn btn-subtle btn-xs" id="btn-use-draft-as-concept">
-                <svg class="app-symbol"><use href="#sym-act-eject"></use></svg> Pull from Draft
+                <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-eject"></use></svg> Pull from Draft
               </button>
             </div>
             <textarea class="studio-concept-textarea" id="studio-concept-input" placeholder="e.g. Distributed database nodes synchronizing across global cloud data centers with luminous fiber optic connections, clean minimalist composition..."></textarea>
@@ -2455,7 +2423,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
 
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <button type="button" class="btn btn-outline btn-xs" id="btn-synthesize-prompt">
-              <svg class="app-symbol"><use href="#sym-act-hooks"></use></svg> Synthesize Master Prompt
+              <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-hooks"></use></svg> Synthesize Master Prompt
             </button>
             <span style="font-size: 11px; color: var(--text-muted);" id="studio-provider-badge">Orchestration: Agno AgentOS</span>
           </div>
@@ -2470,7 +2438,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
         <div class="image-studio-preview-pane">
           <div>
             <button type="button" class="btn btn-primary" id="btn-start-image-generation" style="width: 100%; padding: 10px; font-weight: 600;">
-              <svg class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Launch AI Generation
+              <svg aria-hidden="true" class="app-symbol"><use href="#sym-sec-ai-command"></use></svg> Launch AI Generation
             </button>
           </div>
 
@@ -2490,7 +2458,7 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
           <div class="image-gen-result-container" id="image-gen-result-container">
             <div class="image-gen-empty-state" id="image-gen-empty-state">
               <div style="display: flex; justify-content: center; margin-bottom: 8px;">
-                <svg class="app-symbol app-symbol-xl app-symbol-no-margin" style="opacity: 0.35;"><use href="#sym-mode-media"></use></svg>
+                <svg aria-hidden="true" class="app-symbol app-symbol-xl app-symbol-no-margin" style="opacity: 0.35;"><use href="#sym-mode-media"></use></svg>
               </div>
               <div style="font-weight: 600; font-size: 13px; text-align: center;">No Visual Generated Yet</div>
               <div style="font-size: 11.5px; color: var(--text-muted); text-align: center; max-width: 220px; margin-top: 4px;">Select options and click Launch AI Generation.</div>
@@ -2500,10 +2468,10 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
               <img id="image-gen-result-img" src="" alt="Generated Asset">
               <div class="image-gen-overlay-actions">
                 <button type="button" class="btn btn-primary btn-xs" id="btn-attach-to-draft">
-                  <svg class="app-symbol"><use href="#sym-act-apply"></use></svg> Attach to Post
+                  <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-apply"></use></svg> Attach to Post
                 </button>
                 <a href="#" target="_blank" download="linkedin_visual.png" class="btn btn-outline btn-xs" id="btn-download-generated-image">
-                  <svg class="app-symbol"><use href="#sym-act-export"></use></svg> Download
+                  <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-export"></use></svg> Download
                 </a>
               </div>
             </div>
@@ -2606,7 +2574,24 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
           </div>
         </div>
 
-        <!-- Section C: Global Environment Mode Toggle -->
+        <!-- Section C: Visual Screen Concept & Bug Identifier (Internal Sheet) -->
+        <div class="drawer-card">
+          <div class="drawer-card-header">
+            <span class="drawer-card-title">Screen Concept & Bug Identifier</span>
+            <span class="drawer-flow-indicator" id="sheet-open-badge">0 Open</span>
+          </div>
+          <p class="drawer-card-desc">Click any element on the screen to capture DOM diagnostics and log problems directly to the internal sheet:</p>
+          <div class="sheet-action-row">
+            <button type="button" class="btn-inspect-trigger" id="btn-inspect-screen">
+              <span class="btn-icon">&#127919;</span> Identify Element on Screen
+            </button>
+            <button type="button" class="btn-view-sheet" id="btn-view-internal-sheet">
+              <span class="btn-icon">&#128202;</span> Open Internal Sheet
+            </button>
+          </div>
+        </div>
+
+        <!-- Section D: Global Environment Mode Toggle -->
         <div class="drawer-card">
           <div class="drawer-card-header">
             <span class="drawer-card-title">Environment Mode</span>
@@ -2624,6 +2609,186 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
       </div>
     </div>
   </aside>
+
+  <!-- =========================================================================
+       SECTION 17: SCREEN CONCEPT & ELEMENT INSPECTION OVERLAY
+       ========================================================================= -->
+  <div class="screen-picker-overlay" id="screen-picker-overlay" style="display: none;">
+    <div class="picker-top-banner">
+      <div class="picker-banner-left">
+        <span class="picker-radar-dot"></span>
+        <span class="picker-banner-title">Screen Concept & Element Identifier Active</span>
+        <span class="picker-banner-hint">Hover over any button, card, header, or text. Click to capture & report.</span>
+      </div>
+      <button type="button" class="btn-exit-picker" id="btn-exit-picker" title="Cancel Inspection (Esc)">
+        Cancel Inspection (Esc)
+      </button>
+    </div>
+    <!-- Live Snapping Bounding Box -->
+    <div class="screen-picker-box" id="screen-picker-box" style="display: none;">
+      <span class="picker-corner corner-tl"></span>
+      <span class="picker-corner corner-tr"></span>
+      <span class="picker-corner corner-bl"></span>
+      <span class="picker-corner corner-br"></span>
+      <span class="screen-picker-badge" id="screen-picker-badge">element</span>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       SECTION 18: ELEMENT ANNOTATION & CONCEPT MODAL
+       ========================================================================= -->
+  <div class="modal-backdrop" id="concept-modal-backdrop" style="display: none;">
+    <div class="concept-modal" id="concept-id-modal" role="dialog" aria-modal="true" aria-labelledby="concept-modal-title">
+      <div class="concept-modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-badge">CONCEPT IDENTIFICATION</span>
+          <h3 id="concept-modal-title">Element Issue & Concept Note</h3>
+        </div>
+        <button type="button" class="btn-close-concept-modal" id="btn-close-concept-modal">&times;</button>
+      </div>
+
+      <div class="concept-modal-body">
+        <!-- Target Element Info Card -->
+        <div class="target-element-info">
+          <div class="target-meta-row">
+            <span class="target-tag" id="annot-target-tag">BUTTON</span>
+            <span class="target-tab" id="annot-target-tab">Composer</span>
+            <code class="target-selector" id="annot-target-selector">#btn-publish</code>
+          </div>
+          <div class="target-snippet-preview" id="annot-target-snippet">
+            "Target element text preview..."
+          </div>
+        </div>
+
+        <!-- Annotation Input Form -->
+        <form id="concept-annotation-form" class="concept-form">
+          <div class="form-row-duo">
+            <div class="form-field">
+              <label for="annot-category">Category / Classification</label>
+              <select id="annot-category" required>
+                <option value="bug">Logic / System Bug</option>
+                <option value="ux_glitch">UI / UX Glitch</option>
+                <option value="concept" selected>Concept / Feature Idea</option>
+                <option value="copy_slop">Anti-Slop / Copy Issue</option>
+                <option value="data_mismatch">Data / Metric Mismatch</option>
+                <option value="feature_request">Feature Request</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="annot-severity">Severity / Priority</label>
+              <select id="annot-severity">
+                <option value="low">Low (Cosmetic / Nice-to-have)</option>
+                <option value="medium" selected>Medium (Standard)</option>
+                <option value="high">High (Noticeable Impairment)</option>
+                <option value="critical">Critical (Workflow Blocker)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row-duo">
+            <div class="form-field">
+              <label for="annot-role">Assigned Cognitive Role</label>
+              <select id="annot-role">
+                <option value="DESIGNER">Lead UI/UX Designer</option>
+                <option value="CEO">CEO & Product Strategist</option>
+                <option value="ENGINEERING_MANAGER" selected>Engineering Manager</option>
+                <option value="QA_LEAD">QA & Verification Lead</option>
+                <option value="CSO">Chief Security Officer (CSO)</option>
+                <option value="RELEASE_MANAGER">Release & Ops Manager</option>
+              </select>
+            </div>
+            <div class="form-field">
+              <label for="annot-title">Short Title / Subject</label>
+              <input type="text" id="annot-title" placeholder="e.g. Button needs tactile feedback" required maxlength="300" />
+            </div>
+          </div>
+
+          <div class="form-field">
+            <label for="annot-desc">Problem Description / Concept Details</label>
+            <textarea id="annot-desc" rows="3" placeholder="Describe the exact issue, unexpected behavior, or new concept proposal for this element..." required maxlength="5000"></textarea>
+          </div>
+
+          <div class="form-checkbox-row">
+            <label class="checkbox-label">
+              <input type="checkbox" id="annot-promote-backlog" checked />
+              <span>Also promote to G-Stack Multi-Agent Backlog for autonomous task tracking</span>
+            </label>
+          </div>
+
+          <div class="concept-form-actions">
+            <button type="button" class="btn-cancel-concept" id="btn-cancel-concept">Cancel</button>
+            <button type="submit" class="btn-submit-concept" id="btn-submit-concept">
+              Submit to Internal Sheet
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       SECTION 19: INTERNAL SHEET SPREADSHEET MODAL
+       ========================================================================= -->
+  <div class="modal-backdrop" id="sheet-modal-backdrop" style="display: none;">
+    <div class="internal-sheet-modal" id="internal-sheet-modal" role="dialog" aria-modal="true" aria-labelledby="internal-sheet-title">
+      <div class="sheet-modal-header">
+        <div class="sheet-header-left">
+          <div class="sheet-title-row">
+            <span class="sheet-badge">LOCAL-FIRST LEDGER</span>
+            <h2 id="internal-sheet-title">Internal Concept & Issue Sheet</h2>
+          </div>
+          <p class="sheet-subheading">Zero-egress SQLite sheet tracking UI elements, visual concepts, and bug annotations.</p>
+        </div>
+        <div class="sheet-header-actions">
+          <button type="button" class="btn-export-csv" id="btn-export-sheet-csv" title="Export as CSV for Google Sheets & Excel">
+            &#128229; Export CSV Sheet
+          </button>
+          <button type="button" class="btn-close-sheet" id="btn-close-sheet-modal" title="Close Sheet">&times;</button>
+        </div>
+      </div>
+
+      <!-- Sheet Toolbar & Filter Controls -->
+      <div class="sheet-toolbar">
+        <div class="sheet-filter-group" id="sheet-filter-pills">
+          <button type="button" class="sheet-filter-pill active" data-filter="all">All Items (<span id="sheet-count-all">0</span>)</button>
+          <button type="button" class="sheet-filter-pill" data-filter="OPEN">Open (<span id="sheet-count-open">0</span>)</button>
+          <button type="button" class="sheet-filter-pill" data-filter="RESOLVED">Resolved (<span id="sheet-count-resolved">0</span>)</button>
+          <button type="button" class="sheet-filter-pill" data-filter="critical">Critical (<span id="sheet-count-critical">0</span>)</button>
+        </div>
+        <div class="sheet-search-wrap">
+          <input type="text" id="sheet-search-input" placeholder="Search selector, description, or title..." />
+        </div>
+      </div>
+
+      <!-- Spreadsheet Grid -->
+      <div class="sheet-table-container">
+        <table class="internal-spreadsheet" id="internal-spreadsheet-table">
+          <thead>
+            <tr>
+              <th style="width: 55px;">ID</th>
+              <th style="width: 105px;">Status</th>
+              <th style="width: 95px;">Priority</th>
+              <th style="width: 110px;">Category</th>
+              <th style="width: 160px;">Target Element</th>
+              <th style="width: 90px;">Tab</th>
+              <th>Title & Problem Description</th>
+              <th style="width: 130px;">Assigned Role</th>
+              <th style="width: 130px;">Logged Date</th>
+              <th style="width: 100px; text-align: center;">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="internal-spreadsheet-tbody">
+            <!-- Dynamically populated rows -->
+          </tbody>
+        </table>
+        <div class="sheet-empty-state" id="sheet-empty-state" style="display: none;">
+          <div class="empty-icon">&#128203;</div>
+          <h4>No items found</h4>
+          <p>Click "Identify Element on Screen" in the Z-Tab to select any element and log a concept or problem.</p>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- TOAST NOTIFICATIONS -->
   <div class="toast-container" id="toast-container"></div>
