@@ -251,3 +251,73 @@ def test_zero_em_dash_compliance_module11():
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
             assert em_dash not in content, f"Em-dash found in {file_path}"
+
+
+def test_publish_from_background_thread_reaches_an_idle_loop():
+    """
+    Verifies an event published from a worker thread is delivered to a loop that is
+    otherwise idle.
+
+    asyncio.Queue is not thread safe. put_nowait from a foreign thread resolves the
+    waiting getter's future but never wakes the selector, so an idle loop, which is
+    exactly what an SSE stream is between events, never sees it. The scheduler
+    publishes post_published and schedule_recovery from its own thread and the UI
+    listens for both, so this path has to work.
+    """
+    import asyncio
+    import threading
+    import time
+
+    from event_bus import EventBus
+
+    async def scenario():
+        bus = EventBus()
+        received = []
+
+        async def consumer():
+            async for event in bus.subscribe():
+                received.append(event)
+                break
+
+        task = asyncio.create_task(consumer())
+        await asyncio.sleep(0.2)
+
+        # Publish only once the loop has settled into an idle wait.
+        def publish_later():
+            time.sleep(0.8)
+            bus.publish_sync("post_published", {"post_id": "thread-probe"})
+
+        threading.Thread(target=publish_later, daemon=True).start()
+
+        await asyncio.wait_for(task, timeout=6.0)
+        return received
+
+    received = asyncio.run(scenario())
+    assert len(received) == 1, "The threaded publish never reached the idle loop"
+    assert received[0]["event"] == "post_published"
+    assert received[0]["data"]["post_id"] == "thread-probe"
+
+
+def test_event_ids_are_unique_under_concurrent_threaded_publishes():
+    """Verifies the event counter does not hand out duplicate ids to racing threads."""
+    import threading
+
+    from event_bus import EventBus
+
+    bus = EventBus(buffer_size=1000)
+    ids = []
+    ids_lock = threading.Lock()
+
+    def publish_batch():
+        local = [bus.publish_sync("probe", {"n": i})["id"] for i in range(40)]
+        with ids_lock:
+            ids.extend(local)
+
+    threads = [threading.Thread(target=publish_batch) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(ids) == 240
+    assert len(set(ids)) == len(ids), "Duplicate event ids were handed out across threads"

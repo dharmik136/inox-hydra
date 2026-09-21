@@ -211,12 +211,19 @@ class LinkedInClient:
         top_pv = raw_data.get("profile_views")
         if top_pv is not None and not series:
             today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            # followers and connections carry forward from the most recent day
+            # when today has no row yet. Selecting them bare wrote NULL, and
+            # get_kpis subtracts one day's follower count from another, so a
+            # profile views only payload took the whole dashboard down with a
+            # TypeError on None.
             cursor.execute("""
             INSERT OR REPLACE INTO analytics_daily 
             (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate)
             VALUES (?, 
-                    (SELECT followers FROM analytics_daily WHERE date = ?),
-                    (SELECT connections FROM analytics_daily WHERE date = ?),
+                    COALESCE((SELECT followers FROM analytics_daily WHERE date = ?),
+                             (SELECT followers FROM analytics_daily WHERE followers IS NOT NULL ORDER BY date DESC LIMIT 1), 0),
+                    COALESCE((SELECT connections FROM analytics_daily WHERE date = ?),
+                             (SELECT connections FROM analytics_daily WHERE connections IS NOT NULL ORDER BY date DESC LIMIT 1), 0),
                     ?,
                     COALESCE((SELECT impressions FROM analytics_daily WHERE date = ?), 0),
                     COALESCE((SELECT reactions FROM analytics_daily WHERE date = ?), 0),
