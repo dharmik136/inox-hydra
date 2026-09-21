@@ -74,6 +74,13 @@ try:
                         describe as describe_paths)
     from .docs_engine import search_docs_fts, init_docs_search_index
     from .carousel_engine import carousel_engine
+    from .browser_launcher import (
+        detect_installed_browsers,
+        create_desktop_shortcuts,
+        launch_browser_with_extension,
+        copy_extension_path_to_clipboard,
+        get_extension_dir
+    )
     try:
         from studio.core.telemetry_shard import telemetry_engine, telemetry_buffer
     except ImportError:
@@ -122,6 +129,13 @@ except ImportError:
                         describe as describe_paths)
     from docs_engine import search_docs_fts, init_docs_search_index
     from carousel_engine import carousel_engine
+    from browser_launcher import (
+        detect_installed_browsers,
+        create_desktop_shortcuts,
+        launch_browser_with_extension,
+        copy_extension_path_to_clipboard,
+        get_extension_dir
+    )
     try:
         from studio.core.telemetry_shard import telemetry_engine, telemetry_buffer
     except ImportError:
@@ -1227,6 +1241,45 @@ def get_lead_enrichment_endpoint(lead_id: str):
         "status": "success",
         "enrichment": enrichment
     }
+
+
+# -------------------------------------------------------------
+# Module: Browser Bridge & Extension Launcher
+# -------------------------------------------------------------
+@app.get("/api/v1/browser/status", tags=["Browser Bridge"])
+def get_browser_status_endpoint():
+    browsers = detect_installed_browsers()
+    return {
+        "status": "success",
+        "browsers": browsers,
+        "extension_path": get_extension_dir(),
+        "total_detected": len(browsers)
+    }
+
+
+@app.post("/api/v1/browser/create-shortcuts", tags=["Browser Bridge"])
+def create_browser_shortcuts_endpoint():
+    shortcuts = create_desktop_shortcuts()
+    return {
+        "status": "success",
+        "shortcuts": shortcuts,
+        "total_created": len([s for s in shortcuts if s.get("status") == "created"])
+    }
+
+
+@app.post("/api/v1/browser/launch", tags=["Browser Bridge"])
+def launch_browser_endpoint(payload: Optional[Dict[str, Any]] = None):
+    browser_id = "auto"
+    url = "https://www.linkedin.com/feed/"
+    if payload and isinstance(payload, dict):
+        browser_id = payload.get("browser_id", "auto")
+        url = payload.get("url", "https://www.linkedin.com/feed/")
+    return launch_browser_with_extension(browser_id=browser_id, target_url=url)
+
+
+@app.post("/api/v1/browser/copy-path", tags=["Browser Bridge"])
+def copy_browser_path_endpoint():
+    return copy_extension_path_to_clipboard()
 
 
 # -------------------------------------------------------------
