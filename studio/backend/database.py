@@ -1395,6 +1395,292 @@ def seed_day17_draft(conn: Optional[sqlite3.Connection] = None) -> Optional[int]
             conn.close()
 
 
+DEMO_SERIES_BASE_DATE = date(2026, 9, 14)
+DEMO_SERIES_DAYS = 90
+
+
+def demo_analytics_rows() -> List[Dict[str, Any]]:
+    """
+    The exact 90 rows the demo seeder writes.
+
+    Returned rather than inserted so that two callers can share one definition:
+    seed_initial_data writes them, and purge_seeded_analytics recognises them.
+    A second copy of this arithmetic would drift, and a purge working from a
+    drifted copy would either leave fabricated rows behind or delete real ones.
+    """
+    start_date = DEMO_SERIES_BASE_DATE - timedelta(days=DEMO_SERIES_DAYS - 1)
+
+    current_followers = 2330
+    current_connections = 2270
+    current_pviews = 70
+
+    rows = []
+    for i in range(DEMO_SERIES_DAYS):
+        d_str = (start_date + timedelta(days=i)).strftime("%Y-%m-%d")
+
+        if i % 3 == 0:
+            current_followers += 1
+        if i % 4 == 0:
+            current_connections += 1
+        if i % 5 == 0:
+            current_pviews = min(120, current_pviews + 1)
+
+        imp = rxn = comm = shr = 0
+        spikes = {
+            "2026-07-10": (1450, 48, 12, 4),
+            "2026-07-28": (620, 22, 5, 1),
+            "2026-08-18": (42, 2, 0, 0),
+            "2026-08-19": (15, 1, 0, 0),
+            "2026-09-09": (303, 10, 2, 0),
+            "2026-09-11": (28, 3, 0, 0),
+        }
+        if d_str in spikes:
+            imp, rxn, comm, shr = spikes[d_str]
+        elif i % 7 == 2:  # baseline organic impressions
+            imp = 12 + (i % 5)
+            rxn = 1 if imp > 14 else 0
+
+        rows.append({
+            "date": d_str,
+            "followers": current_followers,
+            "connections": current_connections,
+            "profile_views": current_pviews,
+            "impressions": imp,
+            "reactions": rxn,
+            "comments": comm,
+            "shares": shr,
+            "engagement_rate": round(((rxn + comm + shr) / imp * 100), 2) if imp > 0 else 0.0,
+        })
+    return rows
+
+
+# The fields compared when deciding whether a stored row is the seeder's work.
+DEMO_MATCH_FIELDS = (
+    "followers", "connections", "profile_views",
+    "impressions", "reactions", "comments", "shares",
+)
+
+
+def identify_seeded_analytics(conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
+    """
+    Classify every analytics_daily row against the demo generator.
+
+    A row counts as seeded only when it matches the generator on every field.
+    Anything the creator has since captured over differs somewhere and is left
+    alone, and a row already marked source='observed' is never a candidate no
+    matter what it holds.
+    """
+    owns = conn is None
+    conn = conn or get_db()
+    try:
+        expected = {r["date"]: r for r in demo_analytics_rows()}
+        seeded, modified, observed, unknown = [], [], [], []
+
+        for row in conn.execute("SELECT * FROM analytics_daily ORDER BY date"):
+            d = row["date"]
+            source = row["source"] if "source" in row.keys() else None
+            if source == "observed":
+                observed.append(d)
+                continue
+            want = expected.get(d)
+            if want is None:
+                unknown.append(d)
+                continue
+            if all(row[f] == want[f] for f in DEMO_MATCH_FIELDS):
+                seeded.append(d)
+            else:
+                modified.append(d)
+
+        return {
+            "seeded": seeded,
+            "modified": modified,
+            "observed": observed,
+            "unknown": unknown,
+        }
+    finally:
+        if owns:
+            conn.close()
+
+
+def purge_seeded_analytics(
+    conn: Optional[sqlite3.Connection] = None,
+    dry_run: bool = True,
+) -> Dict[str, Any]:
+    """
+    Remove rows that are provably the demo generator's output.
+
+    Provably, not probably: a row is deleted only when every generated field
+    matches. This is the one operation in the codebase permitted to delete
+    analytics, and it exists because migration 4 deliberately refused to guess
+    which pre-existing rows were fabricated. Guessing was the wrong answer for a
+    migration that runs on every database; proving it is the right answer for an
+    operation the creator asks for.
+    """
+    owns = conn is None
+    conn = conn or get_db()
+    try:
+        report = identify_seeded_analytics(conn)
+        report["dry_run"] = dry_run
+        report["deleted"] = 0
+        if dry_run or not report["seeded"]:
+            return report
+
+        placeholders = ",".join("?" for _ in report["seeded"])
+        with conn:
+            cur = conn.execute(
+                f"DELETE FROM analytics_daily WHERE date IN ({placeholders})",
+                report["seeded"],
+            )
+            report["deleted"] = cur.rowcount
+        return report
+    finally:
+        if owns:
+            conn.close()
+
+
+# The five posts the demo seeder writes. Three of them carry the same
+# impression and reaction figures as the analytics spikes (1450/48, 303/10,
+# 28/3), which is what gives them away as one fabricated set rather than three
+# coincidences.
+DEMO_POST_IDS = (
+    "post-enterprise-scheduled",
+    "post-enterprise-decoupling-scheduled",
+    "urn:li:activity:7481319755904303105",
+    "urn:li:activity:7503313058338070529",
+    "urn:li:activity:7504139397143883776",
+)
+
+
+def demo_demographics_rows() -> List[tuple]:
+    """
+    The 18 hand-typed audience rows the demo seeder writes.
+
+    Shared with the purge for the same reason as demo_analytics_rows: one
+    definition cannot drift away from itself.
+    """
+    return [
+        ("job_title", "Software Engineers & Architects", 34.5),
+        ("job_title", "Product Managers & Leaders", 22.8),
+        ("job_title", "Content & Strategy Practitioners", 18.2),
+        ("job_title", "Founders & Executives", 14.1),
+        ("job_title", "Consultants & Enterprise Architects", 10.4),
+        ("industry", "IT Services & Consulting", 42.0),
+        ("industry", "Software Development & SaaS", 30.5),
+        ("industry", "Cloud & Infrastructure Systems", 16.0),
+        ("industry", "Financial Services & Fintech", 11.5),
+        ("company_size", "10,001+ employees (Enterprise)", 38.2),
+        ("company_size", "1,001 - 5,000 employees", 24.5),
+        ("company_size", "51 - 200 employees (Scale-up)", 19.3),
+        ("company_size", "1 - 10 employees (Startups)", 18.0),
+        ("location", "Bengaluru, India", 31.0),
+        ("location", "Ahmedabad, India", 26.5),
+        ("location", "Mumbai, India", 18.2),
+        ("location", "San Francisco Bay Area, US", 12.8),
+        ("location", "London, United Kingdom", 11.5),
+    ]
+
+
+def purge_seeded_demographics(
+    conn: Optional[sqlite3.Connection] = None,
+    dry_run: bool = True,
+) -> Dict[str, Any]:
+    """
+    Remove audience rows that exactly match the demo seeder's hand-typed set.
+
+    These describe an audience the studio has never observed. They reached the
+    creator through the data export as well as the API, so a fabricated audience
+    breakdown could leave the machine inside a file labelled as their own data.
+    """
+    owns = conn is None
+    conn = conn or get_db()
+    try:
+        expected = {(d, l): p for d, l, p in demo_demographics_rows()}
+        seeded, kept = [], []
+        for row in conn.execute("SELECT rowid AS rid, dimension, label, percentage, source FROM audience_demographics"):
+            key = (row["dimension"], row["label"])
+            if row["source"] == "observed":
+                kept.append(key)
+            elif key in expected and abs(row["percentage"] - expected[key]) < 1e-9:
+                seeded.append(row["rid"])
+            else:
+                kept.append(key)
+
+        report = {"seeded": len(seeded), "kept": len(kept), "dry_run": dry_run, "deleted": 0}
+        if dry_run or not seeded:
+            return report
+
+        placeholders = ",".join("?" for _ in seeded)
+        with conn:
+            cur = conn.execute(
+                f"DELETE FROM audience_demographics WHERE rowid IN ({placeholders})",
+                seeded,
+            )
+            report["deleted"] = cur.rowcount
+        return report
+    finally:
+        if owns:
+            conn.close()
+
+
+def purge_seeded_posts(
+    conn: Optional[sqlite3.Connection] = None,
+    dry_run: bool = True,
+) -> Dict[str, Any]:
+    """
+    Remove the demo posts, which carry invented impression and reaction counts.
+
+    Matched by id rather than by content: these ids are the seeder's own, and a
+    post the creator actually wrote never has one.
+    """
+    owns = conn is None
+    conn = conn or get_db()
+    try:
+        placeholders = ",".join("?" for _ in DEMO_POST_IDS)
+        rows = conn.execute(
+            f"SELECT id FROM posts WHERE id IN ({placeholders})", DEMO_POST_IDS
+        ).fetchall()
+        found = [r["id"] for r in rows]
+
+        report = {"seeded": found, "dry_run": dry_run, "deleted": 0}
+        if dry_run or not found:
+            return report
+
+        with conn:
+            cur = conn.execute(
+                f"DELETE FROM posts WHERE id IN ({placeholders})", DEMO_POST_IDS
+            )
+            report["deleted"] = cur.rowcount
+        return report
+    finally:
+        if owns:
+            conn.close()
+
+
+def purge_all_seeded_data(
+    conn: Optional[sqlite3.Connection] = None,
+    dry_run: bool = True,
+) -> Dict[str, Any]:
+    """
+    Remove every row this codebase can prove it fabricated.
+
+    Deliberately narrow. It deletes what matches a definition in this file and
+    nothing else, so a row the creator captured is never at risk even when it
+    sits beside one that was invented.
+    """
+    owns = conn is None
+    conn = conn or get_db()
+    try:
+        return {
+            "analytics": purge_seeded_analytics(conn, dry_run=dry_run),
+            "demographics": purge_seeded_demographics(conn, dry_run=dry_run),
+            "posts": purge_seeded_posts(conn, dry_run=dry_run),
+            "dry_run": dry_run,
+        }
+    finally:
+        if owns:
+            conn.close()
+
+
 def seed_initial_data():
     conn = get_db()
     cursor = conn.cursor()
@@ -1476,74 +1762,14 @@ def seed_initial_data():
     if seed_demo_metrics:
         print("INOX_DEMO_DATA is set: seeding 90 days of FABRICATED analytics and demographics.")
 
-    # Generate 90 days of demo creator metrics ending at 2026-09-14
+    # Generate the demo series from the shared definition, so the purge that
+    # recognises these rows and the seeder that writes them can never disagree.
     if count < 60:
-        base_date = date(2026, 9, 14)
-        start_date = base_date - timedelta(days=89)
-        
-        current_followers = 2330
-        current_connections = 2270
-        current_pviews = 70
-
-        for i in range(90):
-            d = start_date + timedelta(days=i)
-            d_str = d.strftime("%Y-%m-%d")
-
-            # Gradual growth
-            if i % 3 == 0:
-                current_followers += 1
-            if i % 4 == 0:
-                current_connections += 1
-            if i % 5 == 0:
-                current_pviews = min(120, current_pviews + 1)
-
-            # Post publication spikes on specific days
-            imp = 0
-            rxn = 0
-            comm = 0
-            shr = 0
-
-            # Day spikes
-            if d_str == "2026-07-10":
-                imp = 1450
-                rxn = 48
-                comm = 12
-                shr = 4
-            elif d_str == "2026-07-28":
-                imp = 620
-                rxn = 22
-                comm = 5
-                shr = 1
-            elif d_str == "2026-08-18":
-                imp = 42
-                rxn = 2
-                comm = 0
-                shr = 0
-            elif d_str == "2026-08-19":
-                imp = 15
-                rxn = 1
-                comm = 0
-                shr = 0
-            elif d_str == "2026-09-09":
-                imp = 303
-                rxn = 10
-                comm = 2
-                shr = 0
-            elif d_str == "2026-09-11":
-                imp = 28
-                rxn = 3
-                comm = 0
-                shr = 0
-            elif i % 7 == 2:  # baseline organic impressions
-                imp = 12 + (i % 5)
-                rxn = 1 if imp > 14 else 0
-
-            eng_rate = round(((rxn + comm + shr) / imp * 100), 2) if imp > 0 else 0.0
-
-            cursor.execute("""
-            INSERT OR REPLACE INTO analytics_daily (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'seed')
-            """, (d_str, current_followers, current_connections, current_pviews, imp, rxn, comm, shr, eng_rate))
+        cursor.executemany("""
+        INSERT OR REPLACE INTO analytics_daily
+        (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source)
+        VALUES (:date, :followers, :connections, :profile_views, :impressions, :reactions, :comments, :shares, :engagement_rate, 'seed')
+        """, demo_analytics_rows())
 
     # Seed Posts
     posts_data = [
@@ -1652,35 +1878,13 @@ What is your team's biggest bottleneck when decoupling legacy services?""",
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, p)
 
-    # Seed Demographics across 4 dimensions
-    demographics = [
-        # Job Titles
-        ("job_title", "Software Engineers & Architects", 34.5),
-        ("job_title", "Product Managers & Leaders", 22.8),
-        ("job_title", "Content & Strategy Practitioners", 18.2),
-        ("job_title", "Founders & Executives", 14.1),
-        ("job_title", "Consultants & Enterprise Architects", 10.4),
-        # Industries
-        ("industry", "IT Services & Consulting", 42.0),
-        ("industry", "Software Development & SaaS", 30.5),
-        ("industry", "Cloud & Infrastructure Systems", 16.0),
-        ("industry", "Financial Services & Fintech", 11.5),
-        # Company Size
-        ("company_size", "10,001+ employees (Enterprise)", 38.2),
-        ("company_size", "1,001 - 5,000 employees", 24.5),
-        ("company_size", "51 - 200 employees (Scale-up)", 19.3),
-        ("company_size", "1 - 10 employees (Startups)", 18.0),
-        # Locations
-        ("location", "Bengaluru, India", 31.0),
-        ("location", "Ahmedabad, India", 26.5),
-        ("location", "Mumbai, India", 18.2),
-        ("location", "San Francisco Bay Area, US", 12.8),
-        ("location", "London, United Kingdom", 11.5),
-    ]
-
+    # Seed Demographics from the shared definition, so the purge that
+    # recognises these rows and the seeder that writes them cannot disagree.
     if demo_count < 14:
-        for d in demographics:
-            cursor.execute("INSERT INTO audience_demographics (dimension, label, percentage, source) VALUES (?, ?, ?, 'seed')", d)
+        cursor.executemany(
+            "INSERT INTO audience_demographics (dimension, label, percentage, source) VALUES (?, ?, ?, 'seed')",
+            demo_demographics_rows(),
+        )
 
     # Seed Default Smart Queue Slots
     if slots_count < 8:
