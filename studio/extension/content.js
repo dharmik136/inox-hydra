@@ -277,6 +277,116 @@ function extractAndSyncAnalytics() {
 }
 
 // -------------------------------------------------------------
+// Post Identity: binding what the creator wrote to what LinkedIn published
+// -------------------------------------------------------------
+
+/**
+ * Pull a LinkedIn activity URN out of a URL or a DOM attribute.
+ *
+ * Three shapes appear in the wild:
+ *   /feed/update/urn:li:activity:7504139397143883776/
+ *   /feed/update/urn:li:share:7504139397143883776/
+ *   /posts/someone_slug-activity-7504139397143883776-AbCd
+ */
+function extractActivityUrn(text) {
+  if (!text) return null;
+  const direct = text.match(/urn:li:(?:activity|share|ugcPost):\d+/);
+  if (direct) return direct[0];
+  const slug = text.match(/-activity-(\d{6,})/);
+  if (slug) return `urn:li:activity:${slug[1]}`;
+  return null;
+}
+
+/**
+ * The URN of the post a given element belongs to.
+ *
+ * On a permalink the URL is authoritative and needs no markup at all. In the
+ * feed, where several posts share a page, the containing update card carries
+ * the URN in a data attribute. Reading the URL first means the common case
+ * never depends on a class name LinkedIn can rename.
+ */
+function postUrnFor(element) {
+  const fromUrl = extractActivityUrn(window.location.pathname);
+  if (fromUrl) return fromUrl;
+
+  let node = element;
+  while (node && node !== document.body) {
+    for (const attr of ["data-urn", "data-id", "data-activity-urn"]) {
+      const value = node.getAttribute && node.getAttribute(attr);
+      const urn = extractActivityUrn(value);
+      if (urn) return urn;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/**
+ * The text of the post currently on screen, used to recognise which of the
+ * creator's drafts this is.
+ */
+function readPostBodyText() {
+  const selectors = [
+    ".feed-shared-update-v2__description",
+    ".update-components-text",
+    ".feed-shared-inline-show-more-text",
+    '[data-test-id="main-feed-activity-card__commentary"]',
+  ];
+  for (const sel of selectors) {
+    const el = document.querySelector(sel);
+    if (el && el.innerText && el.innerText.trim().length > 20) {
+      return el.innerText.trim();
+    }
+  }
+  return "";
+}
+
+let lastBoundUrn = null;
+
+/**
+ * Offer the studio the URN of the post the creator is looking at.
+ *
+ * The studio decides whether it matches something it is waiting for. Matching
+ * lives there rather than here so the rule is testable and so this script never
+ * has to track which post is armed. A refusal is the normal case: most posts
+ * the creator opens are not their own.
+ */
+function maybeBindPostUrn() {
+  const urn = extractActivityUrn(window.location.pathname);
+  if (!urn || urn === lastBoundUrn) return;
+
+  const body = readPostBodyText();
+  if (!body) return;
+  lastBoundUrn = urn;
+
+  fetch("http://127.0.0.1:8000/api/v1/posts/bind-urn", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ activity_urn: urn, post_text: body })
+  })
+    .then(r => r.json())
+    .then(result => {
+      if (result && result.status === "bound") {
+        showInPageToast(
+          "LinkedIn Studio: this post is now linked to your draft. Engagement on it will be attributed.",
+          "success"
+        );
+      }
+    })
+    .catch(() => {});
+}
+
+// Binding is cheap and idempotent, so run it on the same signals as everything
+// else rather than inventing a separate schedule for it.
+window.addEventListener("load", maybeBindPostUrn);
+window.addEventListener("popstate", maybeBindPostUrn);
+window.addEventListener("studio:locationchange", () => {
+  lastBoundUrn = null;
+  setTimeout(maybeBindPostUrn, 1500);
+});
+setTimeout(maybeBindPostUrn, 2500);
+
+// -------------------------------------------------------------
 // Auto-Capture Engagers (Commenters & Reactors) into Local CRM
 // -------------------------------------------------------------
 let lastCommentScrapeTime = 0;
@@ -370,6 +480,10 @@ function observeAndCaptureEngagers() {
         profile_url: profileUrl,
         engagement_type: "Commented",
         notes: commentText ? `Commented: "${commentText}"` : "Commented on post",
+        // Which post this happened on. Without it the studio stores an
+        // engagement with no subject, which is why three complete attribution
+        // surfaces have returned zero for this product's entire existence.
+        post_urn: postUrnFor(card),
         _isNew: isNew
       });
     } catch (e) {}
@@ -416,6 +530,7 @@ function observeAndCaptureEngagers() {
           profile_url: profileUrl,
           engagement_type: "Liked",
           notes: "Reacted to post on LinkedIn",
+          post_urn: postUrnFor(item),
           _isNew: isNew
         });
       });
@@ -477,6 +592,7 @@ function observeAndCaptureEngagers() {
             // Where this row was read from, so a bad selector can be found and
             // its rows removed rather than left to look like observations.
             capture_context: window.location.pathname,
+            post_urn: lead.post_urn || null,
             // The post this happened on is not known yet. A fixed string here
             // ended up quoted in every generated message.
             post_topic: null
