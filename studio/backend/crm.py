@@ -220,13 +220,38 @@ class ICPScoringEngine:
         """
         Generate a natural, high-context 1-to-1 conversation starter without AI slop.
         Bans generic cliches and strictly enforces zero em-dashes.
+
+        Returns an empty string when there is nothing real to quote. Two ways
+        this used to produce a message that was simply false:
+
+          - A reactor has no comment. The caller passed the scraper's own
+            placeholder, so the stored draft read
+            `Your point about "Reacted to post on LinkedIn..." was spot on.`
+          - post_topic was a fixed string, so every draft claimed the post was
+            about "sovereign creator architecture" whatever the creator wrote.
+
+        An empty draft is the correct output here. The interface shows the
+        person and their actual words, and the creator writes the message.
         """
         first_name = lead_name.split()[0] if lead_name else "there"
-        excerpt = comment_text.strip()[:60] if comment_text else ""
+        text = (comment_text or "").strip()
+
+        # The scraper's own placeholders, which are not things anyone said.
+        PLACEHOLDERS = (
+            "reacted to post on linkedin",
+            "commented on post",
+        )
+        if not text or text.lower() in PLACEHOLDERS or any(text.lower().startswith(p) for p in PLACEHOLDERS):
+            return ""
+
+        if not post_topic:
+            return ""
+
+        excerpt = text[:60]
         if excerpt.endswith((".", "!", "?")):
             excerpt = excerpt[:-1]
 
-        if "?" in comment_text:
+        if "?" in text:
             insight = custom_insight or "We found decoupling background ingestion eliminates write lock contention entirely."
             return (
                 f"Hi {first_name}, saw your question on my recent post about {post_topic}. "
@@ -314,7 +339,8 @@ class ReverseCRMManager:
         comment_text: Optional[str] = None,
         post_urn: Optional[str] = None,
         post_id: Optional[int] = None,
-        post_topic: str = "sovereign creator stack",
+        post_topic: Optional[str] = None,
+        capture_context: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Ingest or update a lead and record an interaction."""
         # Sanitize field lengths to prevent abuse
@@ -325,7 +351,15 @@ class ReverseCRMManager:
 
         seniority = ICPScoringEngine.classify_seniority(headline)
         icp_score = ICPScoringEngine.calculate_icp_score(headline, company, comment_text, interaction_type)
-        suggested_dm = ICPScoringEngine.generate_contextual_dm(full_name, comment_text or "", post_topic)
+        # Only a comment carries words to reply to. A reaction does not, and a
+        # draft written as though it did puts a fabricated quote in front of a
+        # real person.
+        if (interaction_type or "").upper() == "COMMENT":
+            suggested_dm = ICPScoringEngine.generate_contextual_dm(
+                full_name, comment_text or "", post_topic
+            )
+        else:
+            suggested_dm = ""
 
         lead_id = None
         conn = get_db()
@@ -365,9 +399,10 @@ class ReverseCRMManager:
                 cursor.execute("""
                 INSERT INTO lead_interactions (
                     lead_id, post_id, post_urn, interaction_type,
-                    comment_text, suggested_dm_reply, interacted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """, (lead_id, post_id, post_urn, interaction_type, comment_text, suggested_dm))
+                    comment_text, suggested_dm_reply, capture_context, interacted_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, (lead_id, post_id, post_urn, interaction_type, comment_text,
+                      suggested_dm, capture_context))
                 interaction_id = cursor.lastrowid
         finally:
             conn.close()

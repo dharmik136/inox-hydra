@@ -334,8 +334,29 @@ def get_kpis(range: str = "30d"):
     cursor.execute("SELECT MAX(date) FROM analytics_daily")
     max_d_row = cursor.fetchone()
     if not max_d_row or not max_d_row[0]:
+        # Nothing captured yet. Return the full shape with nulls rather than an
+        # empty object: callers should render "not known yet", and an empty dict
+        # made every consumer reach for a fallback constant instead.
+        cursor.execute("SELECT COUNT(*) FROM posts WHERE status = 'scheduled'")
+        scheduled_when_empty = cursor.fetchone()[0]
         conn.close()
-        return {}
+        return {
+            "range": f"{days}d",
+            "impressions": None,
+            "impressions_delta_pct": None,
+            "total_engagements": None,
+            "engagements_delta_pct": None,
+            "avg_engagement_rate": None,
+            "engagement_rate_delta": None,
+            "total_followers": None,
+            "follower_growth": None,
+            "profile_views": None,
+            "profile_views_delta_pct": None,
+            # Counted, not assumed. An empty analytics table says nothing about
+            # the queue, and the queue screen was showing posts this reported as
+            # zero.
+            "scheduled_posts_count": scheduled_when_empty,
+        }
 
     end_date = datetime.strptime(max_d_row[0], "%Y-%m-%d").date()
     start_cur = end_date - timedelta(days=days - 1)
@@ -381,16 +402,22 @@ def get_kpis(range: str = "30d"):
 
     cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (end_date.strftime("%Y-%m-%d"),))
     latest_stat = cursor.fetchone()
-    cur_followers = latest_stat["followers"] if (latest_stat and latest_stat["followers"] is not None) else 2412
-    cur_pviews = latest_stat["profile_views"] if (latest_stat and latest_stat["profile_views"] is not None) else 104
+    # An unknown metric is null. It used to fall back to 2412 followers and 104
+    # profile views, which meant a creator who had captured nothing, or who
+    # genuinely had zero profile views, was shown a number that looked measured.
+    # Null travels to the interface and renders as a dash.
+    cur_followers = latest_stat["followers"] if (latest_stat and latest_stat["followers"] is not None) else None
+    cur_pviews = latest_stat["profile_views"] if (latest_stat and latest_stat["profile_views"] is not None) else None
 
     cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (start_cur.strftime("%Y-%m-%d"),))
     start_stat = cursor.fetchone()
     start_followers = start_stat["followers"] if (start_stat and start_stat["followers"] is not None) else cur_followers
     start_pviews = start_stat["profile_views"] if (start_stat and start_stat["profile_views"] is not None) else cur_pviews
 
-    follower_growth = cur_followers - start_followers
-    pviews_delta = calc_delta(cur_pviews, start_pviews)
+    # A delta between two points needs both points. One missing means no answer,
+    # not a zero and not a hundred percent.
+    follower_growth = (cur_followers - start_followers) if (cur_followers is not None and start_followers is not None) else None
+    pviews_delta = calc_delta(cur_pviews, start_pviews) if (cur_pviews is not None and start_pviews is not None) else None
 
     cursor.execute("SELECT COUNT(*) FROM posts WHERE status = 'scheduled'")
     scheduled_count = cursor.fetchone()[0]
@@ -1282,6 +1309,7 @@ def copy_browser_path_endpoint():
     return copy_extension_path_to_clipboard()
 
 
+
 # -------------------------------------------------------------
 # Module 3: Smart Queue & Slots
 # -------------------------------------------------------------
@@ -1446,12 +1474,16 @@ def search_inspirations(query: Optional[str] = None, topic: Optional[str] = None
 # -------------------------------------------------------------
 @app.post("/api/auth/cookies")
 def receive_cookies(payload: CookiePayload):
+    # Saving a token is local bookkeeping. It used to also trigger an
+    # authenticated GET to LinkedIn, which meant every creator-analytics page
+    # load and every 15 minute alarm produced a request the creator never made.
+    # The sync is still available on its own endpoint for anyone who opts into
+    # egress deliberately.
     linkedin_client.save_tokens(payload.li_at, payload.JSESSIONID)
-    sync_result = linkedin_client.sync_live_profile_and_stats()
     return {
         "status": "success",
         "message": "LinkedIn session tokens saved to local studio",
-        "sync": sync_result
+        "sync": {"status": "skipped", "message": "Token save does not contact LinkedIn"}
     }
 
 
@@ -1873,7 +1905,10 @@ class IngestInteractionRequest(BaseModel):
     comment_text: Optional[str] = None
     post_urn: Optional[str] = None
     post_id: Optional[int] = None
-    post_topic: Optional[str] = "sovereign creator stack"
+    # No default topic. A fixed string here ended up quoted in every generated
+    # message as though it described the creator's actual post.
+    post_topic: Optional[str] = None
+    capture_context: Optional[str] = None
 
 
 @app.post("/api/v1/crm/interactions/ingest", tags=["Enterprise Reverse CRM"])
@@ -1882,7 +1917,10 @@ def ingest_crm_interaction(req: IngestInteractionRequest):
     Ingests commenter or reactor, calculates deterministic multi-factor ICP score,
     and synthesizes anti-slop 1-to-1 personalized DM.
     """
-    urn = req.linkedin_urn or req.profile_url or f"urn:li:person:{uuid.uuid4().hex[:10]}"
+    # An unidentified person gets a clearly local key. Minting a urn:li:person:
+    # put a value this studio invented into LinkedIn's own namespace, where it
+    # was indistinguishable from one LinkedIn issued.
+    urn = req.linkedin_urn or req.profile_url or f"local:unresolved:{uuid.uuid4().hex[:12]}"
     raw_type = (req.interaction_type or "COMMENT").upper()
     if "COMMENT" in raw_type:
         norm_type = "COMMENT"
@@ -1902,7 +1940,8 @@ def ingest_crm_interaction(req: IngestInteractionRequest):
         comment_text=req.comment_text,
         post_urn=req.post_urn,
         post_id=req.post_id,
-        post_topic=req.post_topic or "sovereign creator stack",
+        post_topic=req.post_topic,
+        capture_context=req.capture_context,
     )
     result["id"] = result.get("lead_id")
     result["qualification_tier"] = result.get("tier")
@@ -2012,8 +2051,31 @@ def get_lead_interaction_timeline(lead_id: str):
 
 @app.get("/api/v1/session/health", tags=["LinkedIn Session & Telemetry"])
 def check_session_health(mock: bool = False):
-    """Checks session viability against Voyager API with circuit breaker safeguard."""
+    """
+    Checks session viability against the Voyager API.
+
+    This contacts LinkedIn, so it is refused unless egress is explicitly
+    enabled. A refusal returns healthy: null, meaning "not checked", rather than
+    healthy: true, which would certify a session nobody looked at.
+    """
     return linkedin_client.check_session_health(mock=mock)
+
+
+@app.post("/api/v1/session/sync-profile", tags=["LinkedIn Session & Telemetry"])
+def sync_linkedin_profile():
+    """
+    Fetches the creator's own name and headline from LinkedIn.
+
+    This is the one place in the product that deliberately contacts LinkedIn,
+    and it exists as its own route precisely so that contacting them is a thing
+    someone chooses to do. It used to run as a side effect of saving a session
+    token, which the extension did on a 15 minute alarm and on every
+    creator-analytics response, so the studio was issuing authenticated requests
+    the creator never asked for.
+
+    Refused unless INOX_ALLOW_LINKEDIN_EGRESS is set.
+    """
+    return linkedin_client.sync_live_profile_and_stats(enforce_rate_limit=True)
 
 
 @app.get("/api/v1/ingress/status", tags=["Mobile & Bot Ingress"])

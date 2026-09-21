@@ -5701,3 +5701,22 @@ input:checked + .toggle-slider:before {
 }
 
 
+
+/* Unknown and empty states.
+   A metric the studio has not captured renders as a dash, never as a plausible
+   number. These two rules are what the dash and the empty table look like, and
+   they are deliberately quiet: an absence should read as an absence, not as an
+   error the creator caused. */
+.stat-unknown {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: help;
+}
+
+.table-empty {
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: center;
+  padding: 26px 16px;
+}

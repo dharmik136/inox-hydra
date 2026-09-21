@@ -142,8 +142,11 @@ chrome.webRequest.onCompleted.addListener(
     // 3. Creator Analytics and GraphQL creator telemetry
     else if (url.includes("voyager/api/identity/dash/creatorAnalytics") || 
         (url.includes("voyager/api/graphql") && url.includes("creator"))) {
-      console.log("[Studio Bridge] Intercepted Creator Analytics response:", url);
-      syncActiveSessionToStudio();
+      // Observed, not intercepted: onCompleted carries no response body.
+      // This branch used to also call syncActiveSessionToStudio(), which made
+      // the backend issue its own authenticated request to LinkedIn. Observing
+      // that a page loaded must never cause a new request.
+      console.log("[Studio Bridge] Observed creator analytics request:", url);
       forwardPassiveTelemetry("creator_analytics", {
         url: url.split("?")[0],
         statusCode: details.statusCode

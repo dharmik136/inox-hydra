@@ -1854,6 +1854,10 @@ function updateStudioState() {
 // -------------------------------------------------------------
 function runAlgorithmicAudit(text) {
   let score = 100;
+  // Counted where the failures happen. Deriving a count from the score is
+  // not possible: the six deductions are 40/20/25/15/15/15, so the arithmetic
+  // is lossy in both directions.
+  let failedChecks = 0;
 
   // Dimension 1: Outbound Link in Body (-40 points)
   const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+|\b[a-zA-Z0-9-]+\.(com|io|ai|org|net|co)\b)/gi;
@@ -1864,6 +1868,7 @@ function runAlgorithmicAudit(text) {
 
   if (hasUrl) {
     score -= 40;
+    failedChecks += 1;
     if (dimLink) {
       dimLink.className = "reui-audit-badge fail";
       dimLink.innerText = "Penalty (-40%)";
@@ -1895,6 +1900,7 @@ function runAlgorithmicAudit(text) {
 
   if (hookLen > 180) {
     score -= 20;
+    failedChecks += 1;
     if (dimHook) {
       dimHook.className = "reui-audit-badge warning";
       dimHook.innerText = `Exceeds (${hookLen})`;
@@ -1926,6 +1932,7 @@ function runAlgorithmicAudit(text) {
 
   if (hasBait) {
     score -= 25;
+    failedChecks += 1;
     if (dimBait) {
       dimBait.className = "reui-audit-badge fail";
       dimBait.innerText = "Bait Detected";
@@ -1949,6 +1956,7 @@ function runAlgorithmicAudit(text) {
 
   if (hashtags > 4) {
     score -= 15;
+    failedChecks += 1;
     if (dimHash) {
       dimHash.className = "reui-audit-badge warning";
       dimHash.innerText = `Stuffing (${hashtags})`;
@@ -1986,6 +1994,7 @@ function runAlgorithmicAudit(text) {
 
   if (hasWall) {
     score -= 15;
+    failedChecks += 1;
     if (dimPacing) {
       dimPacing.className = "reui-audit-badge warning";
       dimPacing.innerText = "Wall of Text";
@@ -2009,6 +2018,7 @@ function runAlgorithmicAudit(text) {
 
   if (hasEmDash) {
     score -= 15;
+    failedChecks += 1;
     if (dimEmdash) {
       dimEmdash.className = "reui-audit-badge fail";
       dimEmdash.innerText = "Violation";
@@ -2049,16 +2059,27 @@ function runAlgorithmicAudit(text) {
   const verdictDisplay = document.getElementById("verdict-display");
 
   if (dwellDisplay) dwellDisplay.innerText = `~${readSeconds} sec`;
+
+  // This used to read "High Reach" or "Suppressed", which is a claim about how
+  // LinkedIn will distribute the post. Nothing in this product measures
+  // distribution: the score behind it comes from six formatting checks running
+  // in this browser, and it has never once been compared against the impression
+  // counts already in the database. An empty composer scored 100 and read "High
+  // Reach" before the creator typed a character.
+  //
+  // The checks themselves are real and stay. What is reported now is how many
+  // of them are unmet, which is exactly what the computation knows.
   if (verdictDisplay) {
-    if (score >= 90) {
-      verdictDisplay.innerText = "High Reach";
+    const unmet = failedChecks;
+    if (!text || !text.trim()) {
+      verdictDisplay.innerText = "\u2013";
+      verdictDisplay.style.color = "var(--text-muted)";
+    } else if (unmet === 0) {
+      verdictDisplay.innerText = "Formatting clean";
       verdictDisplay.style.color = "var(--signal-green)";
-    } else if (score >= 70) {
-      verdictDisplay.innerText = "Acceptable";
-      verdictDisplay.style.color = "var(--signal-orange)";
     } else {
-      verdictDisplay.innerText = "Suppressed";
-      verdictDisplay.style.color = "#E03131";
+      verdictDisplay.innerText = `${unmet} to fix`;
+      verdictDisplay.style.color = unmet <= 2 ? "var(--signal-orange)" : "var(--signal-red)";
     }
   }
 }
@@ -2241,7 +2262,11 @@ async function generateHookVariants(contextText) {
     hooks.forEach((h, idx) => {
       const card = document.createElement("div");
       card.className = "hook-specimen-card";
-      const isSafe = h.is_mobile_fold_safe;
+      // The backend emits `mobile_safe` (repurposer.py:301, :363). Reading
+      // `is_mobile_fold_safe` produced undefined for every hook, so the only
+      // real signal in this panel was rendered inverted: fold-safe hooks were
+      // all labelled "Truncated".
+      const isSafe = h.mobile_safe;
 
       card.innerHTML = `
         <div class="hook-specimen-header">
@@ -4293,9 +4318,15 @@ async function loadKPIs() {
     const vEl = document.getElementById("kpi-views");
     const iEl = document.getElementById("kpi-impressions");
 
-    if (fEl) fEl.innerText = Number(data.total_followers || 2412).toLocaleString();
-    if (vEl) vEl.innerText = Number(data.profile_views || 104).toLocaleString();
-    if (iEl) iEl.innerText = Number(data.impressions || 314).toLocaleString();
+    // A missing metric renders as a dash. Using || here meant a truthful zero
+    // was replaced by a fabricated constant, so the one creator who most needed
+    // to know the studio had captured nothing was the one told it had.
+    const statText = (v) => (v === null || v === undefined || Number.isNaN(Number(v)))
+      ? "–"
+      : Number(v).toLocaleString();
+    if (fEl) fEl.innerText = statText(data.total_followers);
+    if (vEl) vEl.innerText = statText(data.profile_views);
+    if (iEl) iEl.innerText = statText(data.impressions);
 
     const csvBtn = document.getElementById("btn-export-csv-report");
     if (csvBtn) {
@@ -4541,11 +4572,14 @@ async function loadAnalyticsChart() {
     const totalImpressions = impressionsData.reduce((a, b) => a + b, 0);
     const avgImpressions = Math.round(totalImpressions / Math.max(1, impressionsData.length));
     const recentDelta = impressionsData.length >= 2 ? (impressionsData[impressionsData.length - 1] - impressionsData[0]) : 0;
-    const deltaPercent = impressionsData[0] ? ((recentDelta / impressionsData[0]) * 100).toFixed(1) : "18.4";
+    const deltaPercent = impressionsData[0] ? ((recentDelta / impressionsData[0]) * 100).toFixed(1) : null;
 
     const obsChanged = document.getElementById("obs-what-changed");
     if (obsChanged) {
-      obsChanged.innerText = `${currentRange.toUpperCase()} trajectory: ${totalImpressions.toLocaleString()} aggregate impressions (${avgImpressions.toLocaleString()}/day avg). Trend is ${recentDelta >= 0 ? '+' : ''}${deltaPercent}% across analyzed window.`;
+      const trend = deltaPercent === null
+        ? "Trend needs a non-zero first day to compare against."
+        : `Trend is ${recentDelta >= 0 ? '+' : ''}${deltaPercent}% across analyzed window.`;
+      obsChanged.innerText = `${currentRange.toUpperCase()} trajectory: ${totalImpressions.toLocaleString()} aggregate impressions (${avgImpressions.toLocaleString()}/day avg). ${trend}`;
     }
 
     const obsCaused = document.getElementById("obs-what-caused");
@@ -4569,12 +4603,22 @@ async function renderAnalyticsPostsTable() {
   const tbody = document.getElementById("analytics-posts-table-tbody");
   if (!tbody) return;
 
+  const emptyRow = (message) => {
+    tbody.innerHTML = `<tr><td colspan="6" class="table-empty">${message}</td></tr>`;
+  };
+
   try {
     const res = await fetch(`${API_BASE}/analytics/posts`);
-    if (!res.ok) return;
+    if (!res.ok) {
+      emptyRow("Could not reach the studio backend.");
+      return;
+    }
     const json = await res.json();
     const posts = json.posts || [];
-    if (!posts.length) return;
+    if (!posts.length) {
+      emptyRow("No published posts captured yet. Publish from the composer and the studio will track them here.");
+      return;
+    }
 
     tbody.innerHTML = "";
     posts.forEach(post => {
@@ -4598,7 +4642,7 @@ async function renderAnalyticsPostsTable() {
         <td style="color: var(--text-secondary); font-size: 12.5px;">${dateStr}</td>
         <td style="font-family: var(--font-mono, monospace); font-weight: 600;">${impressions}</td>
         <td style="color: var(--text-secondary); font-size: 12.5px;">${estDwell}</td>
-        <td><span style="color: var(--signal-green); font-size: 12px; font-weight: 600;">96% Safe</span></td>
+        <td><span class="stat-unknown" title="No audit has been run against this post's text">&ndash;</span></td>
         <td>
           <div style="display: flex; align-items: center; gap: 8px;">
             <span class="icp-badge-pill ${vipLeads > 0 ? 'icp-badge-vip' : (totalLeads > 0 ? 'icp-badge-qual' : 'icp-badge-low')}" style="font-size: 11px;">
@@ -5298,7 +5342,7 @@ function initSettingsPanel() {
         return;
       }
       btnSyncTokens.disabled = true;
-      btnSyncTokens.innerHTML = '<svg class="app-symbol app-symbol-xs"><use href="#sym-act-spark"></use></svg> Syncing...';
+      btnSyncTokens.innerHTML = '<svg class="app-symbol app-symbol-xs"><use href="#sym-act-spark"></use></svg> Saving...';
       try {
         const res = await fetch(`${API_BASE}/auth/cookies`, {
           method: "POST",
@@ -5306,16 +5350,19 @@ function initSettingsPanel() {
           body: JSON.stringify({ li_at: liAtVal, JSESSIONID: jsessionVal })
         });
         if (res.ok) {
-          showToast("LinkedIn session tokens saved and synced!");
+          // Saving a token is local. It used to also trigger an authenticated
+          // request to LinkedIn, and the word "synced" described that request.
+          // Nothing is fetched now, so nothing is claimed.
+          showToast("LinkedIn session tokens saved to your local studio.");
           checkLinkedInSessionStatus();
         } else {
-          showToast("Failed to sync tokens with backend.");
+          showToast("Could not save tokens to the studio backend.", "error");
         }
       } catch (err) {
         showToast("Sync error: " + err.message);
       } finally {
         btnSyncTokens.disabled = false;
-        btnSyncTokens.innerHTML = '<svg class="app-symbol app-symbol-xs"><use href="#sym-act-save"></use></svg> Save & Sync Tokens';
+        btnSyncTokens.innerHTML = '<svg class="app-symbol app-symbol-xs"><use href="#sym-act-save"></use></svg> Save Tokens';
       }
     });
   }

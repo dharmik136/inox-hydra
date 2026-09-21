@@ -34,6 +34,12 @@ if "INOX_HYDRA_HOME" not in os.environ:
     _SESSION_TEST_HOME = tempfile.mkdtemp(prefix="inox_pytest_sandbox_")
     os.environ["INOX_HYDRA_HOME"] = _SESSION_TEST_HOME
 
+# Fabricated analytics and demographics are opt-in and OFF by default, so a real
+# install never shows a creator numbers it invented. The suite needs predictable
+# fixtures to assert against, so the sandbox opts in explicitly. Any test that
+# cares about the un-seeded state must clear this and re-seed for itself.
+os.environ.setdefault("INOX_DEMO_DATA", "1")
+
 
 def pytest_configure(config):
     """Initializes and seeds the sandboxed database before test execution."""

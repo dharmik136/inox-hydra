@@ -1433,7 +1433,19 @@ def seed_initial_data():
             """, l)
         conn.commit()
 
-    # Clear and re-seed if counts are insufficient
+    # Fabricated observations are opt-in.
+    #
+    # analytics_daily and audience_demographics describe the creator's real
+    # LinkedIn account. Generating them meant every chart, KPI, range pill and
+    # CSV export on a fresh install was fiction that rendered identically to
+    # captured data, and the DELETE below destroyed genuinely captured rows
+    # whenever there were fewer than sixty of them.
+    #
+    # queue_slots are different in kind and still seed unconditionally: they are
+    # default posting times, not claims about anything that happened. They carry
+    # no measurement and assert nothing, so a default is honest there.
+    seed_demo_metrics = os.environ.get("INOX_DEMO_DATA", "").strip().lower() in ("1", "true", "yes", "on")
+
     cursor.execute("SELECT COUNT(*) FROM analytics_daily")
     count = cursor.fetchone()[0]
 
@@ -1443,20 +1455,28 @@ def seed_initial_data():
     cursor.execute("SELECT COUNT(*) FROM queue_slots")
     slots_count = cursor.fetchone()[0]
 
+    if not seed_demo_metrics:
+        # Real rows are never deleted. An empty table is the honest state of a
+        # studio that has not captured anything yet.
+        count = max(count, 60)
+        demo_count = max(demo_count, 14)
+
     if count >= 60 and demo_count >= 14 and slots_count >= 8:
+        conn.commit()
         conn.close()
         return
 
-    if count < 60:
-        cursor.execute("DELETE FROM analytics_daily")
-    if demo_count < 14:
-        cursor.execute("DELETE FROM audience_demographics")
+    if seed_demo_metrics and count < 60:
+        cursor.execute("DELETE FROM analytics_daily WHERE source = 'seed' OR source IS NULL")
+    if seed_demo_metrics and demo_count < 14:
+        cursor.execute("DELETE FROM audience_demographics WHERE source = 'seed' OR source IS NULL")
     if slots_count < 8:
         cursor.execute("DELETE FROM queue_slots")
 
-    print("Seeding multi-range analytics (90 days), demographics, queue slots, and inspirations...")
+    if seed_demo_metrics:
+        print("INOX_DEMO_DATA is set: seeding 90 days of FABRICATED analytics and demographics.")
 
-    # Generate 90 days of realistic creator metrics ending at 2026-09-14
+    # Generate 90 days of demo creator metrics ending at 2026-09-14
     if count < 60:
         base_date = date(2026, 9, 14)
         start_date = base_date - timedelta(days=89)
@@ -1521,8 +1541,8 @@ def seed_initial_data():
             eng_rate = round(((rxn + comm + shr) / imp * 100), 2) if imp > 0 else 0.0
 
             cursor.execute("""
-            INSERT OR REPLACE INTO analytics_daily (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO analytics_daily (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'seed')
             """, (d_str, current_followers, current_connections, current_pviews, imp, rxn, comm, shr, eng_rate))
 
     # Seed Posts
@@ -1620,11 +1640,17 @@ What is your team's biggest bottleneck when decoupling legacy services?""",
         )
     ]
 
-    for p in posts_data:
-        cursor.execute("""
-        INSERT OR REPLACE INTO posts (id, content, media_urls, status, scheduled_for, published_at, impressions, reactions, comments, shares, tags)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, p)
+    # These carry hardcoded impression and reaction counts, so they are
+    # fabricated observations exactly like the analytics rows and belong behind
+    # the same flag. Without this, the Recent Post Trajectory table showed 1,450
+    # impressions on a post the creator never wrote, immediately below a KPI
+    # strip that was honestly reporting that it knew nothing.
+    if seed_demo_metrics:
+        for p in posts_data:
+            cursor.execute("""
+            INSERT OR REPLACE INTO posts (id, content, media_urls, status, scheduled_for, published_at, impressions, reactions, comments, shares, tags)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, p)
 
     # Seed Demographics across 4 dimensions
     demographics = [
@@ -1654,7 +1680,7 @@ What is your team's biggest bottleneck when decoupling legacy services?""",
 
     if demo_count < 14:
         for d in demographics:
-            cursor.execute("INSERT INTO audience_demographics (dimension, label, percentage) VALUES (?, ?, ?)", d)
+            cursor.execute("INSERT INTO audience_demographics (dimension, label, percentage, source) VALUES (?, ?, ?, 'seed')", d)
 
     # Seed Default Smart Queue Slots
     if slots_count < 8:

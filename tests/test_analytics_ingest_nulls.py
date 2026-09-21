@@ -130,7 +130,16 @@ def test_kpi_dashboard_survives_a_profile_views_only_ingest(isolated_studio):
 
 
 def test_kpi_dashboard_handles_historical_null_followers_gracefully(isolated_studio):
-    """Verifies that get_kpis returns 200 even if database has rows with NULL followers."""
+    """
+    A row with NULL followers must not crash the dashboard, and must not be
+    papered over with an invented number either.
+
+    This test previously asserted total_followers == 2412, which was the
+    hardcoded fallback in get_kpis. That encoded the defect as the contract: a
+    creator with no captured follower count was shown 2,412 followers as though
+    it had been measured. The correct answer to "how many followers" when the
+    studio has never captured one is null, which the interface renders as a dash.
+    """
     database, _ = isolated_studio
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
@@ -152,6 +161,11 @@ def test_kpi_dashboard_handles_historical_null_followers_gracefully(isolated_stu
     assert res.status_code == 200
     data = res.json()
     assert "total_followers" in data
-    assert data["total_followers"] == 2412
+    assert data["total_followers"] is None, (
+        f"An uncaptured follower count must be null, not {data['total_followers']!r}. "
+        f"A fabricated constant here is indistinguishable from a measurement."
+    )
     assert "follower_growth" in data
-    assert isinstance(data["follower_growth"], (int, float))
+    assert data["follower_growth"] is None, (
+        "Growth between two unknown points is unknown, not zero."
+    )
