@@ -35,6 +35,11 @@ DB_PATH = get_db_path()
 
 _db_write_lock = threading.Lock()
 
+# Demo content that ships with the product. The scheduler must never dispatch
+# or roll forward these seeded example posts; they exist so a fresh install
+# has something to show in the queue UI.
+SEEDED_DEMO_POST_IDS = ("post-enterprise-scheduled",)
+
 
 def get_db() -> sqlite3.Connection:
     """
@@ -1511,7 +1516,7 @@ def seed_initial_data():
     # Seed Posts
     posts_data = [
         (
-            "post-enterprise-scheduled",
+            SEEDED_DEMO_POST_IDS[0],
             """𝗦𝘁𝗲𝗽𝗽𝗶𝗻𝗴 𝗶𝗻𝘁𝗼 𝗲𝗻𝘁𝗲𝗿𝗽𝗿𝗶𝘀𝗲 𝘀𝘆𝘀𝘁𝗲𝗺𝘀 𝗳𝗲𝗲𝗹𝘀 𝗹𝗶𝗸𝗲 𝗹𝗲𝗮𝗿𝗻𝗶𝗻𝗴 𝗮 𝗰𝗼𝗺𝗽𝗹𝗲𝘁𝗲𝗹𝘆 𝗻𝗲𝘄 𝗹𝗮𝗻𝗴𝘂𝗮𝗴𝗲.
 
 Lately, I’ve been spending my time doing something humbling:
@@ -1706,11 +1711,13 @@ What is your team's biggest bottleneck when decoupling legacy services?""",
         )
     ]
 
-    for insp in inspirations:
-        cursor.execute("""
-        INSERT OR REPLACE INTO inspirations (id, author_name, author_headline, topic, content, likes_count, comments_count, key_hook)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, insp)
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspirations'")
+    if cursor.fetchone():
+        for insp in inspirations:
+            cursor.execute("""
+            INSERT OR REPLACE INTO inspirations (id, author_name, author_headline, topic, content, likes_count, comments_count, key_hook)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, insp)
 
     # Seed Initial Leads & Engagers CRM
     cursor.execute("SELECT COUNT(*) FROM leads")

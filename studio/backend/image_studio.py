@@ -38,6 +38,13 @@ except ImportError:
 
 GENERATED_DIR = get_generated_dir()
 
+# -- Validation & Concurrency Constants -------------------------------------
+MAX_CONCEPT_LENGTH = 2000
+MIN_DIMENSION = 64
+MAX_DIMENSION = 4096
+MAX_CONCURRENT_TASKS = 5
+MAX_STORED_TASKS = 100
+
 
 class ImageStudioManager:
     """Manages asynchronous AI image generation tasks and live progress telemetry."""
@@ -45,11 +52,20 @@ class ImageStudioManager:
     def __init__(self):
         self._tasks: Dict[str, Dict[str, Any]] = {}
         self._lock = threading.Lock()
+        self._worker_semaphore = threading.Semaphore(MAX_CONCURRENT_TASKS)
 
-    def start_task(self, options: Dict[str, Any]) -> str:
+    def start_task(self, options: Optional[Dict[str, Any]]) -> str:
         """Initializes a new generation task and launches the background worker."""
+        if not isinstance(options, dict):
+            options = {}
+
         task_id = f"img_task_{uuid.uuid4().hex[:12]}"
-        concept = options.get("concept", "Enterprise Software Architecture")
+        raw_concept = options.get("concept")
+        concept = (raw_concept or "").strip() if isinstance(raw_concept, str) else ""
+        if not concept:
+            concept = "Enterprise Software Architecture"
+        concept = concept[:MAX_CONCEPT_LENGTH]
+        options["concept"] = concept
 
         task_record = {
             "task_id": task_id,
@@ -66,10 +82,20 @@ class ImageStudioManager:
         }
 
         with self._lock:
+            # Prevent unbounded memory growth by pruning oldest finished tasks
+            if len(self._tasks) >= MAX_STORED_TASKS:
+                finished_keys = [
+                    k for k, v in self._tasks.items()
+                    if v.get("status") in ("completed", "failed")
+                ]
+                finished_keys.sort(key=lambda k: self._tasks[k].get("created_at", 0))
+                for k in finished_keys[:max(1, len(self._tasks) - MAX_STORED_TASKS + 10)]:
+                    self._tasks.pop(k, None)
             self._tasks[task_id] = task_record
 
         # Persist initial record in SQLite if available
         if get_db:
+            conn = None
             try:
                 conn = get_db()
                 with conn:
@@ -86,9 +112,14 @@ class ImageStudioManager:
                         1,
                         task_record["status_message"]
                     ))
-                conn.close()
             except Exception as e:
                 print(f"[ImageStudio] SQLite task init failed: {e}")
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
 
         # Launch background thread
         thread = threading.Thread(target=self._run_generation_worker, args=(task_id, options), daemon=True)
@@ -98,20 +129,33 @@ class ImageStudioManager:
 
     def get_progress(self, task_id: str) -> Dict[str, Any]:
         """Retrieves real-time progress percentage (1%..100%) and stage description."""
+        if not isinstance(task_id, str) or not task_id:
+            return {
+                "status": "not_found",
+                "progress_percent": 0,
+                "status_message": "Invalid task ID"
+            }
+
         with self._lock:
             task = self._tasks.get(task_id)
 
         if not task and get_db:
+            conn = None
             try:
                 conn = get_db()
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM generation_tasks WHERE task_id = ?", (task_id,))
                 row = cursor.fetchone()
-                conn.close()
                 if row:
                     task = dict(row)
             except Exception:
                 pass
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
 
         if not task:
             return {
@@ -132,9 +176,10 @@ class ImageStudioManager:
 
     def _update_task(self, task_id: str, percent: int, message: str, status: str = "processing", result_url: str = None, error: str = None, prompt_used: str = None):
         """Thread-safe update of task status in memory and SQLite."""
+        clamped_percent = max(0, min(int(percent) if isinstance(percent, (int, float)) else 0, 100))
         with self._lock:
             if task_id in self._tasks:
-                self._tasks[task_id]["progress_percent"] = percent
+                self._tasks[task_id]["progress_percent"] = clamped_percent
                 self._tasks[task_id]["status_message"] = message
                 self._tasks[task_id]["status"] = status
                 self._tasks[task_id]["updated_at"] = time.time()
@@ -146,6 +191,7 @@ class ImageStudioManager:
                     self._tasks[task_id]["prompt_used"] = prompt_used
 
         if get_db:
+            conn = None
             try:
                 conn = get_db()
                 with conn:
@@ -154,23 +200,44 @@ class ImageStudioManager:
                     UPDATE generation_tasks 
                     SET progress_percent = ?, status_message = ?, status = ?, result_url = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE task_id = ?
-                    """, (percent, message, status, result_url, error, task_id))
-                conn.close()
+                    """, (clamped_percent, message, status, result_url, error, task_id))
             except Exception:
                 pass
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
 
     def _run_generation_worker(self, task_id: str, options: Dict[str, Any]):
         """Executes the multi-stage image generation workflow."""
         is_testing = bool(os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("TESTING"))
         delay = 0.02 if is_testing else 0.3
 
+        acquired = self._worker_semaphore.acquire(timeout=60)
+        if not acquired:
+            self._update_task(
+                task_id, 100,
+                "Task dropped: worker concurrency limit reached.",
+                status="failed",
+                error="Concurrency limit reached"
+            )
+            return
+
         try:
             # Stage 1: Agno Prompt Synthesis (1% -> 20%)
             self._update_task(task_id, 8, "Decomposing creative concept into artistic dimensions...")
             time.sleep(delay)
 
+            raw_concept = options.get("concept", "Enterprise Software Architecture")
+            concept = (raw_concept or "").strip() if isinstance(raw_concept, str) else ""
+            if not concept:
+                concept = "Enterprise Software Architecture"
+            concept = concept[:MAX_CONCEPT_LENGTH]
+
             prompt_input = ImagePromptInput(
-                concept=options.get("concept", "Enterprise Architecture"),
+                concept=concept,
                 aspect_ratio=options.get("aspect_ratio", "1:1"),
                 visual_style=options.get("visual_style", "photorealistic"),
                 color_palette=options.get("color_palette", "navy_cyan"),
@@ -181,10 +248,19 @@ class ImageStudioManager:
             )
 
             self._update_task(task_id, 18, "Synthesizing master prompt blueprint via Agno AgentOS...")
-            synthesized = orchestrator.synthesize_image_prompt(prompt_input.model_dump())
-            master_prompt = synthesized.master_prompt
-            width = synthesized.width
-            height = synthesized.height
+            if orchestrator:
+                synthesized = orchestrator.synthesize_image_prompt(prompt_input.model_dump())
+                master_prompt = synthesized.master_prompt
+                width = synthesized.width
+                height = synthesized.height
+                quote_text = synthesized.quote_text
+                quote_author = synthesized.quote_author
+            else:
+                master_prompt = f"Professional studio visual for {concept}"
+                width = 1080
+                height = 1080
+                quote_text = options.get("custom_quote_text")
+                quote_author = options.get("custom_quote_author")
 
             self._update_task(task_id, 28, "Master prompt formulated. Selecting AI generation provider...", prompt_used=master_prompt)
             time.sleep(delay)
@@ -229,17 +305,17 @@ class ImageStudioManager:
             # Provider 4: Deterministic fallback canvas generator (guaranteed test & offline safety)
             if not image_bytes:
                 self._update_task(task_id, 75, "Constructing studio visual canvas asset...")
-                image_bytes = self._create_local_canvas_image(width, height, options.get("concept", "Concept"), options.get("visual_style", "style"))
+                image_bytes = self._create_local_canvas_image(width, height, concept, options.get("visual_style", "style"))
 
             # Stage 3: Typographic Quote Compositing & Personal Watermarking (80% -> 95%)
             # Step A: Typographic Quote Overlay
-            if synthesized.quote_text and options.get("render_quote_overlay", True) and render_typographic_quote and image_bytes:
-                self._update_task(task_id, 82, f"Compositing typographic quote overlay ({synthesized.quote_author or 'Quote'})...")
+            if quote_text and options.get("render_quote_overlay", True) and render_typographic_quote and image_bytes:
+                self._update_task(task_id, 82, f"Compositing typographic quote overlay ({quote_author or 'Quote'})...")
                 try:
                     import io
                     from PIL import Image
                     raw_pil = Image.open(io.BytesIO(image_bytes))
-                    quoted_pil = render_typographic_quote(raw_pil, synthesized.quote_text, synthesized.quote_author)
+                    quoted_pil = render_typographic_quote(raw_pil, quote_text, quote_author)
                     buf = io.BytesIO()
                     quoted_pil.save(buf, format="JPEG", quality=95)
                     image_bytes = buf.getvalue()
@@ -254,6 +330,7 @@ class ImageStudioManager:
 
             # Fallback to saved creator profile in database if option not explicitly provided
             if apply_brand is None and get_db:
+                conn = None
                 try:
                     conn = get_db()
                     cursor = conn.cursor()
@@ -266,9 +343,14 @@ class ImageStudioManager:
                             brand_text = prof_data.get("brand_watermark_text", "@dharmik136")
                         brand_pos = prof_data.get("brand_watermark_position", brand_pos)
                         brand_style = prof_data.get("brand_watermark_style", brand_style)
-                    conn.close()
                 except Exception as e:
                     print(f"[ImageStudio] Settings lookup note: {e}")
+                finally:
+                    if conn:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
 
             if apply_brand and apply_personal_brand_watermark and image_bytes:
                 self._update_task(task_id, 86, f"Stamping personal brand watermark ({brand_text or '@creator'})...")
@@ -294,6 +376,7 @@ class ImageStudioManager:
                 self._update_task(task_id, 90, "Preserving raw canvas format (provider watermark retained)...")
             time.sleep(delay)
 
+            os.makedirs(GENERATED_DIR, exist_ok=True)
             filename = f"gen_{uuid.uuid4().hex[:10]}.jpg"
             file_path = os.path.join(GENERATED_DIR, filename)
 
@@ -307,6 +390,7 @@ class ImageStudioManager:
 
             # Persist in media_assets table
             if get_db:
+                conn = None
                 try:
                     conn = get_db()
                     with conn:
@@ -325,9 +409,14 @@ class ImageStudioManager:
                             json.dumps({"width": width, "height": height}),
                             master_prompt
                         ))
-                    conn.close()
                 except Exception as e:
                     print(f"[ImageStudio] media_assets insert error: {e}")
+                finally:
+                    if conn:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
 
             # Stage 4: 100% Completion
             time.sleep(0.2)
@@ -343,6 +432,8 @@ class ImageStudioManager:
         except Exception as e:
             print(f"[ImageStudio] Worker error: {e}")
             self._update_task(task_id, 100, f"Generation failed: {str(e)}", status="failed", error=str(e))
+        finally:
+            self._worker_semaphore.release()
 
     def _call_openai_dalle3(self, prompt: str, api_key: str, width: int, height: int) -> Optional[bytes]:
         """Invokes OpenAI DALL-E 3 image generation API."""
@@ -410,12 +501,17 @@ class ImageStudioManager:
         in a bottom discard buffer and cleanly slices it off.
         If False, requests exact target dimensions without any cropping.
         """
+        # Clamp dimensions to safe bounds
+        width = max(MIN_DIMENSION, min(int(width) if width else 1080, MAX_DIMENSION))
+        height = max(MIN_DIMENSION, min(int(height) if height else 1080, MAX_DIMENSION))
+
+        prompt = (prompt or "Abstract architectural technology concept").strip()
         encoded_prompt = urllib.parse.quote(prompt[:450])
         seed = int(time.time()) % 1000000
 
         if eliminate_watermark:
             # Calculate oversampled dimensions so bottom watermark lands in the discard strip
-            target_ratio = float(width) / float(height)
+            target_ratio = float(width) / float(height) if height > 0 else 1.0
             if target_ratio >= 1.5:
                 # 16:9 Landscape
                 req_w = 1080
@@ -435,20 +531,31 @@ class ImageStudioManager:
 
         # enhance=false prevents Pollinations internal LLM from hallucinating portraits over scene descriptions
         url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={req_w}&height={req_h}&seed={seed}&nologo=true"
-        res = requests.get(url, timeout=30)
-        if res.status_code == 200 and len(res.content) > 5000:
-            if eliminate_watermark and remove_watermark_crop:
-                try:
-                    clean_bytes, _ = remove_watermark_crop(res.content, width, height)
-                    return clean_bytes
-                except Exception as e:
-                    print(f"[ImageStudio] Watermark removal crop error: {e}")
-            return res.content
+        try:
+            res = requests.get(url, timeout=30)
+            if res.status_code == 200 and len(res.content) > 5000:
+                if eliminate_watermark and remove_watermark_crop:
+                    try:
+                        clean_bytes, _ = remove_watermark_crop(res.content, width, height)
+                        return clean_bytes
+                    except Exception as e:
+                        print(f"[ImageStudio] Watermark removal crop error: {e}")
+                return res.content
+        except Exception as e:
+            print(f"[ImageStudio] Pollinations network error: {e}")
         return None
 
-    def _create_local_canvas_image(self, width: int, height: int, title: str, style: str) -> bytes:
+    def _create_local_canvas_image(self, width: int, height: int, title: Optional[str], style: Optional[str]) -> bytes:
         """Local PIL image generator ensuring 100% offline reliability."""
         from PIL import Image, ImageDraw, ImageFont
+
+        # Clamp dimensions to safe bounds
+        width = max(MIN_DIMENSION, min(int(width) if isinstance(width, (int, float)) and width > 0 else 1080, MAX_DIMENSION))
+        height = max(MIN_DIMENSION, min(int(height) if isinstance(height, (int, float)) and height > 0 else 1080, MAX_DIMENSION))
+
+        title = (title or "Concept").strip()
+        style = (style or "style").strip()
+
         img = Image.new("RGB", (width, height), color=(11, 15, 25))
         draw = ImageDraw.Draw(img)
 
@@ -460,10 +567,12 @@ class ImageStudioManager:
             draw.line([(0, y), (width, y)], fill=grid_color, width=1)
 
         # Draw decorative glowing center card
-        card_w, card_h = int(width * 0.75), int(height * 0.5)
-        x0 = (width - card_w) // 2
-        y0 = (height - card_h) // 2
-        draw.rounded_rectangle([x0, y0, x0 + card_w, y0 + card_h], radius=16, fill=(15, 23, 42), outline=(99, 102, 241), width=2)
+        card_w = max(20, min(width - 4, int(width * 0.75)))
+        card_h = max(20, min(height - 4, int(height * 0.5)))
+        x0 = max(0, (width - card_w) // 2)
+        y0 = max(0, (height - card_h) // 2)
+        radius = max(2, min(16, card_w // 4, card_h // 4))
+        draw.rounded_rectangle([x0, y0, min(width, x0 + card_w), min(height, y0 + card_h)], radius=radius, fill=(15, 23, 42), outline=(99, 102, 241), width=2)
 
         # Text labels
         try:

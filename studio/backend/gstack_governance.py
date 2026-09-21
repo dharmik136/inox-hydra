@@ -27,6 +27,13 @@ try:
 except ImportError:
     from database import get_db
 
+MAX_TITLE_LENGTH = 300
+MAX_SPEC_LENGTH = 10000
+MAX_ROLE_LENGTH = 50
+MAX_STATUS_LENGTH = 50
+MAX_AUDIT_CONTENT_LENGTH = 50000
+VALID_BACKLOG_STATUSES = ("PENDING", "IN_PROGRESS", "VERIFIED", "BLOCKED")
+
 GSTACK_ROLES = {
     "CEO": {
         "title": "CEO & Product Strategist",
@@ -105,6 +112,126 @@ FOUNDATIONAL_BACKLOG = [
     }
 ]
 
+UPCOMING_ROADMAP_BACKLOG = [
+    # Milestone 2: Hook Mechanics & Asymmetric Intelligence (Days 05 - 08)
+    {
+        "role": "CEO",
+        "title": "Day 05: Algorithmic Dwell Time Mathematical Weighting",
+        "specification": "Define formula: Score = 0.55*Dwell + 0.30*Comments + 0.15*Reactions to maximize feed visibility.",
+        "status": "PENDING"
+    },
+    {
+        "role": "DESIGNER",
+        "title": "Day 05: Bifurcated Trend Radar & Topic Velocity Grid",
+        "specification": "Implement #view-radar with Swiss card layout and 7-day velocity differentials.",
+        "status": "PENDING"
+    },
+    {
+        "role": "ENGINEERING_MANAGER",
+        "title": "Day 05: SQLite 7-Day Moving Average & Keyword Velocity Calculator",
+        "specification": "Compute local rolling average of impression velocity without cloud analytics dependencies.",
+        "status": "PENDING"
+    },
+    {
+        "role": "QA_LEAD",
+        "title": "Day 05: Dwell Time Pacing & Fold Boundary Test Matrix",
+        "specification": "Stress-test mobile fold simulator across edge cases: 1-line hooks, multiline code snippets, and emojis.",
+        "status": "PENDING"
+    },
+    {
+        "role": "ENGINEERING_MANAGER",
+        "title": "Day 06: Multi-Mirror CDN Fallback Engine",
+        "specification": "Implement redundant fallback chain: GitHub CDN -> jsDelivr -> Cloudflare R2 on 403 or 429.",
+        "status": "PENDING"
+    },
+    {
+        "role": "CSO",
+        "title": "Day 06: Anonymous Egress & Zero-Leak Edge Telemetry Verification",
+        "specification": "Verify that all intelligence sync requests strip local machine fingerprints and credentials.",
+        "status": "PENDING"
+    },
+    {
+        "role": "RELEASE_MANAGER",
+        "title": "Day 07: GitHub Releases Differential ETag Synchronization",
+        "specification": "Automate conditional packaging updates via GitHub release assets with ETag caching.",
+        "status": "PENDING"
+    },
+    {
+        "role": "CEO",
+        "title": "Day 08: Zero Token Markup Local AI Gateway Specification",
+        "specification": "Establish direct BYO-AI client architecture bypassing intermediary token reseller taxes.",
+        "status": "PENDING"
+    },
+    {
+        "role": "CSO",
+        "title": "Day 08: DPAPI Hardware Keying for Third-Party AI API Keys",
+        "specification": "Encrypt OpenAI, Anthropic, and Gemini API keys locally via Windows DPAPI before SQLite persistence.",
+        "status": "PENDING"
+    },
+    # Milestone 3: Modular Architecture & Systems Engineering (Days 09 - 12)
+    {
+        "role": "ENGINEERING_MANAGER",
+        "title": "Day 09: Sub-Millisecond SQLite FTS5 Full-Text Search for Docs",
+        "specification": "Build instant offline search index across all markdown playbooks and architectural specs.",
+        "status": "PENDING"
+    },
+    {
+        "role": "DESIGNER",
+        "title": "Day 09: Split-Pane Swiss Documentation Reader",
+        "specification": "Render offline architecture manuals with syntax highlighting and instant topic switching.",
+        "status": "PENDING"
+    },
+    {
+        "role": "ENGINEERING_MANAGER",
+        "title": "Day 10: Decouple SPA Modules with Strict Lifecycle Mount & Unmount",
+        "specification": "Refactor monolithic UI views into modular DOM controllers with explicit cleanup handlers.",
+        "status": "PENDING"
+    },
+    {
+        "role": "CEO",
+        "title": "Day 11: Post-Publish Edit & External Link Penalty Auditing Rules",
+        "specification": "Formalize algorithm reach suppression warnings for post edits within 60 minutes and outbound URLs.",
+        "status": "PENDING"
+    },
+    {
+        "role": "CEO",
+        "title": "Day 12: Multi-Factor ICP Scoring & Reverse-Engineered DM Templates",
+        "specification": "Score incoming commenters by seniority, company size, and engagement depth into Warm Lead pipeline.",
+        "status": "PENDING"
+    },
+    # Milestone 4: Quality Assurance, Packaging & Launch (Days 13 - 17)
+    {
+        "role": "DESIGNER",
+        "title": "Day 13: Vector PDF Carousel Generator with Swiss Grid Geometry",
+        "specification": "Programmatically generate high-DPI 4:5 document carousels with sharp typography and zero bitmap blur.",
+        "status": "PENDING"
+    },
+    {
+        "role": "QA_LEAD",
+        "title": "Day 14: Playwright End-to-End Visual Regression Suite",
+        "specification": "Automate headless Chromium tests validating desktop layout stability and 0 CLS across all 8 views.",
+        "status": "PENDING"
+    },
+    {
+        "role": "CSO",
+        "title": "Day 15: Comprehensive Air-Gap & Token Storage Threat Modeling",
+        "specification": "Conduct security audit asserting zero background outbound network sockets during offline operation.",
+        "status": "PENDING"
+    },
+    {
+        "role": "RELEASE_MANAGER",
+        "title": "Day 16: Single-Binary Windows PyInstaller & Embedded CPython Packager",
+        "specification": "Bundle application, local web server, and dependencies into a self-contained portable Windows executable.",
+        "status": "PENDING"
+    },
+    {
+        "role": "CEO",
+        "title": "Day 17: Public Launch Kit & The Sovereign Creator Manifesto Post",
+        "specification": "Finalize launch messaging, public documentation distribution, and open-source release kit.",
+        "status": "PENDING"
+    }
+]
+
 
 class GStackGovernanceEngine:
     """
@@ -115,85 +242,145 @@ class GStackGovernanceEngine:
         self._ensure_backlog_seeded()
 
     def _ensure_backlog_seeded(self) -> None:
-        """Seeds foundational G-Stack roadmap backlog if empty."""
+        """Seeds foundational G-Stack roadmap backlog and upcoming milestones if not present."""
+        conn = None
         try:
             conn = get_db()
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM gstack_backlog")
-            count = cursor.fetchone()[0]
-            if count == 0:
-                for item in FOUNDATIONAL_BACKLOG:
-                    cursor.execute("""
-                    INSERT INTO gstack_backlog (role, title, specification, status, anti_slop_check)
-                    VALUES (?, ?, ?, ?, 1)
-                    """, (item["role"], item["title"], item["specification"], item["status"]))
-                conn.commit()
-            conn.close()
+            with conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM gstack_backlog")
+                count = cursor.fetchone()[0]
+                if count == 0:
+                    for item in FOUNDATIONAL_BACKLOG:
+                        cursor.execute("""
+                        INSERT INTO gstack_backlog (role, title, specification, status, anti_slop_check)
+                        VALUES (?, ?, ?, ?, 1)
+                        """, (item["role"], item["title"], item["specification"], item["status"]))
+                
+                # Seed upcoming milestones idempotently
+                for item in UPCOMING_ROADMAP_BACKLOG:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM gstack_backlog WHERE role = ? AND title = ?",
+                        (item["role"], item["title"])
+                    )
+                    if cursor.fetchone()[0] == 0:
+                        cursor.execute("""
+                        INSERT INTO gstack_backlog (role, title, specification, status, anti_slop_check)
+                        VALUES (?, ?, ?, ?, 1)
+                        """, (item["role"], item["title"], item["specification"], item["status"]))
         except Exception:
             pass
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def get_roles(self) -> Dict[str, Any]:
         """Returns the 6 G-Stack roles, their titles, PRD references, and mandates."""
         return GSTACK_ROLES
 
-    def get_backlog(self, role: Optional[str] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_backlog(self, role: Optional[str] = None, status: Optional[str] = None, limit: int = 500) -> List[Dict[str, Any]]:
         """Queries tasks from gstack_backlog filtered by role and/or status."""
         self._ensure_backlog_seeded()
-        conn = get_db()
-        cursor = conn.cursor()
+        clamped_limit = max(1, min(int(limit) if isinstance(limit, (int, float)) else 500, 1000))
+        conn = None
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
 
-        query = "SELECT id, role, title, specification, status, anti_slop_check, created_at, updated_at FROM gstack_backlog WHERE 1=1"
-        params: List[Any] = []
+            query = "SELECT id, role, title, specification, status, anti_slop_check, created_at, updated_at FROM gstack_backlog WHERE 1=1"
+            params: List[Any] = []
 
-        if role:
-            query += " AND role = ?"
-            params.append(role)
-        if status:
-            query += " AND status = ?"
-            params.append(status)
+            if role and str(role).strip():
+                clean_role = str(role).strip()[:MAX_ROLE_LENGTH]
+                query += " AND role = ?"
+                params.append(clean_role)
+            if status and str(status).strip():
+                clean_status = str(status).strip().upper()[:MAX_STATUS_LENGTH]
+                query += " AND status = ?"
+                params.append(clean_status)
 
-        query += " ORDER BY id ASC"
-        cursor.execute(query, tuple(params))
-        rows = cursor.fetchall()
-        results = [dict(r) for r in rows]
-        conn.close()
-        return results
+            query += " ORDER BY id ASC LIMIT ?"
+            params.append(clamped_limit)
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+        except Exception:
+            return []
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def add_backlog_task(self, role: str, title: str, specification: str, status: str = "PENDING") -> int:
         """Appends a new task to the G-Stack governance backlog."""
-        if role not in GSTACK_ROLES:
+        norm_role = str(role or "").strip().upper()[:MAX_ROLE_LENGTH]
+        if norm_role not in GSTACK_ROLES:
             raise ValueError(f"Invalid G-Stack role: {role}. Must be one of {list(GSTACK_ROLES.keys())}")
 
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-        INSERT INTO gstack_backlog (role, title, specification, status, anti_slop_check, updated_at)
-        VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
-        """, (role, title, specification, status))
-        task_id = cursor.lastrowid
-        conn.commit()
-        conn.close()
-        return task_id
+        clean_title = str(title or "").strip()[:MAX_TITLE_LENGTH]
+        if not clean_title:
+            raise ValueError("Task title cannot be empty.")
+
+        clean_spec = str(specification or "").strip()[:MAX_SPEC_LENGTH]
+        if not clean_spec:
+            raise ValueError("Task specification cannot be empty.")
+
+        norm_status = str(status or "PENDING").strip().upper()[:MAX_STATUS_LENGTH]
+        if norm_status not in VALID_BACKLOG_STATUSES:
+            raise ValueError(f"Invalid status: {status}. Must be one of {VALID_BACKLOG_STATUSES}")
+
+        conn = None
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+            INSERT INTO gstack_backlog (role, title, specification, status, anti_slop_check, updated_at)
+            VALUES (?, ?, ?, ?, 1, CURRENT_TIMESTAMP)
+            """, (norm_role, clean_title, clean_spec, norm_status))
+            task_id = cursor.lastrowid
+            conn.commit()
+            return int(task_id)
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
     def update_backlog_status(self, task_id: int, status: str) -> bool:
         """Updates the lifecycle status of a backlog item."""
-        valid_statuses = ("PENDING", "IN_PROGRESS", "VERIFIED", "BLOCKED")
-        if status not in valid_statuses:
-            raise ValueError(f"Invalid status: {status}. Must be one of {valid_statuses}")
+        if not isinstance(task_id, int) or task_id <= 0:
+            return False
 
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute("""
-        UPDATE gstack_backlog
-        SET status = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-        """, (status, task_id))
-        modified = cursor.rowcount > 0
-        conn.commit()
-        conn.close()
-        return modified
+        norm_status = str(status or "").strip().upper()[:MAX_STATUS_LENGTH]
+        if norm_status not in VALID_BACKLOG_STATUSES:
+            raise ValueError(f"Invalid status: {status}. Must be one of {VALID_BACKLOG_STATUSES}")
 
-    def audit_content_or_feature(self, content: str, title: Optional[str] = None) -> Dict[str, Any]:
+        conn = None
+        try:
+            conn = get_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+            UPDATE gstack_backlog
+            SET status = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """, (norm_status, task_id))
+            modified = cursor.rowcount > 0
+            conn.commit()
+            return modified
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def audit_content_or_feature(self, content: Any, title: Optional[Any] = None) -> Dict[str, Any]:
         """
         Executes a 6-gate G-Stack audit against draft content or feature specifications:
         Gate 1 (CEO): Zero em-dash enforcement and anti-slop standards.
@@ -203,15 +390,19 @@ class GStackGovernanceEngine:
         Gate 5 (CSO): Absence of plain-text credentials or unsafe tracking links.
         Gate 6 (Release Manager): Self-contained, offline-renderable markdown.
         """
+        safe_content = str(content or "")[:MAX_AUDIT_CONTENT_LENGTH]
+        safe_title = str(title or "")[:MAX_TITLE_LENGTH] if title is not None else ""
+
         violations: List[str] = []
         gates: Dict[str, Dict[str, Any]] = {}
 
         # Gate 1: CEO Anti-Slop (Strict Zero Em-Dash)
-        em_dash_count = content.count("\u2014") + (title.count("\u2014") if title else 0)
-        has_generic_buzzwords = bool(re.search(r"\b(game-changer|revolutionary|synergistic|supercharge)\b", content, re.IGNORECASE))
+        em_dash = chr(0x2014)
+        em_dash_count = safe_content.count(em_dash) + safe_title.count(em_dash)
+        has_generic_buzzwords = bool(re.search(r"\b(game-changer|revolutionary|synergistic|supercharge)\b", safe_content, re.IGNORECASE))
         g1_passed = (em_dash_count == 0) and not has_generic_buzzwords
         if em_dash_count > 0:
-            violations.append(f"Gate 1 (CEO): Detected {em_dash_count} illegal em-dash characters (\\u2014).")
+            violations.append(f"Gate 1 (CEO): Detected {em_dash_count} illegal em-dash characters (U+2014).")
         if has_generic_buzzwords:
             violations.append("Gate 1 (CEO): Detected generic AI buzzword slop.")
         gates["gate_1_ceo"] = {
@@ -221,7 +412,7 @@ class GStackGovernanceEngine:
         }
 
         # Gate 2: Engineering Manager (Structural Bounds)
-        char_count = len(content)
+        char_count = len(safe_content)
         g2_passed = (50 <= char_count <= 3000)
         if char_count < 50:
             violations.append("Gate 2 (Eng Manager): Content is too short for algorithmic authority (<50 characters).")
@@ -233,9 +424,9 @@ class GStackGovernanceEngine:
         }
 
         # Gate 3: Designer (Mobile Fold Safety)
-        raw_lines = content.splitlines()
+        raw_lines = safe_content.splitlines()
         first_line = raw_lines[0].strip() if raw_lines else ""
-        first_3_lines_text = "\n".join(raw_lines[:3]) if len(raw_lines) >= 3 else content
+        first_3_lines_text = "\n".join(raw_lines[:3]) if len(raw_lines) >= 3 else safe_content
         pre_fold_chars = len(first_3_lines_text)
         g3_passed = (len(first_line) <= 140 and pre_fold_chars <= 210)
         if len(first_line) > 140:
@@ -250,8 +441,8 @@ class GStackGovernanceEngine:
         }
 
         # Gate 4: QA Lead (Completeness & Formatting)
-        has_line_breaks = "\n" in content
-        g4_passed = bool(content.strip()) and has_line_breaks
+        has_line_breaks = "\n" in safe_content
+        g4_passed = bool(safe_content.strip()) and has_line_breaks
         if not has_line_breaks:
             violations.append("Gate 4 (QA): Content lacks paragraph structure (monolithic block of text).")
         gates["gate_4_qa_lead"] = {
@@ -260,7 +451,7 @@ class GStackGovernanceEngine:
         }
 
         # Gate 5: CSO Security (No Leaks / Local-First)
-        has_secret_pattern = bool(re.search(r"(li_at|session_key|bot_token|api_key)=['\"][^'\"]+['\"]", content, re.IGNORECASE))
+        has_secret_pattern = bool(re.search(r"(li_at|session_key|bot_token|api_key)=['\"][^'\"]+['\"]", safe_content, re.IGNORECASE))
         g5_passed = not has_secret_pattern
         if has_secret_pattern:
             violations.append("Gate 5 (CSO): Potential credentials or secret keys detected in text payload.")

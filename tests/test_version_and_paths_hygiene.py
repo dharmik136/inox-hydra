@@ -36,7 +36,7 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 # search for it.
 EXCLUDED_DIRS = {".git", "archive", "build_artifacts", "scratch", "node_modules",
                  "__pycache__", ".pytest_cache", ".playwright-mcp", "dist", "build",
-                 "tests"}
+                 "tests", "logs", "backups"}
 EXCLUDED_RELPATHS = {
     os.path.join("docs", "prudent_handoff"),
     os.path.join("docs", "PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md"),

@@ -1,8 +1,24 @@
 import re
 import math
+from typing import Any
 
-def to_sans_bold(text: str) -> str:
+MAX_FORMAT_TEXT_LENGTH = 50000
+
+
+def _normalize_text(text: Any) -> str:
+    """Safely normalizes input text to bounded string, guarding against nulls and non-string types."""
+    if text is None:
+        return ""
+    if not isinstance(text, str):
+        text = str(text)
+    return text[:MAX_FORMAT_TEXT_LENGTH]
+
+
+def to_sans_bold(text: Any) -> str:
     """Converts standard ASCII characters to Unicode Mathematical Sans-Serif Bold."""
+    text = _normalize_text(text)
+    if not text:
+        return ""
     out = []
     for c in text:
         if 'A' <= c <= 'Z':
@@ -16,8 +32,11 @@ def to_sans_bold(text: str) -> str:
     return ''.join(out)
 
 
-def to_sans_italic(text: str) -> str:
+def to_sans_italic(text: Any) -> str:
     """Converts standard ASCII characters to Unicode Mathematical Sans-Serif Italic."""
+    text = _normalize_text(text)
+    if not text:
+        return ""
     out = []
     for c in text:
         if 'A' <= c <= 'Z':
@@ -29,8 +48,11 @@ def to_sans_italic(text: str) -> str:
     return ''.join(out)
 
 
-def to_monospace(text: str) -> str:
+def to_monospace(text: Any) -> str:
     """Converts ASCII characters to Unicode Mathematical Monospace."""
+    text = _normalize_text(text)
+    if not text:
+        return ""
     out = []
     for c in text:
         if 'A' <= c <= 'Z':
@@ -44,17 +66,170 @@ def to_monospace(text: str) -> str:
     return ''.join(out)
 
 
-def to_strikethrough(text: str) -> str:
+def to_strikethrough(text: Any) -> str:
     """Adds combining long stroke overlay (strikethrough) to each character."""
+    text = _normalize_text(text)
+    if not text:
+        return ""
     return ''.join(c + '\u0336' if c != '\n' else c for c in text)
 
 
-def clean_text_formatting(text: str) -> str:
+def to_serif_bold(text: Any) -> str:
+    """Converts standard ASCII characters to Unicode Mathematical Serif Bold."""
+    text = _normalize_text(text)
+    if not text:
+        return ""
+    out = []
+    for c in text:
+        if 'A' <= c <= 'Z':
+            out.append(chr(0x1D400 + ord(c) - ord('A')))
+        elif 'a' <= c <= 'z':
+            out.append(chr(0x1D41A + ord(c) - ord('a')))
+        elif '0' <= c <= '9':
+            out.append(chr(0x1D7CE + ord(c) - ord('0')))
+        else:
+            out.append(c)
+    return ''.join(out)
+
+
+def to_serif_italic(text: Any) -> str:
+    """Converts standard ASCII characters to Unicode Mathematical Serif Italic."""
+    text = _normalize_text(text)
+    if not text:
+        return ""
+    out = []
+    for c in text:
+        if 'A' <= c <= 'Z':
+            out.append(chr(0x1D434 + ord(c) - ord('A')))
+        elif c == 'h':
+            # Unicode Planck constant symbol represents italic small h
+            out.append('\u210E')
+        elif 'a' <= c <= 'z':
+            out.append(chr(0x1D44E + ord(c) - ord('a')))
+        else:
+            out.append(c)
+    return ''.join(out)
+
+
+def to_blackboard_bold(text: Any) -> str:
+    """Converts standard ASCII characters to Unicode Mathematical Double-Struck (Blackboard)."""
+    text = _normalize_text(text)
+    if not text:
+        return ""
+    # Gaps in Unicode BMP for capital letters
+    special_caps = {
+        'C': '\u2102',
+        'H': '\u210D',
+        'N': '\u2115',
+        'P': '\u2119',
+        'Q': '\u211A',
+        'R': '\u211D',
+        'Z': '\u2124',
+    }
+    out = []
+    for c in text:
+        if c in special_caps:
+            out.append(special_caps[c])
+        elif 'A' <= c <= 'Z':
+            out.append(chr(0x1D538 + ord(c) - ord('A')))
+        elif 'a' <= c <= 'z':
+            out.append(chr(0x1D552 + ord(c) - ord('a')))
+        elif '0' <= c <= '9':
+            out.append(chr(0x1D7D8 + ord(c) - ord('0')))
+        else:
+            out.append(c)
+    return ''.join(out)
+
+
+def to_underline(text: Any) -> str:
+    """Adds combining low line overlay (underline) to each character."""
+    text = _normalize_text(text)
+    if not text:
+        return ""
+    return ''.join(c + '\u0332' if c != '\n' else c for c in text)
+
+
+def to_circled_numbers(text: Any) -> str:
+    """Converts ASCII numbers 0-9 into filled black circled numbers (❶, ❷, ...)."""
+    text = _normalize_text(text)
+    if not text:
+        return ""
+    circled_map = {
+        '0': '\u24FF',  # Negative circled 0
+        '1': '\u2776',  # Dingbat negative circled digit 1
+        '2': '\u2777',
+        '3': '\u2778',
+        '4': '\u2779',
+        '5': '\u277A',
+        '6': '\u277B',
+        '7': '\u277C',
+        '8': '\u277D',
+        '9': '\u277E',
+    }
+    return ''.join(circled_map.get(c, c) for c in text)
+
+
+def calculate_dwell_metrics(text: Any) -> dict:
+    """
+    Calculates estimated reading velocity, dwell probability, and reading time:
+    - 220 words per minute average reading velocity
+    - 0.8s pause penalty per paragraph break
+    """
+    text = _normalize_text(text)
+    if not text.strip():
+        return {
+            "word_count": 0,
+            "char_count": 0,
+            "paragraph_count": 0,
+            "estimated_reading_sec": 0.0,
+            "dwell_status": "EMPTY",
+            "dwell_badge": "0.0s",
+            "description": "Empty canvas",
+        }
+
+    words = re.findall(r'\b\w+\b', text)
+    word_count = len(words)
+    char_count = len(text)
+    paragraphs = [p for p in text.split('\n\n') if p.strip()]
+    paragraph_count = max(1, len(paragraphs))
+    paragraph_breaks = max(0, paragraph_count - 1)
+
+    # 220 WPM = ~3.67 words per second
+    reading_sec = round((word_count / 220.0) * 60.0 + (paragraph_breaks * 0.8), 1)
+
+    if reading_sec < 8.0:
+        dwell_status = "LOW_VELOCITY"
+        desc = "Quick glance: high risk of rapid scroll-by"
+    elif reading_sec <= 22.0:
+        dwell_status = "OPTIMAL_HOOK"
+        desc = "Ideal reading velocity: prompts 'see more' click"
+    else:
+        dwell_status = "DEEP_DWELL"
+        desc = "In-depth authority: high dwell time distribution"
+
+    return {
+        "word_count": word_count,
+        "char_count": char_count,
+        "paragraph_count": paragraph_count,
+        "estimated_reading_sec": reading_sec,
+        "dwell_status": dwell_status,
+        "dwell_badge": f"{reading_sec}s",
+        "description": desc,
+    }
+
+
+def clean_text_formatting(text: Any) -> str:
     """
     Cleans em-dashes, en-dashes, irregular spaces, and restores clean natural punctuation.
     """
+    text = _normalize_text(text)
+    if not text:
+        return ""
+
+    em_dash = chr(0x2014)
+    en_dash = chr(0x2013)
     # Replace em-dashes and en-dashes with natural comma/pause
-    cleaned = text.replace("\u2014", ", ").replace("–", ", ")
+    cleaned = text.replace(em_dash, ", ").replace(en_dash, ", ")
     # Fix double/triple hyphens used as dashes
     cleaned = re.sub(r'(?<=\w)--+(?=\w)', ', ', cleaned)
     # Clean redundant spaces
@@ -66,7 +241,7 @@ def clean_text_formatting(text: str) -> str:
     return cleaned.strip()
 
 
-def analyze_hook(text: str) -> dict:
+def analyze_hook(text: Any) -> dict:
     """
     Deep-dive algorithmic analysis of LinkedIn post:
     - Hook strength and archetype classification
@@ -74,7 +249,8 @@ def analyze_hook(text: str) -> dict:
     - Pacing & whitespace density (penalizing walls of text)
     - Readability & punchiness score (0 - 100)
     """
-    if not text or not text.strip():
+    text = _normalize_text(text)
+    if not text.strip():
         return {
             "char_count": 0,
             "word_count": 0,
@@ -175,7 +351,10 @@ def analyze_hook(text: str) -> dict:
         recommendations.append("Avoid dense walls of text. Break long paragraphs into 1-2 sentence digestible chunks.")
 
     # Em-dash check
-    if "\u2014" in text or "–" in text:
+    em_dash = chr(0x2014)
+    en_dash = chr(0x2013)
+    has_dashes = (em_dash in text or en_dash in text)
+    if has_dashes:
         recommendations.append("Em-dashes detected. Use natural commas or periods for executive readability.")
         score -= 10
 
@@ -204,6 +383,6 @@ def analyze_hook(text: str) -> dict:
         "score": final_score,
         "blank_lines": blank_line_count,
         "hashtag_count": len(hashtags),
-        "has_em_dashes": ("\u2014" in text or "–" in text),
+        "has_em_dashes": has_dashes,
         "recommendations": recommendations if recommendations else ["Outstanding hook structure! Highly optimized for mobile scroll stoppage."]
     }

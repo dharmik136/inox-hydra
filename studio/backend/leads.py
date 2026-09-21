@@ -22,6 +22,15 @@ except ImportError:
     from database import get_db
 
 
+# -- Validation constants --------------------------------------------------
+MAX_NAME_LENGTH = 200
+MAX_HEADLINE_LENGTH = 500
+MAX_COMPANY_LENGTH = 300
+MAX_NOTES_LENGTH = 2000
+MAX_BATCH_SIZE = 500
+VALID_LEAD_STATUSES = {"New Lead", "Outreach Sent", "Connected", "Meeting Booked"}
+
+
 def list_leads(status: Optional[str] = None, search: Optional[str] = None) -> List[Dict[str, Any]]:
     conn = get_db()
     c = conn.cursor()
@@ -47,14 +56,18 @@ def list_leads(status: Optional[str] = None, search: Optional[str] = None) -> Li
 
 
 def add_lead(lead_data: Dict) -> Dict:
-    name = (lead_data.get("name") or "").strip()
+    name = (lead_data.get("name") or "").strip()[:MAX_NAME_LENGTH]
     if not name:
         return {"status": "error", "message": "Name is required"}
-        
+
+    headline = (lead_data.get("headline") or "").strip()[:MAX_HEADLINE_LENGTH]
+    company = (lead_data.get("company") or "").strip()[:MAX_COMPANY_LENGTH]
+    notes = (lead_data.get("notes") or "").strip()[:MAX_NOTES_LENGTH]
+
     lead_id = lead_data.get("id") or f"lead_{uuid.uuid4().hex[:8]}"
     conn = get_db()
     c = conn.cursor()
-    
+
     # Deduplicate if lead with same profile_url or exact name exists
     profile_url = (lead_data.get("profile_url") or "").strip()
     if profile_url:
@@ -64,7 +77,7 @@ def add_lead(lead_data: Dict) -> Dict:
             # Update notes or engagement if new comment
             c.execute("UPDATE leads SET engagement_type = ?, notes = ? WHERE id = ?", (
                 lead_data.get("engagement_type", "Commented"),
-                lead_data.get("notes", ""),
+                notes,
                 existing["id"]
             ))
             conn.commit()
@@ -77,13 +90,13 @@ def add_lead(lead_data: Dict) -> Dict:
     """, (
         lead_id,
         name,
-        lead_data.get("headline", ""),
-        lead_data.get("company", ""),
+        headline,
+        company,
         profile_url,
         lead_data.get("engagement_type", "Commented"),
         lead_data.get("post_id", ""),
         lead_data.get("status", "New Lead"),
-        lead_data.get("notes", "")
+        notes
     ))
     conn.commit()
     conn.close()
@@ -94,7 +107,13 @@ def batch_add_leads(leads_list: List[Dict]) -> Dict:
     """
     Ingests multiple leads captured passively or actively from LinkedIn.
     Safely ignores duplicates without raising errors.
+    Capped at MAX_BATCH_SIZE (500) per request to prevent DB lock starvation.
     """
+    if len(leads_list) > MAX_BATCH_SIZE:
+        return {
+            "status": "error",
+            "message": f"Batch size {len(leads_list)} exceeds maximum of {MAX_BATCH_SIZE} leads per request"
+        }
     conn = get_db()
     c = conn.cursor()
     added_count = 0
@@ -161,14 +180,23 @@ def batch_add_leads(leads_list: List[Dict]) -> Dict:
 
 
 def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = None) -> Dict:
+    if new_status not in VALID_LEAD_STATUSES:
+        return {
+            "status": "error",
+            "message": f"Invalid status '{new_status}'. Must be one of: {', '.join(sorted(VALID_LEAD_STATUSES))}"
+        }
     conn = get_db()
     c = conn.cursor()
     if notes is not None:
-        c.execute("UPDATE leads SET status = ?, notes = ? WHERE id = ?", (new_status, notes, lead_id))
+        sanitized_notes = notes.strip()[:MAX_NOTES_LENGTH]
+        c.execute("UPDATE leads SET status = ?, notes = ? WHERE id = ?", (new_status, sanitized_notes, lead_id))
     else:
         c.execute("UPDATE leads SET status = ? WHERE id = ?", (new_status, lead_id))
+    updated = c.rowcount
     conn.commit()
     conn.close()
+    if updated == 0:
+        return {"status": "not_found", "id": lead_id}
     return {"status": "success", "id": lead_id, "new_status": new_status}
 
 
@@ -176,8 +204,11 @@ def delete_lead(lead_id: str) -> Dict:
     conn = get_db()
     c = conn.cursor()
     c.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
+    deleted = c.rowcount
     conn.commit()
     conn.close()
+    if deleted == 0:
+        return {"status": "not_found", "id": lead_id}
     return {"status": "success", "id": lead_id}
 
 

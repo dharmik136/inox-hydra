@@ -33,6 +33,11 @@ def temp_home(monkeypatch):
     """Every test gets its own application home, so none touch the real database."""
     d = tempfile.mkdtemp(prefix="inox_migr_")
     monkeypatch.setenv("INOX_HYDRA_HOME", d)
+    # Unit tests in this file verify migration engine mechanics using synthetic
+    # migrations starting from BASELINE_VERSION (e.g. 2, 3).
+    # Reset MIGRATIONS to empty baseline for synthetic test isolation.
+    monkeypatch.setattr(migrations, "MIGRATIONS", [])
+    monkeypatch.setattr(migrations, "SCHEMA_VERSION", migrations.BASELINE_VERSION)
     yield d
     shutil.rmtree(d, ignore_errors=True)
 
@@ -250,3 +255,47 @@ def test_shipped_ledger_is_well_formed():
         "a migration claims a version at or below the baseline"
     )
     assert migrations.SCHEMA_VERSION == migrations.BASELINE_VERSION + len(migrations.MIGRATIONS)
+
+
+def test_migration_2_migrates_and_drops_inspirations(temp_home):
+    """
+    Verifies that Migration 2 migrates existing inspirations into viral_templates
+    and drops the inspirations table cleanly.
+    """
+    conn = sqlite3.connect(paths.get_db_path())
+    conn.execute("""
+    CREATE TABLE inspirations (
+        id TEXT PRIMARY KEY,
+        author_name TEXT,
+        author_headline TEXT,
+        topic TEXT,
+        content TEXT,
+        likes_count INTEGER DEFAULT 0,
+        comments_count INTEGER DEFAULT 0,
+        key_hook TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    conn.execute("""
+    INSERT INTO inspirations (id, topic, key_hook, content)
+    VALUES ('insp-test-1', 'Contrarian', 'Test hook line', 'Test hook line\n\nBody text')
+    """)
+    conn.commit()
+
+    # Apply real migration 2 callable
+    from studio.backend.migrations import _migrate_inspirations
+    cursor = conn.cursor()
+    _migrate_inspirations(cursor)
+    conn.commit()
+
+    # Table inspirations should be dropped
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspirations'")
+    assert cursor.fetchone() is None
+
+    # Table viral_templates should exist and contain migrated record
+    cursor.execute("SELECT archetype, hook_text FROM viral_templates WHERE example_post_id = 'migrated-insp-test-1'")
+    row = cursor.fetchone()
+    assert row is not None
+    assert row[0] == "Contrarian"
+    assert row[1] == "Test hook line"
+    conn.close()

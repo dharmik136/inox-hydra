@@ -6,7 +6,7 @@ Strict negative constraints checked before any text is returned or persisted.
 """
 
 import re
-from typing import Tuple, List
+from typing import Tuple, List, Any
 
 # Banned tropes that trigger LinkedIn algorithmic downranking or scream generic AI
 BANNED_TROPES = [
@@ -27,15 +27,18 @@ BANNED_TROPES = [
 ]
 
 
-def scrub_em_dashes(text: str) -> str:
+def scrub_em_dashes(text: Any) -> str:
     """
     Enforces strict zero em-dash compliance across all generated text.
     Replaces em-dashes, en-dashes, and double dashes with natural punctuation.
     """
     if not text:
         return ""
+    text_str = str(text)
+    em_dash = chr(0x2014)
+    en_dash = chr(0x2013)
     # Replace em-dash and en-dash
-    cleaned = text.replace("\u2014", ", ").replace("–", ", ")
+    cleaned = text_str.replace(em_dash, ", ").replace(en_dash, ", ")
     # Replace ASCII double/triple dash
     cleaned = re.sub(r'\s*--+\s*', ', ', cleaned)
     # Clean up double punctuation resulting from substitution

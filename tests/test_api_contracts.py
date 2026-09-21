@@ -7,6 +7,7 @@ data contracts, algorithmic safety rules, and zero em-dash compliance.
 
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 import pytest
 from fastapi.testclient import TestClient
 
@@ -100,7 +101,8 @@ def test_post_lifecycle():
     assert update_resp.json()["status"] == "success"
 
     # 4. Reschedule post
-    resched_resp = client.post(f"/api/posts/{post_id}/reschedule", json={"scheduled_for": "2026-09-20 08:30:00"})
+    future_time = (datetime.now(timezone.utc) + timedelta(days=2)).strftime("%Y-%m-%d 14:30:00")
+    resched_resp = client.post(f"/api/posts/{post_id}/reschedule", json={"scheduled_for": future_time})
     assert resched_resp.status_code == 200
     assert resched_resp.json()["status"] == "success"
 

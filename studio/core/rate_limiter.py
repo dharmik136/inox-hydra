@@ -14,7 +14,7 @@ Strict Invariants:
 """
 
 from concurrent.futures import Future
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional, Tuple
 import logging
 import queue
@@ -36,9 +36,13 @@ def generate_gaussian_interval(
     Clamping: Delta t in [mu - clamp_sigmas * sigma, mu + clamp_sigmas * sigma]
     Default: [900 - 240, 900 + 240] = [660.0s, 1140.0s] (11 to 19 minutes).
     """
-    min_bound = mu - (clamp_sigmas * sigma)
-    max_bound = mu + (clamp_sigmas * sigma)
-    raw_sample = random.gauss(mu, sigma)
+    safe_mu = max(0.001, float(mu))
+    safe_sigma = max(0.0, float(sigma))
+    safe_sigmas = max(0.0, float(clamp_sigmas))
+
+    min_bound = max(0.001, safe_mu - (safe_sigmas * safe_sigma))
+    max_bound = safe_mu + (safe_sigmas * safe_sigma)
+    raw_sample = random.gauss(safe_mu, safe_sigma)
     clamped_sample = max(min_bound, min(max_bound, raw_sample))
     return round(clamped_sample, 3)
 
@@ -57,12 +61,13 @@ class GaussianRateLimiter:
         capacity: float = 1.0,
         initial_tokens: Optional[float] = None,
     ):
-        self.mu = float(mu)
-        self.sigma = float(sigma)
-        self.clamp_sigmas = float(clamp_sigmas)
-        self.capacity = float(capacity)
+        self.mu = max(0.001, float(mu))
+        self.sigma = max(0.0, float(sigma))
+        self.clamp_sigmas = max(0.0, float(clamp_sigmas))
+        self.capacity = max(0.01, float(capacity))
         self.refill_rate = 1.0 / self.mu  # Tokens per second
-        self._tokens = float(capacity if initial_tokens is None else initial_tokens)
+        init_t = self.capacity if initial_tokens is None else float(initial_tokens)
+        self._tokens = max(0.0, min(self.capacity, init_t))
         self._last_refill = time.monotonic()
         self._lock = threading.Lock()
         self.total_acquisitions = 0
@@ -71,7 +76,7 @@ class GaussianRateLimiter:
 
     @property
     def min_bound(self) -> float:
-        return self.mu - (self.clamp_sigmas * self.sigma)
+        return max(0.001, self.mu - (self.clamp_sigmas * self.sigma))
 
     @property
     def max_bound(self) -> float:
@@ -94,12 +99,20 @@ class GaussianRateLimiter:
         Non-blocking token consumption check.
         Returns True if tokens were available and consumed, False otherwise.
         """
+        try:
+            tok = float(tokens)
+        except (TypeError, ValueError):
+            tok = 1.0
+
+        if tok <= 0.0:
+            return True
+
         with self._lock:
             self._refill()
-            if self._tokens >= tokens:
-                self._tokens -= tokens
+            if self._tokens >= tok:
+                self._tokens -= tok
                 self.total_acquisitions += 1
-                self.last_acquired_at = datetime.utcnow().isoformat()
+                self.last_acquired_at = datetime.now(timezone.utc).isoformat()
                 return True
             self.total_rejections += 1
             return False
@@ -110,9 +123,17 @@ class GaussianRateLimiter:
         If tokens are available immediately, returns 0.0.
         If unavailable, returns a Gaussian-jittered wait interval.
         """
+        try:
+            tok = float(tokens)
+        except (TypeError, ValueError):
+            tok = 1.0
+
+        if tok <= 0.0:
+            return 0.0
+
         with self._lock:
             self._refill()
-            if self._tokens >= tokens:
+            if self._tokens >= tok:
                 return 0.0
             # Token bucket empty: apply Gaussian-jittered wait
             return self.calculate_next_interval()
@@ -122,25 +143,44 @@ class GaussianRateLimiter:
         Acquires tokens, optionally blocking until the Gaussian wait interval elapses.
         Thread-safe across concurrent callers.
         """
+        try:
+            tok = float(tokens)
+        except (TypeError, ValueError):
+            tok = 1.0
+
+        if tok <= 0.0:
+            return True
+
+        parsed_timeout: Optional[float] = None
+        if timeout is not None:
+            try:
+                parsed_timeout = max(0.0, float(timeout))
+            except (TypeError, ValueError):
+                parsed_timeout = None
+
         start_time = time.monotonic()
         while True:
             with self._lock:
                 self._refill()
-                if self._tokens >= tokens:
-                    self._tokens -= tokens
+                if self._tokens >= tok:
+                    self._tokens -= tok
                     self.total_acquisitions += 1
-                    self.last_acquired_at = datetime.utcnow().isoformat()
+                    self.last_acquired_at = datetime.now(timezone.utc).isoformat()
                     return True
 
             if not block:
                 self.total_rejections += 1
                 return False
 
-            sleep_duration = min(self.calculate_next_interval(), 1.0)
-            if timeout is not None:
+            if parsed_timeout is not None and parsed_timeout <= 0.0:
+                self.total_rejections += 1
+                return False
+
+            sleep_duration = min(self.calculate_next_interval(), 0.5)
+            if parsed_timeout is not None:
                 elapsed = time.monotonic() - start_time
-                if elapsed + sleep_duration > timeout:
-                    remaining = timeout - elapsed
+                if elapsed + sleep_duration > parsed_timeout:
+                    remaining = parsed_timeout - elapsed
                     if remaining > 0:
                         time.sleep(remaining)
                     self.total_rejections += 1
@@ -151,7 +191,13 @@ class GaussianRateLimiter:
     def reset(self, tokens: Optional[float] = None):
         """Resets the token bucket to full capacity."""
         with self._lock:
-            self._tokens = self.capacity if tokens is None else float(tokens)
+            if tokens is None:
+                self._tokens = self.capacity
+            else:
+                try:
+                    self._tokens = max(0.0, min(self.capacity, float(tokens)))
+                except (TypeError, ValueError):
+                    self._tokens = self.capacity
             self._last_refill = time.monotonic()
 
     def get_diagnostics(self) -> Dict[str, Any]:
@@ -216,23 +262,45 @@ class SingleWriterActor:
 
     def submit(self, func: Callable, *args, **kwargs) -> Future:
         """Submits a write task asynchronously, returning a concurrent Future."""
+        if not callable(func):
+            raise TypeError("Task target func must be callable.")
         if not self._is_running:
             raise RuntimeError("SingleWriterActor is shut down.")
         future = Future()
-        self._queue.put((func, args, kwargs, future))
+        try:
+            self._queue.put((func, args, kwargs, future), timeout=5.0)
+        except queue.Full:
+            raise RuntimeError("SingleWriterActor queue is full.")
         return future
 
     def execute_sync(self, func: Callable, *args, timeout: float = 10.0, **kwargs) -> Any:
         """Executes a write task synchronously through the serialized queue."""
+        if not callable(func):
+            raise TypeError("Task target func must be callable.")
         future = self.submit(func, *args, **kwargs)
         return future.result(timeout=timeout)
 
     def stop(self, timeout: float = 3.0):
-        """Gracefully halts the single-writer actor thread."""
+        """Gracefully halts the single-writer actor thread and drains pending futures."""
         self._is_running = False
-        self._queue.put(None)
+        try:
+            self._queue.put_nowait(None)
+        except queue.Full:
+            pass
         if self._worker_thread.is_alive():
             self._worker_thread.join(timeout=timeout)
+
+        # Drain any remaining unprocessed tasks to avoid hanging callers
+        while not self._queue.empty():
+            try:
+                item = self._queue.get_nowait()
+                if item is not None:
+                    _, _, _, future = item
+                    if not future.done():
+                        future.set_exception(RuntimeError("SingleWriterActor shut down before task execution."))
+                self._queue.task_done()
+            except (queue.Empty, Exception):
+                break
 
     def get_metrics(self) -> Dict[str, Any]:
         """Telemetry diagnostics for the single-writer queue."""
