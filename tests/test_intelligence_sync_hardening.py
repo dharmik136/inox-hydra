@@ -178,8 +178,40 @@ def test_sync_http_200_no_valid_templates_preserves_cache():
         with patch("requests.get", return_value=mock_resp):
             res = engine.sync(force=True)
 
-        assert res["status"] == "error"
+        assert res["status"] == "no_valid_templates"
         assert res["hooks_count"] == 0
         assert "preserved" in res["message"]
         assert engine.get_total_count() == before_count
         assert not os.path.exists(etag_file), "ETag must not be saved for a payload with no valid templates"
+
+
+def test_api_sync_empty_payload_is_not_a_client_error():
+    """Verify a CDN 200 carrying no valid templates reports as a preserved no-op, not an HTTP 400."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {"templates": [None, "junk", {"hook_text": "   "}]}
+    mock_resp.headers = {"ETag": '"etag-empty-api"'}
+
+    with tempfile.TemporaryDirectory() as td:
+        from studio.backend import app as app_module
+        engine = app_module.intelligence_sync_engine
+        original_etag_file = engine.etag_file
+        engine.etag_file = os.path.join(td, "etag_cache")
+        try:
+            with patch("requests.get", return_value=mock_resp):
+                res = client.post("/api/v1/intelligence/sync", json={"force": True})
+            assert res.status_code == 200, "A preserved cache must not surface as a client error"
+            body = res.json()
+            assert body["status"] == "no_valid_templates"
+            assert body["hooks_count"] == 0
+            assert body["templates_available"] > 0
+            assert not os.path.exists(engine.etag_file)
+        finally:
+            engine.etag_file = original_etag_file
+
+
+def test_api_sync_real_error_still_returns_400():
+    """Verify genuine client errors (SSRF-blocked scheme) still map to HTTP 400."""
+    res = client.post("/api/v1/intelligence/sync", json={"force": True, "cdn_url": "file:///etc/passwd"})
+    assert res.status_code == 400
+    assert "Disallowed URL scheme" in res.json()["detail"]

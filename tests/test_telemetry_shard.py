@@ -225,3 +225,61 @@ def test_flush_failure_restores_buffered_events(temp_telemetry_env):
     assert res2["flushed_events"] == 1
     assert res2["flushed_dwells"] == 1
     assert buffer.pending_count() == 0
+
+
+def test_failed_flush_does_not_block_subsequent_ingests(temp_telemetry_env):
+    """Verifies a broken engine does not turn every ingest() into a blocking failed write."""
+    engine, buffer, db_path = temp_telemetry_env
+
+    attempts = {"n": 0}
+
+    def failing_write(batch):
+        attempts["n"] += 1
+        time.sleep(0.02)
+        raise RuntimeError("database is locked")
+
+    engine.record_events_batch = failing_write
+
+    for i in range(buffer.batch_size):
+        buffer.ingest("storm", {"i": i})
+    assert attempts["n"] == 1, "The first threshold crossing should attempt exactly one flush"
+
+    started = time.perf_counter()
+    for i in range(buffer.batch_size * 3):
+        buffer.ingest("storm", {"i": 1000 + i})
+    elapsed = time.perf_counter() - started
+
+    assert attempts["n"] == 1, "Ingests during the cooldown must not re-trigger the failing engine"
+    assert elapsed < 0.5, f"Ingest stayed non-blocking (took {elapsed:.3f}s)"
+    assert buffer.pending_count() > 0
+
+
+def test_concurrent_failed_flushes_preserve_chronological_order(temp_telemetry_env):
+    """Verifies overlapping flushes are serialized so restored batches keep their order."""
+    import threading
+
+    engine, buffer, db_path = temp_telemetry_env
+
+    def failing_write(batch):
+        time.sleep(0.01)
+        raise RuntimeError("locked")
+
+    original = engine.record_events_batch
+    engine.record_events_batch = failing_write
+
+    for i in range(6):
+        buffer.ingest("ordered", {"seq": i})
+
+    threads = [threading.Thread(target=buffer.flush) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    engine.record_events_batch = original
+    buffer.flush()
+
+    rows = engine.get_recent_events(event_type="ordered", limit=100)
+    seqs = [r["payload"]["seq"] for r in rows][::-1]
+    assert seqs == sorted(seqs), f"Restored events lost chronological order: {seqs}"
+    assert len(seqs) == 6, f"Expected all 6 events to survive, got {len(seqs)}"

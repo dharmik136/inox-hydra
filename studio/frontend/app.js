@@ -3730,6 +3730,27 @@ function initQueue() {
   }
 }
 
+// Converts a slot record from /api/queue/next-slot into the local wall-clock
+// string a datetime-local input expects. The backend returns slot_datetime as a
+// true UTC instant and local_datetime as the creator-local equivalent, so the
+// UTC field must never be sliced straight into the picker.
+function slotToPickerValue(slot) {
+  if (!slot) {
+    return "";
+  }
+  const source = slot.local_datetime || slot.slot_datetime;
+  if (!source) {
+    return "";
+  }
+  const parsed = new Date(source);
+  if (isNaN(parsed.getTime())) {
+    return String(source).slice(0, 16);
+  }
+  return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 16);
+}
+
 function updateQueuePauseUI(isPaused) {
   isQueuePausedState = isPaused;
   const banner = document.getElementById("queue-paused-banner");
@@ -3810,8 +3831,9 @@ function initScheduleModal() {
         if (res.ok) {
           const json = await res.json();
           const slot = json.slot;
-          if (slot && slot.slot_datetime && picker) {
-            picker.value = slot.slot_datetime.slice(0, 16);
+          const slotValue = slotToPickerValue(slot);
+          if (slotValue && picker) {
+            picker.value = slotValue;
             validateScheduleInput(picker.value);
           }
         }
@@ -4007,8 +4029,9 @@ async function openScheduleModal(targetPostId = null, currentScheduledFor = null
         if (quickLabel) {
           quickLabel.innerText = `${slot.day_name} ${slot.time_slot}`;
         }
-        if (picker && slot.slot_datetime) {
-          picker.value = slot.slot_datetime.slice(0, 16);
+        const slotValue = slotToPickerValue(slot);
+        if (picker && slotValue) {
+          picker.value = slotValue;
           validateScheduleInput(picker.value);
         }
       }
@@ -4225,11 +4248,6 @@ async function loadQueue() {
         });
       }
     }
-
-  } catch (e) {
-    console.error("Failed to load queue:", e);
-  }
-}
 
   } catch (e) {
     console.error("Failed to load queue:", e);
