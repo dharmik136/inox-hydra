@@ -1,0 +1,245 @@
+{
+  "$schema_version": 1,
+  "description": "Provenance and contract for every symbol in the studio's inline SVG sprite. Generated and verified by tests/test_icon_system.py.",
+  "sprite": {
+    "location": "studio/frontend/index.html",
+    "container_id": "editorial-symbol-catalog",
+    "view_box": "0 0 24 24",
+    "stroke_width": "2",
+    "stroke_linecap": "round",
+    "stroke_linejoin": "round",
+    "colour": "currentColor"
+  },
+  "source": {
+    "iconset": "coolicons (Free Iconset, Community)",
+    "figma_file_key": "P1LOY4s7crnhhkWpmYGNDo",
+    "figma_file_name": "Icons",
+    "retrieved_via": "Figma REST API: GET /v1/files/{key}/nodes then GET /v1/images/{key}?format=svg",
+    "credential": "FIGMA_API_KEY environment variable (never committed)"
+  },
+  "size_classes": {
+    "app-symbol-xs": 11,
+    "app-symbol-sm": 13,
+    "app-symbol": 14,
+    "app-symbol-md": 16,
+    "app-symbol-lg": 20
+  },
+  "symbols": {
+    "sym-brand-logo": {
+      "role": "brand",
+      "source": "hand-authored",
+      "figma_node_id": null,
+      "references": 3
+    },
+    "sym-sec-composer": {
+      "role": "section",
+      "source": "Edit/Edit_Pencil_Line_01",
+      "figma_node_id": "30789:32205",
+      "references": 4
+    },
+    "sym-sec-queue": {
+      "role": "section",
+      "source": "Calendar/Calendar_Days",
+      "figma_node_id": "30789:32316",
+      "references": 5
+    },
+    "sym-sec-crm": {
+      "role": "section",
+      "source": "User/Users_Group",
+      "figma_node_id": "30789:32448",
+      "references": 4
+    },
+    "sym-sec-analytics": {
+      "role": "section",
+      "source": "Interface/Chart_Line",
+      "figma_node_id": "30789:32117",
+      "references": 4
+    },
+    "sym-sec-docs": {
+      "role": "section",
+      "source": "File/File_Document",
+      "figma_node_id": "30789:32083",
+      "references": 7
+    },
+    "sym-sec-swipe": {
+      "role": "section",
+      "source": "Interface/Bookmark",
+      "figma_node_id": "30789:32259",
+      "references": 3
+    },
+    "sym-sec-brand": {
+      "role": "section",
+      "source": "Edit/Swatches_Palette",
+      "figma_node_id": "30789:32203",
+      "references": 4
+    },
+    "sym-sec-ai-command": {
+      "role": "section",
+      "source": "System/Terminal",
+      "figma_node_id": "30789:32417",
+      "references": 16
+    },
+    "sym-sec-chat": {
+      "role": "section",
+      "source": "Communication/Chat_Conversation",
+      "figma_node_id": "30789:32307",
+      "references": 1
+    },
+    "sym-sec-radar": {
+      "role": "section",
+      "source": "Navigation/Compass",
+      "figma_node_id": "30789:32249",
+      "references": 1
+    },
+    "sym-act-copy": {
+      "role": "action",
+      "source": "Edit/Copy",
+      "figma_node_id": "30789:32210",
+      "references": 6
+    },
+    "sym-act-save": {
+      "role": "action",
+      "source": "System/Save",
+      "figma_node_id": "30789:32370",
+      "references": 5
+    },
+    "sym-act-export": {
+      "role": "action",
+      "source": "Interface/Download",
+      "figma_node_id": "30789:32167",
+      "references": 6
+    },
+    "sym-act-eye": {
+      "role": "action",
+      "source": "Edit/Show",
+      "figma_node_id": "30789:32351",
+      "references": 3
+    },
+    "sym-act-lock": {
+      "role": "action",
+      "source": "Interface/Lock",
+      "figma_node_id": "30789:32184",
+      "references": 4
+    },
+    "sym-act-tag": {
+      "role": "action",
+      "source": "Interface/Tag",
+      "figma_node_id": "30789:32139",
+      "references": 2
+    },
+    "sym-act-trim": {
+      "role": "action",
+      "source": "Edit/Crop",
+      "figma_node_id": "30789:32189",
+      "references": 2
+    },
+    "sym-act-clean": {
+      "role": "action",
+      "source": "Edit/Text",
+      "figma_node_id": "30789:32195",
+      "references": 5
+    },
+    "sym-act-spark": {
+      "role": "action",
+      "source": "Interface/Star",
+      "figma_node_id": "30789:32165",
+      "references": 10
+    },
+    "sym-act-hooks": {
+      "role": "action",
+      "source": "Environment/Bulb",
+      "figma_node_id": "30789:32431",
+      "references": 5
+    },
+    "sym-act-image": {
+      "role": "action",
+      "source": "Media/Image_01",
+      "figma_node_id": "30789:32376",
+      "references": 3
+    },
+    "sym-act-rhythm": {
+      "role": "action",
+      "source": "Interface/Trending_Up",
+      "figma_node_id": "30789:32115",
+      "references": 3
+    },
+    "sym-act-repurpose": {
+      "role": "action",
+      "source": "Arrow/Arrow_Reload_02",
+      "figma_node_id": "30789:32162",
+      "references": 1
+    },
+    "sym-act-apply": {
+      "role": "action",
+      "source": "Interface/Check",
+      "figma_node_id": "30789:32175",
+      "references": 11
+    },
+    "sym-act-eject": {
+      "role": "action",
+      "source": "Interface/Log_Out",
+      "figma_node_id": "30789:32099",
+      "references": 4
+    },
+    "sym-act-publish": {
+      "role": "action",
+      "source": "Communication/Paper_Plane",
+      "figma_node_id": "30789:32308",
+      "references": 0
+    },
+    "sym-act-theme-dark": {
+      "role": "action",
+      "source": "Environment/Moon",
+      "figma_node_id": "30789:32350",
+      "references": 1
+    },
+    "sym-act-theme-light": {
+      "role": "action",
+      "source": "Environment/Sun",
+      "figma_node_id": "30789:32352",
+      "references": 1
+    },
+    "sym-mode-audit": {
+      "role": "mode",
+      "source": "Warning/Shield_Check",
+      "figma_node_id": "30789:32271",
+      "references": 2
+    },
+    "sym-mode-brand": {
+      "role": "mode",
+      "source": "Interface/Label",
+      "figma_node_id": "30789:32100",
+      "references": 2
+    },
+    "sym-mode-media": {
+      "role": "mode",
+      "source": "Media/Image_02",
+      "figma_node_id": "30789:32425",
+      "references": 7
+    },
+    "sym-mode-preview": {
+      "role": "mode",
+      "source": "System/Monitor",
+      "figma_node_id": "30789:32428",
+      "references": 2
+    },
+    "sym-mode-prompt": {
+      "role": "mode",
+      "source": "Communication/Chat_Circle_Dots",
+      "figma_node_id": "30789:32310",
+      "references": 2
+    },
+    "sym-refresh": {
+      "role": "utility",
+      "source": "Arrow/Arrows_Reload_01",
+      "figma_node_id": "30789:32164",
+      "references": 4
+    },
+    "sym-close": {
+      "role": "utility",
+      "source": "Menu/Close_MD",
+      "figma_node_id": "30789:32318",
+      "references": 15
+    }
+  }
+}
