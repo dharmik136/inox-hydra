@@ -197,6 +197,48 @@ def _migrate_capture_context(cursor: sqlite3.Cursor) -> None:
         cursor.execute("ALTER TABLE lead_interactions ADD COLUMN capture_context TEXT")
 
 
+def _migrate_post_identity(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 7:
+    Gives a post the identity LinkedIn knows it by.
+
+    Three attribution surfaces already exist and are already correct:
+    crm.py:637 joins leads to posts, app.py:516 powers the leaderboard, and
+    /api/v1/analytics/posts/{id}/leads answers the question this product was
+    built to answer. All three have returned zero for their entire existence,
+    because posts had no column holding the URN and lead_interactions was never
+    sent one.
+
+      activity_urn        the urn:li:activity: LinkedIn assigned on publish
+      content_fingerprint the opening of the text, used to recognise the post
+                          on its own permalink without depending on any CSS
+                          class LinkedIn can rename
+      draft_id            the drafts row this came from, so authored form
+                          (archetype, pre_fold_chars) can be correlated with
+                          outcome
+
+    The unique index is partial. Unbound posts are the normal state, so NULL
+    must not collide with NULL.
+    """
+    cursor.execute("PRAGMA table_info(posts)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "activity_urn" not in columns:
+        cursor.execute("ALTER TABLE posts ADD COLUMN activity_urn TEXT")
+    if "content_fingerprint" not in columns:
+        cursor.execute("ALTER TABLE posts ADD COLUMN content_fingerprint TEXT")
+    if "draft_id" not in columns:
+        cursor.execute("ALTER TABLE posts ADD COLUMN draft_id INTEGER")
+
+    cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_posts_activity_urn "
+        "ON posts(activity_urn) WHERE activity_urn IS NOT NULL"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_posts_fingerprint "
+        "ON posts(content_fingerprint) WHERE content_fingerprint IS NOT NULL"
+    )
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -207,6 +249,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (4, "Add provenance column to analytics_daily and audience_demographics", _migrate_provenance),
     (5, "Record observation window and precision on analytics_daily", _migrate_observation_window),
     (6, "Record capture context on lead_interactions", _migrate_capture_context),
+    (7, "Give a post the activity URN and fingerprint that identify it", _migrate_post_identity),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

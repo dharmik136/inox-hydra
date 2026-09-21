@@ -74,6 +74,7 @@ try:
                         describe as describe_paths)
     from .docs_engine import search_docs_fts, init_docs_search_index
     from .carousel_engine import carousel_engine
+    from . import post_identity
     from .browser_launcher import (
         detect_installed_browsers,
         create_desktop_shortcuts,
@@ -129,6 +130,7 @@ except ImportError:
                         describe as describe_paths)
     from docs_engine import search_docs_fts, init_docs_search_index
     from carousel_engine import carousel_engine
+    import post_identity
     from browser_launcher import (
         detect_installed_browsers,
         create_desktop_shortcuts,
@@ -2047,6 +2049,187 @@ def get_lead_interaction_timeline(lead_id: str):
     if res["status"] == "not_found":
         raise HTTPException(status_code=404, detail="Lead not found")
     return res
+
+
+# -------------------------------------------------------------
+# Post Identity: binding what the creator wrote to what LinkedIn published
+# -------------------------------------------------------------
+class InjectedPostRequest(BaseModel):
+    content: str
+    draft_id: Optional[int] = None
+
+
+@app.post("/api/v1/posts/injected", tags=["Post Identity"])
+def record_injected_post(req: InjectedPostRequest):
+    """
+    Record that the creator just put this text into LinkedIn's composer.
+
+    This is bookkeeping on an event the studio itself caused, not an
+    observation of LinkedIn, so it contacts nothing. It is also the first link
+    in the only chain that can answer "which post produced my best leads":
+    without a row here, the URN seen later on the permalink has nothing to
+    attach to.
+    """
+    fingerprint = post_identity.content_fingerprint(req.content)
+    if fingerprint is None:
+        return {
+            "status": "too_short",
+            "message": (
+                "This text is too short to identify the post again later. "
+                "It was injected, but engagement cannot be attributed to it."
+            ),
+        }
+
+    conn = get_db()
+    try:
+        with conn:
+            cursor = conn.cursor()
+            # An unbound post with the same fingerprint is the same post being
+            # injected twice, which happens when the creator retries. Reuse it
+            # rather than creating a second row that will compete for the URN.
+            cursor.execute(
+                "SELECT id FROM posts WHERE content_fingerprint = ? AND activity_urn IS NULL",
+                (fingerprint,),
+            )
+            existing = cursor.fetchone()
+            now = datetime.now(timezone.utc).isoformat()
+
+            if existing:
+                post_id = existing["id"]
+                cursor.execute(
+                    "UPDATE posts SET published_at = ?, status = 'published' WHERE id = ?",
+                    (now, post_id),
+                )
+            else:
+                post_id = f"post-{uuid.uuid4().hex[:12]}"
+                cursor.execute(
+                    """
+                    INSERT INTO posts (id, content, status, published_at, content_fingerprint, draft_id)
+                    VALUES (?, ?, 'published', ?, ?, ?)
+                    """,
+                    (post_id, req.content, now, fingerprint, req.draft_id),
+                )
+    finally:
+        conn.close()
+
+    return {
+        "status": "recorded",
+        "post_id": post_id,
+        "content_fingerprint": fingerprint,
+        "message": "Open this post on LinkedIn once and the studio will bind its URN.",
+    }
+
+
+class BindUrnRequest(BaseModel):
+    activity_urn: str
+    post_text: str
+
+
+@app.post("/api/v1/posts/bind-urn", tags=["Post Identity"])
+def bind_post_urn(req: BindUrnRequest):
+    """
+    Attach a LinkedIn activity URN to the post the creator wrote.
+
+    The extension sends the URN from location.pathname and the text rendered on
+    the page. Matching happens here rather than in the extension so the rule is
+    testable and so the extension never has to track which post is armed.
+
+    Refuses rather than guesses. If no unbound post matches the text, nothing is
+    written, because a wrong binding would attribute one post's engagers to
+    another and be very hard to notice.
+    """
+    urn = post_identity.extract_activity_urn(req.activity_urn) or req.activity_urn
+    if not post_identity.ACTIVITY_URN_PATTERN.fullmatch(urn or ""):
+        return {"status": "invalid_urn", "bound": False, "activity_urn": urn}
+
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM posts WHERE activity_urn = ?", (urn,))
+        already = cursor.fetchone()
+        if already:
+            return {"status": "already_bound", "bound": True, "post_id": already["id"], "activity_urn": urn}
+
+        cursor.execute(
+            """
+            SELECT id, content_fingerprint FROM posts
+            WHERE activity_urn IS NULL AND content_fingerprint IS NOT NULL
+            ORDER BY published_at DESC
+            LIMIT 50
+            """
+        )
+        candidates = cursor.fetchall()
+
+        for row in candidates:
+            if post_identity.fingerprint_matches(req.post_text, row["content_fingerprint"]):
+                with conn:
+                    conn.execute(
+                        "UPDATE posts SET activity_urn = ? WHERE id = ?", (urn, row["id"])
+                    )
+                return {
+                    "status": "bound",
+                    "bound": True,
+                    "post_id": row["id"],
+                    "activity_urn": urn,
+                }
+
+        return {
+            "status": "no_match",
+            "bound": False,
+            "activity_urn": urn,
+            "candidates_considered": len(candidates),
+        }
+    finally:
+        conn.close()
+
+
+@app.get("/api/v1/posts/{post_id}/engagers", tags=["Post Identity"])
+def get_post_engagers(post_id: str):
+    """
+    The people who engaged with one post.
+
+    This is the question the product exists to answer and the first time it can
+    be asked of real data.
+    """
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, activity_urn, content FROM posts WHERE id = ?", (post_id,))
+        post = cursor.fetchone()
+        if not post:
+            raise HTTPException(status_code=404, detail="No such post")
+
+        if not post["activity_urn"]:
+            return {
+                "status": "unbound",
+                "post_id": post_id,
+                "engagers": [],
+                "message": "This post has no LinkedIn URN yet. Open it on LinkedIn once to bind it.",
+            }
+
+        cursor.execute(
+            """
+            SELECT l.id, l.full_name, l.name, l.headline, l.company,
+                   l.seniority_level, l.icp_score, l.profile_url,
+                   i.interaction_type, i.comment_text, i.interacted_at
+            FROM lead_interactions i
+            JOIN leads l ON l.id = i.lead_id
+            WHERE i.post_urn = ?
+            ORDER BY l.icp_score DESC
+            """,
+            (post["activity_urn"],),
+        )
+        engagers = [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "post_id": post_id,
+        "activity_urn": post["activity_urn"],
+        "count": len(engagers),
+        "engagers": engagers,
+    }
 
 
 @app.get("/api/v1/session/health", tags=["LinkedIn Session & Telemetry"])

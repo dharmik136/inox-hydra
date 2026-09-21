@@ -101,7 +101,20 @@ document.addEventListener("DOMContentLoaded", () => {
           console.warn(chrome.runtime.lastError);
           showToast("⚠️ Please refresh your LinkedIn tab to activate bridge!");
         } else if (response && response.status === "success") {
-          showToast("✅ Successfully inserted into LinkedIn composer!");
+          // Record the post at the moment the studio causes it to exist.
+          //
+          // This line is the difference between a CRM full of strangers and
+          // one that can say which post brought each person in. Without a row
+          // here, the activity URN seen later on the permalink has nothing to
+          // attach to, and three complete attribution surfaces keep returning
+          // zero. It is bookkeeping on an event the studio itself caused, so
+          // it contacts nothing but the local backend.
+          fetch("http://127.0.0.1:8000/api/v1/posts/injected", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ content: content })
+          }).catch(() => {});
+          showToast("✅ Inserted into the composer. Open the post once after publishing and the studio will link it.");
         } else {
           showToast("⚠️ Click 'Start a post' on LinkedIn first!");
         }
