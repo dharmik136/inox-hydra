@@ -65,7 +65,7 @@ class CarouselDeckEngine:
         total_slides: int,
         theme_name: str = "dark_obsidian",
         aspect_ratio: str = "4:5",
-        author_name: str = "Dharmik Shingala",
+        author_name: str = "",
         author_title: str = "Enterprise Systems Practitioner"
     ) -> str:
         """
@@ -163,7 +163,7 @@ class CarouselDeckEngine:
         slides: List[Dict[str, Any]],
         theme: str = "dark_obsidian",
         aspect_ratio: str = "4:5",
-        author_name: str = "Dharmik Shingala",
+        author_name: str = "",
         author_title: str = "Enterprise Systems Practitioner"
     ) -> Dict[str, Any]:
         """

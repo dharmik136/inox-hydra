@@ -499,7 +499,7 @@ class LinkedInClient:
         if mock or li_at.startswith(("mock_", "sandbox_", "test_")):
             now_iso = datetime.now(timezone.utc).isoformat()
             mock_profile = {
-                "name": "Dharmik Shingala",
+                "name": "Mock Creator",
                 "headline": "Enterprise Systems Architect & Content Strategist",
                 "vanity": "dharmik-shingala",
                 "status": "authenticated"

@@ -252,10 +252,10 @@ class ImageGenerateRequest(BaseModel):
 
 
 class CreatorProfilePayload(BaseModel):
-    name: Optional[str] = "Dharmik Shingala"
-    headline: Optional[str] = "AI Systems Engineer & Full-Stack Architect"
-    company: Optional[str] = "Enterprise Labs"
-    brand_watermark_text: Optional[str] = "@dharmik136"
+    name: Optional[str] = ""
+    headline: Optional[str] = ""
+    company: Optional[str] = ""
+    brand_watermark_text: Optional[str] = ""
     brand_watermark_position: Optional[str] = "bottom_right"
     brand_watermark_style: Optional[str] = "glass_pill"
     brand_watermark_enabled: Optional[bool] = True
@@ -274,7 +274,7 @@ class CopilotRequest(BaseModel):
 class CarouselRequest(BaseModel):
     slides: List[Dict[str, str]]
     theme: Optional[str] = "dark_slate"
-    author_name: Optional[str] = "Dharmik Shingala"
+    author_name: Optional[str] = None
     author_title: Optional[str] = "Content Strategist & Enterprise Systems Practitioner"
 
 
@@ -987,7 +987,7 @@ class CarouselDeckRequest(BaseModel):
     slides: List[Dict[str, Any]] = Field(..., min_length=1, max_length=50)
     theme: Optional[str] = "dark_obsidian"
     aspect_ratio: Optional[str] = "4:5"
-    author_name: Optional[str] = "Dharmik Shingala"
+    author_name: Optional[str] = None
     author_title: Optional[str] = "Enterprise Systems Practitioner"
 
     @field_validator("slides")
@@ -1010,7 +1010,7 @@ def generate_vector_carousel_deck(req: CarouselDeckRequest):
         slides=req.slides,
         theme=req.theme or "dark_obsidian",
         aspect_ratio=req.aspect_ratio or "4:5",
-        author_name=req.author_name or "Dharmik Shingala",
+        author_name=req.author_name or "",
         author_title=req.author_title or "Enterprise Systems Practitioner"
     )
     if res.get("status") == "error":
@@ -1553,10 +1553,13 @@ def get_creator_profile():
     row = cursor.fetchone()
 
     defaults = {
-        "name": "Dharmik Shingala",
-        "headline": "AI Systems Engineer & Full-Stack Architect",
-        "company": "Enterprise Labs",
-        "brand_watermark_text": "@dharmik136",
+        # Empty, not absent: the shape stays stable for the form that binds to
+        # it. `is_set` in the response is how a caller tells "not configured"
+        # apart from "configured to an empty string".
+        "name": "",
+        "headline": "",
+        "company": "",
+        "brand_watermark_text": "",
         "brand_watermark_position": "bottom_right",
         "brand_watermark_style": "glass_pill",
         "brand_watermark_enabled": True,
@@ -1578,9 +1581,17 @@ def get_creator_profile():
     li_row = cursor.fetchone()
     conn.close()
 
+    # Whether this install knows who its creator is. Callers need to tell
+    # "never configured" apart from "configured to an empty string", and the
+    # first is the state every fresh install starts in. Anything that renders a
+    # name (watermarks, carousel footers, the feed simulator) should ask before
+    # rendering rather than falling back to a value it invented.
+    identity_is_set = bool((profile.get("name") or "").strip())
+
     return {
         "status": "success",
         "profile": profile,
+        "is_set": identity_is_set,
         "linkedin_connected": linkedin_client.is_authenticated(),
         "session_status": s_row["value"] if s_row else "ready",
         "last_token_update": t_row["value"] if t_row else None,

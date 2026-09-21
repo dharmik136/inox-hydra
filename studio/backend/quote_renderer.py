@@ -185,7 +185,7 @@ def render_typographic_quote(
 
 def apply_personal_brand_watermark(
     img: Image.Image,
-    brand_text: str = "@dharmik136",
+    brand_text: str = "",
     position: str = "bottom_right",
     style: str = "glass_pill"
 ) -> Image.Image:
