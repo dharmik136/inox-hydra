@@ -5723,7 +5723,24 @@ function initFloatingFlowWidget() {
     });
   }
 
-  // 4. Hook real-time audit onto editor input
+  // 4. Hook Screen Concept & Bug Identifier Actions
+  const inspectBtn = document.getElementById("btn-inspect-screen");
+  const viewSheetBtn = document.getElementById("btn-view-internal-sheet");
+  if (inspectBtn) {
+    inspectBtn.addEventListener("click", () => {
+      drawerPanel.style.display = "none";
+      startScreenInspection();
+    });
+  }
+  if (viewSheetBtn) {
+    viewSheetBtn.addEventListener("click", () => {
+      drawerPanel.style.display = "none";
+      openInternalSheetModal();
+    });
+  }
+  refreshSheetBadgeCount();
+
+  // 5. Hook real-time audit onto editor input
   const postContent = document.getElementById("post-editor-input") || document.getElementById("post-content");
   if (postContent) {
     postContent.addEventListener("input", () => {
@@ -5861,6 +5878,532 @@ function updateHUDGateUI(audit) {
       violationsBox.innerHTML = "";
     }
   }
+}
+
+/* =========================================================================
+   SECTION 17: SCREEN CONCEPT & ELEMENT IDENTIFIER ENGINE
+   ========================================================================= */
+let isInspectingScreen = false;
+let hoveredElement = null;
+let selectedElementData = null;
+let currentSheetFilter = "all";
+let sheetIssuesCache = [];
+
+function startScreenInspection() {
+  const overlay = document.getElementById("screen-picker-overlay");
+  const exitBtn = document.getElementById("btn-exit-picker");
+  if (!overlay) return;
+
+  isInspectingScreen = true;
+  overlay.style.display = "block";
+  document.body.style.cursor = "crosshair";
+
+  document.addEventListener("mousemove", handlePickerMouseMove, true);
+  document.addEventListener("click", handlePickerClick, true);
+  document.addEventListener("keydown", handlePickerKeyDown, true);
+
+  if (exitBtn) {
+    exitBtn.onclick = (e) => {
+      e.stopPropagation();
+      stopScreenInspection();
+    };
+  }
+
+  showToast("Screen inspection active. Hover and click any element to identify.", "info");
+}
+
+function stopScreenInspection() {
+  isInspectingScreen = false;
+  const overlay = document.getElementById("screen-picker-overlay");
+  const pickerBox = document.getElementById("screen-picker-box");
+
+  if (overlay) overlay.style.display = "none";
+  if (pickerBox) pickerBox.style.display = "none";
+  document.body.style.cursor = "default";
+
+  document.removeEventListener("mousemove", handlePickerMouseMove, true);
+  document.removeEventListener("click", handlePickerClick, true);
+  document.removeEventListener("keydown", handlePickerKeyDown, true);
+  hoveredElement = null;
+}
+
+function handlePickerKeyDown(e) {
+  if (e.key === "Escape") {
+    stopScreenInspection();
+    showToast("Screen inspection cancelled.", "info");
+  }
+}
+
+function computeElementSelector(el) {
+  if (!el || el === document.body) return "body";
+  if (el.id) return `#${el.id}`;
+
+  let path = [];
+  let current = el;
+  while (current && current !== document.body && current !== document.documentElement && path.length < 3) {
+    let selector = current.tagName.toLowerCase();
+    if (current.id) {
+      selector += `#${current.id}`;
+      path.unshift(selector);
+      break;
+    } else if (current.classList && current.classList.length > 0) {
+      const meaningfulClasses = Array.from(current.classList).filter(
+        c => !["active", "hover", "focus", "selected", "gate-pass", "gate-fail"].includes(c)
+      );
+      if (meaningfulClasses.length > 0) {
+        selector += `.${meaningfulClasses[0]}`;
+      }
+    }
+    path.unshift(selector);
+    current = current.parentElement;
+  }
+  return path.join(" > ");
+}
+
+function getActiveTabName() {
+  const activeNav = document.querySelector(".nav-item.active") || document.querySelector(".nav-tab.active");
+  if (activeNav) {
+    return activeNav.innerText.trim().replace(/[\r\n\t]+/g, " ");
+  }
+  const activePane = document.querySelector(".tab-pane.active");
+  if (activePane) {
+    return activePane.id ? activePane.id.replace("tab-", "") : "composer";
+  }
+  return "composer";
+}
+
+function handlePickerMouseMove(e) {
+  if (!isInspectingScreen) return;
+
+  // Find element under cursor, ignoring the overlay itself and assistant widgets
+  const elements = document.elementsFromPoint(e.clientX, e.clientY);
+  const target = elements.find(el => {
+    return !el.closest("#screen-picker-overlay") &&
+           !el.closest("#floating-flow-widget") &&
+           !el.closest(".modal-backdrop") &&
+           !el.closest("#toast-container");
+  });
+
+  if (!target) return;
+  hoveredElement = target;
+
+  const pickerBox = document.getElementById("screen-picker-box");
+  const pickerBadge = document.getElementById("screen-picker-badge");
+  if (!pickerBox || !pickerBadge) return;
+
+  const rect = target.getBoundingClientRect();
+  pickerBox.style.display = "block";
+  pickerBox.style.top = `${rect.top}px`;
+  pickerBox.style.left = `${rect.left}px`;
+  pickerBox.style.width = `${rect.width}px`;
+  pickerBox.style.height = `${rect.height}px`;
+
+  const selector = computeElementSelector(target);
+  pickerBadge.innerText = `<${target.tagName.toLowerCase()}> ${selector}`;
+}
+
+function handlePickerClick(e) {
+  if (!isInspectingScreen) return;
+
+  e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
+
+  const elements = document.elementsFromPoint(e.clientX, e.clientY);
+  const target = elements.find(el => {
+    return !el.closest("#screen-picker-overlay") &&
+           !el.closest("#floating-flow-widget") &&
+           !el.closest(".modal-backdrop") &&
+           !el.closest("#toast-container");
+  });
+
+  stopScreenInspection();
+
+  if (target) {
+    openConceptAnnotationModal(target);
+  }
+}
+
+function openConceptAnnotationModal(target) {
+  const backdrop = document.getElementById("concept-modal-backdrop");
+  if (!backdrop) return;
+
+  const rect = target.getBoundingClientRect();
+  const selector = computeElementSelector(target);
+  const tabName = getActiveTabName();
+  const rawSnippet = (target.innerText || target.value || target.getAttribute("placeholder") || "").trim();
+  const snippet = rawSnippet ? (rawSnippet.length > 100 ? rawSnippet.slice(0, 97) + "..." : rawSnippet) : "(No visible text)";
+
+  selectedElementData = {
+    tag: target.tagName,
+    id: target.id || null,
+    classes: target.className || null,
+    selector: selector,
+    snippet: snippet,
+    tabName: tabName,
+    boundingBox: {
+      top: Math.round(rect.top),
+      left: Math.round(rect.left),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height)
+    },
+    viewport: `${window.innerWidth}x${window.innerHeight}`
+  };
+
+  // Populate UI
+  const tagEl = document.getElementById("annot-target-tag");
+  const tabEl = document.getElementById("annot-target-tab");
+  const selectorEl = document.getElementById("annot-target-selector");
+  const snippetEl = document.getElementById("annot-target-snippet");
+
+  if (tagEl) tagEl.innerText = target.tagName;
+  if (tabEl) tabEl.innerText = tabName;
+  if (selectorEl) selectorEl.innerText = selector;
+  if (snippetEl) snippetEl.innerText = `"${snippet}"`;
+
+  // Reset form
+  const form = document.getElementById("concept-annotation-form");
+  if (form) form.reset();
+
+  // Auto-fill sensible default title
+  const titleInput = document.getElementById("annot-title");
+  if (titleInput) {
+    titleInput.value = `Issue on ${target.tagName.toLowerCase()} (${selector})`;
+  }
+
+  backdrop.style.display = "flex";
+
+  // Focus description
+  setTimeout(() => {
+    const descInput = document.getElementById("annot-desc");
+    if (descInput) descInput.focus();
+  }, 100);
+}
+
+function closeConceptAnnotationModal() {
+  const backdrop = document.getElementById("concept-modal-backdrop");
+  if (backdrop) backdrop.style.display = "none";
+  selectedElementData = null;
+}
+
+function initConceptAnnotationEvents() {
+  const form = document.getElementById("concept-annotation-form");
+  const closeBtn = document.getElementById("btn-close-concept-modal");
+  const cancelBtn = document.getElementById("btn-cancel-concept");
+  const backdrop = document.getElementById("concept-modal-backdrop");
+
+  if (closeBtn) closeBtn.addEventListener("click", closeConceptAnnotationModal);
+  if (cancelBtn) cancelBtn.addEventListener("click", closeConceptAnnotationModal);
+
+  if (backdrop) {
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) closeConceptAnnotationModal();
+    });
+  }
+
+  // Category change auto-suggests role
+  const catSelect = document.getElementById("annot-category");
+  const roleSelect = document.getElementById("annot-role");
+  if (catSelect && roleSelect) {
+    catSelect.addEventListener("change", () => {
+      const cat = catSelect.value;
+      if (cat === "ux_glitch") roleSelect.value = "DESIGNER";
+      else if (cat === "copy_slop") roleSelect.value = "CEO";
+      else if (cat === "data_mismatch" || cat === "bug") roleSelect.value = "ENGINEERING_MANAGER";
+      else if (cat === "concept" || cat === "feature_request") roleSelect.value = "ENGINEERING_MANAGER";
+    });
+  }
+
+  if (form) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      if (!selectedElementData) {
+        showToast("No element target selected.", "error");
+        return;
+      }
+
+      const title = document.getElementById("annot-title").value.trim();
+      const desc = document.getElementById("annot-desc").value.trim();
+      const category = document.getElementById("annot-category").value;
+      const severity = document.getElementById("annot-severity").value;
+      const role = document.getElementById("annot-role").value;
+      const promoteBacklog = document.getElementById("annot-promote-backlog").checked;
+      const submitBtn = document.getElementById("btn-submit-concept");
+
+      if (!title || !desc) {
+        showToast("Please enter a title and description.", "error");
+        return;
+      }
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerText = "Submitting...";
+      }
+
+      try {
+        const payload = {
+          target_selector: selectedElementData.selector,
+          title: title,
+          description: desc,
+          category: category,
+          severity: severity,
+          suggested_role: role,
+          element_tag: selectedElementData.tag,
+          element_id: selectedElementData.id,
+          element_classes: selectedElementData.classes,
+          element_text_snippet: selectedElementData.snippet,
+          tab_name: selectedElementData.tabName,
+          page_route: window.location.pathname || "/",
+          bounding_box: selectedElementData.boundingBox,
+          viewport_resolution: selectedElementData.viewport,
+          promote_to_backlog: promoteBacklog
+        };
+
+        const res = await fetch(`${API_BASE}/v1/internal-sheet/issues`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.detail || "Submission failed");
+        }
+
+        const data = await res.json();
+        showToast("Logged to Internal Sheet successfully!", "success");
+        if (promoteBacklog && data.issue && data.issue.gstack_task_id) {
+          showToast(`Promoted to G-Stack Backlog (Task #${data.issue.gstack_task_id})`, "info");
+        }
+
+        closeConceptAnnotationModal();
+        refreshSheetBadgeCount();
+      } catch (err) {
+        showToast(`Failed to log issue: ${err.message}`, "error");
+      } finally {
+        if (submitBtn) {
+          submitBtn.disabled = false;
+          submitBtn.innerText = "Submit to Internal Sheet";
+        }
+      }
+    });
+  }
+}
+
+/* =========================================================================
+   SECTION 18: INTERNAL SPREADSHEET VIEWER CONTROLLER
+   ========================================================================= */
+function initInternalSheetModalEvents() {
+  const sheetBackdrop = document.getElementById("sheet-modal-backdrop");
+  const closeBtn = document.getElementById("btn-close-sheet-modal");
+  const exportBtn = document.getElementById("btn-export-sheet-csv");
+  const searchInput = document.getElementById("sheet-search-input");
+  const filterPills = document.querySelectorAll("#sheet-filter-pills .sheet-filter-pill");
+
+  if (closeBtn) closeBtn.addEventListener("click", closeInternalSheetModal);
+  if (sheetBackdrop) {
+    sheetBackdrop.addEventListener("click", (e) => {
+      if (e.target === sheetBackdrop) closeInternalSheetModal();
+    });
+  }
+
+  if (exportBtn) {
+    exportBtn.addEventListener("click", () => {
+      window.location.href = `${API_BASE}/v1/internal-sheet/export.csv`;
+      showToast("Downloading internal sheet CSV...", "info");
+    });
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener("input", () => {
+      renderInternalSheetTable();
+    });
+  }
+
+  filterPills.forEach(pill => {
+    pill.addEventListener("click", () => {
+      filterPills.forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      currentSheetFilter = pill.getAttribute("data-filter");
+      renderInternalSheetTable();
+    });
+  });
+}
+
+function openInternalSheetModal() {
+  const backdrop = document.getElementById("sheet-modal-backdrop");
+  if (!backdrop) return;
+  backdrop.style.display = "flex";
+  loadInternalSheetData();
+}
+
+function closeInternalSheetModal() {
+  const backdrop = document.getElementById("sheet-modal-backdrop");
+  if (backdrop) backdrop.style.display = "none";
+}
+
+async function loadInternalSheetData() {
+  try {
+    const res = await fetch(`${API_BASE}/v1/internal-sheet/issues`);
+    if (!res.ok) return;
+    const data = await res.json();
+    sheetIssuesCache = data.issues || [];
+
+    // Update counts
+    const summary = data.summary || {};
+    const countAll = document.getElementById("sheet-count-all");
+    const countOpen = document.getElementById("sheet-count-open");
+    const countResolved = document.getElementById("sheet-count-resolved");
+    const countCritical = document.getElementById("sheet-count-critical");
+
+    if (countAll) countAll.innerText = summary.total || 0;
+    if (countOpen) countOpen.innerText = summary.open || 0;
+    if (countResolved) countResolved.innerText = summary.resolved || 0;
+    if (countCritical) countCritical.innerText = summary.critical || 0;
+
+    const openBadge = document.getElementById("sheet-open-badge");
+    if (openBadge) {
+      openBadge.innerText = `${summary.open || 0} Open`;
+    }
+
+    renderInternalSheetTable();
+  } catch (err) {
+    console.error("Failed to load internal sheet issues:", err);
+  }
+}
+
+async function refreshSheetBadgeCount() {
+  try {
+    const res = await fetch(`${API_BASE}/v1/internal-sheet/issues?limit=1`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const summary = data.summary || {};
+    const openBadge = document.getElementById("sheet-open-badge");
+    if (openBadge) {
+      openBadge.innerText = `${summary.open || 0} Open`;
+    }
+  } catch (err) {
+    // Non-blocking
+  }
+}
+
+function renderInternalSheetTable() {
+  const tbody = document.getElementById("internal-spreadsheet-tbody");
+  const emptyState = document.getElementById("sheet-empty-state");
+  const searchInput = document.getElementById("sheet-search-input");
+  const query = searchInput ? searchInput.value.toLowerCase().trim() : "";
+
+  if (!tbody) return;
+
+  let filtered = sheetIssuesCache.filter(item => {
+    if (currentSheetFilter === "OPEN" && item.status !== "OPEN") return false;
+    if (currentSheetFilter === "RESOLVED" && item.status !== "RESOLVED") return false;
+    if (currentSheetFilter === "critical" && item.severity !== "critical") return false;
+
+    if (query) {
+      const matchTitle = (item.title || "").toLowerCase().includes(query);
+      const matchDesc = (item.description || "").toLowerCase().includes(query);
+      const matchSelector = (item.target_selector || "").toLowerCase().includes(query);
+      const matchRole = (item.suggested_role || "").toLowerCase().includes(query);
+      if (!matchTitle && !matchDesc && !matchSelector && !matchRole) return false;
+    }
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = "";
+    if (emptyState) emptyState.style.display = "block";
+    return;
+  }
+
+  if (emptyState) emptyState.style.display = "none";
+
+  tbody.innerHTML = filtered.map(item => {
+    const isResolved = item.status === "RESOLVED";
+    const statusClass = isResolved ? "sheet-status-resolved" : "sheet-status-open";
+    const priorityClass = `priority-${(item.severity || "medium").toLowerCase()}`;
+    const dateStr = item.created_at ? item.created_at.slice(0, 16).replace("T", " ") : "";
+
+    return `
+      <tr data-id="${item.id}">
+        <td style="font-weight: 600; color: #94A3B8;">#${item.id}</td>
+        <td>
+          <span class="sheet-status-pill ${statusClass}">${item.status}</span>
+        </td>
+        <td>
+          <span class="sheet-priority-pill ${priorityClass}">${item.severity}</span>
+        </td>
+        <td>
+          <span class="sheet-cat-tag">${escapeHtml(item.category || "bug")}</span>
+        </td>
+        <td>
+          <span class="sheet-selector-code">${escapeHtml(item.target_selector || "")}</span>
+        </td>
+        <td>
+          <span style="font-size: 11px; color: #93C5FD;">${escapeHtml(item.tab_name || "")}</span>
+        </td>
+        <td>
+          <strong style="color: #F8FAFC; display: block; margin-bottom: 3px;">${escapeHtml(item.title)}</strong>
+          <span style="color: #94A3B8; font-size: 11.5px;">${escapeHtml(item.description)}</span>
+        </td>
+        <td>
+          <span class="sheet-role-badge">${escapeHtml(item.suggested_role || "")}</span>
+        </td>
+        <td style="font-size: 11px; color: #64748B; white-space: nowrap;">${dateStr}</td>
+        <td>
+          <div class="sheet-action-btns">
+            <button type="button" class="btn-sheet-toggle-status" onclick="handleToggleIssueStatus(${item.id}, '${item.status}')" title="${isResolved ? 'Reopen' : 'Mark Resolved'}">
+              ${isResolved ? 'Reopen' : 'Resolve'}
+            </button>
+            <button type="button" class="btn-sheet-del" onclick="handleDeleteIssue(${item.id})" title="Delete">
+              &times;
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
+}
+
+window.handleToggleIssueStatus = async function(issueId, currentStatus) {
+  const targetStatus = currentStatus === "OPEN" ? "RESOLVED" : "OPEN";
+  try {
+    const res = await fetch(`${API_BASE}/v1/internal-sheet/issues/${issueId}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: targetStatus })
+    });
+    if (!res.ok) throw new Error("Status update failed");
+    showToast(`Issue #${issueId} marked as ${targetStatus}`, "success");
+    await loadInternalSheetData();
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+};
+
+window.handleDeleteIssue = async function(issueId) {
+  if (!confirm(`Delete internal sheet issue #${issueId}?`)) return;
+  try {
+    const res = await fetch(`${API_BASE}/v1/internal-sheet/issues/${issueId}`, {
+      method: "DELETE"
+    });
+    if (!res.ok) throw new Error("Delete failed");
+    showToast(`Issue #${issueId} deleted`, "info");
+    await loadInternalSheetData();
+  } catch (err) {
+    showToast(err.message, "error");
+  }
+};
+
+// Initialize listeners on load
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    initConceptAnnotationEvents();
+    initInternalSheetModalEvents();
+  });
+} else {
+  initConceptAnnotationEvents();
+  initInternalSheetModalEvents();
 }
 
 
