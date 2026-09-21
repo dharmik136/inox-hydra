@@ -91,12 +91,49 @@ def _migrate_inspirations(cursor: sqlite3.Cursor) -> None:
     cursor.execute("DROP TABLE IF EXISTS inspirations")
 
 
+def _migrate_internal_sheet(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 3:
+    Creates internal_sheet_issues table for in-app visual screen concept
+    identification, bug reporting, and zero-egress internal sheet tracking.
+    """
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS internal_sheet_issues (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_selector TEXT NOT NULL,
+        element_tag TEXT,
+        element_id TEXT,
+        element_classes TEXT,
+        element_text_snippet TEXT,
+        tab_name TEXT NOT NULL DEFAULT 'composer',
+        page_route TEXT DEFAULT '/',
+        category TEXT NOT NULL DEFAULT 'bug' CHECK(category IN ('bug', 'concept', 'ux_glitch', 'copy_slop', 'data_mismatch', 'feature_request')),
+        severity TEXT NOT NULL DEFAULT 'medium' CHECK(severity IN ('low', 'medium', 'high', 'critical')),
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        suggested_role TEXT DEFAULT 'ENGINEERING_MANAGER' CHECK(suggested_role IN ('CEO', 'ENGINEERING_MANAGER', 'DESIGNER', 'QA_LEAD', 'CSO', 'RELEASE_MANAGER')),
+        status TEXT DEFAULT 'OPEN' CHECK(status IN ('OPEN', 'IN_PROGRESS', 'RESOLVED', 'WONT_FIX')),
+        bounding_box TEXT,
+        viewport_resolution TEXT,
+        dom_path TEXT,
+        gstack_task_id INTEGER,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        resolved_at TIMESTAMP
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_internal_sheet_status ON internal_sheet_issues(status, severity)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_internal_sheet_tab ON internal_sheet_issues(tab_name)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_internal_sheet_category ON internal_sheet_issues(category)")
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
 Payload = Union[Sequence[str], Callable[[sqlite3.Cursor], None]]
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
+    (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

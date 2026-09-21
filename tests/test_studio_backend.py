@@ -302,14 +302,26 @@ def test_docs_api_and_modules():
 
 
 if __name__ == "__main__":
+    import tempfile
+    import shutil
     print("Running LinkedIn Studio Enterprise Tests...")
-    test_database_and_seed()
-    test_formatters_and_rehooker()
-    test_carousel_pdf()
-    test_leads_crm()
-    test_multi_range_kpis_and_slots()
-    test_ai_engine()
-    test_scheduled_post_integrity()
-    test_static_assets_and_docs()
-    test_docs_api_and_modules()
-    print("\n🎉 ALL 9 ENTERPRISE TEST SUITES PASSED SUCCESSFULLY!")
+    temp_dir = tempfile.mkdtemp(prefix="inox_standalone_backend_")
+    old_home = os.environ.get("INOX_HYDRA_HOME")
+    os.environ["INOX_HYDRA_HOME"] = temp_dir
+    try:
+        test_database_and_seed()
+        test_formatters_and_rehooker()
+        test_carousel_pdf()
+        test_leads_crm()
+        test_multi_range_kpis_and_slots()
+        test_ai_engine()
+        test_scheduled_post_integrity()
+        test_static_assets_and_docs()
+        test_docs_api_and_modules()
+        print("\nALL 9 ENTERPRISE TEST SUITES PASSED SUCCESSFULLY!")
+    finally:
+        if old_home is None:
+            os.environ.pop("INOX_HYDRA_HOME", None)
+        else:
+            os.environ["INOX_HYDRA_HOME"] = old_home
+        shutil.rmtree(temp_dir, ignore_errors=True)

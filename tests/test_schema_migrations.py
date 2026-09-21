@@ -283,7 +283,7 @@ def test_migration_2_migrates_and_drops_inspirations(temp_home):
     conn.commit()
 
     # Apply real migration 2 callable
-    from studio.backend.migrations import _migrate_inspirations
+    _migrate_inspirations = migrations._migrate_inspirations
     cursor = conn.cursor()
     _migrate_inspirations(cursor)
     conn.commit()
@@ -298,4 +298,35 @@ def test_migration_2_migrates_and_drops_inspirations(temp_home):
     assert row is not None
     assert row[0] == "Contrarian"
     assert row[1] == "Test hook line"
+    conn.close()
+
+
+def test_migration_3_creates_internal_sheet_issues(temp_home):
+    """
+    Verifies that Migration 3 creates internal_sheet_issues table
+    and its supporting indexes cleanly.
+    """
+    conn = sqlite3.connect(paths.get_db_path())
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    _migrate_internal_sheet = migrations._migrate_internal_sheet
+    _migrate_internal_sheet(cursor)
+    conn.commit()
+
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='internal_sheet_issues'")
+    assert cursor.fetchone() is not None
+
+    cursor.execute("PRAGMA table_info(internal_sheet_issues)")
+    cols = {r["name"] for r in cursor.fetchall()}
+    assert "target_selector" in cols
+    assert "status" in cols
+    assert "category" in cols
+    assert "severity" in cols
+    assert "gstack_task_id" in cols
+
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='index'")
+    indexes = {r[0] for r in cursor.fetchall()}
+    assert "idx_internal_sheet_status" in indexes
+    assert "idx_internal_sheet_tab" in indexes
+    assert "idx_internal_sheet_category" in indexes
     conn.close()
