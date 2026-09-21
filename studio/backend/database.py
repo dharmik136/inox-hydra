@@ -15,6 +15,7 @@ brought forward safely. See docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md.
 Concurrency: Zero-blocking concurrent reads during background writes.
 """
 
+import sys
 import sqlite3
 import os
 import json
@@ -23,10 +24,10 @@ from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
 
 try:
-    from .paths import get_db_path
+    from .paths import get_db_path, _STUDIO_DIR, DB_FILENAME
     from .migrations import ensure_schema
 except ImportError:
-    from paths import get_db_path
+    from paths import get_db_path, _STUDIO_DIR, DB_FILENAME
     from migrations import ensure_schema
 
 # Retained as a module constant for backwards compatibility. Live resolution
@@ -47,6 +48,17 @@ def get_db() -> sqlite3.Connection:
     Sets row_factory to sqlite3.Row for dictionary-like column access.
     """
     db_path = get_db_path()
+
+    # Safety guard: Tests must NEVER connect to the live production database
+    if ("pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ) and os.environ.get("INOX_ALLOW_LIVE_DB_IN_TESTS") != "1":
+        live_repo_db = os.path.normcase(os.path.abspath(os.path.join(_STUDIO_DIR, "data", DB_FILENAME)))
+        current_resolved_db = os.path.normcase(os.path.abspath(db_path))
+        if current_resolved_db == live_repo_db:
+            raise RuntimeError(
+                f"CRITICAL SAFETY VIOLATION: Test run attempted to connect to live production database at {db_path}! "
+                "Tests must run against an isolated INOX_HYDRA_HOME sandbox."
+            )
+
     conn = sqlite3.connect(db_path, timeout=5.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode = WAL;")

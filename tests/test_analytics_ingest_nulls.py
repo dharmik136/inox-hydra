@@ -127,3 +127,31 @@ def test_kpi_dashboard_survives_a_profile_views_only_ingest(isolated_studio):
     assert res.status_code == 200, (
         f"The KPI dashboard returned {res.status_code} after a profile views only ingest"
     )
+
+
+def test_kpi_dashboard_handles_historical_null_followers_gracefully(isolated_studio):
+    """Verifies that get_kpis returns 200 even if database has rows with NULL followers."""
+    database, _ = isolated_studio
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    conn = database.get_db()
+    conn.execute("DELETE FROM analytics_daily")
+    conn.execute(
+        "INSERT INTO analytics_daily (date, followers, connections, profile_views) VALUES (?, NULL, 100, NULL)",
+        (today,)
+    )
+    conn.commit()
+    conn.close()
+
+    from fastapi.testclient import TestClient
+    import app as app_module
+    importlib.reload(app_module)
+
+    client = TestClient(app_module.app, raise_server_exceptions=False)
+    res = client.get("/api/analytics/kpis")
+    assert res.status_code == 200
+    data = res.json()
+    assert "total_followers" in data
+    assert data["total_followers"] == 2412
+    assert "follower_growth" in data
+    assert isinstance(data["follower_growth"], (int, float))

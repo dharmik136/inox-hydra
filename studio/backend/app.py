@@ -65,6 +65,7 @@ try:
     from .rate_limiter import rate_limiter, write_actor
     from .intelligence_sync import intelligence_sync_engine
     from .gstack_governance import gstack_engine
+    from .internal_sheet import internal_sheet_manager
     from .migrations import describe as describe_schema
     from . import support as support_tools
     from . import updates as update_checker
@@ -112,6 +113,7 @@ except ImportError:
     from rate_limiter import rate_limiter, write_actor
     from intelligence_sync import intelligence_sync_engine
     from gstack_governance import gstack_engine
+    from internal_sheet import internal_sheet_manager
     from migrations import describe as describe_schema
     import support as support_tools
     import updates as update_checker
@@ -148,7 +150,8 @@ OPENAPI_TAGS = [
     {"name": "Enterprise Reverse CRM", "description": "Deterministic ICP scoring engine and anti-slop 1-to-1 contextual DM generation."},
     {"name": "Anti-Bot & Rate Limiting", "description": "Gaussian jitter request governor, human pacing, and single-writer WAL actor."},
     {"name": "Intelligence Sync & Radar", "description": "Asymmetric GitHub CDN intelligence sync, ETag caching, and viral hook templates."},
-    {"name": "G-Stack Multi-Agent Governance", "description": "Garry Tan 6-role virtual team governance, role backlogs, and multi-gate anti-slop audits."}
+    {"name": "G-Stack Multi-Agent Governance", "description": "Garry Tan 6-role virtual team governance, role backlogs, and multi-gate anti-slop audits."},
+    {"name": "Internal Sheet & Concept Identifier", "description": "Visual screen element inspection, bug annotations, and zero-egress internal sheet tracking."}
 ]
 
 @asynccontextmanager
@@ -364,13 +367,13 @@ def get_kpis(range: str = "30d"):
 
     cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (end_date.strftime("%Y-%m-%d"),))
     latest_stat = cursor.fetchone()
-    cur_followers = latest_stat["followers"] if latest_stat else 2412
-    cur_pviews = latest_stat["profile_views"] if latest_stat else 104
+    cur_followers = latest_stat["followers"] if (latest_stat and latest_stat["followers"] is not None) else 2412
+    cur_pviews = latest_stat["profile_views"] if (latest_stat and latest_stat["profile_views"] is not None) else 104
 
     cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (start_cur.strftime("%Y-%m-%d"),))
     start_stat = cursor.fetchone()
-    start_followers = start_stat["followers"] if start_stat else cur_followers
-    start_pviews = start_stat["profile_views"] if start_stat else cur_pviews
+    start_followers = start_stat["followers"] if (start_stat and start_stat["followers"] is not None) else cur_followers
+    start_pviews = start_stat["profile_views"] if (start_stat and start_stat["profile_views"] is not None) else cur_pviews
 
     follower_growth = cur_followers - start_followers
     pviews_delta = calc_delta(cur_pviews, start_pviews)
@@ -2094,6 +2097,29 @@ class GStackAuditRequest(BaseModel):
     title: Optional[str] = Field(None, max_length=300)
 
 
+class InternalSheetIssueCreate(BaseModel):
+    target_selector: str = Field(..., min_length=1, max_length=500)
+    title: str = Field(..., min_length=1, max_length=300)
+    description: str = Field(..., min_length=1, max_length=10000)
+    category: Optional[str] = Field("bug", max_length=50)
+    severity: Optional[str] = Field("medium", max_length=50)
+    suggested_role: Optional[str] = Field("ENGINEERING_MANAGER", max_length=50)
+    element_tag: Optional[str] = Field(None, max_length=100)
+    element_id: Optional[str] = Field(None, max_length=200)
+    element_classes: Optional[str] = Field(None, max_length=500)
+    element_text_snippet: Optional[str] = Field(None, max_length=1000)
+    tab_name: Optional[str] = Field("composer", max_length=100)
+    page_route: Optional[str] = Field("/", max_length=200)
+    bounding_box: Optional[Dict[str, Any]] = None
+    viewport_resolution: Optional[str] = Field(None, max_length=100)
+    dom_path: Optional[str] = Field(None, max_length=1000)
+    promote_to_backlog: Optional[bool] = False
+
+
+class InternalSheetStatusUpdate(BaseModel):
+    status: str = Field(..., min_length=1, max_length=50)
+
+
 @app.get("/api/v1/schema/status", tags=["Settings & Creator Profile"])
 def get_schema_status():
     """
@@ -2247,6 +2273,128 @@ def audit_gstack_content(req: GStackAuditRequest):
         "status": "success",
         "audit": gstack_engine.audit_content_or_feature(content=req.content, title=req.title)
     }
+
+
+# -------------------------------------------------------------
+# Module: Internal Sheet & Visual Concept Identifier
+# -------------------------------------------------------------
+@app.get("/api/v1/internal-sheet/issues", tags=["Internal Sheet & Concept Identifier"])
+def list_internal_sheet_issues(
+    status: Optional[str] = None,
+    category: Optional[str] = None,
+    severity: Optional[str] = None,
+    tab_name: Optional[str] = None,
+    limit: int = 200
+):
+    """Lists logged screen concept issues, bugs, and annotations with summary metrics."""
+    issues = internal_sheet_manager.list_issues(
+        status=status,
+        category=category,
+        severity=severity,
+        tab_name=tab_name,
+        limit=limit
+    )
+    summary = internal_sheet_manager.get_summary_metrics()
+    return {
+        "status": "success",
+        "issues": issues,
+        "count": len(issues),
+        "summary": summary
+    }
+
+
+@app.post("/api/v1/internal-sheet/issues", tags=["Internal Sheet & Concept Identifier"])
+def create_internal_sheet_issue(req: InternalSheetIssueCreate):
+    """Creates a new screen concept identification or bug annotation in the internal sheet."""
+    try:
+        issue = internal_sheet_manager.create_issue(
+            target_selector=req.target_selector,
+            title=req.title,
+            description=req.description,
+            category=req.category or "bug",
+            severity=req.severity or "medium",
+            suggested_role=req.suggested_role or "ENGINEERING_MANAGER",
+            element_tag=req.element_tag,
+            element_id=req.element_id,
+            element_classes=req.element_classes,
+            element_text_snippet=req.element_text_snippet,
+            tab_name=req.tab_name or "composer",
+            page_route=req.page_route or "/",
+            bounding_box=req.bounding_box,
+            viewport_resolution=req.viewport_resolution,
+            dom_path=req.dom_path,
+            promote_to_backlog=bool(req.promote_to_backlog)
+        )
+        return {
+            "status": "success",
+            "issue": issue
+        }
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+
+
+@app.get("/api/v1/internal-sheet/issues/{issue_id}", tags=["Internal Sheet & Concept Identifier"])
+def get_internal_sheet_issue(issue_id: int):
+    """Retrieves a single internal sheet issue by ID."""
+    issue = internal_sheet_manager.get_issue(issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return {
+        "status": "success",
+        "issue": issue
+    }
+
+
+@app.patch("/api/v1/internal-sheet/issues/{issue_id}/status", tags=["Internal Sheet & Concept Identifier"])
+def update_internal_sheet_issue_status(issue_id: int, req: InternalSheetStatusUpdate):
+    """Updates the resolution status of an internal sheet issue (e.g. OPEN or RESOLVED)."""
+    try:
+        updated = internal_sheet_manager.update_issue_status(issue_id, req.status)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Issue not found")
+        return {
+            "status": "success",
+            "issue": internal_sheet_manager.get_issue(issue_id)
+        }
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+
+
+@app.delete("/api/v1/internal-sheet/issues/{issue_id}", tags=["Internal Sheet & Concept Identifier"])
+def delete_internal_sheet_issue(issue_id: int):
+    """Deletes an internal sheet issue record."""
+    deleted = internal_sheet_manager.delete_issue(issue_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return {
+        "status": "success",
+        "deleted": True
+    }
+
+
+@app.post("/api/v1/internal-sheet/issues/{issue_id}/promote", tags=["Internal Sheet & Concept Identifier"])
+def promote_internal_sheet_issue(issue_id: int):
+    """Promotes an internal sheet issue to the active G-Stack multi-agent backlog."""
+    task_id = internal_sheet_manager.promote_to_gstack(issue_id)
+    if task_id is None:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return {
+        "status": "success",
+        "gstack_task_id": task_id
+    }
+
+
+@app.get("/api/v1/internal-sheet/export.csv", tags=["Internal Sheet & Concept Identifier"])
+def export_internal_sheet_csv():
+    """Streams an RFC-4180 CSV spreadsheet file compatible with Google Sheets and Microsoft Excel."""
+    csv_data = internal_sheet_manager.export_csv()
+    return Response(
+        content=csv_data,
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": "attachment; filename=internal_concept_sheet.csv"
+        }
+    )
 
 
 # -------------------------------------------------------------
