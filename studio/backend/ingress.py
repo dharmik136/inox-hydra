@@ -11,15 +11,13 @@ Strict Invariants:
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
-import asyncio
+from typing import Any, Dict, List, Optional
 import json
 import logging
 import os
 import re
 import requests
 import threading
-import time
 
 try:
     from .database import get_db, create_draft, get_draft
@@ -330,7 +328,7 @@ class TelegramIngressDaemon:
                         self.current_delay = max(float(retry_after), self.current_delay)
                 except Exception:
                     pass
-                self.last_error = f"HTTP 429: Rate limited by Telegram API"
+                self.last_error = f"HTTP 429: Rate limited by Telegram API, backing off {self.current_delay:.1f}s"
             else:
                 self.last_error = f"HTTP {res.status_code}: {res.text[:100]}"
         except Exception as err:

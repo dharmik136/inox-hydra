@@ -16,10 +16,7 @@ Design Constraints:
 3. Offline Autonomy: Zero cloud egress during local audits.
 """
 
-import os
 import re
-import json
-import sqlite3
 from typing import Dict, Any, List, Optional
 
 try:
@@ -257,17 +254,21 @@ class GStackGovernanceEngine:
                         VALUES (?, ?, ?, ?, 1)
                         """, (item["role"], item["title"], item["specification"], item["status"]))
                 
-                # Seed upcoming milestones idempotently
-                for item in UPCOMING_ROADMAP_BACKLOG:
-                    cursor.execute(
-                        "SELECT COUNT(*) FROM gstack_backlog WHERE role = ? AND title = ?",
-                        (item["role"], item["title"])
-                    )
-                    if cursor.fetchone()[0] == 0:
-                        cursor.execute("""
-                        INSERT INTO gstack_backlog (role, title, specification, status, anti_slop_check)
-                        VALUES (?, ?, ?, ?, 1)
-                        """, (item["role"], item["title"], item["specification"], item["status"]))
+                # Seed upcoming milestones idempotently. This runs on every
+                # backlog read, so it reads the existing keys once rather than
+                # issuing a COUNT per roadmap row.
+                cursor.execute("SELECT role, title FROM gstack_backlog")
+                existing = {(r[0], r[1]) for r in cursor.fetchall()}
+                missing = [
+                    (item["role"], item["title"], item["specification"], item["status"])
+                    for item in UPCOMING_ROADMAP_BACKLOG
+                    if (item["role"], item["title"]) not in existing
+                ]
+                if missing:
+                    cursor.executemany("""
+                    INSERT INTO gstack_backlog (role, title, specification, status, anti_slop_check)
+                    VALUES (?, ?, ?, ?, 1)
+                    """, missing)
         except Exception:
             pass
         finally:
