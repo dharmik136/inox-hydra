@@ -127,7 +127,7 @@ def render_slide(
     total_slides: int,
     title: str,
     body: str,
-    author_name: str = "Dharmik Shingala",
+    author_name: str = "",
     author_title: str = "Content Strategist & Enterprise Systems Practitioner",
     theme_name: str = "dark_slate",
     is_cover: bool = False,
@@ -144,7 +144,7 @@ def render_slide(
     en_dash = chr(0x2013)
     safe_title = str(title or "").replace(em_dash, " -- ").replace(en_dash, "-")[:MAX_SLIDE_TITLE_LEN]
     safe_body = str(body or "").replace(em_dash, " -- ").replace(en_dash, "-")[:MAX_SLIDE_BODY_LEN]
-    safe_author = str(author_name or "Dharmik Shingala")[:100]
+    safe_author = str(author_name or "")[:100]
     safe_author_title = str(author_title or "Enterprise Systems Practitioner")[:150]
 
     # Outer border & subtle glow frame
@@ -259,7 +259,11 @@ def render_slide(
 
     # Bottom slide footer
     font_footer = get_font(15, bold=False)
-    draw.text((64, HEIGHT - 100), "Dharmik Shingala - Personal LinkedIn Studio", fill=theme["text_muted"], font=font_footer)
+    # Drawn from the caller's name, and skipped entirely when there is none.
+    # An unset footer is no footer, not somebody else's.
+    if safe_author:
+        draw.text((64, HEIGHT - 100), f"{safe_author} - Personal LinkedIn Studio",
+                  fill=theme["text_muted"], font=font_footer)
 
     # Progress bar line at the very bottom
     prog_width = int((WIDTH - 128) * ((slide_index + 1) / total_safe))
@@ -270,7 +274,7 @@ def render_slide(
 
 def generate_carousel_pdf(
     slides_data: List[Dict[str, Any]],
-    author_name: str = "Dharmik Shingala",
+    author_name: str = "",
     author_title: str = "Content Strategist & Enterprise Systems Practitioner",
     theme_name: str = "dark_slate",
 ) -> bytes:

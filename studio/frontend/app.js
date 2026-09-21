@@ -486,9 +486,9 @@ function syncDesktopPostFrame(text) {
     desktopBody.innerText = text.trim() || "Type in the composer to view your desktop feed post...";
   }
 
-  if (authorName && cachedCreatorProfile) authorName.innerText = cachedCreatorProfile.name || "Dharmik Shingala";
-  if (authorEyebrow && cachedCreatorProfile) authorEyebrow.innerText = cachedCreatorProfile.name || "Dharmik Shingala";
-  if (authorHeadline && cachedCreatorProfile) authorHeadline.innerText = cachedCreatorProfile.headline || "AI Systems Engineer & Full-Stack Architect";
+  if (authorName && cachedCreatorProfile) authorName.innerText = cachedCreatorProfile.name || "";
+  if (authorEyebrow && cachedCreatorProfile) authorEyebrow.innerText = cachedCreatorProfile.name || "";
+  if (authorHeadline && cachedCreatorProfile) authorHeadline.innerText = cachedCreatorProfile.headline || "";
   if (authorAvatar && cachedCreatorProfile) {
     const initials = (cachedCreatorProfile.name || "DS").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
     authorAvatar.innerText = initials;
@@ -606,7 +606,7 @@ function renderCurrentCarouselSlide() {
   if (slideCounter) slideCounter.innerText = `Slide ${currentCarouselIndex + 1} of ${carouselSlides.length}`;
 
   const brandHandle = document.getElementById("inspector-brand-handle");
-  if (handleDisplay) handleDisplay.innerText = brandHandle ? brandHandle.value : "@dharmik136";
+  if (handleDisplay) handleDisplay.innerText = (brandHandle && brandHandle.value) ? brandHandle.value : "–";
 
   if (dotsRow) {
     dotsRow.innerHTML = "";
@@ -873,7 +873,7 @@ function initInspectorBrandControls() {
     handleInput.addEventListener("input", () => {
       syncBrandWatermarkCanvas();
       const carouselHandle = document.getElementById("carousel-deck-brand");
-      if (carouselHandle) carouselHandle.innerText = handleInput.value.trim() || "@dharmik136";
+      if (carouselHandle) carouselHandle.innerText = handleInput.value.trim() || "";
     });
   }
 
@@ -910,8 +910,8 @@ function syncBrandWatermarkCanvas() {
 
   if (!badge) return;
 
-  const handle = handleInput ? handleInput.value.trim() : "@dharmik136";
-  if (badgeText) badgeText.innerText = handle || "@dharmik136";
+  const handle = handleInput ? handleInput.value.trim() : "";
+  if (badgeText) badgeText.innerText = handle || "";
 
   const pos = activeCorner ? activeCorner.getAttribute("data-pos") : "bottom_right";
   badge.classList.remove("pos-bottom-right", "pos-bottom-left", "pos-top-right", "pos-top-left");
@@ -5387,7 +5387,7 @@ function updateWatermarkLivePreview() {
   const posInput = document.getElementById("setting-watermark-position");
   const styleInput = document.getElementById("setting-watermark-style");
 
-  const brandText = (watermarkTextInput && watermarkTextInput.value.trim()) || "@dharmik136";
+  const brandText = (watermarkTextInput && watermarkTextInput.value.trim()) || "";
   const pos = (posInput && posInput.value) || "bottom_right";
   const style = (styleInput && styleInput.value) || "glass_pill";
 
@@ -5403,7 +5403,7 @@ function updateWatermarkLivePreview() {
   if (modalHandle) modalHandle.innerText = brandText;
 
   const modalCustomInput = document.getElementById("img-personal-watermark-text");
-  if (modalCustomInput && (!modalCustomInput.value || modalCustomInput.value === "@dharmik136")) {
+  if (modalCustomInput && !modalCustomInput.value) {
     modalCustomInput.value = brandText;
   }
 
@@ -5427,7 +5427,7 @@ async function loadCreatorProfile() {
       if (document.getElementById("setting-creator-name")) document.getElementById("setting-creator-name").value = p.name || "";
       if (document.getElementById("setting-creator-headline")) document.getElementById("setting-creator-headline").value = p.headline || "";
       if (document.getElementById("setting-creator-company")) document.getElementById("setting-creator-company").value = p.company || "";
-      if (document.getElementById("setting-watermark-text")) document.getElementById("setting-watermark-text").value = p.brand_watermark_text || "@dharmik136";
+      if (document.getElementById("setting-watermark-text")) document.getElementById("setting-watermark-text").value = p.brand_watermark_text || "";
       
       const watermarkEnabledToggle = document.getElementById("setting-watermark-enabled");
       if (watermarkEnabledToggle) watermarkEnabledToggle.checked = p.brand_watermark_enabled !== false;
@@ -5482,10 +5482,10 @@ async function saveCreatorProfile() {
   }
 
   const payload = {
-    name: (document.getElementById("setting-creator-name") && document.getElementById("setting-creator-name").value.trim()) || "Dharmik Shingala",
-    headline: (document.getElementById("setting-creator-headline") && document.getElementById("setting-creator-headline").value.trim()) || "AI Systems Engineer",
-    company: (document.getElementById("setting-creator-company") && document.getElementById("setting-creator-company").value.trim()) || "Enterprise Labs",
-    brand_watermark_text: (document.getElementById("setting-watermark-text") && document.getElementById("setting-watermark-text").value.trim()) || "@dharmik136",
+    name: (document.getElementById("setting-creator-name") && document.getElementById("setting-creator-name").value.trim()) || "",
+    headline: (document.getElementById("setting-creator-headline") && document.getElementById("setting-creator-headline").value.trim()) || "",
+    company: (document.getElementById("setting-creator-company") && document.getElementById("setting-creator-company").value.trim()) || "",
+    brand_watermark_text: (document.getElementById("setting-watermark-text") && document.getElementById("setting-watermark-text").value.trim()) || "",
     brand_watermark_position: (document.getElementById("setting-watermark-position") && document.getElementById("setting-watermark-position").value) || "bottom_right",
     brand_watermark_style: (document.getElementById("setting-watermark-style") && document.getElementById("setting-watermark-style").value) || "glass_pill",
     brand_watermark_enabled: document.getElementById("setting-watermark-enabled") ? document.getElementById("setting-watermark-enabled").checked : true,

@@ -357,14 +357,17 @@ def init_db() -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_leads_account ON leads(account_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_account ON lead_interactions(account_id)")
 
-    # Seed foundational launch drafts (Days 02 through 08)
-    seed_day02_draft(conn)
-    seed_day03_draft(conn)
-    seed_day04_draft(conn)
-    seed_day05_draft(conn)
-    seed_day06_draft(conn)
-    seed_day07_draft(conn)
-    seed_day08_draft(conn)
+    # Seed foundational launch drafts (Days 02 through 08).
+    # Demo content: these are the author's own posts, in their first person,
+    # about a campaign a new user is not running.
+    if demo_data_enabled():
+        seed_day02_draft(conn)
+        seed_day03_draft(conn)
+        seed_day04_draft(conn)
+        seed_day05_draft(conn)
+        seed_day06_draft(conn)
+        seed_day07_draft(conn)
+        seed_day08_draft(conn)
 
     conn.commit()
 
@@ -1395,6 +1398,19 @@ def seed_day17_draft(conn: Optional[sqlite3.Connection] = None) -> Optional[int]
             conn.close()
 
 
+def demo_data_enabled() -> bool:
+    """
+    True when the operator has asked for demo content.
+
+    Everything this gates is content about a person: the author's own drafts
+    written in their first person, and four invented personas with pipeline
+    states. A real install gets none of it, because a product that opens with
+    someone else's campaign already in the queue is telling its new user
+    something false about their own work.
+    """
+    return os.environ.get("INOX_DEMO_DATA", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 DEMO_SERIES_BASE_DATE = date(2026, 9, 14)
 DEMO_SERIES_DAYS = 90
 
@@ -1685,27 +1701,36 @@ def seed_initial_data():
     conn = get_db()
     cursor = conn.cursor()
 
-    # Seed Days 02 through 17 Launch Kit drafts
-    seed_day02_draft(conn)
-    seed_day03_draft(conn)
-    seed_day04_draft(conn)
-    seed_day05_draft(conn)
-    seed_day06_draft(conn)
-    seed_day07_draft(conn)
-    seed_day08_draft(conn)
-    seed_day09_draft(conn)
-    seed_day10_draft(conn)
-    seed_day11_draft(conn)
-    seed_day12_draft(conn)
-    seed_day13_draft(conn)
-    seed_day14_draft(conn)
-    seed_day15_draft(conn)
-    seed_day16_draft(conn)
-    seed_day17_draft(conn)
+    # Seed Days 02 through 17 Launch Kit drafts. Demo content, same reason as
+    # the Days 02 to 08 block in init_db. Both call sites are gated: gating one
+    # leaves the behaviour reachable through the other.
+    if demo_data_enabled():
+        seed_day02_draft(conn)
+        seed_day03_draft(conn)
+        seed_day04_draft(conn)
+        seed_day05_draft(conn)
+        seed_day06_draft(conn)
+        seed_day07_draft(conn)
+        seed_day08_draft(conn)
+        seed_day09_draft(conn)
+        seed_day10_draft(conn)
+        seed_day11_draft(conn)
+        seed_day12_draft(conn)
+        seed_day13_draft(conn)
+        seed_day14_draft(conn)
+        seed_day15_draft(conn)
+        seed_day16_draft(conn)
+        seed_day17_draft(conn)
 
-    # Check if leads need seeding
-    cursor.execute("SELECT COUNT(*) FROM leads")
-    if cursor.fetchone()[0] == 0:
+    # Check if leads need seeding. Demo content: four invented people with
+    # pipeline states, one of them at "Meeting Booked", which registers as a
+    # real conversion now that the funnel works.
+    if demo_data_enabled():
+        cursor.execute("SELECT COUNT(*) FROM leads")
+        seed_sample_leads = cursor.fetchone()[0] == 0
+    else:
+        seed_sample_leads = False
+    if seed_sample_leads:
         sample_leads = [
             ("lead-1", "Aravind Subramanian", "VP of Engineering at CloudScale", "CloudScale", "https://linkedin.com/in/aravind-sub", "Commented", "post-enterprise-scheduled", "New Lead", "Interested in ERP observability architecture"),
             ("lead-2", "Sarah Jenkins", "Director of Product Architecture", "Fintech Nexus", "https://linkedin.com/in/sarah-jenkins-lead", "Liked", "urn:li:activity:7503313058338070529", "Connected", "Engaged with content strategy breakdown"),
@@ -1905,65 +1930,27 @@ What is your team's biggest bottleneck when decoupling legacy services?""",
             cursor.execute("INSERT INTO queue_slots (day_of_week, time_slot, label, is_active) VALUES (?, ?, ?, ?)", s)
 
     # Seed Inspirations
-    inspirations = [
-        (
-            "insp-1",
-            "Dan Koe",
-            "Solopreneur & Systems Thinker",
-            "Productivity & AI",
-            "The greatest productivity hack is not a new app.\nIt is cutting 80% of what you thought you had to do manually.",
-            4200, 312,
-            "The greatest productivity hack is not a new app."
-        ),
-        (
-            "insp-2",
-            "Sahil Bloom",
-            "Managing Partner & Author",
-            "Mental Models",
-            "Mental model that changed how I build:\nThe Razor of Leverage.\nIf an action does not compound while you sleep, it is labor, not asset creation.",
-            8500, 480,
-            "Mental model that changed how I build: The Razor of Leverage."
-        ),
-        (
-            "insp-3",
-            "Garry Tan",
-            "President & CEO at Y Combinator",
-            "Engineering & AI",
-            "In 2026, the best engineers are not typing code.\nThey are orchestrating agents and reviewing diffs with uncompromising taste.",
-            12400, 920,
-            "In 2026, the best engineers are not typing code."
-        ),
-        (
-            "insp-4",
-            "Shreyas Doshi",
-            "Product Leadership Advisor",
-            "Product & Strategy",
-            "Most meetings are not work. They are a proxy for alignment that should have happened in a 2-page document.",
-            9400, 680,
-            "Most meetings are not work."
-        ),
-        (
-            "insp-5",
-            "Alex Hormozi",
-            "Managing Partner at Acquisition.com",
-            "B2B & Distribution",
-            "You do not lack time. You lack priorities that hurt enough to say no to everything else.",
-            15300, 1100,
-            "You do not lack time."
-        )
-    ]
+    # Five posts used to be seeded here, attributed to Dan Koe, Sahil Bloom,
+    # Garry Tan, Shreyas Doshi and Alex Hormozi, with invented engagement counts
+    # of 4,200 to 15,300.
+    #
+    # Deleted outright rather than gated behind the demo flag, unlike the
+    # author's own drafts and the invented personas. Those fabricate the user's
+    # own numbers or describe people who do not exist. These put words in the
+    # mouths of real, identifiable people and attach metrics to posts they never
+    # wrote, and no flag makes that acceptable to ship or to demonstrate.
+    #
+    # The swipe file is not left empty by this: 36 hand-authored hook templates
+    # seed into viral_templates, which is the table the feature actually reads.
 
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspirations'")
-    if cursor.fetchone():
-        for insp in inspirations:
-            cursor.execute("""
-            INSERT OR REPLACE INTO inspirations (id, author_name, author_headline, topic, content, likes_count, comments_count, key_hook)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """, insp)
-
-    # Seed Initial Leads & Engagers CRM
-    cursor.execute("SELECT COUNT(*) FROM leads")
-    if cursor.fetchone()[0] == 0:
+    # Seed Initial Leads & Engagers CRM. The second of two identical blocks,
+    # gated for the same reason as the first.
+    if demo_data_enabled():
+        cursor.execute("SELECT COUNT(*) FROM leads")
+        needs_leads = cursor.fetchone()[0] == 0
+    else:
+        needs_leads = False
+    if needs_leads:
         sample_leads = [
             ("lead-1", "Aravind Subramanian", "VP of Engineering at CloudScale", "CloudScale", "https://linkedin.com/in/aravind-sub", "Commented", "post-enterprise-scheduled", "New Lead", "Interested in ERP observability architecture"),
             ("lead-2", "Sarah Jenkins", "Director of Product Architecture", "Fintech Nexus", "https://linkedin.com/in/sarah-jenkins-lead", "Liked", "urn:li:activity:7503313058338070529", "Connected", "Engaged with content strategy breakdown"),
@@ -1976,9 +1963,14 @@ What is your team's biggest bottleneck when decoupling legacy services?""",
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, l)
 
-    # Seed Sample Lead Enrichment if empty
-    cursor.execute("SELECT COUNT(*) FROM lead_enrichments")
-    if cursor.fetchone()[0] == 0:
+    # Seed Sample Lead Enrichment if empty. Describes one of the invented
+    # people above, so it goes with them.
+    if demo_data_enabled():
+        cursor.execute("SELECT COUNT(*) FROM lead_enrichments")
+        seed_enrichment = cursor.fetchone()[0] == 0
+    else:
+        seed_enrichment = False
+    if seed_enrichment:
         cursor.execute("""
         INSERT OR REPLACE INTO lead_enrichments 
         (lead_id, company_intelligence, estimated_tech_stack, key_topics, friction_points, icebreakers, enriched_by)

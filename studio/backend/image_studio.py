@@ -340,7 +340,7 @@ class ImageStudioManager:
                         prof_data = json.loads(prof_row["value"])
                         apply_brand = prof_data.get("brand_watermark_enabled", False)
                         if not brand_text:
-                            brand_text = prof_data.get("brand_watermark_text", "@dharmik136")
+                            brand_text = prof_data.get("brand_watermark_text") or ""
                         brand_pos = prof_data.get("brand_watermark_position", brand_pos)
                         brand_style = prof_data.get("brand_watermark_style", brand_style)
                 except Exception as e:
