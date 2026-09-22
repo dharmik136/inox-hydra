@@ -415,6 +415,29 @@ let lastCommentScrapeTime = 0;
 const knownEngagersSet = new Set();
 
 /**
+ * Identifies an engagement, not a person.
+ *
+ * The key used to be identity alone, and the set that holds it is module level
+ * and never clears across LinkedIn's in-app navigation. So the first post a
+ * creator opened claimed every commenter on it, and the same people were
+ * silently filtered out of every later post in that session. They were counted
+ * as already known rather than as skipped, so no toast fired and nothing said
+ * a capture had been dropped. Per-post attribution is the feature this
+ * extension exists to feed, and it was losing exactly the rows that feed it.
+ *
+ * Scoping by post fixes that. When the URN cannot be read from the card, the
+ * page path stands in, which still separates one post's page from another's.
+ * The path is used for scoping ONLY and is never stored as a post_urn: a value
+ * this extension invented must not end up in LinkedIn's namespace.
+ */
+function engagerDedupeKey(profileUrl, name, headline, postUrn) {
+  const identity = profileUrl || `${name}_${headline}`;
+  const scope = postUrn || window.location.pathname || "unknown-surface";
+  return `${identity}|${scope}`;
+}
+
+
+/**
  * True only on a page that shows engagement with a specific post.
  *
  * The reactor scraper used to run on every linkedin.com page and match a bare
@@ -491,7 +514,7 @@ function observeAndCaptureEngagers() {
       const profileUrl = linkEl ? linkEl.href.split("?")[0] : "";
       const commentText = bodyEl ? bodyEl.innerText.trim().slice(0, 140) : "";
 
-      const dedupeKey = profileUrl || `${name}_${headline}`;
+      const dedupeKey = engagerDedupeKey(profileUrl, name, headline, postUrnFor(card));
       const isNew = !knownEngagersSet.has(dedupeKey);
       knownEngagersSet.add(dedupeKey);
 
@@ -541,7 +564,7 @@ function observeAndCaptureEngagers() {
         const headline = headlineEl ? headlineEl.innerText.replace(/[\n\r]+/g, " ").trim() : "";
         const profileUrl = linkEl.href.split("?")[0];
 
-        const dedupeKey = profileUrl || `${name}_${headline}`;
+        const dedupeKey = engagerDedupeKey(profileUrl, name, headline, postUrnFor(item));
         const isNew = !knownEngagersSet.has(dedupeKey);
         knownEngagersSet.add(dedupeKey);
 
