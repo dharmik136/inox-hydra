@@ -430,6 +430,41 @@ const knownEngagersSet = new Set();
  * The path is used for scoping ONLY and is never stored as a post_urn: a value
  * this extension invented must not end up in LinkedIn's namespace.
  */
+/**
+ * Returns the first element matching the HIGHEST PRIORITY selector that finds
+ * usable text, trying the selectors in the order given.
+ *
+ * This exists because querySelector with a comma separated list does NOT do
+ * that. It returns the first element in DOCUMENT order matching any of them,
+ * so the order a developer writes the selectors in carries no weight at all.
+ *
+ * The commenter name selector ended with a bare [aria-hidden="true"], and
+ * LinkedIn puts that attribute on avatar wrappers, bullet separators and
+ * relative timestamps, all of which sit before the name in the card. Verified
+ * against a card shaped like LinkedIn's: the old list returned the avatar's
+ * empty string, so the name failed the length guard and the whole commenter
+ * was dropped. Where a timestamp came first it returned "2h", which passes the
+ * guard, and a lead named "2h" entered the CRM with a real profile URL.
+ *
+ * Trying one selector at a time makes the priority order mean what it looks
+ * like it means.
+ */
+function firstNamedElement(root, selectors) {
+  if (!root) return null;
+  for (const selector of selectors) {
+    let candidate = null;
+    try {
+      candidate = root.querySelector(selector);
+    } catch (err) {
+      continue;
+    }
+    if (candidate && (candidate.innerText || candidate.textContent || "").trim().length >= 2) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
 function engagerDedupeKey(profileUrl, name, headline, postUrn) {
   const identity = profileUrl || `${name}_${headline}`;
   const scope = postUrn || window.location.pathname || "unknown-surface";
@@ -501,7 +536,14 @@ function observeAndCaptureEngagers() {
   const commentCards = document.querySelectorAll(commentSelectors);
   commentCards.forEach(card => {
     try {
-      const nameEl = card.querySelector('.comments-post-meta__name-text, [data-anonymize="person-name"], .comments-comment-item__profile-link span, .update-components-actor__name, [aria-hidden="true"]');
+      const nameEl = firstNamedElement(card, [
+        '.comments-post-meta__name-text',
+        '[data-anonymize="person-name"]',
+        '.comments-comment-item__profile-link span[aria-hidden="true"]',
+        '.comments-comment-item__profile-link span',
+        '.update-components-actor__name',
+        'a[href*="/in/"] span[aria-hidden="true"]'
+      ]);
       const headlineEl = card.querySelector('.comments-post-meta__headline, .comments-comment-item__headline, .update-components-actor__description');
       const linkEl = card.querySelector('a.comments-post-meta__profile-link, a[href*="/in/"]');
       const bodyEl = card.querySelector('.comments-comment-item__main-content, .feed-shared-main-content--comment, .update-components-text');
@@ -554,7 +596,12 @@ function observeAndCaptureEngagers() {
         const linkEl = item.querySelector('a[href*="/in/"]');
         if (!linkEl) return;
 
-        const nameEl = item.querySelector('.artdeco-entity-lockup__title, .actor-name, a[href*="/in/"] span[aria-hidden="true"], [data-anonymize="person-name"]');
+        const nameEl = firstNamedElement(item, [
+          '.artdeco-entity-lockup__title',
+          '.actor-name',
+          '[data-anonymize="person-name"]',
+          'a[href*="/in/"] span[aria-hidden="true"]'
+        ]);
         const headlineEl = item.querySelector('.artdeco-entity-lockup__subtitle, .actor-description, .artdeco-entity-lockup__caption');
 
         const rawName = nameEl ? nameEl.innerText.trim() : "";
