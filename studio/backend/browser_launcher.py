@@ -176,15 +176,30 @@ def create_desktop_shortcuts(
         shortcut_name = f"LinkedIn Studio ({b_name}).lnk"
         shortcut_dest = os.path.join(desktop_dir, shortcut_name)
 
-        # Format single-line PowerShell command
+        # PowerShell escapes a single quote by doubling it, not with "".
+        #
+        # The previous form emitted --load-extension=""C:\...\Linkedin
+        # strategy\studio\extension"", where "" opens and immediately closes
+        # a quoted section and leaves the path bare. On any install path
+        # containing a space, Chrome received the path split across two
+        # arguments and started without the extension, which is the one thing
+        # the shortcut exists to do. The API launcher builds an argv list and
+        # was always fine, so the two disagreed and only the shortcut failed.
+        #
+        # Doubling also protects an account name containing an apostrophe,
+        # which is legal on Windows and otherwise ends the string early.
+        def ps_quote(value):
+            return str(value).replace("'", "''")
+
+        safe_url = _validated_target(target_url)
         ps_cmd = (
             f"$w = New-Object -ComObject WScript.Shell; "
-            f"$s = $w.CreateShortcut('{shortcut_dest}'); "
-            f"$s.TargetPath = '{b_path}'; "
-            f"$s.Arguments = '--load-extension=\"\"{ext_path}\"\" {target_url}'; "
-            f"$s.IconLocation = '{b_path},0'; "
-            f"$s.Description = 'Launch {b_name} with LinkedIn Studio Bridge'; "
-            f"$s.WorkingDirectory = '{os.path.dirname(b_path)}'; "
+            f"$s = $w.CreateShortcut('{ps_quote(shortcut_dest)}'); "
+            f"$s.TargetPath = '{ps_quote(b_path)}'; "
+            f"$s.Arguments = '--load-extension=\"{ps_quote(ext_path)}\" {ps_quote(safe_url)}'; "
+            f"$s.IconLocation = '{ps_quote(b_path)},0'; "
+            f"$s.Description = 'Launch {ps_quote(b_name)} with LinkedIn Studio Bridge'; "
+            f"$s.WorkingDirectory = '{ps_quote(os.path.dirname(b_path))}'; "
             f"$s.Save()"
         )
         try:

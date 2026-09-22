@@ -3978,12 +3978,31 @@ async function validateScheduleInput(datetimeStr) {
     return;
   }
 
+  // Sent as an instant, not as a wall clock reading.
+  //
+  // A datetime-local input yields "2026-09-22T17:30" with no zone, and the
+  // backend reads a naive timestamp as UTC. Posting the raw value therefore
+  // asked the server about a different moment than the one the creator picked,
+  // off by exactly this machine's UTC offset. West of Greenwich that made a
+  // time hours in the future validate as already past, so the confirm button
+  // stayed disabled and scheduling was impossible; east of Greenwich the
+  // collision check ran against the wrong hours and reported a clear slot for
+  // one that was taken.
+  //
+  // The save path at :3930 already did this correctly, which is why the bug
+  // showed up as a preview that disagreed with what saving would do. The
+  // scheduler commit fixed slot to picker and missed picker to backend.
+  const asInstant = new Date(datetimeStr);
+  const scheduledForIso = isNaN(asInstant.getTime())
+    ? datetimeStr
+    : asInstant.toISOString();
+
   try {
     const res = await fetch(`${API_BASE}/queue/validate-cadence`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        scheduled_for: datetimeStr,
+        scheduled_for: scheduledForIso,
         post_id: rescheduleTargetPostId || currentDraftId
       })
     });
@@ -4632,7 +4651,13 @@ async function renderAnalyticsPostsTable() {
 
       const dateStr = post.published_at ? new Date(post.published_at).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "Recent";
       const impressions = (post.impressions || 0).toLocaleString();
-      const estDwell = `~${Math.round(45 + Math.min(45, (post.impressions || 0) * 0.05))} sec`;
+      // Dwell time is not measured and is not measurable here. LinkedIn does
+      // not expose it, and the extension observes page loads rather than how
+      // long anyone read. The old value was 45 plus a twentieth of the
+      // impression count, an arithmetic invention rendered in a table of
+      // captured figures, in the same row where the audit column already
+      // shows a dash for want of real data. The commit that replaced the
+      // fabricated "96% Safe" with that dash left this one standing.
 
       const attr = post.attribution || { total_leads: 0, vip_leads: 0, avg_icp: 0.0 };
       const totalLeads = attr.total_leads || 0;
@@ -4645,7 +4670,7 @@ async function renderAnalyticsPostsTable() {
         </td>
         <td style="color: var(--text-secondary); font-size: 12.5px;">${dateStr}</td>
         <td style="font-family: var(--font-mono, monospace); font-weight: 600;">${impressions}</td>
-        <td style="color: var(--text-secondary); font-size: 12.5px;">${estDwell}</td>
+        <td><span class="stat-unknown" title="Dwell time is not something LinkedIn reports, so the studio has no way to know it">&ndash;</span></td>
         <td><span class="stat-unknown" title="No audit has been run against this post's text">&ndash;</span></td>
         <td>
           <div style="display: flex; align-items: center; gap: 8px;">

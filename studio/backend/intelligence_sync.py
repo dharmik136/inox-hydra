@@ -688,6 +688,28 @@ class IntelligenceSyncEngine:
         if not isinstance(templates, list) or not templates:
             return {"status": "error", "message": "Empty or invalid intelligence bundle format."}
 
+        # Nothing is deleted until the replacement is known to be usable.
+        #
+        # This used to DELETE FROM viral_templates and then skip invalid items
+        # one at a time, so a bundle whose every entry failed validation, for
+        # example a list of plain strings from an older export, emptied the
+        # store, imported nothing, and returned status success with
+        # imported_count 0. sync() was hardened against exactly this with a
+        # pre-flight pass; this path never was.
+        usable = [
+            h for h in templates[:MAX_SYNC_TEMPLATES_BATCH]
+            if isinstance(h, dict)
+            and str(h.get("hook_text") or h.get("hook") or "").strip()
+        ]
+        if not usable:
+            return {
+                "status": "error",
+                "message": (
+                    "No usable templates in this bundle, so the existing library "
+                    "was left untouched. Expected objects carrying a hook_text field."
+                ),
+            }
+
         conn = None
         inserted = 0
         try:
@@ -695,9 +717,7 @@ class IntelligenceSyncEngine:
             with conn:
                 cursor = conn.cursor()
                 cursor.execute("DELETE FROM viral_templates")
-                for h in templates[:MAX_SYNC_TEMPLATES_BATCH]:
-                    if not isinstance(h, dict):
-                        continue
+                for h in usable:
                     hook_text = str(h.get("hook_text") or h.get("hook") or "").strip()[:MAX_HOOK_TEXT_LENGTH]
                     if not hook_text:
                         continue
