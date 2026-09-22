@@ -444,238 +444,253 @@ def get_range_days(range_str: str) -> int:
 def get_kpis(range: str = "30d"):
     days = get_range_days(range)
     conn = get_db()
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    cursor.execute("SELECT MAX(date) FROM analytics_daily")
-    max_d_row = cursor.fetchone()
-    if not max_d_row or not max_d_row[0]:
-        # Nothing captured yet. Return the full shape with nulls rather than an
-        # empty object: callers should render "not known yet", and an empty dict
-        # made every consumer reach for a fallback constant instead.
+        cursor.execute("SELECT MAX(date) FROM analytics_daily")
+        max_d_row = cursor.fetchone()
+        if not max_d_row or not max_d_row[0]:
+            # Nothing captured yet. Return the full shape with nulls rather than an
+            # empty object: callers should render "not known yet", and an empty dict
+            # made every consumer reach for a fallback constant instead.
+            cursor.execute("SELECT COUNT(*) FROM posts WHERE status = 'scheduled'")
+            scheduled_when_empty = cursor.fetchone()[0]
+            conn.close()
+            return {
+                "range": f"{days}d",
+                "impressions": None,
+                "impressions_delta_pct": None,
+                "total_engagements": None,
+                "engagements_delta_pct": None,
+                "avg_engagement_rate": None,
+                "engagement_rate_delta": None,
+                "total_followers": None,
+                "follower_growth": None,
+                "profile_views": None,
+                "profile_views_delta_pct": None,
+                # Counted, not assumed. An empty analytics table says nothing about
+                # the queue, and the queue screen was showing posts this reported as
+                # zero.
+                "scheduled_posts_count": scheduled_when_empty,
+            }
+
+        end_date = datetime.strptime(max_d_row[0], "%Y-%m-%d").date()
+        start_cur = end_date - timedelta(days=days - 1)
+        start_prev = start_cur - timedelta(days=days)
+        end_prev = start_cur - timedelta(days=1)
+
+        # 1. Current Window Totals
+        cursor.execute("""
+        SELECT SUM(impressions), SUM(reactions), SUM(comments), SUM(shares)
+        FROM analytics_daily
+        WHERE date >= ? AND date <= ?
+        """, (start_cur.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
+        cur_imp, cur_rxn, cur_comm, cur_shr = cursor.fetchone()
+        cur_imp = cur_imp or 0
+        cur_rxn = cur_rxn or 0
+        cur_comm = cur_comm or 0
+        cur_shr = cur_shr or 0
+        cur_eng = cur_rxn + cur_comm + cur_shr
+        cur_eng_rate = round((cur_eng / cur_imp * 100), 2) if cur_imp > 0 else 0.0
+
+        # 2. Previous Window Totals for True Period Deltas
+        cursor.execute("""
+        SELECT SUM(impressions), SUM(reactions), SUM(comments), SUM(shares)
+        FROM analytics_daily
+        WHERE date >= ? AND date <= ?
+        """, (start_prev.strftime("%Y-%m-%d"), end_prev.strftime("%Y-%m-%d")))
+        prev_imp, prev_rxn, prev_comm, prev_shr = cursor.fetchone()
+        prev_imp = prev_imp or 0
+        prev_rxn = prev_rxn or 0
+        prev_comm = prev_comm or 0
+        prev_shr = prev_shr or 0
+        prev_eng = prev_rxn + prev_comm + prev_shr
+        prev_eng_rate = round((prev_eng / prev_imp * 100), 2) if prev_imp > 0 else 0.0
+
+        def calc_delta(cur, prev):
+            if prev == 0:
+                return 100.0 if cur > 0 else 0.0
+            return round(((cur - prev) / prev) * 100.0, 1)
+
+        imp_delta = calc_delta(cur_imp, prev_imp)
+        eng_delta = calc_delta(cur_eng, prev_eng)
+        eng_rate_delta = round(cur_eng_rate - prev_eng_rate, 2)
+
+        cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (end_date.strftime("%Y-%m-%d"),))
+        latest_stat = cursor.fetchone()
+        # An unknown metric is null. It used to fall back to 2412 followers and 104
+        # profile views, which meant a creator who had captured nothing, or who
+        # genuinely had zero profile views, was shown a number that looked measured.
+        # Null travels to the interface and renders as a dash.
+        cur_followers = latest_stat["followers"] if (latest_stat and latest_stat["followers"] is not None) else None
+        cur_pviews = latest_stat["profile_views"] if (latest_stat and latest_stat["profile_views"] is not None) else None
+
+        cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (start_cur.strftime("%Y-%m-%d"),))
+        start_stat = cursor.fetchone()
+        start_followers = start_stat["followers"] if (start_stat and start_stat["followers"] is not None) else cur_followers
+        start_pviews = start_stat["profile_views"] if (start_stat and start_stat["profile_views"] is not None) else cur_pviews
+
+        # A delta between two points needs both points. One missing means no answer,
+        # not a zero and not a hundred percent.
+        follower_growth = (cur_followers - start_followers) if (cur_followers is not None and start_followers is not None) else None
+        pviews_delta = calc_delta(cur_pviews, start_pviews) if (cur_pviews is not None and start_pviews is not None) else None
+
         cursor.execute("SELECT COUNT(*) FROM posts WHERE status = 'scheduled'")
-        scheduled_when_empty = cursor.fetchone()[0]
+        scheduled_count = cursor.fetchone()[0]
+
         conn.close()
+
         return {
             "range": f"{days}d",
-            "impressions": None,
-            "impressions_delta_pct": None,
-            "total_engagements": None,
-            "engagements_delta_pct": None,
-            "avg_engagement_rate": None,
-            "engagement_rate_delta": None,
-            "total_followers": None,
-            "follower_growth": None,
-            "profile_views": None,
-            "profile_views_delta_pct": None,
-            # Counted, not assumed. An empty analytics table says nothing about
-            # the queue, and the queue screen was showing posts this reported as
-            # zero.
-            "scheduled_posts_count": scheduled_when_empty,
+            "impressions": cur_imp,
+            "impressions_delta_pct": imp_delta,
+            "total_engagements": cur_eng,
+            "engagements_delta_pct": eng_delta,
+            "avg_engagement_rate": cur_eng_rate,
+            "engagement_rate_delta": eng_rate_delta,
+            "total_followers": cur_followers,
+            "follower_growth": follower_growth,
+            "profile_views": cur_pviews,
+            "profile_views_delta_pct": pviews_delta,
+            "scheduled_posts_count": scheduled_count
         }
-
-    end_date = datetime.strptime(max_d_row[0], "%Y-%m-%d").date()
-    start_cur = end_date - timedelta(days=days - 1)
-    start_prev = start_cur - timedelta(days=days)
-    end_prev = start_cur - timedelta(days=1)
-
-    # 1. Current Window Totals
-    cursor.execute("""
-    SELECT SUM(impressions), SUM(reactions), SUM(comments), SUM(shares)
-    FROM analytics_daily
-    WHERE date >= ? AND date <= ?
-    """, (start_cur.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
-    cur_imp, cur_rxn, cur_comm, cur_shr = cursor.fetchone()
-    cur_imp = cur_imp or 0
-    cur_rxn = cur_rxn or 0
-    cur_comm = cur_comm or 0
-    cur_shr = cur_shr or 0
-    cur_eng = cur_rxn + cur_comm + cur_shr
-    cur_eng_rate = round((cur_eng / cur_imp * 100), 2) if cur_imp > 0 else 0.0
-
-    # 2. Previous Window Totals for True Period Deltas
-    cursor.execute("""
-    SELECT SUM(impressions), SUM(reactions), SUM(comments), SUM(shares)
-    FROM analytics_daily
-    WHERE date >= ? AND date <= ?
-    """, (start_prev.strftime("%Y-%m-%d"), end_prev.strftime("%Y-%m-%d")))
-    prev_imp, prev_rxn, prev_comm, prev_shr = cursor.fetchone()
-    prev_imp = prev_imp or 0
-    prev_rxn = prev_rxn or 0
-    prev_comm = prev_comm or 0
-    prev_shr = prev_shr or 0
-    prev_eng = prev_rxn + prev_comm + prev_shr
-    prev_eng_rate = round((prev_eng / prev_imp * 100), 2) if prev_imp > 0 else 0.0
-
-    def calc_delta(cur, prev):
-        if prev == 0:
-            return 100.0 if cur > 0 else 0.0
-        return round(((cur - prev) / prev) * 100.0, 1)
-
-    imp_delta = calc_delta(cur_imp, prev_imp)
-    eng_delta = calc_delta(cur_eng, prev_eng)
-    eng_rate_delta = round(cur_eng_rate - prev_eng_rate, 2)
-
-    cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (end_date.strftime("%Y-%m-%d"),))
-    latest_stat = cursor.fetchone()
-    # An unknown metric is null. It used to fall back to 2412 followers and 104
-    # profile views, which meant a creator who had captured nothing, or who
-    # genuinely had zero profile views, was shown a number that looked measured.
-    # Null travels to the interface and renders as a dash.
-    cur_followers = latest_stat["followers"] if (latest_stat and latest_stat["followers"] is not None) else None
-    cur_pviews = latest_stat["profile_views"] if (latest_stat and latest_stat["profile_views"] is not None) else None
-
-    cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (start_cur.strftime("%Y-%m-%d"),))
-    start_stat = cursor.fetchone()
-    start_followers = start_stat["followers"] if (start_stat and start_stat["followers"] is not None) else cur_followers
-    start_pviews = start_stat["profile_views"] if (start_stat and start_stat["profile_views"] is not None) else cur_pviews
-
-    # A delta between two points needs both points. One missing means no answer,
-    # not a zero and not a hundred percent.
-    follower_growth = (cur_followers - start_followers) if (cur_followers is not None and start_followers is not None) else None
-    pviews_delta = calc_delta(cur_pviews, start_pviews) if (cur_pviews is not None and start_pviews is not None) else None
-
-    cursor.execute("SELECT COUNT(*) FROM posts WHERE status = 'scheduled'")
-    scheduled_count = cursor.fetchone()[0]
-
-    conn.close()
-
-    return {
-        "range": f"{days}d",
-        "impressions": cur_imp,
-        "impressions_delta_pct": imp_delta,
-        "total_engagements": cur_eng,
-        "engagements_delta_pct": eng_delta,
-        "avg_engagement_rate": cur_eng_rate,
-        "engagement_rate_delta": eng_rate_delta,
-        "total_followers": cur_followers,
-        "follower_growth": follower_growth,
-        "profile_views": cur_pviews,
-        "profile_views_delta_pct": pviews_delta,
-        "scheduled_posts_count": scheduled_count
-    }
+    finally:
+        conn.close()
 
 
 @app.get("/api/analytics/overview")
 def get_analytics_overview(range: str = "30d"):
     days = get_range_days(range)
     conn = get_db()
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    cursor.execute("SELECT MAX(date) FROM analytics_daily")
-    max_d_row = cursor.fetchone()
-    if not max_d_row or not max_d_row[0]:
+        cursor.execute("SELECT MAX(date) FROM analytics_daily")
+        max_d_row = cursor.fetchone()
+        if not max_d_row or not max_d_row[0]:
+            conn.close()
+            return {"status": "success", "count": 0, "series": []}
+
+        end_date = datetime.strptime(max_d_row[0], "%Y-%m-%d").date()
+        start_date = end_date - timedelta(days=days - 1)
+
+        cursor.execute("""
+        SELECT * FROM analytics_daily 
+        WHERE date >= ? AND date <= ? 
+        ORDER BY date ASC
+        """, (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
+        rows = [dict(r) for r in cursor.fetchall()]
         conn.close()
-        return {"status": "success", "count": 0, "series": []}
 
-    end_date = datetime.strptime(max_d_row[0], "%Y-%m-%d").date()
-    start_date = end_date - timedelta(days=days - 1)
-
-    cursor.execute("""
-    SELECT * FROM analytics_daily 
-    WHERE date >= ? AND date <= ? 
-    ORDER BY date ASC
-    """, (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
-    rows = [dict(r) for r in cursor.fetchall()]
-    conn.close()
-
-    return {
-        "status": "success",
-        "range": f"{days}d",
-        "count": len(rows),
-        "series": rows
-    }
+        return {
+            "status": "success",
+            "range": f"{days}d",
+            "count": len(rows),
+            "series": rows
+        }
+    finally:
+        conn.close()
 
 
 @app.get("/api/analytics/demographics")
 def get_demographics(dimension: Optional[str] = None):
     conn = get_db()
-    cursor = conn.cursor()
-    if dimension:
-        cursor.execute("SELECT dimension, label, percentage FROM audience_demographics WHERE dimension = ? ORDER BY percentage DESC", (dimension,))
-    else:
-        cursor.execute("SELECT dimension, label, percentage FROM audience_demographics ORDER BY percentage DESC")
-    rows = [dict(r) for r in cursor.fetchall()]
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        if dimension:
+            cursor.execute("SELECT dimension, label, percentage FROM audience_demographics WHERE dimension = ? ORDER BY percentage DESC", (dimension,))
+        else:
+            cursor.execute("SELECT dimension, label, percentage FROM audience_demographics ORDER BY percentage DESC")
+        rows = [dict(r) for r in cursor.fetchall()]
+        conn.close()
 
-    grouped = {}
-    for r in rows:
-        dim = r["dimension"]
-        grouped.setdefault(dim, []).append(r)
+        grouped = {}
+        for r in rows:
+            dim = r["dimension"]
+            grouped.setdefault(dim, []).append(r)
 
-    return {"status": "success", "demographics": grouped}
+        return {"status": "success", "demographics": grouped}
+    finally:
+        conn.close()
 
 
 @app.get("/api/analytics/export")
 def export_analytics(format: str = "csv"):
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM analytics_daily ORDER BY date ASC")
-    rows = [dict(r) for r in cursor.fetchall()]
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM analytics_daily ORDER BY date ASC")
+        rows = [dict(r) for r in cursor.fetchall()]
+        conn.close()
 
-    if format.lower() == "json":
-        return rows
+        if format.lower() == "json":
+            return rows
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-    if rows:
-        writer.writerow(rows[0].keys())
-        for r in rows:
-            writer.writerow(r.values())
+        output = io.StringIO()
+        writer = csv.writer(output)
+        if rows:
+            writer.writerow(rows[0].keys())
+            for r in rows:
+                writer.writerow(r.values())
     
-    return Response(
-        content=output.getvalue(),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=linkedin_analytics_export.csv"}
-    )
+        return Response(
+            content=output.getvalue(),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=linkedin_analytics_export.csv"}
+        )
+    finally:
+        conn.close()
 
 
 @app.get("/api/analytics/posts")
 def get_posts_leaderboard():
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-    SELECT id, content, media_urls, status, published_at, impressions, reactions, comments, shares, tags,
-           activity_urn,
-           CASE WHEN impressions > 0 THEN ROUND((reactions + comments + shares) * 100.0 / impressions, 2) ELSE 0.0 END as engagement_rate
-    FROM posts
-    WHERE status = 'published'
-    ORDER BY impressions DESC
-    """)
-    rows = []
-    for r in cursor.fetchall():
-        d = dict(r)
-        d["media_urls"] = json.loads(d["media_urls"]) if d["media_urls"] else []
-        d["tags"] = json.loads(d["tags"]) if d["tags"] else []
-
-        # Attribution correlation summary for post leaderboard.
-        #
-        # Matched on the activity URN, which is what an engagement is actually
-        # recorded under. This used to compare posts.id against li.post_urn,
-        # two different namespaces, so the badge read zero on every post no
-        # matter how many commenters had been captured. li.post_id is an
-        # INTEGER key into drafts(id) and could not match a posts.id string
-        # either, so all three disjuncts were dead.
-        post_id_str = str(d["id"])
-        post_urn = d.get("activity_urn") or ""
+    try:
+        cursor = conn.cursor()
         cursor.execute("""
-            SELECT
-                COUNT(DISTINCT l.id) as total_leads,
-                COUNT(DISTINCT CASE WHEN l.icp_score >= 75.0 THEN l.id END) as vip_leads,
-                ROUND(AVG(l.icp_score), 1) as avg_icp
-            FROM leads l
-            LEFT JOIN lead_interactions li ON l.id = li.lead_id
-            WHERE (li.post_urn != '' AND li.post_urn IN (?, ?)) OR l.post_id = ?
-        """, (post_id_str, post_urn, post_id_str))
-        attr_row = cursor.fetchone()
-        d["attribution"] = {
-            "total_leads": int(attr_row["total_leads"] or 0) if attr_row else 0,
-            "vip_leads": int(attr_row["vip_leads"] or 0) if attr_row else 0,
-            "avg_icp": float(attr_row["avg_icp"] or 0.0) if attr_row and attr_row["avg_icp"] else 0.0,
-        }
-        rows.append(d)
-    conn.close()
-    return {"status": "success", "posts": rows}
+        SELECT id, content, media_urls, status, published_at, impressions, reactions, comments, shares, tags,
+               activity_urn,
+               CASE WHEN impressions > 0 THEN ROUND((reactions + comments + shares) * 100.0 / impressions, 2) ELSE 0.0 END as engagement_rate
+        FROM posts
+        WHERE status = 'published'
+        ORDER BY impressions DESC
+        """)
+        rows = []
+        for r in cursor.fetchall():
+            d = dict(r)
+            d["media_urls"] = json.loads(d["media_urls"]) if d["media_urls"] else []
+            d["tags"] = json.loads(d["tags"]) if d["tags"] else []
+
+            # Attribution correlation summary for post leaderboard.
+            #
+            # Matched on the activity URN, which is what an engagement is actually
+            # recorded under. This used to compare posts.id against li.post_urn,
+            # two different namespaces, so the badge read zero on every post no
+            # matter how many commenters had been captured. li.post_id is an
+            # INTEGER key into drafts(id) and could not match a posts.id string
+            # either, so all three disjuncts were dead.
+            post_id_str = str(d["id"])
+            post_urn = d.get("activity_urn") or ""
+            cursor.execute("""
+                SELECT
+                    COUNT(DISTINCT l.id) as total_leads,
+                    COUNT(DISTINCT CASE WHEN l.icp_score >= 75.0 THEN l.id END) as vip_leads,
+                    ROUND(AVG(l.icp_score), 1) as avg_icp
+                FROM leads l
+                LEFT JOIN lead_interactions li ON l.id = li.lead_id
+                WHERE (li.post_urn != '' AND li.post_urn IN (?, ?)) OR l.post_id = ?
+            """, (post_id_str, post_urn, post_id_str))
+            attr_row = cursor.fetchone()
+            d["attribution"] = {
+                "total_leads": int(attr_row["total_leads"] or 0) if attr_row else 0,
+                "vip_leads": int(attr_row["vip_leads"] or 0) if attr_row else 0,
+                "avg_icp": float(attr_row["avg_icp"] or 0.0) if attr_row and attr_row["avg_icp"] else 0.0,
+            }
+            rows.append(d)
+        conn.close()
+        return {"status": "success", "posts": rows}
+    finally:
+        conn.close()
 
 
 @app.get("/api/v1/analytics/posts/{post_id}/leads", tags=["Enterprise Reverse CRM", "Analytics"])
@@ -693,20 +708,23 @@ def get_post_leads_attribution(post_id: str, account_id: str = "default"):
 @app.get("/api/posts")
 def list_posts(status: Optional[str] = None):
     conn = get_db()
-    cursor = conn.cursor()
-    if status:
-        cursor.execute("SELECT * FROM posts WHERE status = ? ORDER BY COALESCE(scheduled_for, created_at) ASC", (status,))
-    else:
-        cursor.execute("SELECT * FROM posts ORDER BY created_at DESC")
+    try:
+        cursor = conn.cursor()
+        if status:
+            cursor.execute("SELECT * FROM posts WHERE status = ? ORDER BY COALESCE(scheduled_for, created_at) ASC", (status,))
+        else:
+            cursor.execute("SELECT * FROM posts ORDER BY created_at DESC")
 
-    rows = []
-    for r in cursor.fetchall():
-        d = dict(r)
-        d["media_urls"] = json.loads(d["media_urls"]) if d["media_urls"] else []
-        d["tags"] = json.loads(d["tags"]) if d["tags"] else []
-        rows.append(d)
-    conn.close()
-    return {"status": "success", "posts": rows}
+        rows = []
+        for r in cursor.fetchall():
+            d = dict(r)
+            d["media_urls"] = json.loads(d["media_urls"]) if d["media_urls"] else []
+            d["tags"] = json.loads(d["tags"]) if d["tags"] else []
+            rows.append(d)
+        conn.close()
+        return {"status": "success", "posts": rows}
+    finally:
+        conn.close()
 
 
 @app.post("/api/posts")
@@ -729,24 +747,27 @@ def create_post(post: PostCreate):
 
     post_id = f"post_{uuid.uuid4().hex[:10]}"
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("""
-    INSERT INTO posts (id, content, media_urls, status, scheduled_for, tags)
-    VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        post_id,
-        post.content,
-        json.dumps(post.media_urls),
-        post.status,
-        sched_for,
-        json.dumps(post.tags)
-    ))
-    conn.commit()
-    conn.close()
-    resp = {"status": "success", "id": post_id, "message": "Post created successfully"}
-    if cadence_info:
-        resp["cadence"] = cadence_info
-    return resp
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+        INSERT INTO posts (id, content, media_urls, status, scheduled_for, tags)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            post_id,
+            post.content,
+            json.dumps(post.media_urls),
+            post.status,
+            sched_for,
+            json.dumps(post.tags)
+        ))
+        conn.commit()
+        conn.close()
+        resp = {"status": "success", "id": post_id, "message": "Post created successfully"}
+        if cadence_info:
+            resp["cadence"] = cadence_info
+        return resp
+    finally:
+        conn.close()
 
 
 @app.put("/api/posts/{post_id}")
@@ -755,43 +776,46 @@ def update_post(post_id: str, updates: PostUpdate):
         raise HTTPException(status_code=400, detail="Post content exceeds maximum 5,000 character limit.")
 
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM posts WHERE id = ?", (post_id,))
-    existing = cursor.fetchone()
-    if not existing:
-        conn.close()
-        raise HTTPException(status_code=404, detail="Post not found")
-
-    content = updates.content if updates.content is not None else existing["content"]
-    media_urls = json.dumps(updates.media_urls) if updates.media_urls is not None else existing["media_urls"]
-    status = updates.status if updates.status is not None else existing["status"]
-    scheduled_for = updates.scheduled_for if updates.scheduled_for is not None else existing["scheduled_for"]
-    tags = json.dumps(updates.tags) if updates.tags is not None else existing["tags"]
-
-    cadence_info = None
-    if status == "scheduled" and scheduled_for:
-        val = native_scheduler.validate_schedule_cadence(scheduled_for, post_id=post_id)
-        if not val["valid"]:
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posts WHERE id = ?", (post_id,))
+        existing = cursor.fetchone()
+        if not existing:
             conn.close()
-            raise HTTPException(status_code=400, detail=val["error"])
-        cadence_info = {
-            "has_collision": val.get("has_collision", False),
-            "warning": val.get("warning"),
-            "cadence_health_score": val.get("cadence_health_score", 100)
-        }
-        scheduled_for = normalize_datetime_to_utc_iso(scheduled_for) or scheduled_for
+            raise HTTPException(status_code=404, detail="Post not found")
 
-    cursor.execute("""
-    UPDATE posts
-    SET content = ?, media_urls = ?, status = ?, scheduled_for = ?, tags = ?
-    WHERE id = ?
-    """, (content, media_urls, status, scheduled_for, tags, post_id))
-    conn.commit()
-    conn.close()
-    resp = {"status": "success", "message": "Post updated successfully"}
-    if cadence_info:
-        resp["cadence"] = cadence_info
-    return resp
+        content = updates.content if updates.content is not None else existing["content"]
+        media_urls = json.dumps(updates.media_urls) if updates.media_urls is not None else existing["media_urls"]
+        status = updates.status if updates.status is not None else existing["status"]
+        scheduled_for = updates.scheduled_for if updates.scheduled_for is not None else existing["scheduled_for"]
+        tags = json.dumps(updates.tags) if updates.tags is not None else existing["tags"]
+
+        cadence_info = None
+        if status == "scheduled" and scheduled_for:
+            val = native_scheduler.validate_schedule_cadence(scheduled_for, post_id=post_id)
+            if not val["valid"]:
+                conn.close()
+                raise HTTPException(status_code=400, detail=val["error"])
+            cadence_info = {
+                "has_collision": val.get("has_collision", False),
+                "warning": val.get("warning"),
+                "cadence_health_score": val.get("cadence_health_score", 100)
+            }
+            scheduled_for = normalize_datetime_to_utc_iso(scheduled_for) or scheduled_for
+
+        cursor.execute("""
+        UPDATE posts
+        SET content = ?, media_urls = ?, status = ?, scheduled_for = ?, tags = ?
+        WHERE id = ?
+        """, (content, media_urls, status, scheduled_for, tags, post_id))
+        conn.commit()
+        conn.close()
+        resp = {"status": "success", "message": "Post updated successfully"}
+        if cadence_info:
+            resp["cadence"] = cadence_info
+        return resp
+    finally:
+        conn.close()
 
 
 @app.post("/api/posts/{post_id}/reschedule")
@@ -831,49 +855,55 @@ async def publish_post_now(post_id: str):
     and broadcasts the post_published event across the real-time event bus.
     """
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM posts WHERE id = ?", (post_id,))
-    existing = cursor.fetchone()
-    if not existing:
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM posts WHERE id = ?", (post_id,))
+        existing = cursor.fetchone()
+        if not existing:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Post not found")
+
+        if existing["status"] == "published":
+            conn.close()
+            raise HTTPException(status_code=400, detail="Post is already published")
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        cursor.execute("""
+        UPDATE posts
+        SET status = 'published', published_at = ?
+        WHERE id = ?
+        """, (now_iso, post_id))
+        conn.commit()
         conn.close()
-        raise HTTPException(status_code=404, detail="Post not found")
 
-    if existing["status"] == "published":
+        await event_bus.publish("post_published", {
+            "post_id": post_id,
+            "content": existing["content"][:80],
+            "action": "published_now",
+            "published_at": now_iso
+        })
+
+        return {
+            "status": "success",
+            "message": "Post published immediately.",
+            "post_id": post_id,
+            "published_at": now_iso
+        }
+    finally:
         conn.close()
-        raise HTTPException(status_code=400, detail="Post is already published")
-
-    now_iso = datetime.now(timezone.utc).isoformat()
-    cursor.execute("""
-    UPDATE posts
-    SET status = 'published', published_at = ?
-    WHERE id = ?
-    """, (now_iso, post_id))
-    conn.commit()
-    conn.close()
-
-    await event_bus.publish("post_published", {
-        "post_id": post_id,
-        "content": existing["content"][:80],
-        "action": "published_now",
-        "published_at": now_iso
-    })
-
-    return {
-        "status": "success",
-        "message": "Post published immediately.",
-        "post_id": post_id,
-        "published_at": now_iso
-    }
 
 
 @app.delete("/api/posts/{post_id}")
 def delete_post(post_id: str):
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM posts WHERE id = ?", (post_id,))
-    conn.commit()
-    conn.close()
-    return {"status": "success", "message": "Post deleted"}
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+        conn.commit()
+        conn.close()
+        return {"status": "success", "message": "Post deleted"}
+    finally:
+        conn.close()
 
 
 # -------------------------------------------------------------
@@ -1014,34 +1044,40 @@ async def upload_media_file(file: UploadFile = File(...)):
 def list_media_assets():
     """Lists all uploaded and AI-generated media assets in the local library."""
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM media_assets ORDER BY created_at DESC")
-    rows = [dict(r) for r in cursor.fetchall()]
-    conn.close()
-    return {"status": "success", "count": len(rows), "assets": rows}
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM media_assets ORDER BY created_at DESC")
+        rows = [dict(r) for r in cursor.fetchall()]
+        conn.close()
+        return {"status": "success", "count": len(rows), "assets": rows}
+    finally:
+        conn.close()
 
 
 @app.delete("/api/media/{asset_id}", tags=["Media Studio & Dropzone"])
 def delete_media_asset(asset_id: str):
     """Deletes an uploaded media asset and cleans up local storage."""
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT storage_path FROM media_assets WHERE id = ?", (asset_id,))
-    row = cursor.fetchone()
-    if row:
-        rel_path = row["storage_path"]
-        if rel_path.startswith("/assets/"):
-            sub_path = rel_path.replace("/assets/", "")
-            full_path = os.path.join(get_assets_dir(), sub_path)
-            if os.path.exists(full_path):
-                try:
-                    os.remove(full_path)
-                except Exception:
-                    pass
-        cursor.execute("DELETE FROM media_assets WHERE id = ?", (asset_id,))
-        conn.commit()
-    conn.close()
-    return {"status": "success", "message": f"Asset {asset_id} deleted"}
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT storage_path FROM media_assets WHERE id = ?", (asset_id,))
+        row = cursor.fetchone()
+        if row:
+            rel_path = row["storage_path"]
+            if rel_path.startswith("/assets/"):
+                sub_path = rel_path.replace("/assets/", "")
+                full_path = os.path.join(get_assets_dir(), sub_path)
+                if os.path.exists(full_path):
+                    try:
+                        os.remove(full_path)
+                    except Exception:
+                        pass
+            cursor.execute("DELETE FROM media_assets WHERE id = ?", (asset_id,))
+            conn.commit()
+        conn.close()
+        return {"status": "success", "message": f"Asset {asset_id} deleted"}
+    finally:
+        conn.close()
 
 
 # -------------------------------------------------------------
@@ -1440,23 +1476,26 @@ def copy_browser_path_endpoint():
 @app.get("/api/queue/smart-slots")
 def get_smart_slots():
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM queue_slots WHERE is_active = 1 ORDER BY day_of_week, time_slot")
-    slots = [dict(r) for r in cursor.fetchall()]
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM queue_slots WHERE is_active = 1 ORDER BY day_of_week, time_slot")
+        slots = [dict(r) for r in cursor.fetchall()]
 
-    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    for s in slots:
-        s["day_name"] = day_names[s["day_of_week"]]
+        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+        for s in slots:
+            s["day_name"] = day_names[s["day_of_week"]]
 
-    cursor.execute("SELECT id, content, scheduled_for FROM posts WHERE status = 'scheduled' ORDER BY scheduled_for ASC")
-    scheduled_posts = [dict(r) for r in cursor.fetchall()]
-    conn.close()
+        cursor.execute("SELECT id, content, scheduled_for FROM posts WHERE status = 'scheduled' ORDER BY scheduled_for ASC")
+        scheduled_posts = [dict(r) for r in cursor.fetchall()]
+        conn.close()
 
-    return {
-        "status": "success",
-        "slots": slots,
-        "scheduled_posts": scheduled_posts
-    }
+        return {
+            "status": "success",
+            "slots": slots,
+            "scheduled_posts": scheduled_posts
+        }
+    finally:
+        conn.close()
 
 
 class CadenceValidationPayload(BaseModel):
@@ -1528,84 +1567,87 @@ async def toggle_queue_pause(payload: Optional[QueuePausePayload] = None):
 @app.get("/api/inspirations")
 def search_inspirations(query: Optional[str] = None, topic: Optional[str] = None, limit: Optional[int] = 100):
     conn = get_db()
-    cursor = conn.cursor()
+    try:
+        cursor = conn.cursor()
 
-    # Whether the retired table has rows, not whether it exists.
-    #
-    # This used to switch on table existence alone, which made the swipe file
-    # work once and then go empty forever. init_db runs before ensure_schema on
-    # every boot and recreates `inspirations` through CREATE TABLE IF NOT
-    # EXISTS, but the ledger only runs migration 2 once, so nothing dropped it
-    # again. From the second launch onward an empty legacy table was present,
-    # this switch took the legacy path, and the creator saw nothing.
-    #
-    # Emptiness is the honest test: migration 2 moved every row into
-    # viral_templates, so a table with no rows has nothing left to serve
-    # whether or not some later boot recreated its shell.
-    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspirations'")
-    has_inspirations = cursor.fetchone() is not None
-    if has_inspirations:
-        cursor.execute("SELECT COUNT(*) FROM inspirations")
-        has_inspirations = cursor.fetchone()[0] > 0
+        # Whether the retired table has rows, not whether it exists.
+        #
+        # This used to switch on table existence alone, which made the swipe file
+        # work once and then go empty forever. init_db runs before ensure_schema on
+        # every boot and recreates `inspirations` through CREATE TABLE IF NOT
+        # EXISTS, but the ledger only runs migration 2 once, so nothing dropped it
+        # again. From the second launch onward an empty legacy table was present,
+        # this switch took the legacy path, and the creator saw nothing.
+        #
+        # Emptiness is the honest test: migration 2 moved every row into
+        # viral_templates, so a table with no rows has nothing left to serve
+        # whether or not some later boot recreated its shell.
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspirations'")
+        has_inspirations = cursor.fetchone() is not None
+        if has_inspirations:
+            cursor.execute("SELECT COUNT(*) FROM inspirations")
+            has_inspirations = cursor.fetchone()[0] > 0
 
-    if not has_inspirations:
-        conn.close()
-        templates = intelligence_sync_engine.get_templates(archetype=topic, query=query, limit=limit or 100)
-        total_vaulted = intelligence_sync_engine.get_total_count()
-        adapted_rows = [
-            {
-                "id": f"tpl-{t.get('id', idx)}",
-                "author_name": "Blueprint",
-                "author_headline": t.get("archetype", "Engineering"),
-                "topic": t.get("archetype", "Engineering"),
-                "content": (t.get("hook_text") or "") + "\n\n" + (t.get("pacing_style") or ""),
-                "likes_count": int(float(t.get("velocity_score") or 8.0) * 1000),
-                "comments_count": 50,
-                "key_hook": t.get("hook_text", ""),
-                "archetype": t.get("archetype", "Engineering"),
-                "velocity_score": t.get("velocity_score", 8.0),
-                "engagement_multiplier": t.get("engagement_multiplier", "2.0x"),
-                "pacing_style": t.get("pacing_style", "")
+        if not has_inspirations:
+            conn.close()
+            templates = intelligence_sync_engine.get_templates(archetype=topic, query=query, limit=limit or 100)
+            total_vaulted = intelligence_sync_engine.get_total_count()
+            adapted_rows = [
+                {
+                    "id": f"tpl-{t.get('id', idx)}",
+                    "author_name": "Blueprint",
+                    "author_headline": t.get("archetype", "Engineering"),
+                    "topic": t.get("archetype", "Engineering"),
+                    "content": (t.get("hook_text") or "") + "\n\n" + (t.get("pacing_style") or ""),
+                    "likes_count": int(float(t.get("velocity_score") or 8.0) * 1000),
+                    "comments_count": 50,
+                    "key_hook": t.get("hook_text", ""),
+                    "archetype": t.get("archetype", "Engineering"),
+                    "velocity_score": t.get("velocity_score", 8.0),
+                    "engagement_multiplier": t.get("engagement_multiplier", "2.0x"),
+                    "pacing_style": t.get("pacing_style", "")
+                }
+                for idx, t in enumerate(templates)
+            ]
+            return {
+                "status": "success",
+                "total_vaulted": total_vaulted,
+                "count": len(adapted_rows),
+                "inspirations": adapted_rows
             }
-            for idx, t in enumerate(templates)
-        ]
+
+        conditions = []
+        params = []
+
+        if topic:
+            conditions.append("topic LIKE ?")
+            params.append(f"%{topic}%")
+
+        if query:
+            conditions.append("(topic LIKE ? OR author_name LIKE ? OR content LIKE ? OR key_hook LIKE ?)")
+            pattern = f"%{query}%"
+            params.extend([pattern, pattern, pattern, pattern])
+
+        where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+        sql = f"SELECT * FROM inspirations{where_clause} ORDER BY likes_count DESC"
+        if limit and limit > 0:
+            sql += f" LIMIT {int(limit)}"
+
+        cursor.execute(sql, tuple(params))
+        rows = [dict(r) for r in cursor.fetchall()]
+
+        cursor.execute("SELECT COUNT(*) FROM inspirations")
+        total_count = cursor.fetchone()[0]
+
+        conn.close()
         return {
             "status": "success",
-            "total_vaulted": total_vaulted,
-            "count": len(adapted_rows),
-            "inspirations": adapted_rows
+            "total_vaulted": total_count,
+            "count": len(rows),
+            "inspirations": rows
         }
-
-    conditions = []
-    params = []
-
-    if topic:
-        conditions.append("topic LIKE ?")
-        params.append(f"%{topic}%")
-
-    if query:
-        conditions.append("(topic LIKE ? OR author_name LIKE ? OR content LIKE ? OR key_hook LIKE ?)")
-        pattern = f"%{query}%"
-        params.extend([pattern, pattern, pattern, pattern])
-
-    where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
-    sql = f"SELECT * FROM inspirations{where_clause} ORDER BY likes_count DESC"
-    if limit and limit > 0:
-        sql += f" LIMIT {int(limit)}"
-
-    cursor.execute(sql, tuple(params))
-    rows = [dict(r) for r in cursor.fetchall()]
-
-    cursor.execute("SELECT COUNT(*) FROM inspirations")
-    total_count = cursor.fetchone()[0]
-
-    conn.close()
-    return {
-        "status": "success",
-        "total_vaulted": total_count,
-        "count": len(rows),
-        "inspirations": rows
-    }
+    finally:
+        conn.close()
 
 
 
@@ -1630,16 +1672,19 @@ def receive_cookies(payload: CookiePayload):
 @app.get("/api/auth/status")
 def get_auth_status():
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT value FROM settings WHERE key = 'session_status'")
-    row = cursor.fetchone()
-    status = row["value"] if row else "disconnected"
-    conn.close()
-    return {
-        "status": status,
-        "is_connected": status in ["connected", "ready"],
-        "client_session": linkedin_client.is_authenticated()
-    }
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = 'session_status'")
+        row = cursor.fetchone()
+        status = row["value"] if row else "disconnected"
+        conn.close()
+        return {
+            "status": status,
+            "is_connected": status in ["connected", "ready"],
+            "client_session": linkedin_client.is_authenticated()
+        }
+    finally:
+        conn.close()
 
 
 @app.post("/api/analytics/ingest", tags=["Analytics"])
@@ -1686,55 +1731,58 @@ def get_creator_profile():
     studio defaults, and passive LinkedIn session telemetry.
     """
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT value FROM settings WHERE key = 'creator_profile'")
-    row = cursor.fetchone()
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT value FROM settings WHERE key = 'creator_profile'")
+        row = cursor.fetchone()
 
-    defaults = {
-        # Empty, not absent: the shape stays stable for the form that binds to
-        # it. `is_set` in the response is how a caller tells "not configured"
-        # apart from "configured to an empty string".
-        "name": "",
-        "headline": "",
-        "company": "",
-        "brand_watermark_text": "",
-        "brand_watermark_position": "bottom_right",
-        "brand_watermark_style": "glass_pill",
-        "brand_watermark_enabled": True,
-        "eliminate_provider_watermark_default": True,
-        "default_aspect_ratio": "1:1",
-        "default_visual_style": "photorealistic"
-    }
+        defaults = {
+            # Empty, not absent: the shape stays stable for the form that binds to
+            # it. `is_set` in the response is how a caller tells "not configured"
+            # apart from "configured to an empty string".
+            "name": "",
+            "headline": "",
+            "company": "",
+            "brand_watermark_text": "",
+            "brand_watermark_position": "bottom_right",
+            "brand_watermark_style": "glass_pill",
+            "brand_watermark_enabled": True,
+            "eliminate_provider_watermark_default": True,
+            "default_aspect_ratio": "1:1",
+            "default_visual_style": "photorealistic"
+        }
 
-    profile = json.loads(row["value"]) if row and row["value"] else defaults
-    for k, v in defaults.items():
-        if k not in profile:
-            profile[k] = v
+        profile = json.loads(row["value"]) if row and row["value"] else defaults
+        for k, v in defaults.items():
+            if k not in profile:
+                profile[k] = v
 
-    cursor.execute("SELECT value FROM settings WHERE key = 'session_status'")
-    s_row = cursor.fetchone()
-    cursor.execute("SELECT value FROM settings WHERE key = 'last_token_update'")
-    t_row = cursor.fetchone()
-    cursor.execute("SELECT value FROM settings WHERE key = 'li_at'")
-    li_row = cursor.fetchone()
-    conn.close()
+        cursor.execute("SELECT value FROM settings WHERE key = 'session_status'")
+        s_row = cursor.fetchone()
+        cursor.execute("SELECT value FROM settings WHERE key = 'last_token_update'")
+        t_row = cursor.fetchone()
+        cursor.execute("SELECT value FROM settings WHERE key = 'li_at'")
+        li_row = cursor.fetchone()
+        conn.close()
 
-    # Whether this install knows who its creator is. Callers need to tell
-    # "never configured" apart from "configured to an empty string", and the
-    # first is the state every fresh install starts in. Anything that renders a
-    # name (watermarks, carousel footers, the feed simulator) should ask before
-    # rendering rather than falling back to a value it invented.
-    identity_is_set = bool((profile.get("name") or "").strip())
+        # Whether this install knows who its creator is. Callers need to tell
+        # "never configured" apart from "configured to an empty string", and the
+        # first is the state every fresh install starts in. Anything that renders a
+        # name (watermarks, carousel footers, the feed simulator) should ask before
+        # rendering rather than falling back to a value it invented.
+        identity_is_set = bool((profile.get("name") or "").strip())
 
-    return {
-        "status": "success",
-        "profile": profile,
-        "is_set": identity_is_set,
-        "linkedin_connected": linkedin_client.is_authenticated(),
-        "session_status": s_row["value"] if s_row else "ready",
-        "last_token_update": t_row["value"] if t_row else None,
-        "has_li_cookie": bool(li_row and li_row["value"])
-    }
+        return {
+            "status": "success",
+            "profile": profile,
+            "is_set": identity_is_set,
+            "linkedin_connected": linkedin_client.is_authenticated(),
+            "session_status": s_row["value"] if s_row else "ready",
+            "last_token_update": t_row["value"] if t_row else None,
+            "has_li_cookie": bool(li_row and li_row["value"])
+        }
+    finally:
+        conn.close()
 
 
 @app.post("/api/settings/profile", tags=["Settings & Creator Profile"])
