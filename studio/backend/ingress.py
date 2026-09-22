@@ -18,6 +18,7 @@ import os
 import re
 import requests
 import threading
+import time
 
 try:
     from .database import get_db, create_draft, get_draft
@@ -157,6 +158,14 @@ class TelegramIngressDaemon:
         self.quiet_hours_end = 6     # 6:00 AM
         self.current_delay = 2.0
         self.consecutive_errors = 0
+
+        # A deadline, on the monotonic clock, before which Telegram has asked
+        # us not to poll. Held separately from consecutive_errors because a 429
+        # is not a failure to reach the server, it is the server answering with
+        # an instruction. Treating it as an error would double the delay on a
+        # ladder Telegram never asked for; treating it as a success, which is
+        # what used to happen, threw the instruction away entirely.
+        self.rate_limited_until = 0.0
         self.total_polls = 0
         self.total_messages_processed = 0
         self.last_poll_at: Optional[str] = None
@@ -177,6 +186,14 @@ class TelegramIngressDaemon:
         - Network errors: Exponential backoff doubling delay up to max_delay (60.0s).
         - Normal daytime operation: 2.0s responsive polling.
         """
+        # An outstanding rate limit outranks everything below, including the
+        # quiet hours branch. Checked first because the whole point is that
+        # nothing else is allowed to shorten it.
+        remaining = self.rate_limited_until - time.monotonic()
+        if remaining > 0:
+            self.current_delay = remaining
+            return remaining
+
         if has_error:
             self.consecutive_errors += 1
             delay = min(self.max_delay, self.base_delay * (2 ** min(self.consecutive_errors, 6)))
@@ -321,14 +338,40 @@ class TelegramIngressDaemon:
                 else:
                     self.last_error = f"Telegram API error: {data.get('description', 'Unknown')}"
             elif res.status_code == 429:
+                # Telegram says wait. Record it as a deadline, not as a delay.
+                #
+                # This used to set current_delay and return normally. The loop
+                # read no exception, so calculate_next_poll_interval took the
+                # success path, reset consecutive_errors and overwrote
+                # current_delay with base_delay. The daemon then re-polled two
+                # seconds later while reporting "backing off 25.0s", which
+                # escalates the rate limit it is supposed to be respecting.
+                retry_after = None
                 try:
-                    data = res.json()
-                    retry_after = data.get("parameters", {}).get("retry_after")
-                    if retry_after:
-                        self.current_delay = max(float(retry_after), self.current_delay)
+                    raw_retry = res.json().get("parameters", {}).get("retry_after")
+                    if raw_retry is not None:
+                        retry_after = float(raw_retry)
                 except Exception:
-                    pass
-                self.last_error = f"HTTP 429: Rate limited by Telegram API, backing off {self.current_delay:.1f}s"
+                    retry_after = None
+
+                if retry_after and retry_after > 0:
+                    # The server named a figure, so use it rather than guessing.
+                    self.current_delay = max(retry_after, self.base_delay)
+                else:
+                    # A 429 with no retry_after is the one case where the
+                    # exponential ladder is the right answer, because nothing
+                    # told us how long to wait.
+                    self.consecutive_errors += 1
+                    self.current_delay = min(
+                        self.max_delay,
+                        self.base_delay * (2 ** min(self.consecutive_errors, 6)),
+                    )
+
+                self.rate_limited_until = time.monotonic() + self.current_delay
+                self.last_error = (
+                    f"HTTP 429: Rate limited by Telegram API, "
+                    f"backing off {self.current_delay:.1f}s"
+                )
             else:
                 self.last_error = f"HTTP {res.status_code}: {res.text[:100]}"
         except Exception as err:
