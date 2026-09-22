@@ -66,7 +66,19 @@ ID_EXIT = 1006
 
 # Paths
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-ICON_PATH = os.path.join(PROJECT_ROOT, "studio", "extension", "icons", "icon-48.png")
+
+# The tray needs an .ico, not a .png. The previous constant here pointed at the
+# extension's 48 pixel PNG, which the Win32 icon loader cannot read, which is
+# why this program spent its life wearing the generic Windows box.
+APP_ICON_PATH = os.path.join(PROJECT_ROOT, "assets", "inox_hydra.ico")
+
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+try:
+    from studio.backend import desktop
+except Exception:  # pragma: no cover - the tray must still start without it
+    desktop = None
 
 
 class NOTIFYICONDATAW(ctypes.Structure):
@@ -103,6 +115,40 @@ class InoxHydraTray:
         self.server_process = None
         self.nid = None
         self.running = False
+
+    def load_app_icon(self):
+        """
+        Loads the product icon at the exact size the tray asks for.
+
+        This used to be LoadIconW(IDI_APPLICATION), the generic Windows box
+        that means "this program did not bring an icon". It is the most visible
+        thing separating something that looks like a product from something
+        that looks like a script somebody left running.
+
+        LoadImageW with the requested metrics is used rather than LoadIconW,
+        because the tray wants a small icon and letting Windows downscale a
+        256 pixel frame produces a blurry one. The .ico carries every size, so
+        this picks the frame that was drawn for it.
+
+        Falls back to the old default if the asset is missing, since a tray
+        with a dull icon is still better than no tray.
+        """
+        IDI_APPLICATION = 32512
+        IMAGE_ICON = 1
+        LR_LOADFROMFILE = 0x00000010
+        SM_CXSMICON = 49
+        SM_CYSMICON = 50
+
+        if os.path.exists(APP_ICON_PATH):
+            width = self.user32.GetSystemMetrics(SM_CXSMICON) or 16
+            height = self.user32.GetSystemMetrics(SM_CYSMICON) or 16
+            handle = self.user32.LoadImageW(
+                None, APP_ICON_PATH, IMAGE_ICON, width, height, LR_LOADFROMFILE
+            )
+            if handle:
+                return handle
+
+        return self.user32.LoadIconW(None, wintypes.LPCWSTR(IDI_APPLICATION))
 
     def is_server_running(self) -> bool:
         """Checks if localhost port 8000 is listening."""
@@ -262,9 +308,7 @@ class InoxHydraTray:
             None, None, wndclass.hInstance, None
         )
 
-        # Standard application default icon
-        IDI_APPLICATION = 32512
-        hicon = self.user32.LoadIconW(None, wintypes.LPCWSTR(IDI_APPLICATION))
+        hicon = self.load_app_icon()
 
         self.nid = NOTIFYICONDATAW()
         self.nid.cbSize = ctypes.sizeof(NOTIFYICONDATAW)
@@ -286,6 +330,8 @@ class InoxHydraTray:
         self.start_server_if_needed()
         self.create_tray()
         print("[Tray] Inox Hydra background tray active on 127.0.0.1:8000.")
+        if desktop and desktop.is_autostart_enabled():
+            print("[Tray] Autostart is on. Remove it from Settings or the Startup folder.")
 
         msg = wintypes.MSG()
         while self.running and self.user32.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
@@ -311,6 +357,31 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"❌ Tray verification failed: {e}", file=sys.stderr)
             sys.exit(1)
+
+    # Identity first. Windows binds a window to whatever application identity
+    # the process has at the moment the window is created, so this has to
+    # happen before create_tray, not after.
+    if desktop:
+        desktop.set_app_user_model_id()
+
+        # One studio per logon session. Without this, a second launch starts a
+        # second tray icon and a second uvicorn that loses the race for port
+        # 8000, and the user is left with a tray icon controlling nothing.
+        #
+        # The handle is bound to a module level name on purpose: the mutex is
+        # held only as long as the handle lives, and letting it fall out of
+        # scope would release it immediately and defeat the guard.
+        _INSTANCE_LOCK = desktop.acquire_single_instance()
+        if _INSTANCE_LOCK is None and desktop.is_windows():
+            print("[Tray] Inox Hydra is already running. Use the existing tray icon.")
+            try:
+                # Bring the running studio forward rather than just refusing,
+                # since a person who launched it twice wants to see it.
+                import webbrowser
+                webbrowser.open("http://127.0.0.1:8000")
+            except Exception:
+                pass
+            sys.exit(0)
 
     tray = InoxHydraTray()
     tray.run()

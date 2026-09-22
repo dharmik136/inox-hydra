@@ -30,6 +30,7 @@ needs on day one is described in `FIRST_RUN.md` and is built, not read.
 | [AI_ENGINE.md](AI_ENGINE.md) | The generation layer and its deterministic fallbacks |
 | [BYO_AI_ARCHITECTURE.md](BYO_AI_ARCHITECTURE.md) | Bring-your-own-key provider configuration |
 | [API_REFERENCE.md](API_REFERENCE.md) | Endpoint reference |
+| [DESKTOP_SHELL.md](DESKTOP_SHELL.md) | The native window, why it wraps the backend rather than replacing it, and how it is built |
 
 ## Interface
 
