@@ -165,6 +165,19 @@ def decrypt_token(ciphertext: Any) -> str:
         except Exception:
             return ""
 
+        # CryptUnprotectData signals failure by returning 0 rather than
+        # raising, so a failed decrypt fell out of the `if` and off the end of
+        # this function, where the final `return raw_cipher` handed the caller
+        # the base64 DPAPI blob as though it were the token.
+        #
+        # The blob is a non-empty string, so is_authenticated() reported True
+        # and the client sent it to LinkedIn as a cookie. The 401 that came
+        # back tripped the circuit breaker for 300 seconds and told the user to
+        # recapture, which cannot help: the vault entry was sealed on a
+        # different machine or under a different account and is simply not
+        # readable here. An empty string says that honestly.
+        return ""
+
     # Machine-Keyed Decryption
     if raw_cipher.startswith(LOCAL_ENC_PREFIX):
         try:

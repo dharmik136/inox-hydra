@@ -636,6 +636,7 @@ def get_posts_leaderboard():
     cursor = conn.cursor()
     cursor.execute("""
     SELECT id, content, media_urls, status, published_at, impressions, reactions, comments, shares, tags,
+           activity_urn,
            CASE WHEN impressions > 0 THEN ROUND((reactions + comments + shares) * 100.0 / impressions, 2) ELSE 0.0 END as engagement_rate
     FROM posts
     WHERE status = 'published'
@@ -647,17 +648,25 @@ def get_posts_leaderboard():
         d["media_urls"] = json.loads(d["media_urls"]) if d["media_urls"] else []
         d["tags"] = json.loads(d["tags"]) if d["tags"] else []
 
-        # Attribution correlation summary for post leaderboard
+        # Attribution correlation summary for post leaderboard.
+        #
+        # Matched on the activity URN, which is what an engagement is actually
+        # recorded under. This used to compare posts.id against li.post_urn,
+        # two different namespaces, so the badge read zero on every post no
+        # matter how many commenters had been captured. li.post_id is an
+        # INTEGER key into drafts(id) and could not match a posts.id string
+        # either, so all three disjuncts were dead.
         post_id_str = str(d["id"])
+        post_urn = d.get("activity_urn") or ""
         cursor.execute("""
-            SELECT 
+            SELECT
                 COUNT(DISTINCT l.id) as total_leads,
                 COUNT(DISTINCT CASE WHEN l.icp_score >= 75.0 THEN l.id END) as vip_leads,
                 ROUND(AVG(l.icp_score), 1) as avg_icp
             FROM leads l
             LEFT JOIN lead_interactions li ON l.id = li.lead_id
-            WHERE li.post_id = ? OR li.post_urn = ? OR l.post_id = ?
-        """, (post_id_str, post_id_str, post_id_str))
+            WHERE (li.post_urn != '' AND li.post_urn IN (?, ?)) OR l.post_id = ?
+        """, (post_id_str, post_urn, post_id_str))
         attr_row = cursor.fetchone()
         d["attribution"] = {
             "total_leads": int(attr_row["total_leads"] or 0) if attr_row else 0,
@@ -1520,8 +1529,24 @@ async def toggle_queue_pause(payload: Optional[QueuePausePayload] = None):
 def search_inspirations(query: Optional[str] = None, topic: Optional[str] = None, limit: Optional[int] = 100):
     conn = get_db()
     cursor = conn.cursor()
+
+    # Whether the retired table has rows, not whether it exists.
+    #
+    # This used to switch on table existence alone, which made the swipe file
+    # work once and then go empty forever. init_db runs before ensure_schema on
+    # every boot and recreates `inspirations` through CREATE TABLE IF NOT
+    # EXISTS, but the ledger only runs migration 2 once, so nothing dropped it
+    # again. From the second launch onward an empty legacy table was present,
+    # this switch took the legacy path, and the creator saw nothing.
+    #
+    # Emptiness is the honest test: migration 2 moved every row into
+    # viral_templates, so a table with no rows has nothing left to serve
+    # whether or not some later boot recreated its shell.
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspirations'")
     has_inspirations = cursor.fetchone() is not None
+    if has_inspirations:
+        cursor.execute("SELECT COUNT(*) FROM inspirations")
+        has_inspirations = cursor.fetchone()[0] > 0
 
     if not has_inspirations:
         conn.close()

@@ -639,6 +639,29 @@ class ReverseCRMManager:
                 (post_str,)
             )
             p_row = cursor.fetchone()
+
+            # The identifiers an interaction could have been recorded under.
+            #
+            # The caller passes posts.id, which is this application's own key.
+            # lead_interactions.post_urn holds what LinkedIn calls the post,
+            # and those are different namespaces, so matching one against the
+            # other could never succeed. Migration 7 added posts.activity_urn
+            # precisely to bridge them; this resolves through it.
+            #
+            # li.post_id is worse than useless here: it is an INTEGER foreign
+            # key into drafts(id), so comparing it to a posts.id string can
+            # never match either.
+            match_keys = {post_str}
+            cursor.execute("SELECT activity_urn FROM posts WHERE id = ?", (post_str,))
+            urn_row = cursor.fetchone()
+            if urn_row and urn_row["activity_urn"]:
+                match_keys.add(urn_row["activity_urn"])
+
+            # The reverse direction, for a caller who already holds the URN.
+            cursor.execute("SELECT id FROM posts WHERE activity_urn = ?", (post_str,))
+            id_row = cursor.fetchone()
+            if id_row and id_row["id"]:
+                match_keys.add(str(id_row["id"]))
             if not p_row:
                 try:
                     p_id_int = int(post_str)
@@ -669,11 +692,15 @@ class ReverseCRMManager:
                 li.suggested_dm_reply,
                 li.interacted_at
             FROM leads l
-            LEFT JOIN lead_interactions li ON l.id = li.lead_id AND (li.post_id = ? OR li.post_urn = ? OR li.post_id = ?)
-            WHERE (li.post_id = ? OR li.post_urn = ? OR li.post_id = ? OR l.post_id = ?)
+            LEFT JOIN lead_interactions li
+                ON l.id = li.lead_id AND li.post_urn IN ({placeholders})
+            WHERE li.post_urn IN ({placeholders}) OR l.post_id IN ({placeholders})
             ORDER BY l.icp_score DESC, li.interacted_at DESC
             """
-            cursor.execute(query, (post_str, post_str, post_str, post_str, post_str, post_str, post_str))
+            keys = sorted(match_keys)
+            placeholders = ", ".join("?" for _ in keys)
+            query = query.format(placeholders=placeholders)
+            cursor.execute(query, tuple(keys) * 3)
             rows = cursor.fetchall()
 
             deduped_leads: Dict[str, Dict[str, Any]] = {}
