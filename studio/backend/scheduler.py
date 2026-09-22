@@ -83,22 +83,44 @@ class NativeScheduler:
 
     def is_queue_paused(self) -> bool:
         """Checks if automated queue dispatch is paused by creator."""
-        conn = get_db()
+        # get_db() is inside the try. It was outside, so a failure to open the
+        # database escaped past the handler written for exactly that case, and
+        # the caller got an exception instead of the safe default below.
+        conn = None
         try:
+            conn = get_db()
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM settings WHERE key = 'queue_status'")
             row = cursor.fetchone()
             return bool(row and row["value"] == "paused")
         except Exception as e:
-            logger.warning("Could not read queue_status setting: %s", e)
-            return False
+            # Fail closed, not open.
+            #
+            # This returned False on a read failure, which means "not paused",
+            # which means the dispatcher publishes. A locked database therefore
+            # decided on the creator's behalf that their queue was running.
+            # Publishing to someone's professional network when the studio
+            # cannot tell whether they asked it to is the worse of the two
+            # errors, so an unreadable setting counts as paused.
+            logger.warning("Could not read queue_status setting, treating the queue as paused: %s", e)
+            return True
         finally:
-            conn.close()
+            # conn is None when get_db() itself raised.
+            if conn is not None:
+                conn.close()
 
     def set_queue_paused(self, paused: bool) -> bool:
-        """Sets automated queue dispatch status in SQLite settings table."""
-        conn = get_db()
+        """
+        Sets automated queue dispatch status. Returns whether the write landed.
+
+        This used to return `paused` on success and False on failure, which
+        made the two indistinguishable for set_queue_paused(False): the caller
+        could not tell "resumed" from "could not write". It now answers the
+        only question a caller has, which is whether the setting changed.
+        """
+        conn = None
         try:
+            conn = get_db()
             cursor = conn.cursor()
             val = "paused" if paused else "active"
             cursor.execute("""
@@ -108,12 +130,14 @@ class NativeScheduler:
             """, (val,))
             conn.commit()
             logger.info("Queue dispatch status set to %s.", val)
-            return paused
+            return True
         except Exception as e:
             logger.error("Failed to update queue_status setting: %s", e)
             return False
         finally:
-            conn.close()
+            # conn is None when get_db() itself raised.
+            if conn is not None:
+                conn.close()
 
     def get_active_slots(self) -> List[Dict[str, Any]]:
         """Fetches active queue slots from SQLite with fallback to enterprise defaults."""
@@ -320,17 +344,43 @@ class NativeScheduler:
                         "hours_clearance": round(min_distance, 1) if min_distance < 900 else None
                     }
 
-        # Fallback: exactly 24 hours from cursor if all slots congested
+        # Fallback: exactly 24 hours from the cursor when every slot inside the
+        # 14 day window collides.
+        #
+        # The clearance is measured, not asserted. This used to return
+        # cooldown_satisfied True and hours_clearance 24.0 without consulting a
+        # single post, so with a congested calendar it handed back a time that
+        # had a post sitting on it while reporting a full day of room. The
+        # "Use Next Smart Slot" button fills the picker with this value, so the
+        # creator was being told a colliding time was clear.
+        #
+        # 24 hours is the distance from the CURSOR, which says nothing about
+        # the distance from the nearest post. Those are different numbers and
+        # only one of them is the cooldown.
         fallback_dt = cursor_dt + timedelta(hours=24)
         fallback_local = fallback_dt.astimezone()
+
+        fallback_distance = 999.0
+        for ex_dt, _, _ in existing_posts:
+            diff_hours = abs((fallback_dt - ex_dt).total_seconds()) / 3600.0
+            if diff_hours < fallback_distance:
+                fallback_distance = diff_hours
+
+        satisfied = fallback_distance >= self.min_cooldown_hours
+
         return {
             "slot_datetime": fallback_dt.isoformat(),
             "local_datetime": fallback_local.isoformat(),
             "day_name": DAY_NAMES[fallback_local.weekday()],
             "time_slot": fallback_local.strftime("%H:%M"),
-            "label": "24-Hour Cooldown Buffer Slot",
-            "cooldown_satisfied": True,
-            "hours_clearance": 24.0
+            "label": (
+                "24-Hour Cooldown Buffer Slot" if satisfied
+                else "24-Hour Buffer Slot (still inside the cooldown)"
+            ),
+            "cooldown_satisfied": satisfied,
+            "hours_clearance": (
+                round(fallback_distance, 1) if fallback_distance < 900 else None
+            ),
         }
 
     def check_scheduled_queue(self) -> List[Dict[str, Any]]:
