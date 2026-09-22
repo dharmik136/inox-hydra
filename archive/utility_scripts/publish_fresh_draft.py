@@ -4,7 +4,22 @@ import json
 import uuid
 import os
 
-API_KEY = "01a08fa4-2354-769d-b2a1-86136e7dae52"
+# Read from the environment, never written here.
+#
+# This line used to hold the Taplio key as a literal. These scripts are
+# tracked, the repository is public, and that key grants create, schedule and
+# publish on the owner's real LinkedIn account. It sat in ten files from the
+# initial release commit onward.
+#
+# Removing it here does not undo that. The literal stays reachable in published
+# history, so the key itself had to be rotated. This only stops the next one
+# from being committed.
+API_KEY = os.environ.get("TAPLIO_API_KEY", "")
+if not API_KEY:
+    raise SystemExit(
+        "Set TAPLIO_API_KEY in your environment before running this script. "
+        "In PowerShell: $env:TAPLIO_API_KEY = '<your key>'"
+    )
 FILE_PATH = "ai_leadership_gestured_4k.jpg"
 
 post_content = """𝗔𝗿𝗲 𝘄𝗲 𝗮𝗰𝘁𝘂𝗮𝗹𝗹𝘆 𝗮𝗱𝗼𝗽𝘁𝗶𝗻𝗴 𝗔𝗜, 𝗼𝗿 𝗮𝗿𝗲 𝘄𝗲 𝗷𝘂𝘀𝘁 𝘀𝘂𝗯𝘀𝗶𝗱𝗶𝘇𝗶𝗻𝗴 𝗮 𝗺𝗮𝘀𝘀𝗶𝘃𝗲 𝗶𝗹𝗹𝘂𝘀𝗶𝗼𝗻 𝗼𝗳 "𝗽𝗿𝗼𝗱𝘂𝗰𝘁𝗶𝘃𝗶𝘁𝘆"?

@@ -1,8 +1,24 @@
+import os
 import urllib.request
 import urllib.error
 import json
 
-API_KEY = "01a08fa4-2354-769d-b2a1-86136e7dae52"
+# Read from the environment, never written here.
+#
+# This line used to hold the Taplio key as a literal. These scripts are
+# tracked, the repository is public, and that key grants create, schedule and
+# publish on the owner's real LinkedIn account. It sat in ten files from the
+# initial release commit onward.
+#
+# Removing it here does not undo that. The literal stays reachable in published
+# history, so the key itself had to be rotated. This only stops the next one
+# from being committed.
+API_KEY = os.environ.get("TAPLIO_API_KEY", "")
+if not API_KEY:
+    raise SystemExit(
+        "Set TAPLIO_API_KEY in your environment before running this script. "
+        "In PowerShell: $env:TAPLIO_API_KEY = '<your key>'"
+    )
 DRAFT_ID = "01a08fd1-da14-75fa-a970-6a83144f078d"
 
 final_content = """𝗭𝗲𝗿𝗼 𝗺𝗮𝗻𝘂𝗮𝗹 𝗶𝗻𝘁𝗲𝗿𝘃𝗲𝗻𝘁𝗶𝗼𝗻.

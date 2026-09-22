@@ -269,3 +269,142 @@ def test_both_build_paths_run_the_secret_check():
     assert "assert_no_secrets(target)" in builder, "the portable build does not verify what it staged"
     assert "assert_no_secrets(PAYLOAD_ROOT)" in staging, "the desktop payload is not verified"
 
+
+
+# ---------------------------------------------------------------------------
+# What tracked files SAY, as opposed to what they are named
+#
+# Every test above checks filenames and extensions. A live Taplio bearer token
+# sat in ten tracked .py files under archive/utility_scripts/ from the initial
+# release commit, public for seven days, granting create, schedule and publish
+# on the owner's real LinkedIn account. Every rule in this file passed the
+# entire time, because a .py file with a credential inside it is still a .py
+# file.
+#
+# Names were never going to catch that. Content is.
+# ---------------------------------------------------------------------------
+
+import re
+
+# Shapes that are a credential wherever they appear. Deliberately narrow: a
+# pattern that fires on ordinary code gets suppressed, and a suppressed test
+# protects nothing.
+CREDENTIAL_PATTERNS = [
+    (r"sk-ant-[A-Za-z0-9_-]{16,}", "Anthropic secret key"),
+    (r"sk-[A-Za-z0-9_-]{24,}", "OpenAI style secret key"),
+    (r"AIza[0-9A-Za-z_-]{30,}", "Google API key"),
+    (r"gh[pousr]_[A-Za-z0-9]{30,}", "GitHub token"),
+    (r"xox[baprs]-[A-Za-z0-9-]{12,}", "Slack token"),
+    (r"AQ[A-Za-z0-9_-]{40,}", "LinkedIn li_at session cookie"),
+    (r"-----BEGIN [A-Z ]*PRIVATE KEY-----", "private key"),
+    # The shape the Taplio key had: a credential-named variable assigned a long
+    # opaque literal. This is the one that would have caught it.
+    (r"(?i)\b(api[_-]?key|apikey|secret|auth[_-]?token|password|bearer)\b\s*[:=]\s*"
+     r"['\"][A-Za-z0-9_-]{20,}['\"]", "credential assigned as a literal"),
+]
+
+# Values that match a pattern and are not credentials. Each needs a reason.
+CREDENTIAL_ALLOWLIST = (
+    "xxxx", "placeholder", "example", "your-key", "your key", "<your",
+    "redacted", "dummy", "fake", "sample", "os.environ",
+    "getenv", "secrets.", "${{",
+    # The convention for fixture credentials across this suite. One marker
+    # rather than a growing list of ad hoc words, so a reviewer can grep it and
+    # a scary looking string in a diff is immediately identifiable as fake.
+    "notarealkey",
+)
+
+
+def _looks_allowlisted(line):
+    lowered = line.lower()
+    return any(marker in lowered for marker in CREDENTIAL_ALLOWLIST)
+
+
+def test_no_tracked_file_contains_a_credential():
+    """
+    The test that would have caught the Taplio key on the day it was written.
+
+    Scans the CONTENT of every tracked text file. The suite meant to prevent
+    leaks checked names only, which is how a ten file API key leak survived a
+    hygiene pass explicitly aimed at leaks.
+    """
+    text_suffixes = (
+        ".py", ".js", ".ts", ".json", ".md", ".yml", ".yaml", ".html", ".css",
+        ".txt", ".toml", ".cfg", ".ini", ".bat", ".ps1", ".vbs", ".rs",
+    )
+    compiled = [(re.compile(pattern), label) for pattern, label in CREDENTIAL_PATTERNS]
+
+    offenders = []
+    for relative in _tracked_files():
+        if not relative.lower().endswith(text_suffixes):
+            continue
+        # This file necessarily contains the patterns it searches for.
+        if relative.endswith("test_distribution_hygiene.py"):
+            continue
+
+        full = os.path.join(REPO_ROOT, relative)
+        try:
+            with open(full, "r", encoding="utf-8", errors="ignore") as handle:
+                lines = handle.readlines()
+        except OSError:
+            continue
+
+        for number, line in enumerate(lines, 1):
+            if _looks_allowlisted(line):
+                continue
+            for pattern, label in compiled:
+                if pattern.search(line):
+                    offenders.append(relative + ":" + str(number) + "  (" + label + ")")
+                    break
+
+    assert not offenders, (
+        "These tracked files contain credential shaped values:"
+        + "".join("\n  " + o for o in offenders)
+        + "\n\nIf one is real, rotate it FIRST. Removing it from HEAD does not "
+        "remove it from published history."
+        "\nIf it is a fixture, name it so it reads as fake."
+    )
+
+
+def test_the_taplio_key_is_gone_from_the_working_tree():
+    """
+    Specific, because this one actually happened. A general pattern can be
+    loosened later without anyone noticing this exact case regressed.
+    """
+    # Assembled rather than written whole, so this file does not itself contain
+    # the string it exists to forbid.
+    leaked_prefix = "01a08fa4" + "-2354"
+    offenders = []
+    for f in _tracked_files():
+        if not f.lower().endswith((".py", ".md", ".txt", ".json")):
+            continue
+        if f.endswith("test_distribution_hygiene.py"):
+            continue
+        with open(os.path.join(REPO_ROOT, f), encoding="utf-8", errors="ignore") as handle:
+            if leaked_prefix in handle.read():
+                offenders.append(f)
+    assert not offenders, "the leaked Taplio key is back in: " + str(offenders)
+
+
+def test_the_archive_scripts_read_their_key_from_the_environment():
+    """They held the credential as a literal. They now ask the environment."""
+    import glob
+
+    scripts = []
+    for path in glob.glob(os.path.join(REPO_ROOT, "archive", "utility_scripts", "*.py")):
+        with open(path, encoding="utf-8", errors="ignore") as handle:
+            if "TAPLIO_API_KEY" in handle.read():
+                scripts.append(path)
+
+    assert len(scripts) >= 10, (
+        "expected the ten Taplio scripts to read TAPLIO_API_KEY, found " + str(len(scripts))
+    )
+
+    for path in scripts:
+        with open(path, encoding="utf-8", errors="ignore") as handle:
+            content = handle.read()
+        name = os.path.basename(path)
+        assert "os.environ" in content, name + " does not read the environment"
+        assert "raise SystemExit" in content, (
+            name + " would run with an empty key and fail confusingly"
+        )
