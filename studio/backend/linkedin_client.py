@@ -925,8 +925,24 @@ class LinkedInClient:
         - Delay <= 45 minutes: Apply 45-minute morning grace rule (eligible for 1-click launch).
         - Delay > 45 minutes: Auto-reschedule to the next peak creator window (default: 1:15 PM / 13:15).
         """
-        now = current_time or datetime.now()
-        delta_seconds = (now - scheduled_at).total_seconds()
+        # A scheduled_at that carries an offset and a now that does not cannot
+        # be subtracted at all: Python raises rather than guessing, and the
+        # route returned a 500. Stored schedule times go through
+        # normalize_datetime_to_utc_iso, which always writes an offset, so the
+        # common path was exactly the broken one.
+        #
+        # Both sides are put in UTC before any arithmetic. A naive value is
+        # read as local time, which is what astimezone does with one, and is
+        # the right reading here: naive datetimes in this studio come off the
+        # creator's own clock or their date picker, never off a wire format.
+        # scheduler.parse_datetime_flexible reads a naive value as UTC instead,
+        # because it parses rows already normalized to UTC and a legacy row
+        # without an offset is likeliest to be one of those.
+        reference = current_time or datetime.now().astimezone()
+
+        now = reference.astimezone(timezone.utc)
+        scheduled_utc = scheduled_at.astimezone(timezone.utc)
+        delta_seconds = (now - scheduled_utc).total_seconds()
 
         # If scheduled time is in future, it is on time
         if delta_seconds <= 0:
@@ -945,22 +961,27 @@ class LinkedInClient:
             return {
                 "status": "GRACE_PERIOD_ELIGIBLE",
                 "scheduled_at": scheduled_at.isoformat(),
-                "current_time": now.isoformat(),
+                "current_time": reference.isoformat(),
                 "delay_minutes": delay_minutes,
                 "action": "prompt_grace_launch",
                 "message": f"Machine woke {delay_minutes} mins late. Eligible for 1-click launch under the 45-minute morning grace rule."
             }
 
         # Stale: > 45 mins late - auto-reschedule to protect algorithmic reach
-        next_peak = now.replace(hour=peak_hour, minute=peak_minute, second=0, microsecond=0)
-        if next_peak <= now:
+        #
+        # The peak window is built on `reference`, not on the UTC value. "1:15
+        # PM" is a claim about the creator's working day, and 13:15 UTC is a
+        # quarter to seven in the evening in Mumbai. Computing it in UTC would
+        # move the window by the whole offset for every creator outside it.
+        next_peak = reference.replace(hour=peak_hour, minute=peak_minute, second=0, microsecond=0)
+        if next_peak <= reference:
             # If peak window today has already passed, schedule for tomorrow
             next_peak += timedelta(days=1)
 
         return {
             "status": "AUTO_RESCHEDULED",
             "scheduled_at": scheduled_at.isoformat(),
-            "current_time": now.isoformat(),
+            "current_time": reference.isoformat(),
             "delay_minutes": delay_minutes,
             "rescheduled_to": next_peak.isoformat(),
             "action": "auto_rescheduled",

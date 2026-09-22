@@ -2106,7 +2106,17 @@ def evaluate_recovery(req: RecoveryEvaluateRequest):
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid ISO timestamp format for scheduled_at")
 
-    now_dt = datetime.fromisoformat(req.current_time) if req.current_time else datetime.now()
+    # A caller-supplied current_time was parsed with no guard, so a malformed
+    # one raised inside the handler and returned a 500 for what is a bad
+    # request. The default carries the machine's offset, so the answer names
+    # which 1:15 PM it means instead of leaving the client to assume.
+    if req.current_time:
+        try:
+            now_dt = datetime.fromisoformat(req.current_time)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid ISO timestamp format for current_time")
+    else:
+        now_dt = datetime.now().astimezone()
     recovery = linkedin_client.evaluate_schedule_recovery(sched_dt, current_time=now_dt)
     return {"status": "success", "recovery": recovery}
 
