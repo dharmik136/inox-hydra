@@ -36,6 +36,7 @@ os.environ["INOX_HYDRA_HOME"] = tempfile.mkdtemp(prefix="inox_verify_")
 from fastapi.testclient import TestClient
 import studio.backend.app as m
 import studio.backend.paths as p
+import studio.backend.security as sec
 
 install_root = os.path.dirname(os.path.dirname(m.__file__))
 failures = []
@@ -46,7 +47,17 @@ def check(label, condition, detail=""):
         failures.append(label)
 
 # Context manager so lifespan startup runs, exactly as on a real first launch.
-with TestClient(m.app) as c:
+#
+# Pointed at the loopback origin and carrying the installation's token, which
+# is what a real caller has. The API checks Host, Origin and token on every
+# request, so a bare TestClient defaults to Host "testserver" with no
+# credential and is refused before it reaches a route. Verifying an installed
+# wheel means verifying it the way the product is actually used.
+with TestClient(
+    m.app,
+    base_url="http://127.0.0.1:8000",
+    headers={sec.TOKEN_HEADER: sec.get_or_create_token()},
+) as c:
     r = c.get("/")
     check("serves the single page app", r.status_code == 200 and "<html" in r.text.lower(),
           f"({len(r.text)} bytes)")
