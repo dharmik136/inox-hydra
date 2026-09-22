@@ -25,10 +25,10 @@ from typing import Optional, List, Dict, Any
 
 try:
     from .paths import get_db_path, _STUDIO_DIR, DB_FILENAME
-    from .migrations import ensure_schema
+    from .migrations import ensure_schema, check_compatibility
 except ImportError:
     from paths import get_db_path, _STUDIO_DIR, DB_FILENAME
-    from migrations import ensure_schema
+    from migrations import ensure_schema, check_compatibility
 
 # Retained as a module constant for backwards compatibility. Live resolution
 # happens in get_db() so that INOX_HYDRA_HOME can be redirected at runtime.
@@ -82,6 +82,28 @@ def init_db() -> None:
     7. settings: Key-value configuration store for tokens & Gemini API keys.
     """
     conn = get_db()
+
+    # Refuse a database this build does not understand BEFORE touching it.
+    #
+    # check_compatibility says in its own docstring that it is "called before
+    # any write". It was not: ensure_schema, which wraps it, ran at the end of
+    # this function, after every CREATE TABLE, every ALTER, the seeding and the
+    # commit. So a user who installed a newer build and then rolled back had
+    # this one recreate tables the newer schema had dropped, commit them, and
+    # only then decline to open the file. Verified by stamping user_version to
+    # 99 and dropping a table: the refused build put it back.
+    #
+    # The check is hoisted; ensure_schema stays at the end, because a pre
+    # ledger database has to be stamped after the baseline DDL rather than
+    # rebuilt by it. Those are two different jobs that were sharing one call.
+    try:
+        check_compatibility(conn)
+    except Exception:
+        # No try/finally around this function's body, so an escaping error
+        # would otherwise leak the connection along with the WAL handle.
+        conn.close()
+        raise
+
     cursor = conn.cursor()
 
     # 1. Daily Analytics Snapshots
@@ -374,7 +396,11 @@ def init_db() -> None:
     # Adopt or advance the schema ledger. Runs after the baseline DDL above so
     # a pre-ledger database is stamped rather than rebuilt. Any future schema
     # change belongs in studio/backend/migrations.py, never in this function.
-    report = ensure_schema(conn)
+    try:
+        report = ensure_schema(conn)
+    except Exception:
+        conn.close()
+        raise
     conn.close()
 
     print("Database initialized at:", get_db_path())
