@@ -1,3 +1,18 @@
+import os
+
+# This script exercises features, and most of them need something to work on:
+# the CRM needs leads, the analytics surfaces need rows, the leaderboard needs
+# posts. It runs standalone rather than under pytest, so it does not get the
+# INOX_DEMO_DATA that tests/conftest.py sets for the suite, and when fabricated
+# seeding became opt in this file started asserting against an empty database
+# and failing. It declares the dependency itself instead.
+#
+# This is emphatically NOT the place that checks a fresh install stays honest.
+# tests/test_no_fabricated_metrics.py and tests/test_fresh_install_is_impersonal.py
+# do that, in their own clean homes with the flag deliberately cleared. Turning
+# it on here would defeat them, which is why they spawn subprocesses.
+os.environ.setdefault("INOX_DEMO_DATA", "1")
+
 import sys
 import os
 
