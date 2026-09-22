@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LinkedIn Studio</title>
+  <!--
+    The only page this shell ships.
+
+    It is on screen for the second or two between the window appearing and the
+    backend answering its health probe, and it stays on screen if the backend
+    never answers. So it has two jobs: look like the application rather than a
+    blank white rectangle, and say something useful if the wait does not end.
+
+    No script, no fonts, no network. Anything it needed to fetch would be one
+    more thing that can fail during the exact window where something already
+    has.
+  -->
+  <style>
+    :root {
+      color-scheme: dark;
+      --ground: #0A0A0A;
+      --indigo: #4F46E5;
+      --paper: #E7E2D5;
+      --muted: #6F6F6B;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+    }
+
+    body {
+      background: var(--ground);
+      color: var(--paper);
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 28px;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* The application mark, redrawn in CSS rather than loaded as an image.
+       Same two paper bars and orange fold as assets/inox_hydra.ico. */
+    .mark {
+      width: 96px;
+      height: 96px;
+      border-radius: 22px;
+      background: var(--indigo);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      padding: 0 18px;
+    }
+
+    .bar {
+      height: 9px;
+      border-radius: 5px;
+      background: var(--paper);
+      width: 100%;
+    }
+
+    .bar.short { width: 74%; margin-right: auto; }
+
+    .bar.fold {
+      width: 46%;
+      margin-right: auto;
+      margin-top: 6px;
+      background: #FF6A3D;
+    }
+
+    .status {
+      font-size: 13px;
+      letter-spacing: 0.01em;
+      color: var(--muted);
+      text-align: center;
+      max-width: 42ch;
+      line-height: 1.6;
+    }
+
+    .title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--paper);
+      letter-spacing: 0.02em;
+    }
+
+    /* A determinate looking sweep rather than a spinner. A spinner that keeps
+       going after something broke is a small lie; this reads as activity
+       without promising completion. */
+    .track {
+      width: 180px;
+      height: 2px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .track i {
+      display: block;
+      height: 100%;
+      width: 40%;
+      background: var(--indigo);
+      border-radius: 2px;
+      animation: sweep 1.4s ease-in-out infinite;
+    }
+
+    @keyframes sweep {
+      0%   { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .track i { animation: none; width: 100%; opacity: 0.5; }
+    }
+
+    .slow {
+      display: none;
+      font-size: 12px;
+      color: var(--muted);
+      max-width: 44ch;
+      text-align: center;
+      line-height: 1.7;
+    }
+
+    /* Shown only once the wait has stopped being normal. Twelve seconds is
+       past a warm start and past a first run on most machines. */
+    body.waiting-a-while .slow { display: block; }
+  </style>
+</head>
+<body>
+  <div class="mark" role="img" aria-label="LinkedIn Studio">
+    <span class="bar"></span>
+    <span class="bar short"></span>
+    <span class="bar fold"></span>
+  </div>
+
+  <div class="title">LinkedIn Studio</div>
+  <div class="track"><i></i></div>
+  <p class="status">Starting your local engine.</p>
+
+  <p class="slow">
+    This is taking longer than usual. A first run applies database migrations
+    and builds the documentation index, which is normal and only happens once.
+    If the window stays on this screen, quit from the tray icon and start again.
+  </p>
+
+  <script>
+    // The one line of script here, and it only reveals an existing paragraph.
+    // The shell replaces this whole page the moment the backend answers.
+    setTimeout(function () {
+      document.body.classList.add("waiting-a-while");
+    }, 12000);
+  </script>
+</body>
+</html>

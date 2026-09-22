@@ -1,0 +1,67 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LinkedIn Studio",
+  "version": "2.5.2",
+  "identifier": "com.inoxhydra.linkedinstudio",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "studio",
+        "title": "LinkedIn Studio",
+        "width": 1440,
+        "height": 920,
+        "minWidth": 1024,
+        "minHeight": 640,
+        "resizable": true,
+        "center": true,
+        "visible": false,
+        "decorations": true,
+        "theme": "Dark",
+        "backgroundColor": "#0A0A0A"
+      }
+    ],
+    "security": {
+      "csp": null,
+      "capabilities": [
+        "default"
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../payload/runtime": "runtime/",
+      "../payload/lib": "lib/",
+      "../payload/app": "app/"
+    },
+    "publisher": "Inox Hydra",
+    "category": "Productivity",
+    "shortDescription": "Local creator engine for LinkedIn.",
+    "longDescription": "Drafts, scheduling, analytics and inbound CRM for LinkedIn, held entirely on your own machine. No cloud account, no data egress.",
+    "licenseFile": "../../LICENSE",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico"
+      }
+    }
+  }
+}
