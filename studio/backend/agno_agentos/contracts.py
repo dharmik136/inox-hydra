@@ -58,6 +58,10 @@ class CopilotDraftResponse(BaseModel):
     fold_safe: bool = Field(default=True, description="Whether the primary hook fits under the 180-char fold")
     pre_fold_chars: int = Field(default=140, description="Exact character count of opening hook")
     media_callout: Optional[str] = Field(default=None, description="Contextual swipe or watch callout for attached media")
+    hook_provenance: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Whether a model wrote these hooks or the deterministic templates did, and why",
+    )
 
 
 # ==========================================

@@ -90,6 +90,70 @@ SUPPORTED_PROVIDERS = {
 }
 
 
+# Providers whose base URL the user may legitimately set, because the whole
+# point of them is pointing at something local or self hosted.
+CUSTOM_ENDPOINT_PROVIDERS = ("custom_openai", "ollama")
+
+
+def _is_private_host(hostname):
+    import ipaddress
+
+    if not hostname:
+        return False
+    if hostname in ("localhost", "::1"):
+        return True
+    try:
+        address = ipaddress.ip_address(hostname.strip("[]"))
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private
+
+
+def _resolve_base_url(provider, requested, prov_meta):
+    """
+    Decides where this provider's requests are actually sent.
+
+    Every completion carries the user's API key in an Authorization header, so
+    whoever controls this URL receives that key. It was a free string written
+    straight into settings, which made a single POST to /api/ai/configure
+    enough to have the next AI action deliver an OpenAI or Anthropic key to an
+    arbitrary host.
+
+    Two rules:
+
+      A named provider always uses its own endpoint. If the provider is
+      "openai", the key is an OpenAI key, and there is no legitimate reason to
+      send it anywhere but OpenAI. The field is ignored rather than rejected,
+      because nothing in the interface offers to set it for these.
+
+      A custom endpoint provider may point anywhere, since that is its purpose,
+      but only over https unless the host is local. Sending a bearer token in
+      cleartext across a network is not a tradeoff worth offering.
+    """
+    from urllib.parse import urlsplit
+
+    default = prov_meta.get("default_base_url") or ""
+    candidate = (requested or "").strip()
+
+    if provider not in CUSTOM_ENDPOINT_PROVIDERS:
+        return default
+
+    if not candidate:
+        return default
+
+    try:
+        parts = urlsplit(candidate)
+    except ValueError:
+        return default
+
+    if parts.scheme not in ("http", "https"):
+        return default
+    if parts.scheme == "http" and not _is_private_host(parts.hostname):
+        return default
+
+    return candidate
+
+
 class AIProviderConfig:
     """Encapsulates active AI provider settings."""
     def __init__(
@@ -105,7 +169,7 @@ class AIProviderConfig:
         self.api_key = api_key or ""
         prov_meta = SUPPORTED_PROVIDERS[self.provider]
         self.model = model or prov_meta.get("default_model", "deterministic-heuristics-v2")
-        self.base_url = (base_url or prov_meta.get("default_base_url") or "").rstrip("/")
+        self.base_url = _resolve_base_url(self.provider, base_url, prov_meta).rstrip("/")
         self.verified_at = verified_at
         self.status = status
 
