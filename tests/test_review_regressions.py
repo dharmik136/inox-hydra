@@ -343,7 +343,11 @@ def test_unidentified_people_are_excluded_from_both_writes():
     endpoint, so the toast said "skipped" about rows that had just been stored.
     """
     source = _read(CONTENT_JS)
-    assert "JSON.stringify({ leads: identified })" in source, (
+    # The call moved from a direct fetch to the service worker relay, because a
+    # request made from the LinkedIn page carries the LinkedIn origin and the
+    # studio refuses it. What this test cares about is unchanged: the batch
+    # POST must send the filtered array, not the raw one.
+    assert 'studioApi("/api/analytics/ingest", { leads: identified })' in source, (
         "The batch lead POST still sends the unfiltered array, so people the "
         "toast reports as skipped are written to the leads table anyway."
     )

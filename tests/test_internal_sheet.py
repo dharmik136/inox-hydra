@@ -8,6 +8,10 @@ Validates:
 4. G-Stack backlog promotion bridge.
 5. FastAPI REST endpoints under /api/v1/internal-sheet/*.
 6. Strict Zero Em-Dash invariant across code and payloads.
+
+The REST surface is maintainer only. Every test that exercises it has to turn
+INOX_DEV_MODE on first, which is the point: a consumer build answers 404 there,
+and test_consumer_build_hides_internal_sheet holds that line.
 """
 
 import csv
@@ -26,6 +30,16 @@ from database import get_db, init_db
 from internal_sheet import internal_sheet_manager
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def enable_dev_mode(monkeypatch):
+    """
+    The maintainer surface is off unless the environment says otherwise, so the
+    suite that exercises it has to ask for it explicitly.
+    """
+    monkeypatch.setenv("INOX_DEV_MODE", "1")
+    yield
 
 
 @pytest.fixture(autouse=True)

@@ -1,3 +1,29 @@
+/**
+ * Calls the studio through the service worker.
+ *
+ * The API requires a token the panel cannot read, and a direct fetch from here
+ * carries no credential at all, so this used to 401 and the post attribution
+ * chain never recorded its first row.
+ */
+function studioApiFromPanel(path, options) {
+  return new Promise((resolve) => {
+    let body = null;
+    if (options && options.body) {
+      try { body = JSON.parse(options.body); } catch (e) { body = null; }
+    }
+    chrome.runtime.sendMessage(
+      { action: "STUDIO_API", path: path, method: (options && options.method) || "POST", body: body },
+      (response) => {
+        const ok = !chrome.runtime.lastError && response && response.status === "success";
+        resolve({
+          ok: ok,
+          json: () => Promise.resolve(ok && response ? response.data : {})
+        });
+      }
+    );
+  });
+}
+
 // -------------------------------------------------------------
 // LinkedIn Studio - Side Panel Controller
 // -------------------------------------------------------------
@@ -109,7 +135,7 @@ document.addEventListener("DOMContentLoaded", () => {
           // attach to, and three complete attribution surfaces keep returning
           // zero. It is bookkeeping on an event the studio itself caused, so
           // it contacts nothing but the local backend.
-          fetch("http://127.0.0.1:8000/api/v1/posts/injected", {
+          studioApiFromPanel("/api/v1/posts/injected", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ content: content })

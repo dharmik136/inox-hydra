@@ -101,8 +101,14 @@ def test_phase4_repository_wide_zero_em_dashes():
     # Build output is excluded: dist/ contains vendored third party libraries
     # (fastapi, pydantic, pymupdf, requests) whose source we neither author nor
     # ship as our own content. The anti-slop rule governs this project's writing.
+    #
+    # payload/ is the same category, staged by tools/stage_desktop_payload.py
+    # for the desktop bundle, and target/ is the Rust build directory. Both are
+    # gitignored, both appear only after a build, and neither holds a line this
+    # project wrote.
     excluded = {".git", "__pycache__", "node_modules", ".pytest_cache", "venv",
-                ".venv", "dist", "build", "build_artifacts", "archive", "scratch"}
+                ".venv", "dist", "build", "build_artifacts", "archive", "scratch",
+                "payload", "target"}
 
     violations = []
     for root, dirs, files in os.walk(base_dir):

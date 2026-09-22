@@ -200,7 +200,15 @@ init_db()
 seed_initial_data()
 from fastapi.testclient import TestClient
 from studio.backend.app import app
-client = TestClient(app, raise_server_exceptions=False)
+from studio.backend.security import get_or_create_token, TOKEN_HEADER
+# This runs in its own process, so the suite's authenticated client patch in
+# conftest does not reach it. The API is authenticated, so it authenticates.
+client = TestClient(
+    app,
+    raise_server_exceptions=False,
+    base_url="http://127.0.0.1:8000",
+    headers={TOKEN_HEADER: get_or_create_token()},
+)
 r = client.get("/api/analytics/kpis?range=30d")
 d = r.json()
 print("RESULT", r.status_code, repr(d.get("total_followers")), repr(d.get("profile_views")), repr(d.get("range")))

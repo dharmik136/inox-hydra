@@ -310,4 +310,6 @@ def test_extension_manifest_and_passive_background():
 
     assert "voyager/api/identity/dash/creatorAnalytics" in bg_content
     assert "INGEST_ANALYTICS" in bg_content
-    assert "http://127.0.0.1:8000/api/analytics/ingest" in bg_content
+    # Same endpoint, now reached through the token aware helper.
+    assert 'STUDIO_ORIGIN = "http://127.0.0.1:8000"' in bg_content
+    assert 'studioFetch("/api/analytics/ingest"' in bg_content

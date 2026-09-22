@@ -8,6 +8,18 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+
+  <!-- Installable application metadata.
+       With these, Edge and Chrome offer "Install this site as an app", which
+       gives the studio its own window, its own taskbar button, its own Start
+       menu entry and its own icon, instead of a browser tab pointed at a port
+       number. 127.0.0.1 counts as a secure context, so no certificate is
+       involved. -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="theme-color" content="#4F46E5">
+  <meta name="application-name" content="LinkedIn Studio">
 </head>
 <body>
   <!-- =========================================================================
@@ -62,6 +74,16 @@
       <!-- 8. Section: Brand and Media Studio (coolicons: Edit / Swatches_Palette) -->
       <symbol id="sym-sec-brand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M6.5 21H20.4706C20.763 21 21.0002 20.7631 21.0002 20.4707L21 14.5293M7.98047 20.6713L20.6421 14.7671C20.9071 14.6435 21.0217 14.3285 20.8981 14.0635L18.3872 8.6792C18.2636 8.41421 17.9486 8.29914 17.6836 8.42271L12.0303 11.0591M9.88182 18.4048C9.38152 20.2719 7.46235 21.38 5.59521 20.8797C3.72808 20.3794 2.61982 18.4604 3.12011 16.5933L6.73596 3.09863C6.81163 2.81621 7.10168 2.64855 7.3841 2.72422L13.1231 4.26171C13.4055 4.33738 13.5731 4.6276 13.4974 4.91002L9.88182 18.4048ZM6.5 17.6001H6.502L6.50195 17.6021L6.5 17.6021V17.6001Z"/>
+      </symbol>
+
+      <!-- Section: Desktop (hand-authored: a display on a stand).
+           No monitor glyph existed in the set, and the alternative was reusing
+           the palette icon for a card about how the application behaves on
+           this machine, which would read as a mistake to the next person. -->
+      <symbol id="sym-sec-desktop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="4" width="20" height="13" rx="2"/>
+        <path d="M9 21h6"/>
+        <path d="M12 17v4"/>
       </symbol>
 
       <!-- 9. Section: AI Command Center (coolicons: System / Terminal) -->
@@ -412,11 +434,11 @@
 
         <!-- VIEW 1: COMPOSER WORKSPACE (Section 7) -->
         <div class="studio-viewport" id="tab-studio">
-          <main class="editor-pane">
+          <main class="editor-pane" data-section="studio.editor_pane">
             <div class="editor-stage">
 
               <!-- SECTION 7.A: HOOK RAIL / CONTACT-SHEET FILMSTRIP -->
-              <div class="hook-carousel-container" id="hook-carousel-container" style="display: none;">
+              <div class="hook-carousel-container" data-section="studio.hook_carousel" id="hook-carousel-container" style="display: none;">
                 <div class="hook-carousel-header">
                   <div class="hook-carousel-title">
                     <svg aria-hidden="true" class="app-symbol"><use href="#sym-act-hooks"></use></svg>
@@ -435,7 +457,7 @@
               </div>
 
               <!-- SECTION 7.B: UNENCLOSED WRITING CANVAS -->
-              <div class="editor-card">
+              <div class="editor-card" data-section="studio.editor">
                 <div class="editor-toolbar-row">
                   <div style="display: flex; align-items: center;">
                     <span class="section-logo-badge" style="width: 26px; height: 26px; margin-right: 8px;">
@@ -1008,6 +1030,45 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
             <div class="brand-studio-grid">
               
               <!-- Column 1: Identity -->
+              <!-- Desktop integration. Autostart is shown whether it is on or
+                   off, so the setting is something the user chose and can find
+                   again, not something they have to discover in a folder. -->
+              <div class="settings-card" data-section="settings.desktop">
+                <div class="settings-card-header">
+                  <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-desktop"></use></svg>
+                  <div>
+                    <h3 class="settings-card-title">Desktop</h3>
+                    <span class="settings-card-sub">How the studio behaves on this machine</span>
+                  </div>
+                </div>
+
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Start with Windows</label>
+                  <div class="env-toggle-control">
+                    <button type="button" class="env-mode-btn" id="btn-autostart-off">
+                      <span class="env-dot env-dot-real"></span> Off
+                    </button>
+                    <button type="button" class="env-mode-btn" id="btn-autostart-on">
+                      <span class="env-dot env-dot-test"></span> On
+                    </button>
+                  </div>
+                  <p class="settings-card-sub" id="autostart-explainer">
+                    Off. The studio runs only when you launch it.
+                  </p>
+                </div>
+
+                <div class="settings-field-group">
+                  <label class="settings-field-label">Install as an app</label>
+                  <p class="settings-card-sub">
+                    Your browser can give the studio its own window, icon and Start menu entry.
+                    Open the browser menu and choose "Install this site as an app".
+                  </p>
+                  <button type="button" class="env-mode-btn" id="btn-install-app" hidden>
+                    <span class="env-dot env-dot-test"></span> Install now
+                  </button>
+                </div>
+              </div>
+
               <div class="settings-card">
                 <div class="settings-card-header">
                   <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-sec-brand"></use></svg>
@@ -2560,13 +2621,24 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
           </div>
         </div>
 
+        <!-- =====================================================================
+             MAINTAINER SURFACE
+
+             Hidden unless /api/v1/devtools/status reports dev mode, which only
+             happens when INOX_DEV_MODE is set in the environment. A creator who
+             bought a scheduler never sees any of this. The hidden attribute is
+             the second line of defence, not the first: the endpoints behind
+             these controls answer 404 in a consumer build regardless.
+             ===================================================================== -->
+        <div id="devtools-drawer-section" hidden>
+
         <!-- Section C: Visual Screen Concept & Bug Identifier (Internal Sheet) -->
         <div class="drawer-card">
           <div class="drawer-card-header">
             <span class="drawer-card-title">Screen Concept & Bug Identifier</span>
             <span class="drawer-flow-indicator" id="sheet-open-badge">0 Open</span>
           </div>
-          <p class="drawer-card-desc">Click any element on the screen to capture DOM diagnostics and log problems directly to the internal sheet:</p>
+          <p class="drawer-card-desc">Click any element on the screen to capture DOM diagnostics, console, network and the steps that led there, then log it to the internal sheet:</p>
           <div class="sheet-action-row">
             <button type="button" class="btn-inspect-trigger" id="btn-inspect-screen">
               <span class="btn-icon">&#127919;</span> Identify Element on Screen
@@ -2575,6 +2647,27 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
               <span class="btn-icon">&#128202;</span> Open Internal Sheet
             </button>
           </div>
+        </div>
+
+        <!-- Section C2: Inspectors -->
+        <div class="drawer-card">
+          <div class="drawer-card-header">
+            <span class="drawer-card-title">Inspectors</span>
+            <span class="drawer-flow-indicator" id="devtools-schema-badge">Schema ?</span>
+          </div>
+          <p class="drawer-card-desc">Answers the question that costs ten minutes every time it is asked without it: is this screen empty because there is no data, or because the query is broken?</p>
+          <div class="sheet-action-row">
+            <button type="button" class="btn-view-sheet" id="btn-devtools-state">
+              <span class="btn-icon">&#128202;</span> State
+            </button>
+            <button type="button" class="btn-view-sheet" id="btn-devtools-migrations">
+              <span class="btn-icon">&#128451;</span> Schema
+            </button>
+            <button type="button" class="btn-view-sheet" id="btn-devtools-coverage">
+              <span class="btn-icon">&#128269;</span> Coverage
+            </button>
+          </div>
+          <pre class="devtools-output" id="devtools-output" hidden></pre>
         </div>
 
         <!-- Section D: Global Environment Mode Toggle -->
@@ -2591,6 +2684,8 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
               <span class="env-dot env-dot-test"></span> Test / Sandbox
             </button>
           </div>
+        </div>
+
         </div>
       </div>
     </div>

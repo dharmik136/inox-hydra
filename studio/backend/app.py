@@ -21,7 +21,7 @@ from datetime import datetime, date, timedelta, timezone
 from contextlib import asynccontextmanager
 import time
 
-from fastapi import FastAPI, HTTPException, Response, UploadFile, File, Form, Request, Header
+from fastapi import FastAPI, HTTPException, Response, UploadFile, File, Form, Request, Header, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,6 +66,9 @@ try:
     from .intelligence_sync import intelligence_sync_engine
     from .gstack_governance import gstack_engine
     from .internal_sheet import internal_sheet_manager
+    from . import devtools
+    from . import security
+    from . import desktop as desktop_integration
     from .migrations import describe as describe_schema
     from . import support as support_tools
     from . import updates as update_checker
@@ -122,6 +125,9 @@ except ImportError:
     from intelligence_sync import intelligence_sync_engine
     from gstack_governance import gstack_engine
     from internal_sheet import internal_sheet_manager
+    import devtools
+    import security
+    import desktop as desktop_integration
     from migrations import describe as describe_schema
     import support as support_tools
     import updates as update_checker
@@ -167,7 +173,8 @@ OPENAPI_TAGS = [
     {"name": "Anti-Bot & Rate Limiting", "description": "Gaussian jitter request governor, human pacing, and single-writer WAL actor."},
     {"name": "Intelligence Sync & Radar", "description": "Asymmetric GitHub CDN intelligence sync, ETag caching, and viral hook templates."},
     {"name": "G-Stack Multi-Agent Governance", "description": "Garry Tan 6-role virtual team governance, role backlogs, and multi-gate anti-slop audits."},
-    {"name": "Internal Sheet & Concept Identifier", "description": "Visual screen element inspection, bug annotations, and zero-egress internal sheet tracking."}
+    {"name": "Internal Sheet & Concept Identifier", "description": "Visual screen element inspection, bug annotations, and zero-egress internal sheet tracking."},
+    {"name": "Developer Tools", "description": "Maintainer only. Screen registry, state and migration inspectors, and annotation portability. Absent unless INOX_DEV_MODE is set."}
 ]
 
 @asynccontextmanager
@@ -182,22 +189,128 @@ async def lifespan(app: FastAPI):
     ingress_daemon.stop_worker()
 
 
+# The interactive documentation is a maintainer tool, so it follows the same
+# gate everything else maintainer facing does.
+#
+# It was not gated, and none of /openapi.json, /docs or /redoc begins with
+# "/api", so the auth middleware never saw them either. A consumer build
+# published a complete, unauthenticated map of its own API, including every
+# devtools route it otherwise answers 404 for. That directly contradicted the
+# invariant those 404s exist to maintain. Swagger UI also pulls its bundle
+# from a CDN, which a product claiming zero egress should not do by default.
+#
+# Read from the environment rather than devtools.is_dev_mode(), because this
+# runs before the database exists.
+_DEV_DOCS = devtools.env_allows_dev_mode()
+
 app = FastAPI(
     title="LinkedIn Studio Enterprise",
     description="A 100% self-hosted, air-gapped, privacy-first alternative to $199/month SaaS creator tools running on localhost.",
     version=__version__,
+    openapi_url="/openapi.json" if _DEV_DOCS else None,
+    docs_url="/docs" if _DEV_DOCS else None,
+    redoc_url="/redoc" if _DEV_DOCS else None,
     openapi_tags=OPENAPI_TAGS,
     lifespan=lifespan
 )
 
-# Enable CORS for local extension and browser UI
+# CORS for the studio interface and the extension, and nothing else.
+#
+# This used to be allow_origins=["*"] with credentials enabled, which meant any
+# page the creator had open in another tab could call this server and read the
+# response. Binding to 127.0.0.1 never prevented that: the browser is already
+# on this machine. See studio/backend/security.py for the full reasoning,
+# including why LinkedIn itself is not on this list.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=sorted(security.allowed_origins()),
+    allow_origin_regex=r"^chrome-extension://[a-z]{32}$",
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", security.TOKEN_HEADER],
 )
+
+
+@app.middleware("http")
+async def enforce_local_access(request: Request, call_next):
+    """
+    Host, origin and token, checked before anything reaches a route.
+
+    Applied as middleware rather than as a dependency on each route so that a
+    new endpoint is protected the moment it is written. A route that has to be
+    remembered about is a route that will eventually be forgotten about.
+    """
+    # scope["path"], not request.url.path.
+    #
+    # Starlette reconstructs request.url from the path PLUS the raw Host header
+    # as the netloc, then re-splits it. A Host of "127.0.0.1:8000/x" therefore
+    # yields request.url.path == "/x/api/v1/..." while the router still matches
+    # scope["path"] == "/api/v1/...". Gating on the reconstructed value let a
+    # caller move their own request out from behind this check while still
+    # reaching the endpoint. Reading the same value the router reads closes
+    # that by construction rather than by relying on Starlette's Host parsing.
+    path = request.scope.get("path", "")
+    host_header = request.headers.get("host")
+    port = security.extract_port(host_header)
+
+    # The Host check applies to everything, not only /api.
+    #
+    # It used to guard the API alone, which left the SPA and the /assets mount
+    # answering a rebound origin. That is enough for an attacker who points
+    # their domain at 127.0.0.1 to read the creator's uploaded and generated
+    # media from a page they control, and to fingerprint the install.
+    if not security.is_loopback_host(host_header):
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "This server answers on loopback only."},
+        )
+
+    if path.startswith("/api") and not security.request_is_exempt(path):
+        # Preflight carries no credentials by design. CORSMiddleware has
+        # already decided whether the origin may ask.
+        if request.method != "OPTIONS":
+            if not security.is_allowed_origin(request.headers.get("origin"), port):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "This origin is not permitted to use the local studio."},
+                )
+
+            supplied = (
+                request.headers.get(security.TOKEN_HEADER)
+                or request.cookies.get(security.TOKEN_COOKIE)
+            )
+            if not security.constant_time_match(supplied, security.get_or_create_token()):
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Missing or invalid studio token."},
+                )
+
+    response = await call_next(request)
+
+    # Hand the interface its token as it loads. SameSite=Strict is the part
+    # that matters: a browser will not attach this cookie to a request started
+    # by any other site, so a hostile page cannot borrow the creator's session
+    # even from the same machine.
+    if not path.startswith("/api") and security.is_loopback_host(host_header):
+        response.set_cookie(
+            key=security.TOKEN_COOKIE,
+            value=security.get_or_create_token(),
+            # HttpOnly, so no script on this origin can read the token.
+            #
+            # This was briefly false, on the assumption that the extension
+            # needed script access. It does not: chrome.cookies.get is a
+            # privileged extension API that reads HttpOnly cookies given host
+            # permission, which the extension holds for 127.0.0.1:8000. The
+            # only thing the false setting bought was letting any script on
+            # this origin exfiltrate the token, which turns an XSS here into
+            # full API access.
+            httponly=True,
+            samesite="strict",
+            path="/",
+            max_age=60 * 60 * 24 * 365,
+        )
+
+    return response
 
 
 # -------------------------------------------------------------
@@ -2423,10 +2536,43 @@ class InternalSheetIssueCreate(BaseModel):
     viewport_resolution: Optional[str] = Field(None, max_length=100)
     dom_path: Optional[str] = Field(None, max_length=1000)
     promote_to_backlog: Optional[bool] = False
+    # Location and evidence. The browser proposes, devtools.resolve_location
+    # and devtools.normalize_capture dispose.
+    tab_id: Optional[str] = Field(None, max_length=100)
+    section_hint: Optional[str] = Field(None, max_length=200)
+    ancestor_ids: Optional[List[str]] = None
+    capture: Optional[Dict[str, Any]] = None
 
 
 class InternalSheetStatusUpdate(BaseModel):
     status: str = Field(..., min_length=1, max_length=50)
+
+
+class InternalSheetImport(BaseModel):
+    payload: Dict[str, Any]
+
+
+class DevModeToggle(BaseModel):
+    enabled: bool
+
+
+class AutostartToggle(BaseModel):
+    enabled: bool
+
+
+def require_dev_mode():
+    """
+    The gate in front of every maintainer route.
+
+    Answers 404 rather than 403 on purpose. A consumer build should look like a
+    build where these endpoints were never written, not like one that has them
+    and is declining to say so. Gating the router and not only the interface
+    matters: hiding a button leaves the endpoint answering to anything that can
+    reach the port.
+    """
+    if not devtools.is_dev_mode():
+        raise HTTPException(status_code=404, detail="Not Found")
+    return True
 
 
 @app.get("/api/v1/schema/status", tags=["Settings & Creator Profile"])
@@ -2587,7 +2733,7 @@ def audit_gstack_content(req: GStackAuditRequest):
 # -------------------------------------------------------------
 # Module: Internal Sheet & Visual Concept Identifier
 # -------------------------------------------------------------
-@app.get("/api/v1/internal-sheet/issues", tags=["Internal Sheet & Concept Identifier"])
+@app.get("/api/v1/internal-sheet/issues", tags=["Internal Sheet & Concept Identifier"], dependencies=[Depends(require_dev_mode)])
 def list_internal_sheet_issues(
     status: Optional[str] = None,
     category: Optional[str] = None,
@@ -2612,7 +2758,7 @@ def list_internal_sheet_issues(
     }
 
 
-@app.post("/api/v1/internal-sheet/issues", tags=["Internal Sheet & Concept Identifier"])
+@app.post("/api/v1/internal-sheet/issues", tags=["Internal Sheet & Concept Identifier"], dependencies=[Depends(require_dev_mode)])
 def create_internal_sheet_issue(req: InternalSheetIssueCreate):
     """Creates a new screen concept identification or bug annotation in the internal sheet."""
     try:
@@ -2632,17 +2778,31 @@ def create_internal_sheet_issue(req: InternalSheetIssueCreate):
             bounding_box=req.bounding_box,
             viewport_resolution=req.viewport_resolution,
             dom_path=req.dom_path,
-            promote_to_backlog=bool(req.promote_to_backlog)
+            promote_to_backlog=bool(req.promote_to_backlog),
+            tab_id=req.tab_id,
+            section_hint=req.section_hint,
+            ancestor_ids=req.ancestor_ids,
+            capture=req.capture,
+        )
+        # Reported alongside the new record rather than made the caller's job to
+        # go looking for. Filing the same broken card twice is the failure mode
+        # an annotation ledger has, and this is where it gets caught.
+        duplicates = internal_sheet_manager.find_duplicates(
+            issue.get("repro_hash") or "", exclude_id=issue.get("id")
         )
         return {
             "status": "success",
-            "issue": issue
+            "issue": issue,
+            "duplicates": [
+                {"id": d["id"], "title": d["title"], "status": d["status"]}
+                for d in duplicates
+            ],
         }
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err))
 
 
-@app.get("/api/v1/internal-sheet/issues/{issue_id}", tags=["Internal Sheet & Concept Identifier"])
+@app.get("/api/v1/internal-sheet/issues/{issue_id}", tags=["Internal Sheet & Concept Identifier"], dependencies=[Depends(require_dev_mode)])
 def get_internal_sheet_issue(issue_id: int):
     """Retrieves a single internal sheet issue by ID."""
     issue = internal_sheet_manager.get_issue(issue_id)
@@ -2654,7 +2814,7 @@ def get_internal_sheet_issue(issue_id: int):
     }
 
 
-@app.patch("/api/v1/internal-sheet/issues/{issue_id}/status", tags=["Internal Sheet & Concept Identifier"])
+@app.patch("/api/v1/internal-sheet/issues/{issue_id}/status", tags=["Internal Sheet & Concept Identifier"], dependencies=[Depends(require_dev_mode)])
 def update_internal_sheet_issue_status(issue_id: int, req: InternalSheetStatusUpdate):
     """Updates the resolution status of an internal sheet issue (e.g. OPEN or RESOLVED)."""
     try:
@@ -2669,7 +2829,7 @@ def update_internal_sheet_issue_status(issue_id: int, req: InternalSheetStatusUp
         raise HTTPException(status_code=400, detail=str(err))
 
 
-@app.delete("/api/v1/internal-sheet/issues/{issue_id}", tags=["Internal Sheet & Concept Identifier"])
+@app.delete("/api/v1/internal-sheet/issues/{issue_id}", tags=["Internal Sheet & Concept Identifier"], dependencies=[Depends(require_dev_mode)])
 def delete_internal_sheet_issue(issue_id: int):
     """Deletes an internal sheet issue record."""
     deleted = internal_sheet_manager.delete_issue(issue_id)
@@ -2681,7 +2841,7 @@ def delete_internal_sheet_issue(issue_id: int):
     }
 
 
-@app.post("/api/v1/internal-sheet/issues/{issue_id}/promote", tags=["Internal Sheet & Concept Identifier"])
+@app.post("/api/v1/internal-sheet/issues/{issue_id}/promote", tags=["Internal Sheet & Concept Identifier"], dependencies=[Depends(require_dev_mode)])
 def promote_internal_sheet_issue(issue_id: int):
     """Promotes an internal sheet issue to the active G-Stack multi-agent backlog."""
     task_id = internal_sheet_manager.promote_to_gstack(issue_id)
@@ -2693,7 +2853,7 @@ def promote_internal_sheet_issue(issue_id: int):
     }
 
 
-@app.get("/api/v1/internal-sheet/export.csv", tags=["Internal Sheet & Concept Identifier"])
+@app.get("/api/v1/internal-sheet/export.csv", tags=["Internal Sheet & Concept Identifier"], dependencies=[Depends(require_dev_mode)])
 def export_internal_sheet_csv():
     """Streams an RFC-4180 CSV spreadsheet file compatible with Google Sheets and Microsoft Excel."""
     csv_data = internal_sheet_manager.export_csv()
@@ -2704,6 +2864,150 @@ def export_internal_sheet_csv():
             "Content-Disposition": "attachment; filename=internal_concept_sheet.csv"
         }
     )
+
+
+@app.get("/api/v1/health", tags=["Settings & Creator Profile"])
+def get_health():
+    """
+    Readiness probe. The one route that answers without a token.
+
+    It exists for callers that have to know whether this process is up before
+    they can do anything else, and that have nowhere to get a token from yet:
+    the desktop shell deciding whether to show a window or keep waiting, and a
+    launcher deciding whether to start a second server.
+
+    Deliberately says almost nothing. An unauthenticated endpoint is readable
+    by any process on the machine, so it reports liveness and version and not
+    one fact about the creator, their content, or their configuration.
+    """
+    return {
+        "status": "ok",
+        "app": "inox-hydra",
+        "version": __version__,
+    }
+
+
+# -------------------------------------------------------------
+# Desktop Integration
+#
+# Whether this installation starts with Windows, and what Windows calls it.
+# Autostart is off until asked for and visible in Settings once on, because
+# software that quietly adds itself to startup is the kind of software this
+# product exists to replace.
+# -------------------------------------------------------------
+@app.get("/api/v1/desktop/integration", tags=["Settings & Creator Profile"])
+def get_desktop_integration():
+    """Reports the desktop integration state, including why a control is off."""
+    return {"status": "success", "desktop": desktop_integration.describe()}
+
+
+@app.post("/api/v1/desktop/autostart", tags=["Settings & Creator Profile"])
+def set_desktop_autostart(req: AutostartToggle):
+    """
+    Turns the Startup shortcut on or off.
+
+    Reports the resulting state rather than echoing the request, so a failure
+    to write the shortcut surfaces as the switch staying off rather than as a
+    switch that says on while nothing happens at login.
+    """
+    if req.enabled:
+        result = desktop_integration.enable_autostart()
+    else:
+        result = desktop_integration.disable_autostart()
+
+    return {
+        "status": "success",
+        "result": result,
+        "desktop": desktop_integration.describe(),
+    }
+
+
+# -------------------------------------------------------------
+# Developer Tools
+#
+# Everything below is absent from a consumer build. The status endpoint is the
+# one exception: the interface has to be able to ask whether the surface exists
+# before deciding whether to render it, so that route answers honestly either
+# way instead of 404ing and leaving the frontend to guess from a failed fetch.
+# -------------------------------------------------------------
+@app.get("/api/v1/devtools/status", tags=["Developer Tools"])
+def get_devtools_status():
+    """Whether the maintainer surface is available in this build."""
+    if not devtools.is_dev_mode():
+        return {"status": "success", "dev_mode": False, "capabilities": [], "screens": []}
+    return {"status": "success", **devtools.capability_report()}
+
+
+@app.post("/api/v1/devtools/mode", tags=["Developer Tools"], dependencies=[Depends(require_dev_mode)])
+def set_devtools_mode(req: DevModeToggle):
+    """
+    Toggles the surface for this installation without a restart. Cannot turn dev
+    mode on where the environment does not already allow it, so this is never a
+    way into a consumer install.
+    """
+    effective = devtools.set_runtime_dev_mode(bool(req.enabled))
+    return {"status": "success", "dev_mode": effective}
+
+
+@app.get("/api/v1/devtools/state", tags=["Developer Tools"], dependencies=[Depends(require_dev_mode)])
+def get_devtools_state():
+    """Row counts, worker state, and the build this process is running."""
+    return {"status": "success", "state": devtools.state_inspector()}
+
+
+@app.get("/api/v1/devtools/migrations", tags=["Developer Tools"], dependencies=[Depends(require_dev_mode)])
+def get_devtools_migrations():
+    """Where this database sits against the forward-only ledger. Read only."""
+    return {"status": "success", "migrations": devtools.migration_inspector()}
+
+
+@app.post("/api/v1/devtools/migrations/apply", tags=["Developer Tools"], dependencies=[Depends(require_dev_mode)])
+def apply_devtools_migrations():
+    """
+    Applies pending migrations. Separate from the inspector on purpose: looking
+    at the schema should never be the thing that changes it.
+    """
+    try:
+        from .migrations import ensure_schema
+        from .database import get_db as _get_db
+    except ImportError:
+        from migrations import ensure_schema
+        from database import get_db as _get_db
+
+    conn = _get_db()
+    try:
+        report = ensure_schema(conn, take_backup=True)
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Migration failed: {err}")
+    finally:
+        conn.close()
+    return {"status": "success", "report": report}
+
+
+@app.get("/api/v1/devtools/coverage", tags=["Developer Tools"], dependencies=[Depends(require_dev_mode)])
+def get_devtools_coverage():
+    """
+    How much of the interface can be addressed by name rather than by selector.
+    A screen with a high unmapped count loses its annotation history the next
+    time somebody restyles it.
+    """
+    return {"status": "success", "coverage": devtools.section_coverage()}
+
+
+@app.get("/api/v1/devtools/sheet/export.json", tags=["Developer Tools"], dependencies=[Depends(require_dev_mode)])
+def export_internal_sheet_json():
+    """A lossless, re-importable dump of the annotation ledger."""
+    return internal_sheet_manager.export_json()
+
+
+@app.post("/api/v1/devtools/sheet/import", tags=["Developer Tools"], dependencies=[Depends(require_dev_mode)])
+def import_internal_sheet_json(req: InternalSheetImport):
+    """Merges an exported sheet into this database. Importing twice is a no-op."""
+    try:
+        result = internal_sheet_manager.import_json(req.payload)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err))
+    return {"status": "success", **result}
 
 
 # -------------------------------------------------------------
