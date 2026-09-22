@@ -48,6 +48,13 @@ EGRESS_ENV_FLAG = "INOX_ALLOW_LINKEDIN_EGRESS"
 egress_stats = {"refused": 0, "performed": 0, "last_refused_endpoint": None}
 
 
+def _stable_key(identity):
+    """Deterministic id fragment. See crm.stable_lead_key for the reasoning."""
+    import hashlib
+
+    return hashlib.sha256((identity or "").encode("utf-8")).hexdigest()[:12]
+
+
 def egress_allowed() -> bool:
     """True only when the operator has explicitly opted into active requests."""
     return os.environ.get(EGRESS_ENV_FLAG, "").strip().lower() in ("1", "true", "yes", "on")
@@ -326,12 +333,26 @@ class LinkedInClient:
 
                 engaged = sum(v for v in (lk, cm, sh) if v is not None)
                 eng_rate = round((engaged / imp * 100), 2) if (imp or 0) > 0 else None
-                row_period = bucket.get("period_label") or declared_period
+                # An absent window is recorded as "unknown" rather than left
+                # NULL. The gate above deliberately lets an undetected period
+                # through, on the reasoning that a row labelled period unknown
+                # beats no row at all, but it was then stored as NULL, which
+                # is indistinguishable from a row nobody ever asked about.
+                # Writing the state down is the point of migration 5.
+                row_period = bucket.get("period_label") or declared_period or "unknown"
                 row_precision = bucket.get("precision") or declared_precision
 
                 cursor.execute("""
-                INSERT OR REPLACE INTO analytics_daily 
-                (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source, period_label, precision)
+                -- INSERT OR REPLACE deletes the old row and writes a new one,
+                -- so every column the statement does not name reverts to its
+                -- default. This named twelve of fourteen, which silently reset
+                -- unique_members_reached to 0 and created_at to now on every
+                -- re-sync of a day. The top_pv branch below already carried
+                -- reach forward with COALESCE; this one did not, so the two
+                -- fought each other and the last writer erased the other's
+                -- figure. Measured: a stored reach of 4200 became 0.
+                INSERT OR REPLACE INTO analytics_daily
+                (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source, period_label, precision, unique_members_reached, created_at)
                 VALUES (?, 
                         COALESCE(?, (SELECT followers FROM analytics_daily WHERE date = ?)),
                         COALESCE(?, (SELECT connections FROM analytics_daily WHERE date = ?)),
@@ -341,10 +362,12 @@ class LinkedInClient:
                         COALESCE(?, (SELECT comments FROM analytics_daily WHERE date = ?), 0),
                         COALESCE(?, (SELECT shares FROM analytics_daily WHERE date = ?), 0),
                         COALESCE(?, (SELECT engagement_rate FROM analytics_daily WHERE date = ?), 0.0),
-                        'observed', ?, ?)
+                        'observed', ?, ?,
+                        COALESCE((SELECT unique_members_reached FROM analytics_daily WHERE date = ?), 0),
+                        COALESCE((SELECT created_at FROM analytics_daily WHERE date = ?), CURRENT_TIMESTAMP))
                 """, (dt, fl, dt, cn, dt, pv, dt,
                       imp, dt, lk, dt, cm, dt, sh, dt, eng_rate, dt,
-                      row_period, row_precision))
+                      row_period, row_precision, dt, dt))
                 # The rate is derived from the row, never from the payload.
                 #
                 # `engaged` above sums only the metrics THIS payload carried,
@@ -507,7 +530,7 @@ class LinkedInClient:
                     ))
                     leads_updated += 1
                 else:
-                    l_id = l.get("id") or f"lead-live-{abs(hash(name + profile_url)) % 1000000}"
+                    l_id = l.get("id") or f"lead-live-{_stable_key(name + profile_url)}"
                     cursor.execute("""
                     INSERT INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, lead_status, notes)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

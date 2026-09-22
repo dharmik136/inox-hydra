@@ -31,6 +31,28 @@ MIN_ARCHIVE_INACTIVE_DAYS = 7
 MAX_HIGH_VALUE_QUERY_LIMIT = 500
 
 
+def stable_lead_key(identity: str) -> str:
+    """
+    A deterministic id for a person, derived from how they are identified.
+
+    This was abs(hash(identity)) % 1000000. Python randomises hash() per
+    process unless PYTHONHASHSEED is fixed, so the same profile produced a
+    different id on every restart: measured at 32333, 827572 and 711202 across
+    three runs of the same input. Re-capturing someone therefore created a new
+    lead rather than matching the existing one.
+
+    A million buckets is also too few. At a thousand leads the birthday bound
+    puts a collision near 39 percent, and a collision here is an IntegrityError
+    on the primary key in the middle of a capture.
+
+    sha256 is deterministic across processes and machines, and twelve hex
+    characters give 48 bits, which is ample for a personal CRM.
+    """
+    import hashlib
+
+    return hashlib.sha256((identity or "").encode("utf-8")).hexdigest()[:12]
+
+
 class ICPScoringEngine:
     """Calculates Ideal Customer Profile (ICP) fit score (0.0 to 100.0) from profile and engagement data."""
 
@@ -386,7 +408,7 @@ class ReverseCRMManager:
                     WHERE id = ?
                     """, (full_name, full_name, headline, company, seniority, new_icp, lead_id))
                 else:
-                    new_id = f"lead-{abs(hash(linkedin_urn or full_name)) % 1000000}"
+                    new_id = f"lead-{stable_lead_key(linkedin_urn or full_name)}"
                     cursor.execute("""
                     INSERT INTO leads (
                         id, linkedin_urn, full_name, name, headline, company,
@@ -562,8 +584,20 @@ class ReverseCRMManager:
             funnel = {k: 0 for k in funnel_keys}
             cursor.execute("SELECT lead_status, COUNT(*) as count FROM leads GROUP BY lead_status")
             for r in cursor.fetchall():
+                # Accumulate, never assign.
+                #
+                # GROUP BY returns NULL and '' as two separate groups, and both
+                # fold to NEW on the line below, so the second one overwrote
+                # the first. Measured: 30 leads with a NULL status and 12 with
+                # an empty one gave a funnel reading 12, and 30 leads simply
+                # stopped existing as far as every chart was concerned.
                 status_name = r["lead_status"] or "NEW"
-                funnel[status_name] = int(r["count"])
+                # A status outside the known set used to silently add a bucket,
+                # so the funnel could grow a category nobody designed. Unknown
+                # values are counted where they belong instead.
+                if status_name not in funnel:
+                    status_name = "NEW"
+                funnel[status_name] = funnel.get(status_name, 0) + int(r["count"])
 
             converted_count = funnel.get("CONVERTED", 0)
             conversion_rate = round((converted_count / total_leads * 100.0), 2) if total_leads > 0 else 0.0

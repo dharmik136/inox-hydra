@@ -32,6 +32,13 @@ except ImportError:
     from database import get_db
 
 
+def _stable_key(identity):
+    """Deterministic id fragment. See crm.stable_lead_key for the reasoning."""
+    import hashlib
+
+    return hashlib.sha256((identity or "").encode("utf-8")).hexdigest()[:12]
+
+
 def clean_no_em_dashes(text: Any) -> str:
     """
     Enforces strict zero em-dash compliance.
@@ -268,7 +275,7 @@ class EnrichmentOrchestrator:
         if not isinstance(lead, dict):
             raise TypeError("lead must be a dictionary")
 
-        lead_id = str(lead.get("id") or f"lead-gen-{abs(hash(str(lead.get('name', '')))) % 100000}")[:100]
+        lead_id = str(lead.get("id") or f"lead-gen-{_stable_key(str(lead.get('name', '')))}")[:100]
         research = self.researcher.research(lead)
 
         api_key = self.get_gemini_api_key()
