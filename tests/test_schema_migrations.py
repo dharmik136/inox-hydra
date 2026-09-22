@@ -17,7 +17,10 @@ Strict Invariants:
 import os
 import shutil
 import sqlite3
+import subprocess
 import sys
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 import tempfile
 
 import pytest
@@ -330,3 +333,139 @@ def test_migration_3_creates_internal_sheet_issues(temp_home):
     assert "idx_internal_sheet_tab" in indexes
     assert "idx_internal_sheet_category" in indexes
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Refusing a database written by a newer build
+#
+# migrations.check_compatibility says in its own docstring that it is "called
+# before any write". It was not. ensure_schema, which wraps it, ran at the END
+# of init_db, after every CREATE TABLE, every ALTER, the seeding and the
+# commit. A user who installed a newer build and rolled back therefore had the
+# older build recreate tables the newer schema had dropped, commit them, and
+# only then decline to open the file.
+#
+# These run in a subprocess with their own INOX_HYDRA_HOME, because init_db
+# operates on a real database file and the suite's sandbox is shared.
+# ---------------------------------------------------------------------------
+
+REFUSE_AND_INSPECT = """
+import os, sys, sqlite3, tempfile
+sys.path.insert(0, ".")
+from studio.backend.database import init_db
+from studio.backend.paths import get_db_path
+
+init_db()
+db = get_db_path()
+
+# Stand in for "installed a newer build, then rolled back": a schema version
+# this build cannot understand, and a table that version had dropped.
+c = sqlite3.connect(db)
+c.execute("PRAGMA user_version = 99")
+c.execute("DROP TABLE IF EXISTS queue_slots")
+c.commit()
+before = sorted(r[0] for r in c.execute(
+    "SELECT name FROM sqlite_master WHERE type='table'").fetchall())
+c.close()
+
+refused = "no"
+try:
+    init_db()
+except Exception as err:
+    refused = type(err).__name__
+
+c = sqlite3.connect(db)
+after = sorted(r[0] for r in c.execute(
+    "SELECT name FROM sqlite_master WHERE type='table'").fetchall())
+version = c.execute("PRAGMA user_version").fetchone()[0]
+c.close()
+
+print("RESULT", refused, version, "SAME" if before == after else "MUTATED")
+"""
+
+
+def _run_isolated(code):
+    home = tempfile.mkdtemp(prefix="inox_schema_guard_")
+    env = dict(os.environ)
+    env["INOX_HYDRA_HOME"] = home
+    env["INOX_ALLOW_LIVE_DB_IN_TESTS"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    env.pop("INOX_DEMO_DATA", None)
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=180,
+    )
+    assert result.returncode == 0, (
+        "subprocess failed:\nSTDOUT:\n" + result.stdout + "\nSTDERR:\n" + result.stderr
+    )
+    for line in reversed(result.stdout.strip().splitlines()):
+        if line.startswith("RESULT"):
+            return line.split()
+    raise AssertionError("no RESULT line:\n" + result.stdout)
+
+
+def test_a_newer_database_is_refused_without_being_written_to():
+    """
+    The whole point. Refusing after committing is not refusing, it is
+    corrupting and then apologising.
+    """
+    _, refused, version, mutated = _run_isolated(REFUSE_AND_INSPECT)
+
+    assert refused == "SchemaTooNewError", (
+        "a database at schema 99 was not refused by a build that understands 8"
+    )
+    assert version == "99", (
+        "the refused build changed the schema version to " + version
+    )
+    assert mutated == "SAME", (
+        "the refused build mutated the database before declining to open it. "
+        "A table the newer schema had dropped was recreated and committed."
+    )
+
+
+def test_the_compatibility_check_runs_before_the_first_write():
+    """
+    Structural, so the ordering cannot drift back. The guard must appear in
+    init_db ahead of the first cursor.execute, not at the end inside
+    ensure_schema.
+    """
+    source = open(
+        os.path.join(REPO_ROOT, "studio", "backend", "database.py"), encoding="utf-8"
+    ).read()
+
+    start = source.index("def init_db()")
+    body = source[start:source.index("def seed_day02_draft", start)]
+
+    guard_at = body.find("check_compatibility(conn)")
+    first_write_at = body.find("cursor.execute(")
+
+    assert guard_at != -1, "init_db no longer calls check_compatibility directly"
+    assert first_write_at != -1, "expected init_db to issue DDL"
+    assert guard_at < first_write_at, (
+        "check_compatibility runs after the first write in init_db. Its own "
+        "docstring says it is called before any write, and that is the whole "
+        "protection for a rolled back install."
+    )
+
+
+def test_a_fresh_database_still_initialises():
+    """The guard must not refuse an empty database, which reads as version 0."""
+    code = """
+import sys
+sys.path.insert(0, ".")
+from studio.backend.database import init_db
+from studio.backend.paths import get_db_path
+import sqlite3
+
+init_db()
+c = sqlite3.connect(get_db_path())
+tables = len(c.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall())
+version = c.execute("PRAGMA user_version").fetchone()[0]
+c.close()
+print("RESULT ok", version, tables)
+"""
+    _, status, version, tables = _run_isolated(code)
+    assert status == "ok"
+    assert int(tables) > 10, "a fresh install produced almost no tables"
+    assert int(version) > 0, "the schema ledger was never stamped"
