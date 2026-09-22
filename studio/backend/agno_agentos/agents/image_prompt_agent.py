@@ -7,11 +7,12 @@ Adheres to P1/P6/P7: Strict Pydantic contracts, negative prompt constraints, zer
 
 import os
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 import requests
 
 from ..contracts import ImagePromptInput, SynthesizedImagePrompt
 from ..scar_tissue import scrub_em_dashes
+from ..briefing import Brief, provenance, validate_response
 from ..model_gateway import get_current_ai_config, execute_llm_completion, AIProviderConfig
 
 
@@ -146,6 +147,13 @@ class ImagePromptSynthesizerAgent:
 
         # Formulate master prompt avoiding statue/bust hallucinations if a room/setting for a quote was requested
         negative_prompt = self.NEGATIVE_PROMPT
+        # The scene the model is allowed to rewrite, kept separate from the
+        # scaffold it is not. Set in the quote branch below and reused for the
+        # briefing, so the model works on the cleaned environment description
+        # rather than on a concept string that still names a person.
+        scene_for_brief = clean_concept
+        reserve_negative_space = False
+
         if quote_text and not explicit_statue:
             negative_prompt = f"{self.NEGATIVE_PROMPT}, marble bust, statue of person, human face portrait, distorted text"
             # Formulate scene background
@@ -160,6 +168,9 @@ class ImagePromptSynthesizerAgent:
 
             if not scene_desc or len(scene_desc) < 8:
                 scene_desc = "quiet dark and white room with a light flowing from the corner"
+
+            scene_for_brief = scene_desc
+            reserve_negative_space = True
 
             master_prompt = (
                 f"Minimalist architectural photography of {scene_desc}. "
@@ -180,14 +191,35 @@ class ImagePromptSynthesizerAgent:
                 f"Composition: Centered, balanced negative space for LinkedIn hero visual, photorealistic materials, 8k uhd."
             )
 
-        # Enhance with configured AI provider if active
+        # Enhancement composes, it does not replace.
+        #
+        # The model is asked for one thing: a richer description of the scene.
+        # Style, palette, lighting, composition and the negative space the quote
+        # compositor depends on are appended afterwards from the resolved
+        # profiles, so a model that ignores them cannot drop them. This used to
+        # overwrite master_prompt wholesale, which meant configuring a provider
+        # silently produced worse images than running with none.
+        prompt_source = provenance("deterministic", "no provider configured")
         if self.ai_config and self.ai_config.is_configured:
-            try:
-                enhanced = self._call_llm_enhancer(clean_concept, prompt_input.visual_style, prompt_input.color_palette, quote_text=quote_text, is_statue=explicit_statue)
-                if enhanced:
-                    master_prompt = enhanced
-            except Exception as e:
-                print(f"[ImagePromptSynthesizerAgent] LLM enhancement failed: {e}. Falling back to deterministic prompt.")
+            enhanced_scene, prompt_source = self._describe_scene(
+                scene=scene_for_brief,
+                style=prompt_input.visual_style,
+                palette=prompt_input.color_palette,
+                lighting=prompt_input.lighting,
+                aspect_ratio=ratio,
+                quote_text=quote_text,
+                reserve_negative_space=reserve_negative_space,
+                is_statue=explicit_statue,
+            )
+            if enhanced_scene:
+                master_prompt = self._compose(
+                    scene=enhanced_scene,
+                    style_desc=style_desc,
+                    palette_desc=palette_desc,
+                    lighting_desc=lighting_desc,
+                    quote_text=quote_text,
+                    reserve_negative_space=reserve_negative_space,
+                )
 
         aesthetic_notes = (
             f"Engineered for {ratio} format ({width}x{height}px) using {prompt_input.visual_style} aesthetic "
@@ -207,26 +239,123 @@ class ImagePromptSynthesizerAgent:
                 "lighting": prompt_input.lighting,
                 "quote_text": quote_text,
                 "quote_author": quote_author,
-                "render_quote_overlay": prompt_input.render_quote_overlay
+                "render_quote_overlay": prompt_input.render_quote_overlay,
+                "prompt_provenance": prompt_source
             },
             aesthetic_notes=aesthetic_notes,
             quote_text=quote_text,
             quote_author=quote_author
         )
 
-    def _call_llm_enhancer(self, concept: str, style: str, palette: str, quote_text: Optional[str] = None, is_statue: bool = False) -> Optional[str]:
-        """Calls configured AI provider to enrich prompt with cinematic detail while respecting constraints."""
-        bust_guard = ""
-        if quote_text and not is_statue:
-            bust_guard = "CRITICAL: Describe the architectural room and dramatic lighting with negative space. Do NOT include a marble bust, statue, or face. "
+    def _compose(
+        self,
+        scene: str,
+        style_desc: str,
+        palette_desc: str,
+        lighting_desc: str,
+        quote_text: Optional[str],
+        reserve_negative_space: bool,
+    ) -> str:
+        """
+        Builds the final prompt from a scene plus the resolved profiles.
 
-        prompt = (
-            f"You are an expert generative AI image prompt engineer for Midjourney, DALL-E 3, and Imagen 3. "
-            f"Transform this concept into a single descriptive prompt (maximum 75 words): '{concept}'. "
-            f"Style: {style}. Palette: {palette}. {bust_guard}"
-            f"Do not write conversational filler or preamble. Return ONLY the final prompt."
+        The single place a master prompt is assembled, whether the scene came
+        from the deterministic path or from a model. That is what guarantees
+        lighting and composition survive either way.
+        """
+        composition = (
+            "Composition: Balanced, quiet contemplative mood, generous unobstructed negative space "
+            "in the lower third reserved for quote typography, nothing important behind it, 8k uhd."
+            if reserve_negative_space else
+            "Composition: Centered, balanced negative space for LinkedIn hero visual, "
+            "photorealistic materials, 8k uhd."
         )
-        res_text = execute_llm_completion(self.ai_config, prompt, max_tokens=200, temperature=0.4)
-        if res_text and len(res_text.strip()) > 10:
-            return scrub_em_dashes(res_text.strip())
-        return None
+        quote_clause = ""
+        if quote_text and not reserve_negative_space:
+            quote_clause = f" Featuring negative space displaying quote: '{quote_text}'."
+
+        return scrub_em_dashes(
+            f"{scene.rstrip('.')}.{quote_clause} "
+            f"Visual Style: {style_desc}. "
+            f"Color Palette: {palette_desc}. "
+            f"Lighting: {lighting_desc}. "
+            f"{composition}"
+        )
+
+    def _describe_scene(
+        self,
+        scene: str,
+        style: str,
+        palette: str,
+        lighting: str,
+        aspect_ratio: str,
+        quote_text: Optional[str],
+        reserve_negative_space: bool,
+        is_statue: bool,
+    ) -> tuple:
+        """
+        Asks the model for a richer scene description, and nothing else.
+
+        The brief carries everything already decided, including the lighting and
+        aspect ratio the old call never mentioned, so the model enriches within
+        the direction instead of inventing a competing one. A response that
+        smuggles in a face when the frame is reserved for a quote is rejected
+        outright rather than shipped to the diffusion engine.
+
+        Returns (scene or None, provenance).
+        """
+        forbidden: List[str] = []
+        constraints = [
+            "Describe only the physical scene, setting, materials and atmosphere.",
+            "Never name a person, and never describe a face, portrait, bust or statue "
+            "unless the inputs explicitly ask for one.",
+            "Do not mention colour palette, lighting setup, camera gear or resolution. "
+            "Those are appended separately and repeating them corrupts the prompt.",
+            "Write one flowing description, maximum 60 words, no lists, no headings.",
+        ]
+
+        if quote_text and not is_statue:
+            forbidden = ["marble bust", "statue", "portrait", "human face", "sculpture"]
+            constraints.append(
+                "The lower third of the frame must stay visually quiet and uncluttered, "
+                "because typography is composited over it afterwards."
+            )
+
+        brief = Brief(
+            role=(
+                "You are the visual director for a generative image pipeline that feeds "
+                "DALL-E 3, Imagen 3 and Midjourney."
+            ),
+            objective="Expand the scene into a vivid, concrete description of the environment.",
+            inputs={
+                "scene": scene,
+                "style_key": style,
+                "palette_key": palette,
+                "lighting_key": lighting,
+                "aspect_ratio": aspect_ratio,
+                "typography_overlay": "yes, lower third must stay clear" if reserve_negative_space else "no",
+            },
+            constraints=constraints,
+            forbidden=forbidden,
+            output_contract="the scene description only, as a single paragraph.",
+        )
+
+        system_prompt, user_prompt = brief.render()
+        try:
+            raw = execute_llm_completion(
+                self.ai_config, user_prompt, system_prompt=system_prompt,
+                max_tokens=200, temperature=0.4,
+            )
+        except Exception as err:
+            return None, provenance("deterministic", f"provider error: {err}", self.ai_config.model)
+
+        accepted, cleaned, reason = validate_response(
+            raw,
+            min_chars=20,
+            max_chars=700,
+            forbidden_terms=forbidden,
+        )
+        if not accepted:
+            return None, provenance("deterministic", f"model response rejected: {reason}", self.ai_config.model)
+
+        return cleaned, provenance("model_assisted", "accepted", self.ai_config.model)

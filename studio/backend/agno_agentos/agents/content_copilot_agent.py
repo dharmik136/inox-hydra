@@ -12,7 +12,13 @@ import requests
 
 from ..contracts import CopilotDraftInput, CopilotDraftResponse
 from ..scar_tissue import scrub_em_dashes, validate_pre_fold_hook
+from ..briefing import Brief, provenance, strip_preamble, validate_response
 from ..model_gateway import get_current_ai_config, execute_llm_completion, AIProviderConfig
+
+# LinkedIn truncates the opening line on mobile at roughly this width. A hook
+# that crosses it loses its payoff behind a "see more", which is the one failure
+# this product exists to prevent, so a model is not permitted to cross it either.
+HOOK_FOLD_LIMIT = 140
 
 
 def to_sans_bold(text: str) -> str:
@@ -97,14 +103,27 @@ class LinkedInContentCopilotAgent:
         word_count = len(optimized_body.split())
         dwell_seconds = max(15, int((word_count / 200) * 60))
 
-        # Attempt LLM enhancement if configured
+        # Model hooks are merged, not substituted.
+        #
+        # Every hook the model returns is checked against the fold limit and the
+        # banned vocabulary before it is allowed into the list, and the
+        # deterministic templates backfill whatever is rejected. The old code
+        # accepted any three lines over ten characters, which meant a model
+        # could quietly replace ten fold safe hooks with three that truncate on
+        # mobile, in a product whose whole claim is that it stops exactly that.
+        hook_source = provenance("deterministic", "no provider configured")
         if self.ai_config and self.ai_config.is_configured and len(raw) > 30:
-            try:
-                llm_hooks = self._generate_llm_hooks(topic, raw)
-                if llm_hooks:
-                    hook_variants = llm_hooks
-            except Exception as e:
-                print(f"[LinkedInContentCopilotAgent] LLM hook generation failed: {e}")
+            model_hooks, hook_source = self._generate_llm_hooks(
+                topic=topic,
+                content=raw,
+                audience=draft_input.target_audience,
+                post_format=draft_input.post_format,
+            )
+            if model_hooks:
+                # Model hooks lead because they are written against this draft.
+                # Templates follow so the count never drops below the baseline.
+                deterministic_fill = [h for h in hook_variants if h not in model_hooks]
+                hook_variants = (model_hooks + deterministic_fill)[:10]
 
         return CopilotDraftResponse(
             optimized_content=optimized_body,
@@ -112,24 +131,96 @@ class LinkedInContentCopilotAgent:
             dwell_time_seconds=dwell_seconds,
             fold_safe=fold_safe,
             pre_fold_chars=pre_fold_chars,
-            media_callout=media_callout
+            media_callout=media_callout,
+            hook_provenance=hook_source
         )
 
-    def _generate_llm_hooks(self, topic: str, content: str) -> Optional[List[str]]:
-        """Invokes configured AI provider (Gemini, OpenAI, Claude, Groq, Ollama) to synthesize 5 high-converting hook variants."""
-        prompt_text = (
-            f"Generate 5 viral, scroll-stopping LinkedIn hook openers (each under 140 characters) "
-            f"for this post draft on '{topic}'.\n\n"
-            f"Post draft:\n{content[:500]}\n\n"
-            f"Rules:\n"
-            f"1. Zero em-dashes, en-dashes, or double dashes. Use commas or periods.\n"
-            f"2. Return ONLY the 5 hooks numbered 1 to 5, nothing else."
+    def _generate_llm_hooks(
+        self,
+        topic: str,
+        content: str,
+        audience: str = "Engineering & Product Leaders",
+        post_format: str = "framework_breakdown",
+    ) -> tuple:
+        """
+        Asks the configured provider for hooks, then holds each one to the rules.
+
+        The brief carries the audience and the post format, both of which are
+        already in the input contract and were previously discarded before the
+        model ever saw them. A hook written for the wrong reader is worse than a
+        template written for the right one.
+
+        Returns (accepted hooks or None, provenance).
+        """
+        brief = Brief(
+            role=(
+                "You are a LinkedIn copywriter who writes openers for practitioners. "
+                "You write plainly and never pad."
+            ),
+            objective=f"Write 6 opening hooks for a post about {topic}.",
+            inputs={
+                "audience": audience,
+                "post_format": post_format,
+                "draft_excerpt": content[:600],
+            },
+            constraints=[
+                f"Every hook must be under {HOOK_FOLD_LIMIT} characters. "
+                "LinkedIn truncates the rest behind a 'see more' on mobile.",
+                "No em-dashes, en-dashes or double dashes. Use commas or full stops.",
+                "No hashtags, no emoji, no links.",
+                "Each hook must be able to open the post on its own, not describe it.",
+                "Vary the angle across the six: contrarian, concrete number, hard lesson, "
+                "direct question, blunt statement, specific scene.",
+            ],
+            forbidden=["game-changing", "revolutionary", "in today's fast-paced world", "delve"],
+            output_contract="six hooks, one per line, numbered 1 to 6, nothing else.",
         )
-        system_prompt = "You are an elite LinkedIn copywriter. Strictly follow formatting rules and return only numbered hooks."
-        res_text = execute_llm_completion(self.ai_config, prompt_text, system_prompt=system_prompt, max_tokens=300)
-        if res_text:
-            lines = [re.sub(r'^\d+[\.\)]\s*', '', l).strip() for l in res_text.split("\n") if l.strip()]
-            cleaned_lines = [scrub_em_dashes(l) for l in lines if len(l) > 10]
-            if len(cleaned_lines) >= 3:
-                return cleaned_lines[:7]
-        return None
+
+        system_prompt, user_prompt = brief.render()
+        try:
+            raw = execute_llm_completion(
+                self.ai_config, user_prompt, system_prompt=system_prompt, max_tokens=400
+            )
+        except Exception as err:
+            return None, provenance("deterministic", f"provider error: {err}", self.ai_config.model)
+
+        if not raw or not raw.strip():
+            return None, provenance("deterministic", "empty response", self.ai_config.model)
+
+        accepted: List[str] = []
+        rejected = 0
+        for line in raw.split("\n"):
+            candidate = re.sub(r'^\s*\d+[\.\)]\s*', '', strip_preamble(line)).strip()
+            if not candidate:
+                continue
+
+            ok, cleaned, _reason = validate_response(
+                candidate, min_chars=15, max_chars=HOOK_FOLD_LIMIT
+            )
+            if not ok:
+                rejected += 1
+                continue
+
+            # Checked again through the product's own fold rule rather than
+            # trusting the character count alone, so this cannot drift from what
+            # the rest of the studio calls fold safe.
+            is_fold_safe, _chars = validate_pre_fold_hook(cleaned, max_chars=HOOK_FOLD_LIMIT)
+            if not is_fold_safe:
+                rejected += 1
+                continue
+
+            if cleaned not in accepted:
+                accepted.append(cleaned)
+
+        if len(accepted) < 3:
+            return None, provenance(
+                "deterministic",
+                f"only {len(accepted)} of {len(accepted) + rejected} hooks passed the fold and vocabulary rules",
+                self.ai_config.model,
+            )
+
+        return accepted[:7], provenance(
+            "model_assisted",
+            f"{len(accepted)} accepted, {rejected} rejected",
+            self.ai_config.model,
+        )
