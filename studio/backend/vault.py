@@ -1,9 +1,21 @@
 """
-Local Hardware-Keyed Token Vault & Security Manager.
-====================================================
+Local Token Vault & Security Manager.
+=====================================
 Provides encryption at rest for sensitive session credentials (li_at, JSESSIONID).
-Uses Windows Data Protection API (DPAPI) via ctypes on Windows,
-with a secure machine-keyed PBKDF2/SHA256 fallback for cross-platform support.
+
+On Windows this is the Data Protection API via ctypes, which ties the
+ciphertext to the user account and is the real protection here.
+
+Everywhere else, and when DPAPI fails, a local key file is used. That file sits
+beside the database, so this protects a database that travels without it, a
+backup zip or a synced folder, and not an attacker who already has the whole
+directory. Saying which of those it does is the point.
+
+It is NOT hardware keyed, and this module used to say it was. The previous
+fallback derived its key with PBKDF2 over hostname and username against a salt
+committed to this public repository, so anyone holding the database could
+recompute it in three lines. It then used that key as a repeating XOR pad over
+a token several times its length, which leaks structure on its own.
 
 Strict Invariants:
 - Zero cloud egress (100% local encryption).
@@ -14,11 +26,16 @@ from typing import Optional, Any
 import base64
 import ctypes
 import hashlib
+import hmac
 import os
 import platform
 
 DPAPI_PREFIX = "dpapi:"
 LOCAL_ENC_PREFIX = "locenc:"
+# The replacement scheme. The old prefix is still read so existing vaults keep
+# working; nothing new is ever written under it.
+LOCAL_ENC_V2_PREFIX = "locenc2:"
+_VAULT_KEY_FILENAME = "vault_key"
 MAX_PLAINTEXT_LENGTH = 65536
 
 
@@ -28,6 +45,92 @@ def _get_machine_key() -> bytes:
     user = os.environ.get("USERNAME") or os.environ.get("USER") or "default_creator"
     salt = b"linkedin_studio_sovereign_vault_v1"
     return hashlib.pbkdf2_hmac("sha256", f"{node_id}:{user}".encode("utf-8"), salt, 100000)
+
+
+def _local_key() -> bytes:
+    """
+    A random 256 bit key for this installation, created on first use.
+
+    Random, not derived. The previous key came from hostname, username and a
+    salt in the published source, all three of which an attacker holding the
+    database already has. A random key kept in a separate file means the
+    database alone is not enough.
+
+    Stored next to the API token in the vault directory, which lives with user
+    state rather than in the install directory, so an update cannot destroy it
+    and two installations never share one.
+    """
+    try:
+        from .paths import get_vault_dir
+    except ImportError:
+        from paths import get_vault_dir
+
+    path = os.path.join(get_vault_dir(), _VAULT_KEY_FILENAME)
+    try:
+        with open(path, "rb") as handle:
+            key = handle.read().strip()
+        if len(key) >= 32:
+            return key[:32]
+    except (OSError, IOError):
+        pass
+
+    key = os.urandom(32)
+    try:
+        with open(path, "wb") as handle:
+            handle.write(key)
+        try:
+            os.chmod(path, 0o600)
+        except (OSError, NotImplementedError):
+            pass
+    except (OSError, IOError):
+        # A read only state directory is a broken install. Running with an
+        # ephemeral key is better than refusing to start, and the token simply
+        # will not decrypt after a restart, which is a visible failure rather
+        # than a silent one.
+        pass
+    return key
+
+
+def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
+    """
+    HMAC-SHA256 in counter mode.
+
+    The old scheme repeated a 32 byte key across a token several times longer,
+    so identical plaintext bytes 32 apart produced identical ciphertext bytes.
+    A counter mode stream never repeats within a message, and the nonce means
+    it never repeats between messages either.
+    """
+    out = bytearray()
+    counter = 0
+    while len(out) < length:
+        out.extend(hmac.new(key, nonce + counter.to_bytes(8, "big"), hashlib.sha256).digest())
+        counter += 1
+    return bytes(out[:length])
+
+
+def _encrypt_local(plaintext: str) -> str:
+    key = _local_key()
+    nonce = os.urandom(16)
+    raw = plaintext.encode("utf-8")
+    cipher = bytes(a ^ b for a, b in zip(raw, _keystream(key, nonce, len(raw))))
+    # Encrypt then MAC, so a tampered vault row is rejected rather than
+    # decrypted into something arbitrary.
+    tag = hmac.new(key, nonce + cipher, hashlib.sha256).digest()
+    return LOCAL_ENC_V2_PREFIX + base64.b64encode(nonce + cipher + tag).decode("utf-8")
+
+
+def _decrypt_local_v2(payload: str) -> str:
+    key = _local_key()
+    blob = base64.b64decode(payload)
+    if len(blob) < 16 + 32:
+        return ""
+    nonce, cipher, tag = blob[:16], blob[16:-32], blob[-32:]
+    expected = hmac.new(key, nonce + cipher, hashlib.sha256).digest()
+    if not hmac.compare_digest(tag, expected):
+        # Wrong key or altered data. Returning "" says so; returning a guess
+        # would hand the caller bytes it would send to LinkedIn as a cookie.
+        return ""
+    return bytes(a ^ b for a, b in zip(cipher, _keystream(key, nonce, len(cipher)))).decode("utf-8", "replace")
 
 
 def get_vault_backend() -> str:
@@ -98,11 +201,9 @@ def encrypt_token(plaintext: Any) -> str:
         except Exception:
             pass  # Fall through to machine-keyed fallback
 
-    # Cross-Platform Machine-Keyed XOR Stream Fallback
-    key = _get_machine_key()
-    raw_bytes = bounded_text.encode("utf-8")
-    cipher_bytes = bytes([b ^ key[i % len(key)] for i, b in enumerate(raw_bytes)])
-    return LOCAL_ENC_PREFIX + base64.b64encode(cipher_bytes).decode("utf-8")
+    # Cross platform fallback, using a random local key rather than one
+    # derivable from facts an attacker already has.
+    return _encrypt_local(bounded_text)
 
 
 def decrypt_token(ciphertext: Any) -> str:
@@ -178,7 +279,14 @@ def decrypt_token(ciphertext: Any) -> str:
         # readable here. An empty string says that honestly.
         return ""
 
-    # Machine-Keyed Decryption
+    if raw_cipher.startswith(LOCAL_ENC_V2_PREFIX):
+        try:
+            return _decrypt_local_v2(raw_cipher[len(LOCAL_ENC_V2_PREFIX):])
+        except Exception:
+            return ""
+
+    # Legacy machine-keyed decryption. Read only: existing vaults keep working
+    # and are rewritten under the new scheme the next time they are saved.
     if raw_cipher.startswith(LOCAL_ENC_PREFIX):
         try:
             key = _get_machine_key()

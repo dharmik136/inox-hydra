@@ -210,25 +210,45 @@ def enable_autostart() -> Dict[str, Any]:
 
     # Minimised, because the point of autostart is that the daemon is ready in
     # the tray, not that a console window greets the user at every login.
+    # PowerShell escapes a single quote by doubling it.
+    #
+    # I fixed this exact pattern in browser_launcher, verified it, and missed
+    # it here. A Windows account name may legally contain an apostrophe, and
+    # every one of these paths runs through the user profile, so an account
+    # named O'Brien ended the quoted string early and the command failed to
+    # parse. Not remotely reachable, but a silent failure for those users.
+    def ps_quote(value):
+        return str(value).replace("'", "''")
+
     ps_cmd = (
         f"$w = New-Object -ComObject WScript.Shell; "
-        f"$s = $w.CreateShortcut('{shortcut}'); "
-        f"$s.TargetPath = '{target}'; "
-        f"$s.WorkingDirectory = '{os.path.dirname(target)}'; "
+        f"$s = $w.CreateShortcut('{ps_quote(shortcut)}'); "
+        f"$s.TargetPath = '{ps_quote(target)}'; "
+        f"$s.WorkingDirectory = '{ps_quote(os.path.dirname(target))}'; "
         f"$s.WindowStyle = 7; "
-        f"$s.Description = '{APP_DISPLAY_NAME} background engine'; "
+        f"$s.Description = '{ps_quote(APP_DISPLAY_NAME)} background engine'; "
     )
     if os.path.isfile(icon):
-        ps_cmd += f"$s.IconLocation = '{icon},0'; "
+        ps_cmd += f"$s.IconLocation = '{ps_quote(icon)},0'; "
     ps_cmd += "$s.Save()"
 
     try:
-        subprocess.run(
+        result = subprocess.run(
             ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
             capture_output=True, text=True, timeout=15,
         )
     except Exception as err:
         return {"enabled": False, "reason": f"shortcut creation failed: {err}"}
+
+    # The existence check below is the real verdict, but a non zero exit says
+    # WHY, which is the difference between a usable message and "it did not
+    # work".
+    if result.returncode != 0 and not os.path.isfile(shortcut):
+        detail = (result.stderr or result.stdout or "").strip().splitlines()
+        return {
+            "enabled": False,
+            "reason": detail[0] if detail else "PowerShell refused the shortcut command",
+        }
 
     if os.path.isfile(shortcut):
         return {"enabled": True, "shortcut_path": shortcut, "target": target}
