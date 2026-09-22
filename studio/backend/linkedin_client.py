@@ -162,6 +162,23 @@ class CircuitBreaker:
             }
 
 
+def _pipeline_status(human_status):
+    """
+    Maps the human facing lead status to the machine one.
+
+    A lead carries two status vocabularies: `status` is what the CRM screen
+    shows a person, `lead_status` is what the funnel and conversion rate read.
+    Writing one without the other is why a captured lead could never move a
+    chart. The mapping is imported rather than duplicated so there is one
+    definition of what "Meeting Booked" means.
+    """
+    try:
+        from .leads import LEAD_STATUS_TO_PIPELINE
+    except ImportError:
+        from leads import LEAD_STATUS_TO_PIPELINE
+    return LEAD_STATUS_TO_PIPELINE.get(human_status, "NEW")
+
+
 class LinkedInClient:
     """
     Client for communicating with LinkedIn internal Voyager endpoints
@@ -449,8 +466,8 @@ class LinkedInClient:
                 else:
                     l_id = l.get("id") or f"lead-live-{abs(hash(name + profile_url)) % 1000000}"
                     cursor.execute("""
-                    INSERT INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, lead_status, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         l_id,
                         name,
@@ -460,6 +477,10 @@ class LinkedInClient:
                         l.get("engagement_type", "Commented"),
                         l.get("post_id", ""),
                         l.get("status", "New Lead"),
+                        # The machine vocabulary, which every analytic reads.
+                        # Written from the same mapping leads.py uses rather
+                        # than a second copy of it, so the two cannot drift.
+                        _pipeline_status(l.get("status", "New Lead")),
                         notes
                     ))
                     leads_added += 1

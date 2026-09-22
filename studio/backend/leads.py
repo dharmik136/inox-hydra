@@ -187,8 +187,8 @@ def batch_add_leads(leads_list: List[Dict]) -> Dict:
                 updated_count += 1
             else:
                 c.execute("""
-                INSERT INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, lead_status, notes)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     l_id,
                     name,
@@ -198,6 +198,13 @@ def batch_add_leads(leads_list: List[Dict]) -> Dict:
                     l.get("engagement_type", "Commented"),
                     l.get("post_id", ""),
                     l.get("status", "New Lead"),
+                    # Both vocabularies, always. add_lead and
+                    # update_lead_status already did this; this path did not,
+                    # so forty commenters captured as "Meeting Booked" showed
+                    # as forty in the CRM list and zero in the funnel, because
+                    # the list filters on status and the funnel reads
+                    # lead_status.
+                    LEAD_STATUS_TO_PIPELINE.get(l.get("status", "New Lead"), "NEW"),
                     notes
                 ))
                 added_count += 1
