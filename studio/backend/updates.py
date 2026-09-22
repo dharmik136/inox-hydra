@@ -213,6 +213,15 @@ def check_for_update(force: bool = False, url: Optional[str] = None) -> Dict[str
         result["error"] = "Update manifest did not declare a version"
         return result
 
+    # Version first, then the ETag. The order is the whole point.
+    #
+    # The ETag is a promise that we already know what is at that URL. Writing
+    # it before recording the version meant that if the version write failed,
+    # every later check sent the new ETag, got a 304, and reported the user as
+    # up to date permanently, with no way to notice. intelligence_sync
+    # documents and fixes this exact ordering; this file had it backwards.
+    _set_setting(LAST_SEEN_KEY, latest)
+
     etag = response.headers.get("ETag")
     if etag:
         try:
@@ -220,8 +229,6 @@ def check_for_update(force: bool = False, url: Optional[str] = None) -> Dict[str
                 f.write(etag)
         except OSError:
             pass
-
-    _set_setting(LAST_SEEN_KEY, latest)
 
     result["latest_version"] = latest
     result["update_available"] = is_newer(latest)

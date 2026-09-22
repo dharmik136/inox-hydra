@@ -27,6 +27,8 @@ except ImportError:
     from database import get_db, create_draft, get_draft
     from event_bus import event_bus
 
+MAX_UPDATE_ATTEMPTS = 3
+
 logger = logging.getLogger("studio.ingress")
 
 # Fold limits per Day 01 spec
@@ -166,6 +168,10 @@ class TelegramIngressDaemon:
         # ladder Telegram never asked for; treating it as a success, which is
         # what used to happen, threw the instruction away entirely.
         self.rate_limited_until = 0.0
+
+        # update_id -> how many times processing it has failed. Bounded so a
+        # message that can never be handled does not block the ones behind it.
+        self._failed_updates = {}
         self.total_polls = 0
         self.total_messages_processed = 0
         self.last_poll_at: Optional[str] = None
@@ -327,11 +333,47 @@ class TelegramIngressDaemon:
                         if not isinstance(update, dict):
                             continue
                         update_id = update.get("update_id", 0)
+
+                        # Process first, then acknowledge.
+                        #
+                        # last_update_id becomes the offset on the next poll,
+                        # so advancing it before handling the message told
+                        # Telegram we had it while we had not. A draft that
+                        # failed to store was gone, because Telegram never
+                        # sends an acknowledged update again.
+                        #
+                        # Simply moving the advance below the call is not
+                        # enough on its own: a message that can never be
+                        # processed would then be retried forever and block
+                        # every message behind it. So a failure is retried a
+                        # bounded number of times and then stepped over, with
+                        # the reason logged, which is the only outcome that
+                        # loses neither the queue nor the evidence.
+                        try:
+                            p = self.process_incoming_update(update)
+                            if p:
+                                processed.append(p)
+                            self._failed_updates.pop(update_id, None)
+                        except Exception as update_error:
+                            attempts = self._failed_updates.get(update_id, 0) + 1
+                            self._failed_updates[update_id] = attempts
+                            logger.error(
+                                "Could not process Telegram update %s (attempt %d of %d): %s",
+                                update_id, attempts, MAX_UPDATE_ATTEMPTS, update_error,
+                            )
+                            if attempts < MAX_UPDATE_ATTEMPTS:
+                                # Leave the offset where it is so Telegram
+                                # sends it again.
+                                break
+                            logger.error(
+                                "Giving up on Telegram update %s after %d attempts. "
+                                "The message is being skipped so the queue can drain.",
+                                update_id, attempts,
+                            )
+                            self._failed_updates.pop(update_id, None)
+
                         if isinstance(update_id, int) and update_id > self.last_update_id:
                             self.last_update_id = update_id
-                        p = self.process_incoming_update(update)
-                        if p:
-                            processed.append(p)
                     self.total_messages_processed += len(processed)
                     self.last_error = None
                     return processed

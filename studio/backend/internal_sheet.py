@@ -153,23 +153,14 @@ class InternalSheetManager:
             screen_key, section_key, category_clean, clean_capture["console"]
         )
 
+        # The backlog task is created AFTER the issue row exists.
+        #
+        # It used to be created first, in its own transaction, before this
+        # function had even opened a connection. A locked database during the
+        # insert below therefore left a PENDING task whose gstack_task_id
+        # pointed at no issue, and every retry added another one. The task is
+        # the derived record; it should not outlive the thing it derives from.
         gstack_task_id = None
-        if promote_to_backlog:
-            spec = self._backlog_specification(
-                screen_key=screen_key,
-                section_key=section_key,
-                target_selector=target_selector,
-                snippet=element_text_snippet,
-                description=description,
-                capture=clean_capture,
-                env_snapshot=env_snapshot,
-            )
-            gstack_task_id = gstack_engine.add_backlog_task(
-                role=role_clean,
-                title=f"[{category_clean.upper()}] {title}",
-                specification=spec,
-                status="PENDING",
-            )
 
         conn = self._get_conn()
         try:
@@ -216,9 +207,16 @@ class InternalSheetManager:
             )
             issue_id = cursor.lastrowid
             conn.commit()
-            return self.get_issue(issue_id)
         finally:
             conn.close()
+
+        if promote_to_backlog:
+            # promote_to_gstack builds the same specification and writes the
+            # resulting id back onto the row, so there is one code path that
+            # creates a backlog task rather than two that can disagree.
+            self.promote_to_gstack(issue_id)
+
+        return self.get_issue(issue_id)
 
     def _backlog_specification(
         self,

@@ -10,10 +10,13 @@ Guarantees:
 3. Zero Em-Dashes: Strict enforcement across all indexed text and docstrings.
 """
 
+import logging
 import os
 import re
 import sqlite3
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger("studio.docs")
 
 try:
     from .database import get_db
@@ -49,13 +52,34 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
 
     try:
         cur = conn.cursor()
+
+        # A table left over from an older schema is rebuilt rather than reused.
+        #
+        # CREATE VIRTUAL TABLE IF NOT EXISTS does nothing when a table of that
+        # name exists, whatever its columns are. With a stale three-vs-four
+        # column table the DELETE below still succeeded and every INSERT then
+        # raised a column count error, which the per-file handler swallowed.
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='docs_index'")
+        if cur.fetchone():
+            try:
+                existing = {row[1] for row in cur.execute("PRAGMA table_info(docs_index)").fetchall()}
+            except Exception:
+                existing = set()
+            if not {"filename", "section", "content"}.issubset(existing):
+                cur.execute("DROP TABLE IF EXISTS docs_index")
+
         cur.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs_index USING fts5(filename, section, content)")
         cur.execute("DELETE FROM docs_index")
 
         indexed_count = 0
+        # Counted so a total failure can be told apart from a docs directory
+        # that genuinely has nothing in it.
+        markdown_seen = 0
+        failed_files = []
         for root, _, files in os.walk(target_dir):
             for f in files:
                 if f.endswith(".md"):
+                    markdown_seen += 1
                     file_path = os.path.join(root, f)
                     try:
                         # Defensive check: skip unusually huge files
@@ -87,8 +111,33 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
                                 (rel_path, clean_title, clean_sec)
                             )
                             indexed_count += 1
-                    except Exception:
+                    except Exception as file_error:
+                        # Recorded rather than merely skipped. This handler sits
+                        # inside the outer guard, so it used to eat the very
+                        # failures the rollback below exists to catch.
+                        failed_files.append((f, str(file_error)))
                         continue
+
+        # Refuse to commit an empty index when there were files to index.
+        #
+        # DELETE has already run at this point, so committing zero rows
+        # replaces a working index with nothing, returns 0 and raises no
+        # exception. Every search then returns nothing, for good, and the only
+        # signal is that the docs tab looks broken.
+        if indexed_count == 0 and markdown_seen > 0:
+            conn.rollback()
+            logger.error(
+                "Refusing to publish an empty documentation index: %d markdown "
+                "files were found and none could be indexed. First failures: %s",
+                markdown_seen, failed_files[:3],
+            )
+            return 0
+
+        if failed_files:
+            logger.warning(
+                "Documentation index built with %d of %d files failing: %s",
+                len(failed_files), markdown_seen, failed_files[:3],
+            )
 
         conn.commit()
         return indexed_count
