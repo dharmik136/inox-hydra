@@ -420,11 +420,33 @@ class NativeScheduler:
 
                 # Case 1: On-time or within 2-hour morning grace window
                 if overdue_minutes <= self.grace_window_minutes:
+                    # Claim the post, do not just write to it.
+                    #
+                    # The APScheduler thread and the manual dispatch endpoint
+                    # both run this. They each SELECT the same due row, each
+                    # UPDATE it, and each publish a post_published event, so a
+                    # creator's post goes to LinkedIn twice. Neither sees the
+                    # other's uncommitted write, so nothing upstream catches
+                    # it.
+                    #
+                    # Repeating the status in the WHERE clause turns the write
+                    # into a compare and swap: the first one to commit changes
+                    # the row, the second matches nothing. rowcount is how we
+                    # learn which one we were. This holds across processes as
+                    # well as threads, which a lock in this file would not.
                     cursor.execute(
-                        "UPDATE posts SET status = 'published', published_at = ? WHERE id = ?",
+                        "UPDATE posts SET status = 'published', published_at = ? "
+                        "WHERE id = ? AND status = 'scheduled'",
                         (now_iso, post_id)
                     )
                     conn.commit()
+
+                    if cursor.rowcount == 0:
+                        logger.info(
+                            "Post %s was already dispatched by another cycle. Skipping.",
+                            post_id
+                        )
+                        continue
 
                     if overdue_minutes <= ON_TIME_THRESHOLD_MINUTES:
                         logger.info("Post %s dispatched on time at %s.", post_id, now_iso)
@@ -461,11 +483,23 @@ class NativeScheduler:
                     next_slot = self.calculate_next_smart_slot(from_time=now, exclude_post_id=post_id)
                     new_time = next_slot["slot_datetime"]
 
+                    # The same claim. Two cycles rolling the same stale post
+                    # forward would compute two different next slots and each
+                    # announce its own, so the creator is told twice where
+                    # their post went, to two different places.
                     cursor.execute(
-                        "UPDATE posts SET scheduled_for = ?, status = 'scheduled' WHERE id = ?",
-                        (new_time, post_id)
+                        "UPDATE posts SET scheduled_for = ?, status = 'scheduled' "
+                        "WHERE id = ? AND status = 'scheduled' AND scheduled_for = ?",
+                        (new_time, post_id, post["scheduled_for"])
                     )
                     conn.commit()
+
+                    if cursor.rowcount == 0:
+                        logger.info(
+                            "Post %s was already rolled forward by another cycle. Skipping.",
+                            post_id
+                        )
+                        continue
 
                     logger.warning(
                         "Post %s missed window by %.1fm. Rolled forward to %s (%s).",
