@@ -325,11 +325,35 @@ class ImageStudioManager:
             # Step B: Personal Brand Watermark (Creator Handle & Corner Badge)
             apply_brand = options.get("apply_personal_watermark")
             brand_text = options.get("personal_watermark_text")
-            brand_pos = options.get("personal_watermark_position", "bottom_right")
-            brand_style = options.get("personal_watermark_style", "glass_pill")
+            brand_pos = options.get("personal_watermark_position")
+            brand_style = options.get("personal_watermark_style")
 
-            # Fallback to saved creator profile in database if option not explicitly provided
-            if apply_brand is None and get_db:
+            # One condition used to answer two different questions, and so
+            # answered neither.
+            #
+            # The guard was `apply_brand is None`, but the request model
+            # defaults apply_personal_watermark to False and the checkbox in
+            # the interface always sends a boolean, so it was never None and
+            # this whole block was unreachable. A creator who saved their handle
+            # in Settings and ticked the box got an image stamped with the
+            # literal string "@creator", and their saved position and style
+            # were ignored too.
+            #
+            # The two questions are separate:
+            #   should we stamp?   the request decides, because that is the
+            #                      checkbox the creator just clicked
+            #   what do we stamp?  the saved profile decides, because that is
+            #                      where the handle lives
+            #
+            # So the profile is read whenever the request did not carry the
+            # details, regardless of how the first question was answered.
+            needs_profile = (
+                apply_brand is None
+                or not brand_text
+                or not brand_pos
+                or not brand_style
+            )
+            if needs_profile and get_db:
                 conn = None
                 try:
                     conn = get_db()
@@ -338,11 +362,18 @@ class ImageStudioManager:
                     prof_row = cursor.fetchone()
                     if prof_row and prof_row["value"]:
                         prof_data = json.loads(prof_row["value"])
-                        apply_brand = prof_data.get("brand_watermark_enabled", False)
+                        # Only fills what the request left unanswered. An
+                        # explicit False from the interface means the creator
+                        # unticked the box, and must not be overridden by a
+                        # stale enabled flag in the profile.
+                        if apply_brand is None:
+                            apply_brand = prof_data.get("brand_watermark_enabled", False)
                         if not brand_text:
                             brand_text = prof_data.get("brand_watermark_text") or ""
-                        brand_pos = prof_data.get("brand_watermark_position", brand_pos)
-                        brand_style = prof_data.get("brand_watermark_style", brand_style)
+                        if not brand_pos:
+                            brand_pos = prof_data.get("brand_watermark_position") or ""
+                        if not brand_style:
+                            brand_style = prof_data.get("brand_watermark_style") or ""
                 except Exception as e:
                     print(f"[ImageStudio] Settings lookup note: {e}")
                 finally:
@@ -352,15 +383,33 @@ class ImageStudioManager:
                         except Exception:
                             pass
 
+            # Defaults for presentation only, applied after the profile has had
+            # its say so a saved preference is never silently overridden.
+            brand_pos = brand_pos or "bottom_right"
+            brand_style = brand_style or "glass_pill"
+
+            # A handle this studio invented is worse than no handle.
+            #
+            # The old code fell back to the literal "@creator" whenever the
+            # text was empty, which stamped a made up identity onto the
+            # creator's image. "A fresh install belongs to nobody" applies
+            # here too: with nothing to stamp, stamp nothing and say so.
+            if apply_brand and not (brand_text or "").strip():
+                self._update_task(
+                    task_id, 86,
+                    "Skipping the brand watermark: no handle is saved in Settings.",
+                )
+                apply_brand = False
+
             if apply_brand and apply_personal_brand_watermark and image_bytes:
-                self._update_task(task_id, 86, f"Stamping personal brand watermark ({brand_text or '@creator'})...")
+                self._update_task(task_id, 86, f"Stamping personal brand watermark ({brand_text})...")
                 try:
                     import io
                     from PIL import Image
                     raw_pil = Image.open(io.BytesIO(image_bytes))
                     stamped_pil = apply_personal_brand_watermark(
                         raw_pil,
-                        brand_text=brand_text or "@creator",
+                        brand_text=brand_text,
                         position=brand_pos,
                         style=brand_style
                     )
