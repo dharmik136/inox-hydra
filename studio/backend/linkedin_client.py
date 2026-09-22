@@ -275,203 +275,206 @@ class LinkedInClient:
         declared_precision = raw_data.get("precision")
 
         conn = get_db()
-        cursor = conn.cursor()
-        saved_count = 0
+        try:
+            cursor = conn.cursor()
+            saved_count = 0
 
-        # Handle time series
-        series = raw_data.get("series") or raw_data.get("data", {}).get("series") or []
-        for bucket in series:
-            dt = bucket.get("bucket") or bucket.get("date")
-            metrics = bucket.get("metrics") or bucket
-            if not dt:
-                continue
+            # Handle time series
+            series = raw_data.get("series") or raw_data.get("data", {}).get("series") or []
+            for bucket in series:
+                dt = bucket.get("bucket") or bucket.get("date")
+                metrics = bucket.get("metrics") or bucket
+                if not dt:
+                    continue
 
-            # A metric that was not read is None, not zero. Coercing it meant a
-            # payload where only the follower card had rendered wrote a zero over
-            # the impressions figure captured earlier the same day, stamped
-            # 'observed'. None flows into COALESCE below, which keeps what is
-            # already stored.
-            def _metric(*keys):
-                for k in keys:
-                    v = metrics.get(k)
-                    if v is not None:
-                        return v
-                return None
+                # A metric that was not read is None, not zero. Coercing it meant a
+                # payload where only the follower card had rendered wrote a zero over
+                # the impressions figure captured earlier the same day, stamped
+                # 'observed'. None flows into COALESCE below, which keeps what is
+                # already stored.
+                def _metric(*keys):
+                    for k in keys:
+                        v = metrics.get(k)
+                        if v is not None:
+                            return v
+                    return None
 
-            imp = _metric("impressions")
-            lk = _metric("likes", "reactions")
-            cm = _metric("comments")
-            sh = _metric("shares")
-            fl = metrics.get("followers")
-            cn = metrics.get("connections")
-            pv = metrics.get("profile_views")
+                imp = _metric("impressions")
+                lk = _metric("likes", "reactions")
+                cm = _metric("comments")
+                sh = _metric("shares")
+                fl = metrics.get("followers")
+                cn = metrics.get("connections")
+                pv = metrics.get("profile_views")
 
-            engaged = sum(v for v in (lk, cm, sh) if v is not None)
-            eng_rate = round((engaged / imp * 100), 2) if (imp or 0) > 0 else None
-            row_period = bucket.get("period_label") or declared_period
-            row_precision = bucket.get("precision") or declared_precision
+                engaged = sum(v for v in (lk, cm, sh) if v is not None)
+                eng_rate = round((engaged / imp * 100), 2) if (imp or 0) > 0 else None
+                row_period = bucket.get("period_label") or declared_period
+                row_precision = bucket.get("precision") or declared_precision
 
-            cursor.execute("""
-            INSERT OR REPLACE INTO analytics_daily 
-            (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source, period_label, precision)
-            VALUES (?, 
-                    COALESCE(?, (SELECT followers FROM analytics_daily WHERE date = ?)),
-                    COALESCE(?, (SELECT connections FROM analytics_daily WHERE date = ?)),
-                    COALESCE(?, (SELECT profile_views FROM analytics_daily WHERE date = ?)),
-                    COALESCE(?, (SELECT impressions FROM analytics_daily WHERE date = ?), 0),
-                    COALESCE(?, (SELECT reactions FROM analytics_daily WHERE date = ?), 0),
-                    COALESCE(?, (SELECT comments FROM analytics_daily WHERE date = ?), 0),
-                    COALESCE(?, (SELECT shares FROM analytics_daily WHERE date = ?), 0),
-                    COALESCE(?, (SELECT engagement_rate FROM analytics_daily WHERE date = ?), 0.0),
-                    'observed', ?, ?)
-            """, (dt, fl, dt, cn, dt, pv, dt,
-                  imp, dt, lk, dt, cm, dt, sh, dt, eng_rate, dt,
-                  row_period, row_precision))
-            saved_count += 1
-
-        # Handle top-level profile views from identity profile responses
-        top_pv = raw_data.get("profile_views")
-        if top_pv is not None and not series:
-            today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            # followers and connections carry forward from the most recent day
-            # when today has no row yet. Selecting them bare wrote NULL, and
-            # get_kpis subtracts one day's follower count from another, so a
-            # profile views only payload took the whole dashboard down with a
-            # TypeError on None.
-            cursor.execute("""
-            INSERT OR REPLACE INTO analytics_daily 
-            (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source, period_label, precision, unique_members_reached)
-            VALUES (?, 
-                    COALESCE((SELECT followers FROM analytics_daily WHERE date = ?),
-                             (SELECT followers FROM analytics_daily WHERE followers IS NOT NULL ORDER BY date DESC LIMIT 1), 0),
-                    COALESCE((SELECT connections FROM analytics_daily WHERE date = ?),
-                             (SELECT connections FROM analytics_daily WHERE connections IS NOT NULL ORDER BY date DESC LIMIT 1), 0),
-                    ?,
-                    COALESCE((SELECT impressions FROM analytics_daily WHERE date = ?), 0),
-                    COALESCE((SELECT reactions FROM analytics_daily WHERE date = ?), 0),
-                    COALESCE((SELECT comments FROM analytics_daily WHERE date = ?), 0),
-                    COALESCE((SELECT shares FROM analytics_daily WHERE date = ?), 0),
-                    COALESCE((SELECT engagement_rate FROM analytics_daily WHERE date = ?), 0.0),
-                    'observed',
-                    (SELECT period_label FROM analytics_daily WHERE date = ?),
-                    (SELECT precision FROM analytics_daily WHERE date = ?),
-                    COALESCE((SELECT unique_members_reached FROM analytics_daily WHERE date = ?), 0))
-            """, (today_str, today_str, today_str, int(top_pv), today_str, today_str,
-                  today_str, today_str, today_str, today_str, today_str, today_str))
-            saved_count += 1
-
-        # Handle demographics and viewer seniority if present
-        demographics = list(raw_data.get("demographics") or [])
-        seniority = raw_data.get("viewer_seniority") or raw_data.get("seniority") or []
-        if seniority and isinstance(seniority, list):
-            for s in seniority:
-                if isinstance(s, dict):
-                    demographics.append({
-                        "dimension": "seniority",
-                        "label": s.get("label") or s.get("title") or s.get("level", "Senior"),
-                        "percentage": float(s.get("percentage") or s.get("pct", 0.0))
-                    })
-
-        if demographics:
-            for d in demographics:
-                dim = d.get("dimension")
-                lbl = d.get("label")
-                pct = d.get("percentage", 0.0)
-                if dim and lbl:
-                    cursor.execute("DELETE FROM audience_demographics WHERE dimension = ? AND label = ?", (dim, lbl))
-                    cursor.execute("""
-                    INSERT INTO audience_demographics (dimension, label, percentage, source)
-                    VALUES (?, ?, ?, 'observed')
-                    """, (dim, lbl, pct))
-
-        # Handle live posts updates from LinkedIn feed (updatesV2 or elements)
-        posts = raw_data.get("posts") or raw_data.get("feed_updates") or []
-        if not posts and isinstance(raw_data.get("elements"), list):
-            posts = raw_data.get("elements", [])
-        posts_updated = 0
-        for p in posts:
-            p_id = p.get("id") or p.get("urn")
-            if not p_id:
-                continue
-            cursor.execute("""
-            INSERT INTO posts (id, content, impressions, reactions, comments, shares, published_at, status)
-            VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), 'published')
-            ON CONFLICT(id) DO UPDATE SET
-                impressions = COALESCE(excluded.impressions, posts.impressions),
-                reactions = COALESCE(excluded.reactions, posts.reactions),
-                comments = COALESCE(excluded.comments, posts.comments),
-                shares = COALESCE(excluded.shares, posts.shares)
-            """, (
-                p_id,
-                p.get("content", ""),
-                p.get("impressions", 0),
-                p.get("reactions", 0),
-                p.get("comments", 0),
-                p.get("shares", 0),
-                p.get("published_at")
-            ))
-            posts_updated += 1
-
-        # Handle live leads & commenters captured from LinkedIn
-        leads = raw_data.get("leads") or []
-        leads_added = 0
-        leads_updated = 0
-        for l in leads:
-            name = (l.get("name") or "").strip()
-            if not name:
-                continue
-            profile_url = (l.get("profile_url") or "").strip()
-            headline = (l.get("headline") or "").strip()
-            company = (l.get("company") or "").strip()
-            notes = l.get("notes") or "Captured live from LinkedIn engagement"
-
-            # Deduplicate by profile_url or exact name + headline
-            existing_id = None
-            if profile_url:
-                cursor.execute("SELECT id FROM leads WHERE profile_url = ?", (profile_url,))
-                row = cursor.fetchone()
-                if row:
-                    existing_id = row[0]
-            if not existing_id:
-                cursor.execute("SELECT id FROM leads WHERE name = ? AND headline = ?", (name, headline))
-                row = cursor.fetchone()
-                if row:
-                    existing_id = row[0]
-
-            if existing_id:
-                cursor.execute("UPDATE leads SET engagement_type = ?, notes = ? WHERE id = ?", (
-                    l.get("engagement_type", "Commented"),
-                    notes,
-                    existing_id
-                ))
-                leads_updated += 1
-            else:
-                l_id = l.get("id") or f"lead-live-{abs(hash(name + profile_url)) % 1000000}"
                 cursor.execute("""
-                INSERT INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    l_id,
-                    name,
-                    headline,
-                    company,
-                    profile_url,
-                    l.get("engagement_type", "Commented"),
-                    l.get("post_id", ""),
-                    l.get("status", "New Lead"),
-                    notes
-                ))
-                leads_added += 1
+                INSERT OR REPLACE INTO analytics_daily 
+                (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source, period_label, precision)
+                VALUES (?, 
+                        COALESCE(?, (SELECT followers FROM analytics_daily WHERE date = ?)),
+                        COALESCE(?, (SELECT connections FROM analytics_daily WHERE date = ?)),
+                        COALESCE(?, (SELECT profile_views FROM analytics_daily WHERE date = ?)),
+                        COALESCE(?, (SELECT impressions FROM analytics_daily WHERE date = ?), 0),
+                        COALESCE(?, (SELECT reactions FROM analytics_daily WHERE date = ?), 0),
+                        COALESCE(?, (SELECT comments FROM analytics_daily WHERE date = ?), 0),
+                        COALESCE(?, (SELECT shares FROM analytics_daily WHERE date = ?), 0),
+                        COALESCE(?, (SELECT engagement_rate FROM analytics_daily WHERE date = ?), 0.0),
+                        'observed', ?, ?)
+                """, (dt, fl, dt, cn, dt, pv, dt,
+                      imp, dt, lk, dt, cm, dt, sh, dt, eng_rate, dt,
+                      row_period, row_precision))
+                saved_count += 1
 
-        conn.commit()
-        conn.close()
-        return {
-            "status": "success",
-            "buckets_ingested": saved_count,
-            "posts_updated": posts_updated,
-            "leads_added": leads_added,
-            "leads_updated": leads_updated
-        }
+            # Handle top-level profile views from identity profile responses
+            top_pv = raw_data.get("profile_views")
+            if top_pv is not None and not series:
+                today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                # followers and connections carry forward from the most recent day
+                # when today has no row yet. Selecting them bare wrote NULL, and
+                # get_kpis subtracts one day's follower count from another, so a
+                # profile views only payload took the whole dashboard down with a
+                # TypeError on None.
+                cursor.execute("""
+                INSERT OR REPLACE INTO analytics_daily 
+                (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source, period_label, precision, unique_members_reached)
+                VALUES (?, 
+                        COALESCE((SELECT followers FROM analytics_daily WHERE date = ?),
+                                 (SELECT followers FROM analytics_daily WHERE followers IS NOT NULL ORDER BY date DESC LIMIT 1), 0),
+                        COALESCE((SELECT connections FROM analytics_daily WHERE date = ?),
+                                 (SELECT connections FROM analytics_daily WHERE connections IS NOT NULL ORDER BY date DESC LIMIT 1), 0),
+                        ?,
+                        COALESCE((SELECT impressions FROM analytics_daily WHERE date = ?), 0),
+                        COALESCE((SELECT reactions FROM analytics_daily WHERE date = ?), 0),
+                        COALESCE((SELECT comments FROM analytics_daily WHERE date = ?), 0),
+                        COALESCE((SELECT shares FROM analytics_daily WHERE date = ?), 0),
+                        COALESCE((SELECT engagement_rate FROM analytics_daily WHERE date = ?), 0.0),
+                        'observed',
+                        (SELECT period_label FROM analytics_daily WHERE date = ?),
+                        (SELECT precision FROM analytics_daily WHERE date = ?),
+                        COALESCE((SELECT unique_members_reached FROM analytics_daily WHERE date = ?), 0))
+                """, (today_str, today_str, today_str, int(top_pv), today_str, today_str,
+                      today_str, today_str, today_str, today_str, today_str, today_str))
+                saved_count += 1
+
+            # Handle demographics and viewer seniority if present
+            demographics = list(raw_data.get("demographics") or [])
+            seniority = raw_data.get("viewer_seniority") or raw_data.get("seniority") or []
+            if seniority and isinstance(seniority, list):
+                for s in seniority:
+                    if isinstance(s, dict):
+                        demographics.append({
+                            "dimension": "seniority",
+                            "label": s.get("label") or s.get("title") or s.get("level", "Senior"),
+                            "percentage": float(s.get("percentage") or s.get("pct", 0.0))
+                        })
+
+            if demographics:
+                for d in demographics:
+                    dim = d.get("dimension")
+                    lbl = d.get("label")
+                    pct = d.get("percentage", 0.0)
+                    if dim and lbl:
+                        cursor.execute("DELETE FROM audience_demographics WHERE dimension = ? AND label = ?", (dim, lbl))
+                        cursor.execute("""
+                        INSERT INTO audience_demographics (dimension, label, percentage, source)
+                        VALUES (?, ?, ?, 'observed')
+                        """, (dim, lbl, pct))
+
+            # Handle live posts updates from LinkedIn feed (updatesV2 or elements)
+            posts = raw_data.get("posts") or raw_data.get("feed_updates") or []
+            if not posts and isinstance(raw_data.get("elements"), list):
+                posts = raw_data.get("elements", [])
+            posts_updated = 0
+            for p in posts:
+                p_id = p.get("id") or p.get("urn")
+                if not p_id:
+                    continue
+                cursor.execute("""
+                INSERT INTO posts (id, content, impressions, reactions, comments, shares, published_at, status)
+                VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), 'published')
+                ON CONFLICT(id) DO UPDATE SET
+                    impressions = COALESCE(excluded.impressions, posts.impressions),
+                    reactions = COALESCE(excluded.reactions, posts.reactions),
+                    comments = COALESCE(excluded.comments, posts.comments),
+                    shares = COALESCE(excluded.shares, posts.shares)
+                """, (
+                    p_id,
+                    p.get("content", ""),
+                    p.get("impressions", 0),
+                    p.get("reactions", 0),
+                    p.get("comments", 0),
+                    p.get("shares", 0),
+                    p.get("published_at")
+                ))
+                posts_updated += 1
+
+            # Handle live leads & commenters captured from LinkedIn
+            leads = raw_data.get("leads") or []
+            leads_added = 0
+            leads_updated = 0
+            for l in leads:
+                name = (l.get("name") or "").strip()
+                if not name:
+                    continue
+                profile_url = (l.get("profile_url") or "").strip()
+                headline = (l.get("headline") or "").strip()
+                company = (l.get("company") or "").strip()
+                notes = l.get("notes") or "Captured live from LinkedIn engagement"
+
+                # Deduplicate by profile_url or exact name + headline
+                existing_id = None
+                if profile_url:
+                    cursor.execute("SELECT id FROM leads WHERE profile_url = ?", (profile_url,))
+                    row = cursor.fetchone()
+                    if row:
+                        existing_id = row[0]
+                if not existing_id:
+                    cursor.execute("SELECT id FROM leads WHERE name = ? AND headline = ?", (name, headline))
+                    row = cursor.fetchone()
+                    if row:
+                        existing_id = row[0]
+
+                if existing_id:
+                    cursor.execute("UPDATE leads SET engagement_type = ?, notes = ? WHERE id = ?", (
+                        l.get("engagement_type", "Commented"),
+                        notes,
+                        existing_id
+                    ))
+                    leads_updated += 1
+                else:
+                    l_id = l.get("id") or f"lead-live-{abs(hash(name + profile_url)) % 1000000}"
+                    cursor.execute("""
+                    INSERT INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        l_id,
+                        name,
+                        headline,
+                        company,
+                        profile_url,
+                        l.get("engagement_type", "Commented"),
+                        l.get("post_id", ""),
+                        l.get("status", "New Lead"),
+                        notes
+                    ))
+                    leads_added += 1
+
+            conn.commit()
+            conn.close()
+            return {
+                "status": "success",
+                "buckets_ingested": saved_count,
+                "posts_updated": posts_updated,
+                "leads_added": leads_added,
+                "leads_updated": leads_updated
+            }
+        finally:
+            conn.close()
 
     def sync_live_profile_and_stats(self, mock: bool = False, enforce_rate_limit: bool = False) -> dict:
         """
