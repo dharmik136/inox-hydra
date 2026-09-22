@@ -109,3 +109,9 @@ desktop/src-tauri/gen/
 # would have caught it. This is the same one-git-add-away shape as the
 # extension key.
 studio/vault/
+
+# Written by the desktop workflow when signing credentials are present. It
+# carries no secret itself, but it must not be committed: a signCommand in the
+# tracked config would make every local build try to reach a signing service
+# that is not configured.
+desktop/signing.json
