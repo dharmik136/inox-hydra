@@ -350,17 +350,44 @@ def copy_extension_path_to_clipboard() -> Dict[str, Any]:
     for users wishing to paste into the Load Unpacked file dialog.
     """
     ext_path = get_extension_dir()
+
+    # The result is read, not assumed.
+    #
+    # This reported success whenever PowerShell merely started, because the
+    # return code was discarded. Set-Clipboard needs an interactive desktop
+    # with STA clipboard access, so on a machine without one, a service
+    # session or a CI runner, it fails while the studio tells the creator the
+    # path is copied. They then paste whatever was already on the clipboard
+    # into the Load Unpacked dialog and the extension does not load.
+    #
+    # The path is always returned either way, so the interface can show it for
+    # manual copying when the clipboard is unavailable.
     try:
-        ps_script = f"Set-Clipboard -Value '{ext_path}'"
-        subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], timeout=5)
-        return {
-            "status": "success",
-            "extension_path": ext_path,
-            "message": "Extension path copied to clipboard."
-        }
-    except Exception as e:
+        ps_script = f"Set-Clipboard -Value '{ext_path.replace(chr(39), chr(39) * 2)}'"
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+            capture_output=True, text=True, timeout=20,
+        )
+    except Exception as err:
         return {
             "status": "error",
             "extension_path": ext_path,
-            "message": f"Clipboard copy failed: {str(e)}"
+            "message": f"Clipboard copy failed: {err}. Copy the path shown above by hand.",
         }
+
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip().splitlines()
+        return {
+            "status": "error",
+            "extension_path": ext_path,
+            "message": (
+                "Could not reach the clipboard on this machine. "
+                + (detail[0] if detail else "Copy the path shown above by hand.")
+            ),
+        }
+
+    return {
+        "status": "success",
+        "extension_path": ext_path,
+        "message": "Extension path copied to clipboard."
+    }
