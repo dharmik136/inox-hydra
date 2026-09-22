@@ -46,6 +46,46 @@ MAX_TEMPLATES_LIMIT = 500
 MAX_SYNC_TEMPLATES_BATCH = 1000
 ALLOWED_CDN_SCHEMES = ("https",)
 
+# Hosts this studio will fetch intelligence from.
+#
+# The scheme was pinned to https and the host was not, which left the endpoint
+# able to reach any https service the machine can see, including internal ones
+# and https://127.0.0.1:<port>. The status code and parse outcome are returned
+# to the caller, and fetched hook_text lands in the database where
+# /api/v1/intelligence/templates reads it back, so it was both a probe and a
+# way to put chosen text in front of the creator.
+#
+# The AI gateway got a host rule in the same pass and this did not, which is
+# the only reason it survived. Subdomains are matched explicitly rather than by
+# suffix, because "evil-githubusercontent.com" ends with the same characters as
+# the real host and a naive endswith would accept it.
+ALLOWED_CDN_HOSTS = (
+    "raw.githubusercontent.com",
+    "github.com",
+    "objects.githubusercontent.com",
+)
+
+
+def is_allowed_cdn_host(hostname):
+    """
+    Exact host match, case insensitive. No suffix matching.
+
+    The host configured through INTELLIGENCE_CDN_URL is accepted as well, so a
+    creator running their own mirror is not blocked by this. That is a
+    deliberate line: setting an environment variable requires access to the
+    machine already, whereas the cdn_url request parameter is reachable by
+    anything holding the studio token, and those are different levels of trust.
+    """
+    if not hostname:
+        return False
+
+    candidate = hostname.strip().lower()
+    if candidate in ALLOWED_CDN_HOSTS:
+        return True
+
+    configured = urllib.parse.urlparse(DEFAULT_CDN_URL).hostname
+    return bool(configured) and candidate == configured.strip().lower()
+
 FALLBACK_TEMPLATES = [
     # Taxonomy 1: Contrarian Truths & Paradigm Shifts
     {
@@ -442,6 +482,14 @@ class IntelligenceSyncEngine:
             return {
                 "status": "error",
                 "message": f"Disallowed URL scheme '{parsed.scheme}'. Only HTTPS is permitted."
+            }
+        if not is_allowed_cdn_host(parsed.hostname):
+            return {
+                "status": "error",
+                "message": (
+                    f"Disallowed intelligence host '{parsed.hostname}'. "
+                    f"Permitted: {', '.join(ALLOWED_CDN_HOSTS)}."
+                )
             }
 
         etag = None if force else self.get_cached_etag()
