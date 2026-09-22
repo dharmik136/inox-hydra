@@ -145,13 +145,46 @@ Rust compiles. That is CI's job, and the trade is deliberate.
 
 ## 8. Not done yet
 
-**Code signing.** Unsigned, the installer trips SmartScreen on download and
-some antivirus engines quarantine it outright, which is the exact failure the
-portable builder was written to avoid. The workflow has the hooks and prints a
-warning when no certificate is configured. Azure Trusted Signing is $9.99 a
-month and open to individual developers, which replaced the old $300 to $600 a
-year EV certificate with a hardware token. **This is the highest value
-remaining item.**
+**Code signing.** Wired, and off until you add credentials.
+
+Unsigned, the installer trips SmartScreen on download and some antivirus
+engines quarantine it outright, which is the exact failure the portable builder
+was written to avoid by refusing PyInstaller. Shipping a Rust binary only helps
+if that binary is signed.
+
+Signing runs through Tauri's `signCommand`, not as a step after the build. That
+ordering is the point: NSIS embeds the application executable inside the
+installer, so signing the finished artifacts would leave the embedded copy
+unsigned and SmartScreen would still complain once the installer ran.
+
+To turn it on, add these repository secrets:
+
+| Secret | Value |
+|---|---|
+| `AZURE_TENANT_ID` | directory tenant |
+| `AZURE_CLIENT_ID` | the signing identity |
+| `AZURE_CLIENT_SECRET` | its secret |
+| `AZURE_SIGNING_ENDPOINT` | `https://<region>.codesigning.azure.net` |
+| `AZURE_SIGNING_ACCOUNT` | signing account name |
+| `AZURE_SIGNING_PROFILE` | certificate profile name |
+
+The identity needs the **Artifact Signing Certificate Profile Signer** role.
+Microsoft renamed Trusted Signing to Artifact Signing in January 2026, and the
+role was renamed with it, so older guides name the previous one. It is about
+ten dollars a month and open to individual developers, which replaced the old
+several hundred a year plus a hardware token.
+
+A build with no credentials stays green and produces a working unsigned
+artifact, so a fork can still build. It emits a workflow warning rather than
+passing quietly, because an unsigned release shipping by accident is the
+failure mode worth designing against.
+
+The step that matters is **Verify The Signature**. It asks Windows itself,
+through `Get-AuthenticodeSignature`, whether the installer is validly signed,
+and fails the build when signing was configured but did not take. A
+`signCommand` that silently did nothing, an expired certificate, and a
+credential missing the signer role all produce a green build and an unsigned
+artifact otherwise.
 
 **Auto update.** `tauri-plugin-updater` is not enabled, because it requires a
 generated signing keypair and enabling it without one produces an application

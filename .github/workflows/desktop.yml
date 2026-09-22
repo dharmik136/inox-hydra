@@ -96,32 +96,98 @@ jobs:
       - name: Install Tauri CLI
         run: npm install --global @tauri-apps/cli@^2
 
-      # Code signing.
+      # ---------------------------------------------------------------------
+      # Code signing
       #
       # Unsigned, every download trips SmartScreen and some antivirus engines
       # quarantine the installer outright, which is the exact failure the
-      # portable builder was written to avoid. Set these repository secrets to
-      # turn it on; the build stays green without them so a fork can still
-      # produce a working, unsigned artifact.
+      # portable builder was written to avoid by refusing PyInstaller. Shipping
+      # a Rust binary only helps if that binary is signed.
       #
-      #   TAURI_SIGNING_PRIVATE_KEY           updater key, see docs
-      #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-      #   WINDOWS_CERTIFICATE                 base64 pfx, or use Azure signing
-      #   WINDOWS_CERTIFICATE_PASSWORD
-      - name: Report Signing Status
+      # Signing happens through Tauri's signCommand rather than as a step after
+      # the build, and the ordering is the reason. NSIS embeds the application
+      # executable inside the installer, so signing the artifacts afterwards
+      # would leave the embedded copy unsigned and SmartScreen would still
+      # complain once the installer ran. signCommand makes Tauri sign each
+      # binary as it produces it, before packaging.
+      #
+      # Preferred: Azure Artifact Signing, which Microsoft renamed from Trusted
+      # Signing in January 2026. It is ten dollars a month and open to
+      # individual developers, which replaced the old several hundred a year
+      # plus a hardware token. Set these repository secrets:
+      #
+      #   AZURE_TENANT_ID
+      #   AZURE_CLIENT_ID
+      #   AZURE_CLIENT_SECRET
+      #   AZURE_SIGNING_ENDPOINT        https://<region>.codesigning.azure.net
+      #   AZURE_SIGNING_ACCOUNT         the signing account name
+      #   AZURE_SIGNING_PROFILE         the certificate profile name
+      #
+      # The identity needs the Artifact Signing Certificate Profile Signer role
+      # (named Trusted Signing Certificate Profile Signer before the rename).
+      #
+      # A build without them stays green and produces a working unsigned
+      # artifact, so a fork can still build. It says so loudly, because a
+      # warning nobody reads is how an unsigned release ships by accident.
+      # ---------------------------------------------------------------------
+      - name: Decide Whether This Build Can Be Signed
+        id: signing
         shell: pwsh
         run: |
-          if ($env:WINDOWS_CERTIFICATE) {
-            "Signing: a certificate is configured."
+          $configured = [bool]$env:AZURE_CLIENT_ID -and [bool]$env:AZURE_SIGNING_ENDPOINT
+          "configured=$($configured.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          if ($configured) {
+            "Signing: Azure Artifact Signing is configured. The bundle will be signed."
           } else {
-            "Signing: NOT configured. This artifact will trip SmartScreen on download."
+            "::warning title=Unsigned build::No signing credentials are configured. This installer will trip SmartScreen on download and may be quarantined by antivirus. See docs/DESKTOP_SHELL.md for setup."
+            "Signing: NOT configured. Producing an unsigned artifact."
           }
         env:
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+
+      - name: Install The Signing Tool
+        if: steps.signing.outputs.configured == 'true'
+        run: cargo install trusted-signing-cli --locked
+
+      # Written at build time rather than committed, because tauri.conf.json is
+      # the same file a local unsigned build uses and must not carry a
+      # signCommand pointing at credentials that are not there. Tauri merges
+      # this over the base config.
+      - name: Configure Signing
+        if: steps.signing.outputs.configured == 'true'
+        shell: pwsh
+        run: |
+          $cfg = @{
+            bundle = @{
+              windows = @{
+                signCommand = "trusted-signing-cli -e $env:AZURE_SIGNING_ENDPOINT -a $env:AZURE_SIGNING_ACCOUNT -c $env:AZURE_SIGNING_PROFILE %1"
+              }
+            }
+          }
+          $cfg | ConvertTo-Json -Depth 8 | Out-File -FilePath "desktop/signing.json" -Encoding utf8
+          "Wrote desktop/signing.json (credentials are read from the environment, not written here)."
+        env:
+          AZURE_SIGNING_ENDPOINT: ${{ secrets.AZURE_SIGNING_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
+          AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
 
       - name: Build The Desktop Bundle
-        run: npm exec --yes -- tauri build --config desktop/src-tauri/tauri.conf.json
+        shell: pwsh
+        run: |
+          $buildArgs = @("tauri", "build", "--config", "desktop/src-tauri/tauri.conf.json")
+          if ("${{ steps.signing.outputs.configured }}" -eq "true") {
+            $buildArgs += @("--config", "desktop/signing.json")
+          }
+          npm exec --yes -- @buildArgs
         env:
+          # Read by trusted-signing-cli through DefaultAzureCredential.
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          # Updater signing, separate from code signing. Not yet enabled; see
+          # docs/DESKTOP_SHELL.md.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
@@ -133,6 +199,33 @@ jobs:
           if (-not $nsis) { throw "No installer was produced. Check the bundle step output." }
           "path=$($nsis.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "Built $($nsis.Name), $([math]::Round($nsis.Length / 1MB, 1)) MB"
+
+      # The check that matters. A signCommand that silently did nothing, an
+      # expired certificate, or a credential without the signer role all
+      # produce a build that looks successful and an artifact that is not
+      # signed. Asking Windows itself is the only way to know.
+      - name: Verify The Signature
+        shell: pwsh
+        run: |
+          $sig = Get-AuthenticodeSignature -FilePath "${{ steps.artifact.outputs.path }}"
+          "Installer status: $($sig.Status)"
+          if ($sig.SignerCertificate) {
+            "Signed by:         $($sig.SignerCertificate.Subject)"
+            "Expires:           $($sig.SignerCertificate.NotAfter)"
+          }
+
+          if ("${{ steps.signing.outputs.configured }}" -eq "true") {
+            if ($sig.Status -ne "Valid") {
+              throw "Signing was configured but the installer is not validly signed (status: $($sig.Status)). Refusing to publish a build that only looks signed."
+            }
+            "Signature verified."
+          } else {
+            if ($sig.Status -eq "Valid") {
+              "Unexpectedly signed without configuration. Investigate before publishing."
+            } else {
+              "::warning title=Unsigned artifact::This installer is unsigned and will warn on download."
+            }
+          }
 
       - name: Upload The Installer
         uses: actions/upload-artifact@v4

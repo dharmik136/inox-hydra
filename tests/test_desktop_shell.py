@@ -356,13 +356,13 @@ def test_the_workflow_builds_on_windows_and_verifies_the_payload():
 
 def test_the_workflow_says_when_signing_is_absent():
     """
-    An unsigned installer trips SmartScreen. The build stays green without a
-    certificate so a fork can still produce an artifact, which makes it easy to
+    An unsigned installer trips SmartScreen. The build stays green without
+    credentials so a fork can still produce an artifact, which makes it easy to
     not notice, so the log has to say so.
     """
     workflow = read(REPO_ROOT, ".github", "workflows", "desktop.yml")
     assert "SmartScreen" in workflow
-    assert "WINDOWS_CERTIFICATE" in workflow
+    assert "AZURE_SIGNING_ENDPOINT" in workflow
 
 
 def test_build_output_is_not_committed():
@@ -417,3 +417,56 @@ def test_the_shell_holds_the_zero_em_dash_invariant():
         content = io.open(path, encoding="utf-8").read()
         # Never typed literally, or this file would break the rule it enforces.
         assert chr(8212) not in content, f"{os.path.basename(path)} contains an em-dash"
+
+# ---------------------------------------------------------------------------
+# Signing
+# ---------------------------------------------------------------------------
+
+def test_signing_happens_before_the_installer_is_packaged():
+    """
+    NSIS embeds the application executable. Signing the finished artifacts
+    would leave that embedded copy unsigned, so the signature has to be applied
+    as Tauri produces each binary, which is what signCommand does.
+    """
+    workflow = read(REPO_ROOT, ".github", "workflows", "desktop.yml")
+    assert "signCommand" in workflow
+    assert "trusted-signing-cli" in workflow
+
+
+def test_an_unsigned_build_says_so_rather_than_passing_quietly():
+    workflow = read(REPO_ROOT, ".github", "workflows", "desktop.yml")
+    assert "::warning title=Unsigned build::" in workflow
+    assert "SmartScreen" in workflow
+
+
+def test_a_build_that_only_looks_signed_fails():
+    """
+    The check that matters. A signCommand that silently did nothing, an expired
+    certificate, or a credential without the signer role each produce a green
+    build and an unsigned artifact. Windows is asked directly.
+    """
+    workflow = read(REPO_ROOT, ".github", "workflows", "desktop.yml")
+    assert "Get-AuthenticodeSignature" in workflow
+    assert "Refusing to publish a build that only looks signed" in workflow
+
+
+def test_the_tracked_config_carries_no_sign_command():
+    """
+    A signCommand in tauri.conf.json would make every local build reach for a
+    signing service that is not configured. The workflow writes it separately.
+    """
+    config = read(TAURI, "tauri.conf.json")
+    assert "signCommand" not in config
+
+    ignored = read(REPO_ROOT, ".gitignore")
+    assert "desktop/signing.json" in ignored
+
+
+def test_no_signing_secret_is_committed():
+    """Credentials reach the signer through the environment, never a file."""
+    workflow = read(REPO_ROOT, ".github", "workflows", "desktop.yml")
+    for secret in ("AZURE_CLIENT_SECRET", "AZURE_TENANT_ID"):
+        for line in workflow.splitlines():
+            if secret in line and "secrets." not in line and not line.strip().startswith("#"):
+                raise AssertionError(f"{secret} appears outside a secrets reference: {line.strip()}")
+
