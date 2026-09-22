@@ -21,7 +21,10 @@ business; a file git is tracking is everybody's.
 """
 
 import os
+import pathlib
+import shutil
 import subprocess
+import tempfile
 
 import pytest
 
@@ -178,3 +181,91 @@ def test_personal_media_does_not_accumulate():
         f"ceiling of {KNOWN_PERSONAL_ASSETS}. These are personal content rather "
         f"than engine code. If you removed some, lower the ceiling."
     )
+
+# ---------------------------------------------------------------------------
+# What the BUILD copies, as opposed to what git tracks
+#
+# The tests above check the index, which is the right boundary for git and the
+# wrong one for a build. copy_application reads the working tree, so a file
+# that is correctly gitignored and correctly absent from a CI checkout is still
+# sitting beside the source on the machine of whoever runs a local build, and
+# was being copied straight into the distributable.
+#
+# That is how studio/extension.pem, the key that signs an update every
+# installed copy accepts as genuine, ended up in a locally built payload.
+# ---------------------------------------------------------------------------
+
+def _build_portable():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "build_portable", os.path.join(REPO_ROOT, "tools", "build_portable.py")
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_build_excludes_the_extension_signing_key():
+    """
+    The key that can push code to every installed copy must not be copyable
+    into an artifact, whether or not it happens to be present locally.
+    """
+    build = _build_portable()
+    assert "*.pem" in build.SECRET_PATTERNS
+    assert "*.key" in build.SECRET_PATTERNS
+    assert "*.pfx" in build.SECRET_PATTERNS
+
+
+def test_a_staged_private_key_stops_the_build():
+    """
+    The ignore patterns are the first line. This is the second, because the
+    cost of being wrong is unbounded and the cost of the check is a walk.
+    """
+    build = _build_portable()
+
+    staged = pathlib.Path(tempfile.mkdtemp(prefix="inox_hygiene_")) / "staged"
+    (staged / "studio").mkdir(parents=True)
+    (staged / "studio" / "extension.pem").write_text(
+        "-----BEGIN PRIVATE KEY-----\nnot a real key\n-----END PRIVATE KEY-----\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(SystemExit) as caught:
+        build.assert_no_secrets(str(staged))
+
+    message = str(caught.value)
+    assert "extension.pem" in message
+    assert "REFUSING TO BUILD" in message
+
+
+def test_the_public_ca_bundle_is_not_mistaken_for_a_secret():
+    """
+    certifi ships cacert.pem, the public trust roots every HTTPS request
+    depends on. It has the same extension as a private key and must still
+    ship, so the two are told apart on content rather than on the name.
+    """
+    build = _build_portable()
+
+    staged = pathlib.Path(tempfile.mkdtemp(prefix="inox_hygiene_")) / "staged"
+    (staged / "lib" / "certifi").mkdir(parents=True)
+    (staged / "lib" / "certifi" / "cacert.pem").write_text(
+        "-----BEGIN CERTIFICATE-----\npublic trust root\n-----END CERTIFICATE-----\n",
+        encoding="utf-8",
+    )
+
+    # Must not raise. Refusing this would break outbound HTTPS in the artifact.
+    build.assert_no_secrets(str(staged))
+
+
+def test_both_build_paths_run_the_secret_check():
+    """
+    The portable ZIP and the desktop installer carry the same payload. A check
+    on only one of them protects only one of them.
+    """
+    builder = open(os.path.join(REPO_ROOT, "tools", "build_portable.py"), encoding="utf-8").read()
+    staging = open(os.path.join(REPO_ROOT, "tools", "stage_desktop_payload.py"), encoding="utf-8").read()
+
+    assert "assert_no_secrets(target)" in builder, "the portable build does not verify what it staged"
+    assert "assert_no_secrets(PAYLOAD_ROOT)" in staging, "the desktop payload is not verified"
+

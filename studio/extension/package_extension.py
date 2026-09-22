@@ -57,6 +57,27 @@ def validate_manifest(manifest_path: str) -> dict:
     return manifest
 
 
+def _assert_extension_carries_no_secrets():
+    """
+    Refuses to pack if anything credential shaped is sitting in the extension
+    directory.
+
+    Reuses the portable builder's check rather than keeping a second list, so
+    there is one definition of what counts as a secret and it cannot drift.
+    """
+    import importlib.util
+
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    builder_path = os.path.join(repo_root, "tools", "build_portable.py")
+    if not os.path.isfile(builder_path):
+        return
+
+    spec = importlib.util.spec_from_file_location("build_portable", builder_path)
+    builder = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(builder)
+    builder.assert_no_secrets(EXT_DIR)
+
+
 def package_extension():
     """Validates files and compiles the deployment ZIP archive."""
     print("Packing Inox Hydra Chrome Extension...")
@@ -74,6 +95,15 @@ def package_extension():
 
     if missing_files:
         raise FileNotFoundError(f"Missing required extension files: {missing_files}")
+
+    # Nothing credential shaped goes to the Chrome Web Store.
+    #
+    # This archive is a public upload produced only on a developer machine, and
+    # the walk below is a denylist: everything that is not Python gets bundled.
+    # A key, a scratch .env, or a packed .crx dropped into studio/extension/
+    # would be published. The portable builder learned this lesson the hard way
+    # with studio/extension.pem, so the same check runs here.
+    _assert_extension_carries_no_secrets()
 
     # Build ZIP archive
     with zipfile.ZipFile(OUTPUT_ZIP, "w", zipfile.ZIP_DEFLATED) as zipf:

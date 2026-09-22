@@ -52,9 +52,101 @@ EMBED_URL = (
     f"python-{PYTHON_VERSION}-embed-amd64.zip"
 )
 
-# Copied into app/studio/. Everything else in studio/ is either user state,
-# test code, or build tooling, none of which belongs in a user artifact.
-STUDIO_EXCLUDE = {"data", "assets", "tests", "__pycache__", ".pytest_cache"}
+# Directories under studio/ that hold the BUILDER's own state rather than the
+# product. In a source checkout paths.get_app_home() resolves to studio/,
+# because studio/data exists, so the creator's database, backups, logs and
+# credential vault all materialise inside the tree that copy_application walks.
+#
+# backups/ is the one that mattered: support.create_backup() writes a zip there
+# containing the whole database plus every uploaded and generated image. Three
+# pre-migration database files sitting there right now hold 225 real leads and
+# 842 real interactions. Only the *.db pattern kept them out of the artifact,
+# and a .zip written by the documented `InoxHydra-CLI.bat backup` command would
+# not have matched it.
+STUDIO_EXCLUDE = {
+    "data", "assets", "tests", "__pycache__", ".pytest_cache",
+    "backups", "logs", "vault",
+}
+
+# Secrets that must never leave this machine inside an artifact.
+#
+# studio/extension.pem is the key that signs extension updates. Every installed
+# copy accepts an update signed with it as genuine, so shipping it hands any
+# recipient the ability to push code to every other user.
+#
+# tests/test_distribution_hygiene.py already refuses to let git track these, and
+# it is explicit that it checks the index rather than the working tree. That is
+# the right boundary for git and the wrong one for a build: copy_application
+# reads the working tree, so a file that is correctly gitignored and correctly
+# absent from CI is still sitting next to the source on the machine of whoever
+# generated it, and was being copied straight into the distributable.
+SECRET_PATTERNS = (
+    "*.pem", "*.key", "*.pfx", "*.p12", "*.crx",
+    "*.env", ".env", ".env.*",
+    "id_rsa", "id_rsa.*", "*.asc",
+)
+
+
+# Names that are a credential whatever is inside them.
+ALWAYS_SECRET = (
+    "*.pfx", "*.p12", "*.env", ".env", ".env.*", "id_rsa", "id_rsa.*",
+    # The local API bearer token. It has no extension, so every pattern that
+    # works by suffix misses it, and it is matched by name instead.
+    "*.token", "api_token",
+)
+
+# Markers that make a PEM a private key rather than a public certificate.
+#
+# This distinction has to be drawn on content, not on the extension. lib/certifi
+# ships cacert.pem, which is the public trust root bundle every HTTPS request
+# depends on, and refusing to ship it would break the product. The extension
+# signing key has the same extension and must never ship. Only the bytes tell
+# them apart.
+PRIVATE_KEY_MARKERS = (
+    b"PRIVATE KEY",
+    b"BEGIN OPENSSH PRIVATE KEY",
+    b"BEGIN PGP PRIVATE KEY",
+)
+
+
+def assert_no_secrets(staged_root):
+    """
+    Refuses to produce an artifact carrying a credential.
+
+    A second check rather than trusting the ignore patterns, because the cost
+    of being wrong is unbounded and the cost of the check is a directory walk.
+    Raises rather than warning: a build that prints a warning nobody reads and
+    then writes the ZIP anyway has not prevented anything.
+    """
+    import fnmatch
+
+    found = []
+    for root, _dirs, files in os.walk(staged_root):
+        for name in files:
+            relative = os.path.relpath(os.path.join(root, name), staged_root)
+            lowered = name.lower()
+
+            if any(fnmatch.fnmatch(lowered, pattern) for pattern in ALWAYS_SECRET):
+                found.append(f"{relative} (credential file)")
+                continue
+
+            # Certificate shaped files are judged on their contents.
+            if lowered.endswith((".pem", ".key", ".asc", ".crt")):
+                try:
+                    with open(os.path.join(root, name), "rb") as handle:
+                        head = handle.read(65536)
+                except OSError:
+                    continue
+                if any(marker in head for marker in PRIVATE_KEY_MARKERS):
+                    found.append(f"{relative} (contains a private key)")
+
+    if found:
+        raise SystemExit(
+            "REFUSING TO BUILD. The staged artifact contains credentials:\n  "
+            + "\n  ".join(found)
+            + "\n\nThese would ship to every person who installs this build. "
+              "Remove them from the source tree, or exclude them from the copy."
+        )
 
 LAUNCHER = r"""@echo off
 title Inox Hydra - LinkedIn Studio
@@ -65,6 +157,13 @@ echo   Inox Hydra - Local Creator Engine
 echo   100%% local. Zero cloud egress. Port 8000.
 echo ==========================================================
 echo.
+
+:: The maintainer surface stays off. devtools.is_dev_mode() treats the absence
+:: of this variable as off already, so this line is belt and braces: it also
+:: clears a value inherited from the shell that launched this one, which is the
+:: only way a shipped folder could otherwise come up with the element picker and
+:: the annotation ledger visible to a paying creator.
+set INOX_DEV_MODE=
 
 :: Already running? Reuse the existing server rather than starting a second.
 powershell -NoProfile -Command "$c = Test-NetConnection -ComputerName 127.0.0.1 -Port 8000 -InformationLevel Quiet -WarningAction SilentlyContinue; if ($c) { exit 0 } else { exit 1 }" >nul 2>&1
@@ -312,17 +411,26 @@ def vendor_dependencies(lib_dir):
 
 
 def copy_application(app_dir):
-    """Copies the studio package, excluding user state, tests and caches."""
+    """Copies the studio package, excluding user state, tests, caches and secrets."""
     target = os.path.join(app_dir, "studio")
     shutil.copytree(
         os.path.join(REPO_ROOT, "studio"), target,
-        ignore=shutil.ignore_patterns(*STUDIO_EXCLUDE, "*.pyc", "*.db", "*.db-wal", "*.db-shm"),
+        ignore=shutil.ignore_patterns(
+            *STUDIO_EXCLUDE, "*.pyc", "*.db", "*.db-wal", "*.db-shm",
+            # A backup zip carries the entire database and media tree, and a
+            # diagnostics json carries the environment report. Both are written
+            # by documented commands into directories excluded above, so these
+            # are the second line rather than the first.
+            "*.zip", "*.log", "*.token",
+            *SECRET_PATTERNS,
+        ),
     )
     # The data directory's ABSENCE is what selects user-profile state. Assert it.
     assert not os.path.exists(os.path.join(target, "data")), (
         "app/studio/data exists in the artifact. That would make the build write "
         "user state inside the install directory, so an update would destroy it."
     )
+    assert_no_secrets(target)
     log("app", f"copied studio package, {sum(len(f) for _, _, f in os.walk(target))} files")
     return target
 
@@ -368,7 +476,9 @@ def main():
 
     shutil.copytree(os.path.join(REPO_ROOT, "studio", "extension"),
                     os.path.join(staging, "extension"),
-                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "package_extension.py"))
+                    ignore=shutil.ignore_patterns(
+                        "__pycache__", "*.pyc", "package_extension.py",
+                        *SECRET_PATTERNS, *ALWAYS_SECRET))
     log("app", "copied unpacked extension for store submission and fallback")
 
     with open(os.path.join(staging, "InoxHydra.bat"), "w", encoding="utf-8", newline="\r\n") as f:
@@ -380,6 +490,28 @@ def main():
 
     shutil.copy2(os.path.join(REPO_ROOT, "create_desktop_shortcut.vbs"), staging)
     shutil.copy2(os.path.join(REPO_ROOT, "LICENSE"), staging)
+
+    # The application icon. Shipped at the staging root, beside the launcher,
+    # because that is what the shortcut and the tray both resolve against. Its
+    # absence is why this product wore the generic Windows icon, so the build
+    # refuses rather than quietly producing that artifact again.
+    icon_source = os.path.join(REPO_ROOT, "assets", "inox_hydra.ico")
+    assert os.path.isfile(icon_source), (
+        "assets/inox_hydra.ico is missing. Run tools/generate_icons.py before building, "
+        "or the shipped artifact falls back to the generic Windows application icon."
+    )
+    os.makedirs(os.path.join(staging, "assets"), exist_ok=True)
+    shutil.copy2(icon_source, os.path.join(staging, "assets", "inox_hydra.ico"))
+    log("app", "copied the application icon")
+
+    # Everything, immediately before the zip is written.
+    #
+    # copy_application checks what it copied, but four more trees are staged
+    # after it returns: the runtime, the vendored lib directory, the unpacked
+    # extension and the loose root files. A check that covers one of five is
+    # not a check, and the argument it is given is the part a grep over source
+    # text cannot verify.
+    assert_no_secrets(staging)
 
     log("zip", "compressing")
     archive = os.path.join(BUILD_ROOT, name + ".zip")

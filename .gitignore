@@ -96,3 +96,16 @@ studio/extension.pem
 # Packaged extension build output, reproducible from studio/extension/.
 *.crx
 studio/extension.crx
+
+# Desktop shell build output. The payload is staged from the portable builder
+# on every build, and the Rust target directory is enormous.
+desktop/payload/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+
+# The local API token lives here in a source checkout, because get_app_home()
+# resolves to studio/ whenever studio/data exists. It is a bearer credential
+# for this machine's studio, and it has no file extension, so nothing else
+# would have caught it. This is the same one-git-add-away shape as the
+# extension key.
+studio/vault/
