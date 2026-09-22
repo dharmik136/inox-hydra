@@ -1,4 +1,5 @@
 import re
+import unicodedata
 import math
 from typing import Any
 
@@ -12,6 +13,30 @@ def _normalize_text(text: Any) -> str:
     if not isinstance(text, str):
         text = str(text)
     return text[:MAX_FORMAT_TEXT_LENGTH]
+
+
+def _measurable_text(text: Any) -> str:
+    r"""
+    The text as a reader perceives it, with decoration stripped.
+
+    to_strikethrough and to_underline work by inserting a combining mark after
+    every character. Those marks are separate code points that \w does not
+    match, so re.findall(r"\b\w+\b", ...) counts each decorated letter as
+    its own word and len() doubles.
+
+    Measured: a 220 word post run through to_underline reported 880 words, and
+    an 80 character hook run through to_strikethrough reported 160 pre-fold
+    characters, which flipped mobile_safe from True to False. Both endpoints
+    ship, so a creator who struck a line through then asked for an audit was
+    told their fold-safe hook would truncate.
+
+    Only the combining-mark formatters cause this. Mathematical bold maps each
+    letter to a single code point, and measures correctly without help.
+    """
+    normalized = _normalize_text(text)
+    if not normalized:
+        return ""
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
 
 
 def to_sans_bold(text: Any) -> str:
@@ -174,8 +199,10 @@ def calculate_dwell_metrics(text: Any) -> dict:
     Calculates estimated reading velocity, dwell probability, and reading time:
     - 220 words per minute average reading velocity
     - 0.8s pause penalty per paragraph break
+
+    Measured on the undecorated text: see _measurable_text.
     """
-    text = _normalize_text(text)
+    text = _measurable_text(text)
     if not text.strip():
         return {
             "word_count": 0,
@@ -228,8 +255,22 @@ def clean_text_formatting(text: Any) -> str:
 
     em_dash = chr(0x2014)
     en_dash = chr(0x2013)
-    # Replace em-dashes and en-dashes with natural comma/pause
-    cleaned = text.replace(em_dash, ", ").replace(en_dash, ", ")
+    # The em-dash always becomes a pause, which is the anti-slop rule.
+    cleaned = text.replace(em_dash, ", ")
+
+    # The en-dash depends on what it is joining, because it does two jobs.
+    #
+    # Between numbers it is a range, and a comma changes the meaning:
+    # "Revenue grew 2021-2024" became "Revenue grew 2021, 2024" and
+    # "pages 10-20" became "pages 10, 20", which say different things.
+    #
+    # Between words it is a pause, and a comma is right:
+    # "first principles - always" reads better than a hyphen.
+    #
+    # Mapping every en-dash the same way is what got one of these wrong,
+    # whichever way it was mapped.
+    cleaned = re.sub(r"(?<=\d)\s*" + en_dash + r"\s*(?=\d)", "-", cleaned)
+    cleaned = cleaned.replace(en_dash, ", ")
     # Fix double/triple hyphens used as dashes
     cleaned = re.sub(r'(?<=\w)--+(?=\w)', ', ', cleaned)
     # Clean redundant spaces
@@ -248,8 +289,10 @@ def analyze_hook(text: Any) -> dict:
     - Truncation cutoff check for Mobile (3 lines / 210 chars) and Desktop (5 lines / 320 chars)
     - Pacing & whitespace density (penalizing walls of text)
     - Readability & punchiness score (0 - 100)
+
+    Measured on the undecorated text: see _measurable_text.
     """
-    text = _normalize_text(text)
+    text = _measurable_text(text)
     if not text.strip():
         return {
             "char_count": 0,
