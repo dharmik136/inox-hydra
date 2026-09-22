@@ -616,7 +616,14 @@ class ReverseCRMManager:
                     COALESCE(SUM(CASE WHEN interaction_type = 'COMMENT' THEN 1 ELSE 0 END), 0) as comments_count,
                     COALESCE(SUM(CASE WHEN interaction_type = 'LIKE' THEN 1 ELSE 0 END), 0) as likes_count,
                     COALESCE(SUM(CASE WHEN interaction_type = 'REPOST' THEN 1 ELSE 0 END), 0) as reposts_count,
-                    COALESCE(SUM(CASE WHEN comment_text LIKE '%?%' THEN 1 ELSE 0 END), 0) as questions_count
+                    -- Questions among COMMENTS, because that is what the rate
+                    -- is divided by. Counting a question mark on a LIKE or a
+                    -- REPOST row put it in the numerator and not the
+                    -- denominator, so question_inquiry_rate_pct could exceed
+                    -- 100 percent and be presented as a percentage anyway.
+                    COALESCE(SUM(CASE WHEN interaction_type = 'COMMENT'
+                                       AND comment_text LIKE '%?%'
+                                      THEN 1 ELSE 0 END), 0) as questions_count
                 FROM lead_interactions
             """)
             irow = cursor.fetchone()
