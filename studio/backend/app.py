@@ -1550,12 +1550,32 @@ async def toggle_queue_pause(payload: Optional[QueuePausePayload] = None):
     """Toggles or sets the automated publishing queue pause state."""
     current = native_scheduler.is_queue_paused()
     new_state = payload.paused if (payload and payload.paused is not None) else not current
-    native_scheduler.set_queue_paused(new_state)
-    await event_bus.publish("queue_status_changed", {"queue_paused": new_state})
-    msg = "Publishing queue paused." if new_state else "Publishing queue resumed."
+
+    # The write is checked, and the state is read back.
+    #
+    # This discarded the result, published queue_status_changed and returned
+    # success regardless. A failed write therefore told the creator their
+    # queue was paused while the dispatcher went on publishing, which is the
+    # one outcome this control exists to prevent.
+    wrote = native_scheduler.set_queue_paused(new_state)
+    actual_state = native_scheduler.is_queue_paused()
+
+    if not wrote or actual_state != new_state:
+        return {
+            "status": "error",
+            "queue_paused": actual_state,
+            "message": (
+                "Could not change the queue state. It is still "
+                + ("paused" if actual_state else "running")
+                + ". Check studio/logs for the database error."
+            ),
+        }
+
+    await event_bus.publish("queue_status_changed", {"queue_paused": actual_state})
+    msg = "Publishing queue paused." if actual_state else "Publishing queue resumed."
     return {
         "status": "success",
-        "queue_paused": new_state,
+        "queue_paused": actual_state,
         "message": msg
     }
 
