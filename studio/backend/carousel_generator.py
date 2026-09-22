@@ -154,7 +154,16 @@ def render_slide(
     avatar_bg = theme["accent"]
     draw.ellipse([64, 60, 114, 110], fill=avatar_bg)
     font_av = get_font(20, bold=True)
-    draw.text((76, 74), "DS", fill=(255, 255, 255), font=font_av)
+    # Initials from the author actually being rendered.
+    #
+    # This was the literal "DS", which survived the de-personalisation pass, so
+    # a slide footer reading "Jane Doe" carried a badge reading DS. Two
+    # different people on one slide is worse than no badge at all.
+    initials = "".join(
+        word[0] for word in str(safe_author or "").split() if word
+    )[:2].upper()
+    if initials:
+        draw.text((76, 74), initials, fill=(255, 255, 255), font=font_av)
 
     font_author = get_font(22, bold=True)
     draw.text((130, 64), safe_author, fill=theme["text"], font=font_author)

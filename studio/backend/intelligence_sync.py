@@ -537,7 +537,14 @@ class IntelligenceSyncEngine:
                     if not hook_text:
                         continue
                     try:
-                        velocity = float(h.get("velocity_score") or h.get("velocity") or 8.0)
+                        # `or` treats a genuine 0.0 as missing and substitutes
+                        # 8.0, so the worst performing hook in a bundle
+                        # outranked real 7.x entries. Absence is tested for,
+                        # not inferred from falsiness.
+                        raw_velocity = h.get("velocity_score")
+                        if raw_velocity is None:
+                            raw_velocity = h.get("velocity")
+                        velocity = float(8.0 if raw_velocity is None else raw_velocity)
                     except (ValueError, TypeError):
                         velocity = 8.0
                     cleaned_rows.append((
@@ -770,7 +777,14 @@ class IntelligenceSyncEngine:
                     if not hook_text:
                         continue
                     try:
-                        velocity = float(h.get("velocity_score") or h.get("velocity") or 8.0)
+                        # `or` treats a genuine 0.0 as missing and substitutes
+                        # 8.0, so the worst performing hook in a bundle
+                        # outranked real 7.x entries. Absence is tested for,
+                        # not inferred from falsiness.
+                        raw_velocity = h.get("velocity_score")
+                        if raw_velocity is None:
+                            raw_velocity = h.get("velocity")
+                        velocity = float(8.0 if raw_velocity is None else raw_velocity)
                     except (ValueError, TypeError):
                         velocity = 8.0
 

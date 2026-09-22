@@ -100,7 +100,16 @@ def test_a_429_without_a_retry_after_engages_the_ladder(monkeypatch, daemon):
 
 
 def test_a_successful_poll_clears_the_limit(monkeypatch, daemon):
-    """Once the window passes, normal pacing resumes rather than sticking."""
+    """
+    Once the window passes, normal pacing resumes rather than sticking.
+
+    Quiet hours are pinned off. They also lengthen the interval, so leaving
+    them live made this assertion depend on what time the suite ran: it passed
+    in the afternoon and failed at 23:00 against a quiet_delay of 120s, which
+    is correct behaviour and nothing to do with rate limiting.
+    """
+    monkeypatch.setattr(daemon, "is_quiet_hours", lambda *a, **k: False)
+
     _respond(monkeypatch, _Response(429, {"ok": False, "parameters": {"retry_after": 20}}))
     daemon.poll_once()
 

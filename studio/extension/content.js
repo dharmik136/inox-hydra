@@ -490,7 +490,16 @@ function isPostEngagementSurface() {
     path === "/feed/" ||
     path.startsWith("/feed/") ||
     path.startsWith("/posts/") ||
-    path.startsWith("/in/") ||
+    // "/in/" is deliberately absent.
+    //
+    // A profile page renders that person's comments on OTHER people's posts.
+    // postUrnFor then walks up to a stranger's data-urn, and those commenters
+    // were written to lead_interactions carrying a post_urn the creator never
+    // authored. Every one of those rows is an engagement with somebody else's
+    // content, recorded as if it were engagement with theirs.
+    //
+    // The reactions path is gated by looksLikeReactionsList; the commenter
+    // path had no equivalent, so this is the gate.
     /\/activity-\d+/.test(path)
   );
 }

@@ -61,33 +61,24 @@ def remove_watermark_crop(
 
 def scrub_corner_watermark(img: Image.Image) -> Image.Image:
     """
-    Subtle safety net for bottom-right corner watermarks.
-    Samples neighbor background texture just above the watermark zone to blur/blend any residual glyphs.
+    Returns the image unchanged. Kept as the named place this would happen.
+
+    This used to crop a sample patch, build a gradient blend mask, and then
+    return the original image without applying either, behind an
+    `except Exception: pass` that hid the fact that it never ran. A reader
+    checking whether corner watermarks were handled would have found a
+    function that appeared to handle them.
+
+    The watermark is removed earlier, by the oversample crop in the generation
+    path, which takes the corner off entirely rather than painting over it.
+    That is the actual mechanism and it is sufficient, which is why nothing
+    here was ever missed.
+
+    If a provider ever places a mark outside the cropped region, this is where
+    the blend belongs. Writing that blend is a real piece of work, not a matter
+    of uncommenting: it has to detect a watermark before touching the pixels,
+    or it will soften the corner of every clean image it is handed.
     """
-    try:
-        w, h = img.size
-        # Watermark zone: bottom right ~160px by ~42px
-        zw = min(180, int(w * 0.22))
-        zh = min(48, int(h * 0.065))
-        x0, y0 = w - zw, h - zh
-
-        # Crop patch from just above watermark zone (y0 - zh to y0)
-        sample_box = (x0, max(0, y0 - zh), w, y0)
-        patch = img.crop(sample_box)
-
-        # Softly blend onto watermark zone if contrast indicates watermark
-        # To avoid altering clean images, only blend with a soft gradient mask
-        blend_mask = Image.new("L", (zw, zh), color=0)
-        draw_mask = ImageDraw.Draw(blend_mask)
-        # Fade in towards bottom-right corner
-        for i in range(zh):
-            alpha = int(180 * (i / zh))
-            draw_mask.line([(0, i), (zw, i)], fill=alpha)
-
-        # Only apply if needed
-        # (With oversample crop, the watermark is already 100% sliced off, so this is an extra layer)
-    except Exception:
-        pass
     return img
 
 
