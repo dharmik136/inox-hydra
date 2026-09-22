@@ -54,6 +54,46 @@ class ImageStudioManager:
         self._lock = threading.Lock()
         self._worker_semaphore = threading.Semaphore(MAX_CONCURRENT_TASKS)
 
+    def _evict_locked(self):
+        """
+        Keeps the in-memory task table under its cap. Caller holds the lock.
+
+        Finished tasks go first, oldest first, because they have already been
+        reported. If that is not enough, live tasks go too, oldest first.
+
+        Only pruning finished tasks could not bound anything. The semaphore
+        limits how many generations run at once, not how many are submitted,
+        so a burst sits here as "processing" with nothing eligible to evict
+        and the dict grows without limit.
+
+        Evicting a live task is safe because get_progress falls back to the
+        generation_tasks table when the in-memory record is gone. This dict is
+        a cache, not the record.
+        """
+        if len(self._tasks) < MAX_STORED_TASKS:
+            return
+
+        def _age(key):
+            return self._tasks[key].get("created_at", 0)
+
+        target = MAX_STORED_TASKS - 10
+
+        finished = sorted(
+            (k for k, v in self._tasks.items()
+             if v.get("status") in ("completed", "failed")),
+            key=_age,
+        )
+        for key in finished:
+            if len(self._tasks) <= target:
+                break
+            self._tasks.pop(key, None)
+
+        if len(self._tasks) > target:
+            for key in sorted(self._tasks, key=_age):
+                if len(self._tasks) <= target:
+                    break
+                self._tasks.pop(key, None)
+
     def start_task(self, options: Optional[Dict[str, Any]]) -> str:
         """Initializes a new generation task and launches the background worker."""
         if not isinstance(options, dict):
@@ -82,15 +122,7 @@ class ImageStudioManager:
         }
 
         with self._lock:
-            # Prevent unbounded memory growth by pruning oldest finished tasks
-            if len(self._tasks) >= MAX_STORED_TASKS:
-                finished_keys = [
-                    k for k, v in self._tasks.items()
-                    if v.get("status") in ("completed", "failed")
-                ]
-                finished_keys.sort(key=lambda k: self._tasks[k].get("created_at", 0))
-                for k in finished_keys[:max(1, len(self._tasks) - MAX_STORED_TASKS + 10)]:
-                    self._tasks.pop(k, None)
+            self._evict_locked()
             self._tasks[task_id] = task_record
 
         # Persist initial record in SQLite if available
@@ -138,6 +170,15 @@ class ImageStudioManager:
 
         with self._lock:
             task = self._tasks.get(task_id)
+            # Snapshot, not a reference.
+            #
+            # The reference was taken under the lock and then six fields were
+            # read outside it, while a worker thread mutated the same dict. A
+            # poller could therefore see status "completed" from after the
+            # update and result_url None from before it, and render a finished
+            # image with no image.
+            if task is not None:
+                task = dict(task)
 
         if not task and get_db:
             conn = None

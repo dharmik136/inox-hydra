@@ -246,6 +246,11 @@ class SingleWriterActor:
                 continue
 
             if item is None:
+                # The stop sentinel. Anything queued before it was accepted by
+                # submit() and is a database write the caller is waiting on, so
+                # it is executed rather than abandoned. Stopping is not a
+                # reason to lose work that was already promised.
+                self._drain_remaining()
                 break
 
             func, args, kwargs, future = item
@@ -280,27 +285,80 @@ class SingleWriterActor:
         future = self.submit(func, *args, **kwargs)
         return future.result(timeout=timeout)
 
+    def _drain_remaining(self):
+        """Executes everything still queued. Called by the worker on shutdown."""
+        while True:
+            try:
+                item = self._queue.get_nowait()
+            except queue.Empty:
+                return
+            if item is None:
+                self._queue.task_done()
+                continue
+            func, args, kwargs, future = item
+            try:
+                if not future.done():
+                    future.set_result(func(*args, **kwargs))
+                    self.total_tasks_processed += 1
+            except Exception as exc:
+                self.total_errors += 1
+                logger.error(f"SingleWriterActor drain error: {exc}")
+                if not future.done():
+                    future.set_exception(exc)
+            finally:
+                self._queue.task_done()
+
     def stop(self, timeout: float = 3.0):
-        """Gracefully halts the single-writer actor thread and drains pending futures."""
-        self._is_running = False
+        """
+        Halts the actor, executing whatever was already queued.
+
+        The order matters. _is_running was cleared before the sentinel was
+        sent, so the loop could exit on its own condition with items still in
+        the queue, and the fallback below then failed those futures rather
+        than running them. Every one of them is a SQLite write a caller
+        submitted and is waiting on, so a graceful stop was silently
+        discarding writes.
+
+        The sentinel goes first and the flag is cleared after, so the worker
+        reaches the sentinel, drains what is left, and exits.
+        """
         try:
             self._queue.put_nowait(None)
         except queue.Full:
             pass
+
         if self._worker_thread.is_alive():
             self._worker_thread.join(timeout=timeout)
 
-        # Drain any remaining unprocessed tasks to avoid hanging callers
-        while not self._queue.empty():
+        self._is_running = False
+
+        # Anything still here means the worker did not finish within the
+        # timeout. Those callers are told, rather than left waiting forever.
+        #
+        # One failure no longer ends the loop: the old handler caught
+        # Exception and broke, so a single problem item left every future
+        # behind it unresolved and its caller blocked on .result().
+        while True:
             try:
                 item = self._queue.get_nowait()
+            except queue.Empty:
+                break
+            except Exception:
+                break
+            try:
                 if item is not None:
                     _, _, _, future = item
                     if not future.done():
-                        future.set_exception(RuntimeError("SingleWriterActor shut down before task execution."))
-                self._queue.task_done()
-            except (queue.Empty, Exception):
-                break
+                        future.set_exception(
+                            RuntimeError("SingleWriterActor shut down before task execution.")
+                        )
+            except Exception as exc:
+                logger.error(f"SingleWriterActor shutdown notification error: {exc}")
+            finally:
+                try:
+                    self._queue.task_done()
+                except Exception:
+                    pass
 
     def get_metrics(self) -> Dict[str, Any]:
         """Telemetry diagnostics for the single-writer queue."""

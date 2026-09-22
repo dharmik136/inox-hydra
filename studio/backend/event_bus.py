@@ -24,6 +24,12 @@ DEFAULT_BUFFER_SIZE = 100
 MAX_BUFFER_SIZE = 1000
 
 
+# Sentinel pushed onto a queue whose subscriber has been evicted, so its
+# generator wakes and terminates rather than blocking on a queue nobody will
+# ever write to again.
+_EVICTED = object()
+
+
 class EventBus:
     """Thread-safe event broadcaster supporting Server-Sent Events."""
 
@@ -117,10 +123,31 @@ class EventBus:
 
     async def subscribe(self, last_event_id: Optional[Any] = None) -> AsyncGenerator[Dict[str, Any], None]:
         """Subscribe to the event stream, replaying missed events if last_event_id is provided."""
-        # Evict oldest queue if exceeding max subscribers to prevent unbounded memory growth
+        # Evict the oldest subscriber, and WAKE it.
+        #
+        # Removing the queue from the list stopped delivery but left that
+        # client's generator blocked on queue.get() forever. From the browser
+        # it looked like a stream that had simply gone quiet: no error, no
+        # close, so no reconnect either. A sentinel gives the generator
+        # something to receive so it can finish and the client can reconnect.
         while len(self._subscribers) >= MAX_SUBSCRIBERS:
             oldest = self._subscribers.pop(0)
             self._dropped_counts.pop(id(oldest), None)
+            try:
+                oldest.put_nowait(_EVICTED)
+            except asyncio.QueueFull:
+                # A backed up client is exactly the one most likely to be
+                # evicted, so the full queue is the common case here, not the
+                # odd one. Drop its oldest event to make room: the sentinel is
+                # worth more to this client than one more event it is already
+                # too far behind to use.
+                try:
+                    oldest.get_nowait()
+                    oldest.put_nowait(_EVICTED)
+                except Exception:
+                    pass
+            except Exception:
+                pass
 
         try:
             self._loop = asyncio.get_running_loop()
@@ -147,6 +174,13 @@ class EventBus:
             # Stream live events
             while True:
                 event = await queue.get()
+                if event is _EVICTED:
+                    # This subscriber was displaced to make room for a newer
+                    # one. Ending the generator closes the response, which is
+                    # what lets the browser's EventSource reconnect. Returning
+                    # silently would look identical to a stream that had
+                    # simply gone quiet.
+                    return
                 yield event
         finally:
             if queue in self._subscribers:
