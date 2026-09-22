@@ -345,6 +345,49 @@ class LinkedInClient:
                 """, (dt, fl, dt, cn, dt, pv, dt,
                       imp, dt, lk, dt, cm, dt, sh, dt, eng_rate, dt,
                       row_period, row_precision))
+                # The rate is derived from the row, never from the payload.
+                #
+                # `engaged` above sums only the metrics THIS payload carried,
+                # and COALESCE cannot protect against it: the value is non
+                # NULL whenever impressions are present, so it always wins.
+                # An afternoon sync where only the reactions card had rendered
+                # therefore divided a partial numerator by the new impressions
+                # and overwrote a correct figure. An impressions only sync
+                # wrote 0.0 while the reaction columns still held real numbers.
+                #
+                # Measured: 1000/50/10/5 gives 6.5. A follow up carrying only
+                # impressions=1100 and likes=55 stored 5.0 against columns that
+                # implied 6.36, and an impressions only follow up stored 0.0
+                # against columns implying 5.83.
+                #
+                # Recomputing from the merged row makes the column and its
+                # inputs agree by construction, whatever a payload omitted.
+                cursor.execute("""
+                UPDATE analytics_daily
+                SET engagement_rate = CASE
+                        WHEN COALESCE(impressions, 0) > 0
+                        THEN ROUND(
+                            (COALESCE(reactions, 0) + COALESCE(comments, 0)
+                             + COALESCE(shares, 0)) * 100.0
+                            / impressions, 2)
+                        ELSE 0.0
+                    END
+                WHERE date = ?
+                """, (dt,))
+                # Same derivation as the series branch above: the stored row
+                # is the source of truth for its own rate.
+                cursor.execute("""
+                UPDATE analytics_daily
+                SET engagement_rate = CASE
+                        WHEN COALESCE(impressions, 0) > 0
+                        THEN ROUND(
+                            (COALESCE(reactions, 0) + COALESCE(comments, 0)
+                             + COALESCE(shares, 0)) * 100.0
+                            / impressions, 2)
+                        ELSE 0.0
+                    END
+                WHERE date = ?
+                """, (dt,))
                 saved_count += 1
 
             # Handle top-level profile views from identity profile responses
