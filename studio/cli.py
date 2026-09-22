@@ -262,6 +262,33 @@ def cmd_update(args) -> int:
     return 0
 
 
+def cmd_token(args) -> int:
+    """
+    Shows or rotates the token the API requires.
+
+    Normally nobody needs this: the interface receives the token as a cookie
+    and the extension reads it through the cookies permission. It exists for
+    the case where a client needs pairing by hand, and for revoking access if
+    the token is ever believed to have leaked.
+    """
+    from studio.backend import security
+
+    if args.action == "reset":
+        token = security.reset_token()
+        print("A new token was issued. Every paired client must be reconnected.")
+        print("Reload the studio in your browser, and reload the extension.")
+    else:
+        token = security.get_or_create_token()
+
+    _print_kv("API token", {
+        "token": token,
+        "header": security.TOKEN_HEADER,
+        "accepted origins": ", ".join(sorted(security.allowed_origins())) + ", chrome-extension://<id>",
+    })
+    print("\nTreat this like a password. Anything holding it can read and write your studio.\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="studio.cli",
@@ -300,6 +327,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("migrate", help="Show or apply pending schema migrations")
     p.add_argument("--dry-run", action="store_true", help="List pending work without applying")
     p.set_defaults(func=cmd_migrate)
+
+    p = sub.add_parser("token", help="Show or rotate this installation's API token")
+    p.add_argument("action", nargs="?", default="show", choices=["show", "reset"])
+    p.set_defaults(func=cmd_token)
 
     p = sub.add_parser("update", help="Check for a newer release")
     p.add_argument("action", nargs="?", default="check",

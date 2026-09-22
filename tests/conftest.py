@@ -52,6 +52,40 @@ def pytest_configure(config):
             sys.stderr.write(f"Notice: Sandbox database bootstrap encountered: {e}\n")
 
 
+# ---------------------------------------------------------------------------
+# Authenticated test client
+#
+# The API requires a loopback Host, a permitted Origin and a valid token on
+# every call. The suite has to satisfy all three the same way a real caller
+# does, because the alternative is a bypass inside the application that exists
+# only for tests, and a bypass that ships is a bypass an attacker can use.
+#
+# So instead of weakening the server, every TestClient is built pointing at the
+# real loopback origin and carrying the real token. A test that wants to prove
+# the boundary holds simply overrides these per request.
+# ---------------------------------------------------------------------------
+def _install_authenticated_test_client():
+    from fastapi.testclient import TestClient
+    from security import get_or_create_token, TOKEN_HEADER
+
+    original_init = TestClient.__init__
+
+    def patched_init(self, *args, **kwargs):
+        # Host must name loopback or the rebinding check refuses the request.
+        kwargs.setdefault("base_url", "http://127.0.0.1:8000")
+        headers = dict(kwargs.get("headers") or {})
+        headers.setdefault(TOKEN_HEADER, get_or_create_token())
+        kwargs["headers"] = headers
+        original_init(self, *args, **kwargs)
+
+    if not getattr(TestClient, "_inox_auth_patched", False):
+        TestClient.__init__ = patched_init
+        TestClient._inox_auth_patched = True
+
+
+_install_authenticated_test_client()
+
+
 def pytest_unconfigure(config):
     """Cleans up the temporary session test sandbox."""
     global _SESSION_TEST_HOME

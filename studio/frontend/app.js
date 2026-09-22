@@ -255,6 +255,10 @@ async function fetchActiveAIStatus() {
 }
 
 function switchTab(tabId) {
+  // Navigation is the breadcrumb that makes a bug report followable. Recorded
+  // whether or not anybody is looking, because the buffer has to already hold
+  // the steps by the time somebody decides to file.
+  if (typeof devtoolsRecordNavigation === "function") devtoolsRecordNavigation(tabId);
   document.querySelectorAll(".nav-link").forEach(l => l.classList.remove("active"));
   const activeLink = document.querySelector(`.nav-link[data-tab="${tabId}"]`);
   if (activeLink) activeLink.classList.add("active");
@@ -5940,6 +5944,10 @@ function startScreenInspection() {
   const overlay = document.getElementById("screen-picker-overlay");
   const exitBtn = document.getElementById("btn-exit-picker");
   if (!overlay) return;
+  // The picker is a maintainer tool. Even if something reached this function
+  // in a consumer build, the endpoint it feeds answers 404, so refusing here
+  // saves the user a crosshair cursor and a confusing modal.
+  if (!devtoolsState.enabled) return;
 
   isInspectingScreen = true;
   overlay.style.display = "block";
@@ -6081,6 +6089,13 @@ function openConceptAnnotationModal(target) {
   const rawSnippet = (target.innerText || target.value || target.getAttribute("placeholder") || "").trim();
   const snippet = rawSnippet ? (rawSnippet.length > 100 ? rawSnippet.slice(0, 97) + "..." : rawSnippet) : "(No visible text)";
 
+  // Location and evidence, gathered at the moment of the pick. Waiting until
+  // submit would let the console and network buffers drift while the modal is
+  // open, and the whole point is to capture what was on screen when the
+  // maintainer decided something was wrong.
+  const location = devtoolsResolveSection(target);
+  const capture = devtoolsCaptureBundle(target);
+
   selectedElementData = {
     tag: target.tagName,
     id: target.id || null,
@@ -6088,6 +6103,10 @@ function openConceptAnnotationModal(target) {
     selector: selector,
     snippet: snippet,
     tabName: tabName,
+    tabId: location.tabId,
+    sectionHint: location.sectionHint,
+    ancestorIds: location.ancestorIds,
+    capture: capture,
     boundingBox: {
       top: Math.round(rect.top),
       left: Math.round(rect.left),
@@ -6203,7 +6222,11 @@ function initConceptAnnotationEvents() {
           page_route: window.location.pathname || "/",
           bounding_box: selectedElementData.boundingBox,
           viewport_resolution: selectedElementData.viewport,
-          promote_to_backlog: promoteBacklog
+          promote_to_backlog: promoteBacklog,
+          tab_id: selectedElementData.tabId,
+          section_hint: selectedElementData.sectionHint,
+          ancestor_ids: selectedElementData.ancestorIds,
+          capture: selectedElementData.capture
         };
 
         const res = await fetch(`${API_BASE}/v1/internal-sheet/issues`, {
@@ -6219,6 +6242,17 @@ function initConceptAnnotationEvents() {
 
         const data = await res.json();
         showToast("Logged to Internal Sheet successfully!", "success");
+        // Two people annotating one broken card should end up looking at one
+        // ticket. The server matches on the reproduction fingerprint; this is
+        // where that gets said out loud instead of sitting in the response.
+        if (data.duplicates && data.duplicates.length > 0) {
+          const first = data.duplicates[0];
+          showToast(
+            `Same failure already filed as #${first.id} (${first.status})` +
+            (data.duplicates.length > 1 ? ` and ${data.duplicates.length - 1} more` : ""),
+            "info"
+          );
+        }
         if (promoteBacklog && data.issue && data.issue.gstack_task_id) {
           showToast(`Promoted to G-Stack Backlog (Task #${data.issue.gstack_task_id})`, "info");
         }
@@ -6455,3 +6489,444 @@ if (document.readyState === "loading") {
 
 
 
+
+/* =========================================================================
+   SECTION 19: DEVELOPER TOOLS CLIENT
+
+   Two jobs.
+
+   The first is the gate. Nothing in the maintainer surface renders until the
+   backend confirms dev mode, and the backend only confirms it when
+   INOX_DEV_MODE is set in the environment. Hiding the controls is the polite
+   half; the endpoints behind them answer 404 in a consumer build either way.
+
+   The second is context capture. A selector and a sentence do not reproduce a
+   bug. The tools engineers keep using all converged on the same answer: record
+   the console, the requests that failed, and the sequence of actions that led
+   there, then attach all of it to the annotation. Three ring buffers run from
+   load so that evidence already exists at the moment somebody decides to file.
+
+   The buffers are bounded here and bounded again on the server, which also
+   scrubs anything credential shaped before it reaches the database. A console
+   line in this application can contain a draft or a lead name, and an exported
+   sheet is a file somebody can mail.
+   ========================================================================= */
+
+const DEVTOOLS_CONSOLE_LIMIT = 50;
+const DEVTOOLS_NETWORK_LIMIT = 25;
+const DEVTOOLS_BREADCRUMB_LIMIT = 40;
+
+const devtoolsState = {
+  enabled: false,
+  capabilities: [],
+  console: [],
+  network: [],
+  breadcrumbs: [],
+  installed: false
+};
+
+function devtoolsPush(buffer, entry, limit) {
+  buffer.push(entry);
+  while (buffer.length > limit) buffer.shift();
+}
+
+function devtoolsNow() {
+  return new Date().toISOString();
+}
+
+/**
+ * Wraps console and fetch once, at load, regardless of dev mode.
+ *
+ * Deliberate: a maintainer who turns the surface on after seeing something odd
+ * would otherwise have an empty buffer at exactly the moment the evidence
+ * mattered. The cost is three bounded arrays. The original console and fetch
+ * are always called, so behaviour is unchanged whether or not anyone looks.
+ */
+function installDevtoolsRecorders() {
+  if (devtoolsState.installed) return;
+  devtoolsState.installed = true;
+
+  ["log", "info", "warn", "error"].forEach(function (level) {
+    const original = console[level];
+    if (typeof original !== "function") return;
+    console[level] = function () {
+      const args = Array.prototype.slice.call(arguments);
+      try {
+        const message = args.map(function (a) {
+          if (a instanceof Error) return a.name + ": " + a.message;
+          if (typeof a === "object" && a !== null) {
+            try { return JSON.stringify(a); } catch (e) { return "[unserialisable object]"; }
+          }
+          return String(a);
+        }).join(" ");
+        devtoolsPush(devtoolsState.console, { level: level, message: message, at: devtoolsNow() }, DEVTOOLS_CONSOLE_LIMIT);
+      } catch (e) {
+        // Recording must never be the reason a log call throws.
+      }
+      return original.apply(console, args);
+    };
+  });
+
+  window.addEventListener("error", function (event) {
+    devtoolsPush(devtoolsState.console, {
+      level: "error",
+      message: event.message + " (" + event.filename + ":" + event.lineno + ")",
+      at: devtoolsNow()
+    }, DEVTOOLS_CONSOLE_LIMIT);
+  });
+
+  window.addEventListener("unhandledrejection", function (event) {
+    const reason = event.reason;
+    devtoolsPush(devtoolsState.console, {
+      level: "error",
+      message: "Unhandled rejection: " + (reason && reason.message ? reason.message : String(reason)),
+      at: devtoolsNow()
+    }, DEVTOOLS_CONSOLE_LIMIT);
+  });
+
+  const originalFetch = window.fetch;
+  if (typeof originalFetch === "function") {
+    window.fetch = function () {
+      const args = Array.prototype.slice.call(arguments);
+      const started = performance.now();
+      const url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+      const method = (args[1] && args[1].method) || "GET";
+      return originalFetch.apply(window, args).then(function (response) {
+        // Only failures and slow calls are kept. A buffer full of successful
+        // polls tells a maintainer nothing and evicts the one line that would.
+        const ms = Math.round(performance.now() - started);
+        if (!response.ok || ms > 1500) {
+          devtoolsPush(devtoolsState.network, {
+            method: method, url: url, status: response.status, ms: ms, at: devtoolsNow()
+          }, DEVTOOLS_NETWORK_LIMIT);
+        }
+        return response;
+      }).catch(function (err) {
+        devtoolsPush(devtoolsState.network, {
+          method: method, url: url, status: "network-error",
+          ms: Math.round(performance.now() - started), at: devtoolsNow()
+        }, DEVTOOLS_NETWORK_LIMIT);
+        throw err;
+      });
+    };
+  }
+
+  // Breadcrumbs. Clicks carry the accessible name where there is one, because
+  // "clicked button.btn-primary" is not a step anybody can follow.
+  document.addEventListener("click", function (event) {
+    const el = event.target && event.target.closest
+      ? event.target.closest("button, a, [role=\"button\"], .nav-item, .mode-pill")
+      : null;
+    if (!el) return;
+    const label = (el.getAttribute("aria-label") || el.innerText || el.id || el.className || "").trim().slice(0, 80);
+    devtoolsPush(devtoolsState.breadcrumbs, { kind: "click", label: label, at: devtoolsNow() }, DEVTOOLS_BREADCRUMB_LIMIT);
+  }, true);
+}
+
+function devtoolsRecordNavigation(tabId) {
+  devtoolsPush(devtoolsState.breadcrumbs, { kind: "navigate", label: tabId || "", at: devtoolsNow() }, DEVTOOLS_BREADCRUMB_LIMIT);
+}
+
+/**
+ * Checks the picked element against the interface rules this project already
+ * committed to in docs/UI_CONVENTIONS.md and docs/ICON_SYSTEM.md.
+ *
+ * Deliberately shallow. It reports what can be established from the element
+ * itself without guessing, because a false accessibility finding costs more
+ * attention than a missing one.
+ */
+function devtoolsAuditElement(el) {
+  const findings = [];
+  if (!el) return findings;
+
+  const tag = el.tagName.toLowerCase();
+  const text = (el.innerText || "").trim();
+  const isControl = ["button", "a", "input", "select", "textarea"].indexOf(tag) !== -1 ||
+                    el.getAttribute("role") === "button";
+
+  if (isControl && !text && !el.getAttribute("aria-label") && !el.getAttribute("title")) {
+    findings.push({ rule: "control-has-no-accessible-name", detail: "<" + tag + "> exposes no text, aria-label or title" });
+  }
+
+  if (isControl) {
+    const rect = el.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0 && (rect.width < 24 || rect.height < 24)) {
+      findings.push({
+        rule: "target-below-24px",
+        detail: Math.round(rect.width) + "x" + Math.round(rect.height) + " is under the 24px minimum target size"
+      });
+    }
+  }
+
+  if (tag === "img" && !el.getAttribute("alt")) {
+    findings.push({ rule: "image-has-no-alt", detail: "img carries no alt attribute" });
+  }
+
+  if (tag === "svg" && !el.getAttribute("aria-hidden") && !el.getAttribute("aria-label")) {
+    findings.push({ rule: "svg-neither-hidden-nor-labelled", detail: "decorative svg should be aria-hidden, meaningful svg needs a label" });
+  }
+
+  const style = window.getComputedStyle(el);
+  if (style && style.overflow === "hidden" && el.scrollWidth > el.clientWidth + 2) {
+    findings.push({ rule: "text-is-clipped", detail: "content is " + el.scrollWidth + "px wide in a " + el.clientWidth + "px box" });
+  }
+
+  return findings;
+}
+
+/**
+ * The stable address of a picked element.
+ *
+ * `data-section` on an ancestor is the only part of this that survives a
+ * restyle, so it is looked for first. The ancestor id chain is a fallback the
+ * server records under an `unmapped:` prefix, which keeps an unlabelled region
+ * legible as a gap rather than dressed up as a section name.
+ */
+function devtoolsResolveSection(el) {
+  const labelled = el && el.closest ? el.closest("[data-section]") : null;
+  const ancestorIds = [];
+  let current = el;
+  while (current && current !== document.body && ancestorIds.length < 6) {
+    if (current.id) ancestorIds.push(current.id);
+    current = current.parentElement;
+  }
+  const pane = el && el.closest ? el.closest(".tab-pane, .studio-viewport, [id^=\"tab-\"]") : null;
+  return {
+    sectionHint: labelled ? labelled.getAttribute("data-section") : null,
+    ancestorIds: ancestorIds,
+    tabId: pane ? pane.id : null
+  };
+}
+
+function devtoolsCaptureBundle(el) {
+  return {
+    console: devtoolsState.console.slice(),
+    network: devtoolsState.network.slice(),
+    breadcrumbs: devtoolsState.breadcrumbs.slice(),
+    a11y: devtoolsAuditElement(el)
+  };
+}
+
+/**
+ * Asks the backend whether this build has a maintainer surface, and reveals it
+ * only on a yes. A failed request is treated as a no.
+ */
+async function initDevtoolsGate() {
+  const section = document.getElementById("devtools-drawer-section");
+  try {
+    const res = await fetch(API_BASE + "/v1/devtools/status");
+    if (!res.ok) throw new Error("unavailable");
+    const data = await res.json();
+    devtoolsState.enabled = Boolean(data.dev_mode);
+    devtoolsState.capabilities = data.capabilities || [];
+  } catch (err) {
+    devtoolsState.enabled = false;
+  }
+
+  if (section) section.hidden = !devtoolsState.enabled;
+  if (!devtoolsState.enabled) return;
+
+  initDevtoolsInspectors();
+  refreshDevtoolsSchemaBadge();
+}
+
+function devtoolsRenderOutput(payload) {
+  const out = document.getElementById("devtools-output");
+  if (!out) return;
+  out.hidden = false;
+  out.textContent = JSON.stringify(payload, null, 2);
+}
+
+async function devtoolsFetchInto(path, key) {
+  try {
+    const res = await fetch(API_BASE + "/v1/devtools/" + path);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+    devtoolsRenderOutput(data[key] || data);
+  } catch (err) {
+    devtoolsRenderOutput({ error: String(err && err.message ? err.message : err) });
+  }
+}
+
+function initDevtoolsInspectors() {
+  const stateBtn = document.getElementById("btn-devtools-state");
+  const migBtn = document.getElementById("btn-devtools-migrations");
+  const covBtn = document.getElementById("btn-devtools-coverage");
+
+  if (stateBtn) stateBtn.addEventListener("click", function () { devtoolsFetchInto("state", "state"); });
+  if (migBtn) migBtn.addEventListener("click", function () { devtoolsFetchInto("migrations", "migrations"); });
+  if (covBtn) covBtn.addEventListener("click", function () { devtoolsFetchInto("coverage", "coverage"); });
+}
+
+async function refreshDevtoolsSchemaBadge() {
+  const badge = document.getElementById("devtools-schema-badge");
+  if (!badge) return;
+  try {
+    const res = await fetch(API_BASE + "/v1/devtools/migrations");
+    if (!res.ok) return;
+    const data = await res.json();
+    const m = data.migrations || {};
+    badge.textContent = m.up_to_date
+      ? "Schema " + m.current_version
+      : "Schema " + m.current_version + " of " + m.expected_version;
+  } catch (err) {
+    badge.textContent = "Schema ?";
+  }
+}
+
+installDevtoolsRecorders();
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initDevtoolsGate);
+} else {
+  initDevtoolsGate();
+}
+
+/* =========================================================================
+   SECTION 20: INSTALLABILITY
+
+   Registers the service worker so Edge and Chrome will offer to install the
+   studio as an application. The worker caches nothing; see sw.js for why.
+
+   Registration is deliberately quiet. If it fails, the studio still works
+   exactly as before and the only thing lost is the install prompt, which is
+   not worth a console error in front of a user.
+   ========================================================================= */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("sw.js").catch(function () {
+      // Nothing to do. The studio does not depend on this.
+    });
+  });
+}
+
+/* =========================================================================
+   SECTION 21: DESKTOP INTEGRATION CONTROLS
+
+   Two settings that decide whether this reads as an application.
+
+   Autostart state is always read back from the server after a change rather
+   than assumed from the click. Creating a Startup shortcut can fail for
+   ordinary reasons, a locked down profile or a roaming folder that is not
+   there yet, and a switch that says "On" while nothing happens at login is
+   worse than one that refuses and says why.
+
+   The install button only appears if the browser actually offers to install.
+   Chrome and Edge fire beforeinstallprompt when the page qualifies; Firefox
+   never does. Rendering a button that cannot work would be a lie, so the
+   markup ships hidden and this reveals it.
+   ========================================================================= */
+
+let deferredInstallPrompt = null;
+
+async function loadDesktopIntegration() {
+  try {
+    const res = await fetch(API_BASE + "/v1/desktop/integration");
+    if (!res.ok) return;
+    const data = await res.json();
+    renderDesktopIntegration(data.desktop || {});
+  } catch (err) {
+    // Settings still render. This section simply stays as shipped.
+  }
+}
+
+function renderDesktopIntegration(state) {
+  const onBtn = document.getElementById("btn-autostart-on");
+  const offBtn = document.getElementById("btn-autostart-off");
+  const explainer = document.getElementById("autostart-explainer");
+  if (!onBtn || !offBtn) return;
+
+  const enabled = Boolean(state.autostart_enabled);
+  onBtn.classList.toggle("active", enabled);
+  offBtn.classList.toggle("active", !enabled);
+
+  const available = Boolean(state.autostart_available);
+  onBtn.disabled = !available;
+  offBtn.disabled = !available;
+
+  if (explainer) {
+    if (!available) {
+      explainer.textContent = state.supported
+        ? "Unavailable. No launcher script was found next to the application."
+        : "Available on Windows only.";
+    } else if (enabled) {
+      explainer.textContent =
+        "On. A shortcut in your Startup folder launches the studio when you log in. " +
+        "You can also remove it from there by hand.";
+    } else {
+      explainer.textContent = "Off. The studio runs only when you launch it.";
+    }
+  }
+}
+
+async function setAutostart(enabled) {
+  try {
+    const res = await fetch(API_BASE + "/v1/desktop/autostart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: enabled })
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const data = await res.json();
+
+    // Rendered from what the server reports, never from what was requested.
+    renderDesktopIntegration(data.desktop || {});
+
+    const result = data.result || {};
+    if (enabled && !result.enabled) {
+      showToast("Could not start with Windows: " + (result.reason || "unknown reason"), "error");
+    } else if (enabled) {
+      showToast("The studio will start when you log in.", "success");
+    } else {
+      showToast("The studio will no longer start automatically.", "info");
+    }
+  } catch (err) {
+    showToast("Could not change the startup setting.", "error");
+    loadDesktopIntegration();
+  }
+}
+
+function initDesktopIntegration() {
+  const onBtn = document.getElementById("btn-autostart-on");
+  const offBtn = document.getElementById("btn-autostart-off");
+  const installBtn = document.getElementById("btn-install-app");
+
+  if (onBtn) onBtn.addEventListener("click", function () { setAutostart(true); });
+  if (offBtn) offBtn.addEventListener("click", function () { setAutostart(false); });
+
+  // Captured so the install can be offered from Settings, where somebody
+  // looking for it would go, rather than only from the browser's own bar.
+  window.addEventListener("beforeinstallprompt", function (event) {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    if (installBtn) installBtn.hidden = false;
+  });
+
+  if (installBtn) {
+    installBtn.addEventListener("click", async function () {
+      if (!deferredInstallPrompt) return;
+      deferredInstallPrompt.prompt();
+      try {
+        await deferredInstallPrompt.userChoice;
+      } catch (err) {
+        // Dismissed. Nothing to report.
+      }
+      // A prompt can only be used once.
+      deferredInstallPrompt = null;
+      installBtn.hidden = true;
+    });
+  }
+
+  window.addEventListener("appinstalled", function () {
+    showToast("LinkedIn Studio installed. It now has its own window and icon.", "success");
+    if (installBtn) installBtn.hidden = true;
+  });
+
+  loadDesktopIntegration();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initDesktopIntegration);
+} else {
+  initDesktopIntegration();
+}

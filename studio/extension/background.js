@@ -1,8 +1,85 @@
 // -------------------------------------------------------------
 // LinkedIn Studio Bridge: Background Service Worker (Manifest V3)
 // -------------------------------------------------------------
-const LOCAL_API_AUTH = "http://127.0.0.1:8000/api/auth/cookies";
-const LOCAL_INGEST_URL = "http://127.0.0.1:8000/api/analytics/ingest";
+const STUDIO_ORIGIN = "http://127.0.0.1:8000";
+
+// Both hosts the studio publishes. Cookies are scoped by host, so a creator
+// who opened the studio at localhost has the token stored under "localhost"
+// and nothing under "127.0.0.1". Checking only one meant the worker found no
+// token, sent every capture request unauthenticated, got a 401 it never
+// inspected, and LinkedIn capture failed silently and permanently.
+const STUDIO_COOKIE_ORIGINS = [
+  "http://127.0.0.1:8000",
+  "http://localhost:8000"
+];
+const LOCAL_API_AUTH = STUDIO_ORIGIN + "/api/auth/cookies";
+const LOCAL_INGEST_URL = STUDIO_ORIGIN + "/api/analytics/ingest";
+
+const STUDIO_TOKEN_COOKIE = "inox_studio_token";
+const STUDIO_TOKEN_HEADER = "X-Inox-Token";
+
+// Paths the content script is permitted to reach through this worker.
+//
+// The content script runs inside the LinkedIn page, which means anything else
+// running in that page can send it messages. An exact allowlist keeps a
+// compromised or hostile page script from using this worker as a general
+// purpose proxy into the creator's local database.
+const RELAYABLE_PATHS = new Set([
+  "/api/analytics/ingest",
+  "/api/v1/posts/bind-urn",
+  "/api/v1/crm/interactions/ingest"
+]);
+
+/**
+ * Reads the studio's access token.
+ *
+ * The token is issued to 127.0.0.1 as an HttpOnly, SameSite=Strict cookie, so
+ * neither another site nor a script on the studio page itself can read it.
+ * chrome.cookies.get is a privileged API and reads HttpOnly cookies given the
+ * host permission the user granted at install, which is why this works and a
+ * page script would not.
+ */
+function getStudioToken() {
+  return new Promise((resolve) => {
+    let remaining = STUDIO_COOKIE_ORIGINS.length;
+    let found = null;
+
+    const settle = () => {
+      remaining -= 1;
+      if (found || remaining === 0) resolve(found);
+    };
+
+    try {
+      STUDIO_COOKIE_ORIGINS.forEach((origin) => {
+        chrome.cookies.get({ url: origin, name: STUDIO_TOKEN_COOKIE }, (cookie) => {
+          if (!found && cookie && cookie.value) found = cookie.value;
+          settle();
+        });
+      });
+    } catch (err) {
+      resolve(null);
+    }
+  });
+}
+
+/**
+ * The only way this extension talks to the studio.
+ *
+ * Every call goes out from the service worker, so the request carries
+ * Origin: chrome-extension://<id> rather than https://www.linkedin.com. That
+ * distinction is the whole point: the studio trusts this extension, and must
+ * not trust arbitrary scripts running on a page the creator happens to visit.
+ */
+async function studioFetch(path, options) {
+  const token = await getStudioToken();
+  const headers = Object.assign(
+    { "Content-Type": "application/json" },
+    (options && options.headers) || {}
+  );
+  if (token) headers[STUDIO_TOKEN_HEADER] = token;
+
+  return fetch(STUDIO_ORIGIN + path, Object.assign({}, options || {}, { headers }));
+}
 
 // Sensitive authentication token keys to sanitize from telemetry
 const SENSITIVE_AUTH_KEYS = new Set([
@@ -68,15 +145,21 @@ async function syncActiveSessionToStudio() {
     const jsessionid = await getCookie("JSESSIONID");
 
     if (li_at && jsessionid) {
-      await fetch(LOCAL_API_AUTH, {
+      const response = await studioFetch("/api/auth/cookies", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           li_at: li_at.value,
           JSESSIONID: jsessionid.value
         })
       });
-      console.log("[Studio Bridge] Background session sync completed successfully.");
+      if (response && !response.ok) {
+        console.warn(
+          "[Studio Bridge] The studio refused the session sync (" + response.status +
+          "). If this is 401 the extension has no token: open the studio once so it issues one."
+        );
+      } else {
+        console.log("[Studio Bridge] Background session sync completed successfully.");
+      }
     }
   } catch (err) {
     console.debug("[Studio Bridge] Background sync skipped (server offline or not logged in):", err.message);
@@ -103,9 +186,8 @@ async function forwardPassiveTelemetry(eventType, metadata) {
       metadata: metadata || {}
     });
 
-    await fetch(LOCAL_INGEST_URL, {
+    await studioFetch("/api/analytics/ingest", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(cleanPayload)
     });
     console.log(`[Studio Bridge] Passive telemetry dispatched for ${eventType}`);
@@ -172,11 +254,40 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // Relay for the content script.
+  //
+  // The content script can no longer call the studio directly, because a
+  // request it makes carries the LinkedIn origin and the studio refuses that.
+  // It asks this worker instead, and only for paths on the allowlist.
+  if (message.action === "STUDIO_API") {
+    const path = message.path || "";
+    if (!RELAYABLE_PATHS.has(path)) {
+      sendResponse({ status: "error", error: "path not permitted: " + path });
+      return true;
+    }
+    studioFetch(path, {
+      method: message.method || "POST",
+      body: message.body ? JSON.stringify(sanitizeTelemetryPayload(message.body)) : undefined
+    })
+      .then(res => res.json().catch(() => ({})).then(data => ({ ok: res.ok, httpStatus: res.status, data })))
+      // The HTTP code is reported as httpStatus, never as status. Spreading a
+      // result carrying its own `status` over this object silently replaced
+      // the literal "success" with the number 200, and the content script
+      // tests `response.status !== "success"`, so every relayed capture
+      // resolved to null while appearing to succeed.
+      .then(result => sendResponse({
+        status: result.ok ? "success" : "error",
+        httpStatus: result.httpStatus,
+        data: result.data
+      }))
+      .catch(err => sendResponse({ status: "error", error: err.message }));
+    return true;
+  }
+
   if (message.action === "INGEST_ANALYTICS") {
     const cleanPayload = sanitizeTelemetryPayload(message.payload);
-    fetch(LOCAL_INGEST_URL, {
+    studioFetch("/api/analytics/ingest", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(cleanPayload)
     })
       .then(res => res.json())

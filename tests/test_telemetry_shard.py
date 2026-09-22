@@ -174,7 +174,10 @@ def test_extension_background_observer_contract():
     assert "voyager/api/identity/dash/creatorAnalytics" in content
     assert "sanitizeTelemetryPayload" in content
     assert "forwardPassiveTelemetry" in content
-    assert "http://127.0.0.1:8000/api/analytics/ingest" in content
+    # The literal URL moved into studioFetch, which attaches the token and
+    # sends from the extension origin rather than the LinkedIn page.
+    assert 'STUDIO_ORIGIN = "http://127.0.0.1:8000"' in content
+    assert 'studioFetch("/api/analytics/ingest"' in content
 
     # Zero em-dash invariant
     assert "\u2014" not in content

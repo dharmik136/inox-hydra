@@ -239,6 +239,57 @@ def _migrate_post_identity(cursor: sqlite3.Cursor) -> None:
     )
 
 
+def _migrate_annotation_context(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 8:
+    Gives an annotation everything needed to reproduce what it describes.
+
+    Until now a record held a selector and two sentences. A selector stops
+    resolving the first time somebody restyles the card it pointed at, and two
+    sentences do not tell a maintainer which build, which schema, or which
+    failing request was on screen when it was written.
+
+      screen_key       the tab pane the element lived in, which survives a
+                       restyle because it is an identity, not a path
+      section_key      the nearest labelled region, or an 'unmapped:' marker so
+                       an unlabelled area reads as a gap instead of a guess
+      console_capture  the console ring buffer at the moment of capture
+      network_capture  requests that failed or ran slow, same window
+      breadcrumbs      the actions leading up to it, which is the part that
+                       makes an intermittent bug reproducible
+      env_snapshot     app version, schema version, platform
+      a11y_findings    contrast, label and target size checks on the element
+      repro_hash       collides when two reports describe the same failure
+
+    All capture columns hold JSON written by devtools.normalize_capture, which
+    bounds and scrubs them first. Nothing here is read by a consumer build.
+    """
+    cursor.execute("PRAGMA table_info(internal_sheet_issues)")
+    columns = {row[1] for row in cursor.fetchall()}
+
+    for column in (
+        "screen_key",
+        "section_key",
+        "console_capture",
+        "network_capture",
+        "breadcrumbs",
+        "env_snapshot",
+        "a11y_findings",
+        "repro_hash",
+    ):
+        if column not in columns:
+            cursor.execute(f"ALTER TABLE internal_sheet_issues ADD COLUMN {column} TEXT")
+
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_internal_sheet_screen "
+        "ON internal_sheet_issues(screen_key, section_key)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_internal_sheet_repro "
+        "ON internal_sheet_issues(repro_hash) WHERE repro_hash IS NOT NULL"
+    )
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -250,6 +301,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (5, "Record observation window and precision on analytics_daily", _migrate_observation_window),
     (6, "Record capture context on lead_interactions", _migrate_capture_context),
     (7, "Give a post the activity URN and fingerprint that identify it", _migrate_post_identity),
+    (8, "Record screen, section and reproduction context on internal sheet issues", _migrate_annotation_context),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

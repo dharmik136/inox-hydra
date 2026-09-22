@@ -5720,3 +5720,30 @@ input:checked + .toggle-slider:before {
   text-align: center;
   padding: 26px 16px;
 }
+
+/* -------------------------------------------------------------------------
+   Developer tools output
+
+   Monospace, scrollable, and capped in height. Inspector payloads are JSON and
+   occasionally long, and a drawer card that grows without a ceiling pushes the
+   rest of the maintainer surface off screen.
+   ------------------------------------------------------------------------- */
+.devtools-output {
+  margin: 10px 0 0;
+  padding: 10px;
+  max-height: 260px;
+  overflow: auto;
+  background: #0B0F1A;
+  border: 1px solid #1E293B;
+  border-radius: 8px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #94A3B8;
+  white-space: pre;
+  tab-size: 2;
+}
+
+.devtools-output[hidden] {
+  display: none;
+}

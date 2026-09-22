@@ -3,6 +3,38 @@
 // Interacts with LinkedIn DOM to auto-inject formatted posts
 // -------------------------------------------------------------
 
+
+/**
+ * Sends a studio API call through the background service worker.
+ *
+ * This content script runs inside the LinkedIn page, so a fetch made from here
+ * carries Origin: https://www.linkedin.com. The studio refuses that origin on
+ * purpose, because trusting it would mean trusting every other script on the
+ * page, including whatever LinkedIn's ad and analytics vendors inject. The
+ * worker holds the token and speaks from the extension's own origin instead.
+ *
+ * Resolves to the parsed body, or null when the studio is offline. Callers
+ * treat a failure as "not captured", never as an error worth interrupting for.
+ */
+function studioApi(path, body, method) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage(
+        { action: "STUDIO_API", path: path, method: method || "POST", body: body },
+        (response) => {
+          if (chrome.runtime.lastError || !response || response.status !== "success") {
+            resolve(null);
+            return;
+          }
+          resolve(response.data || {});
+        }
+      );
+    } catch (err) {
+      resolve(null);
+    }
+  });
+}
+
 console.log("[LinkedIn Studio Bridge] Content script active on linkedin.com");
 
 // Listen for messages from Side Panel or Background
@@ -242,10 +274,7 @@ function extractAndSyncAnalytics() {
     const period = detectAnalyticsPeriod();
     const today = new Date().toISOString().slice(0, 10);
 
-    fetch("http://127.0.0.1:8000/api/analytics/ingest", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    studioApi("/api/analytics/ingest", {
         period_label: period,
         precision: precision,
         series: [{
@@ -257,8 +286,6 @@ function extractAndSyncAnalytics() {
           followers: followers
         }]
       })
-    })
-      .then(r => r.json())
       .then(result => {
         if (result && result.status === "window_mismatch") {
           showInPageToast(
@@ -359,12 +386,7 @@ function maybeBindPostUrn() {
   if (!body) return;
   lastBoundUrn = urn;
 
-  fetch("http://127.0.0.1:8000/api/v1/posts/bind-urn", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ activity_urn: urn, post_text: body })
-  })
-    .then(r => r.json())
+  studioApi("/api/v1/posts/bind-urn", { activity_urn: urn, post_text: body })
     .then(result => {
       if (result && result.status === "bound") {
         showInPageToast(
@@ -562,11 +584,7 @@ function observeAndCaptureEngagers() {
 
     // 1. Batch ingest into the leads store.
     writes.push(
-      fetch("http://127.0.0.1:8000/api/analytics/ingest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ leads: identified })
-      }).then(r => r.ok)
+      studioApi("/api/analytics/ingest", { leads: identified }).then(r => r !== null)
     );
 
     // 2. Per-person CRM ingest, which carries the interaction and its context.
@@ -576,10 +594,7 @@ function observeAndCaptureEngagers() {
         commentOnly = lead.notes.replace(/^Commented:\s*"/, "").replace(/"$/, "");
       }
       writes.push(
-        fetch("http://127.0.0.1:8000/api/v1/crm/interactions/ingest", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        studioApi("/api/v1/crm/interactions/ingest", {
             full_name: lead.name,
             // Only a real profile URL identifies a person. This used to fall
             // back to a urn:li:person: minted from a hash of their display
@@ -596,8 +611,7 @@ function observeAndCaptureEngagers() {
             // The post this happened on is not known yet. A fixed string here
             // ended up quoted in every generated message.
             post_topic: null
-          })
-        }).then(r => r.ok)
+          }).then(r => r !== null)
       );
     });
 

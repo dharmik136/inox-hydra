@@ -219,6 +219,41 @@ def create_desktop_shortcuts(
     return created_shortcuts
 
 
+DEFAULT_TARGET_URL = "https://www.linkedin.com/feed/"
+
+# Hosts this launcher will open. Everything else, including anything that could
+# be read as a Chromium switch, falls back to the feed.
+ALLOWED_TARGET_HOSTS = ("www.linkedin.com", "linkedin.com")
+
+
+def _validated_target(target_url):
+    """
+    Returns a URL that is safe to hand to a browser as argv.
+
+    Falls back to the LinkedIn feed rather than raising, because this is the
+    last step of a user action and refusing outright would present a creator
+    with an error for something they did not type. Anything rejected here was
+    not a URL a person entered, since nothing in the interface sends one.
+    """
+    from urllib.parse import urlsplit
+
+    candidate = (target_url or "").strip()
+    if not candidate or candidate.startswith("-"):
+        return DEFAULT_TARGET_URL
+
+    try:
+        parts = urlsplit(candidate)
+    except ValueError:
+        return DEFAULT_TARGET_URL
+
+    if parts.scheme != "https":
+        return DEFAULT_TARGET_URL
+    if parts.hostname not in ALLOWED_TARGET_HOSTS:
+        return DEFAULT_TARGET_URL
+
+    return candidate
+
+
 def launch_browser_with_extension(
     browser_id: str = "auto",
     target_url: str = "https://www.linkedin.com/feed/"
@@ -250,10 +285,21 @@ def launch_browser_with_extension(
     ext_path = get_extension_dir()
     exe_path = selected["path"]
 
+    # Chromium reads any argv element beginning with "-" as a switch, wherever
+    # it sits in the list. So a caller supplied URL is not data here, it is a
+    # command line, and a value like "--gpu-launcher=cmd.exe /c whatever" makes
+    # the browser execute that program. There is no shell involved and no
+    # quoting that would help: the browser itself is the injection point.
+    #
+    # The allowlist is therefore on the value, not on its characters. This
+    # launcher exists to open LinkedIn with the bridge extension loaded, so
+    # that is the only thing it will open.
+    safe_url = _validated_target(target_url)
+
     args = [
         exe_path,
         f'--load-extension={ext_path}',
-        target_url
+        safe_url
     ]
 
     try:

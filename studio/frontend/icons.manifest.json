@@ -240,6 +240,12 @@
       "source": "Menu/Close_MD",
       "figma_node_id": "30789:32318",
       "references": 15
+    },
+    "sym-sec-desktop": {
+      "role": "section",
+      "source": "hand-authored",
+      "figma_node_id": null,
+      "references": 1
     }
   }
 }
