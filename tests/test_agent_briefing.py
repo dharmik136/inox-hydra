@@ -38,7 +38,7 @@ def configured_provider():
     """A provider that looks configured, so the enhancement path is exercised."""
     return AIProviderConfig(
         provider="openai",
-        api_key="sk-test-key-not-used-because-calls-are-stubbed",
+        api_key="sk-notarealkey-calls-are-stubbed-000000",
         model="gpt-4o-mini",
         base_url="https://api.openai.com/v1",
         verified_at="test",

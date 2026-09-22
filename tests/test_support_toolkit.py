@@ -29,9 +29,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from studio.backend import migrations, paths, support, updates  # noqa: E402
 
-LI_AT = "AQEDATEST_REAL_LOOKING_LINKEDIN_COOKIE_zzz999"
+LI_AT = "AQEDA_notarealkey_LINKEDIN_COOKIE_zzz999"
 JSESSIONID = "ajax:1234567890123456789"
-API_KEY = "sk-proj-DO_NOT_LEAK_THIS_ANYWHERE_8888"
+API_KEY = "sk-proj-notarealkey-DO-NOT-LEAK-8888"
 
 SECRETS = (LI_AT, JSESSIONID, API_KEY)
 

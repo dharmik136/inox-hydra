@@ -78,7 +78,7 @@ def test_ai_provider_config_contracts():
     # OpenAI with valid key
     openai_cfg = AIProviderConfig(
         provider="openai",
-        api_key="sk-proj-1234567890abcdef1234567890",
+        api_key="sk-proj-notarealkey-1234567890abcdef",
         model="gpt-4o"
     )
     assert openai_cfg.provider == "openai"
@@ -87,7 +87,7 @@ def test_ai_provider_config_contracts():
     assert d["has_key"] is True
     assert d["model"] == "gpt-4o"
     assert "..." in d["api_key_masked"]
-    assert not d["api_key_masked"].startswith("sk-proj-1234567890abcdef1234567890")
+    assert not d["api_key_masked"].startswith("sk-proj-notarealkey-1234567890abcdef")
 
     # Ollama requires no API key but is_configured is True
     ollama_cfg = AIProviderConfig(provider="ollama")
@@ -158,7 +158,7 @@ def test_api_configure_ai_rejection_and_acceptance():
     # Bad key -> must return 400 Bad Request
     bad_payload = {
         "provider": "openai",
-        "api_key": "sk-invalid-nonexistent-key-12345"
+        "api_key": "sk-notarealkey-invalid-nonexistent-1"
     }
     res_bad = client.post("/api/ai/configure", json=bad_payload)
     assert res_bad.status_code == 400
