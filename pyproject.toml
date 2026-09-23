@@ -43,11 +43,31 @@ packages = [
 
 # Non-Python files are not shipped by default. Omitting this is what produced a
 # wheel that built successfully and then could not serve its own user interface.
+#
+# Declaring a directory is not enough, and neither is declaring the file types
+# somebody remembered. frontend/ shipped as *.html, *.css and *.js, which left
+# manifest.webmanifest and icons/*.png out of every wheel, so an installed copy
+# served a page the browser would not offer to install. The test that was meant
+# to catch this asked whether the string "frontend/" appeared anywhere in the
+# pattern list, which it did.
+#
+# frontend_next/ is the built React interface. Its asset filenames carry a
+# content hash and its asset types are whatever Vite decides to emit, so the
+# static/ directory is declared wholesale rather than by extension. Everything
+# in it is build output; there is nothing there that should not ship.
 [tool.setuptools.package-data]
 studio = [
     "frontend/*.html",
     "frontend/*.css",
     "frontend/*.js",
+    "frontend/*.json",
+    "frontend/*.webmanifest",
+    "frontend/icons/*.png",
+    "frontend_next/*.html",
+    "frontend_next/*.js",
+    "frontend_next/*.webmanifest",
+    "frontend_next/icons/*.png",
+    "frontend_next/static/*",
     "extension/*.json",
     "extension/*.html",
     "extension/*.js",

@@ -66,6 +66,32 @@ jobs:
       # -rs for the same reason as ci.yml, and more so here: this run is the
       # last gate before a build reaches someone, so a skip it does not name
       # is a check nobody knows was not made.
+      # studio/frontend_next is the built React interface, and it is gitignored,
+      # so a fresh checkout does not contain it. Without this step every
+      # artifact built here falls back to the vanilla page and NOTHING FAILS:
+      # get_frontend_dir() returns the old interface, the product boots, and the
+      # suite stays green. The omission is visible only by looking at the UI.
+      - name: Set up Node Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: studio/ui/package-lock.json
+
+      - name: Build The Studio Interface
+        working-directory: studio/ui
+        run: |
+          npm ci
+          npm run build
+
+      # Fail loudly here. A build that quietly produced nothing is the single
+      # case the runtime fallback would hide completely.
+      - name: Confirm The Interface Was Built
+        run: |
+          if (-not (Test-Path studio/frontend_next/index.html)) {
+            throw "studio/frontend_next/index.html is missing: the interface did not build"
+          }
+
       - name: Run The Test Suite
         run: pytest tests studio/tests -q -rs
 
