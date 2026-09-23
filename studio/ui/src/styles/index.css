@@ -1,0 +1,132 @@
+@import "tailwindcss";
+@import "./tokens.css";
+
+/*
+ * Tokens are mapped into Tailwind's theme with @theme inline, so a utility
+ * like bg-canvas compiles to var(--studio-canvas) rather than to a baked
+ * colour. That is what makes the theme switch free: the utility resolves at
+ * use time, through whichever palette is live, and no dark: variant is needed
+ * for any colour in the system.
+ */
+@theme inline {
+  --color-canvas: var(--studio-canvas);
+  --color-ink: var(--studio-ink);
+  --color-raised: var(--studio-raised);
+  --color-soft: var(--studio-soft);
+
+  --color-edge: var(--studio-border);
+  --color-edge-strong: var(--studio-border-strong);
+
+  --color-ink-primary: var(--studio-text);
+  --color-ink-secondary: var(--studio-text-secondary);
+  --color-ink-muted: var(--studio-text-muted);
+
+  --color-paper: var(--studio-paper);
+  --color-signal-orange: var(--studio-orange);
+  --color-signal-green: var(--studio-green);
+  --color-signal-blue: var(--studio-blue);
+  --color-signal-orange-subtle: var(--studio-orange-subtle);
+  --color-signal-green-subtle: var(--studio-green-subtle);
+  --color-signal-blue-subtle: var(--studio-blue-subtle);
+
+  --font-editorial: var(--studio-font-editorial);
+  --font-display: var(--studio-font-display);
+  --font-mono: var(--studio-font-mono);
+
+  --radius-sm: var(--studio-radius-sm);
+  --radius-md: var(--studio-radius-md);
+  --radius-lg: var(--studio-radius-lg);
+
+  --ease-standard: var(--studio-ease-standard);
+  --ease-spring: var(--studio-ease-spring);
+}
+
+@layer base {
+  html {
+    /* The rail, context bar and inspector are fixed furniture. Only the work
+     * surface scrolls, so the document itself must not. */
+    height: 100%;
+    overflow: hidden;
+  }
+
+  /* html and body are 100% tall, but the React mount point between them is
+   * not, and height percentages resolve against the parent box. Without this
+   * the shell's h-full measures an auto-height div, so the rail and inspector
+   * end wherever the content happens to end instead of at the viewport. */
+  #root {
+    height: 100%;
+  }
+
+  body {
+    height: 100%;
+    margin: 0;
+    background-color: var(--studio-canvas);
+    color: var(--studio-text);
+    font-family: var(--studio-font-editorial);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Accessibility floor, carried over from docs/UI_CONVENTIONS.md section 3.
+   * The vanilla stylesheet shipped 5,600 lines with no :focus-visible rule at
+   * all, so focus was invisible throughout. This interface starts with one. */
+  :focus-visible {
+    outline: 2px solid var(--studio-blue);
+    outline-offset: 2px;
+  }
+
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Motion is a first class token layer here, which makes honouring this
+   * preference load bearing rather than polite. Reduced to near zero instead
+   * of zero: a 1ms transition still fires transitionend, so state machines
+   * waiting on it do not stall. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* Blueprint section 3: 11px uppercase, 0.08em tracking. Used for rail
+   * groups, inspector headers and context bar field labels. */
+  .studio-label {
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.2;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--studio-text-muted);
+  }
+
+  /* Telemetry, timestamps, character counts and audit rules. Reads as
+   * publishing metadata rather than AI monitoring. */
+  .studio-meta {
+    font-family: var(--studio-font-mono);
+    font-size: 11px;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+    color: var(--studio-text-secondary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Workspace titles: 30 to 42px, tight tracking. */
+  .studio-title {
+    font-family: var(--studio-font-display);
+    font-size: clamp(30px, 3.2vw, 42px);
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--studio-text);
+  }
+}
