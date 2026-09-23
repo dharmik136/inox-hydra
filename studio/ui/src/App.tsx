@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PanelRight } from "lucide-react";
 import { StudioRail } from "@/components/StudioRail";
 import { NavigationTray } from "@/components/NavigationTray";
@@ -8,11 +8,14 @@ import { HookFilmstrip } from "@/components/HookFilmstrip";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Inspector } from "@/components/Inspector";
 import { sectionById, type SectionId } from "@/lib/navigation";
-import { generateHooks, type GeneratedHook } from "@/lib/api";
+import {
+  createDraft,
+  fetchLatestDraft,
+  generateHooks,
+  updateDraft,
+  type GeneratedHook,
+} from "@/lib/api";
 import { measurableLength, measurableWordCount } from "@/lib/text";
-
-/** Where the working draft lives until this is wired to the backend drafts API. */
-const DRAFT_KEY = "inox.studio.draft";
 
 /** Average adult reading speed. Used for an estimate that is labelled as one. */
 const WORDS_PER_MINUTE = 200;
@@ -35,9 +38,11 @@ export default function App() {
   const [trayOpen, setTrayOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
-  const [draft, setDraft] = useState(() => window.localStorage.getItem(DRAFT_KEY) ?? "");
+  const [draft, setDraft] = useState("");
+  const [draftId, setDraftId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Incremented whenever a hook replaces the opening, so the canvas can play
   // the vertical text transition. A counter rather than a boolean, because
@@ -47,6 +52,34 @@ export default function App() {
   // Alternatives generated from a selection. While these are present the
   // filmstrip shows them instead of the vaulted library.
   const [generated, setGenerated] = useState<GeneratedHook[] | null>(null);
+
+  /** Whether the author has put anything into the editor this session. */
+  const touched = useRef(false);
+
+  // Reopen the most recent draft from the studio's own database, which is
+  // what the queue and the scheduler read. A draft held anywhere else is
+  // invisible to both.
+  useEffect(() => {
+    let live = true;
+    fetchLatestDraft()
+      .then((existing) => {
+        // Only adopt it if nothing has been typed in the meantime. A slow
+        // response would otherwise overwrite whatever the author started while
+        // it was still in flight. The check reads a ref rather than the draft
+        // state, because deciding inside a setDraft updater would make that
+        // updater impure and React is free to run it more than once.
+        if (!live || !existing || touched.current) return;
+        setDraft(existing.content);
+        setDraftId(existing.id);
+      })
+      .catch(() => {
+        // Nothing loaded. The composer opens empty rather than claiming a
+        // draft it does not have, and the first save will create one.
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
 
   // Dark first, matching docs/UI_CONVENTIONS.md: an unstamped document gets
   // the dark palette, and data-theme="light" is the opt out.
@@ -78,13 +111,16 @@ export default function App() {
   }, [draft]);
 
   const onChangeDraft = useCallback((next: string) => {
+    touched.current = true;
     setDraft(next);
     setSaveState("dirty");
     setSavedAt(null);
+    setSaveError(null);
   }, []);
 
   const onApplyHook = useCallback(
     (hook: string) => {
+      touched.current = true;
       setDraft((current) => swapFirstParagraph(current, hook));
       setSaveState("dirty");
       setSavedAt(null);
@@ -105,17 +141,32 @@ export default function App() {
   }, []);
 
   /**
-   * Save writes the draft and only then reports that it did.
+   * Save writes the draft to the studio database and only then reports that it
+   * did.
    *
    * This product has a run of fixes for surfaces that announced success
-   * without performing the work, so the timestamp is stamped from the result
-   * of the write and a failed write leaves the mark unchanged rather than
-   * showing SAVED.
+   * without performing the work, so the timestamp is stamped after the write
+   * returns, and a rejected write says SAVE FAILED and carries the server's
+   * reason. The 5,000 character limit is enforced server side and arrives as a
+   * 400, which the author needs to read rather than have swallowed.
    */
-  const onSave = useCallback(() => {
+  const onSave = useCallback(async () => {
+    if (!draft.trim()) {
+      // Refuse rather than create an empty row the queue would later show as
+      // a post with no content.
+      setSaveState("failed");
+      setSaveError("There is nothing written to save.");
+      return;
+    }
+
     setSaveState("saving");
+    setSaveError(null);
     try {
-      window.localStorage.setItem(DRAFT_KEY, draft);
+      if (draftId) {
+        await updateDraft(draftId, draft);
+      } else {
+        setDraftId(await createDraft(draft));
+      }
       const now = new Date();
       setSavedAt(
         [now.getHours(), now.getMinutes(), now.getSeconds()]
@@ -123,14 +174,12 @@ export default function App() {
           .join(":"),
       );
       setSaveState("saved");
-    } catch {
-      // Quota exceeded, or storage disabled. Report the truth: the edits are
-      // still only in memory, so the mark goes back to UNSAVED rather than to
-      // a reassuring UNCHANGED.
-      setSaveState("dirty");
+    } catch (error) {
+      setSaveState("failed");
+      setSaveError(error instanceof Error ? error.message : "The save was rejected.");
       setSavedAt(null);
     }
-  }, [draft]);
+  }, [draft, draftId]);
 
   const section = sectionById(active);
 
@@ -154,6 +203,7 @@ export default function App() {
           readSeconds={telemetry.readSeconds}
           saveState={saveState}
           savedAt={savedAt}
+          saveError={saveError}
           onSave={onSave}
           onPublish={() => setInspectorOpen(true)}
         />
