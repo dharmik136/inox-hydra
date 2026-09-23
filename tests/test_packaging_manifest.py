@@ -15,6 +15,7 @@ Strict Invariants:
 - Zero em-dashes across all code, docstrings, and comments.
 """
 
+import fnmatch
 import os
 import shutil
 import sys
@@ -106,6 +107,60 @@ def test_non_python_content_is_declared(manifest):
         assert needed in joined, f"package-data does not ship {needed}"
     assert "frontend/*.html" in patterns
     assert "docs/modules/*.md" in patterns
+
+
+def _unmatched_files(patterns, rel_root):
+    """
+    Every file under rel_root that no package-data pattern would ship.
+
+    Walks the real directory rather than reasoning about the pattern list,
+    because the question that matters is not whether the list mentions a
+    directory but whether each file in it is actually covered.
+    """
+    root = os.path.join(REPO_ROOT, "studio", rel_root)
+    missed = []
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for filename in filenames:
+            full = os.path.join(dirpath, filename)
+            relative = os.path.relpath(full, os.path.join(REPO_ROOT, "studio")).replace(os.sep, "/")
+            if not any(fnmatch.fnmatch(relative, pattern) for pattern in patterns):
+                missed.append(relative)
+    return sorted(missed)
+
+
+def test_every_shipped_interface_file_is_covered_by_a_pattern(manifest):
+    """
+    The declaration has to cover the files that exist, not the file types
+    somebody remembered.
+
+    frontend/ was declared as *.html, *.css and *.js. manifest.webmanifest and
+    icons/*.png matched none of those, so every wheel served a page the browser
+    would not offer to install, while the guard above passed because the string
+    "frontend/" did appear in the pattern list. That guard is kept, because the
+    defect it was written for is real too, but on its own it cannot see this.
+    """
+    patterns = manifest["tool"]["setuptools"]["package-data"]["studio"]
+    missed = _unmatched_files(patterns, "frontend")
+    assert not missed, f"these files exist but no package-data pattern ships them: {missed}"
+
+
+def test_the_built_react_interface_is_covered_by_a_pattern(manifest):
+    """
+    studio/frontend_next is what get_frontend_dir() prefers, so a wheel that
+    omits it silently falls back to the vanilla page. Nothing raises: the
+    fallback is the feature, which is exactly what makes the omission invisible.
+
+    Skipped rather than failed when the interface has not been built, because a
+    checkout without node is a legitimate state. What this cannot skip past is a
+    build that exists and is not declared.
+    """
+    built = os.path.join(REPO_ROOT, "studio", "frontend_next", "index.html")
+    if not os.path.exists(built):
+        pytest.skip("studio/frontend_next is not built in this checkout")
+
+    patterns = manifest["tool"]["setuptools"]["package-data"]["studio"]
+    missed = _unmatched_files(patterns, "frontend_next")
+    assert not missed, f"the built interface exists but these files would not ship: {missed}"
 
 
 @pytest.mark.parametrize("package", [
