@@ -145,6 +145,25 @@ Rust compiles. That is CI's job, and the trade is deliberate.
 
 ## 8. Not done yet
 
+**Browser launching on macOS and Linux.** `studio/backend/browser_launcher.py`
+carries Windows paths only: Program Files, `%LOCALAPPDATA%`, and `.lnk`
+shortcuts. On macOS and Linux `detect_installed_browsers()` returns an empty
+dict and `create_desktop_shortcuts()` produces nothing.
+
+This matters more than it first looks. The extension is how the studio sees
+LinkedIn at all, and the launcher is what opens a browser with it loaded. A
+macOS or Linux user can install the application and use the composer, the
+scheduler and the CRM, but has no assisted path to the capture half of the
+product. They would have to load the unpacked extension by hand.
+
+The fix is a path table per platform (`/Applications/Google Chrome.app/...`,
+`/usr/bin/google-chrome` and friends) plus a launcher that is a `.command`
+script or a `.desktop` entry rather than a `.lnk`. The tests are gated with
+`skipif` naming this reason, so the gap is visible in a test run rather than
+silently absent.
+
+
+
 **Code signing.** Wired, and off until you add credentials.
 
 Unsigned, the installer trips SmartScreen on download and some antivirus

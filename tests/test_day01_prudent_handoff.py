@@ -377,7 +377,7 @@ def test_vault_encryption_decryption():
     encrypted = encrypt_token(sample_token)
 
     assert encrypted != sample_token
-    assert encrypted.startswith(("dpapi:", "locenc:"))
+    assert encrypted.startswith(("dpapi:", "locenc2:", "locenc:"))
 
     decrypted = decrypt_token(encrypted)
     assert decrypted == sample_token
@@ -398,7 +398,7 @@ def test_vault_encryption_decryption():
     c.execute("SELECT value FROM settings WHERE key = 'li_at'")
     raw_val = c.fetchone()["value"]
     conn.close()
-    assert raw_val.startswith(("dpapi:", "locenc:"))
+    assert raw_val.startswith(("dpapi:", "locenc2:", "locenc:"))
 
 
 def test_circuit_breaker_safeguards():

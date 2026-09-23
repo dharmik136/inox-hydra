@@ -391,8 +391,24 @@ def decrypt_token(ciphertext: Any) -> str:
     if not raw_cipher:
         return ""
 
-    # Check if already plaintext (backward compatibility with legacy unencrypted DBs)
-    if not raw_cipher.startswith((DPAPI_PREFIX, LOCAL_ENC_PREFIX)):
+    # Every prefix this function knows how to seal, in one place.
+    #
+    # LOCAL_ENC_V2_PREFIX was missing from this check when the v2 format was
+    # added, and "locenc2:" does not start with "locenc:", so a v2 ciphertext
+    # fell straight through the plaintext branch below and was returned
+    # verbatim. Nothing decrypted it, and nothing said so.
+    #
+    # Windows hid it completely: DPAPI is used there, so the v2 path only runs
+    # on macOS and Linux, and the suite only ever ran on Windows. On those
+    # platforms every stored token round tripped to its own ciphertext,
+    # is_authenticated saw a non-empty string and reported True, and the
+    # client sent "locenc2:..." to LinkedIn as a session cookie.
+    KNOWN_PREFIXES = (DPAPI_PREFIX, LOCAL_ENC_V2_PREFIX, LOCAL_ENC_PREFIX)
+
+    # Genuinely unencrypted, from a legacy database written before the vault
+    # existed. Returned as it is, which is the one case where handing back the
+    # input is correct.
+    if not raw_cipher.startswith(KNOWN_PREFIXES):
         return raw_cipher
 
     # Windows DPAPI Decryption
@@ -464,4 +480,17 @@ def decrypt_token(ciphertext: Any) -> str:
         except Exception:
             return ""
 
-    return raw_cipher
+    # Sealed, and not readable here.
+    #
+    # The common case is a dpapi: row on macOS or Linux: the database was
+    # written on Windows and moved, or restored from a backup onto another
+    # machine. DPAPI cannot decrypt it anywhere else, so no branch above
+    # claims it and control arrives here.
+    #
+    # Returning raw_cipher would hand the caller the sealed blob as though it
+    # were the token, which is the same failure the DPAPI branch above already
+    # documents at length: a non-empty string reads as authenticated, goes to
+    # LinkedIn as a cookie, and comes back 401. An empty string says honestly
+    # that this credential cannot be read on this machine, and the user is
+    # asked to capture it again, which is the only thing that actually helps.
+    return ""
