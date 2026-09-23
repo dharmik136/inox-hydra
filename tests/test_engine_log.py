@@ -133,3 +133,168 @@ def test_the_stale_comment_is_gone(source):
     gap which has since been closed is worse than no comment.
     """
     assert "is the fix and is not done here" not in source
+
+
+# ---------------------------------------------------------------------------
+# The engine does not outlive an abnormal exit
+# ---------------------------------------------------------------------------
+
+def test_the_child_is_tied_to_this_process(source):
+    """
+    Backend::shutdown covers the ordinary exit. It does not run when the shell
+    is killed outright, and the engine then keeps running with no window,
+    holding port 8000. Because is_ready correctly reports that engine as
+    healthy, the next launch attaches to a process the user cannot see and did
+    not knowingly leave behind.
+    """
+    assert "mod job_object" in source, "nothing ties the engine to the shell's lifetime"
+    assert "KILL_ON_JOB_CLOSE" in source
+    assert "tie_to_this_process(&child)" in source, (
+        "the job object exists but is never applied to the spawned engine"
+    )
+
+
+def test_only_a_backend_we_started_is_tied(source):
+    """
+    The module's first rule: never terminate a backend this process did not
+    spawn. A creator may have the studio running from the tray with a
+    scheduler mid post. A job that killed it at our exit would break that
+    rule in the worst way, silently and at shutdown.
+    """
+    spawn_at = source.index("match command.spawn()")
+    tie_at = source.index("tie_to_this_process(&child)")
+    attached_at = source.index("return Ok(Backend::Attached)")
+
+    assert attached_at < spawn_at < tie_at, (
+        "the attach path does not return before the spawn path ties a job, so "
+        "an engine we merely attached to could be killed at our exit"
+    )
+
+
+def test_the_job_handle_is_not_closed_after_assignment(source):
+    """
+    Closing our handle closes the job, and kill-on-close would then take the
+    engine down immediately rather than at our exit. The handle is held on
+    purpose and the kernel releases it when this process dies.
+
+    The two CloseHandle calls that remain are the failure paths, which run
+    before any process has been assigned.
+    """
+    assign_at = source.index("AssignProcessToJobObject(job, child.as_raw_handle()) == 0")
+    tail = source[assign_at:source.index("Where the interpreter lives")]
+
+    # One CloseHandle inside the failed-assignment branch, and none after it.
+    branch_end = tail.index("return;")
+    assert "CloseHandle" not in tail[branch_end:], (
+        "the job handle is closed after the engine was assigned to it, which "
+        "kills the engine immediately instead of at our exit"
+    )
+
+
+def test_the_struct_layout_matches_what_windows_expects(source):
+    """
+    A hand declared struct that is the wrong size makes
+    SetInformationJobObject fail with ERROR_INVALID_PARAMETER. The code
+    handles that, but silently and without the flag, so the orphan returns and
+    nothing says so.
+
+    ctypes follows the same C ABI rules as repr(C), so agreement here is
+    agreement there. Verified against the live API: 144 bytes on x64, with
+    IoInfo at offset 64.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    class Basic(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_int64),
+            ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    # The Rust field order has to match, field for field, or the flag lands in
+    # the wrong slot and means something else entirely.
+    rust_fields = [
+        "per_process_user_time_limit", "per_job_user_time_limit", "limit_flags",
+        "minimum_working_set_size", "maximum_working_set_size",
+        "active_process_limit", "affinity", "priority_class", "scheduling_class",
+    ]
+    declared = source[source.index("struct BasicLimitInformation"):]
+    declared = declared[:declared.index("}")]
+    found = [name for name in rust_fields if name in declared]
+    assert found == rust_fields, (
+        f"BasicLimitInformation field order drifted: {found}"
+    )
+
+    order_in_source = sorted(rust_fields, key=declared.index)
+    assert order_in_source == rust_fields, (
+        f"fields are declared out of order, so limit_flags is not where "
+        f"Windows reads it: {order_in_source}"
+    )
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Job Objects are a Win32 primitive")
+def test_windows_accepts_this_exact_layout():
+    """
+    Not a mirror of the source: the real API is called with the same layout
+    and must accept it. This is what proves the size and the information class
+    are right, rather than merely self consistent.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    class Basic(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_int64),
+            ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class Io(ctypes.Structure):
+        _fields_ = [(n, ctypes.c_uint64) for n in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount")]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", Basic),
+            ("IoInfo", Io),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.SetInformationJobObject.argtypes = [
+        wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD
+    ]
+
+    job = kernel32.CreateJobObjectW(None, None)
+    assert job, "could not create a job object at all"
+    try:
+        info = Extended()
+        info.BasicLimitInformation.LimitFlags = 0x2000  # KILL_ON_JOB_CLOSE
+        accepted = kernel32.SetInformationJobObject(
+            job, 9, ctypes.byref(info), ctypes.sizeof(info)
+        )
+        assert accepted, (
+            f"Windows rejected the layout backend.rs declares, error "
+            f"{ctypes.get_last_error()}. The Rust call would fail the same "
+            f"way and leave the engine unprotected with no message."
+        )
+    finally:
+        kernel32.CloseHandle(job)

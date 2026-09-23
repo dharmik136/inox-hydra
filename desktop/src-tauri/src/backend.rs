@@ -178,6 +178,122 @@ pub fn wait_until_ready(timeout: Duration) -> bool {
     false
 }
 
+/// Ties the engine's lifetime to this process, so a crash cannot orphan it.
+///
+/// `Backend::shutdown` covers the ordinary exit and is the path that respects
+/// the attach rule. It does not run when the shell is killed outright: End
+/// Task, an abort, a power event. The engine then keeps running with no window
+/// of its own, holding port 8000. The next launch finds the port taken, and
+/// because `is_ready` correctly reports that engine as healthy, the shell
+/// attaches to a process the user cannot see and did not knowingly leave
+/// behind.
+///
+/// A Job Object with KILL_ON_JOB_CLOSE makes Windows enforce it. When the last
+/// handle to the job closes, every process in the job is terminated, and the
+/// kernel closes our handle when this process dies however it dies. That is
+/// the only mechanism that survives a kill we never get to respond to.
+///
+/// Declared by hand rather than adding the windows crate. This is four calls
+/// and one struct whose layout has been fixed since Windows XP, weighed
+/// against a dependency that would cost build time on every CI run from here
+/// on. Every failure path below is non fatal and leaves exactly the previous
+/// behaviour: an engine that outlives an abnormal exit, which is what we had.
+#[cfg(windows)]
+mod job_object {
+    use std::ffi::c_void;
+    use std::os::windows::io::AsRawHandle;
+    use std::process::Child;
+
+    type Handle = *mut c_void;
+
+    const KILL_ON_JOB_CLOSE: u32 = 0x0000_2000;
+    /// JOBOBJECTINFOCLASS::JobObjectExtendedLimitInformation
+    const EXTENDED_LIMIT_INFORMATION: i32 = 9;
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct BasicLimitInformation {
+        per_process_user_time_limit: i64,
+        per_job_user_time_limit: i64,
+        limit_flags: u32,
+        minimum_working_set_size: usize,
+        maximum_working_set_size: usize,
+        active_process_limit: u32,
+        affinity: usize,
+        priority_class: u32,
+        scheduling_class: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct IoCounters {
+        read_operation_count: u64,
+        write_operation_count: u64,
+        other_operation_count: u64,
+        read_transfer_count: u64,
+        write_transfer_count: u64,
+        other_transfer_count: u64,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct ExtendedLimitInformation {
+        basic_limit_information: BasicLimitInformation,
+        io_info: IoCounters,
+        process_memory_limit: usize,
+        job_memory_limit: usize,
+        peak_process_memory_used: usize,
+        peak_job_memory_used: usize,
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn CreateJobObjectW(security: *mut c_void, name: *const u16) -> Handle;
+        fn SetInformationJobObject(
+            job: Handle,
+            class: i32,
+            info: *const c_void,
+            length: u32,
+        ) -> i32;
+        fn AssignProcessToJobObject(job: Handle, process: Handle) -> i32;
+        fn CloseHandle(object: Handle) -> i32;
+    }
+
+    pub fn tie_to_this_process(child: &Child) {
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
+            if job.is_null() {
+                return;
+            }
+
+            let mut limits = ExtendedLimitInformation::default();
+            limits.basic_limit_information.limit_flags = KILL_ON_JOB_CLOSE;
+
+            if SetInformationJobObject(
+                job,
+                EXTENDED_LIMIT_INFORMATION,
+                &limits as *const ExtendedLimitInformation as *const c_void,
+                std::mem::size_of::<ExtendedLimitInformation>() as u32,
+            ) == 0
+            {
+                CloseHandle(job);
+                return;
+            }
+
+            if AssignProcessToJobObject(job, child.as_raw_handle()) == 0 {
+                CloseHandle(job);
+                return;
+            }
+
+            // The handle is held for the life of this process on purpose, and
+            // is never closed here. Closing it would close the job, and
+            // kill-on-close would take the engine down immediately rather than
+            // at our exit. The kernel closes it for us when we die, which is
+            // precisely the moment the engine should follow.
+        }
+    }
+}
+
 /// Where the interpreter lives inside the installed bundle.
 ///
 /// The layout mirrors what tools/build_portable.py produces, because the same
@@ -252,7 +368,17 @@ pub fn start(resources: &Path) -> Result<Backend, String> {
     // spawn() succeeding means the process was created, not that it stayed
     // alive. Readiness is established by wait_until_ready, never by this.
     match command.spawn() {
-        Ok(child) => Ok(Backend::Spawned(child)),
+        Ok(child) => {
+            // Only ever applied to a child we started. An attached backend
+            // returns above and never reaches here, so the rule that the shell
+            // must not kill a server it did not start holds: a job that killed
+            // someone else's engine would break it in the worst possible way,
+            // silently and at exit.
+            #[cfg(windows)]
+            job_object::tie_to_this_process(&child);
+
+            Ok(Backend::Spawned(child))
+        }
         Err(err) => Err(format!("could not start the studio engine: {}", err)),
     }
 }
