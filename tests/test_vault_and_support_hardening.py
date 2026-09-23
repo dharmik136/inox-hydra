@@ -11,7 +11,7 @@ def test_vault_encrypt_decrypt_roundtrip():
     sample = "AQEDA_SAMPLE_LINKEDIN_TOKEN_1234567890_VERY_SECRET"
     enc = encrypt_token(sample)
     assert enc != sample
-    assert enc.startswith(("dpapi:", "locenc:"))
+    assert enc.startswith(("dpapi:", "locenc2:", "locenc:"))
     dec = decrypt_token(enc)
     assert dec == sample
 
@@ -25,7 +25,7 @@ def test_vault_null_and_empty_handling():
 
     # Non-string input
     enc_num = encrypt_token(12345)
-    assert enc_num.startswith(("dpapi:", "locenc:"))
+    assert enc_num.startswith(("dpapi:", "locenc2:", "locenc:"))
     assert decrypt_token(enc_num) == "12345"
 
 
@@ -33,7 +33,7 @@ def test_vault_huge_plaintext_bounded():
     """Verify oversized plaintext is bounded safely without memory exhaustion."""
     huge_input = "A" * 100000
     enc = encrypt_token(huge_input)
-    assert enc.startswith(("dpapi:", "locenc:"))
+    assert enc.startswith(("dpapi:", "locenc2:", "locenc:"))
     dec = decrypt_token(enc)
     assert len(dec) == 65536
 
@@ -50,7 +50,10 @@ def test_vault_malformed_ciphertext_handling():
 def test_vault_backend_diagnostic_helper():
     """Verify get_vault_backend reports a valid known backend."""
     backend = get_vault_backend()
-    assert backend in ("DPAPI", "MACHINE_KEYED")
+    # MACHINE_KEYED was the only fallback when this was written. The platform
+    # keystores added KEYCHAIN and SECRET_SERVICE, and renamed the fallback to
+    # FILE_KEY, so the old pair silently meant "Windows only".
+    assert backend in ("DPAPI", "KEYCHAIN", "SECRET_SERVICE", "FILE_KEY", "MACHINE_KEYED")
 
 
 def test_support_create_backup_path_traversal_sanitized(monkeypatch):

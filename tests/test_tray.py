@@ -19,6 +19,14 @@ sys.path.insert(0, PROJECT_ROOT)
 
 from studio_tray import InoxHydraTray, NOTIFYICONDATAW, verify_tray_setup
 
+# studio_tray is Win32 Shell_NotifyIcon through ctypes: NOTIFYICONDATAW has no
+# meaning off Windows and the import itself only succeeds there. Ungated, this
+# file simply failed the moment the suite ran on another platform. The tray is
+# Windows only by design; the macOS and Linux shells use the Tauri tray.
+pytestmark = pytest.mark.skipif(
+    sys.platform != "win32", reason="the Win32 tray is a Windows shell primitive"
+)
+
 
 def test_tray_struct_alignment():
     assert ctypes.sizeof(NOTIFYICONDATAW) == 976
