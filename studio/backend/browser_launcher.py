@@ -12,6 +12,7 @@ Strict Invariants:
 
 import os
 import sys
+import shlex
 import subprocess
 import shutil
 from typing import Dict, List, Optional, Any
@@ -22,61 +23,153 @@ BACKEND_DIR = Path(__file__).resolve().parent
 STUDIO_DIR = BACKEND_DIR.parent
 EXTENSION_DIR = STUDIO_DIR / "extension"
 
+# Where each browser lives, per platform.
+#
+# This table was Windows only, so detect_installed_browsers returned an empty
+# dict on macOS and Linux and a creator there had no assisted way to open a
+# browser with the extension loaded. The extension is how this product sees
+# LinkedIn at all, so that was half the product missing rather than a cosmetic
+# gap.
+#
+# Linux carries bare command names as well as absolute paths. Distributions
+# disagree about where a browser lives, and snap and flatpak put it somewhere
+# else again, so PATH is consulted through shutil.which too.
 BROWSER_CANDIDATES = [
     {
         "id": "chrome",
         "name": "Google Chrome",
         "reg_key": r"Software\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe",
-        "paths": [
-            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
-            os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
-        ]
+        "paths": {
+            "win32": [
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+            ],
+            "darwin": [
+                "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                os.path.expanduser("~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+            ],
+            "linux": [
+                "/usr/bin/google-chrome",
+                "/usr/bin/google-chrome-stable",
+                "/opt/google/chrome/chrome",
+            ],
+        },
+        "commands": ["google-chrome", "google-chrome-stable"],
     },
     {
         "id": "edge",
         "name": "Microsoft Edge",
         "reg_key": r"Software\Microsoft\Windows\CurrentVersion\App Paths\msedge.exe",
-        "paths": [
-            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-            os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe"),
-        ]
+        "paths": {
+            "win32": [
+                r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+                r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Microsoft\Edge\Application\msedge.exe"),
+            ],
+            "darwin": [
+                "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+            ],
+            "linux": [
+                "/usr/bin/microsoft-edge",
+                "/usr/bin/microsoft-edge-stable",
+                "/opt/microsoft/msedge/msedge",
+            ],
+        },
+        "commands": ["microsoft-edge", "microsoft-edge-stable"],
     },
     {
         "id": "brave",
         "name": "Brave Browser",
         "reg_key": r"Software\Microsoft\Windows\CurrentVersion\App Paths\brave.exe",
-        "paths": [
-            r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
-            os.path.expandvars(r"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\Application\brave.exe"),
-        ]
+        "paths": {
+            "win32": [
+                r"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\BraveSoftware\Brave-Browser\Application\brave.exe"),
+            ],
+            "darwin": [
+                "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
+            ],
+            "linux": [
+                "/usr/bin/brave-browser",
+                "/opt/brave.com/brave/brave-browser",
+            ],
+        },
+        "commands": ["brave-browser", "brave"],
     },
     {
         "id": "opera",
         "name": "Opera",
         "reg_key": r"Software\Microsoft\Windows\CurrentVersion\App Paths\opera.exe",
-        "paths": [
-            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Opera\opera.exe"),
-            r"C:\Program Files\Opera\opera.exe",
-        ]
+        "paths": {
+            "win32": [
+                os.path.expandvars(r"%LOCALAPPDATA%\Programs\Opera\opera.exe"),
+                r"C:\Program Files\Opera\opera.exe",
+            ],
+            "darwin": [
+                "/Applications/Opera.app/Contents/MacOS/Opera",
+            ],
+            "linux": [
+                "/usr/bin/opera",
+            ],
+        },
+        "commands": ["opera"],
     },
     {
         "id": "vivaldi",
         "name": "Vivaldi",
         "reg_key": r"Software\Microsoft\Windows\CurrentVersion\App Paths\vivaldi.exe",
-        "paths": [
-            os.path.expandvars(r"%LOCALAPPDATA%\Vivaldi\Application\vivaldi.exe"),
-            r"C:\Program Files\Vivaldi\Application\vivaldi.exe",
-        ]
+        "paths": {
+            "win32": [
+                os.path.expandvars(r"%LOCALAPPDATA%\Vivaldi\Application\vivaldi.exe"),
+                r"C:\Program Files\Vivaldi\Application\vivaldi.exe",
+            ],
+            "darwin": [
+                "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
+            ],
+            "linux": [
+                "/usr/bin/vivaldi",
+                "/usr/bin/vivaldi-stable",
+                "/opt/vivaldi/vivaldi",
+            ],
+        },
+        "commands": ["vivaldi", "vivaldi-stable"],
     },
 ]
 
 
+def _platform_key() -> str:
+    """Which arm of the path table applies here."""
+    if sys.platform == "win32":
+        return "win32"
+    if sys.platform == "darwin":
+        return "darwin"
+    return "linux"
+
+
+def _candidate_paths(candidate: Dict[str, Any]) -> List[str]:
+    """
+    The paths to try for this browser on this platform.
+
+    Tolerates the older flat list shape, so a candidate defined elsewhere
+    degrades to "no paths for this platform" rather than raising inside
+    detection and taking the launcher down with it.
+    """
+    paths = candidate.get("paths")
+    if isinstance(paths, dict):
+        return list(paths.get(_platform_key(), []))
+    if isinstance(paths, list):
+        return list(paths)
+    return []
+
+
 def detect_installed_browsers() -> Dict[str, Dict[str, str]]:
     """
-    Scans the local Windows machine for installed Chromium browsers.
+    Scans this machine for installed Chromium browsers.
+
     Returns a dictionary of browser ID to metadata (name, path, is_available).
+    An empty dictionary means none were found, which is a normal answer on a
+    server or a CI runner and not an error.
     """
     results = {}
 
@@ -86,10 +179,21 @@ def detect_installed_browsers() -> Dict[str, Dict[str, str]]:
         found_path = None
 
         # Check standard disk paths first
-        for p in candidate["paths"]:
+        for p in _candidate_paths(candidate):
             if os.path.exists(p):
                 found_path = p
                 break
+
+        # Then PATH, which is where a snap, a flatpak or a distribution that
+        # disagrees with the table above will have put the executable. Skipped
+        # on Windows, where the registry below is the better answer and a bare
+        # name on PATH is not how these browsers are installed.
+        if not found_path and sys.platform != "win32":
+            for command in candidate.get("commands", []):
+                resolved = shutil.which(command)
+                if resolved:
+                    found_path = resolved
+                    break
 
         # Check Windows Registry if not found on disk
         if not found_path and sys.platform == "win32":
@@ -127,9 +231,34 @@ def get_extension_dir() -> str:
 
 def get_desktop_dir() -> str:
     """
-    Resolves the actual user Desktop directory on Windows,
-    handling OneDrive folder redirection and User Shell Folders.
+    Resolves the user's Desktop directory.
+
+    Windows needs the registry because OneDrive redirects the folder and the
+    literal %USERPROFILE%\\Desktop stops existing. Linux needs xdg-user-dir
+    because the folder is localised: a German desktop is ~/Schreibtisch, and
+    writing a launcher to an English path there creates a directory nobody
+    looks in. macOS has kept ~/Desktop unlocalised at the filesystem level,
+    so the plain path is correct there.
     """
+    if sys.platform == "darwin":
+        return str(Path.home() / "Desktop")
+
+    if sys.platform not in ("win32",):
+        try:
+            result = subprocess.run(
+                ["xdg-user-dir", "DESKTOP"],
+                capture_output=True, text=True, timeout=5,
+            )
+            resolved = (result.stdout or "").strip()
+            # xdg-user-dir echoes $HOME when no desktop is configured, which
+            # is a headless machine telling us there is nowhere to put this.
+            if resolved and os.path.isdir(resolved) and resolved != str(Path.home()):
+                return resolved
+        except (subprocess.SubprocessError, OSError):
+            pass
+        fallback = Path.home() / "Desktop"
+        return str(fallback) if fallback.is_dir() else str(Path.home())
+
     if sys.platform == "win32":
         try:
             import winreg
@@ -155,13 +284,80 @@ def get_desktop_dir() -> str:
     return os.environ.get("USERPROFILE", str(Path.home()))
 
 
+def _posix_launcher(b_id, b_info, desktop_dir, ext_path, safe_url):
+    """
+    Writes one double clickable launcher on macOS or Linux.
+
+    macOS gets a .command file, which Finder runs in Terminal, because a real
+    .app bundle would have to be code signed to open without a Gatekeeper
+    prompt and this is the smaller honest thing.
+
+    Linux gets an XDG .desktop entry, which is what a desktop environment
+    actually reads. It needs the executable bit and, on GNOME, the metadata
+    trust flag, or it renders as an untrusted text file.
+
+    Every interpolated value goes through shlex.quote. The extension path
+    contains a space on a default install, and the Windows path already had
+    to be fixed once for exactly that: an unquoted path split across two
+    arguments and the browser started without the extension, which is the one
+    thing the launcher exists to do.
+    """
+    name = b_info["name"]
+    exe = b_info["path"]
+    argument = "--load-extension=" + ext_path
+
+    if sys.platform == "darwin":
+        path = os.path.join(desktop_dir, f"LinkedIn Studio ({name}).command")
+        body = (
+            "#!/bin/sh\n"
+            "# Opens " + name + " with the Inox Hydra bridge extension loaded.\n"
+            "exec " + shlex.quote(exe) + " " + shlex.quote(argument)
+            + " " + shlex.quote(safe_url) + "\n"
+        )
+    else:
+        path = os.path.join(desktop_dir, f"inox-hydra-{b_id}.desktop")
+        body = (
+            "[Desktop Entry]\n"
+            "Type=Application\n"
+            "Version=1.0\n"
+            f"Name=LinkedIn Studio ({name})\n"
+            "Comment=Launch with the Inox Hydra bridge extension loaded\n"
+            # Exec is not a shell, so shlex.quote is the wrong tool: the spec
+            # wants double quotes around a field containing spaces.
+            f'Exec="{exe}" "{argument}" "{safe_url}"\n'
+            "Terminal=false\n"
+            "Categories=Network;WebBrowser;\n"
+        )
+
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(body)
+    os.chmod(path, 0o755)
+
+    if sys.platform != "darwin":
+        # GNOME refuses to run a .desktop file it does not consider trusted,
+        # and shows the raw text instead. Best effort: not every desktop
+        # environment ships gio, and the launcher still works from a file
+        # manager that does not enforce this.
+        try:
+            subprocess.run(
+                ["gio", "set", path, "metadata::trusted", "true"],
+                capture_output=True, timeout=5,
+            )
+        except (subprocess.SubprocessError, OSError):
+            pass
+
+    return path
+
+
 def create_desktop_shortcuts(
     browsers: Optional[Dict[str, Dict[str, str]]] = None,
     target_url: str = "https://www.linkedin.com/feed/"
 ) -> List[Dict[str, Any]]:
     """
-    Creates Windows Desktop shortcuts (.lnk) for all detected browsers,
-    configured with --load-extension so the user never has to manually load it.
+    Creates a desktop launcher per detected browser, configured with
+    --load-extension so the user never has to load the extension by hand.
+
+    A .lnk on Windows, a .command on macOS, an XDG .desktop entry on Linux.
     """
     if browsers is None:
         browsers = detect_installed_browsers()
@@ -169,6 +365,26 @@ def create_desktop_shortcuts(
     desktop_dir = get_desktop_dir()
     created_shortcuts = []
     ext_path = get_extension_dir()
+
+    if sys.platform != "win32":
+        safe_url = _validated_target(target_url)
+        for b_id, b_info in browsers.items():
+            try:
+                path = _posix_launcher(b_id, b_info, desktop_dir, ext_path, safe_url)
+                created_shortcuts.append({
+                    "browser_id": b_id,
+                    "browser_name": b_info["name"],
+                    "shortcut_path": path,
+                    "status": "created" if os.path.exists(path) else "failed",
+                })
+            except Exception as exc:
+                created_shortcuts.append({
+                    "browser_id": b_id,
+                    "browser_name": b_info["name"],
+                    "error": str(exc),
+                    "status": "failed",
+                })
+        return created_shortcuts
 
     for b_id, b_info in browsers.items():
         b_name = b_info["name"]

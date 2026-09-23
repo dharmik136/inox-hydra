@@ -145,24 +145,40 @@ Rust compiles. That is CI's job, and the trade is deliberate.
 
 ## 8. Not done yet
 
-**Browser launching on macOS and Linux.** `studio/backend/browser_launcher.py`
-carries Windows paths only: Program Files, `%LOCALAPPDATA%`, and `.lnk`
-shortcuts. On macOS and Linux `detect_installed_browsers()` returns an empty
-dict and `create_desktop_shortcuts()` produces nothing.
+**Browser launching on macOS and Linux.** Done.
+`studio/backend/browser_launcher.py` carried Windows paths only, so
+`detect_installed_browsers()` returned an empty dict on macOS and Linux and a
+creator there had no assisted way to open a browser with the extension loaded.
+The extension is how the studio sees LinkedIn at all, so that was half the
+product missing rather than a cosmetic gap.
 
-This matters more than it first looks. The extension is how the studio sees
-LinkedIn at all, and the launcher is what opens a browser with it loaded. A
-macOS or Linux user can install the application and use the composer, the
-scheduler and the CRM, but has no assisted path to the capture half of the
-product. They would have to load the unpacked extension by hand.
+The path table is now keyed per platform, and on macOS and Linux `PATH` is
+consulted through `shutil.which` as well, because distributions disagree about
+where a browser lives and snap and flatpak put it somewhere else again.
 
-The fix is a path table per platform (`/Applications/Google Chrome.app/...`,
-`/usr/bin/google-chrome` and friends) plus a launcher that is a `.command`
-script or a `.desktop` entry rather than a `.lnk`. The tests are gated with
-`skipif` naming this reason, so the gap is visible in a test run rather than
-silently absent.
+The launcher takes the form each desktop actually reads:
 
+| Platform | Launcher |
+|---|---|
+| Windows | `.lnk` shortcut, unchanged |
+| macOS | `.command` file, which Finder runs |
+| Linux | XDG `.desktop` entry, marked executable and trusted through `gio` |
 
+macOS gets a `.command` rather than a real `.app` bundle, because an `.app`
+would have to be code signed to open without a Gatekeeper prompt, and the
+smaller honest thing is a script that works today.
+
+The Desktop directory is resolved per platform too. Linux asks
+`xdg-user-dir`, because the folder is localised: a German desktop is
+`~/Schreibtisch`, and writing a launcher to an English path there creates a
+directory nobody looks in. When `xdg-user-dir` echoes `$HOME`, that is a
+headless machine saying there is nowhere to put this, and it is treated that
+way rather than scattering files into the home directory.
+
+Every interpolated value is quoted. The default install path contains a space,
+and the Windows shortcut already had to be fixed once for exactly that: an
+unquoted path split across two arguments and the browser started without the
+extension, which is the one thing the launcher exists to do.
 
 **Code signing.** Wired, and off until you add credentials.
 
