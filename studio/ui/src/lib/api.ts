@@ -157,3 +157,34 @@ export async function generateHooks(text: string): Promise<GeneratedHook[]> {
   });
   return data.hooks ?? [];
 }
+
+export interface AlgorithmAudit {
+  safety_score: number;
+  status_label: string;
+  word_count: number;
+  estimated_dwell_seconds: number;
+  /** What the feed is expected to punish. May be empty. */
+  penalties: string[];
+  /**
+   * Advice, which is NOT a per-penalty pairing.
+   *
+   * audit_linkedin_algorithm_safety appends a recommendation with no matching
+   * penalty in three branches: no hashtags at all, a read under fifteen
+   * seconds, and a read inside the optimal window, the last of which is
+   * praise rather than a fix. Zipping the two arrays by index therefore
+   * attributes the wrong remedy to the wrong finding, and on a clean draft it
+   * invents findings that do not exist.
+   */
+  recommendations: string[];
+  has_outbound_links: boolean;
+  hashtag_count: number;
+  mention_count: number;
+}
+
+/** Audits a draft against the six distribution rules the backend checks. */
+export async function auditDraft(text: string): Promise<AlgorithmAudit> {
+  return call<AlgorithmAudit>("/api/format/algorithm-audit", {
+    method: "POST",
+    body: JSON.stringify({ text }),
+  });
+}

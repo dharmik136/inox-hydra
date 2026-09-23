@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { PanelRightClose } from "lucide-react";
 import { FOLD_CHARS } from "./ComposerCanvas";
+import { AuditPanel } from "./AuditPanel";
 import { cn } from "@/lib/utils";
 
 type InspectorMode = "Preview" | "Audit" | "Media" | "Brand" | "Prompt";
@@ -18,10 +19,10 @@ interface InspectorProps {
  * The contextual inspector (blueprint section 10).
  *
  * It slides in from the edge rather than occupying five permanently visible
- * panels. Only Preview is implemented so far. The remaining modes say so
- * plainly instead of rendering a convincing shell over nothing, which is the
- * failure tests/test_no_fabricated_metrics.py exists to prevent elsewhere in
- * this product.
+ * panels. Preview and Audit are implemented. The remaining modes say so plainly
+ * instead of rendering a convincing shell over nothing, which is the failure
+ * tests/test_no_fabricated_metrics.py exists to prevent elsewhere in this
+ * product.
  */
 export function Inspector({ open, onClose, draft }: InspectorProps) {
   const [mode, setMode] = useState<InspectorMode>("Preview");
@@ -65,9 +66,9 @@ export function Inspector({ open, onClose, draft }: InspectorProps) {
             </div>
 
             <div className="flex-1 overflow-y-auto p-4">
-              {mode === "Preview" ? (
-                <FeedPreview draft={draft} />
-              ) : (
+              {mode === "Preview" && <FeedPreview draft={draft} />}
+              {mode === "Audit" && <AuditPanel draft={draft} />}
+              {mode !== "Preview" && mode !== "Audit" && (
                 <p className="studio-meta pt-8 text-center leading-relaxed text-ink-muted">
                   {mode.toUpperCase()} INSPECTOR
                   <br />
