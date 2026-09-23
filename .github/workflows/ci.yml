@@ -46,8 +46,12 @@ jobs:
       - name: Run Enterprise Backend Test Suite (9 Suites)
         run: python tests/test_studio_backend.py
 
+      # -rs names every skip. Without it the run reports a bare "3 skipped"
+      # and there is no way to tell which three, so a test that quietly stops
+      # running here looks exactly like one that passes. That is how the
+      # hygiene suite went a week checking filenames instead of file contents.
       - name: Run Full Automated Test Suite (pytest)
-        run: pytest tests studio/tests -q
+        run: pytest tests studio/tests -q -rs
 
   package-verify:
     name: Distributable Build & Clean-Install Verification
