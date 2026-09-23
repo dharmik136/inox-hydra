@@ -188,3 +188,61 @@ export async function auditDraft(text: string): Promise<AlgorithmAudit> {
     body: JSON.stringify({ text }),
   });
 }
+
+export interface CreatorProfile {
+  name: string;
+  headline: string;
+  company: string;
+  brand_watermark_text: string;
+  brand_watermark_position: string;
+  brand_watermark_style: string;
+  brand_watermark_enabled: boolean;
+}
+
+export interface ProfileResponse {
+  profile: CreatorProfile;
+  /**
+   * Whether this install knows who its creator is.
+   *
+   * The backend is explicit that a caller must tell "never configured" apart
+   * from "configured to an empty string", and names the feed simulator as one
+   * of the surfaces that has to ask before rendering a name rather than
+   * falling back to one it invented. So the preview reads this flag and shows
+   * unnamed placeholders when it is false.
+   */
+  is_set: boolean;
+  linkedin_connected: boolean;
+}
+
+export async function fetchProfile(): Promise<ProfileResponse> {
+  return call<ProfileResponse>("/api/settings/profile");
+}
+
+export interface MediaAsset {
+  id: string;
+  filename: string;
+  media_type: string;
+  mime_type: string;
+  size_bytes: number;
+  dimensions: string | null;
+  page_count: number | null;
+  duration_seconds: number | null;
+  created_at: string;
+}
+
+export async function fetchMedia(): Promise<MediaAsset[]> {
+  const data = await call<{ assets?: MediaAsset[] }>("/api/media");
+  return data.assets ?? [];
+}
+
+export interface AiStatus {
+  provider: string;
+  has_api_key: boolean;
+  model: string;
+  active_mode: string;
+  capabilities: string[];
+}
+
+export async function fetchAiStatus(): Promise<AiStatus> {
+  return call<AiStatus>("/api/ai/status");
+}
