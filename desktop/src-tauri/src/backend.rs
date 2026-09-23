@@ -26,7 +26,7 @@
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 /// The port is fixed rather than chosen at runtime, because the browser
@@ -36,6 +36,58 @@ pub const STUDIO_PORT: u16 = 8000;
 pub const STUDIO_HOST: &str = "127.0.0.1";
 
 const PROBE_TIMEOUT: Duration = Duration::from_millis(600);
+
+/// Bound on the engine log. It exists to explain the launch that just failed,
+/// not to accumulate forever on a machine nobody maintains.
+const MAX_LOG_BYTES: u64 = 2 * 1024 * 1024;
+
+/// Where the engine's output is written.
+///
+/// Mirrors `_platform_user_data_dir` and `get_logs_dir` in
+/// studio/backend/paths.py, including the INOX_HYDRA_HOME override, so the
+/// file lands in the same directory the Python side uses. That is deliberate:
+/// support.py's diagnostics bundle already tails the newest files there, so
+/// the shell's log is collected with no further wiring.
+fn engine_log_path() -> Option<PathBuf> {
+    let home = match std::env::var("INOX_HYDRA_HOME") {
+        Ok(value) if !value.trim().is_empty() => PathBuf::from(value),
+        _ => PathBuf::from(std::env::var("LOCALAPPDATA").ok()?).join("InoxHydra"),
+    };
+    Some(home.join("logs").join("engine.log"))
+}
+
+/// Opens the engine log, appending, and marks the start of this launch.
+///
+/// Returns None on any failure. Logging is a diagnostic aid and never a
+/// precondition for starting the product.
+fn open_engine_log() -> Option<std::fs::File> {
+    let path = engine_log_path()?;
+    std::fs::create_dir_all(path.parent()?).ok()?;
+
+    if let Ok(meta) = std::fs::metadata(&path) {
+        if meta.len() > MAX_LOG_BYTES {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    let mut file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .ok()?;
+
+    // Seconds since the epoch rather than a formatted date, because rendering
+    // a civil date needs a crate and this line only has to separate one launch
+    // from the previous one. Every line after it comes from uvicorn, which
+    // timestamps its own output.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let _ = writeln!(file, "\n--- engine launch at unix time {} ---", stamp);
+
+    Some(file)
+}
 
 /// How the backend came to be running, which decides whether we may stop it.
 pub enum Backend {
@@ -166,13 +218,30 @@ pub fn start(resources: &Path) -> Result<Backend, String> {
         .arg(STUDIO_PORT.to_string())
         .current_dir(resources);
 
+    // Capture the child's output before it is thrown away.
+    //
+    // CREATE_NO_WINDOW below means there is no console for the child to write
+    // to, so without this its stdout and stderr go nowhere at all. A Python
+    // process that dies on an import error then looks exactly like one still
+    // starting: the only signal is the readiness timeout, the user gets a
+    // splash that never resolves, and there is nothing anywhere to inspect.
+    // Release builds set the Windows subsystem, so the shell has no stderr of
+    // its own to fall back on either.
+    if let Some(file) = open_engine_log() {
+        match file.try_clone() {
+            Ok(errors) => {
+                command.stdout(Stdio::from(file)).stderr(Stdio::from(errors));
+            }
+            // Only one handle. stderr takes it, because a traceback explains a
+            // failed launch and an access log does not.
+            Err(_) => {
+                command.stderr(Stdio::from(file));
+            }
+        }
+    }
+
     // No console window. Without this the user gets a black box flashing up
     // behind their application at every launch.
-    //
-    // The child's stdout and stderr are therefore discarded. A Python process
-    // that dies on an import error looks identical to one still starting, and
-    // the only signal is the readiness timeout. Piping the child's output to a
-    // log file is the fix and is not done here.
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;

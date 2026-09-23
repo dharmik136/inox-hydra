@@ -190,5 +190,19 @@ artifact otherwise.
 generated signing keypair and enabling it without one produces an application
 that fails at runtime. `studio/backend/updates.py` still does its opt-in check.
 
+**The engine log.** Done. The shell spawns uvicorn with `CREATE_NO_WINDOW`, so
+the child has no console, and its output used to go nowhere: a Python process
+that died on an import error was indistinguishable from one still starting, and
+the user got a splash that never resolved with nothing to inspect.
+
+Its stdout and stderr now go to `engine.log` in the same directory
+`paths.get_logs_dir()` returns, which is where `support.py` already tails the
+newest files for the diagnostics bundle. Nothing else had to be wired.
+
+The file appends across launches, each marked with a separator, and is dropped
+once it passes 2 MB. Opening it is never a precondition for starting: if the
+directory is read only or the disk is full, the studio runs and the output is
+discarded as it was before.
+
 **macOS and Linux.** Nothing builds for them. `icon.icns` is deliberately not
 generated rather than shipped as a placeholder.
