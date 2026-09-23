@@ -227,6 +227,44 @@ and every installed copy stops accepting updates permanently, because they each
 carry the matching public key compiled in. There is no path back except asking
 every user to reinstall by hand.
 
+### Before you actually add these secrets
+
+Deferred deliberately until there are users to ship to. Read this first,
+because the day you add the keys is the day it starts mattering.
+
+This key is not an ordinary credential. A leaked API token exposes data; a
+leaked updater key lets an attacker sign an update that **every installed copy
+accepts and installs**. It is remote code execution on every machine that ever
+ran this application.
+
+The risk is not where the key is stored. GitHub encrypts Actions secrets at
+rest, outside the repository, and masks them in logs. The risk is what runs
+beside it: this workflow uses `actions/checkout@v4`, `dtolnay/rust-toolchain`,
+`swatinem/rust-cache@v2`, `softprops/action-gh-release@v2` and
+`@tauri-apps/cli@^2`, all on mutable tags or version ranges. Any one of them
+could change under us, and it would be running in the same job that holds the
+key.
+
+Two ways to close that, in order of strength:
+
+1. **Sign offline.** CI builds the installer unsigned; you sign it on your own
+   machine and upload the `.sig` and manifest. The key never reaches a runner,
+   which removes the problem rather than shrinking it.
+2. **Protected environment plus pinning.** Move the key into a GitHub
+   Environment with a required reviewer, so it is unavailable to any run you
+   did not approve, and pin every action to a commit SHA and the CLI to an
+   exact version.
+
+An HSM or cloud KMS does not help here, which is worth knowing before paying
+for one. Those protect X.509 code signing certificates. The updater key is a
+minisign Ed25519 key read from an environment variable, and Tauri's signer has
+no KMS integration.
+
+Rotation is expensive, which is why this is worth doing once rather than
+fixing later: existing installs verify against the old public key and cannot
+auto update to a build signed with a new one. Each of them needs a manual
+reinstall.
+
 The public half is not a secret and is compiled into the application. It sits
 in the secret store only so that its absence can switch the whole feature off,
 which is what keeps a fork's build working.
