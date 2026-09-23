@@ -180,6 +180,83 @@ def test_every_document_the_app_serves_is_staged(staging_dir):
     )
 
 
+def test_a_missing_document_fails_the_build(monkeypatch, staging_dir):
+    """
+    It printed WARNING and returned 0, so an incomplete Docs tab went into the
+    artifact. Every caller already aborts on a non-zero return; only the
+    signal was missing.
+    """
+    monkeypatch.setattr(
+        prepare_package, "stage_docs",
+        lambda *a, **k: {"destination": staging_dir, "top_level": [], "modules": [],
+                         "missing": ["ENTERPRISE_USAGE.md"], "copied": 3},
+    )
+    # Version propagation is a separate concern and must not decide this.
+    monkeypatch.setattr(
+        prepare_package.subprocess, "run",
+        lambda *a, **k: type("R", (), {"returncode": 0})(),
+    )
+
+    assert prepare_package.main() == 1, (
+        "a document the app serves was absent and the build reported success"
+    )
+
+
+def test_a_complete_tree_still_succeeds(monkeypatch, staging_dir):
+    """Guard against the new check failing a healthy build."""
+    monkeypatch.setattr(
+        prepare_package, "stage_docs",
+        lambda *a, **k: {"destination": staging_dir, "top_level": [], "modules": [],
+                         "missing": [], "copied": 13},
+    )
+    monkeypatch.setattr(
+        prepare_package.subprocess, "run",
+        lambda *a, **k: type("R", (), {"returncode": 0})(),
+    )
+
+    assert prepare_package.main() == 0
+
+
+def test_a_document_that_disappears_is_reported_as_missing(monkeypatch, staging_dir):
+    """
+    The real staging path, not a stubbed return. A name in the served list
+    with no file behind it has to come back in `missing` rather than being
+    skipped over silently.
+    """
+    monkeypatch.setattr(
+        prepare_package, "TOP_LEVEL_DOCS",
+        prepare_package.TOP_LEVEL_DOCS + ["A_DOCUMENT_THAT_DOES_NOT_EXIST.md"],
+    )
+
+    result = prepare_package.stage_docs(staging_dir)
+
+    assert result["missing"] == ["A_DOCUMENT_THAT_DOES_NOT_EXIST.md"]
+
+
+def test_every_document_the_docs_tab_lists_is_staged(staging_dir):
+    """
+    app.py's DOCS_MODULES and prepare_package's lists are maintained
+    separately, and DOCS_MODULES is hardcoded rather than a directory scan, so
+    the tab renders an entry whether or not the file shipped. A drift between
+    the two therefore produces a visible row that answers 404 on click, which
+    is the worst version of this failure and the one no test covered.
+    """
+    sys.path.insert(0, os.path.join(REPO_ROOT, "studio", "backend"))
+    import app as app_module
+
+    result = prepare_package.stage_docs(staging_dir)
+    staged = result["destination"]
+
+    for module in app_module.DOCS_MODULES:
+        name = module["file"]
+        in_modules = os.path.exists(os.path.join(staged, "modules", name))
+        in_top = os.path.exists(os.path.join(staged, name))
+        assert in_modules or in_top, (
+            f"the Docs tab lists '{module['title']}' and nothing stages "
+            f"{name}, so the entry renders and the click answers 404"
+        )
+
+
 def test_staging_twice_leaves_the_same_tree(staging_dir):
     """
     The script says it is idempotent, and the release job may run it after a
