@@ -6,9 +6,14 @@ The rules the React interface in studio/ui is held to.
 This runs ALONGSIDE tests/test_ui_visual_contract.py rather than replacing it.
 Both interfaces ship: studio/frontend is still the fallback whenever the React
 build is absent, so it is still what some users see and still needs its own
-contract. Retiring it is not a deletion, because the React interface does not
-yet implement queue, docs or command, media upload, the image studio or the
-CRM actions, so removing the vanilla page would remove working features.
+contract.
+
+The React interface now covers queue, docs, command, publishing, scheduling,
+CRM actions, media upload and image generation. What it still does not reach is
+the LinkedIn session connection, the per-post attribution drill down, and three
+maintainer surfaces: the governance audit, the internal issue sheet and the
+image prompt preview. Until those land, removing the vanilla page removes
+working features.
 
 Every rule below was carried across because the defect it guards is a property
 of any themed interface, not of the page that happened to be there first:
@@ -25,7 +30,7 @@ of any themed interface, not of the page that happened to be there first:
 
 Two ratchets came across as well, and both are far below where they started.
 The vanilla page carried 42 hex literals in its JavaScript and 365 inline
-styles; this interface carries 0 and 5. That is not an invitation to spend the
+styles; this interface carries 0 and 6. That is not an invitation to spend the
 difference.
 
 Structural checks read studio/frontend_next, which is build output. They skip
@@ -53,11 +58,16 @@ BUILT = os.path.join(REPO_ROOT, "studio", "frontend_next")
 #
 # Every inline style in this interface is computed geometry: where a measured
 # fold rule sits, where a toolbar follows a selection, how tall a revealed
-# paragraph is. None of those is expressible as a class, which is the one case
-# the vanilla rule was never arguing with. A colour or a spacing value appearing
-# here is the regression this counts.
+# paragraph is, how far along a progress bar the server says a task is. None
+# of those is expressible as a class, which is the one case the vanilla rule
+# was never arguing with. A colour or a spacing value appearing here is the
+# regression this counts.
+#
+# Raised from 5 to 6 for the image studio's progress bar, which is a width
+# the server reports. The ratchet did its job: it made that a decision with a
+# reason rather than a line nobody looked at.
 MAX_HEX_LITERALS_IN_SOURCE = 0
-MAX_INLINE_STYLES = 5
+MAX_INLINE_STYLES = 6
 
 # Never typed literally, or this file would break the rule it enforces, which
 # is what tests/test_phase4_algorithmic_safety.py caught the moment it was.

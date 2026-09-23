@@ -53,6 +53,10 @@
    */
   --studio-orange-text: #b83a14;
 
+  /* Green has the same two jobs. As a fill it stays #168a61; as text on
+   * the light canvas that measured 3.6:1 where AA asks 4.5. */
+  --studio-green-text: #12724f;
+
   /* Text placed ON a signal fill. Always near black, in both themes, because
    * both orange steps are light: white on orange measured 2.85:1 in dark and
    * 3.62:1 in light, and the Publish button is the most important control in
@@ -140,6 +144,9 @@
    * step and the fill step are the same value here. Both names still exist, so
    * a component never has to know which theme it is in. */
   --studio-orange-text: #ff6a3d;
+
+  /* 9.09:1 on the dark surfaces already, so fill and text are one value. */
+  --studio-green-text: #59d49a;
 
   --studio-chart-1: #4c8de8;
 
