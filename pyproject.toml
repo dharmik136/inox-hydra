@@ -63,6 +63,7 @@ studio = [
     "frontend/*.json",
     "frontend/*.webmanifest",
     "frontend/icons/*.png",
+    "frontend/fonts/*.woff2",
     "frontend_next/*.html",
     "frontend_next/*.js",
     "frontend_next/*.webmanifest",
