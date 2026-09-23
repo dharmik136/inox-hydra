@@ -29,6 +29,9 @@
   --color-signal-green-subtle: var(--studio-green-subtle);
   --color-signal-blue-subtle: var(--studio-blue-subtle);
 
+  --color-signal-orange-text: var(--studio-orange-text);
+  --color-on-signal: var(--studio-on-signal);
+
   --color-chart-1: var(--studio-chart-1);
 
   --font-editorial: var(--studio-font-editorial);

@@ -60,7 +60,7 @@ export function ContextBar({
       <p className="studio-meta mx-auto hidden shrink-0 md:block" aria-live="off">
         {chars.toLocaleString()} chars
         <span className="mx-1.5 text-ink-muted">·</span>
-        <span className={pastFold ? "text-signal-orange" : undefined}>{foldLabel}</span>
+        <span className={pastFold ? "text-signal-orange-text" : undefined}>{foldLabel}</span>
         <span className="mx-1.5 text-ink-muted">·</span>~{readSeconds}s read
       </p>
 
@@ -87,11 +87,11 @@ export function ContextBar({
             </>
           )}
           {saveState === "failed" && (
-            <span className="text-signal-orange" title={saveError ?? undefined}>
+            <span className="text-signal-orange-text" title={saveError ?? undefined}>
               SAVE FAILED
             </span>
           )}
-          {saveState === "dirty" && <span className="text-signal-orange">UNSAVED</span>}
+          {saveState === "dirty" && <span className="text-signal-orange-text">UNSAVED</span>}
           {saveState === "idle" && <span className="text-ink-muted">UNCHANGED</span>}
         </span>
 
@@ -113,7 +113,7 @@ export function ContextBar({
           type="button"
           onClick={onPublish}
           className={cn(
-            "rounded-md bg-signal-orange px-3 py-1 text-xs font-medium text-white",
+            "rounded-md bg-signal-orange px-3 py-1 text-xs font-medium text-on-signal",
             "transition-[filter] duration-(--studio-motion-fast) ease-(--ease-standard)",
             "hover:brightness-110",
           )}

@@ -48,7 +48,7 @@ export function AuditPanel({ draft }: { draft: string }) {
       ? "text-signal-green"
       : audit.safety_score >= 60
         ? "text-signal-blue"
-        : "text-signal-orange";
+        : "text-signal-orange-text";
 
   return (
     <div className="flex flex-col gap-5">
@@ -76,7 +76,7 @@ export function AuditPanel({ draft }: { draft: string }) {
         <Findings
           icon={AlertTriangle}
           title="Penalties"
-          tone="text-signal-orange"
+          tone="text-signal-orange-text"
           items={audit.penalties}
         />
       )}
@@ -106,7 +106,7 @@ function Measure({ label, value, bad }: { label: string; value: string; bad: boo
   return (
     <div className="flex items-baseline justify-between gap-2">
       <dt className="text-[11px] text-ink-muted">{label}</dt>
-      <dd className={cn("studio-meta", bad ? "text-signal-orange" : "text-ink-secondary")}>{value}</dd>
+      <dd className={cn("studio-meta", bad ? "text-signal-orange-text" : "text-ink-secondary")}>{value}</dd>
     </div>
   );
 }

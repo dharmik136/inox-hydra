@@ -49,7 +49,7 @@ export function MediaPanel() {
       <p className="studio-meta pt-8 text-center leading-relaxed text-ink-muted">
         NO MEDIA IN THE LOCAL LIBRARY
         <br />
-        <span className="text-ink-muted/70">ADDED THROUGH THE DROPZONE</span>
+        <span className="text-ink-muted">ADDED THROUGH THE DROPZONE</span>
       </p>
     );
   }

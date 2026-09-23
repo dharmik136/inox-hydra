@@ -255,7 +255,7 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
                 the column so the crop mark annotates the text instead of
                 covering it, and stacked so it fits the narrow gutter that is
                 left once the inspector is docked. */}
-            <span className="studio-meta absolute top-0 right-full mr-3 -translate-y-1/2 text-right leading-tight text-[10px] tracking-wider text-signal-orange">
+            <span className="studio-meta absolute top-0 right-full mr-3 -translate-y-1/2 text-right leading-tight text-[10px] tracking-wider text-signal-orange-text">
               LINKEDIN FOLD
               <br />
               {FOLD_CHARS} CHARS

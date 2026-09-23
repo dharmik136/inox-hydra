@@ -29,7 +29,12 @@
   /* ---- Text --------------------------------------------------------- */
   --studio-text: #151515;
   --studio-text-secondary: #595955;
-  --studio-text-muted: #85857f;
+  /* Raised from the blueprint's #85857f, which measured 3.26:1 against the
+   * light canvas where AA asks for 4.5. axe reported 96 contrast failures
+   * across every surface from this one token. 4.70:1 at worst now, and
+   * --studio-text-secondary stays well ahead at 6.17 so the three tier
+   * hierarchy still reads. */
+  --studio-text-muted: #666661;
 
   /* ---- Accent and signals ------------------------------------------- */
   /* Colour indicates state, risk, selection or action. It does not
@@ -39,6 +44,20 @@
   --studio-orange: #e9552c;
   --studio-green: #168a61;
   --studio-blue: #2867c7;
+
+  /* Orange doing two different jobs needs two different steps.
+   *
+   * As a FILL it stays #e9552c. As TEXT on a light surface it measured 3.01:1
+   * where AA asks 4.5, so text gets its own darker step. The fold marginalia,
+   * the UNSAVED mark and the audit penalties are all text.
+   */
+  --studio-orange-text: #b83a14;
+
+  /* Text placed ON a signal fill. Always near black, in both themes, because
+   * both orange steps are light: white on orange measured 2.85:1 in dark and
+   * 3.62:1 in light, and the Publish button is the most important control in
+   * the product. */
+  --studio-on-signal: #0a0a0a;
 
   /* Subtle fills, derived from the signals rather than hand mixed, so a
    * palette change carries through instead of leaving a stale tint. */
@@ -108,12 +127,19 @@
 
   --studio-text: #f5f5f0;
   --studio-text-secondary: #a3a3a0;
-  --studio-text-muted: #6f6f6b;
+  /* Same correction for dark: #6f6f6b measured 3.55:1 on the raised
+   * surface. 5.16:1 at worst now. */
+  --studio-text-muted: #8d8d86;
 
   --studio-paper: #e7e2d5;
   --studio-orange: #ff6a3d;
   --studio-green: #59d49a;
   --studio-blue: #67a8ff;
+
+  /* On the dark surfaces #ff6a3d already measures 5.93:1 as text, so the text
+   * step and the fill step are the same value here. Both names still exist, so
+   * a component never has to know which theme it is in. */
+  --studio-orange-text: #ff6a3d;
 
   --studio-chart-1: #4c8de8;
 

@@ -77,7 +77,7 @@ export function SelectionToolbar({ position, busy, onFormat, onReHook }: Selecti
         aria-label="Re-hook this selection"
         title="Re-hook"
         className={cn(
-          "flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium text-signal-orange",
+          "flex items-center gap-1 rounded px-1.5 py-1 text-[11px] font-medium text-signal-orange-text",
           "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
           "hover:bg-signal-orange-subtle disabled:opacity-40",
         )}

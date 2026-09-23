@@ -10,6 +10,7 @@ import { Inspector } from "@/components/Inspector";
 import { LeadsSurface } from "@/components/LeadsSurface";
 import { SwipeSurface } from "@/components/SwipeSurface";
 import { AnalyticsSurface } from "@/components/AnalyticsSurface";
+import { BrandStudioSurface } from "@/components/BrandStudioSurface";
 import { sectionById, type SectionId } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -247,7 +248,12 @@ export default function App() {
               {active === "leads" && <LeadsSurface />}
               {active === "swipe" && <SwipeSurface />}
               {active === "analytics" && <AnalyticsSurface />}
-              {active !== "composer" && active !== "leads" && active !== "swipe" && active !== "analytics" && (
+              {active === "settings" && <BrandStudioSurface />}
+              {active !== "composer" &&
+                active !== "leads" &&
+                active !== "swipe" &&
+                active !== "analytics" &&
+                active !== "settings" && (
                 <SurfacePlaceholder label={section.label} blurb={section.blurb} />
               )}
             </main>

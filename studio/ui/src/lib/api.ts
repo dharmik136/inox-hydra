@@ -189,6 +189,14 @@ export async function auditDraft(text: string): Promise<AlgorithmAudit> {
   });
 }
 
+/**
+ * Every field the profile carries.
+ *
+ * All ten are listed because saving replaces the stored record wholesale:
+ * update_creator_profile does INSERT OR REPLACE with the serialised payload,
+ * so a partial write silently resets whatever it left out to the model's
+ * defaults. Anything editing this has to send back what it read.
+ */
 export interface CreatorProfile {
   name: string;
   headline: string;
@@ -197,6 +205,17 @@ export interface CreatorProfile {
   brand_watermark_position: string;
   brand_watermark_style: string;
   brand_watermark_enabled: boolean;
+  eliminate_provider_watermark_default: boolean;
+  default_aspect_ratio: string;
+  default_visual_style: string;
+}
+
+/** Writes the whole profile back. See the note on CreatorProfile. */
+export async function saveProfile(profile: CreatorProfile): Promise<void> {
+  await call("/api/settings/profile", {
+    method: "POST",
+    body: JSON.stringify(profile),
+  });
 }
 
 export interface ProfileResponse {

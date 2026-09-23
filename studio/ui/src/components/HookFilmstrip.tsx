@@ -159,7 +159,7 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated }: HookFilm
                   </span>
                 )}
                 {specimen.fits !== null && (
-                  <span className={specimen.fits ? "text-signal-green" : "text-signal-orange"}>
+                  <span className={specimen.fits ? "text-signal-green" : "text-signal-orange-text"}>
                     {specimen.fits ? "FITS FOLD" : "PAST FOLD"}
                   </span>
                 )}

@@ -37,7 +37,7 @@ export function LeadsSurface() {
       <Centered>
         NO LEADS CAPTURED YET
         <br />
-        <span className="text-ink-muted/70">CAPTURED PASSIVELY FROM PEOPLE WHO ENGAGE WITH YOUR POSTS</span>
+        <span className="text-ink-muted">CAPTURED PASSIVELY FROM PEOPLE WHO ENGAGE WITH YOUR POSTS</span>
       </Centered>
     );
   }
