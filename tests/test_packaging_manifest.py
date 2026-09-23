@@ -88,6 +88,7 @@ def test_every_runtime_package_is_declared(manifest):
         "studio.backend",
         "studio.backend.agno_agentos",
         "studio.backend.agno_agentos.agents",
+        "studio.backend.mcp_client",
         "studio.core",
     ):
         assert required in packages, f"{required} would be missing from the wheel"
