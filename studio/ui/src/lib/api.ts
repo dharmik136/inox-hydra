@@ -246,3 +246,131 @@ export interface AiStatus {
 export async function fetchAiStatus(): Promise<AiStatus> {
   return call<AiStatus>("/api/ai/status");
 }
+
+// ---------------------------------------------------------------------------
+// Reverse CRM
+// ---------------------------------------------------------------------------
+
+export interface Lead {
+  id: string;
+  name: string;
+  headline: string | null;
+  company: string | null;
+  profile_url: string | null;
+  engagement_type: string | null;
+  status: string;
+  seniority_level: string | null;
+  /** Deterministic ICP score. 0 means unscored, not "scored zero". */
+  icp_score: number;
+  notes: string | null;
+  created_at: string;
+}
+
+export async function fetchLeads(status?: string): Promise<Lead[]> {
+  const query = status && status !== "All" ? `?status=${encodeURIComponent(status)}` : "";
+  const data = await call<{ leads?: Lead[] }>(`/api/leads${query}`);
+  return data.leads ?? [];
+}
+
+export interface LeadInteraction {
+  id: number;
+  post_id: string | null;
+  interaction_type: string | null;
+  comment_text: string | null;
+  suggested_dm_reply: string | null;
+  interacted_at: string;
+}
+
+export async function fetchLeadTimeline(
+  leadId: string,
+): Promise<{ lead: Lead; interactions: LeadInteraction[] }> {
+  return call(`/api/v1/crm/leads/${encodeURIComponent(leadId)}/timeline`);
+}
+
+// ---------------------------------------------------------------------------
+// Swipe file
+// ---------------------------------------------------------------------------
+
+export interface Inspiration {
+  id: number;
+  archetype: string;
+  topic: string;
+  content: string;
+  key_hook: string | null;
+  author_name: string | null;
+  author_headline: string | null;
+  likes_count: number;
+  comments_count: number;
+  velocity_score: number;
+  pacing_style: string | null;
+}
+
+export async function fetchInspirations(): Promise<Inspiration[]> {
+  const data = await call<{ inspirations?: Inspiration[] }>("/api/inspirations");
+  return data.inspirations ?? [];
+}
+
+// ---------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------
+
+export type AnalyticsRange = "7d" | "30d" | "90d";
+
+export interface AnalyticsPoint {
+  date: string;
+  impressions: number | null;
+  reactions: number | null;
+  comments: number | null;
+  shares: number | null;
+  engagement_rate: number | null;
+  followers: number | null;
+  profile_views: number | null;
+  /**
+   * Where the row came from: "observed", "manual" or "seed".
+   *
+   * This column exists because the studio once generated ninety days of
+   * analytics by modulo arithmetic at every boot with nothing marking them
+   * synthetic, and every chart, KPI and export drew from it indistinguishably
+   * from real capture. Any surface that renders these numbers has to render
+   * this too.
+   */
+  source: string | null;
+}
+
+export async function fetchAnalyticsOverview(range: AnalyticsRange): Promise<AnalyticsPoint[]> {
+  const data = await call<{ series?: AnalyticsPoint[] }>(`/api/analytics/overview?range=${range}`);
+  return data.series ?? [];
+}
+
+export interface AnalyticsKpis {
+  impressions: number | null;
+  impressions_delta_pct: number | null;
+  total_engagements: number | null;
+  engagements_delta_pct: number | null;
+  avg_engagement_rate: number | null;
+  engagement_rate_delta: number | null;
+  total_followers: number | null;
+  follower_growth: number | null;
+  profile_views: number | null;
+  profile_views_delta_pct: number | null;
+}
+
+export async function fetchAnalyticsKpis(range: AnalyticsRange): Promise<AnalyticsKpis> {
+  return call<AnalyticsKpis>(`/api/analytics/kpis?range=${range}`);
+}
+
+export interface AnalyticsPost {
+  id: string;
+  content: string;
+  impressions: number | null;
+  reactions: number | null;
+  comments: number | null;
+  shares: number | null;
+  engagement_rate: number | null;
+  published_at: string | null;
+}
+
+export async function fetchAnalyticsPosts(): Promise<AnalyticsPost[]> {
+  const data = await call<{ posts?: AnalyticsPost[] }>("/api/analytics/posts");
+  return data.posts ?? [];
+}

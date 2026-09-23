@@ -46,6 +46,20 @@
   --studio-green-subtle: color-mix(in srgb, var(--studio-green) 12%, transparent);
   --studio-blue-subtle: color-mix(in srgb, var(--studio-blue) 12%, transparent);
 
+  /* ---- Chart ---------------------------------------------------------
+   * A data hue, separate from the signals on purpose.
+   *
+   * The signal colours are the blueprint's and they carry meaning elsewhere:
+   * orange is the fold and the one destructive action, green and orange are a
+   * verdict in the audit. A plotted line means none of those things, so it
+   * gets its own step rather than borrowing one.
+   *
+   * These are the values the dataviz validator passes, per mode. The dark
+   * lightness band is L 0.48 to 0.67, and the blueprint's --studio-blue sits
+   * at 0.726, outside it, which is why the chart steps darker rather than
+   * reusing the signal. Re-run the validator before changing either. */
+  --studio-chart-1: #2867c7;
+
   /* ---- Shape -------------------------------------------------------- */
   /* Matches the existing ramp so the two interfaces agree on corners. */
   --studio-radius-sm: 4px;
@@ -100,6 +114,8 @@
   --studio-orange: #ff6a3d;
   --studio-green: #59d49a;
   --studio-blue: #67a8ff;
+
+  --studio-chart-1: #4c8de8;
 
   /* Re-derived rather than inherited: color-mix resolved against the light
    * signal above, so these must be restated to pick up the dark ones. */

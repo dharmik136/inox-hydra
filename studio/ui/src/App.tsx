@@ -7,7 +7,11 @@ import { ComposerCanvas, FOLD_CHARS } from "@/components/ComposerCanvas";
 import { HookFilmstrip } from "@/components/HookFilmstrip";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Inspector } from "@/components/Inspector";
+import { LeadsSurface } from "@/components/LeadsSurface";
+import { SwipeSurface } from "@/components/SwipeSurface";
+import { AnalyticsSurface } from "@/components/AnalyticsSurface";
 import { sectionById, type SectionId } from "@/lib/navigation";
+import { cn } from "@/lib/utils";
 import {
   createDraft,
   fetchLatestDraft,
@@ -193,20 +197,31 @@ export default function App() {
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <ContextBar
-          kind={active === "composer" ? "POST" : section.label.toUpperCase()}
-          draftRef="DRAFT 01"
-          title={draft.trim().split("\n")[0]?.slice(0, 72) || "Untitled draft"}
-          chars={telemetry.chars}
-          foldLabel={telemetry.foldLabel}
-          pastFold={telemetry.pastFold}
-          readSeconds={telemetry.readSeconds}
-          saveState={saveState}
-          savedAt={savedAt}
-          saveError={saveError}
-          onSave={onSave}
-          onPublish={() => setInspectorOpen(true)}
-        />
+        {/* The context bar is about the document being written. On a surface
+            that has no document it reported "0 chars, 0% of fold" beside a
+            Save button with nothing to save, which is telemetry about nothing.
+            Those surfaces get a plain heading instead. */}
+        {active === "composer" ? (
+          <ContextBar
+            kind="POST"
+            draftRef="DRAFT 01"
+            title={draft.trim().split("\n")[0]?.slice(0, 72) || "Untitled draft"}
+            chars={telemetry.chars}
+            foldLabel={telemetry.foldLabel}
+            pastFold={telemetry.pastFold}
+            readSeconds={telemetry.readSeconds}
+            saveState={saveState}
+            savedAt={savedAt}
+            saveError={saveError}
+            onSave={onSave}
+            onPublish={() => setInspectorOpen(true)}
+          />
+        ) : (
+          <header className="flex h-12 shrink-0 items-center gap-3 border-b border-edge bg-ink px-4">
+            <span className="studio-meta uppercase">{section.label}</span>
+            <span className="truncate text-[13px] text-ink-muted">{section.blurb}</span>
+          </header>
+        )}
 
         <div className="relative flex min-h-0 flex-1">
           <div className="flex min-w-0 flex-1 flex-col">
@@ -218,23 +233,33 @@ export default function App() {
               />
             )}
 
-            <main className="min-h-0 flex-1 overflow-y-auto">
-              {active === "composer" ? (
+            {/* The surfaces that scroll internally manage their own overflow,
+                so the shell does not add a second scrollbar around them. */}
+            <main className={cn("min-h-0 flex-1", active === "leads" || active === "swipe" ? "overflow-hidden" : "overflow-y-auto")}>
+              {active === "composer" && (
                 <ComposerCanvas
                   value={draft}
                   onChange={onChangeDraft}
                   onReHook={onReHook}
                   swapKey={swapKey}
                 />
-              ) : (
+              )}
+              {active === "leads" && <LeadsSurface />}
+              {active === "swipe" && <SwipeSurface />}
+              {active === "analytics" && <AnalyticsSurface />}
+              {active !== "composer" && active !== "leads" && active !== "swipe" && active !== "analytics" && (
                 <SurfacePlaceholder label={section.label} blurb={section.blurb} />
               )}
             </main>
           </div>
 
-          <Inspector open={inspectorOpen} onClose={() => setInspectorOpen(false)} draft={draft} />
+          {/* The inspector inspects a draft, so it is not drawn beside the
+              surfaces that are not about one. */}
+          {active === "composer" && (
+            <Inspector open={inspectorOpen} onClose={() => setInspectorOpen(false)} draft={draft} />
+          )}
 
-          {!inspectorOpen && (
+          {!inspectorOpen && active === "composer" && (
             <button
               type="button"
               onClick={() => setInspectorOpen(true)}
