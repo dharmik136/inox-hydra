@@ -466,9 +466,14 @@ def test_all_platform_files_hold_zero_em_dash_invariant():
         os.path.join(REPO_ROOT, "studio", "backend", "desktop.py"),
         os.path.join(REPO_ROOT, ".github", "workflows", "desktop.yml"),
         os.path.join(REPO_ROOT, "docs", "DESKTOP_SHELL.md"),
-        os.path.join(REPO_ROOT, "MACOS_LINUX_NOTES.md"),
         os.path.abspath(__file__),
     ]
+    # MACOS_LINUX_NOTES.md was in this list and is deliberately not in the
+    # repository. It was a handoff note from the agent that wrote this work,
+    # folded into the commit message and deleted, so asserting it exists made
+    # the suite depend on a scratch file rather than on the product. A test
+    # that pins the presence of a working note fails the moment the work is
+    # tidied up, which is exactly what happened.
     for path in targets:
         assert os.path.isfile(path), f"Target file does not exist: {path}"
         content = _read(path)
