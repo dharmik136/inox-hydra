@@ -98,14 +98,36 @@ def main() -> int:
         return 1
 
     print(f"staged {result['copied']} documents into studio/docs/")
+
+    # A listed document that is absent stops the build.
+    #
+    # This printed WARNING and returned 0, so an incomplete Docs tab went
+    # straight into the artifact. There is no quiet version of that failure:
+    #
+    #   ENTERPRISE_USAGE.md appears in app.py's DOCS_MODULES, which is a
+    #   hardcoded list rather than a directory scan, so the tab renders the
+    #   entry either way and the click answers 404 "Documentation file for
+    #   'enterprise-usage' not found on disk."
+    #
+    #   The other six are indexed for offline search by docs_engine, which
+    #   walks the staged tree, so a missing one simply stops being findable
+    #   and nothing anywhere says so.
+    #
+    # Every caller already treats a non-zero return as fatal: build_portable,
+    # stage_desktop_payload and verify_package each raise SystemExit on it.
+    # The wiring was there and only the signal was missing.
     if result["missing"]:
-        print(f"WARNING: listed but not found: {', '.join(result['missing'])}")
+        print(f"ERROR: listed as served but not found in docs/: "
+              f"{', '.join(result['missing'])}")
+        print("Either restore the files or remove them from TOP_LEVEL_DOCS. "
+              "Shipping without them leaves the Docs tab pointing at nothing.")
+        return 1
 
     # Propagate the single version source before anything is packaged, so a
     # built artifact can never contain a drifted extension manifest.
     sync = os.path.join(REPO_ROOT, "tools", "sync_version.py")
-    result = subprocess.run([sys.executable, sync], cwd=REPO_ROOT)
-    if result.returncode != 0:
+    completed = subprocess.run([sys.executable, sync], cwd=REPO_ROOT)
+    if completed.returncode != 0:
         print("ERROR: version propagation failed")
         return 1
     return 0
