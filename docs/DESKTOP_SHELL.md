@@ -186,9 +186,99 @@ and fails the build when signing was configured but did not take. A
 credential missing the signer role all produce a green build and an unsigned
 artifact otherwise.
 
-**Auto update.** `tauri-plugin-updater` is not enabled, because it requires a
-generated signing keypair and enabling it without one produces an application
-that fails at runtime. `studio/backend/updates.py` still does its opt-in check.
+**Auto update.** Wired, and off until you generate a keypair. Unlike code
+signing this costs nothing and needs no account: one command, two secrets.
+
+### The two keys are not the same key
+
+Confusing them is the usual mistake, and they solve different problems.
+
+| | Proves | Needed for |
+|---|---|---|
+| **Code signing** | to Windows, who published the installer | SmartScreen not warning on download |
+| **Updater signing** | to the application, that an update came from the same author as the build it replaces | the updater running at all |
+
+Only the second is what makes an update endpoint safe. A URL in a config file,
+without a signature the application checks, is a way to install arbitrary
+software on the user's machine. That is why `tauri-plugin-updater` refuses to
+run without a public key, and why this feature stayed off rather than shipping
+half configured.
+
+You can have updates without code signing. That is the current position.
+
+### Turning it on
+
+Generate the pair once, on your own machine, and keep the private half:
+
+```bash
+npm exec --yes -- tauri signer generate -w "$HOME/.tauri/inox-hydra.key"
+```
+
+Then set three repository secrets:
+
+| Secret | Value |
+|---|---|
+| `TAURI_SIGNING_PRIVATE_KEY` | contents of the `.key` file |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the passphrase, or empty |
+| `TAURI_UPDATER_PUBKEY` | contents of the `.key.pub` file |
+
+**Keep the private key.** It is not recoverable and not regenerable. Lose it
+and every installed copy stops accepting updates permanently, because they each
+carry the matching public key compiled in. There is no path back except asking
+every user to reinstall by hand.
+
+The public half is not a secret and is compiled into the application. It sits
+in the secret store only so that its absence can switch the whole feature off,
+which is what keeps a fork's build working.
+
+Both keys, or neither. A build with only the public key would check for updates
+it can never verify, so the workflow refuses that combination and says why.
+
+### What a release produces
+
+With the keys present, `desktop.yml` writes `desktop/updater.json` at build
+time, the same way it writes `signing.json`, and the bundle gains
+`createUpdaterArtifacts`. Tagging `v*.*.*` then attaches three files:
+
+```
+LinkedIn Studio_x.y.z_x64-setup.exe        the installer
+LinkedIn Studio_x.y.z_x64-setup.exe.sig    its updater signature
+latest-desktop.json                        the manifest clients read
+```
+
+The manifest version is read from `studio/__version__.py`, never written by
+hand: a manifest announcing a version the artifact was not signed for is
+rejected by the client as `SignedVersionMismatch`.
+
+If Tauri produced no `.sig`, the build fails rather than publishing. A manifest
+without one means every client downloads an update it then refuses, which
+breaks updating for the people who already installed.
+
+### Why the tray, and not a button in the studio
+
+The check runs from the tray menu, in Rust, through `UpdaterExt`. It is not
+reachable from the window, and `capabilities/default.json` still grants the
+webview nothing.
+
+That is deliberate. The window navigates to a loopback origin the shell does
+not author. Granting it `updater:default` would let any page the webview ever
+loads ask the shell to download and install software. Rust-side calls do not go
+through the capability system, so driving the check from the tray is what keeps
+that permission list empty.
+
+### It asks, and it does not restart you
+
+The menu item is the status surface: it reports checking, up to date, installed,
+unreachable, or not configured, in the place the user clicked to ask.
+
+Nothing happens unannounced, and nothing restarts on its own. The studio runs a
+scheduler and holds someone's professional correspondence; an update that took
+the window away mid draft would be the one moment the product acted against the
+person using it. `studio/backend/updates.py` is opt-in for the same reason and
+still does its own check, against a different manifest: `release/latest.json`
+is committed and read over raw.githubusercontent, while `latest-desktop.json`
+is a release asset in Tauri's schema. They are separate things and should not
+be merged.
 
 **The engine log.** Done. The shell spawns uvicorn with `CREATE_NO_WINDOW`, so
 the child has no console, and its output used to go nowhere: a Python process

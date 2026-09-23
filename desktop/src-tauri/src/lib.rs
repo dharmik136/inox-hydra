@@ -64,6 +64,19 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
 
+            // Registered, and allowed to fail.
+            //
+            // The plugin needs plugins.updater in the configuration, and that
+            // block is written at build time only when a public key is
+            // available. A build without one must still produce a working
+            // application, so a registration failure is recorded and stepped
+            // over rather than propagated. The tray item then reports that
+            // updates are not configured, which is the truth.
+            #[cfg(desktop)]
+            if let Err(error) = handle.plugin(tauri_plugin_updater::Builder::new().build()) {
+                eprintln!("[shell] updates are not available in this build: {}", error);
+            }
+
             build_tray(app)?;
 
             let resources = app
@@ -137,10 +150,74 @@ pub fn run() {
         });
 }
 
+/// What a check turned up, in the words the tray will show.
+#[cfg(desktop)]
+async fn run_update_check(app: &tauri::AppHandle) -> &'static str {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let updater = match app.updater() {
+        Ok(updater) => updater,
+        // No endpoints or no public key. This build was made without them,
+        // which is a fact about the build and not a failure the user caused.
+        Err(error) => {
+            eprintln!("[shell] updater unavailable: {}", error);
+            return "Updates are not configured";
+        }
+    };
+
+    match updater.check().await {
+        Ok(Some(update)) => {
+            // The signature is checked by the plugin against the public key
+            // compiled into this build. An artifact that was not signed by the
+            // matching private key is refused here, which is the entire reason
+            // the keypair exists: without it, the update endpoint would be a
+            // way to install arbitrary software on the user's machine.
+            match update.download_and_install(|_, _| {}, || {}).await {
+                Ok(()) => {
+                    // Restarting is the install. Doing it without asking would
+                    // take the window away mid sentence, so the user is told
+                    // and chooses when, by quitting and reopening.
+                    "Update installed. Restart to use it"
+                }
+                Err(error) => {
+                    eprintln!("[shell] update download failed: {}", error);
+                    "Update found, but it could not be installed"
+                }
+            }
+        }
+        Ok(None) => "You are on the latest version",
+        Err(error) => {
+            eprintln!("[shell] update check failed: {}", error);
+            "Could not reach the update server"
+        }
+    }
+}
+
+/// Runs the check off the menu thread and reports back into the menu item.
+///
+/// The item's own label is the status surface. No dialog plugin, no
+/// notification permission, and the answer appears exactly where the user
+/// clicked to ask the question.
+#[cfg(desktop)]
+fn start_update_check(app: tauri::AppHandle, item: MenuItem<tauri::Wry>) {
+    let _ = item.set_enabled(false);
+    let _ = item.set_text("Checking for updates...");
+
+    tauri::async_runtime::spawn(async move {
+        let outcome = run_update_check(&app).await;
+        let _ = item.set_text(outcome);
+        let _ = item.set_enabled(true);
+    });
+}
+
 fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let open = MenuItem::with_id(app, "open", "Open Studio", true, None::<&str>)?;
+    let update = MenuItem::with_id(app, "update", "Check for Updates", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &update, &quit])?;
+
+    // Held so the async check can write its result back into the label.
+    let update_item = update.clone();
 
     TrayIconBuilder::with_id("studio-tray")
         .icon(app.default_window_icon().unwrap().clone())
@@ -149,8 +226,10 @@ fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         // Left click opens, right click gets the menu. Showing the menu on
         // both makes the common action take two clicks.
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| match event.id.as_ref() {
+        .on_menu_event(move |app, event| match event.id.as_ref() {
             "open" => show_studio(app),
+            #[cfg(desktop)]
+            "update" => start_update_check(app.clone(), update_item.clone()),
             "quit" => app.exit(0),
             _ => {}
         })

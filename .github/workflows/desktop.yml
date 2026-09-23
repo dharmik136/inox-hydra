@@ -173,12 +173,81 @@ jobs:
           AZURE_SIGNING_ACCOUNT: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
           AZURE_SIGNING_PROFILE: ${{ secrets.AZURE_SIGNING_PROFILE }}
 
+      # ---------------------------------------------------------------------
+      # Auto update, on the same terms as signing: wired, and off until the
+      # keys exist.
+      #
+      # Two different keys are involved and confusing them is the usual
+      # mistake. Code signing proves to Windows who published the installer.
+      # Updater signing proves to the application that an update came from the
+      # same author as the build it is replacing. An update endpoint without
+      # the second one is a way to install arbitrary software on the user's
+      # machine, which is why the plugin refuses to run without a public key.
+      #
+      # Generate the pair once, on your own machine, and keep the private half:
+      #
+      #   npm exec --yes -- tauri signer generate -w "$HOME/.tauri/inox-hydra.key"
+      #
+      # Then set:
+      #
+      #   TAURI_SIGNING_PRIVATE_KEY           contents of the .key file
+      #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  the passphrase, or empty
+      #   TAURI_UPDATER_PUBKEY                contents of the .key.pub file
+      #
+      # The public half is not a secret and is compiled into the application.
+      # It lives in the secret store only so that its absence can switch the
+      # whole feature off, which is what keeps a fork's build working.
+      # ---------------------------------------------------------------------
+      - name: Decide Whether This Build Can Update Itself
+        id: updater
+        shell: pwsh
+        run: |
+          $configured = [bool]$env:TAURI_UPDATER_PUBKEY -and [bool]$env:TAURI_SIGNING_PRIVATE_KEY
+          "configured=$($configured.ToString().ToLower())" | Out-File $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+          if ($configured) {
+            "Updates: configured. The bundle will carry an updater and a signed artifact."
+          } elseif ($env:TAURI_UPDATER_PUBKEY -or $env:TAURI_SIGNING_PRIVATE_KEY) {
+            "::warning title=Half configured updater::Only one of TAURI_UPDATER_PUBKEY and TAURI_SIGNING_PRIVATE_KEY is set. Both are required, so updates stay off. A public key with no private key produces an application that checks for updates it can never verify."
+            "Updates: NOT configured, and one of the two keys is set. See the warning."
+          } else {
+            "Updates: not configured. This build will report that in the tray rather than failing."
+          }
+        env:
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
+      # Written at build time for the same reason signing.json is: the base
+      # config is what a local unsigned build uses, and it must not name a
+      # public key that this checkout does not have.
+      - name: Configure Updates
+        if: steps.updater.outputs.configured == 'true'
+        shell: pwsh
+        run: |
+          $cfg = @{
+            bundle = @{ createUpdaterArtifacts = $true }
+            plugins = @{
+              updater = @{
+                pubkey = $env:TAURI_UPDATER_PUBKEY
+                endpoints = @("https://github.com/${{ github.repository }}/releases/latest/download/latest-desktop.json")
+                windows = @{ installMode = "passive" }
+              }
+            }
+          }
+          $cfg | ConvertTo-Json -Depth 8 | Out-File -FilePath "desktop/updater.json" -Encoding utf8
+          "Wrote desktop/updater.json. The private key is read from the environment and is not written here."
+        env:
+          TAURI_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBKEY }}
+
       - name: Build The Desktop Bundle
         shell: pwsh
         run: |
           $buildArgs = @("tauri", "build", "--config", "desktop/src-tauri/tauri.conf.json")
           if ("${{ steps.signing.outputs.configured }}" -eq "true") {
             $buildArgs += @("--config", "desktop/signing.json")
+          }
+          if ("${{ steps.updater.outputs.configured }}" -eq "true") {
+            $buildArgs += @("--config", "desktop/updater.json")
           }
           npm exec --yes -- @buildArgs
         env:
@@ -227,6 +296,53 @@ jobs:
             }
           }
 
+      # The same reasoning as Verify The Signature, for the other key. Tauri
+      # writes the .sig next to the installer only when it actually signed
+      # one. If it is missing, the build produced an update nobody can verify,
+      # and publishing it would mean shipping a manifest that every client
+      # rejects. Better to fail here than to break updating for the people who
+      # already installed.
+      - name: Build The Update Manifest
+        id: updatefile
+        if: steps.updater.outputs.configured == 'true'
+        shell: pwsh
+        run: |
+          $installer = "${{ steps.artifact.outputs.path }}"
+          $sigPath = "$installer.sig"
+          if (-not (Test-Path $sigPath)) {
+            throw "Updates were configured but no signature was produced at $sigPath. Refusing to publish an update the application cannot verify."
+          }
+
+          $signature = (Get-Content $sigPath -Raw).Trim()
+          if (-not $signature) { throw "The signature file is empty." }
+
+          $version = (Get-Content "studio/__version__.py" -Raw | Select-String -Pattern '__version__\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+          $installerName = [System.IO.Path]::GetFileName($installer)
+          $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/v$version/$installerName"
+
+          # The platform key is what the client looks itself up by. A wrong one
+          # produces TargetNotFound on every machine, which reads to a user as
+          # "there is no update" rather than as a broken manifest.
+          $manifest = [ordered]@{
+            version   = $version
+            notes     = "See the release notes at https://github.com/${{ github.repository }}/releases/tag/v$version"
+            pub_date  = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = [ordered]@{
+              "windows-x86_64" = [ordered]@{
+                signature = $signature
+                url       = $downloadUrl
+              }
+            }
+          }
+
+          $out = "desktop/latest-desktop.json"
+          $manifest | ConvertTo-Json -Depth 8 | Out-File -FilePath $out -Encoding utf8
+          "path=$((Resolve-Path $out).Path)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "sig=$sigPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          ""
+          "Update manifest for $version:"
+          Get-Content $out
+
       - name: Upload The Installer
         uses: actions/upload-artifact@v4
         with:
@@ -234,9 +350,16 @@ jobs:
           path: ${{ steps.artifact.outputs.path }}
           if-no-files-found: error
 
+      # The manifest and the .sig go up with the installer or not at all.
+      # A release carrying a manifest that points at an installer which is not
+      # there yet would have every client download a 404 and report a failed
+      # update.
       - name: Attach To The Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.artifact.outputs.path }}
-          fail_on_unmatched_files: true
+          files: |
+            ${{ steps.artifact.outputs.path }}
+            ${{ steps.updatefile.outputs.sig }}
+            ${{ steps.updatefile.outputs.path }}
+          fail_on_unmatched_files: false

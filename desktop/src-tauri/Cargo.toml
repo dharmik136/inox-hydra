@@ -25,6 +25,14 @@ tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# The updater is driven entirely from Rust, through the tray. It is
+# deliberately not reachable from the window: the studio is a remote origin
+# over loopback, and capabilities/default.json grants that origin nothing.
+# A page in the webview must never be able to ask the shell to install
+# software.
+[target.'cfg(any(windows, target_os = "macos", target_os = "linux"))'.dependencies]
+tauri-plugin-updater = "2"
+
 [profile.release]
 # A smaller binary is a faster download and a smaller attack surface. None of
 # this costs anything at runtime for a process that spends its life idle.
