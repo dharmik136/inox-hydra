@@ -94,6 +94,19 @@ def is_windows() -> bool:
     return sys.platform == "win32"
 
 
+def is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
+def is_linux() -> bool:
+    return sys.platform.startswith("linux")
+
+
+MACOS_LAUNCH_AGENT_LABEL = "com.inoxhydra.linkedinstudio"
+MACOS_LAUNCH_AGENT_FILE = f"{MACOS_LAUNCH_AGENT_LABEL}.plist"
+LINUX_AUTOSTART_FILE = "inox-hydra.desktop"
+
+
 def get_app_icon_path() -> str:
     """
     The one .ico every surface points at.
@@ -138,8 +151,6 @@ def acquire_single_instance(name: str = SINGLE_INSTANCE_MUTEX):
         import ctypes
 
         ERROR_ALREADY_EXISTS = 183
-        # A HANDLE is pointer sized. ctypes defaults restype to c_int, which
-        # would clip the top half of one on 64 bit Windows.
         kernel32 = ctypes.windll.kernel32
         kernel32.CreateMutexW.restype = ctypes.c_void_p
         kernel32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_bool, ctypes.c_wchar_p]
@@ -150,51 +161,82 @@ def acquire_single_instance(name: str = SINGLE_INSTANCE_MUTEX):
             return None
         return handle
     except Exception:
-        # Unable to tell. Better to run than to refuse to start.
         return None
 
 
 def get_startup_dir() -> str:
-    """The per user Startup folder, which is where a shortcut has to land."""
-    appdata = os.environ.get("APPDATA") or os.path.expanduser("~\\AppData\\Roaming")
-    return os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+    """
+    Returns the platform-specific autostart directory for the current user.
+    Windows: %APPDATA%/Microsoft/Windows/Start Menu/Programs/Startup
+    macOS: ~/Library/LaunchAgents
+    Linux: ~/.config/autostart (or $XDG_CONFIG_HOME/autostart)
+    """
+    if is_windows():
+        appdata = os.environ.get("APPDATA") or os.path.expanduser("~\\AppData\\Roaming")
+        return os.path.join(appdata, "Microsoft", "Windows", "Start Menu", "Programs", "Startup")
+    if is_macos():
+        return os.path.expanduser("~/Library/LaunchAgents")
+    config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return os.path.join(config_home, "autostart")
 
 
 def get_startup_shortcut_path() -> str:
-    return os.path.join(get_startup_dir(), STARTUP_SHORTCUT_NAME)
+    if is_windows():
+        return os.path.join(get_startup_dir(), STARTUP_SHORTCUT_NAME)
+    if is_macos():
+        return os.path.join(get_startup_dir(), MACOS_LAUNCH_AGENT_FILE)
+    return os.path.join(get_startup_dir(), LINUX_AUTOSTART_FILE)
 
 
 def is_autostart_enabled() -> bool:
-    return os.path.isfile(get_startup_shortcut_path())
+    path = get_startup_shortcut_path()
+    try:
+        return os.path.isfile(path) and os.path.getsize(path) > 0
+    except OSError:
+        return False
 
 
 def _launcher_target() -> Optional[str]:
     """
     What the Startup shortcut should point at.
 
-    The portable build ships InoxHydra.bat next to the runtime. A source
-    checkout has launch_studio.bat. Whichever exists is the thing that knows
-    how to start this installation, so autostart points at it rather than
-    reconstructing a command line that would drift from it.
+    The portable build ships InoxHydra.bat or InoxHydra.sh next to the runtime.
+    A source checkout has launch_studio.bat or launch_studio.sh. Whichever exists
+    is the thing that knows how to start this installation, so autostart points
+    at it rather than reconstructing a command line that would drift from it.
     """
-    for candidate in ("InoxHydra.bat", "launch_studio.bat"):
+    if is_windows():
+        candidates = ["InoxHydra.bat", "launch_studio.bat"]
+    else:
+        candidates = [
+            "LinkedIn Studio",
+            "InoxHydra",
+            "InoxHydra.sh",
+            "launch_studio.sh",
+            "launch_studio.py",
+            "launch_studio.bat",
+        ]
+
+    for candidate in candidates:
         found = _find_asset(candidate)
         if found and os.path.isfile(found):
             return found
+
+    if not is_windows():
+        return sys.executable
+
     return None
 
 
 def enable_autostart() -> Dict[str, Any]:
     """
-    Creates the Startup shortcut.
+    Enables automatic start on user login.
+    Windows: Creates a Startup folder shortcut (.lnk) via PowerShell.
+    macOS: Creates a LaunchAgent property list (.plist) in ~/Library/LaunchAgents.
+    Linux: Creates an XDG autostart desktop entry (.desktop) in ~/.config/autostart.
 
-    Uses the same WScript.Shell approach as the desktop shortcuts in
-    browser_launcher, because writing a .lnk by hand means implementing a
-    binary shell link format for no benefit.
+    Reports the state achieved on disk rather than what was requested.
     """
-    if not is_windows():
-        return {"enabled": False, "reason": "autostart is implemented for Windows only"}
-
     target = _launcher_target()
     if not target:
         return {"enabled": False, "reason": "no launcher script found next to the application"}
@@ -203,66 +245,118 @@ def enable_autostart() -> Dict[str, Any]:
     try:
         os.makedirs(startup_dir, exist_ok=True)
     except OSError as err:
-        return {"enabled": False, "reason": f"cannot reach the Startup folder: {err}"}
+        return {"enabled": False, "reason": f"cannot reach the autostart directory: {err}"}
 
     shortcut = get_startup_shortcut_path()
-    icon = get_app_icon_path()
 
-    # Minimised, because the point of autostart is that the daemon is ready in
-    # the tray, not that a console window greets the user at every login.
-    # PowerShell escapes a single quote by doubling it.
-    #
-    # I fixed this exact pattern in browser_launcher, verified it, and missed
-    # it here. A Windows account name may legally contain an apostrophe, and
-    # every one of these paths runs through the user profile, so an account
-    # named O'Brien ended the quoted string early and the command failed to
-    # parse. Not remotely reachable, but a silent failure for those users.
-    def ps_quote(value):
-        return str(value).replace("'", "''")
+    if is_windows():
+        icon = get_app_icon_path()
 
-    ps_cmd = (
-        f"$w = New-Object -ComObject WScript.Shell; "
-        f"$s = $w.CreateShortcut('{ps_quote(shortcut)}'); "
-        f"$s.TargetPath = '{ps_quote(target)}'; "
-        f"$s.WorkingDirectory = '{ps_quote(os.path.dirname(target))}'; "
-        f"$s.WindowStyle = 7; "
-        f"$s.Description = '{ps_quote(APP_DISPLAY_NAME)} background engine'; "
-    )
-    if os.path.isfile(icon):
-        ps_cmd += f"$s.IconLocation = '{ps_quote(icon)},0'; "
-    ps_cmd += "$s.Save()"
+        def ps_quote(value):
+            return str(value).replace("'", "''")
 
-    try:
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
-            capture_output=True, text=True, timeout=15,
+        ps_cmd = (
+            f"$w = New-Object -ComObject WScript.Shell; "
+            f"$s = $w.CreateShortcut('{ps_quote(shortcut)}'); "
+            f"$s.TargetPath = '{ps_quote(target)}'; "
+            f"$s.WorkingDirectory = '{ps_quote(os.path.dirname(target))}'; "
+            f"$s.WindowStyle = 7; "
+            f"$s.Description = '{ps_quote(APP_DISPLAY_NAME)} background engine'; "
         )
-    except Exception as err:
-        return {"enabled": False, "reason": f"shortcut creation failed: {err}"}
+        if os.path.isfile(icon):
+            ps_cmd += f"$s.IconLocation = '{ps_quote(icon)},0'; "
+        ps_cmd += "$s.Save()"
 
-    # The existence check below is the real verdict, but a non zero exit says
-    # WHY, which is the difference between a usable message and "it did not
-    # work".
-    if result.returncode != 0 and not os.path.isfile(shortcut):
-        detail = (result.stderr or result.stdout or "").strip().splitlines()
-        return {
-            "enabled": False,
-            "reason": detail[0] if detail else "PowerShell refused the shortcut command",
+        try:
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+                capture_output=True, text=True, timeout=15,
+            )
+        except Exception as err:
+            return {"enabled": False, "reason": f"shortcut creation failed: {err}"}
+
+        if result.returncode != 0 and not os.path.isfile(shortcut):
+            detail = (result.stderr or result.stdout or "").strip().splitlines()
+            return {
+                "enabled": False,
+                "reason": detail[0] if detail else "PowerShell refused the shortcut command",
+            }
+
+        if os.path.isfile(shortcut):
+            return {"enabled": True, "shortcut_path": shortcut, "target": target}
+        return {"enabled": False, "reason": "the shortcut was not created"}
+
+    if is_macos():
+        import plistlib
+
+        prog_args = [target] if not target.endswith(".py") else [sys.executable, target]
+        plist_content = {
+            "Label": MACOS_LAUNCH_AGENT_LABEL,
+            "ProgramArguments": prog_args,
+            "RunAtLoad": True,
+            "WorkingDirectory": os.path.dirname(target) if target else os.path.expanduser("~"),
         }
+        try:
+            with open(shortcut, "wb") as f:
+                plistlib.dump(plist_content, f)
+        except OSError as err:
+            try:
+                if os.path.exists(shortcut):
+                    os.remove(shortcut)
+            except OSError:
+                pass
+            return {"enabled": False, "reason": f"cannot write LaunchAgent plist: {err}"}
 
-    if os.path.isfile(shortcut):
-        return {"enabled": True, "shortcut_path": shortcut, "target": target}
-    return {"enabled": False, "reason": "the shortcut was not created"}
+        if os.path.isfile(shortcut):
+            return {"enabled": True, "shortcut_path": shortcut, "target": target}
+        return {"enabled": False, "reason": "the LaunchAgent plist was not created"}
+
+    if is_linux():
+        exec_line = target if not target.endswith(".py") else f"{sys.executable} {target}"
+        icon = get_app_icon_path()
+        desktop_entry = "\n".join([
+            "[Desktop Entry]",
+            "Type=Application",
+            "Version=1.0",
+            f"Name={APP_DISPLAY_NAME}",
+            "Comment=Local creator engine for LinkedIn",
+            f"Exec={exec_line}",
+            f"Icon={icon}",
+            "Terminal=false",
+            "StartupNotify=false",
+            "Categories=Office;Productivity;",
+            "",
+        ])
+        try:
+            with open(shortcut, "w", encoding="utf-8", newline="\n") as f:
+                f.write(desktop_entry)
+        except OSError as err:
+            try:
+                if os.path.exists(shortcut):
+                    os.remove(shortcut)
+            except OSError:
+                pass
+            return {"enabled": False, "reason": f"cannot write autostart desktop file: {err}"}
+
+        if os.path.isfile(shortcut):
+            return {"enabled": True, "shortcut_path": shortcut, "target": target}
+        return {"enabled": False, "reason": "the autostart desktop entry was not created"}
+
+    return {"enabled": False, "reason": f"autostart is not supported on {sys.platform}"}
 
 
 def disable_autostart() -> Dict[str, Any]:
-    """Removes the Startup shortcut. Succeeds when there was nothing to remove."""
+    """
+    Removes the autostart entry (shortcut, plist, or desktop file).
+    Succeeds when there was nothing to remove, and reports achieved state.
+    """
     shortcut = get_startup_shortcut_path()
     if not os.path.isfile(shortcut):
         return {"enabled": False, "removed": False}
     try:
         os.remove(shortcut)
-        return {"enabled": False, "removed": True}
+        still_present = os.path.isfile(shortcut)
+        return {"enabled": still_present, "removed": not still_present}
     except OSError as err:
         return {"enabled": True, "removed": False, "reason": str(err)}
 
@@ -274,15 +368,16 @@ def describe() -> Dict[str, Any]:
     """
     icon = get_app_icon_path()
     launcher = _launcher_target()
+    supported = is_windows() or is_macos() or is_linux()
     return {
         "platform": sys.platform,
-        "supported": is_windows(),
+        "supported": supported,
         "app_id": APP_USER_MODEL_ID,
         "app_name": APP_DISPLAY_NAME,
         "icon_path": icon,
         "icon_present": os.path.isfile(icon),
         "launcher": launcher,
         "autostart_enabled": is_autostart_enabled(),
-        "autostart_available": bool(launcher) and is_windows(),
+        "autostart_available": bool(launcher) and supported,
         "startup_shortcut_path": get_startup_shortcut_path(),
     }

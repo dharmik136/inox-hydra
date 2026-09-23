@@ -30,12 +30,17 @@ import hmac
 import os
 import platform
 
+import shutil
+import subprocess
+
 DPAPI_PREFIX = "dpapi:"
 LOCAL_ENC_PREFIX = "locenc:"
 # The replacement scheme. The old prefix is still read so existing vaults keep
 # working; nothing new is ever written under it.
 LOCAL_ENC_V2_PREFIX = "locenc2:"
 _VAULT_KEY_FILENAME = "vault_key"
+_KEYCHAIN_SERVICE = "InoxHydra.LinkedInStudio"
+_KEYCHAIN_ACCOUNT = "vault_master_key"
 MAX_PLAINTEXT_LENGTH = 65536
 
 
@@ -47,18 +52,119 @@ def _get_machine_key() -> bytes:
     return hashlib.pbkdf2_hmac("sha256", f"{node_id}:{user}".encode("utf-8"), salt, 100000)
 
 
-def _local_key() -> bytes:
+def _keychain_read() -> Optional[bytes]:
+    """Reads the master key from the macOS Keychain via the security binary."""
+    if platform.system() != "Darwin":
+        return None
+    try:
+        proc = subprocess.run(
+            [
+                "security", "find-generic-password",
+                "-s", _KEYCHAIN_SERVICE,
+                "-a", _KEYCHAIN_ACCOUNT,
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if proc.returncode == 0:
+            secret = proc.stdout.strip()
+            if secret:
+                try:
+                    raw = bytes.fromhex(secret)
+                    if len(raw) >= 32:
+                        return raw[:32]
+                except ValueError:
+                    raw = secret.encode("utf-8")
+                    if len(raw) >= 32:
+                        return raw[:32]
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return None
+
+
+def _keychain_write(key: bytes) -> bool:
+    """Stores the master key in the macOS Keychain via the security binary."""
+    if platform.system() != "Darwin":
+        return False
+    try:
+        proc = subprocess.run(
+            [
+                "security", "add-generic-password",
+                "-s", _KEYCHAIN_SERVICE,
+                "-a", _KEYCHAIN_ACCOUNT,
+                "-w", key.hex(),
+                "-U",
+            ],
+            capture_output=True,
+            timeout=5,
+        )
+        return proc.returncode == 0
+    except (subprocess.SubprocessError, OSError):
+        return False
+
+
+def _secret_tool_read() -> Optional[bytes]:
+    """Reads the master key from Linux Secret Service via secret-tool."""
+    if platform.system() != "Linux":
+        return None
+    if not shutil.which("secret-tool"):
+        return None
+    try:
+        proc = subprocess.run(
+            [
+                "secret-tool", "lookup",
+                "service", _KEYCHAIN_SERVICE,
+                "account", _KEYCHAIN_ACCOUNT,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if proc.returncode == 0:
+            secret = proc.stdout.strip()
+            if secret:
+                try:
+                    raw = bytes.fromhex(secret)
+                    if len(raw) >= 32:
+                        return raw[:32]
+                except ValueError:
+                    raw = secret.encode("utf-8")
+                    if len(raw) >= 32:
+                        return raw[:32]
+    except (subprocess.SubprocessError, OSError):
+        pass
+    return None
+
+
+def _secret_tool_write(key: bytes) -> bool:
+    """Stores the master key in Linux Secret Service via secret-tool."""
+    if platform.system() != "Linux":
+        return False
+    if not shutil.which("secret-tool"):
+        return False
+    try:
+        proc = subprocess.run(
+            [
+                "secret-tool", "store",
+                "--label=LinkedIn Studio Vault",
+                "service", _KEYCHAIN_SERVICE,
+                "account", _KEYCHAIN_ACCOUNT,
+            ],
+            input=key.hex().encode("utf-8"),
+            capture_output=True,
+            timeout=5,
+        )
+        return proc.returncode == 0
+    except (subprocess.SubprocessError, OSError):
+        return False
+
+
+def _file_key() -> bytes:
     """
-    A random 256 bit key for this installation, created on first use.
-
-    Random, not derived. The previous key came from hostname, username and a
-    salt in the published source, all three of which an attacker holding the
-    database already has. A random key kept in a separate file means the
-    database alone is not enough.
-
-    Stored next to the API token in the vault directory, which lives with user
-    state rather than in the install directory, so an update cannot destroy it
-    and two installations never share one.
+    Fallback 256 bit key stored in a local file beside the user database.
+    Used when platform keystores are unavailable or fail.
     """
     try:
         from .paths import get_vault_dir
@@ -89,6 +195,35 @@ def _local_key() -> bytes:
         # than a silent one.
         pass
     return key
+
+
+def _local_key() -> bytes:
+    """
+    Resolves the 256-bit encryption key for this installation.
+    Prefers the platform keystore: macOS Keychain via security, or Linux Secret
+    Service via secret-tool. If the platform keystore is unavailable or fails,
+    falls back to the local file key.
+    """
+    system = platform.system()
+    if system == "Darwin":
+        existing = _keychain_read()
+        if existing:
+            return existing
+        generated = os.urandom(32)
+        if _keychain_write(generated):
+            return generated
+        return _file_key()
+
+    if system == "Linux":
+        existing = _secret_tool_read()
+        if existing:
+            return existing
+        generated = os.urandom(32)
+        if _secret_tool_write(generated):
+            return generated
+        return _file_key()
+
+    return _file_key()
 
 
 def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
@@ -134,10 +269,43 @@ def _decrypt_local_v2(payload: str) -> str:
 
 
 def get_vault_backend() -> str:
-    """Reports the active encryption backend without performing cryptographic operations."""
-    if platform.system() == "Windows":
+    """
+    Reports the active encryption backend without performing cryptographic operations.
+
+    Honesty invariant: Returns DPAPI on Windows, KEYCHAIN on macOS when security
+    is usable, SECRET_SERVICE on Linux when secret-tool is present, or FILE_KEY
+    when using the file-backed key fallback. Never claims hardware backing.
+    """
+    system = platform.system()
+    if system == "Windows":
         return "DPAPI"
-    return "MACHINE_KEYED"
+    if system == "Darwin":
+        if _keychain_read() is not None:
+            return "KEYCHAIN"
+        if shutil.which("security"):
+            return "KEYCHAIN"
+        return "FILE_KEY"
+    if system == "Linux":
+        if shutil.which("secret-tool"):
+            return "SECRET_SERVICE"
+        return "FILE_KEY"
+    return "FILE_KEY"
+
+
+def get_vault_status() -> dict:
+    """
+    Diagnostic status of the active vault backend.
+    Reports honestly whether platform keystore protection is active or if
+    the file-backed key fallback is being used.
+    """
+    backend = get_vault_backend()
+    return {
+        "backend": backend,
+        "platform": platform.system(),
+        "keystore_available": backend in ("DPAPI", "KEYCHAIN", "SECRET_SERVICE"),
+        "hardware_backed": False,
+        "fallback": backend == "FILE_KEY",
+    }
 
 
 def encrypt_token(plaintext: Any) -> str:

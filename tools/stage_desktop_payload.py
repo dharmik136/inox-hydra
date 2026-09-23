@@ -10,31 +10,59 @@ only one of them gets tested.
 So this does not build a payload. It calls the functions in build_portable that
 already do, and lays the result out where tauri.conf.json expects to find it:
 
-    desktop/payload/runtime/    embeddable CPython, with its path file rewritten
+    desktop/payload/runtime/    embeddable CPython, with path resolution configured
     desktop/payload/lib/        vendored third party dependencies
     desktop/payload/app/studio/ the application package
 
-Why PyInstaller is still not involved, even though the Tauri sidecar
-documentation assumes it: the reasoning in build_portable has not changed. An
-unsigned PyInstaller bootloader trips antivirus heuristics, and there is no
-support channel to walk a stranger through a quarantine. A folder of ordinary
-files inside a signed installer does not have that problem, and the outer
-executable is the Rust binary, which signs cleanly.
+Cross-Platform Architecture Decision (macOS and Linux):
+-------------------------------------------------------
+On Windows, python.org publishes an official embeddable zip distribution. That
+layout does not exist on macOS or Linux.
+
+We evaluated four possible approaches for macOS and Linux:
+
+1. PyInstaller / single-file freezing:
+   REJECTED. An unsigned PyInstaller bootloader trips antivirus heuristics, and
+   there is no support channel to walk a stranger through a quarantine. On
+   macOS, PyInstaller bundles trigger Gatekeeper scrutiny and slow down launch
+   by unpacking to temporary directories. Packaging opaque binaries also
+   prevents auditing staged files for accidental credential leaks prior to
+   installer packaging.
+
+2. Relying on host system Python (/usr/bin/python3):
+   REJECTED. macOS Monterey and newer do not ship with Python 3 (only a stub
+   triggering an Xcode CLI tools dialog). Linux distributions ship disparate
+   Python versions (3.10 through 3.13) and PEP 668 prevents pip vendoring
+   without system disruption. Requiring creators to install and configure
+   Python violates the local-first zero-configuration product promise.
+
+3. Naive python -m venv copies without relocatable standard library:
+   REJECTED. Standard virtual environments embed absolute paths to the host
+   toolchain in pyvenv.cfg and rely on system-wide standard library packages.
+   When installed on another machine lacking those paths, the interpreter
+   fails immediately on missing encodings or core library modules.
+
+4. Standalone relocatable runtime layout (SELECTED):
+   On macOS and Linux, we stage a self-contained CPython distribution carrying
+   its own binary (runtime/bin/python3) and complete standard library
+   (runtime/lib/python3.XX). Path resolution is configured via sitecustomize.py
+   and inox_hydra.pth in site-packages, resolving ../lib and ../app relative to
+   runtime without requiring PYTHONPATH to be set in the environment. This
+   preserves the identical sibling layout across Windows, macOS, and Linux.
 
 Usage:
     python tools/stage_desktop_payload.py [--skip-download]
 
 Strict Invariants:
 - Zero em-dashes.
-- Never diverge from the portable layout. runtime/python3XX._pth resolves
-  ..\\lib and ..\\app relative to itself, and the Rust shell relies on it.
+- Never diverge from the portable layout. The Rust shell relies on sibling
+  runtime, lib, and app directories across all platforms.
 """
 
 import os
 import shutil
 import subprocess
 import sys
-import zipfile
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 PAYLOAD_ROOT = os.path.join(REPO_ROOT, "desktop", "payload")
@@ -59,14 +87,18 @@ def main():
         shutil.rmtree(PAYLOAD_ROOT)
     os.makedirs(PAYLOAD_ROOT)
 
-    runtime_zip = build_portable.fetch_runtime(skip_download)
+    runtime_archive = build_portable.fetch_runtime(skip_download)
     runtime_dir = os.path.join(PAYLOAD_ROOT, "runtime")
     os.makedirs(runtime_dir)
-    with zipfile.ZipFile(runtime_zip) as archive:
-        archive.extractall(runtime_dir)
+    build_portable.extract_runtime(runtime_archive, runtime_dir)
 
-    interpreter = os.path.join(runtime_dir, "python.exe")
-    assert os.path.exists(interpreter), "embeddable runtime is missing python.exe"
+    interpreter = build_portable.get_runtime_interpreter(runtime_dir)
+    assert os.path.exists(interpreter), f"embeddable runtime is missing interpreter at {interpreter}"
+    if hasattr(os, "chmod"):
+        try:
+            os.chmod(interpreter, 0o755)
+        except OSError:
+            pass
 
     # This is what lets the Rust shell spawn the interpreter without setting
     # PYTHONPATH. Losing it means an engine that cannot import its own package.
