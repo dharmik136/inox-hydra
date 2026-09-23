@@ -67,16 +67,23 @@ jobs:
 
       - name: Build The Studio Interface
         working-directory: studio/ui
+        shell: bash
         run: |
           npm ci
           npm run build
 
       # Fail loudly here. A build that quietly produced nothing is the single
       # case the runtime fallback would hide completely.
+      # shell: bash, because this job now runs on a matrix of Windows, macOS and
+      # Linux. The PowerShell form of this check was a syntax error on two of
+      # the three, and it guards the step that stops a build shipping the old
+      # interface, so it has to run everywhere rather than pass by not running.
       - name: Confirm The Interface Was Built
+        shell: bash
         run: |
-          if (-not (Test-Path studio/frontend_next/index.html)) {
-            throw "studio/frontend_next/index.html is missing: the interface did not build"
+          test -f studio/frontend_next/index.html || {
+            echo "studio/frontend_next/index.html is missing: the interface did not build" >&2
+            exit 1
           }
 
       - name: Static Code Analysis & Syntax Validation
@@ -141,16 +148,23 @@ jobs:
 
       - name: Build The Studio Interface
         working-directory: studio/ui
+        shell: bash
         run: |
           npm ci
           npm run build
 
       # Fail loudly here. A build that quietly produced nothing is the single
       # case the runtime fallback would hide completely.
+      # shell: bash, because this job now runs on a matrix of Windows, macOS and
+      # Linux. The PowerShell form of this check was a syntax error on two of
+      # the three, and it guards the step that stops a build shipping the old
+      # interface, so it has to run everywhere rather than pass by not running.
       - name: Confirm The Interface Was Built
+        shell: bash
         run: |
-          if (-not (Test-Path studio/frontend_next/index.html)) {
-            throw "studio/frontend_next/index.html is missing: the interface did not build"
+          test -f studio/frontend_next/index.html || {
+            echo "studio/frontend_next/index.html is missing: the interface did not build" >&2
+            exit 1
           }
 
       # Builds a wheel, installs it into a virtual environment with no access to
