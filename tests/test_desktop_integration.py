@@ -112,10 +112,17 @@ def test_integration_reports_enough_to_render_the_setting_honestly():
     assert state["icon_present"] is True
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="the .lnk shortcut is the Windows autostart mechanism")
 def test_the_startup_shortcut_lands_in_the_users_own_startup_folder():
     """
     A shortcut, not a registry key, so a person can find and delete it without
     a registry editor.
+
+    Gated to Windows because get_startup_shortcut_path now answers per
+    platform: a LaunchAgent plist on macOS and an XDG desktop entry on Linux,
+    neither of which ends in .lnk. Those two are covered in
+    test_macos_linux_support.py. Before the suite ran on more than one
+    operating system this assertion was simply always true.
     """
     path = desktop.get_startup_shortcut_path()
     assert path.lower().endswith(".lnk")
