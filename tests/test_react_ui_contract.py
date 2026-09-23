@@ -1,0 +1,327 @@
+"""
+React UI Contract
+=================
+The rules the React interface in studio/ui is held to.
+
+This runs ALONGSIDE tests/test_ui_visual_contract.py rather than replacing it.
+Both interfaces ship: studio/frontend is still the fallback whenever the React
+build is absent, so it is still what some users see and still needs its own
+contract. Retiring it is not a deletion, because the React interface does not
+yet implement queue, docs or command, media upload, the image studio or the
+CRM actions, so removing the vanilla page would remove working features.
+
+Every rule below was carried across because the defect it guards is a property
+of any themed interface, not of the page that happened to be there first:
+
+- 16 var() references pointed at tokens that were never declared, so borders
+  vanished, panels fell back to transparent and corners rendered square.
+- 14 icon-only buttons had no accessible name, so a screen reader announced
+  them as "button" with no indication of what they did.
+- There was no :focus-visible rule anywhere, so a keyboard user could not see
+  where they were.
+- Animation ran unconditionally, ignoring the operating system's reduced motion
+  setting.
+- An unbalanced brace silently discards every rule after it.
+
+Two ratchets came across as well, and both are far below where they started.
+The vanilla page carried 42 hex literals in its JavaScript and 365 inline
+styles; this interface carries 0 and 5. That is not an invitation to spend the
+difference.
+
+Structural checks read studio/frontend_next, which is build output. They skip
+when it is absent, which is a legitimate state for a checkout without node. The
+authoring checks read studio/ui/src and always run.
+
+Strict Invariants:
+- Zero em-dashes across all code, docstrings, and comments.
+"""
+
+import glob
+import io
+import os
+import re
+
+import pytest
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
+TOKENS_CSS = os.path.join(UI_SRC, "styles", "tokens.css")
+INDEX_CSS = os.path.join(UI_SRC, "styles", "index.css")
+BUILT = os.path.join(REPO_ROOT, "studio", "frontend_next")
+
+# Frozen ceilings. Lower them as the debt is paid; never raise them.
+#
+# Every inline style in this interface is computed geometry: where a measured
+# fold rule sits, where a toolbar follows a selection, how tall a revealed
+# paragraph is. None of those is expressible as a class, which is the one case
+# the vanilla rule was never arguing with. A colour or a spacing value appearing
+# here is the regression this counts.
+MAX_HEX_LITERALS_IN_SOURCE = 0
+MAX_INLINE_STYLES = 5
+
+# Never typed literally, or this file would break the rule it enforces, which
+# is what tests/test_phase4_algorithmic_safety.py caught the moment it was.
+EM_DASH = chr(8212)
+
+
+def _source_files(pattern="*.tsx"):
+    return sorted(glob.glob(os.path.join(UI_SRC, "**", pattern), recursive=True))
+
+
+def _read(path):
+    return io.open(path, encoding="utf-8").read()
+
+
+def _built_file(*parts):
+    path = os.path.join(BUILT, *parts)
+    return path if os.path.exists(path) else None
+
+
+def _built_asset(suffix):
+    static = os.path.join(BUILT, "static")
+    if not os.path.isdir(static):
+        return None
+    hits = sorted(p for p in glob.glob(os.path.join(static, f"*{suffix}")))
+    return hits[0] if hits else None
+
+
+# ---------------------------------------------------------------------------
+# Design tokens
+# ---------------------------------------------------------------------------
+
+def _declared_tokens(block):
+    return set(re.findall(r"^\s*(--studio-[a-z0-9-]+)\s*:", block, re.M))
+
+
+@pytest.fixture(scope="module")
+def token_blocks():
+    """The light block and the dark block, split on the dark selector."""
+    source = _read(TOKENS_CSS)
+    parts = re.split(r'\[data-theme="dark"\],\s*\n?:root:not\(\[data-theme="light"\]\)\s*\{', source)
+    assert len(parts) == 2, (
+        "tokens.css no longer has exactly one dark palette block. The whole theme "
+        "mechanism is that both blocks declare the same names with different values."
+    )
+    return _declared_tokens(parts[0]), _declared_tokens(parts[1])
+
+
+def test_every_token_referenced_is_declared():
+    """
+    A var() pointing at an undeclared token resolves to nothing, and the
+    property it was setting silently does not apply.
+    """
+    declared = _declared_tokens(_read(TOKENS_CSS))
+    referenced = set()
+    for path in _source_files("*.tsx") + _source_files("*.ts") + _source_files("*.css"):
+        referenced |= set(re.findall(r"var\((--studio-[a-z0-9-]+)", _read(path)))
+
+    missing = sorted(referenced - declared)
+    assert not missing, f"these tokens are used but never declared: {missing}"
+
+
+def test_no_token_exists_only_in_the_dark_palette(token_blocks):
+    """
+    The dark block overrides; the light block is the base.
+
+    A token declared only in the dark block is undefined under
+    data-theme="light", so the light theme loses whatever it was setting. The
+    reverse is fine and intended: fonts, radii, easing and motion durations are
+    theme neutral and are declared once.
+    """
+    light, dark = token_blocks
+    dark_only = sorted(dark - light)
+    assert not dark_only, (
+        f"declared in the dark palette but not the light one, so they vanish in light mode: {dark_only}"
+    )
+
+
+def test_every_colour_token_is_declared_in_both_palettes(token_blocks):
+    """
+    A colour declared once takes the same value in both themes.
+
+    This is the failure the conventions document was written about: a colour
+    added to the base block alone gives the dark theme a light value.
+    """
+    light, dark = token_blocks
+    source = _read(TOKENS_CSS)
+    light_block = re.split(r'\[data-theme="dark"\]', source)[0]
+
+    colour_like = set()
+    for name in light:
+        match = re.search(rf"^\s*{re.escape(name)}\s*:\s*([^;]+);", light_block, re.M)
+        if match and re.search(r"#[0-9a-fA-F]{3,8}|rgba?\(|color-mix\(", match.group(1)):
+            colour_like.add(name)
+
+    # Text placed on a signal fill is deliberately the same near black in both
+    # themes, because both signal steps are light. It is a colour that is
+    # correct to declare once.
+    exempt = {"--studio-on-signal"}
+    missing = sorted(colour_like - dark - exempt)
+    assert not missing, (
+        f"these are colours declared only in the light palette, so dark inherits a light value: {missing}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Accessibility floor
+# ---------------------------------------------------------------------------
+
+def _button_regions(source):
+    """Each <button ...> ... </button> body, with nested buttons ignored."""
+    for match in re.finditer(r"<button\b", source):
+        start = match.start()
+        end = source.find("</button>", start)
+        if end != -1:
+            yield source[start:end]
+
+
+def _visible_text(region):
+    """What is left of a JSX region once tags and expressions are removed."""
+    body = region[region.find(">") + 1:] if ">" in region else ""
+    body = re.sub(r"\{[^{}]*\}", " ", body)       # simple JSX expressions
+    body = re.sub(r"\{\{.*?\}\}", " ", body, flags=re.S)
+    body = re.sub(r"<[^>]*>", " ", body)          # nested elements
+    return body.strip()
+
+
+def test_icon_only_buttons_have_an_accessible_name():
+    """
+    A button whose only content is a glyph announces as "button" unless it is
+    labelled. Fourteen controls in the previous interface did exactly that.
+    """
+    offenders = []
+    for path in _source_files("*.tsx"):
+        source = _read(path)
+        for region in _button_regions(source):
+            head = region[: region.find(">") + 1] if ">" in region else region
+            has_name = "aria-label" in head or "aria-labelledby" in head
+            if not has_name and not _visible_text(region):
+                offenders.append(f"{os.path.relpath(path, REPO_ROOT)}: {head[:70]}")
+
+    assert not offenders, "buttons with neither text nor an accessible name:\n" + "\n".join(offenders)
+
+
+def test_decorative_glyphs_are_hidden_from_assistive_technology():
+    """
+    Every icon sits beside its own label or inside a labelled control, so the
+    glyph itself must not be announced. 125 were announced as unnamed images.
+    """
+    offenders = []
+    # lucide components are PascalCase single elements rendered with a size class.
+    for path in _source_files("*.tsx"):
+        source = _read(path)
+        for match in re.finditer(r"<([A-Z][A-Za-z0-9]*)\s+([^>]*?)/>", source, re.S):
+            attrs = match.group(2)
+            if "className" in attrs and re.search(r"size-\[?\d", attrs):
+                if "aria-hidden" not in attrs and "aria-label" not in attrs:
+                    offenders.append(f"{os.path.relpath(path, REPO_ROOT)}: <{match.group(1)}>")
+
+    assert not offenders, "icons exposed to assistive technology:\n" + "\n".join(sorted(set(offenders)))
+
+
+def test_keyboard_focus_is_visible():
+    """Without a focus-visible rule a keyboard user cannot tell where they are."""
+    css = _read(INDEX_CSS)
+    assert ":focus-visible" in css, "no :focus-visible rule exists in the stylesheet"
+    assert re.search(r":focus-visible\s*\{[^}]*outline\s*:", css), (
+        ":focus-visible exists but sets no outline"
+    )
+
+
+def test_reduced_motion_preference_is_honoured():
+    """
+    Motion is a first class token layer here, which makes this load bearing
+    rather than polite.
+    """
+    css = _read(INDEX_CSS)
+    assert "prefers-reduced-motion" in css, "the reduced motion preference is never consulted"
+
+
+# ---------------------------------------------------------------------------
+# Ratchets
+# ---------------------------------------------------------------------------
+
+def test_hardcoded_colours_in_source_do_not_grow():
+    """
+    Ratchet. A colour written into a component cannot follow the theme.
+
+    tokens.css is the one file allowed to hold literals; it is where the
+    palette is defined.
+    """
+    found = []
+    for path in _source_files("*.tsx") + _source_files("*.ts"):
+        for hit in re.findall(r"#[0-9a-fA-F]{3,8}\b", _read(path)):
+            found.append(f"{os.path.relpath(path, REPO_ROOT)}: {hit}")
+
+    assert len(found) <= MAX_HEX_LITERALS_IN_SOURCE, (
+        f"{len(found)} hex literals in components, up from {MAX_HEX_LITERALS_IN_SOURCE}. "
+        f"Use a token instead:\n" + "\n".join(found[:10])
+    )
+
+
+def test_inline_styles_do_not_grow():
+    """
+    Ratchet. An inline style cannot be overridden by a class or a media query.
+
+    The five that exist are computed geometry and cannot be classes. A sixth
+    should be one of those, not a colour or a spacing value.
+    """
+    count = sum(len(re.findall(r"style=\{", _read(path))) for path in _source_files("*.tsx"))
+    assert count <= MAX_INLINE_STYLES, (
+        f"{count} inline styles, up from {MAX_INLINE_STYLES}. "
+        "Only measured geometry belongs here."
+    )
+
+
+def test_the_interface_holds_the_zero_em_dash_invariant():
+    """The product wide rule, applied to the interface that ships."""
+    offenders = []
+    for path in _source_files("*.tsx") + _source_files("*.ts") + _source_files("*.css"):
+        if EM_DASH in _read(path):
+            offenders.append(os.path.relpath(path, REPO_ROOT))
+    assert not offenders, f"em-dashes present in: {offenders}"
+
+
+# ---------------------------------------------------------------------------
+# Structural integrity of the built output
+# ---------------------------------------------------------------------------
+
+def test_the_built_stylesheet_braces_balance():
+    """An unbalanced brace silently discards every rule after the error."""
+    css_path = _built_asset(".css")
+    if not css_path:
+        pytest.skip("studio/frontend_next is not built in this checkout")
+    css = _read(css_path)
+    assert css.count("{") == css.count("}"), (
+        f"unbalanced braces in the built stylesheet: {css.count('{')} open, {css.count('}')} close"
+    )
+
+
+def test_the_built_markup_is_structurally_sound():
+    """A stray closing tag silently reparents everything after it."""
+    html_path = _built_file("index.html")
+    if not html_path:
+        pytest.skip("studio/frontend_next is not built in this checkout")
+    html = _read(html_path)
+    for tag in ("html", "head", "body"):
+        assert html.count(f"<{tag}") == html.count(f"</{tag}>"), f"<{tag}> is unbalanced"
+    assert '<div id="root">' in html, "the React mount point is missing from the built page"
+
+
+def test_the_built_page_loads_no_external_resource():
+    """
+    The product claims zero cloud egress, and a page that fetches a font or a
+    script from a CDN breaks that claim on every launch. The previous interface
+    opened three connections to Google on load.
+    """
+    html_path = _built_file("index.html")
+    if not html_path:
+        pytest.skip("studio/frontend_next is not built in this checkout")
+    html = _read(html_path)
+    external = re.findall(r'(?:src|href)="(https?://[^"]+)"', html)
+    assert not external, f"the built page fetches from outside this machine: {external}"
+
+    css_path = _built_asset(".css")
+    if css_path:
+        remote = re.findall(r"url\((https?://[^)]+)\)", _read(css_path))
+        assert not remote, f"the built stylesheet fetches from outside this machine: {remote}"
