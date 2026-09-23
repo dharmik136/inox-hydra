@@ -58,9 +58,19 @@ class CopilotDraftResponse(BaseModel):
     fold_safe: bool = Field(default=True, description="Whether the primary hook fits under the 180-char fold")
     pre_fold_chars: int = Field(default=140, description="Exact character count of opening hook")
     media_callout: Optional[str] = Field(default=None, description="Contextual swipe or watch callout for attached media")
-    hook_provenance: Dict[str, str] = Field(
+    # Dict[str, Any] rather than Dict[str, str] because provenance now carries
+    # a nested grounding record: which of the creator's own servers informed
+    # the hooks, and whether that material left the machine. Flattening those
+    # into strings would have meant "yes" and "no" where a boolean belongs,
+    # and a source list collapsed into a count. Nothing consumes this field
+    # yet, so widening it costs nothing today and keeps the record honest.
+    hook_provenance: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Whether a model wrote these hooks or the deterministic templates did, and why",
+        description=(
+            "Whether a model wrote these hooks or the deterministic templates did, "
+            "and why. Carries a nested `grounding` record naming what the draft was "
+            "grounded in and whether that material was sent off this machine."
+        ),
     )
 
 
