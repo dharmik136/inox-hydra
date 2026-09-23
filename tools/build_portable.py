@@ -1,23 +1,54 @@
 """
 Portable Distributable Builder: A ZIP A Stranger Can Double Click.
 ==================================================================
-Produces a self-contained Windows folder that runs Inox Hydra with no Python
+Produces a self-contained folder that runs Inox Hydra with no Python
 installed, no installer, and no administrator rights.
 
 Layout of the produced artifact:
 
-    InoxHydra-<version>-win64/
-        runtime/        CPython embeddable distribution
+    InoxHydra-<version>-<platform>/
+        runtime/        CPython embeddable or standalone distribution
         lib/            vendored third party dependencies
         app/studio/     the application package
         extension/      unpacked Chrome MV3 source
-        InoxHydra.bat   launcher
+        InoxHydra.*     launcher
         README.txt      quick start
 
-Why the embeddable distribution rather than PyInstaller: an unsigned PyInstaller
-bootloader trips antivirus heuristics, and there is no support channel to walk a
-user through a quarantine on a machine nobody can reach. An extracted folder of
-ordinary files does not have that problem.
+Cross-Platform Runtime Packaging Decision:
+------------------------------------------
+On Windows, python.org publishes an official embeddable zip distribution. That
+layout does not exist on macOS or Linux.
+
+We evaluated four possible approaches for macOS and Linux:
+
+1. PyInstaller / single-file freezing:
+   REJECTED. An unsigned PyInstaller bootloader trips antivirus heuristics, and
+   there is no support channel to walk a stranger through a quarantine. On
+   macOS, PyInstaller bundles trigger Gatekeeper scrutiny and slow down launch
+   by unpacking to temporary directories. Packaging opaque binaries also
+   prevents auditing staged files for accidental credential leaks prior to
+   installer packaging.
+
+2. Relying on host system Python (/usr/bin/python3):
+   REJECTED. macOS Monterey and newer do not ship with Python 3 (only a stub
+   triggering an Xcode CLI tools dialog). Linux distributions ship disparate
+   Python versions (3.10 through 3.13) and PEP 668 prevents pip vendoring
+   without system disruption. Requiring creators to install and configure
+   Python violates the local-first zero-configuration product promise.
+
+3. Naive python -m venv copies without relocatable standard library:
+   REJECTED. Standard virtual environments embed absolute paths to the host
+   toolchain in pyvenv.cfg and rely on system-wide standard library packages.
+   When installed on another machine lacking those paths, the interpreter
+   fails immediately on missing encodings or core library modules.
+
+4. Standalone redistributable runtime layout (SELECTED):
+   On macOS and Linux, we stage a self-contained CPython distribution carrying
+   its own binary (runtime/bin/python3) and complete standard library
+   (runtime/lib/python3.XX). Path resolution is configured via sitecustomize.py
+   and inox_hydra.pth in site-packages, resolving ../lib and ../app relative to
+   runtime without requiring PYTHONPATH to be set in the environment. This
+   preserves the identical sibling layout across Windows, macOS, and Linux.
 
 IMPORTANT: `app/studio/` deliberately ships without a `data/` directory. Its
 absence is what makes `paths.get_app_home()` resolve to the user profile, which
@@ -38,6 +69,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tarfile
 import urllib.request
 import zipfile
 
@@ -341,44 +373,223 @@ def log(step, message):
     print(f"[{step}] {message}")
 
 
-def fetch_runtime(skip_download=False):
-    """Downloads the embeddable CPython, caching it between builds."""
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    cached = os.path.join(CACHE_DIR, f"python-{PYTHON_VERSION}-embed-amd64.zip")
+def _synthesize_local_runtime_archive(target_archive):
+    """
+    Assembles a portable standalone runtime from the building interpreter.
+    Used when downloading is skipped or unavailable on macOS and Linux.
+    """
+    import tempfile
+    staging = tempfile.mkdtemp(prefix="inox_runtime_")
+    try:
+        bin_dir = os.path.join(staging, "bin")
+        os.makedirs(bin_dir, exist_ok=True)
+        py_target = os.path.join(bin_dir, "python3")
+        shutil.copy2(sys.executable, py_target)
+        try:
+            os.chmod(py_target, 0o755)
+        except OSError:
+            pass
 
+        py_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        src_lib = os.path.join(sys.prefix, "lib", py_ver)
+        dst_lib = os.path.join(staging, "lib", py_ver)
+        if os.path.isdir(src_lib):
+            shutil.copytree(
+                src_lib, dst_lib,
+                ignore=shutil.ignore_patterns("site-packages", "test", "tests", "__pycache__", "*.pyc"),
+            )
+        else:
+            os.makedirs(dst_lib, exist_ok=True)
+
+        os.makedirs(os.path.join(dst_lib, "site-packages"), exist_ok=True)
+
+        with tarfile.open(target_archive, "w:gz") as tar:
+            for item in os.listdir(staging):
+                tar.add(os.path.join(staging, item), arcname=item)
+        log("runtime", f"synthesized runtime archive ({os.path.getsize(target_archive):,} bytes)")
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+
+
+def extract_runtime(archive_path, runtime_dir):
+    """Extracts a runtime archive (zip or tarball) into runtime_dir."""
+    if zipfile.is_zipfile(archive_path):
+        with zipfile.ZipFile(archive_path) as z:
+            z.extractall(runtime_dir)
+    elif tarfile.is_tarfile(archive_path):
+        with tarfile.open(archive_path) as t:
+            members = t.getmembers()
+            has_single_root = all(
+                m.name.startswith("python/") or m.name == "python"
+                for m in members if m.name
+            )
+            if has_single_root:
+                import tempfile
+                tmp = tempfile.mkdtemp(prefix="inox_extract_")
+                try:
+                    t.extractall(tmp)
+                    inner = os.path.join(tmp, "python")
+                    for item in os.listdir(inner):
+                        shutil.move(os.path.join(inner, item), os.path.join(runtime_dir, item))
+                finally:
+                    shutil.rmtree(tmp, ignore_errors=True)
+            else:
+                t.extractall(runtime_dir)
+    elif os.path.isdir(archive_path):
+        shutil.copytree(archive_path, runtime_dir, dirs_exist_ok=True)
+    else:
+        raise ValueError(f"Unrecognized runtime archive format: {archive_path}")
+
+
+def get_runtime_interpreter(runtime_dir):
+    """
+    Returns the path to the executable Python interpreter in the runtime directory.
+    Checks python.exe on Windows, bin/python3, bin/python, or python3 on Unix.
+    """
+    if platform.system() == "Windows":
+        return os.path.join(runtime_dir, "python.exe")
+    for cand in (
+        os.path.join(runtime_dir, "bin", "python3"),
+        os.path.join(runtime_dir, "bin", "python"),
+        os.path.join(runtime_dir, "python3"),
+    ):
+        if os.path.exists(cand):
+            return cand
+    return os.path.join(runtime_dir, "bin", "python3")
+
+
+def fetch_runtime(skip_download=False):
+    """
+    Downloads or stages an embeddable or standalone CPython distribution,
+    caching it between builds in build_artifacts/runtime_cache.
+
+    On Windows: downloads python-{version}-embed-amd64.zip from python.org.
+    On macOS: downloads python-build-standalone for apple-darwin.
+    On Linux: downloads python-build-standalone for unknown-linux-gnu.
+    When offline or skip_download is passed without a cache, assembles an
+    isolated runtime from the building interpreter.
+    """
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    system = platform.system()
+
+    if system == "Windows":
+        cached = os.path.join(CACHE_DIR, f"python-{PYTHON_VERSION}-embed-amd64.zip")
+        if os.path.exists(cached) and os.path.getsize(cached) > 0:
+            log("runtime", f"using cached {os.path.basename(cached)}")
+            return cached
+        if skip_download:
+            raise SystemExit(f"--skip-download was passed but no cached runtime exists at {cached}")
+        log("runtime", f"downloading {EMBED_URL}")
+        urllib.request.urlretrieve(EMBED_URL, cached)
+        log("runtime", f"downloaded {os.path.getsize(cached):,} bytes")
+        return cached
+
+    machine = platform.machine().lower()
+    arch_tag = "aarch64" if machine in ("arm64", "aarch64") else "x86_64"
+
+    if system == "Darwin":
+        archive_name = f"cpython-{PYTHON_VERSION}-{arch_tag}-apple-darwin.tar.gz"
+        url = (
+            f"https://github.com/astral-sh/python-build-standalone/releases/download/"
+            f"20241016/cpython-{PYTHON_VERSION}+20241016-{arch_tag}-apple-darwin-install_only.tar.gz"
+        )
+    else:
+        archive_name = f"cpython-{PYTHON_VERSION}-{arch_tag}-unknown-linux-gnu.tar.gz"
+        url = (
+            f"https://github.com/astral-sh/python-build-standalone/releases/download/"
+            f"20241016/cpython-{PYTHON_VERSION}+20241016-{arch_tag}-unknown-linux-gnu-install_only.tar.gz"
+        )
+
+    cached = os.path.join(CACHE_DIR, archive_name)
     if os.path.exists(cached) and os.path.getsize(cached) > 0:
         log("runtime", f"using cached {os.path.basename(cached)}")
         return cached
-    if skip_download:
-        raise SystemExit(f"--skip-download was passed but no cached runtime exists at {cached}")
 
-    log("runtime", f"downloading {EMBED_URL}")
-    urllib.request.urlretrieve(EMBED_URL, cached)
-    log("runtime", f"downloaded {os.path.getsize(cached):,} bytes")
-    return cached
+    if skip_download:
+        log("runtime", f"--skip-download passed. Assembling standalone runtime from {sys.prefix}")
+        _synthesize_local_runtime_archive(cached)
+        return cached
+
+    try:
+        log("runtime", f"downloading standalone runtime from {url}")
+        urllib.request.urlretrieve(url, cached)
+        log("runtime", f"downloaded {os.path.getsize(cached):,} bytes")
+        return cached
+    except Exception as err:
+        log("runtime", f"download failed ({err}). Falling back to local interpreter runtime synthesis.")
+        _synthesize_local_runtime_archive(cached)
+        return cached
 
 
 def write_path_file(runtime_dir):
     """
-    Rewrites python3XX._pth so the embedded interpreter can see our code.
+    Rewrites python3XX._pth (Windows) or configures sitecustomize and .pth (Unix)
+    so the embedded interpreter resolves lib/ and app/ relative to runtime.
 
-    Paths are resolved relative to the directory holding python.exe. `import
-    site` must be enabled, because pip installed distributions rely on it.
+    Paths are resolved relative to the directory holding the runtime. On Windows,
+    python3XX._pth with import site is required. On macOS and Linux, an
+    inox_hydra.pth file in site-packages and sitecustomize.py ensure that
+    ../lib and ../app are on sys.path without relying on environment variables.
     """
-    pth = os.path.join(runtime_dir, f"python{PYTHON_TAG}._pth")
-    content = "\n".join([
-        f"python{PYTHON_TAG}.zip",
-        ".",
-        "..\\lib",
-        "..\\app",
-        "",
-        "# site is required so that pip installed distributions are importable.",
-        "import site",
-        "",
-    ])
-    with open(pth, "w", encoding="utf-8", newline="\n") as f:
-        f.write(content)
-    log("runtime", f"wrote {os.path.basename(pth)} with lib/ and app/ on the path")
+    if platform.system() == "Windows":
+        pth = os.path.join(runtime_dir, f"python{PYTHON_TAG}._pth")
+        content = "\n".join([
+            f"python{PYTHON_TAG}.zip",
+            ".",
+            "..\\lib",
+            "..\\app",
+            "",
+            "# site is required so that pip installed distributions are importable.",
+            "import site",
+            "",
+        ])
+        with open(pth, "w", encoding="utf-8", newline="\n") as f:
+            f.write(content)
+        log("runtime", f"wrote {os.path.basename(pth)} with lib/ and app/ on the path")
+    else:
+        py_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
+        target_sp = os.path.join(runtime_dir, "lib", py_ver, "site-packages")
+        os.makedirs(target_sp, exist_ok=True)
+
+        pth_path = os.path.join(target_sp, "inox_hydra.pth")
+        with open(pth_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write("../../../../lib\n../../../../app\n")
+
+        sc_path = os.path.join(target_sp, "sitecustomize.py")
+        sc_content = "\n".join([
+            "import os",
+            "import sys",
+            "",
+            "_cur = os.path.dirname(os.path.abspath(__file__))",
+            "_runtime = None",
+            "for _ in range(6):",
+            "    if os.path.basename(_cur) == 'runtime':",
+            "        _runtime = _cur",
+            "        break",
+            "    _parent = os.path.dirname(_cur)",
+            "    if _parent == _cur:",
+            "        break",
+            "    _cur = _parent",
+            "",
+            "if _runtime:",
+            "    _payload = os.path.dirname(_runtime)",
+            "    _lib = os.path.join(_payload, 'lib')",
+            "    _app = os.path.join(_payload, 'app')",
+            "    if os.path.isdir(_lib) and _lib not in sys.path:",
+            "        sys.path.insert(0, _lib)",
+            "    if os.path.isdir(_app) and _app not in sys.path:",
+            "        sys.path.insert(0, _app)",
+            "",
+        ])
+        with open(sc_path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(sc_content)
+
+        cfg_path = os.path.join(runtime_dir, "pyvenv.cfg")
+        if not os.path.exists(cfg_path):
+            with open(cfg_path, "w", encoding="utf-8", newline="\n") as f:
+                f.write(f"home = .\ninclude-system-site-packages = false\nversion = {PYTHON_VERSION}\n")
+
+        log("runtime", f"configured Unix runtime paths in {os.path.relpath(target_sp, runtime_dir)}")
 
 
 def vendor_dependencies(lib_dir):

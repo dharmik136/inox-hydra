@@ -43,7 +43,7 @@ Strict Invariants:
 
 import os
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, IcnsImagePlugin
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
@@ -141,20 +141,38 @@ def main():
     tauri_icons = os.path.join(REPO_ROOT, "desktop", "src-tauri", "icons")
     os.makedirs(tauri_icons, exist_ok=True)
 
-    for size in (32, 128):
-        draw_mark(size).save(os.path.join(tauri_icons, f"{size}x{size}.png"), format="PNG", optimize=True)
+    # Linux desktop environments and package bundlers (deb, AppImage) look
+    # for icons matching standard XDG hicolor theme dimensions (32, 64, 128,
+    # 256, 512). Omitting any of these causes desktop environments to stretch
+    # small icons or fall back to generic system place-holders.
+    for size in (32, 64, 128, 256, 512):
+        draw_mark(size).save(
+            os.path.join(tauri_icons, f"{size}x{size}.png"),
+            format="PNG",
+            optimize=True,
+        )
     draw_mark(256).save(os.path.join(tauri_icons, "128x128@2x.png"), format="PNG", optimize=True)
     draw_mark(512).save(os.path.join(tauri_icons, "icon.png"), format="PNG", optimize=True)
 
-    # Windows wants the .ico. The bundler also accepts icon.icns for macOS,
-    # which is not generated here because nothing builds for macOS yet, and a
-    # placeholder would be worse than an honest absence.
+    # Windows wants the .ico file with every standard icon layer.
     master.save(
         os.path.join(tauri_icons, "icon.ico"),
         format="ICO",
         sizes=[(s, s) for s in ICO_SIZES],
     )
-    print(f"wrote {os.path.relpath(tauri_icons, REPO_ROOT)}{os.sep}(32x32, 128x128, 128x128@2x, icon.png, icon.ico)")
+
+    # macOS requires an Apple Icon Image (.icns) file containing standard and
+    # retina pixel layers from 16x16 up to 512x512@2x (1024x1024). A missing
+    # or incomplete .icns leads to dock pixelation or failed bundle assembly.
+    icns_master = draw_mark(1024)
+    icns_layers = [draw_mark(s) for s in (32, 64, 128, 256, 512)]
+    icns_path = os.path.join(tauri_icons, "icon.icns")
+    icns_master.save(icns_path, format="ICNS", append_images=icns_layers)
+
+    print(
+        f"wrote {os.path.relpath(tauri_icons, REPO_ROOT)}{os.sep}"
+        f"(32x32, 64x64, 128x128, 128x128@2x, 256x256, 512x512, icon.png, icon.ico, icon.icns)"
+    )
 
 
 if __name__ == "__main__":

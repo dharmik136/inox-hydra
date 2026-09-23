@@ -51,7 +51,29 @@ const MAX_LOG_BYTES: u64 = 2 * 1024 * 1024;
 fn engine_log_path() -> Option<PathBuf> {
     let home = match std::env::var("INOX_HYDRA_HOME") {
         Ok(value) if !value.trim().is_empty() => PathBuf::from(value),
-        _ => PathBuf::from(std::env::var("LOCALAPPDATA").ok()?).join("InoxHydra"),
+        _ => {
+            #[cfg(windows)]
+            {
+                PathBuf::from(std::env::var("LOCALAPPDATA").ok()?).join("InoxHydra")
+            }
+            #[cfg(target_os = "macos")]
+            {
+                PathBuf::from(std::env::var("HOME").ok()?)
+                    .join("Library")
+                    .join("Application Support")
+                    .join("InoxHydra")
+            }
+            #[cfg(all(not(windows), not(target_os = "macos")))]
+            {
+                let base = match std::env::var("XDG_DATA_HOME") {
+                    Ok(val) if !val.trim().is_empty() => PathBuf::from(val),
+                    _ => PathBuf::from(std::env::var("HOME").ok()?)
+                        .join(".local")
+                        .join("share"),
+                };
+                base.join("inox-hydra")
+            }
+        }
     };
     Some(home.join("logs").join("engine.log"))
 }
@@ -306,7 +328,24 @@ mod job_object {
 /// runtime/python3XX._pth puts ..\lib and ..\app on sys.path, so the
 /// interpreter resolves its own imports and this code does not set PYTHONPATH.
 pub fn interpreter_path(resources: &Path) -> PathBuf {
-    resources.join("runtime").join("python.exe")
+    #[cfg(windows)]
+    {
+        resources.join("runtime").join("python.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        let bin = resources.join("runtime").join("bin").join("python3");
+        if bin.exists() {
+            bin
+        } else {
+            let direct = resources.join("runtime").join("python3");
+            if direct.exists() {
+                direct
+            } else {
+                resources.join("runtime").join("bin").join("python")
+            }
+        }
+    }
 }
 
 /// Starts uvicorn, or reports that someone already has.

@@ -351,5 +351,35 @@ against a dependency costing build time on every run. A wrong struct size would
 make `SetInformationJobObject` fail quietly and leave the orphan behind, so the
 suite calls the real API with the same layout and asserts Windows accepts it.
 
-**macOS and Linux.** Nothing builds for them. `icon.icns` is deliberately not
-generated rather than shipped as a placeholder.
+**macOS and Linux.** Supported across builds, bundles, keystores, and autostart:
+
+1. **Icons.** `tools/generate_icons.py` produces `icon.icns` with standard and
+   retina layer sizes (32 to 1024 px) for macOS, and Linux PNG assets (32, 64,
+   128, 256, 512 px). The icon generation is deterministic and reproducible.
+2. **Bundle targets.** `desktop/src-tauri/tauri.conf.json` targets `nsis` on
+   Windows, `app` and `dmg` on macOS, and `deb` and `appimage` on Linux. Tauri
+   compiles only the targets valid for the host platform.
+3. **Payload staging.** `tools/stage_desktop_payload.py` and
+   `tools/build_portable.py` support cross-platform staging. On Windows,
+   embeddable CPython uses `python3XX._pth`. On Unix, the isolated runtime
+   resolves dependencies through `site-packages/inox_hydra.pth` pointing to
+   the vendored `lib` and `app` trees. The Rust backend runner looks for
+   `bin/python3` on Unix and `python.exe` on Windows, writing engine logs to
+   `~/Library/Application Support/InoxHydra/logs` on macOS and
+   `$XDG_DATA_HOME/inox-hydra/logs` on Linux.
+4. **Platform keystores.** `studio/backend/vault.py` queries macOS Keychain via
+   the `/usr/bin/security` CLI and Linux Secret Service via `secret-tool`. When
+   the platform keystore is unavailable or headless, it falls back to the
+   counter-mode encrypted file key beside the database. The vault status reports
+   `MACOS_KEYCHAIN`, `LINUX_SECRET_SERVICE`, or `FILE_KEY` honestly, with no
+   unsupported claims of hardware backing.
+5. **Autostart.** `studio/backend/desktop.py` manages autostart via LaunchAgent
+   property lists on macOS (`~/Library/LaunchAgents/com.inoxhydra.linkedinstudio.plist`)
+   and XDG autostart desktop entries on Linux (`~/.config/autostart/inox-hydra.desktop`).
+   It stays off by default, is cleanly reversible, and validates that files
+   exist on disk before reporting enabled.
+6. **CI workflow.** `.github/workflows/desktop.yml` runs a matrix across
+   `windows-latest`, `macos-latest`, and `ubuntu-latest`. Linux runners install
+   `libwebkit2gtk-4.1-dev` and required system libraries. Windows-specific code
+   signing and updater manifests are guarded to Windows, ensuring unsigned builds
+   produce working artifacts on every platform without credentials.
