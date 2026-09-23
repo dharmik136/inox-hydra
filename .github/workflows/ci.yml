@@ -16,8 +16,27 @@ on:
 
 jobs:
   test-and-verify:
-    name: Build, Quality & Automated Test Suite
-    runs-on: windows-latest
+    name: Build, Quality & Automated Test Suite (${{ matrix.os }})
+    # The suite ran on windows-latest alone, and the backend now has macOS and
+    # Linux paths: Keychain, Secret Service, LaunchAgent and XDG autostart.
+    # Each of those tests is gated behind skipif for the platform it is live
+    # on, so on a Windows only runner all four skip, and the platforms where
+    # they would run never invoked pytest at all. desktop.yml has a matrix but
+    # builds bundles rather than running tests.
+    #
+    # The result was four tests that read as coverage and executed nowhere.
+    # That is the same shape as the release workflow check gated behind a
+    # pyyaml nobody declared, and the docs staging check waiting on an
+    # artifact CI never produced. A skipif is only honest if something,
+    # somewhere, does not skip.
+    #
+    # fail-fast is off so a failure on one platform does not cancel the others
+    # and hide whether they would have passed.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout Source Code
@@ -55,6 +74,12 @@ jobs:
 
   package-verify:
     name: Distributable Build & Clean-Install Verification
+    # Stays Windows only. The distributable embeds ABI specific compiled
+    # wheels and an embeddable CPython, so building it anywhere else produces
+    # an artifact that cannot import its own dependencies.
+    #
+    # `needs` on a matrix job waits for every leg of it, so this runs only
+    # once all three platforms have passed their tests.
     runs-on: windows-latest
     needs: test-and-verify
 
