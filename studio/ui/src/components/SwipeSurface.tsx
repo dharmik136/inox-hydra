@@ -104,7 +104,15 @@ export function SwipeSurface() {
         </ul>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-8 py-6">
+      {/* tabIndex makes the wall scrollable from the keyboard. A region
+          that scrolls but holds no focusable child cannot otherwise be
+          reached without a pointer, which axe reports as serious. */}
+      <div
+        className="min-h-0 flex-1 overflow-y-auto px-8 py-6"
+        tabIndex={0}
+        role="region"
+        aria-label="Saved specimens"
+      >
         {shown.length === 0 ? (
           <p className="studio-meta pt-8 text-center text-ink-muted">NOTHING MATCHES THAT</p>
         ) : (

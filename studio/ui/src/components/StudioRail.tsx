@@ -52,7 +52,7 @@ export function StudioRail({ active, onSelect, trayOpen, onToggleTray }: StudioR
             className="text-ink-primary"
           />
           <path d="M14 3v5h5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" className="text-ink-primary" />
-          <path d="M8 13h8M8 17h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="text-signal-orange" />
+          <path d="M8 13h8M8 17h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="text-signal-orange-text" />
         </svg>
       </button>
 

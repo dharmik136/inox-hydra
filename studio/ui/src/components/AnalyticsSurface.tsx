@@ -111,7 +111,7 @@ export function AnalyticsSurface() {
           role="status"
           className="mt-4 flex items-start gap-2 rounded-md border border-signal-orange/40 bg-signal-orange-subtle p-3"
         >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-signal-orange" strokeWidth={1.75} aria-hidden="true" />
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-signal-orange-text" strokeWidth={1.75} aria-hidden="true" />
           <span className="text-[12px] leading-snug text-ink-secondary">
             <span className="font-medium text-ink-primary">
               {provenance.synthetic} of {provenance.total} days are seeded sample data, not measurements.

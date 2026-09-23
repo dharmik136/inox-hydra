@@ -96,7 +96,7 @@ export function NavigationTray({ open, active, onSelect, onClose }: NavigationTr
                       )}
                     >
                       <Icon
-                        className={cn("mt-0.5 size-[18px] shrink-0", isActive ? "text-signal-orange" : "text-ink-muted")}
+                        className={cn("mt-0.5 size-[18px] shrink-0", isActive ? "text-signal-orange-text" : "text-ink-muted")}
                         strokeWidth={1.75}
                         aria-hidden="true"
                       />

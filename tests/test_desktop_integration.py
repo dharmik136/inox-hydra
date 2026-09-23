@@ -191,7 +191,13 @@ def test_a_second_instance_is_refused():
     Without this, a second launch starts a second uvicorn that loses the race
     for port 8000, leaving the user with a tray icon controlling nothing.
     """
-    name = "Local\\InoxHydra.Test.SingleInstance"
+    # The mutex name is a machine wide Win32 object, so a fixed one collides
+    # with any other process running this same test: a second checkout, or a
+    # second agent working in a worktree, takes the lock first and this run
+    # fails its own first assertion with nothing actually wrong. The pid keeps
+    # the name unique per process, while a second acquire inside this process
+    # is still refused, which is what the test is about.
+    name = f"Local\\InoxHydra.Test.SingleInstance.{os.getpid()}"
     first = desktop.acquire_single_instance(name)
     assert first is not None, "the first caller must get the lock"
     try:

@@ -46,7 +46,7 @@ export function BrandPanel() {
           <p className="studio-meta leading-relaxed text-ink-muted">
             THIS INSTALL HAS NO CREATOR IDENTITY YET
             <br />
-            <span className="text-ink-muted/70">WATERMARKS AND THE FEED PREVIEW STAY UNNAMED UNTIL IT IS SET</span>
+            <span className="text-ink-muted">WATERMARKS AND THE FEED PREVIEW STAY UNNAMED UNTIL IT IS SET</span>
           </p>
         )}
       </section>
@@ -76,7 +76,7 @@ export function BrandPanel() {
         </dl>
       </section>
 
-      <p className="studio-meta border-t border-edge pt-3 text-ink-muted/70">
+      <p className="studio-meta border-t border-edge pt-3 text-ink-muted">
         EDITED IN BRAND STUDIO, WHICH IS NOT BUILT YET
       </p>
     </div>

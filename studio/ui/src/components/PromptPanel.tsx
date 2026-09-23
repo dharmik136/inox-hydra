@@ -51,7 +51,7 @@ export function PromptPanel() {
           <Row
             label="Egress"
             value={local ? "NONE, RUNS LOCALLY" : "SENDS TO PROVIDER"}
-            tone={local ? "text-signal-green" : "text-signal-orange"}
+            tone={local ? "text-signal-green" : "text-signal-orange-text"}
           />
         </dl>
       </section>
@@ -74,7 +74,7 @@ export function PromptPanel() {
         <p className="studio-meta border-t border-edge pt-3 leading-relaxed text-ink-muted">
           NO PROVIDER KEY IS CONFIGURED
           <br />
-          <span className="text-ink-muted/70">EVERY FEATURE ABOVE STILL ANSWERS, DETERMINISTICALLY</span>
+          <span className="text-ink-muted">EVERY FEATURE ABOVE STILL ANSWERS, DETERMINISTICALLY</span>
         </p>
       )}
     </div>
