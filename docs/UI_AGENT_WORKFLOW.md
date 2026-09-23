@@ -144,7 +144,49 @@ none and the test suite caught one. Driving the interface caught four:
 
 Every one of those renders and typechecks cleanly. None is visible from a diff.
 
-## 6. Landing the work
+Phase 2 added two more of the same kind:
+
+5. The filmstrip read `hook` from `/api/format/re-hook`, because that is the key
+   `generate_10x_hooks` builds internally. The endpoint enriches each hook
+   before returning it and the body arrives as `hook_text`, so every generated
+   specimen rendered an empty card. **Read the endpoint's response, not the
+   function that feeds it.**
+6. React's `onSelect` is polyfilled rather than a real DOM event, so a
+   synthetic `new Event("select")` never reaches it. Selection behaviour has to
+   be driven the way a person drives it, with a real click.
+
+One note on running the suite while another agent is working:
+`test_a_second_instance_is_refused` acquires a Win32 named mutex under a fixed
+global name. Two suites running at once collide on it and the second fails, in
+either worktree, with nothing wrong in either. Re-run the test alone before
+believing it.
+
+## 6. Measuring what the author wrote
+
+Never take `.length` on draft text. It is wrong in two directions at once, and
+the number it produces drives the fold verdict.
+
+| Decoration | What it does | `"abc".length` |
+|---|---|---|
+| none | | 3 |
+| `to_sans_bold` | one astral code point per letter, so two UTF-16 units each | 6 |
+| `to_strikethrough` | a combining mark inserted after each letter | 6 |
+
+All three read as three characters. `studio/ui/src/lib/text.ts` is the only
+correct way to count them, and `tests/test_composer_text_measurement.py`
+executes that module against all three cases rather than checking the source
+mentions it.
+
+The backend hit the combining-mark half of this and fixed it in
+`formatters.py::_measurable_text`. The surrogate-pair half does not exist in
+Python, where `len()` counts code points, which is precisely why porting that
+fix by reading it would have left bold broken here.
+
+Formatting goes through the existing `/api/format/*` endpoints. A second set of
+Unicode maps in the browser would drift from the first, and the fold verdict is
+computed from whatever they return.
+
+## 7. Landing the work
 
 Commit to `ui/<workstream>`, never to `main`, and never rebase or force-push a
 branch another agent may have read. Keep the vanilla interface working for as

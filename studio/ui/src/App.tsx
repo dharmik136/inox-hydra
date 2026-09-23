@@ -4,15 +4,31 @@ import { StudioRail } from "@/components/StudioRail";
 import { NavigationTray } from "@/components/NavigationTray";
 import { ContextBar, type SaveState } from "@/components/ContextBar";
 import { ComposerCanvas, FOLD_CHARS } from "@/components/ComposerCanvas";
+import { HookFilmstrip } from "@/components/HookFilmstrip";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Inspector } from "@/components/Inspector";
 import { sectionById, type SectionId } from "@/lib/navigation";
+import { generateHooks, type GeneratedHook } from "@/lib/api";
+import { measurableLength, measurableWordCount } from "@/lib/text";
 
 /** Where the working draft lives until this is wired to the backend drafts API. */
 const DRAFT_KEY = "inox.studio.draft";
 
 /** Average adult reading speed. Used for an estimate that is labelled as one. */
 const WORDS_PER_MINUTE = 200;
+
+/**
+ * Replaces the opening paragraph, which is what applying a hook means.
+ *
+ * A paragraph ends at the first blank line. When the draft has no blank line
+ * the whole thing is the opening, and when it is empty the hook simply becomes
+ * the draft.
+ */
+function swapFirstParagraph(draft: string, hook: string): string {
+  if (!draft.trim()) return hook;
+  const breakIndex = draft.indexOf("\n\n");
+  return breakIndex === -1 ? hook : hook + draft.slice(breakIndex);
+}
 
 export default function App() {
   const [active, setActive] = useState<SectionId>("composer");
@@ -23,6 +39,15 @@ export default function App() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedAt, setSavedAt] = useState<string | null>(null);
 
+  // Incremented whenever a hook replaces the opening, so the canvas can play
+  // the vertical text transition. A counter rather than a boolean, because
+  // applying the same hook twice still has to animate.
+  const [swapKey, setSwapKey] = useState(0);
+
+  // Alternatives generated from a selection. While these are present the
+  // filmstrip shows them instead of the vaulted library.
+  const [generated, setGenerated] = useState<GeneratedHook[] | null>(null);
+
   // Dark first, matching docs/UI_CONVENTIONS.md: an unstamped document gets
   // the dark palette, and data-theme="light" is the opt out.
   const [theme, setTheme] = useState<"dark" | "light">("dark");
@@ -31,8 +56,11 @@ export default function App() {
   }, [theme]);
 
   const telemetry = useMemo(() => {
-    const chars = draft.length;
-    const words = draft.trim() ? draft.trim().split(/\s+/).length : 0;
+    // Both counts come from the undecorated text. See lib/text.ts: a struck
+    // character carries a second code point, and a bolded one is a surrogate
+    // pair, so a raw .length reports roughly double for either.
+    const chars = measurableLength(draft);
+    const words = measurableWordCount(draft);
     return {
       chars,
       // Two different readings, because one number cannot serve both cases.
@@ -53,6 +81,27 @@ export default function App() {
     setDraft(next);
     setSaveState("dirty");
     setSavedAt(null);
+  }, []);
+
+  const onApplyHook = useCallback(
+    (hook: string) => {
+      setDraft((current) => swapFirstParagraph(current, hook));
+      setSaveState("dirty");
+      setSavedAt(null);
+      setSwapKey((key) => key + 1);
+    },
+    [],
+  );
+
+  const onReHook = useCallback(async (selection: string) => {
+    try {
+      const hooks = await generateHooks(selection);
+      // An empty result is left alone rather than swapping the filmstrip to an
+      // empty strip, which would read as though the library had vanished.
+      if (hooks.length) setGenerated(hooks);
+    } catch {
+      setGenerated(null);
+    }
   }, []);
 
   /**
@@ -110,13 +159,28 @@ export default function App() {
         />
 
         <div className="relative flex min-h-0 flex-1">
-          <main className="min-w-0 flex-1 overflow-y-auto">
-            {active === "composer" ? (
-              <ComposerCanvas value={draft} onChange={onChangeDraft} />
-            ) : (
-              <SurfacePlaceholder label={section.label} blurb={section.blurb} />
+          <div className="flex min-w-0 flex-1 flex-col">
+            {active === "composer" && (
+              <HookFilmstrip
+                onApply={onApplyHook}
+                generated={generated}
+                onClearGenerated={() => setGenerated(null)}
+              />
             )}
-          </main>
+
+            <main className="min-h-0 flex-1 overflow-y-auto">
+              {active === "composer" ? (
+                <ComposerCanvas
+                  value={draft}
+                  onChange={onChangeDraft}
+                  onReHook={onReHook}
+                  swapKey={swapKey}
+                />
+              ) : (
+                <SurfacePlaceholder label={section.label} blurb={section.blurb} />
+              )}
+            </main>
+          </div>
 
           <Inspector open={inspectorOpen} onClose={() => setInspectorOpen(false)} draft={draft} />
 
