@@ -63,8 +63,11 @@ jobs:
             exit 1
           fi
 
+      # -rs for the same reason as ci.yml, and more so here: this run is the
+      # last gate before a build reaches someone, so a skip it does not name
+      # is a check nobody knows was not made.
       - name: Run The Test Suite
-        run: pytest tests studio/tests -q
+        run: pytest tests studio/tests -q -rs
 
       # Proves the wheel is complete and every dependency is declared, before
       # any of it is folded into a 40 MB ZIP that is harder to debug.
