@@ -92,20 +92,70 @@ def test_the_label_says_so_when_the_buffer_is_not_clear(congested_calendar):
         assert "cooldown" in result["label"].lower()
 
 
-def test_an_empty_calendar_still_reports_a_clear_slot():
-    """The honest path must not now report false collisions."""
+@pytest.fixture
+def empty_calendar():
+    """
+    A calendar with nothing on it.
+
+    This used to be a skip: the test read the posts table, found the seeded
+    demo posts, and stepped aside. The seed always contains scheduled posts,
+    so the condition was never false and the test never ran, in CI or locally.
+    A guard that waits for the right conditions and never gets them is not a
+    guard.
+
+    calculate_next_smart_slot reads both 'scheduled' and 'published', so both
+    are parked as drafts and put back afterwards.
+    """
     conn = get_db()
     try:
-        existing = conn.execute(
-            "SELECT COUNT(*) FROM posts WHERE status = 'scheduled'"
+        rows = conn.execute(
+            "SELECT id, status FROM posts WHERE status IN ('scheduled', 'published')"
+        ).fetchall()
+        original = [(r["id"], r["status"]) for r in rows]
+        conn.execute(
+            "UPDATE posts SET status = 'draft' WHERE status IN ('scheduled', 'published')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    try:
+        yield
+    finally:
+        conn = get_db()
+        try:
+            for post_id, status in original:
+                conn.execute(
+                    "UPDATE posts SET status = ? WHERE id = ?", (status, post_id)
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def test_an_empty_calendar_still_reports_a_clear_slot(empty_calendar):
+    """The honest path must not now report false collisions."""
+    result = native_scheduler.calculate_next_smart_slot()
+
+    assert result["cooldown_satisfied"] is True
+    assert result["hours_clearance"] is None or result["hours_clearance"] >= native_scheduler.min_cooldown_hours
+
+
+def test_the_calendar_is_restored_after_the_empty_case(empty_calendar):
+    """
+    The fixture edits the shared sandbox, so it has to put it back. If it did
+    not, every test after this one would run against a table with no schedule
+    and the congestion tests would quietly stop proving anything.
+    """
+    conn = get_db()
+    try:
+        during = conn.execute(
+            "SELECT COUNT(*) FROM posts WHERE status IN ('scheduled', 'published')"
         ).fetchone()[0]
     finally:
         conn.close()
-    if existing:
-        pytest.skip("the sandbox already holds scheduled posts")
 
-    result = native_scheduler.calculate_next_smart_slot()
-    assert result["cooldown_satisfied"] is True
+    assert during == 0, "the fixture did not actually clear the calendar"
 
 
 def test_setting_the_pause_state_reports_whether_it_wrote():

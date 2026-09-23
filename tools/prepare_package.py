@@ -41,22 +41,35 @@ TOP_LEVEL_DOCS = [
 MODULE_DOCS_DIR = "modules"
 
 
-def main() -> int:
+def stage_docs(destination: str = STAGED_DOCS) -> dict:
+    """
+    Copies the served documents into `destination`, replacing what is there.
+
+    Takes a destination so the test suite can stage into a temporary directory
+    and check the result. It used to work only against studio/docs, which is
+    gitignored as a build artifact, so the test guarding this could only run on
+    a machine where somebody had already run the tool by hand. On CI it skipped
+    every time, which meant the check on what ships to a user was the check not
+    being made.
+
+    Returns what was copied and what was listed but absent.
+    """
     if not os.path.isdir(SOURCE_DOCS):
-        print(f"ERROR: source docs directory not found: {SOURCE_DOCS}")
-        return 1
+        raise FileNotFoundError(f"source docs directory not found: {SOURCE_DOCS}")
 
-    if os.path.isdir(STAGED_DOCS):
-        shutil.rmtree(STAGED_DOCS)
-    os.makedirs(os.path.join(STAGED_DOCS, MODULE_DOCS_DIR), exist_ok=True)
+    if os.path.isdir(destination):
+        shutil.rmtree(destination)
+    os.makedirs(os.path.join(destination, MODULE_DOCS_DIR), exist_ok=True)
 
-    copied = 0
+    top_level = []
+    modules = []
     missing = []
+
     for name in TOP_LEVEL_DOCS:
         src = os.path.join(SOURCE_DOCS, name)
         if os.path.exists(src):
-            shutil.copy2(src, os.path.join(STAGED_DOCS, name))
-            copied += 1
+            shutil.copy2(src, os.path.join(destination, name))
+            top_level.append(name)
         else:
             missing.append(name)
 
@@ -65,12 +78,28 @@ def main() -> int:
         for name in sorted(os.listdir(src_modules)):
             if name.endswith(".md"):
                 shutil.copy2(os.path.join(src_modules, name),
-                             os.path.join(STAGED_DOCS, MODULE_DOCS_DIR, name))
-                copied += 1
+                             os.path.join(destination, MODULE_DOCS_DIR, name))
+                modules.append(name)
 
-    print(f"staged {copied} documents into studio/docs/")
-    if missing:
-        print(f"WARNING: listed but not found: {', '.join(missing)}")
+    return {
+        "destination": destination,
+        "top_level": top_level,
+        "modules": modules,
+        "missing": missing,
+        "copied": len(top_level) + len(modules),
+    }
+
+
+def main() -> int:
+    try:
+        result = stage_docs()
+    except FileNotFoundError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
+    print(f"staged {result['copied']} documents into studio/docs/")
+    if result["missing"]:
+        print(f"WARNING: listed but not found: {', '.join(result['missing'])}")
 
     # Propagate the single version source before anything is packaged, so a
     # built artifact can never contain a drifted extension manifest.
