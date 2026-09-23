@@ -204,5 +204,24 @@ once it passes 2 MB. Opening it is never a precondition for starting: if the
 directory is read only or the disk is full, the studio runs and the output is
 discarded as it was before.
 
+**The engine outliving the shell.** Done. `Backend::shutdown` covers the
+ordinary exit and respects the attach rule. It does not run when the shell is
+killed outright, and the engine then kept running with no window of its own,
+holding port 8000. Because `is_ready` correctly reports that engine as healthy,
+the next launch attached to a process the user could not see and had not
+knowingly left behind.
+
+The spawned child is now placed in a Job Object with `KILL_ON_JOB_CLOSE`, so
+Windows terminates it when the last handle to the job closes, which the kernel
+does for us however this process dies. Only a backend the shell started is ever
+placed in the job; an attached one returns before that point, because killing a
+server we did not start is the one thing this file must not do.
+
+The Win32 calls are declared by hand rather than adding the `windows` crate:
+four functions and one struct whose layout has been fixed since Windows XP,
+against a dependency costing build time on every run. A wrong struct size would
+make `SetInformationJobObject` fail quietly and leave the orphan behind, so the
+suite calls the real API with the same layout and asserts Windows accepts it.
+
 **macOS and Linux.** Nothing builds for them. `icon.icns` is deliberately not
 generated rather than shipped as a placeholder.
