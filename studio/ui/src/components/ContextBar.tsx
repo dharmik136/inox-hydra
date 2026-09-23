@@ -4,9 +4,11 @@ import { cn } from "@/lib/utils";
 /**
  * "idle" is the load state, before anything is edited. "dirty" is the one
  * that matters: edits exist that are not on disk. Collapsing it into "idle"
- * would show UNCHANGED over unsaved work.
+ * would show UNCHANGED over unsaved work. "failed" is not a variant of
+ * "dirty": both mean the work is unsaved, but only one of them means the
+ * author already asked for it to be saved and it did not happen.
  */
-export type SaveState = "idle" | "dirty" | "saving" | "saved";
+export type SaveState = "idle" | "dirty" | "saving" | "saved" | "failed";
 
 interface ContextBarProps {
   kind: string;
@@ -18,6 +20,7 @@ interface ContextBarProps {
   readSeconds: number;
   saveState: SaveState;
   savedAt: string | null;
+  saveError: string | null;
   onSave: () => void;
   onPublish: () => void;
 }
@@ -39,6 +42,7 @@ export function ContextBar({
   readSeconds,
   saveState,
   savedAt,
+  saveError,
   onSave,
   onPublish,
 }: ContextBarProps) {
@@ -81,6 +85,11 @@ export function ContextBar({
               <Check className="size-3 text-signal-green" aria-hidden="true" />
               SAVED {savedAt}
             </>
+          )}
+          {saveState === "failed" && (
+            <span className="text-signal-orange" title={saveError ?? undefined}>
+              SAVE FAILED
+            </span>
           )}
           {saveState === "dirty" && <span className="text-signal-orange">UNSAVED</span>}
           {saveState === "idle" && <span className="text-ink-muted">UNCHANGED</span>}

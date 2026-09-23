@@ -17,9 +17,62 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(`${init?.method ?? "GET"} ${path} failed: ${response.status}`);
+    // FastAPI puts the human readable reason in "detail", and some of them are
+    // things the author needs to read rather than a status code: exceeding the
+    // 5,000 character limit comes back as a 400 with the limit spelled out.
+    let reason = `${response.status}`;
+    try {
+      const body = await response.json();
+      if (typeof body?.detail === "string") reason = body.detail;
+    } catch {
+      // No JSON body. The status alone is all there is to report.
+    }
+    throw new Error(reason);
   }
   return (await response.json()) as T;
+}
+
+export interface Draft {
+  id: string;
+  content: string;
+}
+
+interface PostRow {
+  id: string;
+  content: string;
+  created_at?: string;
+}
+
+/**
+ * The draft the composer reopens, or null on a first run.
+ *
+ * list_posts orders by COALESCE(scheduled_for, created_at) ASC, so the newest
+ * draft is the last row rather than the first. Taking posts[0] would reopen the
+ * oldest draft the creator ever wrote.
+ */
+export async function fetchLatestDraft(): Promise<Draft | null> {
+  const data = await call<{ posts?: PostRow[] }>("/api/posts?status=draft");
+  const rows = data.posts ?? [];
+  const newest = rows[rows.length - 1];
+  return newest ? { id: newest.id, content: newest.content } : null;
+}
+
+/** Creates a draft and returns the id the server assigned it. */
+export async function createDraft(content: string): Promise<string> {
+  const data = await call<{ id?: string }>("/api/posts", {
+    method: "POST",
+    body: JSON.stringify({ content, status: "draft" }),
+  });
+  if (!data.id) throw new Error("the server created no draft id");
+  return data.id;
+}
+
+/** Writes new content over an existing draft. */
+export async function updateDraft(id: string, content: string): Promise<void> {
+  await call(`/api/posts/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+  });
 }
 
 export interface HookTemplate {
