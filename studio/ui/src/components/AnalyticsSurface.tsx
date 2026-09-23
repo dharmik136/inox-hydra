@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Download } from "lucide-react";
 import {
   fetchAnalyticsKpis,
   fetchAnalyticsOverview,
@@ -8,6 +8,7 @@ import {
   type AnalyticsPoint,
   type AnalyticsPost,
   type AnalyticsRange,
+  ANALYTICS_CSV_URL,
 } from "@/lib/api";
 import { TimeSeriesChart, type SeriesPoint } from "./TimeSeriesChart";
 import { cn } from "@/lib/utils";
@@ -79,6 +80,15 @@ export function AnalyticsSurface() {
     <div className="mx-auto max-w-[110ch] px-8 py-8">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <h2 className="studio-title">Analytics</h2>
+        <div className="flex items-center gap-3">
+          {/* A file download, so the browser handles it rather than fetch. */}
+          <a
+            href={ANALYTICS_CSV_URL}
+            className="studio-meta flex items-center gap-1 text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+          >
+            <Download className="size-3" strokeWidth={2} aria-hidden="true" />
+            CSV
+          </a>
         <div className="flex items-center gap-1" role="group" aria-label="Date range">
           {RANGES.map((candidate) => (
             <button
@@ -95,6 +105,7 @@ export function AnalyticsSurface() {
               {candidate}
             </button>
           ))}
+        </div>
         </div>
       </div>
 

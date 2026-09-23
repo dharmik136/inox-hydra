@@ -45,7 +45,7 @@ export function AuditPanel({ draft }: { draft: string }) {
   // The backend's own thresholds, so the colour and the label never disagree.
   const tone =
     audit.safety_score >= 85
-      ? "text-signal-green"
+      ? "text-signal-green-text"
       : audit.safety_score >= 60
         ? "text-signal-blue"
         : "text-signal-orange-text";
@@ -96,7 +96,7 @@ export function AuditPanel({ draft }: { draft: string }) {
       )}
 
       {audit.penalties.length === 0 && (
-        <p className="studio-meta text-signal-green">NO DISTRIBUTION PENALTIES DETECTED</p>
+        <p className="studio-meta text-signal-green-text">NO DISTRIBUTION PENALTIES DETECTED</p>
       )}
     </div>
   );
