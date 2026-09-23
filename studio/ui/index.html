@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LinkedIn Studio - Editorial Motion OS</title>
+    <meta name="color-scheme" content="dark light" />
+    <!-- Installability. Chrome and Edge offer the install prompt only for a
+         page that links a manifest and registers a service worker with a
+         fetch handler, so these three lines and the registration in
+         main.tsx are what make the desktop shell installable at all. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <meta name="theme-color" content="#111111" />
+    <!--
+      There is deliberately no <link> to fonts.googleapis.com here.
+
+      studio/frontend/index.html opens three connections to Google on every
+      launch (preconnect, preconnect, stylesheet) for Inter, Newsreader and
+      JetBrains Mono. In a product whose headline claim is zero cloud egress
+      that is a live outbound request, and on an air gapped machine the fonts
+      simply never arrive, so the editorial typography silently degrades to
+      system fallbacks. Both faces are bundled locally instead, imported in
+      src/main.tsx from @fontsource and emitted as woff2 next to the bundle.
+    -->
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -115,3 +115,16 @@ studio/vault/
 # tracked config would make every local build try to reach a signing service
 # that is not configured.
 desktop/signing.json
+
+# React studio UI. node_modules is the hazard the build memory warns about:
+# .gitignore protects the index, but copy_application() walks the working tree,
+# so an ignored dependency tree is still copied into every locally built
+# artifact. These are excluded in tools/build_portable.py as well, and neither
+# entry is sufficient alone.
+studio/ui/node_modules/
+studio/ui/.vite/
+studio/ui/dist/
+# tsc -b incremental state, rewritten on every build.
+studio/ui/tsconfig.tsbuildinfo
+# Built React output, reproducible from studio/ui/ by `npm run build`.
+studio/frontend_next/
