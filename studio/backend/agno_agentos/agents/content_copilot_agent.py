@@ -15,6 +15,27 @@ from ..scar_tissue import scrub_em_dashes, validate_pre_fold_hook
 from ..briefing import Brief, provenance, strip_preamble, validate_response
 from ..model_gateway import get_current_ai_config, execute_llm_completion, AIProviderConfig
 
+# Grounding is optional in the strongest sense: the studio has to keep writing
+# posts on a machine where this package failed to import for any reason. The
+# import is guarded rather than assumed, and everything below treats its
+# absence as "no material", which is the same path a creator with no servers
+# configured takes anyway.
+# The two spellings are both real. The backend is imported as
+# `studio.backend.agno_agentos...` from the installed package and as
+# `agno_agentos...` when studio/backend is on sys.path directly, which is how
+# the app and the tests load it. A three level relative import runs off the
+# top of the package in the second case, so it is tried and then fallen back
+# from, the same way database and event_bus are imported elsewhere here.
+try:
+    from ...mcp_client import as_brief_inputs, gather, grounding_provenance
+except Exception:  # pragma: no cover - the fallback below is the common path
+    try:
+        from mcp_client import as_brief_inputs, gather, grounding_provenance
+    except Exception:
+        as_brief_inputs = None
+        gather = None
+        grounding_provenance = None
+
 # LinkedIn truncates the opening line on mobile at roughly this width. A hook
 # that crosses it loses its payoff behind a "see more", which is the one failure
 # this product exists to prevent, so a model is not permitted to cross it either.
@@ -29,6 +50,21 @@ def to_sans_bold(text: str) -> str:
     return text.translate(trans)
 
 
+def _with_grounding(record: dict, grounded: dict) -> dict:
+    """
+    Attaches what grounded a generation to the record of where it came from.
+
+    On every path, including the ones where the model was never reached. A
+    creator whose notes were gathered and sent to a hosted provider needs that
+    written down even when the generation then failed, because the material
+    left the machine either way and a record that only covers the successes is
+    not a record of what happened.
+    """
+    merged = dict(record or {})
+    merged["grounding"] = (grounded or {}).get("provenance") or {"grounded": False}
+    return merged
+
+
 class LinkedInContentCopilotAgent:
     """Agent for LinkedIn post optimization, hook generation, and dwell optimization."""
 
@@ -41,6 +77,34 @@ class LinkedInContentCopilotAgent:
         "How to scale {topic} without breaking production (and without burning out your team):",
         "If your {topic} architecture requires 24/7 fire-drills, it is already broken."
     ]
+
+    def _gather_grounding(self) -> dict:
+        """
+        Material from the creator's own MCP servers, and where it is going.
+
+        Returns `{"inputs": {...}, "provenance": {...}}`, always. A creator
+        with nothing connected, a package that failed to import, a notes
+        server that is down, and an outright exception all produce the same
+        empty result, because none of them is a reason to stop writing the
+        post. The briefing module's rule applies here too: enhancement is an
+        improvement, never a dependency.
+
+        The provider is passed through rather than defaulted, because the
+        egress report is a claim about where this creator's notes are about to
+        go, and a stale or guessed provider would make that claim about the
+        wrong configuration.
+        """
+        empty = {"inputs": {}, "provenance": {"grounded": False}}
+        if gather is None or as_brief_inputs is None:
+            return empty
+        try:
+            gathered = gather(provider=getattr(self.ai_config, "provider", ""))
+            return {
+                "inputs": as_brief_inputs(gathered),
+                "provenance": grounding_provenance(gathered),
+            }
+        except Exception:
+            return empty
 
     def __init__(self, ai_config: Optional[AIProviderConfig] = None, gemini_api_key: Optional[str] = None):
         if ai_config:
@@ -152,26 +216,56 @@ class LinkedInContentCopilotAgent:
 
         Returns (accepted hooks or None, provenance).
         """
+        # Defined before the brief because the grounding it gathers becomes
+        # Gathered first, because it becomes part of the brief below and its
+        # provenance is attached to every path out of this method, including
+        # the failures.
+        #
+        # This is the thing a cloud tool cannot do. It has never read the
+        # migration this creator ran or the review they sat in, so its hooks
+        # are generic no matter how good its model is.
+        grounded = self._gather_grounding()
+        grounding_inputs = grounded["inputs"]
+
+        brief_inputs = {
+            "audience": audience,
+            "post_format": post_format,
+            "draft_excerpt": content[:600],
+        }
+        # The creator's material goes last, so a long note cannot push the
+        # audience and the draft out of the model's attention.
+        brief_inputs.update(grounding_inputs)
+
+        constraints = [
+            f"Every hook must be under {HOOK_FOLD_LIMIT} characters. "
+            "LinkedIn truncates the rest behind a 'see more' on mobile.",
+            "No em-dashes, en-dashes or double dashes. Use commas or full stops.",
+            "No hashtags, no emoji, no links.",
+            "Each hook must be able to open the post on its own, not describe it.",
+            "Vary the angle across the six: contrarian, concrete number, hard lesson, "
+            "direct question, blunt statement, specific scene.",
+        ]
+
+        if grounding_inputs:
+            # Said explicitly, because a model handed extra sections without
+            # being told what they are treats them as background and writes
+            # the same generic hook it would have written anyway. Naming the
+            # sections is what turns material into specificity.
+            constraints.append(
+                "The sections after the draft excerpt are the author's own notes and "
+                "records. Draw the specifics from them: real numbers, real incidents, "
+                "real decisions. Do not invent detail that is not there, and do not "
+                "quote them verbatim."
+            )
+
         brief = Brief(
             role=(
                 "You are a LinkedIn copywriter who writes openers for practitioners. "
                 "You write plainly and never pad."
             ),
             objective=f"Write 6 opening hooks for a post about {topic}.",
-            inputs={
-                "audience": audience,
-                "post_format": post_format,
-                "draft_excerpt": content[:600],
-            },
-            constraints=[
-                f"Every hook must be under {HOOK_FOLD_LIMIT} characters. "
-                "LinkedIn truncates the rest behind a 'see more' on mobile.",
-                "No em-dashes, en-dashes or double dashes. Use commas or full stops.",
-                "No hashtags, no emoji, no links.",
-                "Each hook must be able to open the post on its own, not describe it.",
-                "Vary the angle across the six: contrarian, concrete number, hard lesson, "
-                "direct question, blunt statement, specific scene.",
-            ],
+            inputs=brief_inputs,
+            constraints=constraints,
             forbidden=["game-changing", "revolutionary", "in today's fast-paced world", "delve"],
             output_contract="six hooks, one per line, numbered 1 to 6, nothing else.",
         )
@@ -182,10 +276,16 @@ class LinkedInContentCopilotAgent:
                 self.ai_config, user_prompt, system_prompt=system_prompt, max_tokens=400
             )
         except Exception as err:
-            return None, provenance("deterministic", f"provider error: {err}", self.ai_config.model)
+            return None, _with_grounding(
+                provenance("deterministic", f"provider error: {err}", self.ai_config.model),
+                grounded,
+            )
 
         if not raw or not raw.strip():
-            return None, provenance("deterministic", "empty response", self.ai_config.model)
+            return None, _with_grounding(
+                provenance("deterministic", "empty response", self.ai_config.model),
+                grounded,
+            )
 
         accepted: List[str] = []
         rejected = 0
@@ -213,14 +313,20 @@ class LinkedInContentCopilotAgent:
                 accepted.append(cleaned)
 
         if len(accepted) < 3:
-            return None, provenance(
-                "deterministic",
-                f"only {len(accepted)} of {len(accepted) + rejected} hooks passed the fold and vocabulary rules",
-                self.ai_config.model,
+            return None, _with_grounding(
+                provenance(
+                    "deterministic",
+                    f"only {len(accepted)} of {len(accepted) + rejected} hooks passed the fold and vocabulary rules",
+                    self.ai_config.model,
+                ),
+                grounded,
             )
 
-        return accepted[:7], provenance(
-            "model_assisted",
-            f"{len(accepted)} accepted, {rejected} rejected",
-            self.ai_config.model,
+        return accepted[:7], _with_grounding(
+            provenance(
+                "model_assisted",
+                f"{len(accepted)} accepted, {rejected} rejected",
+                self.ai_config.model,
+            ),
+            grounded,
         )
