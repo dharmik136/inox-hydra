@@ -16,7 +16,9 @@ Strict Invariants:
 """
 
 import os
+import shutil
 import sys
+import tempfile
 
 import pytest
 
@@ -28,7 +30,24 @@ except ModuleNotFoundError:  # Python 3.10 and older
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 PYPROJECT = os.path.join(REPO_ROOT, "pyproject.toml")
 
+sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
+import prepare_package
+
 pytestmark = pytest.mark.skipif(tomllib is None, reason="tomllib requires Python 3.11 or newer")
+
+
+@pytest.fixture
+def staging_dir():
+    """
+    A throwaway destination for prepare_package.stage_docs.
+
+    tempfile rather than pytest's tmp_path, matching the rest of this suite.
+    """
+    path = tempfile.mkdtemp(prefix="inox_staging_")
+    try:
+        yield os.path.join(path, "staged")
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 @pytest.fixture(scope="module")
@@ -109,19 +128,75 @@ def test_runtime_dependency_declared(manifest, package):
     assert package.lower() in declared, f"{package} is used at runtime but not declared"
 
 
-def test_staged_docs_match_what_the_app_serves():
+def test_staged_docs_match_what_the_app_serves(staging_dir):
     """
     tools/prepare_package.py must stage every document the Docs tab lists.
 
-    Only meaningful when staging has been run. Skipped otherwise so a plain
-    checkout does not fail.
+    This ran the staging tool's output rather than the tool, by looking for
+    studio/docs on disk and skipping when it was absent. studio/docs is
+    gitignored as a build artifact, so it existed only on a machine where
+    somebody had run the tool by hand, and the test skipped on every CI run
+    from the day it was written. The check on what ships to a user was the one
+    not being made.
+
+    It now stages into a temporary directory and asserts on the result, so it
+    runs everywhere and exercises the tool instead of its leftovers.
     """
-    staged = os.path.join(REPO_ROOT, "studio", "docs")
-    if not os.path.isdir(staged):
-        pytest.skip("studio/docs not staged; run tools/prepare_package.py")
+    result = prepare_package.stage_docs(staging_dir)
+    staged = result["destination"]
+
+    assert result["missing"] == [], (
+        f"prepare_package lists {result['missing']} as documents the app "
+        f"serves, and they are not in docs/. The build prints a warning and "
+        f"succeeds, so these would simply be absent from the shipped Docs tab."
+    )
 
     modules_dir = os.path.join(staged, "modules")
     assert os.path.isdir(modules_dir), "staged docs are missing the modules directory"
     module_files = [f for f in os.listdir(modules_dir) if f.endswith(".md")]
     assert len(module_files) >= 6, f"expected the 6 module docs, found {module_files}"
     assert os.path.exists(os.path.join(staged, "ENTERPRISE_USAGE.md"))
+
+
+def test_every_document_the_app_serves_is_staged(staging_dir):
+    """
+    The list in prepare_package and the files on disk have to agree in both
+    directions. The assertion above catches a listed file that is missing;
+    this one catches a served file that was never listed, which ships a build
+    whose Docs tab is missing a page nobody noticed writing.
+    """
+    result = prepare_package.stage_docs(staging_dir)
+
+    for name in prepare_package.TOP_LEVEL_DOCS:
+        assert os.path.exists(os.path.join(result["destination"], name)), (
+            f"{name} is listed as served and did not reach the staged tree"
+        )
+
+    source_modules = os.path.join(REPO_ROOT, "docs", "modules")
+    expected = sorted(f for f in os.listdir(source_modules) if f.endswith(".md"))
+    assert result["modules"] == expected, (
+        f"staged modules {result['modules']} do not match docs/modules "
+        f"{expected}"
+    )
+
+
+def test_staging_twice_leaves_the_same_tree(staging_dir):
+    """
+    The script says it is idempotent, and the release job may run it after a
+    partial earlier run. It removes the destination first, so a document
+    dropped from the list must not survive in a stale tree.
+    """
+    destination = staging_dir
+
+    first = prepare_package.stage_docs(destination)
+    stale = os.path.join(destination, "LEFTOVER.md")
+    with open(stale, "w", encoding="utf-8") as handle:
+        handle.write("from an older build")
+
+    second = prepare_package.stage_docs(destination)
+
+    assert not os.path.exists(stale), (
+        "a file from a previous staging survived, so a document removed from "
+        "the served list would still ship"
+    )
+    assert first["copied"] == second["copied"]
