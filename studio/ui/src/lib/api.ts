@@ -955,3 +955,83 @@ export async function synthesizeImagePrompt(
     aspect_ratio: typeof s.aspect_ratio === "string" ? s.aspect_ratio : aspectRatio,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Grounding (MCP)
+// ---------------------------------------------------------------------------
+
+export interface McpServer {
+  name: string;
+  command: string[];
+  description: string;
+  enabled: boolean;
+}
+
+export interface EgressReport {
+  leaves_this_machine: boolean;
+  provider: string;
+  summary: string;
+}
+
+export async function fetchMcpServers(): Promise<{ servers: McpServer[]; egress: EgressReport }> {
+  const data = await call<{ servers?: McpServer[]; egress?: EgressReport }>("/api/v1/mcp/servers");
+  return {
+    servers: data.servers ?? [],
+    egress: data.egress ?? { leaves_this_machine: false, provider: "", summary: "" },
+  };
+}
+
+/**
+ * Registers a server, switched off.
+ *
+ * There is no enabled field here on purpose, and the interface does not offer
+ * one: agreeing that a command exists and agreeing to be read by it are
+ * different acts, so they are two deliberate steps rather than one.
+ */
+export async function addMcpServer(
+  name: string,
+  command: string[],
+  description?: string,
+): Promise<void> {
+  await call("/api/v1/mcp/servers", {
+    method: "POST",
+    body: JSON.stringify({ name, command, description: description || "" }),
+  });
+}
+
+export async function setMcpServerEnabled(name: string, enabled: boolean): Promise<void> {
+  await call(`/api/v1/mcp/servers/${encodeURIComponent(name)}/enabled`, {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function removeMcpServer(name: string): Promise<void> {
+  await call(`/api/v1/mcp/servers/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+export interface GroundingPreview {
+  egress: EgressReport;
+  material: { server: string; text: string }[];
+  errors: string[];
+  bytes_used: number;
+  bytes_budget: number;
+}
+
+/**
+ * What would be gathered, and whether it is about to leave this machine.
+ *
+ * Reads the enabled servers by the same path a draft takes, so this is the
+ * real thing rather than a description of it. Showing the material before it
+ * is used is the difference between consent and a setting.
+ */
+export async function previewGrounding(): Promise<GroundingPreview> {
+  const data = await call<Record<string, any>>("/api/v1/mcp/preview");
+  return {
+    egress: data.egress ?? { leaves_this_machine: false, provider: "", summary: "" },
+    material: Array.isArray(data.material) ? data.material : [],
+    errors: Array.isArray(data.errors) ? data.errors.map(String) : [],
+    bytes_used: typeof data.bytes_used === "number" ? data.bytes_used : 0,
+    bytes_budget: typeof data.bytes_budget === "number" ? data.bytes_budget : 0,
+  };
+}
