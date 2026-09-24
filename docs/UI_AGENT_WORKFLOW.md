@@ -4,7 +4,7 @@
 > interface lands work without colliding with anyone else working in the repo.
 >
 > The visual specification is [linkedin_studio_reimagined_design.md](linkedin_studio_reimagined_design.md).
-> The rules the vanilla interface is held to are [UI_CONVENTIONS.md](UI_CONVENTIONS.md)
+> The rules the interface is held to are [UI_CONVENTIONS.md](UI_CONVENTIONS.md)
 > and [ICON_SYSTEM.md](ICON_SYSTEM.md). This document is the decision procedure,
 > not the design.
 
@@ -69,17 +69,17 @@ Applying that to the reference table the product was evaluated against:
 
 | Want | Candidates | Decision |
 |---|---|---|
-| Icons | Lucide, Phosphor, Heroicons, Tabler, Iconoir | **Lucide**, as tree-shaken React components. Only referenced glyphs enter the bundle. The vanilla interface keeps its 37 symbol coolicons sprite; the two sets are never mixed inside one surface. |
+| Icons | Lucide, Phosphor, Heroicons, Tabler, Iconoir | **Lucide**, as tree-shaken React components. Only referenced glyphs enter the bundle. It replaced a 37 symbol coolicons sprite that was inlined by hand, and went with the page it was inlined into. |
 | Components | shadcn/ui, Radix, Origin UI, Mantine | Available now that the interface is React. shadcn copies source into the repository rather than adding a runtime dependency, which suits a product that has to audit what it ships. |
 | Effects | Magic UI, Aceternity | Usable, but measured against blueprint section 18, which removes glow, gradient and "AI dashboard" language. Most of what these libraries are known for is on that list. |
 | Charts | Recharts, Tremor, visx, nivo, ECharts, Observable Plot | Open. All are installable and bundle locally. Pick per surface when analytics is built, not before. |
 | Landing templates | Cruip, Tailkit, Tailwind UI | Out of scope here. A marketing site is a different surface with different constraints, and none of the above applies to it. |
 
-Fonts are the worked example. `studio/frontend/index.html` opens three
-connections to Google on every launch, which fails constraint 1 outright and,
-on an air-gapped machine, silently degrades the editorial typography to system
-fallbacks. The React interface bundles the same faces through `@fontsource`,
-emitted as woff2 beside the bundle. No behaviour changed; the requests stopped.
+Fonts are the worked example. The previous interface opened three connections
+to Google on every launch, which fails constraint 1 outright and, on an
+air-gapped machine, silently degrades the editorial typography to system
+fallbacks. The interface bundles the same faces through `@fontsource`, emitted
+as woff2 beside the bundle. No behaviour changed; the requests stopped.
 
 ## 4. Where things live
 
@@ -87,14 +87,17 @@ emitted as woff2 beside the bundle. No behaviour changed; the requests stopped.
 studio/ui/                 React source. Excluded from the artifact.
 studio/ui/public/          Copied verbatim to the bundle root (manifest, icons, sw.js).
 studio/frontend_next/      Build output. Gitignored, reproducible, what FastAPI serves.
-studio/frontend/           The vanilla interface. Still the fallback.
 ```
 
-`get_frontend_dir()` prefers `frontend_next` when it contains an `index.html`,
-and falls back to `frontend` otherwise. The check is for the file rather than
-the directory, because an interrupted build leaves the directory behind with
-nothing servable in it, and falling back then is the difference between the old
-interface and a blank page.
+`get_frontend_dir()` returns `frontend_next`, and nothing else. It used to
+fall back to a second, vanilla page when the build was absent. That page is
+gone and the fallback with it: a missing build now answers 503 naming the step
+that was skipped, rather than silently serving a different interface.
+
+That silence is worth being specific about, because it cost real time. While
+the fallback existed, a build that never ran looked exactly like a build that
+worked: the product booted, served a page, and passed its suite. That is how
+`frontend_next` reached no artifact at all for as long as it did.
 
 Two collisions to know about:
 
@@ -186,9 +189,47 @@ Formatting goes through the existing `/api/format/*` endpoints. A second set of
 Unicode maps in the browser would drift from the first, and the fold verdict is
 computed from whatever they return.
 
-## 7. Landing the work
+## 7. Retiring an interface
+
+Done once, and the procedure is the reusable part.
+
+**Prove parity first, by measurement.** Compare the endpoint families the old
+interface calls against the ones the new interface calls. Completing a design
+blueprint is not the same as replacing a product: the blueprint said how each
+surface should look, and the diff said what the old page could actually do. It
+found three placeholder sections, a Publish button that did not publish, and
+roughly twenty-three unreached endpoint families, none of which the phase list
+showed.
+
+Normalise both sides carefully and confirm every hit by hand. A naive path
+normaliser reported `/api/leads` and `/api/posts/{id}` as missing when both were
+covered, and those false positives nearly hid the real ones.
+
+**Then migrate the coverage, file by file, with a decision each.** Nineteen test
+files referenced the old page. Each was carried across, rewritten where the
+subject had moved, or retired with the reason recorded. The fast version is to
+delete the ones that stop compiling and watch the suite go green with less
+behind it, which is the failure this repository has been burned by twice.
+
+Rewriting is often the better outcome. One check grepped `app.js` for a guard
+inside `const verdictDisplay`; the interface renders what the audit returns
+rather than deciding a label, so it now asserts the audit's behaviour. That is
+stronger than what it replaced, which passed as long as the guard existed,
+whatever it did.
+
+**Clear the build directory before you believe a wheel.** A wheel built
+immediately after the deletion still contained nine files from the deleted
+page: setuptools does not clean `build/lib` between builds, so deleted files
+persist into artifacts until it is cleared.
+
+## 8. Landing the work
 
 Commit to `ui/<workstream>`, never to `main`, and never rebase or force-push a
-branch another agent may have read. Keep the vanilla interface working for as
-long as it is the fallback: while `frontend_next` can be absent, the old page is
-what a user gets, and a half-migrated `studio/frontend` serves nobody.
+branch another agent has read.
+
+Check what the other agent shipped before deleting anything they may have built
+into. A grounding settings card landed in the vanilla page an hour before the
+branch that deleted that page; merging as-is would have removed a feature that
+was a day old. It was ported instead, along with its test file. The endpoint
+parity diff in section 3 is what makes that checkable rather than a matter of
+noticing.
