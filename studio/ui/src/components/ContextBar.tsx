@@ -89,7 +89,7 @@ export function ContextBar({
           {saveState === "published" && (
             <span className="flex items-center gap-1.5 text-signal-green-text">
               <Check className="size-3" aria-hidden="true" />
-              {(savedAt ?? "PUBLISHED").toUpperCase()}
+              {(savedAt ?? "MARKED AS PUBLISHED").toUpperCase()}
             </span>
           )}
           {saveState === "failed" && (
