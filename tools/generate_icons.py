@@ -33,7 +33,7 @@ Usage:
 
 Outputs:
     assets/inox_hydra.ico             tray, window, shortcut, installer
-    studio/frontend/icons/*.png       web app manifest sizes
+    studio/ui/public/icons/*.png      web app manifest sizes
     desktop/src-tauri/icons/*         the exact set the Tauri bundler expects
 
 Strict Invariants:
@@ -47,7 +47,7 @@ from PIL import Image, ImageDraw, IcnsImagePlugin
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-# Straight from studio/frontend/styles.css, so the icon and the interface stay
+# Straight from the interface tokens, so the icon and the interface stay
 # the same product rather than drifting apart.
 INDIGO = (79, 70, 229, 255)      # --accent-indigo, the brand primary
 PAPER = (231, 226, 213, 255)     # --accent-paper
@@ -115,7 +115,9 @@ def draw_mark(size, maskable=False):
 
 def main():
     assets_dir = os.path.join(REPO_ROOT, "assets")
-    icons_dir = os.path.join(REPO_ROOT, "studio", "frontend", "icons")
+    # Vite copies studio/ui/public verbatim into the build, so writing here
+    # puts the icons where the manifest expects them.
+    icons_dir = os.path.join(REPO_ROOT, "studio", "ui", "public", "icons")
     os.makedirs(assets_dir, exist_ok=True)
     os.makedirs(icons_dir, exist_ok=True)
 

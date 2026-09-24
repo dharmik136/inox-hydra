@@ -111,42 +111,8 @@ def test_gdpr_hard_purge_lifecycle():
     assert verify_res.status_code == 404
 
 
-def test_frontend_dom_elements_exist():
-    """Validates that Phase 1 HTML markup contains all required elements."""
-    html_path = os.path.join(os.path.dirname(__file__), "..", "studio", "frontend", "index.html")
-    content = open(html_path, "r", encoding="utf-8").read()
-
-    # Telemetry cards & container
-    assert 'id="crm-telemetry-container"' in content
-    assert 'id="crm-telem-total-leads"' in content
-    assert 'id="crm-telem-vip-leads"' in content
-    assert 'id="crm-telem-avg-score"' in content
-    assert 'id="crm-telem-inquiry-rate"' in content
-    assert 'id="crm-funnel-progress-track"' in content
-
-    # Dossier purge button
-    assert 'id="btn-dossier-purge-lead"' in content
-
-    # 3-Angle DM modal & chat button
-    assert 'id="dm-angle-chips"' in content
-    assert 'id="dm-chip-angle-0"' in content
-    assert 'id="dm-chip-angle-1"' in content
-    assert 'id="dm-chip-angle-2"' in content
-    assert 'id="btn-open-linkedin-chat"' in content
 
 
-def test_frontend_styles_definitions_exist():
-    """Validates that Phase 1 CSS rules exist for cards, funnel, badges, and tooltips."""
-    css_path = os.path.join(os.path.dirname(__file__), "..", "studio", "frontend", "styles.css")
-    content = open(css_path, "r", encoding="utf-8").read()
-
-    assert ".crm-telemetry-container" in content
-    assert ".crm-telemetry-grid" in content
-    assert ".crm-telemetry-card" in content
-    assert ".crm-funnel-progress-track" in content
-    assert ".icp-badge-pill" in content
-    assert ".icp-breakdown-tooltip" in content
-    assert ".btn-danger-outline" in content
 
 
 def test_strict_zero_em_dash_compliance():
@@ -155,9 +121,6 @@ def test_strict_zero_em_dash_compliance():
     targets = [
         os.path.join(base_dir, "studio", "backend", "crm.py"),
         os.path.join(base_dir, "studio", "backend", "app.py"),
-        os.path.join(base_dir, "studio", "frontend", "index.html"),
-        os.path.join(base_dir, "studio", "frontend", "styles.css"),
-        os.path.join(base_dir, "studio", "frontend", "app.js"),
         os.path.join(base_dir, "tests", "test_crm_telemetry_deepdive.py"),
         os.path.join(base_dir, "tests", "test_phase1_crm_ui.py"),
     ]

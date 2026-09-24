@@ -3,17 +3,9 @@ React UI Contract
 =================
 The rules the React interface in studio/ui is held to.
 
-This runs ALONGSIDE tests/test_ui_visual_contract.py rather than replacing it.
-Both interfaces ship: studio/frontend is still the fallback whenever the React
-build is absent, so it is still what some users see and still needs its own
-contract.
-
-The React interface now covers queue, docs, command, publishing, scheduling,
-CRM actions, media upload and image generation. What it still does not reach is
-the LinkedIn session connection, the per-post attribution drill down, and three
-maintainer surfaces: the governance audit, the internal issue sheet and the
-image prompt preview. Until those land, removing the vanilla page removes
-working features.
+This replaced tests/test_ui_visual_contract.py, which held the same rules over
+the vanilla page. That page is gone: the React interface reaches every endpoint
+family it did, so there is one interface and one contract.
 
 Every rule below was carried across because the defect it guards is a property
 of any themed interface, not of the page that happened to be there first:
@@ -34,8 +26,9 @@ styles; this interface carries 0 and 6. That is not an invitation to spend the
 difference.
 
 Structural checks read studio/frontend_next, which is build output. They skip
-when it is absent, which is a legitimate state for a checkout without node. The
-authoring checks read studio/ui/src and always run.
+when it is absent, which is a legitimate state for a checkout without node.
+The authoring checks read studio/ui/src and always run, so a checkout with no
+build is still held to the rules that do not need one.
 
 Strict Invariants:
 - Zero em-dashes across all code, docstrings, and comments.

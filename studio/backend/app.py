@@ -3282,6 +3282,22 @@ app.mount("/assets", StaticFiles(directory=STUDIO_ASSETS_DIR), name="assets")
 
 if os.path.exists(FRONTEND_DIR):
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
+else:
+    # The interface is built from studio/ui and is not in the repository.
+    # A bare 404 here reads like a wrong URL; this says which step was
+    # missed. There used to be a second, vanilla page to fall back to, and
+    # falling back silently is what kept a packaging defect invisible.
+    @app.get("/", include_in_schema=False)
+    def _interface_not_built():
+        return JSONResponse(
+            status_code=503,
+            content={
+                "detail": (
+                    "The studio interface has not been built. Run npm ci and "
+                    "npm run build in studio/ui, which writes studio/frontend_next."
+                )
+            },
+        )
 
 
 if __name__ == "__main__":

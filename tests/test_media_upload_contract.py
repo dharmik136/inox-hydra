@@ -36,7 +36,6 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-APP_JS = os.path.join(os.path.dirname(__file__), "..", "studio", "frontend", "app.js")
 
 # A real, structurally valid one page PDF. A truncated stub would not exercise
 # the page counting path that produced page_count in the response.
@@ -78,8 +77,8 @@ def test_upload_accepts_each_media_type(client, name, data, ctype, expected_type
 
 def test_upload_response_declares_the_keys_the_browser_consumes(client):
     """
-    The contract itself. Renaming either key without updating app.js puts the
-    attachment card back into the broken state.
+    The contract itself. Renaming either key without updating the interface
+    puts the attachment card back into the broken state.
     """
     body = _upload(client, "deck.pdf", REAL_PDF, "application/pdf").json()
     for key in ("filename", "url", "media_type", "asset_id", "size_bytes"):
@@ -115,60 +114,7 @@ def test_uploaded_file_lands_where_its_url_claims(client):
         assert f.read().startswith(b"%PDF"), "stored bytes are not the uploaded file"
 
 
-def _app_js():
-    with open(APP_JS, encoding="utf-8") as f:
-        return f.read()
 
 
-def test_browser_normalises_both_media_shapes():
-    """
-    setAttachedMedia has two callers passing two shapes: the upload endpoint
-    (filename/url) and the AI image studio (file_name/file_url). It must accept
-    either, or one of them breaks.
-    """
-    src = _app_js()
-    body = src[src.index("function setAttachedMedia("):]
-    body = body[:body.index("\nfunction ")] if "\nfunction " in body else body
-
-    assert "media.filename" in body, (
-        "setAttachedMedia does not read the upload endpoint's `filename` key. "
-        "Uploads will throw on media.file_name being undefined."
-    )
-    assert "media.url" in body, (
-        "setAttachedMedia does not read the upload endpoint's `url` key."
-    )
-    assert "media.file_name" in body, "the AI image studio shape is no longer handled"
 
 
-def test_browser_never_dereferences_an_unnormalised_name():
-    """
-    The exact crash: media.file_name.toLowerCase() before any fallback.
-
-    Asserts that every .toLowerCase() on a name in setAttachedMedia happens
-    after normalisation, by requiring the normalisation assignment to appear
-    before the first such call.
-    """
-    src = _app_js()
-    start = src.index("function setAttachedMedia(")
-    body = src[start:]
-    body = body[:body.index("\nfunction ")] if "\nfunction " in body else body
-
-    normalise_at = body.find("file_name: media.file_name || media.filename")
-    assert normalise_at != -1, "the normalisation step is gone"
-
-    first_lower = body.find(".toLowerCase()")
-    assert first_lower != -1, "expected a toLowerCase call to guard"
-    assert normalise_at < first_lower, (
-        "a name is lowercased before it is normalised, which is the original crash"
-    )
-
-
-def test_upload_toast_does_not_report_undefined():
-    """The success message read the wrong key, so it said 'Uploaded undefined'."""
-    src = _app_js()
-    assert "Uploaded ${data.file_name}" not in src, (
-        "the success toast reads data.file_name, which the upload response does not have"
-    )
-    assert re.search(r"Uploaded \$\{data\.filename", src), (
-        "the success toast should report the filename the API actually returned"
-    )

@@ -35,15 +35,40 @@ import pytest
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # The literals that used to be displayed as though they had been measured.
+# The interface side is checked across the whole source tree rather than
+# against named files. The interface used to be one app.js and one
+# index.html, so naming them was enough; it is many components now and a
+# list of filenames would let a constant move into a new one unseen.
+BANNED_IN_THE_INTERFACE = ["2412", "2,412", "96% Safe", "94% Safe", "98% Safe", "18.4"]
+UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
+
+
+def test_no_fabricated_constant_is_displayed_by_the_interface():
+    """
+    A follower count of 2,412 and a safety score of "96% Safe" were
+    literals in the markup, and on screen they were indistinguishable from
+    capture.
+    """
+    import glob
+    import io
+
+    sources = glob.glob(os.path.join(UI_SRC, "**", "*.tsx"), recursive=True)
+    sources += glob.glob(os.path.join(UI_SRC, "**", "*.ts"), recursive=True)
+    assert sources, "no interface source was found to check"
+
+    offenders = []
+    for path in sources:
+        text = io.open(path, encoding="utf-8").read()
+        for banned in BANNED_IN_THE_INTERFACE:
+            if banned in text:
+                offenders.append(f"{os.path.relpath(path, REPO_ROOT)}: {banned}")
+
+    assert not offenders, f"fabricated display constants in the interface: {offenders}"
+
+
 BANNED_DISPLAY_CONSTANTS = [
     ("studio/backend/app.py", "2412"),
     ("studio/backend/app.py", "104)"),
-    ("studio/frontend/app.js", "2412"),
-    ("studio/frontend/app.js", "96% Safe"),
-    ("studio/frontend/app.js", '"18.4"'),
-    ("studio/frontend/index.html", "2,412"),
-    ("studio/frontend/index.html", "94% Safe"),
-    ("studio/frontend/index.html", "98% Safe"),
 ]
 
 
