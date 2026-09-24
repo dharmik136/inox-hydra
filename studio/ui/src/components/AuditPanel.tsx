@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Lightbulb } from "lucide-react";
-import { auditDraft, type AlgorithmAudit } from "@/lib/api";
+import { auditDraft, auditGovernance, type AlgorithmAudit, type GStackAudit } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /**
@@ -19,6 +19,7 @@ const SETTLE_MS = 700;
  */
 export function AuditPanel({ draft }: { draft: string }) {
   const [audit, setAudit] = useState<AlgorithmAudit | null>(null);
+  const [gates, setGates] = useState<GStackAudit | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
@@ -31,6 +32,12 @@ export function AuditPanel({ draft }: { draft: string }) {
           setFailed(false);
         })
         .catch(() => live && setFailed(true));
+
+      // The governance gates are a separate check with its own six rules, so
+      // a failure in one must not blank the other.
+      auditGovernance(draft)
+        .then((result) => live && setGates(result))
+        .catch(() => live && setGates(null));
     }, SETTLE_MS);
 
     return () => {
@@ -97,6 +104,37 @@ export function AuditPanel({ draft }: { draft: string }) {
 
       {audit.penalties.length === 0 && (
         <p className="studio-meta text-signal-green-text">NO DISTRIBUTION PENALTIES DETECTED</p>
+      )}
+
+      {gates && (
+        <section className="border-t border-edge pt-4">
+          <div className="mb-2 flex items-baseline justify-between">
+            <p className="studio-label">Governance gates</p>
+            <span className="studio-meta">
+              <span
+                className={cn(
+                  "text-[13px] font-medium",
+                  gates.passed ? "text-signal-green-text" : "text-signal-orange-text",
+                )}
+              >
+                {gates.score}
+              </span>
+              <span className="mx-1.5 text-ink-muted">·</span>
+              {gates.passed ? "PASSED" : "BLOCKED"}
+            </span>
+          </div>
+          {gates.violations.length === 0 ? (
+            <p className="studio-meta text-ink-muted">ALL SIX GATES CLEAR</p>
+          ) : (
+            <ul className="flex flex-col gap-1.5">
+              {gates.violations.map((violation) => (
+                <li key={violation} className="text-[12px] leading-snug text-ink-secondary">
+                  {violation}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       )}
     </div>
   );

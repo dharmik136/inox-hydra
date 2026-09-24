@@ -7,6 +7,7 @@ import {
   Terminal,
   BookOpen,
   Settings2,
+  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -18,7 +19,8 @@ export type SectionId =
   | "analytics"
   | "command"
   | "docs"
-  | "settings";
+  | "settings"
+  | "devtools";
 
 export interface StudioSection {
   id: SectionId;
@@ -47,6 +49,9 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   { id: "command", label: "Command", blurb: "Agent runs and local model routing", icon: Terminal },
   { id: "docs", label: "Docs", blurb: "Offline playbook and strategy search", icon: BookOpen },
   { id: "settings", label: "Brand Studio", blurb: "Identity, watermark and local security", icon: Settings2 },
+  // Last, and only present when the maintainer surface is on. A consumer
+  // build answers 404 for everything behind it.
+  { id: "devtools", label: "Devtools", blurb: "Internal sheet and screen registry", icon: Wrench },
 ];
 
 export function sectionById(id: SectionId): StudioSection {

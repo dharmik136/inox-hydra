@@ -1,9 +1,10 @@
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { STUDIO_SECTIONS, type SectionId } from "@/lib/navigation";
+import { type SectionId, type StudioSection } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 interface NavigationTrayProps {
+  sections: StudioSection[];
   open: boolean;
   active: SectionId;
   onSelect: (id: SectionId) => void;
@@ -18,7 +19,7 @@ interface NavigationTrayProps {
  * focus to whatever opened it, which is the part that is easy to leave out and
  * strands keyboard users in the page body.
  */
-export function NavigationTray({ open, active, onSelect, onClose }: NavigationTrayProps) {
+export function NavigationTray({ sections, open, active, onSelect, onClose }: NavigationTrayProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreFocusTo = useRef<Element | null>(null);
 
@@ -77,7 +78,7 @@ export function NavigationTray({ open, active, onSelect, onClose }: NavigationTr
           >
             <p className="studio-label px-2 pt-2 pb-1">Workspaces</p>
             <ul className="flex flex-col">
-              {STUDIO_SECTIONS.map((section) => {
+              {sections.map((section) => {
                 const Icon = section.icon;
                 const isActive = section.id === active;
                 return (

@@ -814,3 +814,144 @@ export async function fetchPostAttribution(postId: string): Promise<PostAttribut
     leads: Array.isArray(data.leads) ? data.leads : [],
   };
 }
+
+// ---------------------------------------------------------------------------
+// Governance gates
+// ---------------------------------------------------------------------------
+
+export interface GStackAudit {
+  passed: boolean;
+  score: number;
+  /** Six named gates, each a role's check. The keys are the server's. */
+  gates: Record<string, unknown>;
+  violations: string[];
+}
+
+export async function auditGovernance(content: string, title?: string): Promise<GStackAudit> {
+  const data = await call<{ audit?: Record<string, any> }>("/api/v1/gstack/audit", {
+    method: "POST",
+    body: JSON.stringify({ content, title: title || null }),
+  });
+  const audit = data.audit ?? {};
+  return {
+    passed: audit.passed === true,
+    score: typeof audit.score === "number" ? audit.score : 0,
+    gates: audit.gates ?? {},
+    violations: Array.isArray(audit.violations) ? audit.violations.map(String) : [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Maintainer surfaces
+// ---------------------------------------------------------------------------
+
+export interface DevtoolsStatus {
+  dev_mode: boolean;
+  env_flag: string;
+  env_permits: boolean;
+  screens: { key: string; label: string; owner: string; tab_id: string }[];
+}
+
+/**
+ * Whether the maintainer surface is available at all.
+ *
+ * This is the one devtools route that stays reachable in a consumer build, so
+ * it can be asked before anything else is attempted. Every other internal
+ * sheet route is behind require_dev_mode and answers 404 otherwise, which is
+ * the invariant those 404s exist to maintain.
+ */
+export async function fetchDevtoolsStatus(): Promise<DevtoolsStatus> {
+  const data = await call<Record<string, any>>("/api/v1/devtools/status");
+  return {
+    dev_mode: data.dev_mode === true,
+    env_flag: typeof data.env_flag === "string" ? data.env_flag : "",
+    env_permits: data.env_permits === true,
+    screens: Array.isArray(data.screens) ? data.screens : [],
+  };
+}
+
+export interface InternalIssue {
+  id: number;
+  title: string;
+  description: string;
+  category: string;
+  severity: string;
+  status: string;
+  screen_key: string | null;
+  target_selector: string | null;
+  created_at: string;
+}
+
+export interface InternalSheet {
+  issues: InternalIssue[];
+  summary: { total: number; open: number; resolved: number; critical: number };
+}
+
+export async function fetchInternalSheet(): Promise<InternalSheet> {
+  const data = await call<Record<string, any>>("/api/v1/internal-sheet/issues");
+  const summary = data.summary ?? {};
+  return {
+    issues: Array.isArray(data.issues) ? data.issues : [],
+    summary: {
+      total: summary.total ?? 0,
+      open: summary.open ?? 0,
+      resolved: summary.resolved ?? 0,
+      critical: summary.critical ?? 0,
+    },
+  };
+}
+
+export async function createInternalIssue(fields: {
+  title: string;
+  description: string;
+  target_selector: string;
+  category?: string;
+  severity?: string;
+}): Promise<void> {
+  await call("/api/v1/internal-sheet/issues", {
+    method: "POST",
+    body: JSON.stringify({
+      target_selector: fields.target_selector,
+      title: fields.title,
+      description: fields.description,
+      category: fields.category || "bug",
+      severity: fields.severity || "medium",
+    }),
+  });
+}
+
+export async function setInternalIssueStatus(issueId: number, status: string): Promise<void> {
+  await call(`/api/v1/internal-sheet/issues/${issueId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export const INTERNAL_SHEET_CSV_URL = "/api/v1/internal-sheet/export.csv";
+
+// ---------------------------------------------------------------------------
+// Image prompt preview
+// ---------------------------------------------------------------------------
+
+export interface SynthesizedPrompt {
+  master_prompt: string;
+  negative_prompt: string;
+  aspect_ratio: string;
+}
+
+/** The prompt the image studio would send, shown before anything is rendered. */
+export async function synthesizeImagePrompt(
+  concept: string,
+  aspectRatio: string,
+): Promise<SynthesizedPrompt> {
+  const data = await call<{ synthesized?: Record<string, any> }>("/api/image/synthesize-prompt", {
+    method: "POST",
+    body: JSON.stringify({ concept, aspect_ratio: aspectRatio }),
+  });
+  const s = data.synthesized ?? {};
+  return {
+    master_prompt: typeof s.master_prompt === "string" ? s.master_prompt : "",
+    negative_prompt: typeof s.negative_prompt === "string" ? s.negative_prompt : "",
+    aspect_ratio: typeof s.aspect_ratio === "string" ? s.aspect_ratio : aspectRatio,
+  };
+}
