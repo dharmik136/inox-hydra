@@ -286,9 +286,6 @@ def test_zero_em_dash_compliance():
         os.path.join(base_dir, "studio", "backend", "leads.py"),
         os.path.join(base_dir, "studio", "backend", "crm.py"),
         os.path.join(base_dir, "studio", "backend", "app.py"),
-        os.path.join(base_dir, "studio", "frontend", "app.js"),
-        os.path.join(base_dir, "studio", "frontend", "index.html"),
-        os.path.join(base_dir, "studio", "frontend", "styles.css"),
         os.path.join(base_dir, "tests", "test_crm_leads_hardening.py"),
     ]
 

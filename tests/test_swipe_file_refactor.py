@@ -129,7 +129,5 @@ def test_zero_em_dash_compliance_in_swipe_files():
         content = f.read()
         assert disallowed not in content, "Em-dash found in migrations.py"
 
-    # Check app.js loadInspirations area
-    with open(os.path.join(os.path.dirname(__file__), "..", "studio", "frontend", "app.js"), "r", encoding="utf-8") as f:
-        content = f.read()
-        assert disallowed not in content, "Em-dash found in app.js"
+    # The interface is covered wholesale by tests/test_react_ui_contract.py,
+    # which holds the same rule over every component rather than one file.
