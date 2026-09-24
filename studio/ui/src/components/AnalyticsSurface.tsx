@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Download } from "lucide-react";
+import { AlertTriangle, ChevronRight, Download } from "lucide-react";
 import {
   fetchAnalyticsKpis,
   fetchAnalyticsOverview,
@@ -9,6 +9,8 @@ import {
   type AnalyticsPost,
   type AnalyticsRange,
   ANALYTICS_CSV_URL,
+  fetchPostAttribution,
+  type PostAttribution,
 } from "@/lib/api";
 import { TimeSeriesChart, type SeriesPoint } from "./TimeSeriesChart";
 import { cn } from "@/lib/utils";
@@ -180,21 +182,100 @@ export function AnalyticsSurface() {
             </thead>
             <tbody>
               {posts.map((post) => (
-                <tr key={post.id} className="border-b border-edge">
-                  <td className="max-w-[40ch] truncate py-2 pr-4 text-[12px] text-ink-secondary">
-                    {post.content.split("\n")[0]}
-                  </td>
-                  <Cell value={post.impressions} />
-                  <Cell value={post.reactions} />
-                  <Cell value={post.comments} />
-                  <Cell value={post.engagement_rate} suffix="%" />
-                </tr>
+                <PostRow key={post.id} post={post} />
               ))}
             </tbody>
           </table>
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * One post, expandable into the leads it actually produced.
+ *
+ * Attribution is fetched on expand rather than for every row up front: it is
+ * one query per post and most rows are never opened.
+ */
+function PostRow({ post }: { post: AnalyticsPost }) {
+  const [open, setOpen] = useState(false);
+  const [attribution, setAttribution] = useState<PostAttribution | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!open || attribution) return;
+    let live = true;
+    fetchPostAttribution(post.id)
+      .then((result) => live && setAttribution(result))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [open, attribution, post.id]);
+
+  return (
+    <>
+      <tr className="border-b border-edge">
+        <td className="max-w-[40ch] py-2 pr-4">
+          <button
+            type="button"
+            onClick={() => setOpen((current) => !current)}
+            aria-expanded={open}
+            className="flex w-full items-center gap-1.5 text-left text-[12px] text-ink-secondary transition-colors hover:text-ink-primary"
+          >
+            <ChevronRight
+              className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")}
+              strokeWidth={2}
+              aria-hidden="true"
+            />
+            <span className="truncate">{post.content.split("\n")[0]}</span>
+          </button>
+        </td>
+        <Cell value={post.impressions} />
+        <Cell value={post.reactions} />
+        <Cell value={post.comments} />
+        <Cell value={post.engagement_rate} suffix="%" />
+      </tr>
+
+      {open && (
+        <tr className="border-b border-edge">
+          <td colSpan={5} className="py-3 pl-5">
+            {failed ? (
+              <p className="studio-meta text-ink-muted">ATTRIBUTION UNAVAILABLE</p>
+            ) : !attribution ? (
+              <p className="studio-meta text-ink-muted">READING ATTRIBUTION</p>
+            ) : attribution.leads.length === 0 ? (
+              <p className="studio-meta text-ink-muted">NO LEADS ATTRIBUTED TO THIS POST</p>
+            ) : (
+              <>
+                <p className="studio-meta mb-2">
+                  {attribution.summary.total_leads_generated} LEAD
+                  {attribution.summary.total_leads_generated === 1 ? "" : "S"}
+                  <span className="mx-1.5 text-ink-muted">|</span>
+                  {attribution.summary.total_interactions} INTERACTIONS
+                </p>
+                <ul className="flex flex-col gap-1.5">
+                  {attribution.leads.map((lead) => (
+                    <li key={lead.lead_id} className="border-l border-edge pl-3">
+                      <p className="text-[12px] text-ink-primary">
+                        {lead.name}
+                        {lead.company && <span className="text-ink-muted"> at {lead.company}</span>}
+                      </p>
+                      {lead.latest_comment && (
+                        <p className="mt-0.5 text-[11px] leading-snug text-ink-secondary">
+                          {lead.latest_comment}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </td>
+        </tr>
+      )}
+    </>
   );
 }
 
