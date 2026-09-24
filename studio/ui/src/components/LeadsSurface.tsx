@@ -1,6 +1,16 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { fetchLeadTimeline, fetchLeads, type Lead, type LeadInteraction } from "@/lib/api";
+import { Download, Loader2 } from "lucide-react";
+import {
+  LEADS_CSV_URL,
+  LEAD_STATUSES,
+  fetchLeadTimeline,
+  fetchLeads,
+  generateLeadDm,
+  updateLeadStatus,
+  type Lead,
+  type LeadInteraction,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /**
@@ -14,21 +24,24 @@ export function LeadsSurface() {
   const [failed, setFailed] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
-  useEffect(() => {
-    let live = true;
+  // Re-read after an action so the row and the dossier cannot disagree about
+  // a lead's status. The stream shows the status on every row, so a change
+  // made in the dossier is visible in two places at once or in neither.
+  const reload = useCallback(() => {
     fetchLeads()
       .then((rows) => {
-        if (!live) return;
         setLeads(rows);
         // Open on the first lead so the dossier is never an empty panel next
         // to a populated list.
         setSelected((current) => current ?? rows[0]?.id ?? null);
+        setFailed(false);
       })
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
+      .catch(() => setFailed(true));
   }, []);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   if (failed) return <Centered>LEAD PIPELINE UNAVAILABLE</Centered>;
   if (!leads) return <Centered>LOADING LEADS</Centered>;
@@ -45,9 +58,20 @@ export function LeadsSurface() {
   return (
     <div className="flex h-full min-h-0">
       <section aria-label="Lead stream" className="flex w-[340px] shrink-0 flex-col border-r border-edge">
-        <div className="flex items-baseline justify-between px-4 pt-4 pb-2">
+        <div className="flex items-baseline justify-between gap-2 px-4 pt-4 pb-2">
           <p className="studio-label">Lead stream</p>
-          <p className="studio-meta text-[10px]">{leads.length}</p>
+          <div className="flex items-baseline gap-2">
+            <p className="studio-meta text-[10px]">{leads.length}</p>
+            {/* A download, not a fetch: the route streams a file, so the
+                browser is the right thing to hand it to. */}
+            <a
+              href={LEADS_CSV_URL}
+              className="studio-meta flex items-center gap-1 text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+            >
+              <Download className="size-3" strokeWidth={2} aria-hidden="true" />
+              CSV
+            </a>
+          </div>
         </div>
         <ul className="min-h-0 flex-1 overflow-y-auto">
           {leads.map((lead) => (
@@ -85,7 +109,7 @@ export function LeadsSurface() {
       </section>
 
       <div className="min-w-0 flex-1 overflow-y-auto">
-        {selected ? <Dossier leadId={selected} /> : null}
+        {selected ? <Dossier leadId={selected} onChanged={reload} /> : null}
       </div>
     </div>
   );
@@ -94,14 +118,23 @@ export function LeadsSurface() {
 /**
  * The person dossier. A research sheet, not a modal.
  */
-function Dossier({ leadId }: { leadId: string }) {
+function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void }) {
   const [data, setData] = useState<{ lead: Lead; interactions: LeadInteraction[] } | null>(null);
   const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [draft, setDraft] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    setData(await fetchLeadTimeline(leadId));
+  }, [leadId]);
 
   useEffect(() => {
     let live = true;
     setData(null);
     setFailed(false);
+    setDraft(null);
+    setActionError(null);
     fetchLeadTimeline(leadId)
       .then((result) => live && setData(result))
       .catch(() => live && setFailed(true));
@@ -117,6 +150,9 @@ function Dossier({ leadId }: { leadId: string }) {
   // A suggested reply is stored per interaction, so the most recent one that
   // carries a draft is the one worth offering.
   const suggested = interactions.find((entry) => entry.suggested_dm_reply)?.suggested_dm_reply ?? null;
+  // A DM is drafted from something the lead actually said, so without a
+  // comment there is nothing to draft from and the control says so.
+  const latestComment = interactions.find((entry) => entry.comment_text)?.comment_text ?? null;
 
   // Left aligned against the stream rather than centred in the leftover space,
   // which on a wide window opens a gap between the two halves and makes the
@@ -167,16 +203,92 @@ function Dossier({ leadId }: { leadId: string }) {
       )}
 
       <section className="mt-6">
-        <p className="studio-label mb-2">Suggested reply</p>
-        {suggested ? (
+        <p className="studio-label mb-2">Pipeline</p>
+        {/* The four the backend accepts. Anything else is a 400, so the
+            control offers exactly those rather than free text. Writing through
+            the endpoint also keeps `status` and `lead_status` in step: they are
+            two vocabularies over one lead, and a direct write to either leaves
+            the funnel reading the other. */}
+        <div className="flex flex-wrap gap-1">
+          {LEAD_STATUSES.map((candidate) => (
+            <button
+              key={candidate}
+              type="button"
+              disabled={busy}
+              onClick={async () => {
+                if (candidate === lead.status) return;
+                setBusy(true);
+                setActionError(null);
+                try {
+                  await updateLeadStatus(lead.id, candidate);
+                  await refresh();
+                  onChanged();
+                } catch (caught) {
+                  setActionError(caught instanceof Error ? caught.message : "The change was refused.");
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              aria-pressed={candidate === lead.status}
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-[11px]",
+                "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
+                candidate === lead.status
+                  ? "border-edge-strong bg-soft text-ink-primary"
+                  : "border-edge text-ink-muted hover:text-ink-secondary",
+                busy && "opacity-50",
+              )}
+            >
+              {candidate}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-6">
+        <div className="mb-2 flex items-baseline justify-between gap-3">
+          <p className="studio-label">Suggested reply</p>
+          <button
+            type="button"
+            disabled={busy || !latestComment}
+            title={latestComment ? undefined : "A reply is drafted from a comment this lead left"}
+            onClick={async () => {
+              if (!latestComment) return;
+              setBusy(true);
+              setActionError(null);
+              try {
+                setDraft(await generateLeadDm(lead.name, latestComment));
+              } catch (caught) {
+                setActionError(caught instanceof Error ? caught.message : "The draft was refused.");
+              } finally {
+                setBusy(false);
+              }
+            }}
+            className="studio-meta flex items-center gap-1 text-[10px] text-ink-muted transition-colors hover:text-ink-primary disabled:opacity-40"
+          >
+            {busy && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
+            DRAFT ONE
+          </button>
+        </div>
+
+        {draft ?? suggested ? (
           <p className="rounded-md border border-edge bg-ink p-3 text-[13px] leading-relaxed whitespace-pre-wrap text-ink-secondary">
-            {suggested}
+            {draft ?? suggested}
           </p>
         ) : (
-          /* Nothing is generated here on render. A DM is drafted through the
-             CRM's own endpoint on request, and inventing one to fill the panel
-             would put words in the creator's mouth. */
-          <p className="studio-meta text-ink-muted">NO REPLY DRAFTED FOR THIS LEAD YET</p>
+          /* Nothing is generated on render. Drafting is an action the creator
+             takes, because these are words that go out under their name. */
+          <p className="studio-meta text-ink-muted">
+            {latestComment
+              ? "NO REPLY DRAFTED FOR THIS LEAD YET"
+              : "NO COMMENT FROM THIS LEAD TO DRAFT A REPLY FROM"}
+          </p>
+        )}
+
+        {actionError && (
+          <p role="status" className="studio-meta mt-2 text-signal-orange-text">
+            {actionError}
+          </p>
         )}
       </section>
     </article>

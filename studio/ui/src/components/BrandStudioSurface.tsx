@@ -92,7 +92,7 @@ export function BrandStudioSurface() {
               </span>
             )}
             {state === "saved" && (
-              <span className="flex items-center gap-1.5 text-signal-green">
+              <span className="flex items-center gap-1.5 text-signal-green-text">
                 <Check className="size-3" aria-hidden="true" />
                 SAVED
               </span>
@@ -344,7 +344,7 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
   return (
     <div className="max-w-[60ch]">
       <div className="flex items-center gap-2">
-        <ShieldCheck className="size-5 text-signal-green" strokeWidth={1.75} aria-hidden="true" />
+        <ShieldCheck className="size-5 text-signal-green-text" strokeWidth={1.75} aria-hidden="true" />
         <p className="text-[14px] text-ink-primary">This install processes your work on this machine.</p>
       </div>
 
@@ -352,7 +352,7 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
         {rows.map((row) => (
           <div key={row.label} className="flex items-baseline justify-between gap-4">
             <dt className="text-[12px] text-ink-secondary">{row.label}</dt>
-            <dd className={cn("studio-meta", row.good ? "text-signal-green" : "text-signal-orange-text")}>
+            <dd className={cn("studio-meta", row.good ? "text-signal-green-text" : "text-signal-orange-text")}>
               {row.value}
             </dd>
           </div>

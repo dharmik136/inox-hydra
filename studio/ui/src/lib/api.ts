@@ -393,3 +393,345 @@ export async function fetchAnalyticsPosts(): Promise<AnalyticsPost[]> {
   const data = await call<{ posts?: AnalyticsPost[] }>("/api/analytics/posts");
   return data.posts ?? [];
 }
+
+// ---------------------------------------------------------------------------
+// Smart queue and scheduler
+// ---------------------------------------------------------------------------
+
+export interface QueueSlot {
+  id: number;
+  day_of_week: number;
+  day_name: string;
+  time_slot: string;
+  label: string;
+  is_active: number;
+}
+
+export interface ScheduledPost {
+  id: string;
+  content: string;
+  scheduled_for: string | null;
+}
+
+export interface NextSlot {
+  day_name: string;
+  time_slot: string;
+  label: string;
+  local_datetime: string;
+  slot_datetime: string;
+  hours_clearance: number;
+  cooldown_satisfied: boolean;
+}
+
+export interface CadenceHealth {
+  total_scheduled: number;
+  cadence_health_score: number;
+  collision_count: number;
+  min_spacing_hours: number | null;
+  next_smart_slot: NextSlot | null;
+  queue_paused: boolean;
+}
+
+export async function fetchSmartSlots(): Promise<{ slots: QueueSlot[]; scheduled: ScheduledPost[] }> {
+  const data = await call<{ slots?: QueueSlot[]; scheduled_posts?: ScheduledPost[] }>(
+    "/api/queue/smart-slots",
+  );
+  return { slots: data.slots ?? [], scheduled: data.scheduled_posts ?? [] };
+}
+
+export async function fetchCadenceHealth(): Promise<CadenceHealth> {
+  return call<CadenceHealth>("/api/queue/cadence-health");
+}
+
+/**
+ * Pauses or resumes automated publishing.
+ *
+ * The server reads the state back after writing and reports what it actually
+ * is, because a failed write that returned success told the creator their
+ * queue was paused while the dispatcher went on publishing. So the caller uses
+ * the returned value rather than assuming the request took effect.
+ */
+export async function toggleQueuePause(paused: boolean): Promise<boolean> {
+  const data = await call<{ queue_paused?: boolean }>("/api/queue/toggle-pause", {
+    method: "POST",
+    body: JSON.stringify({ paused }),
+  });
+  if (typeof data.queue_paused !== "boolean") {
+    throw new Error("the server did not report the queue state back");
+  }
+  return data.queue_paused;
+}
+
+export async function dispatchQueueNow(): Promise<string[]> {
+  const data = await call<{ actions?: unknown }>("/api/v1/scheduler/dispatch/now", { method: "POST" });
+  const actions = data.actions;
+  if (Array.isArray(actions)) return actions.map((a) => (typeof a === "string" ? a : JSON.stringify(a)));
+  return [];
+}
+
+// ---------------------------------------------------------------------------
+// Offline documentation
+// ---------------------------------------------------------------------------
+
+export interface DocModule {
+  id: string;
+  number: number;
+  title: string;
+  summary: string;
+  category: string;
+}
+
+export interface DocHit {
+  filename: string;
+  section: string;
+  snippet: string;
+  relevance_rank: number;
+}
+
+export async function fetchDocModules(): Promise<DocModule[]> {
+  const data = await call<{ modules?: DocModule[] }>("/api/docs");
+  return data.modules ?? [];
+}
+
+export async function searchDocs(query: string, limit = 12): Promise<DocHit[]> {
+  const data = await call<{ results?: DocHit[] }>(
+    `/api/docs/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+  );
+  return data.results ?? [];
+}
+
+export async function fetchDocModule(moduleId: string): Promise<{ title: string; content: string }> {
+  const data = await call<{ title?: string; content?: string; markdown?: string }>(
+    `/api/docs/${encodeURIComponent(moduleId)}`,
+  );
+  return { title: data.title ?? moduleId, content: data.content ?? data.markdown ?? "" };
+}
+
+// ---------------------------------------------------------------------------
+// Agent command
+// ---------------------------------------------------------------------------
+
+export async function runAiCommand(command: string, context?: string): Promise<Record<string, unknown>> {
+  return call<Record<string, unknown>>("/api/ai/command", {
+    method: "POST",
+    body: JSON.stringify({ command, context: context ?? null }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CRM actions
+// ---------------------------------------------------------------------------
+
+/** The four the backend accepts. Anything else is rejected with a 400. */
+export const LEAD_STATUSES = ["New Lead", "Outreach Sent", "Connected", "Meeting Booked"] as const;
+
+export async function updateLeadStatus(leadId: string, status: string): Promise<void> {
+  await call(`/api/leads/${encodeURIComponent(leadId)}/status`, {
+    method: "PUT",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function generateLeadDm(
+  leadName: string,
+  commentText: string,
+  postTopic?: string,
+): Promise<string> {
+  const data = await call<{ suggested_dm?: string }>("/api/v1/crm/leads/generate-dm", {
+    method: "POST",
+    body: JSON.stringify({
+      lead_name: leadName,
+      comment_text: commentText,
+      post_topic: postTopic || "sovereign creator stack",
+    }),
+  });
+  if (!data.suggested_dm) throw new Error("the server returned no draft");
+  return data.suggested_dm;
+}
+
+/** The CSV route streams a file, so it is a navigation rather than a fetch. */
+export const LEADS_CSV_URL = "/api/leads/export/csv";
+
+// ---------------------------------------------------------------------------
+// Media
+// ---------------------------------------------------------------------------
+
+export interface UploadedMedia {
+  asset_id: string;
+  filename: string;
+  url: string;
+  media_type: string;
+  size_bytes: number;
+}
+
+/**
+ * Uploads one file.
+ *
+ * No Content-Type is set: the browser has to write the multipart boundary
+ * itself, and naming the type here omits it, which makes the server reject a
+ * body it cannot parse.
+ */
+export async function uploadMedia(file: File): Promise<UploadedMedia> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const response = await fetch("/api/media/upload", {
+    method: "POST",
+    credentials: "same-origin",
+    body: form,
+  });
+  if (!response.ok) {
+    let reason = `${response.status}`;
+    try {
+      const body = await response.json();
+      if (typeof body?.detail === "string") reason = body.detail;
+    } catch {
+      // No JSON body; the status is all there is.
+    }
+    throw new Error(reason);
+  }
+  return (await response.json()) as UploadedMedia;
+}
+
+export async function deleteMedia(assetId: string): Promise<void> {
+  await call(`/api/media/${encodeURIComponent(assetId)}`, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Image studio
+// ---------------------------------------------------------------------------
+
+export interface ImageProgress {
+  /**
+   * The server's own field names, not guessed ones.
+   *
+   * get_progress returns progress_percent, status_message, result_url and
+   * error_message. Reading "percentage" or "image_url" here would yield
+   * undefined and render a task stuck at zero that had actually finished,
+   * which is the same mistake the hook filmstrip made with hook_text.
+   */
+  progress_percent: number;
+  status_message: string;
+  status: string;
+  result_url: string | null;
+  error_message: string | null;
+}
+
+export async function startImageGeneration(concept: string, aspectRatio: string): Promise<string> {
+  const data = await call<{ task_id?: string }>("/api/image/generate", {
+    method: "POST",
+    body: JSON.stringify({ concept, aspect_ratio: aspectRatio }),
+  });
+  if (!data.task_id) throw new Error("the server started no task");
+  return data.task_id;
+}
+
+export async function fetchImageProgress(taskId: string): Promise<ImageProgress> {
+  const data = await call<Record<string, unknown>>(
+    `/api/image/progress/${encodeURIComponent(taskId)}`,
+  );
+  return {
+    progress_percent: typeof data.progress_percent === "number" ? data.progress_percent : 0,
+    status_message: typeof data.status_message === "string" ? data.status_message : "",
+    status: typeof data.status === "string" ? data.status : "unknown",
+    result_url: typeof data.result_url === "string" ? data.result_url : null,
+    error_message: typeof data.error_message === "string" ? data.error_message : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Publishing
+// ---------------------------------------------------------------------------
+
+/** Dispatches a draft immediately and marks it published. */
+export async function publishNow(postId: string): Promise<void> {
+  await call(`/api/posts/${encodeURIComponent(postId)}/publish-now`, { method: "POST" });
+}
+
+export interface CadenceVerdict {
+  valid: boolean;
+  error: string | null;
+  warning: string | null;
+  has_collision: boolean;
+  cadence_health_score: number | null;
+}
+
+/**
+ * Checks a proposed time against the twelve hour cooldown before committing.
+ *
+ * Scheduling calls this first because create and update reject an invalid
+ * cadence with a 400, and a rejection after the fact reads as a broken button
+ * rather than as the rule it is.
+ */
+export async function validateCadence(scheduledFor: string, postId?: string): Promise<CadenceVerdict> {
+  const data = await call<{ validation?: Record<string, unknown> }>("/api/queue/validate-cadence", {
+    method: "POST",
+    body: JSON.stringify({ scheduled_for: scheduledFor, post_id: postId ?? null }),
+  });
+  const v = data.validation ?? {};
+  return {
+    valid: v.valid !== false,
+    error: typeof v.error === "string" ? v.error : null,
+    warning: typeof v.warning === "string" ? v.warning : null,
+    has_collision: v.has_collision === true,
+    cadence_health_score:
+      typeof v.cadence_health_score === "number" ? v.cadence_health_score : null,
+  };
+}
+
+export async function schedulePost(postId: string, scheduledFor: string): Promise<void> {
+  await call(`/api/posts/${encodeURIComponent(postId)}/reschedule`, {
+    method: "POST",
+    body: JSON.stringify({ scheduled_for: scheduledFor }),
+  });
+}
+
+export async function fetchNextSlot(): Promise<NextSlot | null> {
+  const data = await call<{ slot?: NextSlot | null }>("/api/queue/next-slot");
+  return data.slot ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Bring your own AI
+// ---------------------------------------------------------------------------
+
+export interface AiConfig {
+  provider: string;
+  model: string | null;
+  is_configured: boolean;
+}
+
+export async function fetchAiConfig(): Promise<{ config: AiConfig; providers: string[] }> {
+  const data = await call<{ config?: Record<string, unknown>; supported_providers?: unknown }>(
+    "/api/ai/config",
+  );
+  const cfg = data.config ?? {};
+  const providers = Array.isArray(data.supported_providers)
+    ? data.supported_providers.map(String)
+    : Object.keys(data.supported_providers ?? {});
+  return {
+    config: {
+      provider: typeof cfg.provider === "string" ? cfg.provider : "",
+      model: typeof cfg.model === "string" ? cfg.model : null,
+      is_configured: cfg.is_configured === true,
+    },
+    providers,
+  };
+}
+
+/**
+ * Saves a provider only if a live ping to it succeeds.
+ *
+ * The endpoint verifies before writing and answers 400 without changing
+ * anything when it cannot connect, so a rejection here means the existing
+ * configuration is intact rather than half replaced.
+ */
+export async function configureAi(provider: string, apiKey: string, model?: string): Promise<void> {
+  await call("/api/ai/configure", {
+    method: "POST",
+    body: JSON.stringify({ provider, api_key: apiKey, model: model || null }),
+  });
+}
+
+/** The analytics CSV streams as a file, so it is a link rather than a fetch. */
+export const ANALYTICS_CSV_URL = "/api/analytics/export?format=csv";

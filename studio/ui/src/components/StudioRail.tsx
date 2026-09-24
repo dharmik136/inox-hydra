@@ -125,7 +125,7 @@ export function StudioRail({ active, onSelect, trayOpen, onToggleTray }: StudioR
           that stays calm rather than shouting. It is the one always visible
           piece of state that is not about the document. */}
       <div className="mb-3 flex flex-col items-center gap-1" title="All processing is local to this machine">
-        <ShieldCheck className="size-[18px] text-signal-green" strokeWidth={1.75} aria-hidden="true" />
+        <ShieldCheck className="size-[18px] text-signal-green-text" strokeWidth={1.75} aria-hidden="true" />
         <span className="studio-meta text-[9px] tracking-wider text-ink-muted">LOCAL</span>
       </div>
     </nav>

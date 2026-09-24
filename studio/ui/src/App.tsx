@@ -11,6 +11,10 @@ import { LeadsSurface } from "@/components/LeadsSurface";
 import { SwipeSurface } from "@/components/SwipeSurface";
 import { AnalyticsSurface } from "@/components/AnalyticsSurface";
 import { BrandStudioSurface } from "@/components/BrandStudioSurface";
+import { QueueSurface } from "@/components/QueueSurface";
+import { DocsSurface } from "@/components/DocsSurface";
+import { CommandSurface } from "@/components/CommandSurface";
+import { PublishDialog } from "@/components/PublishDialog";
 import { sectionById, type SectionId } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -48,6 +52,7 @@ export default function App() {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [publishOpen, setPublishOpen] = useState(false);
 
   // Incremented whenever a hook replaces the opening, so the canvas can play
   // the vertical text transition. A counter rather than a boolean, because
@@ -215,7 +220,13 @@ export default function App() {
             savedAt={savedAt}
             saveError={saveError}
             onSave={onSave}
-            onPublish={() => setInspectorOpen(true)}
+            onPublish={async () => {
+            // Publishing acts on a stored post. An unsaved draft has no id, so
+            // it is written first rather than opening a dialog that can only
+            // tell the author to go and save.
+            if (!draftId && draft.trim()) await onSave();
+            setPublishOpen(true);
+          }}
           />
         ) : (
           <header className="flex h-12 shrink-0 items-center gap-3 border-b border-edge bg-ink px-4">
@@ -236,7 +247,7 @@ export default function App() {
 
             {/* The surfaces that scroll internally manage their own overflow,
                 so the shell does not add a second scrollbar around them. */}
-            <main className={cn("min-h-0 flex-1", active === "leads" || active === "swipe" ? "overflow-hidden" : "overflow-y-auto")}>
+            <main className={cn("min-h-0 flex-1", active === "leads" || active === "swipe" || active === "docs" ? "overflow-hidden" : "overflow-y-auto")}>
               {active === "composer" && (
                 <ComposerCanvas
                   value={draft}
@@ -249,13 +260,10 @@ export default function App() {
               {active === "swipe" && <SwipeSurface />}
               {active === "analytics" && <AnalyticsSurface />}
               {active === "settings" && <BrandStudioSurface />}
-              {active !== "composer" &&
-                active !== "leads" &&
-                active !== "swipe" &&
-                active !== "analytics" &&
-                active !== "settings" && (
-                <SurfacePlaceholder label={section.label} blurb={section.blurb} />
-              )}
+              {active === "queue" && <QueueSurface />}
+              {active === "docs" && <DocsSurface />}
+              {active === "command" && <CommandSurface />}
+
             </main>
           </div>
 
@@ -285,6 +293,20 @@ export default function App() {
         </div>
       </div>
 
+      <PublishDialog
+        open={publishOpen}
+        postId={draftId}
+        onClose={() => setPublishOpen(false)}
+        onDone={(message) => {
+          // The post left the composer. Reporting it as "saved" would be the
+          // wrong claim, and reporting nothing would leave the author unsure
+          // whether an irreversible action happened.
+          setSaveState("published");
+          setSavedAt(message);
+          setSaveError(null);
+        }}
+      />
+
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
@@ -292,24 +314,6 @@ export default function App() {
         onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
         onToggleInspector={() => setInspectorOpen((open) => !open)}
       />
-    </div>
-  );
-}
-
-/**
- * Stands in for a surface that has not been built yet, and says so. Blueprint
- * build order puts CRM, swipe file and analytics in phase 4, so these are
- * genuinely empty rather than pending data.
- */
-function SurfacePlaceholder({ label, blurb }: { label: string; blurb: string }) {
-  return (
-    <div className="mx-auto flex h-full max-w-[68ch] flex-col justify-center px-10 py-12">
-      <p className="studio-label">Not built yet</p>
-      <h2 className="studio-title mt-2">{label}</h2>
-      <p className="mt-3 max-w-prose text-sm leading-relaxed text-ink-secondary">{blurb}.</p>
-      <p className="studio-meta mt-6">
-        PRESS <span className="text-ink-primary">CTRL K</span> FOR THE COMMAND PALETTE
-      </p>
     </div>
   );
 }
