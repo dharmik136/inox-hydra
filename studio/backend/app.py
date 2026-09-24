@@ -78,6 +78,7 @@ try:
     from .docs_engine import search_docs_fts, init_docs_search_index
     from .carousel_engine import carousel_engine
     from . import post_identity
+    from . import mcp_client
     from .browser_launcher import (
         detect_installed_browsers,
         create_desktop_shortcuts,
@@ -137,6 +138,7 @@ except ImportError:
     from docs_engine import search_docs_fts, init_docs_search_index
     from carousel_engine import carousel_engine
     import post_identity
+    import mcp_client
     from browser_launcher import (
         detect_installed_browsers,
         create_desktop_shortcuts,
@@ -1965,6 +1967,163 @@ def get_doc_module(module_id: str):
         "status": "success",
         "module": target,
         "content": content
+    }
+
+
+# -------------------------------------------------------------
+# Grounding: the creator's own material, through MCP
+#
+# These routes are the surface for a feature that already worked and that
+# nobody could switch on. The client was built and wired into hook generation
+# and there was no way to add a server except from Python.
+#
+# One property decides the shape of everything below: adding a server stores a
+# command this studio will execute. That is not incidental, it is what MCP is,
+# and it is a larger grant than any other route here. The guards, in order of
+# how much they carry:
+#
+#   The middleware already limits this to loopback with a matching Host, an
+#   allowed Origin and the session cookie, which is what keeps another site on
+#   the machine from reaching it at all.
+#
+#   The extension cannot relay these. RELAYABLE_PATHS in background.js lists
+#   three ingest endpoints and nothing else, so a content script on
+#   linkedin.com has no path to them. A test pins that, because adding one
+#   would be a one line change with consequences nobody would notice.
+#
+#   A command is a list, never a string, and is never passed to a shell. The
+#   browser launcher was rewritten after "--gpu-launcher=cmd.exe /c calc.exe"
+#   turned a URL field into arbitrary execution, and the same reasoning
+#   applies to a field that is openly a command.
+#
+#   Adding does not enable. They are separate calls because they are separate
+#   decisions, and a configuration pasted from a README must not start reading
+#   a notes directory on the next draft.
+# -------------------------------------------------------------
+
+def _active_provider() -> str:
+    """
+    The provider in force right now, for the egress answer.
+
+    Resolved per call rather than cached, because the provider can change
+    between one draft and the next and a stale value would make a claim about
+    where a creator's notes are going that is true of a different
+    configuration. Falls back to the local engine on any failure, which is the
+    conservative direction only for the label; gather computes its own report
+    from the same value.
+    """
+    try:
+        from .agno_agentos.model_gateway import get_current_ai_config
+    except ImportError:
+        from agno_agentos.model_gateway import get_current_ai_config
+    try:
+        return getattr(get_current_ai_config(), "provider", "") or ""
+    except Exception:
+        return ""
+
+
+class McpServerRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=48)
+    command: List[str] = Field(..., min_length=1, max_length=24)
+    cwd: Optional[str] = None
+    env: Optional[Dict[str, str]] = None
+    description: Optional[str] = ""
+
+    @field_validator("command")
+    @classmethod
+    def command_is_a_list_of_arguments(cls, v: List[str]) -> List[str]:
+        cleaned = [str(part) for part in v if str(part).strip()]
+        if not cleaned:
+            raise ValueError("A command needs at least one argument.")
+        return cleaned
+
+
+class McpEnabledRequest(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/v1/mcp/servers", tags=["Grounding"])
+def list_mcp_servers():
+    """
+    Every configured server and whether the creator switched it on.
+
+    Also reports where grounding material would go, computed from the provider
+    in force right now rather than stored, so the interface can say it before
+    anything is gathered rather than after.
+    """
+    return {
+        "status": "success",
+        "servers": mcp_client.list_servers(),
+        "egress": mcp_client.egress_report(_active_provider()),
+    }
+
+
+@app.post("/api/v1/mcp/servers", tags=["Grounding"])
+def add_mcp_server(req: McpServerRequest):
+    """
+    Registers a server, switched off.
+
+    There is no `enabled` field on this request on purpose. Agreeing that a
+    command exists and agreeing to be read by it are different acts.
+    """
+    result = mcp_client.add_server(
+        name=req.name,
+        command=req.command,
+        cwd=req.cwd,
+        env=req.env or {},
+        description=req.description or "",
+    )
+    if result.get("status") != "success":
+        raise HTTPException(status_code=400, detail=result.get("message", "Could not add the server."))
+    return result
+
+
+@app.post("/api/v1/mcp/servers/{name}/enabled", tags=["Grounding"])
+def set_mcp_server_enabled(name: str, req: McpEnabledRequest):
+    """
+    Switches a server on or off, and reports the state it achieved.
+
+    Reads the value back rather than echoing the request, for the reason the
+    queue pause was rewritten: a caller told "enabled" when the write failed
+    believes their drafts are grounded when they are not.
+    """
+    result = mcp_client.set_enabled(name, req.enabled)
+    if result.get("status") != "success":
+        raise HTTPException(status_code=400, detail=result.get("message", "Could not change the server."))
+    return result
+
+
+@app.delete("/api/v1/mcp/servers/{name}", tags=["Grounding"])
+def remove_mcp_server(name: str):
+    result = mcp_client.remove_server(name)
+    if result.get("status") != "success":
+        raise HTTPException(status_code=404, detail=result.get("message", "No such server."))
+    return result
+
+
+@app.get("/api/v1/mcp/preview", tags=["Grounding"])
+def preview_mcp_grounding():
+    """
+    What would be gathered, and whether it is about to leave this machine.
+
+    The point of this route. The backend has been computing an egress answer
+    on every gather and telling nobody, so a creator could not see what their
+    notes server was handing over, or that it was about to be pasted into a
+    prompt bound for a hosted provider. Showing the material before it is used
+    is the difference between consent and a setting.
+
+    Reads from the servers that are enabled, which is the same path a draft
+    takes, so this is a preview of the real thing rather than a description
+    of it.
+    """
+    gathered = mcp_client.gather(provider=_active_provider())
+    return {
+        "status": "success",
+        "egress": gathered["egress"],
+        "material": gathered["material"],
+        "errors": gathered["errors"],
+        "bytes_used": gathered["bytes_used"],
+        "bytes_budget": gathered["bytes_budget"],
     }
 
 

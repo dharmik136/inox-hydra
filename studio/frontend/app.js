@@ -6955,3 +6955,204 @@ if (document.readyState === "loading") {
 } else {
   initDesktopIntegration();
 }
+
+/* ---------------------------------------------------------------------------
+   Grounding: the creator's own material, through MCP
+
+   This panel exists because the feature did not have one. The client was
+   built, tested and wired into hook generation, and a server could only be
+   added by calling Python, so the thing a creator would actually want was
+   unreachable to them.
+
+   Two rules shape what is on screen.
+
+   Everything a server returns is escaped before it is rendered. That text
+   comes from a process on the creator's machine rather than from us, and a
+   note containing a script tag is a note, not an attack, right up until it is
+   injected into the page.
+
+   The egress line is never omitted. The backend computes, on every call,
+   whether gathered material is about to leave the machine, and until now it
+   told nobody. A creator deciding whether to connect their notes needs that
+   answer before they connect them, not after.
+--------------------------------------------------------------------------- */
+function initGroundingPanel() {
+  const list = document.getElementById("mcp-server-list");
+  const egressBox = document.getElementById("mcp-egress");
+  if (!list || !egressBox) return;
+
+  const addButton = document.getElementById("btn-mcp-add");
+  const previewButton = document.getElementById("btn-mcp-preview");
+  const addStatus = document.getElementById("mcp-add-status");
+  const previewStatus = document.getElementById("mcp-preview-status");
+  const previewBox = document.getElementById("mcp-preview");
+
+  function renderEgress(egress) {
+    if (!egress) {
+      egressBox.style.display = "none";
+      return;
+    }
+    egressBox.style.display = "block";
+    egressBox.className = "mcp-egress " + (egress.leaves_this_machine ? "is-remote" : "is-local");
+    egressBox.textContent = egress.summary || "";
+  }
+
+  async function refresh() {
+    try {
+      const res = await fetch(API_BASE + "/v1/mcp/servers");
+      const body = await res.json();
+      renderEgress(body.egress);
+
+      const servers = body.servers || [];
+      if (!servers.length) {
+        list.innerHTML = '<div class="mcp-empty">No sources connected. Drafts are written from what you type alone.</div>';
+        return;
+      }
+
+      // The command is shown because the creator is agreeing to run it, and an
+      // agreement to something invisible is not one.
+      list.innerHTML = servers.map(function (server) {
+        const name = escapeHtml(server.name);
+        const command = escapeHtml((server.command || []).join(" "));
+        const checked = server.enabled ? "checked" : "";
+        return '<div class="mcp-server">' +
+          '<div style="min-width: 0;">' +
+          '<div class="mcp-name">' + name + '</div>' +
+          '<div class="mcp-cmd">' + command + '</div>' +
+          '</div>' +
+          '<div style="display: flex; align-items: center; gap: 8px; flex-shrink: 0;">' +
+          '<label class="toggle-switch" title="Read this source when drafting">' +
+          '<input type="checkbox" data-mcp-toggle="' + name + '" ' + checked + '>' +
+          '<span class="toggle-slider"></span>' +
+          '</label>' +
+          '<button class="btn-secondary btn-sm" data-mcp-remove="' + name + '">Remove</button>' +
+          '</div></div>';
+      }).join("");
+    } catch (err) {
+      list.innerHTML = '<div class="mcp-error">Could not reach the studio to read your sources.</div>';
+    }
+  }
+
+  list.addEventListener("change", async function (event) {
+    const name = event.target.getAttribute("data-mcp-toggle");
+    if (!name) return;
+    const wanted = event.target.checked;
+    try {
+      const res = await fetch(
+        API_BASE + "/v1/mcp/servers/" + encodeURIComponent(name) + "/enabled",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: wanted })
+        }
+      );
+      const body = await res.json();
+      // The checkbox follows the state the server achieved, not the one the
+      // click asked for. A toggle left on after a failed write tells the
+      // creator their drafts are grounded when they are not.
+      if (!res.ok || body.enabled !== wanted) {
+        event.target.checked = !wanted;
+        showToast(body.detail || "That source could not be changed.", "error");
+      }
+    } catch (err) {
+      event.target.checked = !wanted;
+      showToast("Could not reach the studio.", "error");
+    }
+    refresh();
+  });
+
+  list.addEventListener("click", async function (event) {
+    const name = event.target.getAttribute("data-mcp-remove");
+    if (!name) return;
+    try {
+      await fetch(API_BASE + "/v1/mcp/servers/" + encodeURIComponent(name), { method: "DELETE" });
+    } catch (err) {
+      showToast("Could not reach the studio.", "error");
+    }
+    refresh();
+  });
+
+  if (addButton) {
+    addButton.addEventListener("click", async function () {
+      const nameField = document.getElementById("mcp-new-name");
+      const commandField = document.getElementById("mcp-new-command");
+      const name = (nameField.value || "").trim();
+      const raw = (commandField.value || "").trim();
+
+      if (!name || !raw) {
+        addStatus.textContent = "A name and a command are both needed.";
+        return;
+      }
+
+      // Split here rather than sending a string. The API refuses a string
+      // outright, because turning one into an argument list is where quoting
+      // bugs and injection both live, and this field is openly a command.
+      const command = raw.split(/\s+/).filter(Boolean);
+
+      addStatus.textContent = "Adding...";
+      try {
+        const res = await fetch(API_BASE + "/v1/mcp/servers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name, command: command })
+        });
+        const body = await res.json();
+        if (!res.ok) {
+          addStatus.textContent = body.detail || "That source could not be added.";
+          return;
+        }
+        addStatus.textContent = "Added, switched off. Turn it on when you are ready.";
+        nameField.value = "";
+        commandField.value = "";
+        refresh();
+      } catch (err) {
+        addStatus.textContent = "Could not reach the studio.";
+      }
+    });
+  }
+
+  if (previewButton) {
+    previewButton.addEventListener("click", async function () {
+      previewStatus.textContent = "Reading...";
+      previewBox.innerHTML = "";
+      try {
+        const res = await fetch(API_BASE + "/v1/mcp/preview");
+        const body = await res.json();
+        renderEgress(body.egress);
+
+        const material = body.material || [];
+        const errors = body.errors || [];
+
+        if (!material.length && !errors.length) {
+          previewStatus.textContent = "Nothing to read. No source is switched on.";
+          return;
+        }
+
+        previewStatus.textContent = material.length
+          ? material.length + " item(s), " + body.bytes_used + " of " + body.bytes_budget + " characters used."
+          : "";
+
+        const errorRows = errors.map(function (item) {
+          return '<div class="mcp-error">' + escapeHtml(item.server) + ": " + escapeHtml(item.error) + "</div>";
+        });
+        const materialRows = material.map(function (item) {
+          return '<div class="mcp-preview-item">' +
+            '<div class="mcp-preview-title">' + escapeHtml(item.title) + '</div>' +
+            '<div class="mcp-preview-body">' + escapeHtml(item.text) + '</div>' +
+            '</div>';
+        });
+        previewBox.innerHTML = errorRows.concat(materialRows).join("");
+      } catch (err) {
+        previewStatus.textContent = "Could not reach the studio.";
+      }
+    });
+  }
+
+  refresh();
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", initGroundingPanel);
+} else {
+  initGroundingPanel();
+}

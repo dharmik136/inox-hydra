@@ -1180,6 +1180,54 @@ Highlight text anytime to format with sans-bold or clean em-dashes."></textarea>
                 <div class="settings-card-header">
                   <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-act-lock"></use></svg>
                   <div>
+                    <h3 class="settings-card-title">Grounding</h3>
+                    <span class="settings-card-sub">Write from your own notes, repo and calendar</span>
+                  </div>
+                </div>
+
+                <p class="mcp-note">
+                  A cloud writing tool has never read your work, which is why its drafts sound
+                  generic. Connect a source and the studio writes from your actual record.
+                </p>
+
+                <!-- Where the material goes. Computed from the provider in force, on every
+                     load, because a creator deciding whether to connect their notes needs
+                     that answer before they connect them, not after. -->
+                <div id="mcp-egress" class="mcp-egress" role="status" style="display: none;"></div>
+
+                <div id="mcp-server-list" class="mcp-list"></div>
+
+                <details class="mcp-add">
+                  <summary class="mcp-add-summary">Connect a source</summary>
+                  <p class="mcp-add-note">
+                    This is a command the studio will run on your machine. Add only servers you
+                    trust, the same care you would give anything you paste into a terminal.
+                  </p>
+                  <label class="mcp-field">
+                    <span>Name</span>
+                    <input type="text" id="mcp-new-name" placeholder="Engineering Notes" maxlength="48">
+                  </label>
+                  <label class="mcp-field">
+                    <span>Command</span>
+                    <input type="text" id="mcp-new-command" placeholder="npx -y @modelcontextprotocol/server-filesystem /home/me/notes">
+                  </label>
+                  <div class="mcp-row-spaced">
+                    <button class="btn-secondary btn-sm" id="btn-mcp-add">Add, switched off</button>
+                    <span id="mcp-add-status" class="mcp-status"></span>
+                  </div>
+                </details>
+
+                <div class="mcp-row">
+                  <button class="btn-secondary btn-sm" id="btn-mcp-preview">Show me what it reads</button>
+                  <span id="mcp-preview-status" class="mcp-status"></span>
+                </div>
+                <div id="mcp-preview" class="mcp-preview"></div>
+              </div>
+
+              <div class="settings-card">
+                <div class="settings-card-header">
+                  <svg aria-hidden="true" class="app-symbol app-symbol-md app-symbol-no-margin"><use href="#sym-act-lock"></use></svg>
+                  <div>
                     <h3 class="settings-card-title">Local Security & Sync</h3>
                     <span class="settings-card-sub">Air-gapped SQLite & session tokens</span>
                   </div>
