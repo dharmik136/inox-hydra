@@ -138,10 +138,20 @@ function Specimen({ specimen }: { specimen: Inspiration }) {
          columns, which CSS multi column will happily do otherwise. */
       className="break-inside-avoid rounded-md border border-edge bg-ink p-4 transition-colors duration-(--studio-motion-fast) hover:border-edge-strong"
     >
+      {/* The two fields carry the same value for every specimen the product
+          seeds, so printing both rendered "CONTRARIAN TRUTHS · CONTRARIAN
+          TRUTHS" on all 36 cards: a separator with nothing on either side of
+          it. The topic is shown only when it says something the archetype has
+          not already said, which keeps the pair meaningful if the two ever
+          diverge. */}
       <p className="studio-meta text-[10px]">
         {specimen.archetype.toUpperCase()}
-        <span className="mx-1.5 text-ink-muted">·</span>
-        {specimen.topic.toUpperCase()}
+        {specimen.topic.trim().toLowerCase() !== specimen.archetype.trim().toLowerCase() && (
+          <>
+            <span className="mx-1.5 text-ink-muted">·</span>
+            {specimen.topic.toUpperCase()}
+          </>
+        )}
       </p>
 
       <p className="mt-2 text-[13px] leading-snug font-medium text-ink-primary">
