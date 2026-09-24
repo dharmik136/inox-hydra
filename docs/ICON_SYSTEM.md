@@ -1,202 +1,104 @@
 # Icon System
 
-> How the studio draws icons, where they come from, and what to do when you need
-> one that does not exist yet.
+> How the studio draws icons, where they come from, and what to do when you
+> need one that does not exist yet.
 
-The interface draws every icon from a single inline SVG sprite. There is one
-sprite, one grid, one stroke weight, and one colour rule. Anything that departs
-from those is a defect, and `tests/test_icon_system.py` fails the build for it.
+The interface draws every icon from [lucide](https://lucide.dev), imported as a
+React component per glyph. There is one set, one grid, one stroke weight, and
+one colour rule. `tests/test_react_ui_contract.py` fails the build for anything
+that departs from the last two.
 
 ---
 
-## 1. Why a sprite and not icon files
+## 1. Why components and not a sprite
 
-The product is local first and ships as one page. An external sprite referenced
-with `<use href="icons.svg#id">` does not resolve in every browser, and a
-per icon `<img>` costs a request each and cannot inherit text colour. So the
-sprite is inlined at the top of `studio/frontend/index.html`, inside
-`<svg id="editorial-symbol-catalog" style="display: none;">`, and every icon in
-the interface is a reference to it:
+The previous interface inlined a 37 symbol SVG sprite at the top of its one
+page, because an external sprite referenced with `<use href="icons.svg#id">`
+does not resolve in every browser, and a per icon `<img>` costs a request each
+and cannot inherit text colour. Both problems were real and the sprite was the
+right answer to them.
 
-```html
-<svg class="app-symbol app-symbol-md"><use href="#sym-sec-queue"></use></svg>
+Neither problem survives a bundler. An imported component is inlined into the
+bundle at build time, so it costs no request, and it is ordinary JSX, so it
+inherits colour like anything else. What it adds is that **only the glyphs
+actually referenced are included**: lucide tree shakes, so the icon set does
+not grow the bundle by existing.
+
+```tsx
+import { CalendarClock } from "lucide-react";
+
+<CalendarClock className="size-4 text-ink-muted" strokeWidth={1.75} aria-hidden="true" />
 ```
 
 ## 2. The contract
 
 | Rule | Value | Why |
 |---|---|---|
-| Grid | `viewBox="0 0 24 24"` | Mixed grids make icons visually different sizes at the same CSS size. |
-| Stroke weight | `2` | One weight, so icons sit together in a row. |
-| Caps and joins | `round` | The coolicons geometry is drawn for round terminals. |
-| Colour | `stroke="currentColor"` on the `<symbol>`, and **no colour on the geometry** | The icon takes the colour of whatever references it, so it follows the theme for free. |
-| Fill | `fill="none"` | These are stroke icons. |
+| Grid | lucide's `24x24` | Mixed grids make icons visually different sizes at the same CSS size. |
+| Stroke weight | `1.75` | One weight, so icons sit together in a row. Lucide defaults to 2, which reads heavy beside this typography. |
+| Caps and joins | lucide's defaults, round | The geometry is drawn for round terminals. |
+| Colour | a text token, never a signal literal | The icon takes the colour of whatever it is set to, so it follows the theme for free. |
+| Size | a `size-*` utility, never a hardcoded width | The ramp is shared, so a row stays a row. |
 
-The colour rule is the one that bites. The Figma exporter emits
-`stroke="white"` on every path. Left in place, every icon is invisible on the
-light theme. The build step strips per path colour so the `<symbol>` can drive
-it. `test_symbols_inherit_currentcolor` enforces this.
+The colour rule is the one that bites, and it bit differently here than it did
+with the sprite. A lucide icon inherits `currentColor` automatically, so the
+old failure, a `stroke="white"` left on by an exporter, cannot happen. The
+failure that replaced it is using a signal colour as an icon colour and
+assuming it passes: a signal that is legible as a fill can fail as a mark. Use
+`text-ink-muted`, `text-ink-secondary`, or the `-text` step of a signal. See
+[UI_CONVENTIONS.md](UI_CONVENTIONS.md) section 1.
 
-## 3. Naming
+## 3. Accessibility is not optional here
 
+Every icon is one of two things, and it must say which:
+
+```tsx
+{/* Decorative: it sits beside its own label. */}
+<Trash2 className="size-3.5" aria-hidden="true" />
+
+{/* Load bearing: it is the entire content of a control. */}
+<button aria-label="Delete this asset"><Trash2 className="size-3.5" aria-hidden="true" /></button>
 ```
-sym-<role>-<name>
-```
 
-| Role | Meaning | Example |
-|---|---|---|
-| `sec` | A destination in the studio rail | `sym-sec-queue` |
-| `act` | A verb the author invokes | `sym-act-publish` |
-| `mode` | A state a surface is currently in | `sym-mode-preview` |
-| `brand` | The product's own mark | `sym-brand-logo` |
-
-Two utility symbols predate the convention and are exempt by name:
-`sym-refresh` and `sym-close`.
-
-Read the role off the id and you know where the icon belongs. A new section
-icon that is called `sym-act-something` will pass review and then confuse the
-next person, so the naming test is not cosmetic.
+An icon inside a labelled control is still `aria-hidden`: the control carries
+the name, and the glyph would otherwise be announced twice. 125 decorative
+glyphs were once read aloud as unnamed images, and fourteen icon-only buttons
+announced as nothing but "button".
 
 ## 4. Sizes
 
-The stylesheet defines the ramp. Use a class, never a hardcoded width.
+Use a Tailwind size utility, never a hardcoded width.
 
-| Class | Rendered |
-|---|---|
-| `.app-symbol-xs` | 11px |
-| `.app-symbol-sm` | 13px |
-| `.app-symbol` | 14px |
-| `.app-symbol-md` | 16px |
-| `.app-symbol-lg` | 20px |
+| Class | Rendered | Used for |
+|---|---|---|
+| `size-3` | 12px | inline meta, chips |
+| `size-3.5` | 14px | row actions, toolbar glyphs |
+| `size-4` | 16px | buttons, list icons |
+| `size-5` | 20px | section headers |
 
-At 11px a 2 unit stroke on a 24 unit grid is the heaviest the set gets. If an
+At 12px a 1.75 stroke on a 24 unit grid is the heaviest the set gets. If an
 icon looks muddy there, it is usually too detailed for the size rather than too
 heavy, so prefer a simpler glyph over a thinner stroke.
 
-## 5. Where the glyphs come from
+## 5. Adding one
+
+Import it. There is no manifest to update, no sprite to regenerate, and no
+build step: lucide ships the whole set and the bundler takes what you named.
+
+Two things to check before you do:
+
+- **Is it decorative or load bearing?** That decides `aria-hidden` versus
+  `aria-label`, and getting it wrong is silent.
+- **Does an existing glyph already mean this?** A second icon for a concept the
+  interface already has one for is how a set stops being a set.
+
+## 6. Where the glyphs come from
 
 | | |
 |---|---|
-| Iconset | coolicons (Free Iconset, Community) |
-| Figma file | `P1LOY4s7crnhhkWpmYGNDo`, named "Icons" |
-| Retrieved via | Figma REST API |
-| Credential | `FIGMA_API_KEY` environment variable |
+| Set | lucide |
+| Licence | ISC, commercial use permitted |
+| Package | `lucide-react`, a direct dependency of `studio/ui` |
 
-The API key lives in the environment and is never committed. Nothing at runtime
-talks to Figma: the sprite is generated once and checked in, so the application
-stays air gapped.
-
-`studio/frontend/icons.manifest.json` records, for every symbol, its role, the
-coolicons glyph it came from, the Figma node id, and how many places reference
-it. That file is the reason the set can be regenerated, audited, or relicensed
-later without guesswork. It is verified against the sprite by the tests, so it
-cannot quietly drift out of date.
-
-## 6. Adding an icon
-
-1. **Find the glyph.** List the file's icons and pick by name:
-
-   ```bash
-   curl -s -H "X-Figma-Token: $FIGMA_API_KEY" \
-     "https://api.figma.com/v1/files/P1LOY4s7crnhhkWpmYGNDo/nodes?ids=17102:2265&depth=2"
-   ```
-
-   The icons live in frames under that canvas, named `Category / Name`.
-
-2. **Export it as SVG.**
-
-   ```bash
-   curl -s -H "X-Figma-Token: $FIGMA_API_KEY" \
-     "https://api.figma.com/v1/images/P1LOY4s7crnhhkWpmYGNDo?ids=<NODE_ID>&format=svg"
-   ```
-
-   The response carries a short lived URL. Download it.
-
-3. **Add the symbol** to the sprite in `index.html`, in the block matching its
-   role, keeping the catalog numbering in order:
-
-   ```html
-   <!-- 37. Action: Archive a draft (coolicons: File / Archive) -->
-   <symbol id="sym-act-archive" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-           stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-     <path d="..."/>
-   </symbol>
-   ```
-
-   Strip `stroke`, `stroke-width`, `stroke-linecap` and `stroke-linejoin` from
-   the paths. The `<symbol>` supplies them.
-
-4. **Record it** in `icons.manifest.json`, including the Figma node id.
-
-5. **Run the contract tests.**
-
-   ```bash
-   python -m pytest tests/test_icon_system.py -q
-   ```
-
-## 7. Removing an icon
-
-Delete the symbol, delete its manifest entry, and remove every reference. The
-tests will tell you if you missed one in either direction: a reference without a
-symbol draws nothing, and a manifest entry without a symbol is a lie about what
-ships.
-
-## 8. What the tests guarantee
-
-`tests/test_icon_system.py` fails if any of these stop being true.
-
-- Every referenced symbol is defined. *This one had already been broken:
-  `sym-sec-chat` and `sym-sec-radar` were referenced by the interface but never
-  defined, so those controls drew empty space, and no test looked.*
-- No duplicate symbol ids.
-- Names follow the role convention.
-- No symbol carries its own colour.
-- Every symbol uses the 24 by 24 grid and contains real geometry.
-- The manifest matches the sprite exactly, records a source for every symbol,
-  and keeps accurate reference counts.
-- The documented size ramp exists in the stylesheet.
-- No em-dashes, matching the project wide rule.
-
-## 9. The current set
-
-The brand mark is drawn by hand and is deliberately not an iconset glyph.
-Everything else is coolicons geometry.
-
-| Symbol | Role | Source glyph | References |
-|---|---|---|---|
-| `sym-brand-logo` | brand | hand-authored | 3 |
-| `sym-sec-composer` | section | Edit/Edit_Pencil_Line_01 | 4 |
-| `sym-sec-queue` | section | Calendar/Calendar_Days | 5 |
-| `sym-sec-crm` | section | User/Users_Group | 4 |
-| `sym-sec-analytics` | section | Interface/Chart_Line | 4 |
-| `sym-sec-docs` | section | File/File_Document | 7 |
-| `sym-sec-swipe` | section | Interface/Bookmark | 3 |
-| `sym-sec-brand` | section | Edit/Swatches_Palette | 4 |
-| `sym-sec-ai-command` | section | System/Terminal | 16 |
-| `sym-sec-chat` | section | Communication/Chat_Conversation | 1 |
-| `sym-sec-radar` | section | Navigation/Compass | 1 |
-| `sym-act-copy` | action | Edit/Copy | 6 |
-| `sym-act-save` | action | System/Save | 5 |
-| `sym-act-export` | action | Interface/Download | 6 |
-| `sym-act-eye` | action | Edit/Show | 3 |
-| `sym-act-lock` | action | Interface/Lock | 4 |
-| `sym-act-tag` | action | Interface/Tag | 2 |
-| `sym-act-trim` | action | Edit/Crop | 2 |
-| `sym-act-clean` | action | Edit/Text | 5 |
-| `sym-act-spark` | action | Interface/Star | 10 |
-| `sym-act-hooks` | action | Environment/Bulb | 5 |
-| `sym-act-image` | action | Media/Image_01 | 3 |
-| `sym-act-rhythm` | action | Interface/Trending_Up | 3 |
-| `sym-act-repurpose` | action | Arrow/Arrow_Reload_02 | 1 |
-| `sym-act-apply` | action | Interface/Check | 11 |
-| `sym-act-eject` | action | Interface/Log_Out | 4 |
-| `sym-act-publish` | action | Communication/Paper_Plane | 0 |
-| `sym-act-theme-dark` | action | Environment/Moon | 1 |
-| `sym-act-theme-light` | action | Environment/Sun | 1 |
-| `sym-mode-audit` | mode | Warning/Shield_Check | 2 |
-| `sym-mode-brand` | mode | Interface/Label | 2 |
-| `sym-mode-media` | mode | Media/Image_02 | 7 |
-| `sym-mode-preview` | mode | System/Monitor | 2 |
-| `sym-mode-prompt` | mode | Communication/Chat_Circle_Dots | 2 |
-| `sym-refresh` | utility | Arrow/Arrows_Reload_01 | 4 |
-| `sym-close` | utility | Menu/Close_MD | 15 |
+The previous set was coolicons, inlined by hand. It went with the page it was
+inlined into.
