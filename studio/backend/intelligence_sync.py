@@ -575,11 +575,15 @@ class IntelligenceSyncEngine:
                     with conn:
                         cursor = conn.cursor()
                         cursor.execute("DELETE FROM viral_templates")
+                        # 'synced', not 'shipped'. These arrived from a bundle
+                        # feed, so calling them shipped would be a guess about
+                        # where a row came from, which is the thing the column
+                        # exists to stop.
                         cursor.executemany("""
                         INSERT INTO viral_templates (
                             archetype, hook_text, velocity_score, engagement_multiplier,
-                            pacing_style, example_post_id, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                            pacing_style, example_post_id, origin, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, 'synced', CURRENT_TIMESTAMP)
                         """, cleaned_rows)
                 finally:
                     if conn:
@@ -791,8 +795,8 @@ class IntelligenceSyncEngine:
                     cursor.execute("""
                     INSERT INTO viral_templates (
                         archetype, hook_text, velocity_score, engagement_multiplier,
-                        pacing_style, example_post_id, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        pacing_style, example_post_id, origin, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'imported', CURRENT_TIMESTAMP)
                     """, (
                         str(h.get("archetype", "General"))[:MAX_ARCHETYPE_LENGTH],
                         hook_text,

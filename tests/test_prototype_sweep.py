@@ -56,6 +56,20 @@ def _read(path):
         return handle.read()
 
 
+def _rendered(path):
+    """
+    A component's source with comments removed.
+
+    Shared with tests/test_egress_surface.py for the same reason: a guard that
+    greps a component for a sentence should not match the comment explaining
+    why that sentence is there.
+    """
+    source = _read(path)
+    source = re.sub(r"\{/\*.*?\*/\}", "", source, flags=re.DOTALL)
+    source = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
+    return re.sub(r"^\s*//[^\n]*$", "", source, flags=re.MULTILINE)
+
+
 # ---------------------------------------------------------------------------
 # 1. The swipe file reports no engagement it did not observe
 # ---------------------------------------------------------------------------
@@ -124,13 +138,25 @@ def test_the_origin_column_exists_to_be_read():
 
 def test_the_wall_states_what_it_is_showing():
     """
-    The surface half, in the same terms Analytics already uses above its chart.
+    The surface half, in the same spirit as the banner Analytics puts above its
+    chart.
+
+    The first version of this asserted the phrase "never posted", which was the
+    first version of the banner. That banner counted rows whose origin was
+    'shipped' and was wrong twice: viral_templates also takes 'synced' and
+    'imported' rows, and rows predating migration 9 carry no origin at all. The
+    claim never needed provenance. The table has no reaction or comment columns,
+    so nothing in it was measured whichever way it arrived, and that is what the
+    wall now says.
     """
-    source = _read(SWIPE_SURFACE)
-    assert "shipped" in source, "the surface never checks a specimen's origin"
-    assert "never posted" in source.lower(), (
-        "the specimen wall does not tell the reader that its contents were "
-        "never posted, which is the statement the banner exists to make"
+    source = _rendered(SWIPE_SURFACE)
+    assert "hook forms, not posts anyone measured" in source, (
+        "the specimen wall no longer tells the reader that its contents are "
+        "patterns rather than measured posts"
+    )
+    assert "No reactions or comments are shown" in source, (
+        "the wall stopped explaining why it shows no engagement, which is the "
+        "half that keeps the absence from reading as missing data"
     )
 
 

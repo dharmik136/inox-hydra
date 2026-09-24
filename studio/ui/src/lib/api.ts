@@ -97,11 +97,18 @@ export async function fetchHookTemplates(limit = 12): Promise<HookTemplate[]> {
 }
 
 /** The formatters the selection toolbar offers, and their endpoints. */
-export type FormatKind = "bold" | "italic" | "monospace" | "strikethrough" | "clean";
+export type FormatKind =
+  | "bold"
+  | "italic"
+  | "underline"
+  | "monospace"
+  | "strikethrough"
+  | "clean";
 
 const FORMAT_PATHS: Record<FormatKind, string> = {
   bold: "/api/format/bold",
   italic: "/api/format/italic",
+  underline: "/api/format/underline",
   monospace: "/api/format/monospace",
   strikethrough: "/api/format/strikethrough",
   clean: "/api/format/clean",

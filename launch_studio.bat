@@ -4,7 +4,7 @@ cd /d "%~dp0"
 
 echo =================================================================
 echo   LinkedIn Studio Enterprise - Executive Desktop Launcher
-echo   100%% Local Engine - Zero Cloud Egress - Port 8000
+echo   Your work stays on this machine - Port 8000
 echo =================================================================
 echo.
 

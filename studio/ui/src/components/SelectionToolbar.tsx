@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { Bold, Italic, Code, Strikethrough, Eraser, Sparkles } from "lucide-react";
+import { Bold, Code, Eraser, Italic, Sparkles, Strikethrough, Underline } from "lucide-react";
 import type { FormatKind } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -20,6 +20,10 @@ interface SelectionToolbarProps {
 const FORMATTERS: { kind: FormatKind; label: string; icon: typeof Bold }[] = [
   { kind: "bold", label: "Bold", icon: Bold },
   { kind: "italic", label: "Italic", icon: Italic },
+  // Underline decorates with U+0332 per character, the same mechanism as
+  // strikethrough. text.ts already discounts those marks, so the fold verdict
+  // survives it. The endpoint existed and had never been reachable.
+  { kind: "underline", label: "Underline", icon: Underline },
   { kind: "monospace", label: "Monospace", icon: Code },
   { kind: "strikethrough", label: "Strikethrough", icon: Strikethrough },
   { kind: "clean", label: "Clean formatting", icon: Eraser },

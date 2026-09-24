@@ -87,10 +87,12 @@ jobs:
 
       # Fail loudly here. A build that quietly produced nothing is the single
       # case the runtime fallback would hide completely.
-      # shell: bash, because this job now runs on a matrix of Windows, macOS and
-      # Linux. The PowerShell form of this check was a syntax error on two of
-      # the three, and it guards the step that stops a build shipping the old
-      # interface, so it has to run everywhere rather than pass by not running.
+      # shell: bash, not PowerShell. This job runs on windows-latest only, so
+      # the shell choice is about the check being one expression that behaves
+      # the same wherever it is copied, not about a matrix. The desktop
+      # workflow does build on three platforms; this portable artifact does
+      # not. It guards the step that stops a build shipping with no interface,
+      # so it has to fail loudly rather than pass by not running.
       - name: Confirm The Interface Was Built
         shell: bash
         run: |

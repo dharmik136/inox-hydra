@@ -132,7 +132,7 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
                   Mark this as published in your record, or put it in the queue.
                 </p>
                 <p className="studio-meta mt-2 leading-snug text-ink-muted">
-                  NEITHER SENDS ANYTHING TO LINKEDIN. THE STUDIO NEVER LEAVES THIS MACHINE,
+                  NEITHER SENDS ANYTHING TO LINKEDIN. BOTH WRITE TO THIS MACHINE ONLY,
                   SO THE POST ITSELF IS STILL YOURS TO MAKE.
                 </p>
 

@@ -372,11 +372,27 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
         ))}
       </dl>
 
-      <p className="studio-meta mt-5 leading-relaxed text-ink-muted">
-        CONFIGURING A CLOUD PROVIDER KEY SENDS PROMPT TEXT TO THAT PROVIDER.
-        <br />
-        <span className="text-ink-muted">NOTHING ELSE IN THE STUDIO LEAVES THIS MACHINE.</span>
-      </p>
+      {/* This used to end "NOTHING ELSE IN THE STUDIO LEAVES THIS MACHINE",
+          which is not true. Four features reach out, and a blanket sentence a
+          reader cannot verify is worth less than a list they can. What stays
+          is the part that actually matters: the work itself never moves.
+
+          tests/test_egress_surface.py holds this list to the code, so adding
+          an outbound call without saying so here fails the suite. */}
+      <div className="mt-5">
+        <p className="studio-meta leading-relaxed text-ink-muted">
+          YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THIS MACHINE.
+        </p>
+        <p className="studio-meta mt-2 leading-relaxed text-ink-muted">
+          FOUR THINGS DO REACH OUT, EACH ONLY WHEN YOU USE IT:
+        </p>
+        <ul className="studio-meta mt-1.5 flex flex-col gap-0.5 leading-relaxed text-ink-muted">
+          <li>A CLOUD PROVIDER KEY SENDS PROMPT TEXT TO THAT PROVIDER</li>
+          <li>GENERATING AN IMAGE SENDS THE PROMPT TO THE IMAGE ENGINE</li>
+          <li>SYNCING THE TEMPLATE LIBRARY FETCHES A BUNDLE</li>
+          <li>UPDATE CHECKS, WHICH ARE OFF UNTIL YOU TURN THEM ON</li>
+        </ul>
+      </div>
 
       <SessionConnection />
 

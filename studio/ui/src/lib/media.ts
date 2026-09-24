@@ -28,8 +28,11 @@ export function formatDimensions(raw: string | null | undefined): string | null 
         return `${width} x ${height}`;
       }
     } catch {
-      // Not JSON after all. Fall through to the plain forms below rather than
-      // showing the author a brace.
+      // Unparseable, or parsed without a usable pair. Either way the answer is
+      // no dimensions rather than the raw field: a value that opens with a
+      // brace is storage, and showing it again is the defect this exists to
+      // fix. The plain forms below cannot match it, so there is nothing to
+      // fall through to.
     }
     return null;
   }

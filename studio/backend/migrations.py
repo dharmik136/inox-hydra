@@ -168,9 +168,14 @@ def _migrate_template_provenance(cursor: sqlite3.Cursor) -> None:
     not, so the same product held two surfaces to different standards. Three
     values are meaningful:
 
-      'shipped'   written by the seeder, an illustration of a form
-      'captured'  saved by the creator from something they actually saw
+      'shipped'   written by the offline seeder, in the box
+      'synced'    pulled from a bundle feed
+      'imported'  read from a bundle file the creator supplied
       NULL        written before this column existed, origin unknown
+
+    None of the three is a post anyone measured. The table has no reaction or
+    comment columns at all, which is why the endpoint that serves it reports
+    neither: the counts it used to emit were computed at render time.
 
     Existing rows are left NULL rather than guessed at, for the same reason
     migration 4 left its own alone: this database cannot know which of its
