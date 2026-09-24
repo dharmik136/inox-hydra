@@ -325,6 +325,11 @@ export default function App() {
           // The post left the composer. Reporting it as "saved" would be the
           // wrong claim, and reporting nothing would leave the author unsure
           // whether an irreversible action happened.
+          //
+          // The message says "marked as published" rather than "published"
+          // because that is what occurred: a status written to a local row.
+          // Nothing in this product makes an outbound request, so a studio
+          // that reported a delivery would be reporting one it cannot make.
           setSaveState("published");
           setSavedAt(message);
           setSaveError(null);

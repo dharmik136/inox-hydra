@@ -643,7 +643,15 @@ export async function fetchImageProgress(taskId: string): Promise<ImageProgress>
 // Publishing
 // ---------------------------------------------------------------------------
 
-/** Dispatches a draft immediately and marks it published. */
+/**
+ * Marks a stored post as published in the local record.
+ *
+ * This does not post to LinkedIn and cannot: the handler writes the row's
+ * status and published_at and opens no connection. The product's real path is
+ * /api/v1/scheduler/native/stage, which stages through Voyager with the saved
+ * session, and this interface does not call it. See
+ * tests/test_publishing_claims.py.
+ */
 export async function publishNow(postId: string): Promise<void> {
   await call(`/api/posts/${encodeURIComponent(postId)}/publish-now`, { method: "POST" });
 }
