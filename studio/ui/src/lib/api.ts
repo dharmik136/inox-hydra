@@ -318,10 +318,19 @@ export interface Inspiration {
   key_hook: string | null;
   author_name: string | null;
   author_headline: string | null;
-  likes_count: number;
-  comments_count: number;
+  /**
+   * Null for a specimen that was never posted, which is all of the ones
+   * shipped in the box. The endpoint used to synthesise these from the
+   * velocity score, so the wall reported reactions on posts that had never
+   * existed. A number here means someone captured it.
+   */
+  likes_count: number | null;
+  comments_count: number | null;
+  /** A real stored rating of the form, unlike the two fields above. */
   velocity_score: number;
   pacing_style: string | null;
+  /** 'shipped' came in the box, 'captured' was saved by the creator. */
+  origin: string | null;
 }
 
 export async function fetchInspirations(): Promise<Inspiration[]> {
@@ -1042,4 +1051,59 @@ export async function previewGrounding(): Promise<GroundingPreview> {
     bytes_used: typeof data.bytes_used === "number" ? data.bytes_used : 0,
     bytes_budget: typeof data.bytes_budget === "number" ? data.bytes_budget : 0,
   };
+}
+
+
+// ---------------------------------------------------------------------------
+// Your data
+//
+// Everything the studio holds lives in one SQLite file. The backup and export
+// endpoints have existed and been tested since before this interface did, and
+// nothing ever called them, so the only way to take a copy was the CLI. For a
+// product whose whole claim is that your work stays on your machine, that put
+// the burden of not losing it entirely on the machine.
+// ---------------------------------------------------------------------------
+
+export interface BackupArchive {
+  name: string;
+  bytes: number;
+  modified: string;
+}
+
+export interface BackupListing {
+  directory: string;
+  count: number;
+  backups: BackupArchive[];
+}
+
+export async function fetchBackups(): Promise<BackupListing> {
+  const data = await call<Partial<BackupListing>>("/api/v1/support/backups");
+  return {
+    directory: data.directory ?? "",
+    count: data.count ?? 0,
+    backups: Array.isArray(data.backups) ? data.backups : [],
+  };
+}
+
+/** Snapshots the database and media. Returns the archive path on disk. */
+export async function createBackup(label = "manual"): Promise<{ archive: string; bytes: number }> {
+  const data = await call<{ archive?: string; bytes?: number }>("/api/v1/support/backup", {
+    method: "POST",
+    body: JSON.stringify({ label }),
+  });
+  return { archive: data.archive ?? "", bytes: data.bytes ?? 0 };
+}
+
+/**
+ * Writes your content out in a portable format.
+ *
+ * Content only. The server excludes credentials deliberately, and the note it
+ * returns says so, which is worth showing rather than paraphrasing.
+ */
+export async function exportData(format: "json" | "csv"): Promise<{ path: string; note: string }> {
+  const data = await call<{ path?: string; note?: string }>("/api/v1/support/export", {
+    method: "POST",
+    body: JSON.stringify({ format }),
+  });
+  return { path: data.path ?? "", note: data.note ?? "" };
 }
