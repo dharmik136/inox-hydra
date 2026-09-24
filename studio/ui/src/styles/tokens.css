@@ -1,0 +1,151 @@
+/*
+ * Editorial Motion OS - design tokens.
+ *
+ * Source of truth: docs/linkedin_studio_reimagined_design.md, sections 2, 3
+ * and 15. Values here are the blueprint's, not reinterpretations of it.
+ *
+ * The theming mechanism matches docs/UI_CONVENTIONS.md section 1, which the
+ * vanilla stylesheet already follows: both blocks declare the SAME token names
+ * with different values, the product is dark first, and an unstamped document
+ * gets the dark palette. data-theme="light" is the opt out. Keeping the two
+ * stylesheets on one mechanism is what lets a surface move between them.
+ *
+ * If a colour does not exist here, add it to BOTH blocks. Adding it to :root
+ * alone gives the dark theme a light value, which is the exact failure the
+ * conventions document was written about.
+ */
+
+:root {
+  /* ---- Ground (light) ---------------------------------------------- */
+  --studio-canvas: #f2f0ea;
+  --studio-ink: #faf9f5;
+  --studio-raised: #ffffff;
+  --studio-soft: #eceae2;
+
+  /* ---- Borders ------------------------------------------------------ */
+  --studio-border: rgba(20, 20, 20, 0.1);
+  --studio-border-strong: rgba(20, 20, 20, 0.18);
+
+  /* ---- Text --------------------------------------------------------- */
+  --studio-text: #151515;
+  --studio-text-secondary: #595955;
+  /* Raised from the blueprint's #85857f, which measured 3.26:1 against the
+   * light canvas where AA asks for 4.5. axe reported 96 contrast failures
+   * across every surface from this one token. 4.70:1 at worst now, and
+   * --studio-text-secondary stays well ahead at 6.17 so the three tier
+   * hierarchy still reads. */
+  --studio-text-muted: #666661;
+
+  /* ---- Accent and signals ------------------------------------------- */
+  /* Colour indicates state, risk, selection or action. It does not
+   * decorate. Blueprint section 2 removes the "AI indigo everywhere"
+   * effect deliberately, so there is no indigo token here at all. */
+  --studio-paper: #111111;
+  --studio-orange: #e9552c;
+  --studio-green: #168a61;
+  --studio-blue: #2867c7;
+
+  /* Orange doing two different jobs needs two different steps.
+   *
+   * As a FILL it stays #e9552c. As TEXT on a light surface it measured 3.01:1
+   * where AA asks 4.5, so text gets its own darker step. The fold marginalia,
+   * the UNSAVED mark and the audit penalties are all text.
+   */
+  --studio-orange-text: #b83a14;
+
+  /* Text placed ON a signal fill. Always near black, in both themes, because
+   * both orange steps are light: white on orange measured 2.85:1 in dark and
+   * 3.62:1 in light, and the Publish button is the most important control in
+   * the product. */
+  --studio-on-signal: #0a0a0a;
+
+  /* Subtle fills, derived from the signals rather than hand mixed, so a
+   * palette change carries through instead of leaving a stale tint. */
+  --studio-orange-subtle: color-mix(in srgb, var(--studio-orange) 12%, transparent);
+  --studio-green-subtle: color-mix(in srgb, var(--studio-green) 12%, transparent);
+  --studio-blue-subtle: color-mix(in srgb, var(--studio-blue) 12%, transparent);
+
+  /* ---- Chart ---------------------------------------------------------
+   * A data hue, separate from the signals on purpose.
+   *
+   * The signal colours are the blueprint's and they carry meaning elsewhere:
+   * orange is the fold and the one destructive action, green and orange are a
+   * verdict in the audit. A plotted line means none of those things, so it
+   * gets its own step rather than borrowing one.
+   *
+   * These are the values the dataviz validator passes, per mode. The dark
+   * lightness band is L 0.48 to 0.67, and the blueprint's --studio-blue sits
+   * at 0.726, outside it, which is why the chart steps darker rather than
+   * reusing the signal. Re-run the validator before changing either. */
+  --studio-chart-1: #2867c7;
+
+  /* ---- Shape -------------------------------------------------------- */
+  /* Matches the existing ramp so the two interfaces agree on corners. */
+  --studio-radius-sm: 4px;
+  --studio-radius-md: 6px;
+  --studio-radius-lg: 8px;
+
+  /* ---- Typography --------------------------------------------------- */
+  /* Inter and JetBrains Mono are bundled locally through @fontsource and
+   * imported in main.tsx. They are NOT fetched from fonts.gstatic.com: the
+   * product claims zero cloud egress, and the vanilla page currently breaks
+   * that claim with three Google Fonts requests on every launch.
+   *
+   * The display serif is deliberately a system stack. Blueprint section 3
+   * permits "Georgia, Iowan Old Style, or a locally available equivalent",
+   * and every platform already has one, so shipping a webfont for major
+   * headings only would be weight for no gain. */
+  --studio-font-editorial: "Inter Variable", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --studio-font-display: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --studio-font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* ---- Motion (blueprint section 15) -------------------------------- */
+  /* Three tiers, each a band rather than a single value. Hover and
+   * selection are fast, panels and tabs are standard, navigation morphs
+   * and canvas transitions are expressive. */
+  --studio-motion-fast: 120ms;
+  --studio-motion-standard: 220ms;
+  --studio-motion-expressive: 460ms;
+
+  /* Visible acceleration and deceleration. Linear is reserved for
+   * progress and telemetry, where constant rate is the honest reading. */
+  --studio-ease-standard: cubic-bezier(0.32, 0.72, 0.24, 1);
+  --studio-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --studio-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
+[data-theme="dark"],
+:root:not([data-theme="light"]) {
+  /* ---- Ground (dark) ------------------------------------------------ */
+  --studio-canvas: #0a0a0a;
+  --studio-ink: #111111;
+  --studio-raised: #171717;
+  --studio-soft: #1d1d1b;
+
+  --studio-border: rgba(255, 255, 255, 0.1);
+  --studio-border-strong: rgba(255, 255, 255, 0.18);
+
+  --studio-text: #f5f5f0;
+  --studio-text-secondary: #a3a3a0;
+  /* Same correction for dark: #6f6f6b measured 3.55:1 on the raised
+   * surface. 5.16:1 at worst now. */
+  --studio-text-muted: #8d8d86;
+
+  --studio-paper: #e7e2d5;
+  --studio-orange: #ff6a3d;
+  --studio-green: #59d49a;
+  --studio-blue: #67a8ff;
+
+  /* On the dark surfaces #ff6a3d already measures 5.93:1 as text, so the text
+   * step and the fill step are the same value here. Both names still exist, so
+   * a component never has to know which theme it is in. */
+  --studio-orange-text: #ff6a3d;
+
+  --studio-chart-1: #4c8de8;
+
+  /* Re-derived rather than inherited: color-mix resolved against the light
+   * signal above, so these must be restated to pick up the dark ones. */
+  --studio-orange-subtle: color-mix(in srgb, var(--studio-orange) 14%, transparent);
+  --studio-green-subtle: color-mix(in srgb, var(--studio-green) 14%, transparent);
+  --studio-blue-subtle: color-mix(in srgb, var(--studio-blue) 14%, transparent);
+}

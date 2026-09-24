@@ -129,7 +129,20 @@ _PACKAGED_DOCS_DIR = os.path.join(_STUDIO_DIR, "docs")
 
 
 def get_frontend_dir() -> str:
-    """Single page application served at /. Always ships inside the package."""
+    """
+    Single page application served at /. Always ships inside the package.
+
+    Two interfaces exist during the Editorial Motion OS rewrite. frontend_next
+    is the React build produced by `npm run build` in studio/ui; frontend is the
+    original vanilla page. The built one wins when it is actually present and
+    complete, and the check is for index.html rather than for the directory,
+    because an interrupted or cleaned build leaves the directory behind with
+    nothing servable in it. Falling back then is the difference between the old
+    interface and a blank page.
+    """
+    built = os.path.join(_STUDIO_DIR, "frontend_next")
+    if os.path.isfile(os.path.join(built, "index.html")):
+        return built
     return os.path.join(_STUDIO_DIR, "frontend")
 
 

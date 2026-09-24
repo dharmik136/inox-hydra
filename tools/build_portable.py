@@ -95,9 +95,17 @@ EMBED_URL = (
 # 842 real interactions. Only the *.db pattern kept them out of the artifact,
 # and a .zip written by the documented `InoxHydra-CLI.bat backup` command would
 # not have matched it.
+#
+# ui/ is the React source for the studio interface. The artifact needs the
+# BUILT output (studio/frontend_next/, produced by `npm run build`), never the
+# source tree, and studio/ui/node_modules is hundreds of megabytes of
+# dependencies that would otherwise be copied verbatim into every zip. It is
+# gitignored too, and per the same reasoning as backups/ above, that alone does
+# not stop this builder: .gitignore governs the index, copy_application walks
+# the working tree.
 STUDIO_EXCLUDE = {
     "data", "assets", "tests", "__pycache__", ".pytest_cache",
-    "backups", "logs", "vault",
+    "backups", "logs", "vault", "ui",
 }
 
 # Secrets that must never leave this machine inside an artifact.
