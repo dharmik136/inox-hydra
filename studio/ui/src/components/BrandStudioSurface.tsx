@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
+import { useState as useLocalState } from "react";
 import { Check, Loader2, ShieldCheck } from "lucide-react";
 import {
   fetchAiStatus,
+  fetchAuthStatus,
   fetchProfile,
+  saveSessionCookies,
   saveProfile,
   type AiStatus,
+  type AuthStatus,
   type CreatorProfile,
   type ProfileResponse,
 } from "@/lib/api";
@@ -364,6 +368,8 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
         <br />
         <span className="text-ink-muted">NOTHING ELSE IN THE STUDIO LEAVES THIS MACHINE.</span>
       </p>
+
+      <SessionConnection />
     </div>
   );
 }
@@ -397,5 +403,111 @@ function Centered({ children }: { children: React.ReactNode }) {
     <div className="grid h-full place-items-center px-8">
       <p className="studio-meta max-w-[40ch] text-center leading-relaxed text-ink-muted">{children}</p>
     </div>
+  );
+}
+
+
+/**
+ * The LinkedIn session, pasted rather than logged into.
+ *
+ * These are the creator's live session cookies, so the fields are secret and
+ * the copy is explicit about two things: where they are kept, and that saving
+ * them contacts nobody. The endpoint used to fire an authenticated request on
+ * every save, which produced traffic from a product that promises not to.
+ */
+function SessionConnection() {
+  const [auth, setAuth] = useLocalState<AuthStatus | null>(null);
+  const [liAt, setLiAt] = useLocalState("");
+  const [jsession, setJsession] = useLocalState("");
+  const [busy, setBusy] = useLocalState(false);
+  const [note, setNote] = useLocalState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetchAuthStatus()
+      .then((result) => live && setAuth(result))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  async function onSave() {
+    if (!liAt.trim() || !jsession.trim()) return;
+    setBusy(true);
+    setNote(null);
+    try {
+      await saveSessionCookies(liAt.trim(), jsession.trim());
+      setLiAt("");
+      setJsession("");
+      setAuth(await fetchAuthStatus());
+      setNote("Saved to the local vault.");
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "The save was refused.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-8 border-t border-edge pt-5">
+      <p className="studio-label mb-2">LinkedIn session</p>
+
+      <dl className="mb-3 flex flex-col gap-1.5">
+        <div className="flex items-baseline justify-between gap-4">
+          <dt className="text-[12px] text-ink-secondary">Stored session</dt>
+          {/* client_session is whether usable tokens exist. status is a string
+              the app sets, and the two disagree on a fresh install, so the
+              honest answer is the one that reflects held credentials. */}
+          <dd
+            className={cn(
+              "studio-meta",
+              auth?.client_session ? "text-signal-green-text" : "text-ink-muted",
+            )}
+          >
+            {auth === null ? "READING" : auth.client_session ? "PRESENT" : "NONE"}
+          </dd>
+        </div>
+      </dl>
+
+      <div className="flex flex-col gap-2">
+        <input
+          type="password"
+          value={liAt}
+          onChange={(event) => setLiAt(event.target.value)}
+          placeholder="li_at"
+          aria-label="LinkedIn li_at cookie"
+          className="rounded-md border border-edge bg-ink px-2.5 py-1.5 text-[12px] text-ink-primary outline-none placeholder:text-ink-muted focus-visible:border-edge-strong"
+        />
+        <input
+          type="password"
+          value={jsession}
+          onChange={(event) => setJsession(event.target.value)}
+          placeholder="JSESSIONID"
+          aria-label="LinkedIn JSESSIONID cookie"
+          className="rounded-md border border-edge bg-ink px-2.5 py-1.5 text-[12px] text-ink-primary outline-none placeholder:text-ink-muted focus-visible:border-edge-strong"
+        />
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={busy || !liAt.trim() || !jsession.trim()}
+          className="flex items-center justify-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+        >
+          {busy && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
+          Save to vault
+        </button>
+
+        {note && (
+          <p role="status" className="studio-meta text-ink-secondary">
+            {note}
+          </p>
+        )}
+
+        <p className="studio-meta leading-relaxed text-ink-muted">
+          ENCRYPTED IN THIS MACHINE&apos;S VAULT. SAVING CONTACTS NOBODY: SYNCING WITH LINKEDIN IS A
+          SEPARATE ACTION YOU TAKE DELIBERATELY.
+        </p>
+      </div>
+    </section>
   );
 }
