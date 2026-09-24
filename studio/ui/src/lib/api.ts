@@ -735,3 +735,82 @@ export async function configureAi(provider: string, apiKey: string, model?: stri
 
 /** The analytics CSV streams as a file, so it is a link rather than a fetch. */
 export const ANALYTICS_CSV_URL = "/api/analytics/export?format=csv";
+
+// ---------------------------------------------------------------------------
+// LinkedIn session
+// ---------------------------------------------------------------------------
+
+export interface AuthStatus {
+  status: string;
+  is_connected: boolean;
+  /** Whether the client actually holds usable tokens, as opposed to a status string. */
+  client_session: boolean;
+}
+
+export async function fetchAuthStatus(): Promise<AuthStatus> {
+  return call<AuthStatus>("/api/auth/status");
+}
+
+/**
+ * Stores the session cookies locally.
+ *
+ * Deliberately does not contact LinkedIn. The endpoint used to fire an
+ * authenticated request on every save, which produced traffic the creator
+ * never asked for from a product that promises not to; the sync is a separate,
+ * opted-into call now. The interface says so rather than leaving the creator
+ * to assume one way or the other.
+ */
+export async function saveSessionCookies(liAt: string, jsessionId: string): Promise<void> {
+  await call("/api/auth/cookies", {
+    method: "POST",
+    body: JSON.stringify({ li_at: liAt, JSESSIONID: jsessionId }),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Post attribution
+// ---------------------------------------------------------------------------
+
+export interface AttributedLead {
+  lead_id: string;
+  name: string;
+  headline: string | null;
+  company: string | null;
+  icp_score: number;
+  lead_status: string | null;
+  qualification_tier: string | null;
+  latest_comment: string | null;
+}
+
+export interface PostAttribution {
+  post_identifier: string;
+  summary: {
+    total_leads_generated: number;
+    total_interactions: number;
+    vip_leads_count: number;
+    avg_icp_score: number;
+    comments_count: number;
+    likes_count: number;
+  };
+  leads: AttributedLead[];
+}
+
+/** Which leads a given post actually produced. */
+export async function fetchPostAttribution(postId: string): Promise<PostAttribution> {
+  const data = await call<Record<string, any>>(
+    `/api/v1/analytics/posts/${encodeURIComponent(postId)}/leads`,
+  );
+  const summary = data.attribution_summary ?? {};
+  return {
+    post_identifier: typeof data.post_identifier === "string" ? data.post_identifier : postId,
+    summary: {
+      total_leads_generated: summary.total_leads_generated ?? 0,
+      total_interactions: summary.total_interactions ?? 0,
+      vip_leads_count: summary.vip_leads_count ?? 0,
+      avg_icp_score: summary.avg_icp_score ?? 0,
+      comments_count: summary.comments_count ?? 0,
+      likes_count: summary.likes_count ?? 0,
+    },
+    leads: Array.isArray(data.leads) ? data.leads : [],
+  };
+}
