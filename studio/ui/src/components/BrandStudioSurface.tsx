@@ -13,10 +13,14 @@ import {
   type ProfileResponse,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { GroundingWorkspace } from "./GroundingWorkspace";
 
-type Workspace = "Identity" | "Watermark" | "Local security";
+type Workspace = "Identity" | "Watermark" | "Grounding" | "Local security";
 
-const WORKSPACES: Workspace[] = ["Identity", "Watermark", "Local security"];
+// Grounding sits beside the other settings rather than in the composer: it
+// is a standing grant about what this machine will run and what leaves it,
+// not a per-draft choice.
+const WORKSPACES: Workspace[] = ["Identity", "Watermark", "Grounding", "Local security"];
 
 /** The nine placements the backend accepts, laid out as they read on an image. */
 const POSITIONS = [
@@ -141,6 +145,7 @@ export function BrandStudioSurface() {
       <div className="mt-6">
         {workspace === "Identity" && <IdentityWorkspace profile={profile} edit={edit} isSet={loaded?.is_set ?? false} />}
         {workspace === "Watermark" && <WatermarkWorkspace profile={profile} edit={edit} />}
+        {workspace === "Grounding" && <GroundingWorkspace />}
         {workspace === "Local security" && <SecurityWorkspace loaded={loaded} ai={ai} />}
       </div>
     </div>

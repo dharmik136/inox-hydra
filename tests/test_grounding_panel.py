@@ -1,185 +1,188 @@
 """
-The grounding panel shows what a source handed over, and escapes it.
-====================================================================
+The Grounding Panel
+===================
+What a creator is shown before they let a source be read, and before its
+material reaches a draft.
 
-The MCP client was built, tested, wired into hook generation, and had no
-interface. A server could only be added by calling Python, so the feature a
-creator would actually want was unreachable to them.
+This suite was written against the vanilla page's Settings card. That page was
+retired and the card moved to studio/ui, so every check here moved with it. The
+guarantees are unchanged; what they read is not.
 
-Two properties of this panel matter more than the rest of it.
+Two of them changed shape rather than subject. The vanilla card built markup by
+hand, so escaping every value an MCP server supplies, and never interpolating
+source text into a template literal, were the difference between showing a name
+and running it. React escapes interpolated values, so the equivalent question
+is whether anything opts out of that, which is what the first two tests now
+ask.
 
-  Everything a source returns is escaped before it reaches the page. That text
-  comes from a process on the creator's own machine, not from us, and a note
-  containing a script tag is a note right up until it is injected into the
-  document. This is the one place in the studio where arbitrary text from an
-  arbitrary local program is rendered.
-
-  The egress line is never omitted. The backend computes on every call whether
-  gathered material is about to leave the machine, and until this panel
-  existed it told nobody. A creator deciding whether to connect their notes
-  needs that answer before they connect them.
+Strict Invariants:
+- Zero em-dashes across all code, docstrings, and comments.
 """
 
+import io
 import os
 import re
-import shutil
-import subprocess
-import sys
 
 import pytest
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-APP_JS = os.path.join(REPO_ROOT, "studio", "frontend", "app.js")
-INDEX = os.path.join(REPO_ROOT, "studio", "frontend", "index.html")
-STYLES = os.path.join(REPO_ROOT, "studio", "frontend", "styles.css")
-
-NODE = shutil.which("node")
-
-
-def _read(path):
-    with open(path, encoding="utf-8") as handle:
-        return handle.read()
+PANEL = os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "GroundingWorkspace.tsx")
+API = os.path.join(REPO_ROOT, "studio", "ui", "src", "lib", "api.ts")
 
 
 @pytest.fixture(scope="module")
 def panel():
-    """Just the grounding panel, so a match elsewhere in app.js cannot pass for one here."""
-    source = _read(APP_JS)
-    start = source.index("function initGroundingPanel")
-    return source[start:]
+    if not os.path.exists(PANEL):
+        pytest.fail("the grounding panel is gone; the feature it fronts has not")
+    return io.open(PANEL, encoding="utf-8").read()
+
+
+@pytest.fixture(scope="module")
+def api():
+    return io.open(API, encoding="utf-8").read()
 
 
 # ---------------------------------------------------------------------------
-# Escaping
+# Values that arrive from a source
 # ---------------------------------------------------------------------------
 
-def test_every_value_a_source_supplies_is_escaped(panel):
+def test_no_source_value_is_written_as_raw_markup(panel):
     """
-    The values that arrive from an MCP server: the server name it was given,
-    its command, and the title and body of whatever it returned. Each is
-    rendered, so each has to be escaped.
+    The values that arrive from an MCP server, its name, its description and
+    the material itself, are not the studio's text. The vanilla card escaped
+    each one by hand. React escapes interpolated values, so what matters here
+    is that nothing opts out.
     """
-    for field in ("server.name", "item.title", "item.text", "item.server", "item.error"):
-        pattern = r"escapeHtml\(\s*" + re.escape(field)
-        assert re.search(pattern, panel), (
-            f"{field} reaches the page without escapeHtml, so a note "
-            f"containing markup is injected into the document"
-        )
+    assert "dangerouslySetInnerHTML" not in panel, (
+        "the grounding panel writes raw markup, so a source controls what renders"
+    )
 
 
-def test_no_template_literal_interpolates_source_text(panel):
+def test_the_whole_interface_never_opts_out_of_escaping(panel):
     """
-    A template literal is where an unescaped value hides most easily, because
-    it reads like ordinary string building. The panel builds its markup by
-    concatenation so every interpolation is visible at the call site.
+    Guards the reasoning above rather than this one file. If the interface
+    starts writing raw markup anywhere, the argument that React escaping covers
+    source values stops being true by construction.
     """
-    interpolations = re.findall(r"\$\{([^}]*)\}", panel)
-    for expression in interpolations:
-        assert "escapeHtml" in expression, (
-            f"a template literal interpolates {expression!r} without escaping"
-        )
+    import glob
 
+    offenders = []
+    for path in glob.glob(os.path.join(REPO_ROOT, "studio", "ui", "src", "**", "*.tsx"), recursive=True):
+        if "dangerouslySetInnerHTML" in io.open(path, encoding="utf-8").read():
+            offenders.append(os.path.relpath(path, REPO_ROOT))
+    assert not offenders, f"raw markup is written in: {offenders}"
+
+
+# ---------------------------------------------------------------------------
+# What the creator is agreeing to
+# ---------------------------------------------------------------------------
 
 def test_the_command_is_shown_to_the_creator(panel):
     """
     They are agreeing to run it. An agreement to something invisible is not
-    one, so the command is on screen next to the toggle that enables it.
+    one, so the command is rendered beside the name rather than hidden behind
+    it.
     """
-    assert "server.command" in panel
-    assert "mcp-cmd" in panel
+    assert "server.command.join" in panel, (
+        "the command a source runs is no longer shown, so the creator is agreeing "
+        "to something they cannot see"
+    )
+
+
+def test_the_panel_says_that_adding_runs_a_command(panel):
+    """The creator is told what they are agreeing to, where they agree to it."""
+    assert "STORES A COMMAND THIS STUDIO WILL EXECUTE" in panel.upper(), (
+        "the form no longer says that adding a source stores a command this "
+        "machine will run"
+    )
+
+
+def test_adding_is_labelled_as_not_enabling(panel):
+    """
+    The two acts are separate in the API, and the button says so. Agreeing that
+    a command exists and agreeing to be read by it are different.
+    """
+    assert "switched off" in panel, "the add control no longer says it does not enable"
+
+
+def test_adding_sends_no_enabled_field(api):
+    """
+    The API has no enabled field on this request on purpose. An interface that
+    invented one would collapse the two acts back together.
+    """
+    start = api.index("export async function addMcpServer(")
+    body = api[start:api.index("export async function", start + 10)]
+    assert "enabled" not in body, "the add call sends an enabled field, which the API does not take"
+
+
+def test_the_command_is_sent_as_a_list(api, panel):
+    """
+    A command stays a list and never reaches a shell. The panel splits the
+    typed text itself and shows the tokens back, so what is stored is not in
+    question.
+    """
+    assert "commandTokens" in panel, "the command is no longer tokenised before it is sent"
+    assert "RUNS AS" in panel.upper(), "the tokens are not shown back before they are stored"
+    assert re.search(r"command:\s*string\[\]", api), "the command is no longer typed as a list"
 
 
 # ---------------------------------------------------------------------------
-# Honesty
+# Egress
 # ---------------------------------------------------------------------------
 
 def test_the_panel_renders_the_egress_answer(panel):
-    assert "renderEgress" in panel
-    assert "leaves_this_machine" in panel, (
-        "the panel does not read the egress flag, so it cannot warn that "
-        "material is about to leave the machine"
-    )
+    """
+    The backend computes, on every gather, whether material is about to leave
+    the machine. It used to tell nobody.
+    """
+    assert "egress.summary" in panel, "the egress answer is computed and still not shown"
 
 
 def test_egress_is_rendered_on_load_and_on_preview(panel):
     """
-    Once, at the point of deciding, and again with the material in hand. A
-    single call at load would go stale the moment the provider changed.
+    Once at the point of deciding, and again with the material in hand. A
+    creator who opens the panel and one who previews are asking the same
+    question at different moments.
     """
-    assert panel.count("renderEgress(") >= 3, (
-        "egress is rendered fewer times than it is computed, so one of the "
-        "two moments a creator needs it is unreported"
+    assert panel.count("egress.summary") >= 2, (
+        "the egress answer is shown in only one of the two places it is needed"
     )
 
 
-def test_local_and_remote_are_not_styled_the_same():
-    """
-    A single neutral style for both is the interface declining to say.
-    Staying on the machine is reassurance; leaving is a warning.
-    """
-    styles = _read(STYLES)
-    assert ".mcp-egress.is-local" in styles
-    assert ".mcp-egress.is-remote" in styles
+def test_local_and_remote_are_not_styled_the_same(panel):
+    """A single neutral style for both is the interface declining to say."""
+    assert "leaves_this_machine" in panel, "the panel does not branch on where material goes"
+    for tone in ("signal-orange", "signal-green"):
+        assert tone in panel, f"the panel has no {tone} treatment to distinguish the two cases"
 
-    remote = styles[styles.index(".mcp-egress.is-remote"):]
-    remote = remote[:remote.index("}")]
-    assert "color:" in remote and "background:" in remote
 
+# ---------------------------------------------------------------------------
+# State
+# ---------------------------------------------------------------------------
 
 def test_a_toggle_follows_the_state_the_server_achieved(panel):
     """
     Not the state the click asked for. A toggle left on after a failed write
-    tells the creator their drafts are grounded when they are not, which is
-    the same defect the queue pause was rewritten for.
+    tells a creator a source is being read when it is not, which is the wrong
+    direction for this particular lie.
     """
-    assert "body.enabled !== wanted" in panel, (
-        "the toggle does not verify the state it achieved"
+    start = panel.index("setMcpServerEnabled(")
+    following = panel[start:start + 200]
+    assert "await load()" in following, (
+        "the toggle does not re-read from the server after writing, so it shows "
+        "the state that was requested rather than the state that was reached"
     )
-    assert "event.target.checked = !wanted" in panel
 
 
 def test_a_server_that_is_down_is_named_in_the_preview(panel):
     """Otherwise the creator wonders why their posts read generic again."""
-    assert "body.errors" in panel or "errors = body.errors" in panel
-    assert "mcp-error" in panel
+    assert "preview.errors" in panel, "a source that failed is not named in the preview"
 
 
-# ---------------------------------------------------------------------------
-# It is actually reachable
-# ---------------------------------------------------------------------------
-
-def test_the_panel_markup_exists():
-    markup = _read(INDEX)
-    for element in (
-        'id="mcp-server-list"',
-        'id="mcp-egress"',
-        'id="btn-mcp-add"',
-        'id="btn-mcp-preview"',
-        'id="mcp-preview"',
-    ):
-        assert element in markup, f"the panel is missing {element}"
-
-
-def test_the_panel_says_that_adding_runs_a_command():
+def test_the_preview_reads_the_same_path_a_draft_takes(api):
     """
-    The creator is told what they are agreeing to, in the place they agree to
-    it, rather than in a document they will not read.
+    A preview of something adjacent to the real thing is a description of it.
+    The route gathers from the enabled servers exactly as a draft does, so the
+    interface calls that route rather than assembling its own answer.
     """
-    markup = _read(INDEX)
-    block = markup[markup.index('id="mcp-server-list"'):]
-    block = block[:block.index("settings-card", 10)] if "settings-card" in block[10:] else block
-    assert "command the studio will run" in block, (
-        "nothing on screen says that adding a source runs a command"
-    )
-
-
-def test_adding_is_labelled_as_not_enabling():
-    """The two acts are separate in the API, and the button should say so."""
-    markup = _read(INDEX)
-    assert "Add, switched off" in markup
-
-
-@pytest.mark.skipif(NODE is None, reason="node is required to parse the frontend")
-def test_the_frontend_still_parses():
-    result = subprocess.run([NODE, "--check", APP_JS], capture_output=True, text=True)
-    assert result.returncode == 0, result.stderr
+    assert '"/api/v1/mcp/preview"' in api, "the interface no longer calls the preview route"
