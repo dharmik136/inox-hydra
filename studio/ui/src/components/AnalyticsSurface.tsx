@@ -252,7 +252,7 @@ function PostRow({ post }: { post: AnalyticsPost }) {
                 <p className="studio-meta mb-2">
                   {attribution.summary.total_leads_generated} LEAD
                   {attribution.summary.total_leads_generated === 1 ? "" : "S"}
-                  <span className="mx-1.5 text-ink-muted">|</span>
+                  <span className="mx-1.5 text-ink-muted">·</span>
                   {attribution.summary.total_interactions} INTERACTIONS
                 </p>
                 <ul className="flex flex-col gap-1.5">
