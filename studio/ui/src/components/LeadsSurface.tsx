@@ -176,7 +176,31 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
       <section className="mt-6">
         <p className="studio-label mb-2">Recent interactions</p>
         {interactions.length === 0 ? (
-          <p className="studio-meta text-ink-muted">NO INTERACTIONS RECORDED</p>
+          /* The interactions table can be empty for a lead that still records
+             an engagement, because the engagement that captured the lead is
+             stored on the lead row and never written as a timeline entry. The
+             stream card reads that field, so a dossier that only reads the
+             table said NO INTERACTIONS RECORDED next to a card that said
+             COMMENTED, about the same person on the same screen.
+
+             What is shown here is that same field and nothing more. The date
+             is labelled as when the studio recorded the lead, which is what
+             created_at means, rather than presented as the moment they
+             engaged, which is not stored. */
+          lead.engagement_type ? (
+            <div className="border-l border-edge pl-3">
+              <p className="studio-meta text-[10px]">
+                {lead.engagement_type.toUpperCase()}
+                <span className="mx-1.5 text-ink-muted">·</span>
+                CAPTURED {lead.created_at?.slice(0, 10)}
+              </p>
+              <p className="studio-meta mt-1 text-[10px] text-ink-muted">
+                THE ENGAGEMENT THAT CAPTURED THIS LEAD. NO TIMELINE ENTRIES BEYOND IT.
+              </p>
+            </div>
+          ) : (
+            <p className="studio-meta text-ink-muted">NO INTERACTIONS RECORDED</p>
+          )
         ) : (
           <ul className="flex flex-col gap-3">
             {interactions.slice(0, 8).map((entry) => (
