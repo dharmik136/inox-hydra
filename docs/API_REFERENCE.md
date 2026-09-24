@@ -309,3 +309,66 @@ Returns real-time diagnostics for the Gaussian jitter rate limiter, token bucket
 
 ### `POST /api/v1/rate-limiter/acquire`
 Attempts to acquire rate-limited permission for passive API/session requests.
+
+---
+
+## 11. Grounding: The Creator's Own Material (MCP)
+
+The studio is an MCP **client**. It reads the creator's notes, repository and
+calendar so a draft can be written from their actual record, which is the one
+thing a cloud writing tool structurally cannot do.
+
+**These routes execute commands.** Adding a server stores a command line the
+studio will run. That is what MCP is rather than an oversight, and it makes
+this the largest grant in the API. Four things hold it:
+
+- The access middleware already limits every route to loopback with a matching
+  `Host`, an allowed `Origin`, and the session cookie.
+- **The extension cannot relay these.** `RELAYABLE_PATHS` in the service worker
+  lists three ingest endpoints. A test pins its size, because adding a fourth
+  would be a one line change whose consequence nobody would notice.
+- A command is a list of arguments, never a string, and never reaches a shell.
+  A string is rejected with `422`.
+- Adding does not enable. They are separate calls because they are separate
+  decisions.
+
+### `GET /api/v1/mcp/servers`
+Every configured source and whether it is switched on, plus an `egress` object
+computed from the AI provider currently in force.
+
+### `POST /api/v1/mcp/servers`
+Registers a source, **switched off**. Body: `name`, `command` (a list), and
+optional `cwd`, `env`, `description`. There is no `enabled` field.
+
+### `POST /api/v1/mcp/servers/{name}/enabled`
+Body `{"enabled": true|false}`. Returns the state it **achieved**, read back
+rather than echoed, so a caller cannot be told a source is on when the write
+failed.
+
+### `DELETE /api/v1/mcp/servers/{name}`
+
+### `GET /api/v1/mcp/preview`
+What the enabled sources hand over, before a draft uses it: `material`,
+`errors` naming any source that failed, `bytes_used` against `bytes_budget`,
+and the same `egress` object.
+
+### Notes for an interface built on these
+
+The vanilla page carries this as a Grounding card in Settings.
+`paths.get_frontend_dir()` prefers `frontend_next` when it is built, so the
+React interface needs its own, and these are the properties that matter rather
+than the layout:
+
+- **Never omit the egress line.** The backend computes on every call whether
+  material is about to leave the machine. A creator deciding whether to connect
+  their notes needs that answer before they connect them, and until this
+  existed the backend computed it and told nobody. Style local and remote
+  differently; one neutral treatment for both is the interface declining to
+  say.
+- **Escape everything a source returns.** It is arbitrary text from an
+  arbitrary local program, and this is the only place in the studio where such
+  text is rendered.
+- **Show the command.** The creator is agreeing to run it, and an agreement to
+  something invisible is not one.
+- **Let the toggle follow the achieved state**, not the click. A toggle left on
+  after a failed write says drafts are grounded when they are not.
