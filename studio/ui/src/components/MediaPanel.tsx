@@ -5,6 +5,7 @@ import {
   fetchImageProgress,
   fetchMedia,
   startImageGeneration,
+  synthesizeImagePrompt,
   uploadMedia,
   type MediaAsset,
 } from "@/lib/api";
@@ -202,6 +203,7 @@ function ImageStudio({ onDone }: { onDone: () => Promise<void> }) {
   const [percent, setPercent] = useState(0);
   const [stage, setStage] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
 
   useEffect(() => {
     if (!taskId) return;
@@ -263,15 +265,42 @@ function ImageStudio({ onDone }: { onDone: () => Promise<void> }) {
         aria-label="Image concept"
         className="resize-none rounded-md border border-edge bg-ink px-2.5 py-1.5 text-[12px] text-ink-primary outline-none placeholder:text-ink-muted focus-visible:border-edge-strong disabled:opacity-50"
       />
-      <button
-        type="button"
-        onClick={onGenerate}
-        disabled={Boolean(taskId) || !concept.trim()}
-        className="flex items-center justify-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
-      >
-        <Sparkles className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-        {taskId ? `${percent}%` : "Generate"}
-      </button>
+      <div className="flex gap-2">
+        {/* The prompt the studio would actually send, shown before anything is
+            rendered. Generation does not need it; a creator deciding whether
+            to spend a render does. */}
+        <button
+          type="button"
+          onClick={async () => {
+            if (!concept.trim()) return;
+            try {
+              const result = await synthesizeImagePrompt(concept.trim(), "1:1");
+              setPreview(result.master_prompt);
+            } catch {
+              setPreview(null);
+            }
+          }}
+          disabled={Boolean(taskId) || !concept.trim()}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+        >
+          Preview prompt
+        </button>
+        <button
+          type="button"
+          onClick={onGenerate}
+          disabled={Boolean(taskId) || !concept.trim()}
+          className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+        >
+          <Sparkles className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          {taskId ? `${percent}%` : "Generate"}
+        </button>
+      </div>
+
+      {preview && (
+        <p className="rounded-md border border-edge bg-ink p-2 text-[11px] leading-snug text-ink-secondary">
+          {preview}
+        </p>
+      )}
 
       {taskId && (
         <>

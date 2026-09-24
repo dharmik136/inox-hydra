@@ -15,10 +15,12 @@ import { QueueSurface } from "@/components/QueueSurface";
 import { DocsSurface } from "@/components/DocsSurface";
 import { CommandSurface } from "@/components/CommandSurface";
 import { PublishDialog } from "@/components/PublishDialog";
-import { sectionById, type SectionId } from "@/lib/navigation";
+import { DevtoolsSurface } from "@/components/DevtoolsSurface";
+import { STUDIO_SECTIONS, sectionById, type SectionId } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import {
   createDraft,
+  fetchDevtoolsStatus,
   fetchLatestDraft,
   generateHooks,
   updateDraft,
@@ -53,6 +55,25 @@ export default function App() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
+
+  // Devtools is a maintainer surface. Every route behind it answers 404 in
+  // a consumer build, so the rail does not offer a destination that cannot
+  // work. Asked once, from the one devtools route that stays reachable.
+  const [devMode, setDevMode] = useState(false);
+  useEffect(() => {
+    let live = true;
+    fetchDevtoolsStatus()
+      .then((status) => live && setDevMode(status.dev_mode))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const sections = useMemo(
+    () => STUDIO_SECTIONS.filter((section) => section.id !== "devtools" || devMode),
+    [devMode],
+  );
 
   // Incremented whenever a hook replaces the opening, so the canvas can play
   // the vertical text transition. A counter rather than a boolean, because
@@ -196,6 +217,7 @@ export default function App() {
   return (
     <div className="flex h-full w-full overflow-hidden bg-canvas">
       <StudioRail
+        sections={sections}
         active={active}
         onSelect={setActive}
         trayOpen={trayOpen}
@@ -263,6 +285,7 @@ export default function App() {
               {active === "queue" && <QueueSurface />}
               {active === "docs" && <DocsSurface />}
               {active === "command" && <CommandSurface />}
+              {active === "devtools" && <DevtoolsSurface />}
 
             </main>
           </div>
@@ -285,6 +308,7 @@ export default function App() {
           )}
 
           <NavigationTray
+            sections={sections}
             open={trayOpen}
             active={active}
             onSelect={setActive}

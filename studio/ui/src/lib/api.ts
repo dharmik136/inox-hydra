@@ -814,3 +814,224 @@ export async function fetchPostAttribution(postId: string): Promise<PostAttribut
     leads: Array.isArray(data.leads) ? data.leads : [],
   };
 }
+
+// ---------------------------------------------------------------------------
+// Governance gates
+// ---------------------------------------------------------------------------
+
+export interface GStackAudit {
+  passed: boolean;
+  score: number;
+  /** Six named gates, each a role's check. The keys are the server's. */
+  gates: Record<string, unknown>;
+  violations: string[];
+}
+
+export async function auditGovernance(content: string, title?: string): Promise<GStackAudit> {
+  const data = await call<{ audit?: Record<string, any> }>("/api/v1/gstack/audit", {
+    method: "POST",
+    body: JSON.stringify({ content, title: title || null }),
+  });
+  const audit = data.audit ?? {};
+  return {
+    passed: audit.passed === true,
+    score: typeof audit.score === "number" ? audit.score : 0,
+    gates: audit.gates ?? {},
+    violations: Array.isArray(audit.violations) ? audit.violations.map(String) : [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Maintainer surfaces
+// ---------------------------------------------------------------------------
+
+export interface DevtoolsStatus {
+  dev_mode: boolean;
+  env_flag: string;
+  env_permits: boolean;
+  screens: { key: string; label: string; owner: string; tab_id: string }[];
+}
+
+/**
+ * Whether the maintainer surface is available at all.
+ *
+ * This is the one devtools route that stays reachable in a consumer build, so
+ * it can be asked before anything else is attempted. Every other internal
+ * sheet route is behind require_dev_mode and answers 404 otherwise, which is
+ * the invariant those 404s exist to maintain.
+ */
+export async function fetchDevtoolsStatus(): Promise<DevtoolsStatus> {
+  const data = await call<Record<string, any>>("/api/v1/devtools/status");
+  return {
+    dev_mode: data.dev_mode === true,
+    env_flag: typeof data.env_flag === "string" ? data.env_flag : "",
+    env_permits: data.env_permits === true,
+    screens: Array.isArray(data.screens) ? data.screens : [],
+  };
+}
+
+export interface InternalIssue {
+  id: number;
+  title: string;
+  description: string;
+  category: string;
+  severity: string;
+  status: string;
+  screen_key: string | null;
+  target_selector: string | null;
+  created_at: string;
+}
+
+export interface InternalSheet {
+  issues: InternalIssue[];
+  summary: { total: number; open: number; resolved: number; critical: number };
+}
+
+export async function fetchInternalSheet(): Promise<InternalSheet> {
+  const data = await call<Record<string, any>>("/api/v1/internal-sheet/issues");
+  const summary = data.summary ?? {};
+  return {
+    issues: Array.isArray(data.issues) ? data.issues : [],
+    summary: {
+      total: summary.total ?? 0,
+      open: summary.open ?? 0,
+      resolved: summary.resolved ?? 0,
+      critical: summary.critical ?? 0,
+    },
+  };
+}
+
+export async function createInternalIssue(fields: {
+  title: string;
+  description: string;
+  target_selector: string;
+  category?: string;
+  severity?: string;
+}): Promise<void> {
+  await call("/api/v1/internal-sheet/issues", {
+    method: "POST",
+    body: JSON.stringify({
+      target_selector: fields.target_selector,
+      title: fields.title,
+      description: fields.description,
+      category: fields.category || "bug",
+      severity: fields.severity || "medium",
+    }),
+  });
+}
+
+export async function setInternalIssueStatus(issueId: number, status: string): Promise<void> {
+  await call(`/api/v1/internal-sheet/issues/${issueId}/status`, {
+    method: "PATCH",
+    body: JSON.stringify({ status }),
+  });
+}
+
+export const INTERNAL_SHEET_CSV_URL = "/api/v1/internal-sheet/export.csv";
+
+// ---------------------------------------------------------------------------
+// Image prompt preview
+// ---------------------------------------------------------------------------
+
+export interface SynthesizedPrompt {
+  master_prompt: string;
+  negative_prompt: string;
+  aspect_ratio: string;
+}
+
+/** The prompt the image studio would send, shown before anything is rendered. */
+export async function synthesizeImagePrompt(
+  concept: string,
+  aspectRatio: string,
+): Promise<SynthesizedPrompt> {
+  const data = await call<{ synthesized?: Record<string, any> }>("/api/image/synthesize-prompt", {
+    method: "POST",
+    body: JSON.stringify({ concept, aspect_ratio: aspectRatio }),
+  });
+  const s = data.synthesized ?? {};
+  return {
+    master_prompt: typeof s.master_prompt === "string" ? s.master_prompt : "",
+    negative_prompt: typeof s.negative_prompt === "string" ? s.negative_prompt : "",
+    aspect_ratio: typeof s.aspect_ratio === "string" ? s.aspect_ratio : aspectRatio,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Grounding (MCP)
+// ---------------------------------------------------------------------------
+
+export interface McpServer {
+  name: string;
+  command: string[];
+  description: string;
+  enabled: boolean;
+}
+
+export interface EgressReport {
+  leaves_this_machine: boolean;
+  provider: string;
+  summary: string;
+}
+
+export async function fetchMcpServers(): Promise<{ servers: McpServer[]; egress: EgressReport }> {
+  const data = await call<{ servers?: McpServer[]; egress?: EgressReport }>("/api/v1/mcp/servers");
+  return {
+    servers: data.servers ?? [],
+    egress: data.egress ?? { leaves_this_machine: false, provider: "", summary: "" },
+  };
+}
+
+/**
+ * Registers a server, switched off.
+ *
+ * There is no enabled field here on purpose, and the interface does not offer
+ * one: agreeing that a command exists and agreeing to be read by it are
+ * different acts, so they are two deliberate steps rather than one.
+ */
+export async function addMcpServer(
+  name: string,
+  command: string[],
+  description?: string,
+): Promise<void> {
+  await call("/api/v1/mcp/servers", {
+    method: "POST",
+    body: JSON.stringify({ name, command, description: description || "" }),
+  });
+}
+
+export async function setMcpServerEnabled(name: string, enabled: boolean): Promise<void> {
+  await call(`/api/v1/mcp/servers/${encodeURIComponent(name)}/enabled`, {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+export async function removeMcpServer(name: string): Promise<void> {
+  await call(`/api/v1/mcp/servers/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+export interface GroundingPreview {
+  egress: EgressReport;
+  material: { server: string; text: string }[];
+  errors: string[];
+  bytes_used: number;
+  bytes_budget: number;
+}
+
+/**
+ * What would be gathered, and whether it is about to leave this machine.
+ *
+ * Reads the enabled servers by the same path a draft takes, so this is the
+ * real thing rather than a description of it. Showing the material before it
+ * is used is the difference between consent and a setting.
+ */
+export async function previewGrounding(): Promise<GroundingPreview> {
+  const data = await call<Record<string, any>>("/api/v1/mcp/preview");
+  return {
+    egress: data.egress ?? { leaves_this_machine: false, provider: "", summary: "" },
+    material: Array.isArray(data.material) ? data.material : [],
+    errors: Array.isArray(data.errors) ? data.errors.map(String) : [],
+    bytes_used: typeof data.bytes_used === "number" ? data.bytes_used : 0,
+    bytes_budget: typeof data.bytes_budget === "number" ? data.bytes_budget : 0,
+  };
+}

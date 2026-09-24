@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ShieldCheck } from "lucide-react";
-import { STUDIO_SECTIONS, type SectionId } from "@/lib/navigation";
+import { type SectionId, type StudioSection } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
 interface StudioRailProps {
+  sections: StudioSection[];
   active: SectionId;
   onSelect: (id: SectionId) => void;
   trayOpen: boolean;
@@ -19,7 +20,7 @@ interface StudioRailProps {
  * work surface rather than resizing the application, which is what keeps the
  * writing column from reflowing every time someone navigates.
  */
-export function StudioRail({ active, onSelect, trayOpen, onToggleTray }: StudioRailProps) {
+export function StudioRail({ sections, active, onSelect, trayOpen, onToggleTray }: StudioRailProps) {
   const [hovered, setHovered] = useState<SectionId | null>(null);
 
   return (
@@ -59,7 +60,7 @@ export function StudioRail({ active, onSelect, trayOpen, onToggleTray }: StudioR
       <div className="mt-2 h-px w-6 bg-edge" />
 
       <ul className="mt-2 flex flex-1 flex-col items-center gap-1">
-        {STUDIO_SECTIONS.map((section) => {
+        {sections.map((section) => {
           const Icon = section.icon;
           const isActive = section.id === active;
 

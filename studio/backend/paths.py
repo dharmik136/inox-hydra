@@ -132,18 +132,14 @@ def get_frontend_dir() -> str:
     """
     Single page application served at /. Always ships inside the package.
 
-    Two interfaces exist during the Editorial Motion OS rewrite. frontend_next
-    is the React build produced by `npm run build` in studio/ui; frontend is the
-    original vanilla page. The built one wins when it is actually present and
-    complete, and the check is for index.html rather than for the directory,
-    because an interrupted or cleaned build leaves the directory behind with
-    nothing servable in it. Falling back then is the difference between the old
-    interface and a blank page.
+    This is the built React interface in studio/frontend_next, produced by
+    `npm run build` in studio/ui. It used to fall back to a second, vanilla
+    page when the build was absent. That page is gone, and the fallback with
+    it: a missing build is now a missing interface rather than a silent
+    downgrade to a different one, which is what kept the packaging defect
+    invisible for as long as it was.
     """
-    built = os.path.join(_STUDIO_DIR, "frontend_next")
-    if os.path.isfile(os.path.join(built, "index.html")):
-        return built
-    return os.path.join(_STUDIO_DIR, "frontend")
+    return os.path.join(_STUDIO_DIR, "frontend_next")
 
 
 def get_extension_dir() -> str:
