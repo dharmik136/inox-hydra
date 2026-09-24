@@ -119,7 +119,7 @@
       "role": "action",
       "source": "Interface/Lock",
       "figma_node_id": "30789:32184",
-      "references": 4
+      "references": 5
     },
     "sym-act-tag": {
       "role": "action",
