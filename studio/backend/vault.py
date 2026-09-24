@@ -138,6 +138,53 @@ def _secret_tool_read() -> Optional[bytes]:
     return None
 
 
+def _secret_tool_is_absent() -> bool:
+    """
+    Whether the keystore definitively holds no key for us.
+
+    This is the distinction that was not being made. A lookup that fails
+    because the keyring is locked, the D-Bus session is not up yet, or the call
+    timed out is NOT a keyring that has no secret stored. Treating them alike
+    meant a transient failure generated a fresh key and overwrote the real one,
+    and every token encrypted under the old key became permanently
+    undecryptable, from one hiccup, with nothing reported.
+
+    secret-tool exits 1 with no output when the secret is simply not there.
+    Anything else, a timeout, a non-empty stderr, any other exit code, reads as
+    unavailable, and an unavailable keystore is never overwritten.
+    """
+    if platform.system() != "Linux" or not shutil.which("secret-tool"):
+        return False
+    try:
+        proc = subprocess.run(
+            [
+                "secret-tool", "lookup",
+                "service", _KEYCHAIN_SERVICE,
+                "account", _KEYCHAIN_ACCOUNT,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return proc.returncode == 1 and not proc.stdout.strip() and not proc.stderr.strip()
+    except (subprocess.SubprocessError, OSError):
+        return False
+
+
+def _file_key_if_present():
+    """The file key, only if one already exists. Never creates one."""
+    try:
+        from .paths import get_vault_dir
+    except ImportError:
+        from paths import get_vault_dir
+    try:
+        with open(os.path.join(get_vault_dir(), _VAULT_KEY_FILENAME), "rb") as handle:
+            key = handle.read().strip()
+        return key[:32] if len(key) >= 32 else None
+    except (OSError, IOError):
+        return None
+
+
 def _secret_tool_write(key: bytes) -> bool:
     """Stores the master key in Linux Secret Service via secret-tool."""
     if platform.system() != "Linux":
@@ -197,14 +244,34 @@ def _file_key() -> bytes:
     return key
 
 
-def _local_key() -> bytes:
+# Resolved once per process.
+#
+# _local_key was recomputed on every encrypt and every decrypt, so a keystore
+# read that failed between the two resolved a different key for each and the
+# round trip broke inside a single run. That is what made the vault tests flaky
+# on Linux CI.
+_RESOLVED_KEY = None
+
+
+def reset_key_cache() -> None:
+    """Drops the cached key. For tests that change platform or keystore state."""
+    global _RESOLVED_KEY
+    _RESOLVED_KEY = None
+
+
+def _resolve_key() -> bytes:
     """
     Resolves the 256-bit encryption key for this installation.
+
     Prefers the platform keystore: macOS Keychain via security, or Linux Secret
-    Service via secret-tool. If the platform keystore is unavailable or fails,
-    falls back to the local file key.
+    Service via secret-tool. A new key is generated and stored ONLY when the
+    keystore definitively holds none. When the keystore is merely unavailable
+    the existing file key is used if there is one and nothing is written,
+    because overwriting a key that may still exist destroys every token
+    encrypted under it.
     """
     system = platform.system()
+
     if system == "Darwin":
         existing = _keychain_read()
         if existing:
@@ -218,12 +285,43 @@ def _local_key() -> bytes:
         existing = _secret_tool_read()
         if existing:
             return existing
-        generated = os.urandom(32)
-        if _secret_tool_write(generated):
-            return generated
-        return _file_key()
+        if _secret_tool_is_absent():
+            generated = os.urandom(32)
+            if _secret_tool_write(generated):
+                return generated
+            return _file_key()
+        # Unavailable, not empty. Use what is already on disk rather than
+        # minting a replacement for a key that is probably still there.
+        return _file_key_if_present() or _file_key()
 
     return _file_key()
+
+
+def _local_key() -> bytes:
+    global _RESOLVED_KEY
+    if _RESOLVED_KEY is None:
+        _RESOLVED_KEY = _resolve_key()
+    return _RESOLVED_KEY
+
+
+def _candidate_keys():
+    """
+    Every key a stored ciphertext might have been written under, best first.
+
+    Decryption tries each. An installation can legitimately hold two: the
+    keystore key, and a file key written during a window when the keystore was
+    unavailable. Without this, tokens written during that window stop opening
+    the moment the keystore comes back.
+    """
+    keys = [_local_key()]
+    extras = []
+    if platform.system() == "Linux":
+        extras.append(_secret_tool_read())
+    extras.append(_file_key_if_present())
+    for extra in extras:
+        if extra and extra not in keys:
+            keys.append(extra)
+    return keys
 
 
 def _keystream(key: bytes, nonce: bytes, length: int) -> bytes:
@@ -255,17 +353,23 @@ def _encrypt_local(plaintext: str) -> str:
 
 
 def _decrypt_local_v2(payload: str) -> str:
-    key = _local_key()
     blob = base64.b64decode(payload)
     if len(blob) < 16 + 32:
         return ""
     nonce, cipher, tag = blob[:16], blob[16:-32], blob[-32:]
-    expected = hmac.new(key, nonce + cipher, hashlib.sha256).digest()
-    if not hmac.compare_digest(tag, expected):
-        # Wrong key or altered data. Returning "" says so; returning a guess
-        # would hand the caller bytes it would send to LinkedIn as a cookie.
-        return ""
-    return bytes(a ^ b for a, b in zip(cipher, _keystream(key, nonce, len(cipher)))).decode("utf-8", "replace")
+
+    # The tag says which key is the right one, so every candidate is tried and
+    # the answer is only "" when none authenticates. Trying is safe precisely
+    # because a wrong key is detected rather than guessed at.
+    for key in _candidate_keys():
+        expected = hmac.new(key, nonce + cipher, hashlib.sha256).digest()
+        if hmac.compare_digest(tag, expected):
+            stream = _keystream(key, nonce, len(cipher))
+            return bytes(a ^ b for a, b in zip(cipher, stream)).decode("utf-8", "replace")
+
+    # Wrong key or altered data. Returning "" says so; returning a guess would
+    # hand the caller bytes it would send to LinkedIn as a cookie.
+    return ""
 
 
 def get_vault_backend() -> str:
