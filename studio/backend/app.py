@@ -1621,8 +1621,22 @@ def search_inspirations(query: Optional[str] = None, topic: Optional[str] = None
                     "author_headline": t.get("archetype", "Engineering"),
                     "topic": t.get("archetype", "Engineering"),
                     "content": (t.get("hook_text") or "") + "\n\n" + (t.get("pacing_style") or ""),
-                    "likes_count": int(float(t.get("velocity_score") or 8.0) * 1000),
-                    "comments_count": 50,
+                    # No reactions, no comments.
+                    #
+                    # These used to be int(velocity_score * 1000) and a literal
+                    # 50, so every card on the swipe wall showed "9,800
+                    # REACTIONS . 50 COMMENTS" for a template nobody had ever
+                    # posted. Neither number is stored anywhere. Both were
+                    # manufactured here at render time and then displayed as
+                    # though they had been measured.
+                    #
+                    # velocity_score survives because it is a real stored
+                    # field: a rating of how strongly the form performs, which
+                    # is the whole point of a template library. A reaction
+                    # count is a claim about an event, and there was no event.
+                    "likes_count": None,
+                    "comments_count": None,
+                    "origin": t.get("origin") or "shipped",
                     "key_hook": t.get("hook_text", ""),
                     "archetype": t.get("archetype", "Engineering"),
                     "velocity_score": t.get("velocity_score", 8.0),
@@ -1700,10 +1714,24 @@ def get_auth_status():
         row = cursor.fetchone()
         status = row["value"] if row else "disconnected"
         conn.close()
+        # is_connected requires both halves, not just the stored string.
+        #
+        # It used to read the settings row alone, so a fresh install with no
+        # credentials at all answered {"is_connected": true,
+        # "client_session": false}: the endpoint certifying a session in the
+        # same breath as reporting that none is held. The interface already
+        # worked around it by reading client_session and ignoring this field,
+        # which is the shape of a bug that survives because everyone routes
+        # around it.
+        #
+        # Both are still reported separately, because they mean different
+        # things and a caller may need to tell "the app believes it connected
+        # once" apart from "usable tokens are on disk right now".
+        held = linkedin_client.is_authenticated()
         return {
             "status": status,
-            "is_connected": status in ["connected", "ready"],
-            "client_session": linkedin_client.is_authenticated()
+            "is_connected": status in ["connected", "ready"] and held,
+            "client_session": held
         }
     finally:
         conn.close()

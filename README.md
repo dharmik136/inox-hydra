@@ -103,8 +103,22 @@ are applied automatically on first launch with a timestamped backup taken first.
 git clone https://github.com/dharmik136/inox-hydra.git
 cd inox-hydra
 pip install -r requirements.txt
+
+# The interface is a build artifact and is not in the repository.
+# Without this step the studio answers 503 and serves nothing.
+npm --prefix studio/ui ci
+npm --prefix studio/ui run build
+
 python -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000
 ```
+
+**The npm step is not optional.** `studio/frontend_next/` is the built
+interface, it is gitignored because it is reproducible, and the server has no
+fallback page to serve in its absence. A checkout that skips it starts cleanly
+and then answers every request for the interface with a 503 naming this step.
+Node 22 or newer.
+
+Rebuild after any change under `studio/ui/`. Nothing watches it for you.
 
 A source checkout keeps its state in `studio/data/` rather than your user
 profile, so each clone is self-contained. Set `INOX_HYDRA_HOME` to override.

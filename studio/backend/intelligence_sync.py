@@ -435,8 +435,8 @@ class IntelligenceSyncEngine:
                     cursor.execute("""
                     INSERT INTO viral_templates (
                         archetype, hook_text, velocity_score, engagement_multiplier,
-                        pacing_style, example_post_id, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        pacing_style, example_post_id, origin, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'shipped', CURRENT_TIMESTAMP)
                     """, (
                         t["archetype"],
                         t["hook_text"],
@@ -647,7 +647,7 @@ class IntelligenceSyncEngine:
             where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
             sql = f"""
             SELECT id, archetype, hook_text, velocity_score, engagement_multiplier,
-                   pacing_style, example_post_id, updated_at
+                   pacing_style, example_post_id, origin, updated_at
             FROM viral_templates
             {where_clause}
             ORDER BY velocity_score DESC

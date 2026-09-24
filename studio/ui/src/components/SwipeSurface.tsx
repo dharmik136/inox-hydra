@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { Search } from "lucide-react";
+import { AlertTriangle, Search } from "lucide-react";
 import { fetchInspirations, type Inspiration } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -36,6 +36,13 @@ export function SwipeSurface() {
     if (!specimens) return [];
     return ["All", ...Array.from(new Set(specimens.map((s) => s.archetype))).sort()];
   }, [specimens]);
+
+  // Counted over the whole library rather than the filtered view, because the
+  // statement is about what the studio shipped, not about the current filter.
+  const shipped = useMemo(
+    () => (specimens ?? []).filter((s) => s.origin === "shipped").length,
+    [specimens],
+  );
 
   const shown = useMemo(() => {
     if (!specimens) return [];
@@ -81,6 +88,26 @@ export function SwipeSurface() {
             />
           </div>
         </div>
+
+        {/* The same statement Analytics makes above its chart, for the same
+            reason. These are illustrations of a form, not posts anyone made,
+            and until migration 9 nothing on the row could tell them apart. */}
+        {shipped > 0 && (
+          <div className="mt-3 flex items-start gap-2 rounded-md border border-signal-orange/40 bg-signal-orange-subtle p-2.5">
+            <AlertTriangle
+              className="mt-0.5 size-3.5 shrink-0 text-signal-orange-text"
+              strokeWidth={1.75}
+              aria-hidden="true"
+            />
+            <p className="text-[12px] leading-snug text-ink-secondary">
+              <span className="font-medium text-ink-primary">
+                {shipped} of {specimens.length} specimens ship with the studio and were never posted.
+              </span>{" "}
+              They are patterns to borrow, not posts to compare against. Velocity rates the form;
+              specimens you capture yourself carry their real engagement.
+            </p>
+          </div>
+        )}
 
         <ul className="mt-3 flex flex-wrap gap-1">
           {archetypes.map((candidate) => (
@@ -177,12 +204,30 @@ function Specimen({ specimen }: { specimen: Inspiration }) {
         </p>
       </motion.div>
 
+      {/* Reactions and comments are shown only when someone captured them.
+          A shipped template was never posted, so it has no engagement, and
+          the endpoint used to invent some from the velocity score. Velocity
+          is a stored rating of the form and is always real. */}
       <p className="studio-meta mt-3 border-t border-edge pt-2 text-[10px]">
-        {specimen.likes_count.toLocaleString()} REACTIONS
-        <span className="mx-1.5 text-ink-muted">·</span>
-        {specimen.comments_count.toLocaleString()} COMMENTS
-        <span className="mx-1.5 text-ink-muted">·</span>
+        {specimen.likes_count !== null && (
+          <>
+            {specimen.likes_count.toLocaleString()} REACTIONS
+            <span className="mx-1.5 text-ink-muted">·</span>
+          </>
+        )}
+        {specimen.comments_count !== null && (
+          <>
+            {specimen.comments_count.toLocaleString()} COMMENTS
+            <span className="mx-1.5 text-ink-muted">·</span>
+          </>
+        )}
         VELOCITY {specimen.velocity_score.toFixed(1)}
+        {specimen.origin === "shipped" && (
+          <>
+            <span className="mx-1.5 text-ink-muted">·</span>
+            <span className="text-ink-muted">NOT POSTED</span>
+          </>
+        )}
       </p>
     </motion.article>
   );
