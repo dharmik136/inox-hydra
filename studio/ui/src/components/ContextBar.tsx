@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
  * "dirty": both mean the work is unsaved, but only one of them means the
  * author already asked for it to be saved and it did not happen.
  */
-export type SaveState = "idle" | "dirty" | "saving" | "saved" | "failed";
+export type SaveState = "idle" | "dirty" | "saving" | "saved" | "failed" | "published";
 
 interface ContextBarProps {
   kind: string;
@@ -82,9 +82,15 @@ export function ContextBar({
           )}
           {saveState === "saved" && savedAt && (
             <>
-              <Check className="size-3 text-signal-green" aria-hidden="true" />
+              <Check className="size-3 text-signal-green-text" aria-hidden="true" />
               SAVED {savedAt}
             </>
+          )}
+          {saveState === "published" && (
+            <span className="flex items-center gap-1.5 text-signal-green-text">
+              <Check className="size-3" aria-hidden="true" />
+              {(savedAt ?? "PUBLISHED").toUpperCase()}
+            </span>
           )}
           {saveState === "failed" && (
             <span className="text-signal-orange-text" title={saveError ?? undefined}>

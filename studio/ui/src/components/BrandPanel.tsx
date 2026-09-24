@@ -57,7 +57,7 @@ export function BrandPanel() {
           <Row
             label="State"
             value={profile.brand_watermark_enabled ? "ENABLED" : "DISABLED"}
-            tone={profile.brand_watermark_enabled ? "text-signal-green" : "text-ink-muted"}
+            tone={profile.brand_watermark_enabled ? "text-signal-green-text" : "text-ink-muted"}
           />
           <Row label="Text" value={profile.brand_watermark_text || "NOT SET"} />
           <Row label="Position" value={profile.brand_watermark_position.replace(/_/g, " ")} />
@@ -71,7 +71,7 @@ export function BrandPanel() {
           <Row
             label="LinkedIn"
             value={data.linkedin_connected ? "CONNECTED" : "NOT CONNECTED"}
-            tone={data.linkedin_connected ? "text-signal-green" : "text-ink-muted"}
+            tone={data.linkedin_connected ? "text-signal-green-text" : "text-ink-muted"}
           />
         </dl>
       </section>
