@@ -34,7 +34,11 @@ import desktop
 client = TestClient(app)
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-FRONTEND = os.path.join(REPO_ROOT, "studio", "frontend")
+# The PWA surface now lives with the React source. Vite copies
+# studio/ui/public verbatim into studio/frontend_next, so checking the
+# source keeps these running in a checkout where node has not been run.
+UI_ROOT = os.path.join(REPO_ROOT, "studio", "ui")
+FRONTEND = os.path.join(UI_ROOT, "public")
 
 
 # ---------------------------------------------------------------------------
@@ -251,7 +255,7 @@ def test_every_manifest_icon_actually_exists():
 
 
 def test_the_page_links_the_manifest():
-    html = io.open(os.path.join(FRONTEND, "index.html"), encoding="utf-8").read()
+    html = io.open(os.path.join(UI_ROOT, "index.html"), encoding="utf-8").read()
     assert 'rel="manifest"' in html
     assert "manifest.webmanifest" in html
     assert 'name="theme-color"' in html
@@ -276,9 +280,15 @@ def test_the_service_worker_caches_nothing():
 
 
 def test_the_worker_is_registered():
-    app_js = io.open(os.path.join(FRONTEND, "app.js"), encoding="utf-8").read()
-    assert "serviceWorker" in app_js
-    assert 'register("sw.js")' in app_js
+    """
+    Registration moved from app.js to the React entry point. The path is
+    absolute because the bundle is served from /static while the worker sits
+    at the root, and a relative "sw.js" would resolve beside the bundle and
+    404, taking installability with it.
+    """
+    main_tsx = io.open(os.path.join(UI_ROOT, "src", "main.tsx"), encoding="utf-8").read()
+    assert "serviceWorker" in main_tsx
+    assert 'register("/sw.js")' in main_tsx
 
 
 def test_the_manifest_and_icon_are_served():

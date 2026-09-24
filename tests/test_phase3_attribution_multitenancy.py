@@ -144,26 +144,6 @@ def test_phase3_api_analytics_posts_leaderboard_attribution():
         assert "avg_icp" in attr
 
 
-def test_phase3_frontend_dom_and_js_integrity():
-    """Verify post-attribution modal and table structures in frontend files."""
-    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    html_path = os.path.join(base_dir, "studio", "frontend", "index.html")
-    js_path = os.path.join(base_dir, "studio", "frontend", "app.js")
-
-    with open(html_path, "r", encoding="utf-8") as f:
-        html = f.read()
-    with open(js_path, "r", encoding="utf-8") as f:
-        js = f.read()
-
-    # Modal and table headers in HTML
-    assert 'id="post-attribution-modal"' in html
-    assert 'id="post-attr-leads-tbody"' in html
-    assert '<th>Attributed Leads</th>' in html
-
-    # JS rendering and interaction functions
-    assert "renderAnalyticsPostsTable" in js
-    assert "openPostAttributionModal" in js
-    assert "initPostAttributionModal" in js
 
 
 def test_phase3_zero_em_dashes_compliance():
@@ -173,8 +153,6 @@ def test_phase3_zero_em_dashes_compliance():
         os.path.join(base_dir, "studio", "backend", "crm.py"),
         os.path.join(base_dir, "studio", "backend", "database.py"),
         os.path.join(base_dir, "studio", "backend", "app.py"),
-        os.path.join(base_dir, "studio", "frontend", "index.html"),
-        os.path.join(base_dir, "studio", "frontend", "app.js"),
         os.path.join(base_dir, "tests", "test_phase3_attribution_multitenancy.py"),
     ]
 

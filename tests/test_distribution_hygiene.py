@@ -141,11 +141,11 @@ def test_no_captured_leads_appear_in_tracked_text():
     # Not captured data, and each is filed or legitimate:
     #   database.py    the four fabricated sample leads, G-Stack #246
     #   linkedin_client.py  a mock fixture used only by tests
-    #   index.html     a placeholder attribute on an input
+    #   LeadsSurface   a placeholder attribute on an input
     known_non_captured = {
         "studio/backend/database.py",
         "studio/backend/linkedin_client.py",
-        "studio/frontend/index.html",
+        "studio/ui/src/components/LeadsSurface.tsx",
     }
     offenders = [
         f for f in files

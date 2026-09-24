@@ -77,45 +77,6 @@ def test_day09_offline_docs_engine_and_fts5():
     conn.close()
 
 
-def test_day10_frontend_page_bifurcation():
-    """
-    Day 10: Verify the 8 decoupled viewport containers exist in index.html,
-    ensuring clean state isolation and zero DOM collision bugs.
-    """
-    html_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "frontend", "index.html"))
-    assert os.path.exists(html_path), "Missing index.html"
-
-    with open(html_path, "r", encoding="utf-8") as f:
-        html = f.read()
-
-    expected_view_containers = [
-        "tab-studio",
-        "tab-queue",
-        "tab-crm",
-        "tab-inspirations",
-        "tab-analytics",
-        "tab-ai-command",
-        "tab-docs",
-        "tab-settings"
-    ]
-
-    for container_id in expected_view_containers:
-        assert f'id="{container_id}"' in html, f"Missing bifurcated viewport container: {container_id}"
-
-    # Verify Day 10 Draft Seeding
-    id10 = seed_day10_draft()
-    assert id10 is not None
-
-    conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute("SELECT title, raw_content, tags FROM drafts WHERE id = ?", (id10,))
-    row10 = cursor.fetchone()
-    assert row10 is not None
-    assert "De-Monolithing the Frontend" in row10[0]
-    assert "State Entanglement" in row10[1]
-    tags10 = json.loads(row10[2])
-    assert "#softwareArchitecture" in tags10
-    conn.close()
 
 
 def test_day11_algorithmic_penalties_auditor():

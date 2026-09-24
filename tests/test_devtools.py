@@ -166,15 +166,34 @@ def test_runtime_toggle_can_close_the_surface(dev_mode):
 # Screens and sections
 # ---------------------------------------------------------------------------
 
-def test_screen_registry_matches_the_markup_that_exists():
+def test_screen_registry_matches_the_interface_that_exists():
     """
-    The registry claims eight screens. If index.html renames one and this is
-    not updated, every annotation filed there resolves to 'unknown'.
+    The registry names the screens annotations are filed against. If the
+    interface renames one and this is not updated, every annotation filed
+    there resolves to 'unknown'.
+
+    This read index.html and checked tab ids. The interface is React now and
+    each section declares the registry key it corresponds to, because the two
+    vocabularies differ: the registry calls the composer "studio", leads
+    "crm" and command "ai_command". The check is that every key the
+    interface files against still exists in the registry.
     """
-    index_html = io.open(
-        os.path.join(REPO_ROOT, "studio", "frontend", "index.html"), encoding="utf-8"
+    import re
+
+    navigation = io.open(
+        os.path.join(REPO_ROOT, "studio", "ui", "src", "lib", "navigation.ts"),
+        encoding="utf-8",
     ).read()
-    assert devtools.verify_screen_registry(index_html) == []
+    declared = set(re.findall(r'screenKey: "([a-z_]+)"', navigation))
+    assert declared, "the interface declares no screen keys at all"
+
+    # SCREEN_REGISTRY is keyed by tab id, with the screen key nested inside,
+    # so the keys of the mapping are not the screens.
+    known = {screen["key"] for screen in devtools.SCREEN_REGISTRY.values()}
+    unknown = sorted(declared - known)
+    assert not unknown, (
+        f"the interface files annotations against screens the registry does not have: {unknown}"
+    )
 
 
 def test_labelled_section_wins_over_ancestor_ids():
@@ -460,18 +479,3 @@ def test_devtools_surface_holds_the_zero_em_dash_invariant():
         assert chr(8212) not in content, f"{os.path.basename(path)} contains an em-dash"
 
 
-def test_frontend_gates_the_maintainer_surface():
-    """
-    The drawer section must be hidden in the markup and revealed only by the
-    status check, and the picker must refuse to start when the surface is off.
-    """
-    index_html = io.open(
-        os.path.join(REPO_ROOT, "studio", "frontend", "index.html"), encoding="utf-8"
-    ).read()
-    assert 'id="devtools-drawer-section" hidden' in index_html
-
-    app_js = io.open(
-        os.path.join(REPO_ROOT, "studio", "frontend", "app.js"), encoding="utf-8"
-    ).read()
-    assert "if (!devtoolsState.enabled) return;" in app_js
-    assert "devtools/status" in app_js

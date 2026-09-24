@@ -26,12 +26,23 @@ import re
 import pytest
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-APP_JS = os.path.join(REPO_ROOT, "studio", "frontend", "app.js")
+UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 
 
 def _app_js():
-    with open(APP_JS, "r", encoding="utf-8") as f:
-        return f.read()
+    """
+    The interface source, concatenated.
+
+    This read one app.js. The interface is many components now, so the same
+    question is asked of all of them: naming one file would let the stale
+    read move into another and stop being seen.
+    """
+    import glob
+
+    paths = glob.glob(os.path.join(UI_SRC, "**", "*.ts"), recursive=True)
+    paths += glob.glob(os.path.join(UI_SRC, "**", "*.tsx"), recursive=True)
+    assert paths, "no interface source was found to check"
+    return "\n".join(open(path, encoding="utf-8").read() for path in sorted(paths))
 
 
 def _code_lines(source):
@@ -134,14 +145,19 @@ def test_an_empty_composer_asserts_nothing():
     The tell that the verdict was unbacked: with no text at all the score was
     100 and the label read "High Reach".
     """
-    source = _app_js()
-    verdict_block = source[source.index("const verdictDisplay"):]
-    verdict_block = verdict_block[:verdict_block.index("\n}")]
+    # This used to grep app.js for the guard inside const verdictDisplay.
+    # The interface renders whatever the audit returns rather than deciding a
+    # label itself, so the guarantee moved to the audit and is asserted on
+    # behaviour. That is stronger: the old check passed as long as the guard
+    # existed, whatever it did.
+    from studio.backend.repurposer import audit_linkedin_algorithm_safety
 
-    assert "!text" in verdict_block or "text.trim()" in verdict_block, (
-        "The verdict does not check for empty text, so it still labels an empty "
-        "composer as though it had assessed something."
-    )
+    for empty in ("", "   "):
+        result = audit_linkedin_algorithm_safety(empty)
+        assert result["status_label"] == "Empty Draft", (
+            "an empty composer is labelled as though something had been assessed"
+        )
+        assert not result["penalties"], "an empty draft was given penalties"
 
 
 def test_the_fold_safe_flag_reads_the_field_the_backend_sends():
@@ -154,12 +170,14 @@ def test_the_fold_safe_flag_reads_the_field_the_backend_sends():
 
     stale = [line.strip()[:110] for line in lines if "is_mobile_fold_safe" in line]
     assert not stale, (
-        "app.js still reads is_mobile_fold_safe, which the backend never sends:\n  "
+        "the interface still reads is_mobile_fold_safe, which the backend never sends:\n  "
         + "\n  ".join(stale)
     )
 
-    assert any("h.mobile_safe" in line for line in lines), (
-        "app.js no longer reads the fold-safe flag at all"
+    # The field is named on a typed interface now rather than read off a
+    # local, so the access is not written "h.mobile_safe".
+    assert any("mobile_safe" in line for line in lines), (
+        "the interface no longer reads the fold-safe flag at all"
     )
 
 

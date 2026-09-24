@@ -592,8 +592,6 @@ def test_zero_em_dashes_in_scheduler_module():
     files_to_check = [
         os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "backend", "scheduler.py")),
         os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "backend", "app.py")),
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "frontend", "app.js")),
-        os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "frontend", "index.html")),
         os.path.abspath(__file__),
     ]
 

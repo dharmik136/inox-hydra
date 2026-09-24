@@ -7,6 +7,10 @@ That happened once: a duplicated catch block shipped in the queue and cadence
 work and no suite noticed, because the existing frontend tests only read the
 files as text to check for forbidden characters.
 
+The studio interface is TypeScript now and tsc checks it at build time, so
+what is left here is the Chrome extension, which is still plain JavaScript
+shipped as written.
+
 This suite parses the shipped JavaScript with Node. It skips, rather than
 fails, when Node is not installed, so a Python only environment can still run
 the suite.
@@ -21,7 +25,6 @@ import pytest
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 JS_FILES = [
-    os.path.join("studio", "frontend", "app.js"),
     os.path.join("studio", "extension", "background.js"),
     os.path.join("studio", "extension", "content.js"),
     os.path.join("studio", "extension", "popup.js"),
@@ -67,13 +70,3 @@ def test_shipped_javascript_parses(rel_path):
     )
 
 
-def test_load_queue_has_exactly_one_error_handler():
-    """Pins the specific regression: loadQueue once shipped with a duplicated, orphaned catch block."""
-    with open(os.path.join(REPO_ROOT, "studio", "frontend", "app.js"), "r", encoding="utf-8") as f:
-        content = f.read()
-
-    occurrences = content.count('console.error("Failed to load queue:", e);')
-    assert occurrences == 1, (
-        f"Expected exactly 1 loadQueue error handler, found {occurrences}. "
-        f"A duplicated handler means an orphaned catch block and a file that does not parse."
-    )
