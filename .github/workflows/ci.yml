@@ -53,6 +53,39 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # studio/frontend_next is the built React interface, and it is gitignored,
+      # so a fresh checkout does not contain it. Without this step every
+      # artifact built here falls back to the vanilla page and NOTHING FAILS:
+      # get_frontend_dir() returns the old interface, the product boots, and the
+      # suite stays green. The omission is visible only by looking at the UI.
+      - name: Set up Node Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: studio/ui/package-lock.json
+
+      - name: Build The Studio Interface
+        working-directory: studio/ui
+        shell: bash
+        run: |
+          npm ci
+          npm run build
+
+      # Fail loudly here. A build that quietly produced nothing is the single
+      # case the runtime fallback would hide completely.
+      # shell: bash, because this job now runs on a matrix of Windows, macOS and
+      # Linux. The PowerShell form of this check was a syntax error on two of
+      # the three, and it guards the step that stops a build shipping the old
+      # interface, so it has to run everywhere rather than pass by not running.
+      - name: Confirm The Interface Was Built
+        shell: bash
+        run: |
+          test -f studio/frontend_next/index.html || {
+            echo "studio/frontend_next/index.html is missing: the interface did not build" >&2
+            exit 1
+          }
+
       - name: Static Code Analysis & Syntax Validation
         run: |
           flake8 studio tests tools --count --select=E9,F63,F7,F82 --show-source --statistics
@@ -100,6 +133,39 @@ jobs:
           # verify_package builds with --no-isolation, so the backend has to
           # be present in the ambient environment.
           pip install build wheel setuptools
+
+      # studio/frontend_next is the built React interface, and it is gitignored,
+      # so a fresh checkout does not contain it. Without this step every
+      # artifact built here falls back to the vanilla page and NOTHING FAILS:
+      # get_frontend_dir() returns the old interface, the product boots, and the
+      # suite stays green. The omission is visible only by looking at the UI.
+      - name: Set up Node Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: studio/ui/package-lock.json
+
+      - name: Build The Studio Interface
+        working-directory: studio/ui
+        shell: bash
+        run: |
+          npm ci
+          npm run build
+
+      # Fail loudly here. A build that quietly produced nothing is the single
+      # case the runtime fallback would hide completely.
+      # shell: bash, because this job now runs on a matrix of Windows, macOS and
+      # Linux. The PowerShell form of this check was a syntax error on two of
+      # the three, and it guards the step that stops a build shipping the old
+      # interface, so it has to run everywhere rather than pass by not running.
+      - name: Confirm The Interface Was Built
+        shell: bash
+        run: |
+          test -f studio/frontend_next/index.html || {
+            echo "studio/frontend_next/index.html is missing: the interface did not build" >&2
+            exit 1
+          }
 
       # Builds a wheel, installs it into a virtual environment with no access to
       # system site packages, and boots it from an unrelated working directory.
