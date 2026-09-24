@@ -37,13 +37,6 @@ export function SwipeSurface() {
     return ["All", ...Array.from(new Set(specimens.map((s) => s.archetype))).sort()];
   }, [specimens]);
 
-  // Counted over the whole library rather than the filtered view, because the
-  // statement is about what the studio shipped, not about the current filter.
-  const shipped = useMemo(
-    () => (specimens ?? []).filter((s) => s.origin === "shipped").length,
-    [specimens],
-  );
-
   const shown = useMemo(() => {
     if (!specimens) return [];
     const term = query.trim().toLowerCase();
@@ -90,24 +83,29 @@ export function SwipeSurface() {
         </div>
 
         {/* The same statement Analytics makes above its chart, for the same
-            reason. These are illustrations of a form, not posts anyone made,
-            and until migration 9 nothing on the row could tell them apart. */}
-        {shipped > 0 && (
-          <div className="mt-3 flex items-start gap-2 rounded-md border border-signal-orange/40 bg-signal-orange-subtle p-2.5">
-            <AlertTriangle
-              className="mt-0.5 size-3.5 shrink-0 text-signal-orange-text"
-              strokeWidth={1.75}
-              aria-hidden="true"
-            />
-            <p className="text-[12px] leading-snug text-ink-secondary">
-              <span className="font-medium text-ink-primary">
-                {shipped} of {specimens.length} specimens ship with the studio and were never posted.
-              </span>{" "}
-              They are patterns to borrow, not posts to compare against. Velocity rates the form;
-              specimens you capture yourself carry their real engagement.
-            </p>
-          </div>
-        )}
+            reason, and stated about the whole library rather than a count.
+
+            The first version of this counted rows whose origin was 'shipped'.
+            That was wrong twice over: viral_templates has three insert paths,
+            so a row can also be 'synced' or 'imported', and rows written
+            before migration 9 carry no origin at all. More to the point, the
+            claim does not depend on any of that. The table holds hook forms
+            and has no reaction or comment columns in the first place, so
+            nothing in it was ever measured, whichever way it arrived. */}
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-signal-orange/40 bg-signal-orange-subtle p-2.5">
+          <AlertTriangle
+            className="mt-0.5 size-3.5 shrink-0 text-signal-orange-text"
+            strokeWidth={1.75}
+            aria-hidden="true"
+          />
+          <p className="text-[12px] leading-snug text-ink-secondary">
+            <span className="font-medium text-ink-primary">
+              These are hook forms, not posts anyone measured.
+            </span>{" "}
+            Velocity rates how strongly the shape performs. No reactions or comments are shown
+            because none were recorded: the studio stores the pattern, not an event.
+          </p>
+        </div>
 
         <ul className="mt-3 flex flex-wrap gap-1">
           {archetypes.map((candidate) => (
@@ -204,10 +202,13 @@ function Specimen({ specimen }: { specimen: Inspiration }) {
         </p>
       </motion.div>
 
-      {/* Reactions and comments are shown only when someone captured them.
-          A shipped template was never posted, so it has no engagement, and
-          the endpoint used to invent some from the velocity score. Velocity
-          is a stored rating of the form and is always real. */}
+      {/* Reactions and comments render only if they were ever recorded, and
+          for this table they never are: it has no columns for them. The
+          endpoint used to compute both at render time, which is what put
+          "9,800 REACTIONS" on a form nobody had posted. Origin is shown only
+          when it says something the reader does not already know from the
+          banner, so a synced or imported specimen is marked and the shipped
+          ones are not. */}
       <p className="studio-meta mt-3 border-t border-edge pt-2 text-[10px]">
         {specimen.likes_count !== null && (
           <>
@@ -222,10 +223,10 @@ function Specimen({ specimen }: { specimen: Inspiration }) {
           </>
         )}
         VELOCITY {specimen.velocity_score.toFixed(1)}
-        {specimen.origin === "shipped" && (
+        {specimen.origin && specimen.origin !== "shipped" && (
           <>
             <span className="mx-1.5 text-ink-muted">·</span>
-            <span className="text-ink-muted">NOT POSTED</span>
+            <span className="text-ink-muted">{specimen.origin.toUpperCase()}</span>
           </>
         )}
       </p>

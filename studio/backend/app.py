@@ -1636,7 +1636,13 @@ def search_inspirations(query: Optional[str] = None, topic: Optional[str] = None
                     # count is a claim about an event, and there was no event.
                     "likes_count": None,
                     "comments_count": None,
-                    "origin": t.get("origin") or "shipped",
+                    # Passed through, never defaulted. viral_templates has
+                    # three insert paths (the offline seeder, the bundle feed,
+                    # and a local import), so filling a NULL in with 'shipped'
+                    # would assert where a row came from on no evidence. Rows
+                    # written before migration 9 stay unknown, which is what
+                    # migration 4 does for the same reason.
+                    "origin": t.get("origin"),
                     "key_hook": t.get("hook_text", ""),
                     "archetype": t.get("archetype", "Engineering"),
                     "velocity_score": t.get("velocity_score", 8.0),
