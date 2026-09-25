@@ -7,12 +7,14 @@ import {
   fetchAiStatus,
   fetchAuthStatus,
   fetchBackups,
+  fetchEgressStatus,
   fetchProfile,
   saveSessionCookies,
   saveProfile,
   type AiStatus,
   type AuthStatus,
   type BackupListing,
+  type EgressStatus,
   type CreatorProfile,
   type ProfileResponse,
 } from "@/lib/api";
@@ -383,16 +385,9 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
         <p className="studio-meta leading-relaxed text-ink-muted">
           YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THIS MACHINE.
         </p>
-        <p className="studio-meta mt-2 leading-relaxed text-ink-muted">
-          FOUR THINGS DO REACH OUT, EACH ONLY WHEN YOU USE IT:
-        </p>
-        <ul className="studio-meta mt-1.5 flex flex-col gap-0.5 leading-relaxed text-ink-muted">
-          <li>A CLOUD PROVIDER KEY SENDS PROMPT TEXT TO THAT PROVIDER</li>
-          <li>GENERATING AN IMAGE SENDS THE PROMPT TO THE IMAGE ENGINE</li>
-          <li>SYNCING THE TEMPLATE LIBRARY FETCHES A BUNDLE</li>
-          <li>UPDATE CHECKS, WHICH ARE OFF UNTIL YOU TURN THEM ON</li>
-        </ul>
       </div>
+
+      <EgressLedger />
 
       <SessionConnection />
 
@@ -526,6 +521,97 @@ function YourData() {
             {listing.directory}
           </p>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What has left this machine, counted.
+ *
+ * This replaced a four line list of things that reach out. The list was true
+ * when it was written, which is the problem with a list: the sentence above it
+ * previously claimed nothing else ever left, and that had been false for as
+ * long as image generation existed. Counters come from the chokepoint every
+ * outbound call passes through, so they cannot describe a version of the code
+ * that is no longer running.
+ *
+ * Categories with nothing to report are still shown. An absence of requests is
+ * the answer most of these should give, and hiding them would turn a zero into
+ * a blank.
+ */
+function EgressLedger() {
+  const [status, setStatus] = useState<EgressStatus | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    fetchEgressStatus()
+      .then((result) => live && setStatus(result))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (failed) {
+    return (
+      <div className="mt-6 border-t border-edge pt-5">
+        <p className="studio-label mb-2">What has left this machine</p>
+        <p className="studio-meta text-ink-muted">EGRESS LEDGER UNAVAILABLE</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-6 border-t border-edge pt-5">
+      <p className="studio-label mb-2">What has left this machine</p>
+
+      {status === null ? (
+        <p className="studio-meta text-ink-muted">READING</p>
+      ) : (
+        <>
+          <p className="mb-3 text-[13px] leading-relaxed text-ink-secondary">
+            Counted since the studio started, at the one point every outbound request passes
+            through.{" "}
+            {status.total_performed === 0
+              ? "Nothing has left this machine."
+              : `${status.total_performed} request${status.total_performed === 1 ? "" : "s"} left this machine.`}
+            {status.total_refused > 0 && ` ${status.total_refused} refused.`}
+          </p>
+
+          {status.master_off && (
+            <p className="studio-meta mb-3 leading-snug text-signal-green-text">
+              {status.master_flag} IS SET. NOTHING MAY OPEN A CONNECTION.
+            </p>
+          )}
+
+          <ul className="flex flex-col gap-1">
+            {status.categories.map((category) => (
+              <li key={category.name} className="flex items-baseline justify-between gap-3">
+                <span className="text-[12px] text-ink-secondary">
+                  {category.name}
+                  {!category.allowed && (
+                    <span className="studio-meta ml-2 text-[10px] text-ink-muted">OFF</span>
+                  )}
+                </span>
+                <span className="studio-meta shrink-0 text-[10px] text-ink-muted tabular-nums">
+                  {category.performed} sent
+                  {category.refused > 0 && (
+                    <>
+                      <span className="mx-1.5">·</span>
+                      {category.refused} refused
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <p className="studio-meta mt-3 leading-snug text-ink-muted">
+            SET {status.master_flag}=1 TO REFUSE EVERY CATEGORY, INCLUDING THE ONES ON BY DEFAULT.
+          </p>
+        </>
       )}
     </div>
   );

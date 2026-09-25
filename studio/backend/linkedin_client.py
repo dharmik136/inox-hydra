@@ -15,6 +15,12 @@ import sqlite3
 import os
 import threading
 import requests
+
+try:  # package import
+    from . import egress as _egress
+except ImportError:  # flat import, when the backend is run as a script
+    import egress as _egress
+
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 try:
@@ -45,7 +51,10 @@ except ImportError:
 # egress_performed is what a test asserts against. Zero is the contract.
 EGRESS_ENV_FLAG = "INOX_ALLOW_LINKEDIN_EGRESS"
 
-egress_stats = {"refused": 0, "performed": 0, "last_refused_endpoint": None}
+# The same dict the shared module counts into, not a copy. Rebinding this to a
+# fresh dict would detach it from the chokepoint and from the tests that write
+# to it directly.
+egress_stats = _egress.stats_for("linkedin")
 
 
 def _stable_key(identity):
@@ -57,7 +66,7 @@ def _stable_key(identity):
 
 def egress_allowed() -> bool:
     """True only when the operator has explicitly opted into active requests."""
-    return os.environ.get(EGRESS_ENV_FLAG, "").strip().lower() in ("1", "true", "yes", "on")
+    return _egress.allowed("linkedin")
 
 
 def egress_guard(endpoint: str) -> Optional[Dict[str, Any]]:
@@ -67,30 +76,23 @@ def egress_guard(endpoint: str) -> Optional[Dict[str, Any]]:
     Returns None when the request may proceed. Returns a result dict describing
     the refusal when it may not, which callers return to their own caller
     unchanged so the refusal is visible rather than silent.
+
+    Delegates to egress.guard(). This used to be the only guard in the backend,
+    and the six modules that did not have one reached nine hosts unchecked. It
+    keeps its own name and its own env flag because the reasoning that put it
+    here is specific to LinkedIn: the studio observes pages you open and does
+    not request data on your behalf.
     """
-    if egress_allowed():
-        egress_stats["performed"] += 1
+    refusal = _egress.guard(endpoint, category="linkedin")
+    if refusal is None:
         return None
-    egress_stats["refused"] += 1
-    egress_stats["last_refused_endpoint"] = endpoint
-    return {
-        "status": "egress_refused",
-        # Not healthy, and not unhealthy: unknown. Answering True here meant
-        # /api/v1/session/health certified an expired session it had never
-        # checked. Callers must be able to tell "we did not look" apart from
-        # "we looked and it was fine".
-        "healthy": None,
-        "checked": False,
-        "endpoint": endpoint,
-        # Every other branch of check_session_health returns this key. Dropping
-        # it made callers that read circuit_breaker.state raise KeyError.
-        "circuit_breaker": None,
-        "message": (
-            "This studio observes LinkedIn pages you open yourself and does not "
-            "request data on your behalf, so the session was not checked. Set "
-            f"{EGRESS_ENV_FLAG}=1 to allow active requests."
-        ),
-    }
+    # The historical wording, which names the boundary rather than the flag.
+    refusal["message"] = (
+        "This studio observes LinkedIn pages you open yourself and does not "
+        "request data on your behalf, so the session was not checked. Set "
+        f"{EGRESS_ENV_FLAG}=1 to allow active requests."
+    )
+    return refusal
 
 
 class CircuitBreaker:

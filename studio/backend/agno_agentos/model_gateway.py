@@ -17,6 +17,11 @@ import json
 import time
 import urllib.request
 import urllib.error
+
+try:  # the shared egress chokepoint
+    from .. import egress as _egress
+except ImportError:
+    import egress as _egress
 from typing import Dict, Any, Optional, Tuple
 
 try:
@@ -378,6 +383,8 @@ def verify_ai_connection(
             }).encode("utf-8")
 
             req = urllib.request.Request(endpoint, data=payload, headers={"Content-Type": "application/json"})
+            # Refuses rather than connecting when this category is off. See egress.py.
+            _egress.require(endpoint, "model")
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 latency = round((time.time() - start_time) * 1000, 1)
@@ -400,6 +407,8 @@ def verify_ai_connection(
                 headers["Authorization"] = f"Bearer {api_key}"
 
             req = urllib.request.Request(endpoint, data=payload, headers=headers)
+            # Refuses rather than connecting when this category is off. See egress.py.
+            _egress.require(endpoint, "model")
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 latency = round((time.time() - start_time) * 1000, 1)
@@ -423,6 +432,8 @@ def verify_ai_connection(
             }
 
             req = urllib.request.Request(endpoint, data=payload, headers=headers)
+            # Refuses rather than connecting when this category is off. See egress.py.
+            _egress.require(endpoint, "model")
             with urllib.request.urlopen(req, timeout=timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 latency = round((time.time() - start_time) * 1000, 1)
@@ -481,6 +492,8 @@ def execute_llm_completion(
             }).encode("utf-8")
 
             req = urllib.request.Request(endpoint, data=payload, headers={"Content-Type": "application/json"})
+            # Refuses rather than connecting when this category is off. See egress.py.
+            _egress.require(endpoint, "model")
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -504,6 +517,8 @@ def execute_llm_completion(
                 headers["Authorization"] = f"Bearer {config.api_key}"
 
             req = urllib.request.Request(endpoint, data=payload, headers=headers)
+            # Refuses rather than connecting when this category is off. See egress.py.
+            _egress.require(endpoint, "model")
             with urllib.request.urlopen(req, timeout=18) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return data["choices"][0]["message"]["content"].strip()
@@ -525,6 +540,8 @@ def execute_llm_completion(
             }
 
             req = urllib.request.Request(endpoint, data=json.dumps(payload_dict).encode("utf-8"), headers=headers)
+            # Refuses rather than connecting when this category is off. See egress.py.
+            _egress.require(endpoint, "model")
             with urllib.request.urlopen(req, timeout=18) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 for block in data.get("content", []):

@@ -53,6 +53,7 @@ try:
     from .repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from .leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from .linkedin_client import linkedin_client
+    from . import egress as egress_policy
     from .scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                             parse_datetime_flexible, normalize_datetime_to_utc_iso,
                             is_queue_paused, set_queue_paused)
@@ -113,6 +114,7 @@ except ImportError:
     from repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from linkedin_client import linkedin_client
+    import egress as egress_policy
     from scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                            parse_datetime_flexible, normalize_datetime_to_utc_iso,
                            is_queue_paused, set_queue_paused)
@@ -2650,6 +2652,18 @@ def get_post_engagers(post_id: str):
         "count": len(engagers),
         "engagers": engagers,
     }
+
+
+@app.get("/api/v1/egress/status", tags=["Support & Maintenance"])
+def get_egress_status():
+    """
+    What has left this machine, and what currently may.
+
+    Counters, not a promise. The interface used to state that nothing but
+    provider prompts ever left, which was untrue of four other features, and
+    there was no way for a reader to check. This is the check.
+    """
+    return egress_policy.describe()
 
 
 @app.get("/api/v1/session/health", tags=["LinkedIn Session & Telemetry"])

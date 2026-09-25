@@ -1114,3 +1114,43 @@ export async function exportData(format: "json" | "csv"): Promise<{ path: string
   });
   return { path: data.path ?? "", note: data.note ?? "" };
 }
+
+
+// ---------------------------------------------------------------------------
+// Egress
+//
+// What has actually left this machine, counted at the one chokepoint every
+// outbound call now passes through. The Local security tab used to assert
+// that nothing but provider prompts ever left, which was untrue of four other
+// features and impossible for a reader to verify. Counters can be checked.
+// ---------------------------------------------------------------------------
+
+export interface EgressCategory {
+  name: string;
+  allowed: boolean;
+  flag: string;
+  default_allowed: boolean;
+  performed: number;
+  refused: number;
+  last_destination: string | null;
+  last_refused_endpoint: string | null;
+}
+
+export interface EgressStatus {
+  master_off: boolean;
+  master_flag: string;
+  categories: EgressCategory[];
+  total_performed: number;
+  total_refused: number;
+}
+
+export async function fetchEgressStatus(): Promise<EgressStatus> {
+  const data = await call<Partial<EgressStatus>>("/api/v1/egress/status");
+  return {
+    master_off: data.master_off ?? false,
+    master_flag: data.master_flag ?? "INOX_NO_EGRESS",
+    categories: Array.isArray(data.categories) ? data.categories : [],
+    total_performed: data.total_performed ?? 0,
+    total_refused: data.total_refused ?? 0,
+  };
+}
