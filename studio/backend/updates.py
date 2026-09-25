@@ -31,6 +31,11 @@ import urllib.parse
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
+try:  # the shared egress chokepoint
+    from . import egress as _egress
+except ImportError:
+    import egress as _egress
+
 try:
     from . import paths
     from ..__version__ import __version__
@@ -182,6 +187,8 @@ def check_for_update(force: bool = False, url: Optional[str] = None) -> Dict[str
     }
 
     try:
+        # Refuses rather than connecting when this category is off. See egress.py.
+        _egress.require(target, "updates")
         response = requests.get(target, headers=headers, timeout=REQUEST_TIMEOUT_SECONDS)
     except Exception as exc:
         result["error"] = f"Could not reach the update manifest: {exc}"

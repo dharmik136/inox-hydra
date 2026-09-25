@@ -13,6 +13,11 @@ import json
 import urllib.parse
 import threading
 import requests
+
+try:  # the shared egress chokepoint
+    from . import egress as _egress
+except ImportError:
+    import egress as _egress
 from typing import Dict, Any, Optional
 
 try:
@@ -547,6 +552,8 @@ class ImageStudioManager:
             "size": size,
             "response_format": "b64_json"
         }
+        # Refuses rather than connecting when this category is off. See egress.py.
+        _egress.require(url, "image")
         res = requests.post(url, headers=headers, json=payload, timeout=35)
         if res.status_code == 200:
             data = res.json()
@@ -557,6 +564,8 @@ class ImageStudioManager:
                     return base64.b64decode(b64)
                 img_url = items[0].get("url")
                 if img_url:
+                    # Refuses rather than connecting when this category is off. See egress.py.
+                    _egress.require(img_url, "image")
                     img_res = requests.get(img_url, timeout=20)
                     if img_res.status_code == 200:
                         return img_res.content
@@ -573,6 +582,8 @@ class ImageStudioManager:
                 "aspectRatio": "1:1" if width == height else ("16:9" if width > height else "4:5")
             }
         }
+        # Refuses rather than connecting when this category is off. See egress.py.
+        _egress.require(url, "image")
         res = requests.post(url, headers=headers, json=payload, timeout=25)
         if res.status_code == 200:
             import base64
@@ -622,6 +633,8 @@ class ImageStudioManager:
         # enhance=false prevents Pollinations internal LLM from hallucinating portraits over scene descriptions
         url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={req_w}&height={req_h}&seed={seed}&nologo=true"
         try:
+            # Refuses rather than connecting when this category is off. See egress.py.
+            _egress.require(url, "image")
             res = requests.get(url, timeout=30)
             if res.status_code == 200 and len(res.content) > 5000:
                 if eliminate_watermark and remove_watermark_crop:

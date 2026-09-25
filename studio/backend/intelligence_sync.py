@@ -19,6 +19,11 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import requests
 
+try:  # the shared egress chokepoint
+    from . import egress as _egress
+except ImportError:
+    import egress as _egress
+
 try:
     from .database import get_db
 except ImportError:
@@ -502,6 +507,8 @@ class IntelligenceSyncEngine:
             headers["If-None-Match"] = etag
 
         try:
+            # Refuses rather than connecting when this category is off. See egress.py.
+            _egress.require(target_url, "library")
             res = requests.get(target_url, headers=headers, timeout=5.0)
 
             if res.status_code == 304:

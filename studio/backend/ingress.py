@@ -17,6 +17,11 @@ import logging
 import os
 import re
 import requests
+
+try:  # the shared egress chokepoint
+    from . import egress as _egress
+except ImportError:
+    import egress as _egress
 import threading
 import time
 
@@ -323,6 +328,8 @@ class TelegramIngressDaemon:
         self.last_poll_at = datetime.now(timezone.utc).isoformat()
 
         try:
+            # Refuses rather than connecting when this category is off. See egress.py.
+            _egress.require(url, "ingress")
             res = requests.get(url, params=params, timeout=35)
             if res.status_code == 200:
                 data = res.json()
