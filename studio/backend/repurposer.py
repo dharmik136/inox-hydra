@@ -197,12 +197,20 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
             except Exception as e:
                 print(f"[BYO-AI] Completion failed on {cfg.provider}: {e}")
 
-    # Fallback to direct Gemini if available
-    if not ai_out:
-        gemini_out = call_gemini_api(full_prompt, system_instruction=system_prompt)
-        if gemini_out:
-            ai_out = gemini_out
-            engine_name = "Gemini 2.5 Flash"
+    # No silent fallback to Google.
+    #
+    # This read "if not ai_out: call_gemini_api(...)", and get_gemini_api_key
+    # reads GEMINI_API_KEY, GOOGLE_API_KEY, or a gemini_api_key settings row,
+    # none of which has anything to do with the provider the creator chose. So
+    # an Anthropic user whose Anthropic call failed, or who had configured no
+    # provider at all, had their draft sent to Google because a Gemini key was
+    # left in settings from an earlier experiment. They were never asked, and
+    # the response was labelled "Gemini 2.5 Flash" only after the fact.
+    #
+    # A provider that fails now falls through to the deterministic engine
+    # below, which is the honest answer: this studio could not reach the model
+    # you chose, so here is output that needed no model. Choosing a provider
+    # has to mean something.
 
     if ai_out:
         cleaned = clean_text_formatting(ai_out.strip())
@@ -272,20 +280,11 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
             except Exception as e:
                 print(f"[BYO-AI Hooks] Failed on {cfg.provider}: {e}")
 
-    # Fallback to direct Gemini if available
-    if not resp:
-        api_key = get_gemini_api_key()
-        if api_key:
-            prompt = (
-                f"Generate exactly 10 distinct, high-converting LinkedIn hooks for the topic: '{subject_clean}'.\n"
-                "Archetypes required: Pattern Interrupt, Concrete Metric, Hard Lesson, Counter-Intuitive, "
-                "Tactical Playbook, Cost of Inaction, Quiet Title, Unpopular Truth, Before vs After, Razor of Leverage.\n"
-                "Rules:\n"
-                "- NEVER use em-dashes (\u2014). Use clean punctuation.\n"
-                "- First line must be under 120 characters so it does not truncate before the 'see more' button on mobile.\n"
-                "- Return strictly a valid JSON array of objects with keys: 'archetype', 'hook'. Do not enclose in markdown code blocks."
-            )
-            resp = call_gemini_api(prompt, system_instruction="You output ONLY raw JSON.")
+    # No silent fallback to Google. See the note in repurpose_content: the
+    # Gemini key is read from the environment and from a settings row
+    # regardless of which provider the creator configured, so this sent their
+    # topic to a third party they had not chosen. The configured path above
+    # builds the identical prompt, so nothing is lost but the bypass.
 
     if resp:
         try:
@@ -503,11 +502,10 @@ def repurpose_content(raw_text: Optional[str]) -> List[Dict[str, str]]:
             except Exception as e:
                 print(f"[BYO-AI Repurpose] Failed on {cfg.provider}: {e}")
 
-    # Fallback to direct Gemini if available
-    if not resp:
-        api_key = get_gemini_api_key()
-        if api_key:
-            resp = call_gemini_api(prompt, system_instruction="You output ONLY raw JSON.")
+    # No silent fallback to Google. See the note in repurpose_content: the
+    # Gemini key is read from the environment and from settings regardless of
+    # which provider the creator configured, so this routed their content to a
+    # third party they had not chosen.
 
     if resp:
         try:

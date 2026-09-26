@@ -644,6 +644,15 @@ class ImageStudioManager:
                     except Exception as e:
                         print(f"[ImageStudio] Watermark removal crop error: {e}")
                 return res.content
+        except _egress.EgressRefused:
+            # A refusal is not a provider failure, and must not become a
+            # drawn placeholder with nothing said. Caught by the handler
+            # below, it returned None and the worker fell through to
+            # _create_local_canvas_image, so under INOX_NO_EGRESS=1 the
+            # creator got a generated-looking image and no statement that
+            # anything had been declined. Re-raised so the worker can record
+            # it.
+            raise
         except Exception as e:
             print(f"[ImageStudio] Pollinations network error: {e}")
         return None

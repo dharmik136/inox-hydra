@@ -548,6 +548,21 @@ def execute_llm_completion(
                     if block.get("type") == "text":
                         return block.get("text", "").strip()
 
+    except _egress.EgressRefused:
+        # A policy refusal is not an empty answer, and must not look like one.
+        #
+        # This was caught by the `except Exception` below, printed to stdout,
+        # and turned into "". Every caller reads "" as "the model produced
+        # nothing" and falls through to deterministic output, so with
+        # INOX_NO_EGRESS=1 the studio behaved exactly as though the provider
+        # had returned an empty string: a deterministic draft, no explanation,
+        # and the egress ledger's refused counter as the only evidence
+        # anywhere. The surface that produced the output said nothing.
+        #
+        # Re-raised instead. All three callers already wrap this in try/except
+        # and record the reason, so the refusal reaches provenance and the
+        # creator can see why their draft is the deterministic one.
+        raise
     except Exception as e:
         print(f"[ModelGateway] Error executing LLM completion ({config.provider}): {e}")
 

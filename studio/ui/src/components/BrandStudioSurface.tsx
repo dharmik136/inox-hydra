@@ -571,13 +571,26 @@ function EgressLedger() {
         <p className="studio-meta text-ink-muted">READING</p>
       ) : (
         <>
+          {/* The claim was "the one point every outbound request passes
+              through", and it was not true. Two paths reach the network
+              without passing the chokepoint, so the sentence promised
+              completeness the counter cannot deliver, and a reader would
+              have taken "Nothing has left this machine" as covering
+              everything. Now it says what it counts, and the note below
+              says what it does not. */}
           <p className="mb-3 text-[13px] leading-relaxed text-ink-secondary">
-            Counted since the studio started, at the one point every outbound request passes
-            through.{" "}
+            Counted since the studio started, at the chokepoint every HTTP request this
+            backend makes passes through.{" "}
             {status.total_performed === 0
-              ? "Nothing has left this machine."
-              : `${status.total_performed} request${status.total_performed === 1 ? "" : "s"} left this machine.`}
+              ? "No counted request has left this machine."
+              : `${status.total_performed} counted request${status.total_performed === 1 ? "" : "s"} left this machine.`}
             {status.total_refused > 0 && ` ${status.total_refused} refused.`}
+          </p>
+          <p className="mb-3 text-[12px] leading-relaxed text-ink-muted">
+            Two things are not counted here, because they do not pass through it. Opening
+            LinkedIn in your browser from this studio makes your browser contact LinkedIn
+            directly. And a connected MCP source is a program on this machine that may make
+            its own requests, which this studio neither sees nor can stop.
           </p>
 
           {status.master_off && (
