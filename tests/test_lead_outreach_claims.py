@@ -189,6 +189,26 @@ def test_the_draft_says_only_what_the_record_holds(seeded):
     assert "local-first tooling" in script, "the topic the creator supplied was dropped"
 
 
+def test_no_topic_is_invented_for_the_post(seeded):
+    """
+    Without a topic the draft fell back to "enterprise systems and
+    architecture", naming a post the creator may never have written. The studio
+    does not know which post the lead engaged with, so it says nothing about
+    the subject rather than guessing one.
+    """
+    import leads
+
+    lead_id = seeded()
+    for style in ("value_add", "resource_share", "quick_chat"):
+        script = leads.generate_dm_script(lead_id, style=style)["dm_script"]
+        assert "enterprise systems" not in script, (
+            f"the {style} draft names a post topic nobody supplied:\n{script}"
+        )
+        assert " on ." not in script and " regarding !" not in script, (
+            f"removing the topic left a dangling phrase:\n{script}"
+        )
+
+
 def test_every_lead_can_reach_a_draft():
     """
     The reason this route was worth surfacing.
