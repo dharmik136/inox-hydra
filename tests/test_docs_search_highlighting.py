@@ -33,9 +33,25 @@ from tests.test_composer_text_measurement import ESBUILD, NODE, REPO_ROOT
 
 SNIPPET_MODULE = os.path.join(REPO_ROOT, "studio", "ui", "src", "lib", "snippet.ts")
 DOCS_SURFACE = os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "DocsSurface.tsx")
+RESULTS_SURFACE = os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "HelpCentre.tsx")
 
 PROBE = r"""
-import { splitSnippet } from "./snippet.js";
+import { splitSnippet, readableSnippet, readableInline, readablePlain } from "./snippet.js";
+
+// A run of spans, flattened for comparison. "code" is reported so a test can
+// assert that a fragment never produces one.
+const flat = (spans) => spans.map((s) => {
+  if (s.kind === "text") return s.text;
+  if (s.kind === "code") return "CODE{" + s.text + "}";
+  if (s.kind === "strong") return "B{" + flat(s.spans) + "}";
+  if (s.kind === "em") return "I{" + flat(s.spans) + "}";
+  if (s.kind === "link") return "A{" + flat(s.spans) + "}";
+  return "";
+}).join("");
+
+const readable = (snippet) => readableSnippet(snippet).map((r) => ({
+  text: flat(r.spans), matched: r.matched,
+}));
 
 console.log(JSON.stringify({
   // What FTS5 actually returns for a hit on "hook".
@@ -51,6 +67,34 @@ console.log(JSON.stringify({
   // An empty pair contributes nothing to read.
   hollow: splitSnippet("a<mark></mark>b"),
   adjacent: splitSnippet("<mark>one</mark><mark>two</mark>"),
+
+  // ---- the fragment cases, all taken from real results ------------------
+  // FTS5 returns a window onto the INDEXED SOURCE, so a snippet arrives as
+  // markdown. These were visible on screen the moment results were drawn at
+  // reading width instead of squeezed into a 300px rail.
+  heading: readable("## 4. Security Model & Zero-<mark>Egress</mark> Guarantee"),
+  bullet: readable("* **Provider Key**: `ollama` * **<mark>Egress</mark>**: none"),
+  rule: readable("Offline <mark>mode</mark> ---"),
+  tableRow: readable("| Dimension | <mark>Rule</mark> & Penalty |"),
+  halfLink: readable("...Swipe File](#module-04-viral-swipe-file) Reverse-engineered <mark>hooks</mark>"),
+  // The window cut after an opening bold marker, so its partner is outside.
+  danglingBold: readable("`http://localhost:11434/v1` * **<mark>Egress</mark>"),
+  // Two backticks that were never partners in the source. Pairing them set a
+  // whole sentence in monospace.
+  spuriousCode: readable("py`: Generates a multi-page PDF ready for <mark>LinkedIn</mark> Document`"),
+  boxArt: readable("Toggle -----------------------------+------------- <mark>theme</mark>"),
+  // Balanced emphasis still means something and is kept.
+  realBold: readable("**Consequence**: any update that replaces the <mark>folder</mark>"),
+
+  // Excerpts are windows too: the document's own opening line, cut at 220.
+  excerptPlain: flat(readableInline("The **Studio & Editor** is the core creation environment.")),
+  excerptCut: flat(readableInline("Uses `taplio_vault_archive_backup.json` and **half a bold")),
+  excerptLink: flat(readableInline("See [the manual](modules/01_STUDIO_AND_EDITOR.md) for detail.")),
+
+  // And a heading shown as a plain string needs the same, for a title
+  // attribute or an uppercased breadcrumb.
+  plainTitle: readablePlain("4.1 Global Sidebar (`#global-sidebar`)"),
+  plainBold: readablePlain("**Real.** Encrypted at rest"),
 }));
 """
 
@@ -68,7 +112,14 @@ def runs():
     with tempfile.TemporaryDirectory() as work:
         compiled = os.path.join(work, "snippet.js")
         build = subprocess.run(
-            [ESBUILD, SNIPPET_MODULE, "--format=esm", f"--outfile={compiled}"],
+            [
+                ESBUILD,
+                SNIPPET_MODULE,
+                "--bundle",
+                "--format=esm",
+                f"--alias:@={os.path.join(REPO_ROOT, 'studio', 'ui', 'src')}",
+                f"--outfile={compiled}",
+            ],
             capture_output=True,
             text=True,
             shell=False,
@@ -97,7 +148,15 @@ def test_the_markers_never_reach_the_reader(runs):
     opener with no closer is a document that contains those characters, and
     stripping it there would edit the playbook rather than highlight it.
     """
-    balanced = {name: entries for name, entries in runs.items() if name != "unbalanced"}
+    # Named explicitly rather than taken as "everything in the dict". The probe
+    # grew fragment cases that return a string or a different run shape, and a
+    # test that iterates whatever happens to be there breaks on the next one
+    # added, which is a test about the probe rather than about the parser.
+    #
+    # "unbalanced" is excluded deliberately and has its own test: an opener with
+    # no closer is a document that contains those characters.
+    balanced = {name: runs[name] for name in
+                ("typical", "unmarked", "empty", "foreign", "hollow", "adjacent")}
     for case, entries in balanced.items():
         joined = _text(entries)
         assert "<mark>" not in joined, f"{case} leaked an opening marker to the reader"
@@ -163,13 +222,19 @@ def test_the_surface_renders_runs_rather_than_raw_html():
     """
     Guards the other half: the component must use the parser, and must not
     reach for dangerouslySetInnerHTML as a shortcut back to the same bug.
+
+    Results moved out of the rail and into the reading column, so the component
+    that renders a snippet is the help centre. readableSnippet is splitSnippet
+    with the rest of the markdown handled too, which is what the wider column
+    made visible: the window FTS5 returns is a view onto the source, so it
+    arrives full of headings, bullets and half a link.
     """
-    if not os.path.exists(DOCS_SURFACE):
-        pytest.skip("DocsSurface.tsx is not present in this checkout")
-    with open(DOCS_SURFACE, encoding="utf-8") as handle:
+    if not os.path.exists(RESULTS_SURFACE):
+        pytest.skip("HelpCentre.tsx is not present in this checkout")
+    with open(RESULTS_SURFACE, encoding="utf-8") as handle:
         source = handle.read()
 
-    assert "splitSnippet(" in source, "the docs surface no longer parses the snippet"
+    assert "readableSnippet(" in source, "the help centre no longer parses the snippet"
     assert "dangerouslySetInnerHTML" not in source, (
         "document content was handed to the HTML parser, which renders whatever "
         "a playbook file happens to contain"
@@ -177,3 +242,109 @@ def test_the_surface_renders_runs_rather_than_raw_html():
     assert "{hit.snippet}" not in source, (
         "the raw snippet is being rendered again, which is the original defect"
     )
+
+
+# ---------------------------------------------------------------------------
+# A snippet is a window onto markdown, not a sentence
+# ---------------------------------------------------------------------------
+# splitSnippet solved one half: the FTS5 markers stopped reaching the reader as
+# characters. The other half only became visible when results moved out of the
+# 300px rail and into the reading column, where a snippet is three legible
+# lines. What arrived was "## 4. Security Model", "* **Provider Key**:
+# `ollama`", a trailing "---", and half a link whose label was outside the
+# window. Exactly the defect the document reader had, one layer down.
+
+FRAGMENT_SYNTAX = [
+    ("**", "bold markers"),
+    ("`", "a backtick"),
+    ("](", "half a link"),
+    ("---", "a horizontal rule"),
+    ("|", "a table pipe"),
+]
+
+
+def _joined(runs):
+    return "".join(run["text"] for run in runs)
+
+
+def test_no_block_syntax_survives_into_a_snippet(runs):
+    """
+    A snippet is a preview of a passage, not the passage: there is no heading
+    to draw, no list to indent and no rule to place.
+    """
+    for case in ("heading", "bullet", "rule", "tableRow", "halfLink", "boxArt"):
+        text = _joined(runs[case])
+        for token, why in FRAGMENT_SYNTAX:
+            assert token not in text, f"{case} still shows {why}: {text!r}"
+        assert "#" not in text, f"{case} still shows a heading marker: {text!r}"
+
+
+def test_the_match_is_still_marked_after_cleaning(runs):
+    """
+    Cleaning happens before the markers are split, so the marks travel with the
+    text they surround. Losing the highlight would trade one defect for another.
+    """
+    for case in ("heading", "bullet", "rule", "tableRow", "halfLink", "danglingBold", "boxArt", "realBold"):
+        marked = [run["text"] for run in runs[case] if run["matched"]]
+        assert marked, f"{case} lost its highlight"
+        assert all(text.strip() for text in marked), f"{case} marked an empty run"
+
+
+def test_balanced_emphasis_is_kept(runs):
+    """The cleaning is of what the window broke, not of the document's own markup."""
+    assert "B{Consequence}" in _joined(runs["realBold"]), runs["realBold"]
+    assert "B{Studio & Editor}" in runs["excerptPlain"], runs["excerptPlain"]
+
+
+def test_an_unpairable_emphasis_marker_is_dropped(runs):
+    """
+    A window that opens inside a bolded phrase leaves a marker whose partner is
+    outside it. An unpaired delimiter marks nothing, so printing it is showing
+    the reader punctuation that means nothing.
+
+    Two layers enforce this: the odd count check before parsing, and the sweep
+    of leftover delimiters out of text spans afterwards. Removing either alone
+    leaves this green, which is defence in depth rather than a weak check.
+    Removing both fails it with "**Egress" on screen, which is how that was
+    established rather than assumed.
+    """
+    text = _joined(runs["danglingBold"])
+    assert "**" not in text, f"a dangling bold marker reached the reader: {text!r}"
+    assert "Egress" in text, "the word the marker was attached to was dropped with it"
+    assert "**" not in runs["excerptCut"], runs["excerptCut"]
+
+
+def test_a_fragment_never_claims_that_prose_is_code(runs):
+    """
+    The subtle one, and the reason backticks are dropped from a fragment
+    outright rather than balanced.
+
+    Two backticks that were never partners in the source sit next to each other
+    once the window has cut, and the parser pairs them. A mis-paired emphasis
+    puts the wrong words in bold; a mis-paired code span claims that run IS
+    code, and a whole sentence in monospace is the interface asserting
+    something untrue about the content.
+    """
+    for case in ("spuriousCode", "bullet", "danglingBold"):
+        text = _joined(runs[case])
+        assert "CODE{" not in text, f"{case} produced a code span from a windowed fragment: {text!r}"
+        assert "`" not in text, f"{case} leaked a backtick: {text!r}"
+    assert "CODE{" not in runs["excerptCut"], runs["excerptCut"]
+    # The words survive; only the claim about what they are is dropped.
+    assert "LinkedIn" in _joined(runs["spuriousCode"])
+    assert "taplio_vault_archive_backup.json" in runs["excerptCut"]
+
+
+def test_a_link_in_an_excerpt_reads_as_its_label(runs):
+    """A preview is not a place to navigate from, so the target is not shown."""
+    assert "A{the manual}" in runs["excerptLink"], runs["excerptLink"]
+    assert "modules/01" not in runs["excerptLink"], runs["excerptLink"]
+
+
+def test_a_title_shown_as_a_plain_string_is_cleaned_too(runs):
+    """
+    Headings are markdown as well, and they reach places a run of spans cannot
+    go: a title attribute, an accessible name, an uppercased breadcrumb.
+    """
+    assert runs["plainTitle"] == "4.1 Global Sidebar (#global-sidebar)", runs["plainTitle"]
+    assert runs["plainBold"] == "Real. Encrypted at rest", runs["plainBold"]
