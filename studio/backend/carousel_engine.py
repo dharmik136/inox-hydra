@@ -282,14 +282,22 @@ class CarouselDeckEngine:
         svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   <defs>
     <style>
-      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&amp;family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap');
-      .tag {{ font-family: 'Plus Jakarta Sans', sans-serif; font-size: 26px; font-weight: 700; fill: {th['accent']}; letter-spacing: 2px; text-transform: uppercase; }}
-      .pagination {{ font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 600; fill: {th['text_secondary']}; }}
-      .title {{ font-family: 'Plus Jakarta Sans', sans-serif; font-size: {title_font}px; font-weight: 800; fill: {th['text_primary']}; line-height: {TITLE_LINE_RATIO}; letter-spacing: -0.5px; overflow-wrap: break-word; }}
-      .body {{ font-family: 'Inter', sans-serif; font-size: {body_font}px; font-weight: 400; fill: {th['text_body']}; line-height: {BODY_LINE_RATIO}; overflow-wrap: break-word; }}
-      .author {{ font-family: 'Plus Jakarta Sans', sans-serif; font-size: 24px; font-weight: 700; fill: {th['text_primary']}; }}
-      .author-sub {{ font-family: 'Inter', sans-serif; font-size: 18px; font-weight: 500; fill: {th['text_secondary']}; }}
-      .swipe-cta {{ font-family: 'Plus Jakarta Sans', sans-serif; font-size: 22px; font-weight: 600; fill: {th['accent']}; }}
+      /* No webfont import. The interface stopped opening three connections
+         to Google for type and vendored the faces instead; this renderer
+         kept its own, so every generated deck still reached out, and on
+         an air-gapped machine silently fell back mid-render.
+
+         The stacks below name the faces the studio already ships in
+         frontend_next, then the platform equivalents. Plus Jakarta Sans
+         was never vendored, so its role goes to Inter at a heavier
+         weight rather than to a face that has to be fetched. */
+      .tag {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: 26px; font-weight: 700; fill: {th['accent']}; letter-spacing: 2px; text-transform: uppercase; }}
+      .pagination {{ font-family: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Consolas, monospace; font-size: 24px; font-weight: 600; fill: {th['text_secondary']}; }}
+      .title {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: {title_font}px; font-weight: 800; fill: {th['text_primary']}; line-height: {TITLE_LINE_RATIO}; letter-spacing: -0.5px; overflow-wrap: break-word; }}
+      .body {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: {body_font}px; font-weight: 400; fill: {th['text_body']}; line-height: {BODY_LINE_RATIO}; overflow-wrap: break-word; }}
+      .author {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: 24px; font-weight: 700; fill: {th['text_primary']}; }}
+      .author-sub {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: 18px; font-weight: 500; fill: {th['text_secondary']}; }}
+      .swipe-cta {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: 22px; font-weight: 600; fill: {th['accent']}; }}
     </style>
     <linearGradient id="bgGrad" x1="1" y1="0" x2="0" y2="1">
       <stop offset="0%" stop-color="{th['accent']}" stop-opacity="0.25"/>

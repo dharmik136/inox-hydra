@@ -345,6 +345,10 @@ def init_db() -> None:
         engagement_multiplier TEXT,
         pacing_style TEXT,
         example_post_id TEXT,
+        -- origin belongs to migration 9, not here. init_db is the version 1
+        -- baseline that every existing database already matches, and a column
+        -- added here reaches only machines that create their database fresh.
+        -- test_schema_baseline_frozen.py caught exactly that.
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)

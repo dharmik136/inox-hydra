@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { CalendarClock, Loader2, Send } from "lucide-react";
+import { CalendarClock, CheckCheck, Loader2 } from "lucide-react";
 import {
   fetchNextSlot,
   publishNow,
@@ -19,9 +19,21 @@ interface PublishDialogProps {
 }
 
 /**
- * Publishing, which until now the Publish button did not do.
+ * Recording a post as out, and queueing one for later.
  *
- * Two outcomes, both irreversible from here: send it, or put it in the queue.
+ * Neither of these sends anything to LinkedIn, and the copy here says so,
+ * because the first version did not. It offered to "send this now", called
+ * the action "Publish now", and the composer answered with a green check
+ * reading PUBLISHED. What actually happens is that /api/posts/{id}/publish-now
+ * sets a row's status and stamps published_at. The backend makes no outbound
+ * HTTP request anywhere, which is the product's headline claim, so a studio
+ * that reported a delivery was reporting one that cannot occur.
+ *
+ * Posting happens in LinkedIn, by the author. The extension is a passive
+ * bridge by design (docs/EXTENSION_AND_SYNC.md), and the post is tied back to
+ * the record afterwards through its activity URN. So the honest verb for this
+ * control is "mark", and the queue path is genuinely a local schedule.
+ *
  * The scheduling path validates the cadence before committing, because the
  * write rejects an invalid time with a 400 and a rejection after the click
  * reads as a broken control rather than as the twelve hour rule it is.
@@ -69,7 +81,7 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
     try {
       if (action === "now") {
         await publishNow(postId);
-        onDone("Published");
+        onDone("Marked as published");
       } else {
         if (!slot) throw new Error("No slot is available to schedule into.");
         await schedulePost(postId, slot.slot_datetime);
@@ -117,7 +129,11 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
             ) : (
               <>
                 <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
-                  Send this now, or put it in the queue.
+                  Mark this as published in your record, or put it in the queue.
+                </p>
+                <p className="studio-meta mt-2 leading-snug text-ink-muted">
+                  NEITHER SENDS ANYTHING TO LINKEDIN. BOTH WRITE TO THIS MACHINE ONLY,
+                  SO THE POST ITSELF IS STILL YOURS TO MAKE.
                 </p>
 
                 {slot && (
@@ -176,9 +192,9 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
                     {busy ? (
                       <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                     ) : (
-                      <Send className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                      <CheckCheck className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
                     )}
-                    Publish now
+                    Mark as published
                   </button>
                 </div>
               </>

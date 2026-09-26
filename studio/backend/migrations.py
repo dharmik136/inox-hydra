@@ -153,6 +153,41 @@ def _migrate_provenance(cursor: sqlite3.Cursor) -> None:
             cursor.execute(f"ALTER TABLE {table} ADD COLUMN source TEXT")
 
 
+def _migrate_template_provenance(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 9:
+    Records where a swipe specimen came from.
+
+    viral_templates ships 36 rows in the box, each carrying a hook, a
+    velocity score and engagement counts in the thousands. The surface drew
+    them exactly as it would draw a post the creator had captured, because
+    nothing on the row distinguished the two. A card reading 9,800 REACTIONS
+    was a number no one measured, presented as one someone had.
+
+    analytics_daily learned this lesson at migration 4 and the swipe file did
+    not, so the same product held two surfaces to different standards. Three
+    values are meaningful:
+
+      'shipped'   written by the offline seeder, in the box
+      'synced'    pulled from a bundle feed
+      'imported'  read from a bundle file the creator supplied
+      NULL        written before this column existed, origin unknown
+
+    None of the three is a post anyone measured. The table has no reaction or
+    comment columns at all, which is why the endpoint that serves it reports
+    neither: the counts it used to emit were computed at render time.
+
+    Existing rows are left NULL rather than guessed at, for the same reason
+    migration 4 left its own alone: this database cannot know which of its
+    rows were seeded, and inventing a classification here would be the exact
+    mistake the column exists to prevent.
+    """
+    cursor.execute("PRAGMA table_info(viral_templates)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "origin" not in columns:
+        cursor.execute("ALTER TABLE viral_templates ADD COLUMN origin TEXT")
+
+
 def _migrate_observation_window(cursor: sqlite3.Cursor) -> None:
     """
     Migration 5:
@@ -302,6 +337,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (6, "Record capture context on lead_interactions", _migrate_capture_context),
     (7, "Give a post the activity URN and fingerprint that identify it", _migrate_post_identity),
     (8, "Record screen, section and reproduction context on internal sheet issues", _migrate_annotation_context),
+    (9, "Record where a swipe specimen came from", _migrate_template_provenance),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

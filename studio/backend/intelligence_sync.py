@@ -19,6 +19,11 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import requests
 
+try:  # the shared egress chokepoint
+    from . import egress as _egress
+except ImportError:
+    import egress as _egress
+
 try:
     from .database import get_db
 except ImportError:
@@ -435,8 +440,8 @@ class IntelligenceSyncEngine:
                     cursor.execute("""
                     INSERT INTO viral_templates (
                         archetype, hook_text, velocity_score, engagement_multiplier,
-                        pacing_style, example_post_id, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        pacing_style, example_post_id, origin, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'shipped', CURRENT_TIMESTAMP)
                     """, (
                         t["archetype"],
                         t["hook_text"],
@@ -502,6 +507,8 @@ class IntelligenceSyncEngine:
             headers["If-None-Match"] = etag
 
         try:
+            # Refuses rather than connecting when this category is off. See egress.py.
+            _egress.require(target_url, "library")
             res = requests.get(target_url, headers=headers, timeout=5.0)
 
             if res.status_code == 304:
@@ -575,11 +582,15 @@ class IntelligenceSyncEngine:
                     with conn:
                         cursor = conn.cursor()
                         cursor.execute("DELETE FROM viral_templates")
+                        # 'synced', not 'shipped'. These arrived from a bundle
+                        # feed, so calling them shipped would be a guess about
+                        # where a row came from, which is the thing the column
+                        # exists to stop.
                         cursor.executemany("""
                         INSERT INTO viral_templates (
                             archetype, hook_text, velocity_score, engagement_multiplier,
-                            pacing_style, example_post_id, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                            pacing_style, example_post_id, origin, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, 'synced', CURRENT_TIMESTAMP)
                         """, cleaned_rows)
                 finally:
                     if conn:
@@ -647,7 +658,7 @@ class IntelligenceSyncEngine:
             where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
             sql = f"""
             SELECT id, archetype, hook_text, velocity_score, engagement_multiplier,
-                   pacing_style, example_post_id, updated_at
+                   pacing_style, example_post_id, origin, updated_at
             FROM viral_templates
             {where_clause}
             ORDER BY velocity_score DESC
@@ -791,8 +802,8 @@ class IntelligenceSyncEngine:
                     cursor.execute("""
                     INSERT INTO viral_templates (
                         archetype, hook_text, velocity_score, engagement_multiplier,
-                        pacing_style, example_post_id, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        pacing_style, example_post_id, origin, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'imported', CURRENT_TIMESTAMP)
                     """, (
                         str(h.get("archetype", "General"))[:MAX_ARCHETYPE_LENGTH],
                         hook_text,
