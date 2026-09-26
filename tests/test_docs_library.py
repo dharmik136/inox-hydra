@@ -786,17 +786,27 @@ def _help_articles():
     return sorted(name for name in os.listdir(HELP_DIR) if name.endswith(".md"))
 
 
+# Written in the help style but for whoever maintains the studio, so they are
+# filed where that reader looks. Named here so a user article cannot drift into
+# the reference by accident.
+MAINTAINER_ARTICLES = {"command-line-tool-reference.md", "turn-on-devtools.md"}
+
+
 def test_every_help_article_is_filed_under_help():
     """An article written for the user must not end up among the reference."""
-    help_paths = {
-        path
-        for section in docs_engine.HELP_SECTIONS
-        if docs_engine.section_kind(section["id"]) == "help"
-        for path in section["paths"]
-    }
+    def paths_of(kind):
+        return {
+            path
+            for section in docs_engine.HELP_SECTIONS
+            if docs_engine.section_kind(section["id"]) == kind
+            for path in section["paths"]
+        }
+
+    help_paths, reference_paths = paths_of("help"), paths_of("reference")
     for name in _help_articles():
-        assert f"help/{name}" in help_paths, (
-            f"docs/help/{name} is not filed under a help section"
+        expected = reference_paths if name in MAINTAINER_ARTICLES else help_paths
+        assert f"help/{name}" in expected, (
+            f"docs/help/{name} is not filed where its reader will look"
         )
 
 

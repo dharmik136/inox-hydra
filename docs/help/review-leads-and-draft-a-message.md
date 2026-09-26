@@ -35,7 +35,7 @@ Under **Pipeline**, click one of the four stages: **New Lead**, **Outreach Sent*
 
 ## Draft a message
 
-1. In **THE POST THEY ENGAGED WITH**, type the subject of the post. The studio does not know which post it was.
+1. In **THE POST THEY ENGAGED WITH**, you can type the subject of the post. The box is optional. Left blank, the draft says only "my recent post". The studio does not know which post it was.
 2. Click a style: **Peer question**, **Offer a blueprint**, **Suggest a call** or **Reply to their comment**.
 3. Read the draft. Its label says which control wrote it.
 4. Click **COPY**, then edit and send it yourself in LinkedIn.
@@ -50,7 +50,7 @@ Under **Pipeline**, click one of the four stages: **New Lead**, **Outreach Sent*
 > [!IMPORTANT]
 > The drafts contain fixed wording about architecture and engineering. If a comment contains a question, **Reply to their comment** also adds "We found decoupling background ingestion eliminates write lock contention entirely." Rewrite anything that is not true of you before sending.
 
-If the topic box is empty, the first three use "enterprise systems and architecture" and **Reply to their comment** uses "sovereign creator stack".
+If the topic box is empty, the first three name no subject: **Peer question** and **Offer a blueprint** say only "my recent post", and **Suggest a call** says only "my post". **Reply to their comment** still uses "sovereign creator stack".
 
 ## What happens
 
