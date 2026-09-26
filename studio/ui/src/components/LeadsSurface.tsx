@@ -2,10 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Copy, Download, ExternalLink, Loader2 } from "lucide-react";
 import {
+  DM_STYLES,
   LEADS_CSV_URL,
   LEAD_STATUSES,
   copyExtensionPath,
   fetchBrowserBridge,
+  fetchLeadDmScript,
   fetchLeadTimeline,
   fetchLeads,
   launchBridge,
@@ -120,18 +122,52 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
   const [data, setData] = useState<{ lead: Lead; interactions: LeadInteraction[] } | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [draft, setDraft] = useState<string | null>(null);
+  // The label travels with the text, so the panel can say which of the four
+  // controls wrote what is in it. A draft whose provenance is invisible is one
+  // the creator cannot judge.
+  const [draft, setDraft] = useState<{ label: string; text: string } | null>(null);
+  const [drafting, setDrafting] = useState<string | null>(null);
+  const [topic, setTopic] = useState("");
+  const [copied, setCopied] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setData(await fetchLeadTimeline(leadId));
   }, [leadId]);
 
+  /**
+   * One path for all four drafting controls.
+   *
+   * They differ only in which route they call, so sharing the in-flight key,
+   * the error surface and the panel write keeps them from drifting into four
+   * slightly different behaviours on failure.
+   */
+  const draftWith = useCallback(
+    async (key: string, label: string, produce: () => Promise<string>) => {
+      setDrafting(key);
+      setActionError(null);
+      setCopied(false);
+      try {
+        setDraft({ label, text: await produce() });
+      } catch (caught) {
+        setActionError(caught instanceof Error ? caught.message : "The draft was refused.");
+      } finally {
+        setDrafting(null);
+      }
+    },
+    [],
+  );
+
   useEffect(() => {
     let live = true;
     setData(null);
     setFailed(false);
     setDraft(null);
+    setDrafting(null);
+    setCopied(false);
+    // The topic is about the creator's own posting, not about the lead, so it
+    // survives moving between people in the stream. Clearing it would make a
+    // creator retype the same subject for every lead in a session.
     setActionError(null);
     fetchLeadTimeline(leadId)
       .then((result) => live && setData(result))
@@ -267,44 +303,93 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
         </div>
       </section>
 
+      {/* Drafting a message.
+       *
+       * This used to offer one control, a reply built from something the lead
+       * said, which left every lead who reacted rather than commented with a
+       * disabled button and the sentence NO COMMENT TO DRAFT A REPLY FROM. That
+       * read as a limit of the product and was not one: the backend also writes
+       * three openers from the stored row alone, which is present for every
+       * lead in the stream, and nothing called it.
+       *
+       * So the four sit together, and which ones are available depends on what
+       * is actually known about the person rather than on which route existed
+       * first. The reply is listed last because it needs a comment; the three
+       * openers never do. */}
       <section className="mt-6">
-        <div className="mb-2 flex items-baseline justify-between gap-3">
-          <p className="studio-label">Suggested reply</p>
-          <button
-            type="button"
-            disabled={busy || !latestComment}
-            title={latestComment ? undefined : "A reply is drafted from a comment this lead left"}
-            onClick={async () => {
-              if (!latestComment) return;
-              setBusy(true);
-              setActionError(null);
-              try {
-                setDraft(await generateLeadDm(lead.name, latestComment));
-              } catch (caught) {
-                setActionError(caught instanceof Error ? caught.message : "The draft was refused.");
-              } finally {
-                setBusy(false);
+        <p className="studio-label mb-1">Draft a message</p>
+        <p className="mb-3 text-[12px] leading-snug text-ink-muted">
+          Written from this lead&rsquo;s own record, then yours to edit. Nothing is sent from here;
+          LinkedIn DMs are not something this studio can do on your behalf.
+        </p>
+
+        {/* The template writes "my recent post on ...", and the studio does not
+            know which post they engaged with, so it guesses a subject. A
+            creator whose work is about something else would send a draft that
+            names the wrong topic, which is worth one input to avoid. */}
+        <label className="mb-3 block">
+          <span className="studio-meta text-[10px] text-ink-muted">THE POST THEY ENGAGED WITH</span>
+          <input
+            type="text"
+            value={topic}
+            onChange={(event) => setTopic(event.target.value)}
+            placeholder="enterprise systems and architecture"
+            className="mt-1 w-full rounded-md border border-edge bg-ink px-2.5 py-1.5 text-[13px] text-ink-primary placeholder:text-ink-muted focus:border-edge-strong focus:outline-none"
+          />
+        </label>
+
+        <div className="flex flex-wrap gap-1">
+          {DM_STYLES.map((style) => (
+            <DraftButton
+              key={style.id}
+              label={style.label}
+              pending={drafting === style.id}
+              disabled={drafting !== null}
+              onPress={() =>
+                void draftWith(style.id, style.label, () => fetchLeadDmScript(lead.id, style.id, topic))
               }
-            }}
-            className="studio-meta flex items-center gap-1 text-[10px] text-ink-muted transition-colors hover:text-ink-primary disabled:opacity-40"
-          >
-            {busy && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
-            DRAFT ONE
-          </button>
+            />
+          ))}
+          <DraftButton
+            label="Reply to their comment"
+            pending={drafting === "reply"}
+            disabled={drafting !== null || !latestComment}
+            hint={latestComment ? undefined : "This lead has left no comment to reply to"}
+            onPress={() =>
+              void draftWith("reply", "Reply to their comment", () =>
+                generateLeadDm(lead.name, latestComment as string, topic || undefined),
+              )
+            }
+          />
         </div>
 
         {draft ?? suggested ? (
-          <p className="rounded-md border border-edge bg-ink p-3 text-[13px] leading-relaxed whitespace-pre-wrap text-ink-secondary">
-            {draft ?? suggested}
-          </p>
+          <div className="mt-3">
+            <div className="mb-1.5 flex items-baseline justify-between gap-3">
+              <p className="studio-meta text-[10px] text-ink-muted">
+                {draft ? draft.label.toUpperCase() : "SAVED WITH AN EARLIER INTERACTION"}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(draft?.text ?? suggested ?? "");
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1600);
+                }}
+                className="studio-meta flex items-center gap-1 text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+              >
+                <Copy className="size-3" strokeWidth={2} aria-hidden="true" />
+                {copied ? "COPIED" : "COPY"}
+              </button>
+            </div>
+            <p className="rounded-md border border-edge bg-ink p-3 text-[13px] leading-relaxed whitespace-pre-wrap text-ink-secondary">
+              {draft?.text ?? suggested}
+            </p>
+          </div>
         ) : (
           /* Nothing is generated on render. Drafting is an action the creator
              takes, because these are words that go out under their name. */
-          <p className="studio-meta text-ink-muted">
-            {latestComment
-              ? "NO REPLY DRAFTED FOR THIS LEAD YET"
-              : "NO COMMENT FROM THIS LEAD TO DRAFT A REPLY FROM"}
-          </p>
+          <p className="studio-meta mt-3 text-ink-muted">NOTHING DRAFTED FOR THIS LEAD YET</p>
         )}
 
         {actionError && (
@@ -314,6 +399,44 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
         )}
       </section>
     </article>
+  );
+}
+
+/**
+ * One of the four drafting controls.
+ *
+ * Disabled carries a reason whenever there is one: a control that is greyed out
+ * and silent about why reads as broken rather than as unavailable.
+ */
+function DraftButton({
+  label,
+  pending,
+  disabled,
+  hint,
+  onPress,
+}: {
+  label: string;
+  pending: boolean;
+  disabled: boolean;
+  hint?: string;
+  onPress: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      title={hint}
+      onClick={onPress}
+      className={cn(
+        "flex items-center gap-1 rounded-full border border-edge px-2.5 py-0.5 text-[11px] text-ink-secondary",
+        "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
+        "hover:border-edge-strong hover:text-ink-primary",
+        disabled && "opacity-40 hover:border-edge hover:text-ink-secondary",
+      )}
+    >
+      {pending && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
+      {label}
+    </button>
   );
 }
 

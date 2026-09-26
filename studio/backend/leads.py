@@ -321,10 +321,19 @@ def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optio
                 f"If you are ever open to a low-key 15-minute virtual coffee to swap notes on engineering architecture, I would love to connect."
             )
         else:  # value_add (default)
+            # Only a comment carries a perspective. Thanking someone for theirs
+            # when they clicked a reaction attributes an opinion they did not
+            # state, in a message going out under the creator's name, so the
+            # sentence is conditional on there being something to appreciate.
+            appreciation = (
+                " Really appreciated your perspective!"
+                if lead["engagement_type"] == "Commented"
+                else ""
+            )
             script = (
                 f"Hi {first_name},\n\n"
-                f"Saw that you {action_saw} my recent post on {topic}. "
-                f"Really appreciated your perspective!{comment_ref}\n\n"
+                f"Saw that you {action_saw} my recent post on {topic}."
+                f"{appreciation}{comment_ref}\n\n"
                 f"Curious how you and {company} are currently navigating foundational observability and decoupling logic as you scale?\n\n"
                 f"Would love to exchange notes if you're open to connecting."
             )
