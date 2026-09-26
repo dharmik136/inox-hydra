@@ -714,8 +714,12 @@ def test_a_hit_reports_its_help_section_without_losing_its_heading():
 
 
 def test_an_opened_document_reports_its_section():
-    body = client.get("/api/docs/data_architecture").json()
+    body = client.get("/api/docs/help-what-leaves-this-machine").json()
     assert body["section"] == "Your data and privacy", body["section"]
+    # The engineering account of the same subject is maintainer reference now,
+    # not user help, and says so.
+    body = client.get("/api/docs/data_architecture").json()
+    assert body["section"] == "For maintainers", body["section"]
 
 
 # ---------------------------------------------------------------------------
@@ -762,3 +766,150 @@ def test_the_view_is_held_rather_than_derived_from_the_query():
     assert "const [view, setView] = useState<View>" in source, (
         "the reading column decides what to show from the query again"
     )
+
+
+# ---------------------------------------------------------------------------
+# The help articles
+# ---------------------------------------------------------------------------
+# Sixteen articles under docs/help, drafted from a brief by a researcher who
+# walked the interface and the routes behind it, then checked claim by claim
+# against the code by a reviewer told to assume every sentence was wrong. That
+# pass made 127 corrections. These guards hold the shape that made them worth
+# writing; the claims themselves are held by the code they describe.
+
+HELP_DIR = os.path.join(DOCS_DIR, "help")
+
+
+def _help_articles():
+    if not os.path.isdir(HELP_DIR):
+        pytest.skip("docs/help is not present in this checkout")
+    return sorted(name for name in os.listdir(HELP_DIR) if name.endswith(".md"))
+
+
+def test_every_help_article_is_filed_under_help():
+    """An article written for the user must not end up among the reference."""
+    help_paths = {
+        path
+        for section in docs_engine.HELP_SECTIONS
+        if docs_engine.section_kind(section["id"]) == "help"
+        for path in section["paths"]
+    }
+    for name in _help_articles():
+        assert f"help/{name}" in help_paths, (
+            f"docs/help/{name} is not filed under a help section"
+        )
+
+
+def test_help_articles_follow_the_house_shape():
+    """
+    Title first, then one plain sentence, because that sentence is what the
+    library shows as the excerpt and what a search result leads with.
+    """
+    em_dash = chr(8212)
+    for name in _help_articles():
+        with open(os.path.join(HELP_DIR, name), encoding="utf-8") as handle:
+            text = handle.read()
+        lines = [line for line in text.splitlines() if line.strip()]
+        assert lines[0].startswith("# "), f"{name} does not open with its title"
+        assert not lines[1].startswith(("#", ">", "|", "-", "*", "1.")), (
+            f"{name} has no summary sentence under its title"
+        )
+        assert em_dash not in text, f"{name} contains an em dash"
+        assert not text.lstrip().startswith("---"), f"{name} has front matter the parser would print"
+
+
+def test_links_between_help_articles_resolve():
+    """A dead cross reference is rendered as text, which is honest and useless."""
+    for name in _help_articles():
+        with open(os.path.join(HELP_DIR, name), encoding="utf-8") as handle:
+            text = handle.read()
+        for target in re.findall(r"\]\(([^)#\s]+\.md)", text):
+            resolved = os.path.normpath(os.path.join(HELP_DIR, target))
+            assert os.path.isfile(resolved), f"{name} links to {target}, which does not exist"
+
+
+def test_help_articles_hold_no_credential_values():
+    """They describe where li_at and a key go. They never show one."""
+    pattern = re.compile(r"AQED[A-Za-z0-9_-]{8,}|sk-[A-Za-z0-9]{16,}|ajax:[0-9]{8,}")
+    for name in _help_articles():
+        with open(os.path.join(HELP_DIR, name), encoding="utf-8") as handle:
+            assert not pattern.search(handle.read()), f"{name} contains something shaped like a credential"
+
+
+def test_a_retired_document_is_marked_and_an_article_is_not(catalogue):
+    """
+    The old module manuals are served, because they are the record, but the
+    review found them contradicted by the code in places. The reader has to be
+    told before it reads "356 vaulted blueprints".
+    """
+    assert client.get("/api/docs/enterprise-usage").json()["retired"] is True
+    assert client.get("/api/docs/studio-editor").json()["retired"] is True
+    assert client.get("/api/docs/help-what-leaves-this-machine").json()["retired"] is False
+
+    kinds = {section["id"]: section["kind"] for section in catalogue["sections"]}
+    assert kinds.get("retired") == "retired" and kinds.get("maintainers") == "reference", kinds
+
+
+def test_contradicted_manuals_are_not_filed_as_help():
+    """
+    The critic's placement report found these contradicted by the code. Filing
+    any of them under a help section would be the studio repeating a claim it
+    knows to be false.
+    """
+    contradicted = {
+        "ENTERPRISE_USAGE.md", "GETTING_STARTED.md", "EXTENSION_AND_SYNC.md", "AI_ENGINE.md",
+        "modules/05_ANALYTICS.md", "modules/04_VIRAL_SWIPE_FILE.md",
+    }
+    for section in docs_engine.HELP_SECTIONS:
+        if docs_engine.section_kind(section["id"]) != "help":
+            continue
+        clash = contradicted.intersection(section["paths"])
+        assert not clash, f"{section['title']} files contradicted manuals as help: {sorted(clash)}"
+
+
+def test_the_reader_warns_before_a_retired_document():
+    source = _rendered(os.path.join(UI_SRC, "components", "DocsSurface.tsx"))
+    assert "doc.retired &&" in source, "a retired manual opens with no notice"
+
+
+def test_the_landing_view_keeps_help_apart_from_the_record():
+    source = _rendered(os.path.join(UI_SRC, "components", "HelpCentre.tsx"))
+    assert 'section.kind === "help"' in source, (
+        "maintainer reference and retired manuals are drawn as help topics again"
+    )
+
+
+def test_search_leads_with_help_rather_than_the_record():
+    """
+    Searching "extension" once put the retired Chrome-only setup guide first,
+    above the help article written because that guide is wrong. Within a kind
+    the index's order stands; across kinds, help comes first.
+    """
+    order = {"help": 0, "reference": 1, "retired": 2}
+    for term in ("extension", "egress", "queue", "backup", "analytics"):
+        hits = client.get(f"/api/docs/search?q={term}&limit=20").json()["results"]
+        assert hits, f"no hits for {term}"
+        kinds = [hit["kind"] for hit in hits]
+        assert kinds == sorted(kinds, key=order.get), (
+            f"searching {term!r} interleaves kinds: {kinds}"
+        )
+        if "help" in kinds:
+            assert kinds[0] == "help", f"searching {term!r} does not lead with help: {kinds[:5]}"
+
+
+def test_the_requested_limit_still_holds():
+    """The wider window is internal; a caller gets what it asked for and no more."""
+    assert len(client.get("/api/docs/search?q=the&limit=5").json()["results"]) <= 5
+    assert client.get("/api/docs/search?q=system&limit=500").json()["count"] <= 100
+
+
+def test_name_matches_are_ordered_and_labelled_too():
+    """
+    Name matches are filtered on the client, so the server's ordering never
+    reached them. Searching "extension" still led with the retired Chrome-only
+    guide, through the list that sits above the passages.
+    """
+    source = _rendered(os.path.join(UI_SRC, "components", "DocsSurface.tsx"))
+    assert "a.rank - b.rank" in source, "name matches are not grouped by kind"
+    results = _rendered(os.path.join(UI_SRC, "components", "HelpCentre.tsx"))
+    assert "sectionTitle(entry.section)" in results, "a name match does not say where it is filed"

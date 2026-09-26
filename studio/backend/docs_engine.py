@@ -519,20 +519,107 @@ def document_library(docs_dir=None):
 # whichever bucket happened to be last.
 
 HELP_SECTIONS = [
+    # ---- Help: written for the person using the studio -----------------
+    #
+    # Every article under docs/help was drafted from a brief written by a
+    # researcher who walked the interface and the routes behind it, then had
+    # every claim checked against the code by a separate reviewer told to
+    # assume each sentence was wrong. 127 corrections came out of that pass.
     {
         "id": "start",
-        "title": "Start here",
-        "blurb": "Installing it, the first launch, and what the studio does before anything is configured.",
+        "title": "Get started",
+        "blurb": "Start the studio, see what a fresh install looks like, and find your way around the rail.",
         "paths": [
-            "GETTING_STARTED.md",
-            "FIRST_RUN.md",
-            "README.md",
+            "help/open-the-studio-for-the-first-time.md",
         ],
     },
     {
-        "id": "using",
-        "title": "Using the studio",
-        "blurb": "The six module manuals, the master operational guide, and the content strategy they assume.",
+        "id": "write",
+        "title": "Write and publish",
+        "blurb": "Write a post, try a new opening, check it before posting, and record, queue or send it.",
+        "paths": [
+            "help/write-format-and-save-a-post.md",
+            "help/try-a-different-opening-line.md",
+            "help/check-a-draft-before-you-post.md",
+            "help/publish-queue-or-send-to-linkedin.md",
+            "help/how-the-queue-works.md",
+            "strategy_playbook.md",
+        ],
+    },
+    {
+        "id": "audience",
+        "title": "Leads and analytics",
+        "blurb": "Install the browser extension, review the people who engaged, and read your own numbers.",
+        "paths": [
+            "help/install-the-browser-extension.md",
+            "help/review-leads-and-draft-a-message.md",
+            "help/read-your-analytics.md",
+        ],
+    },
+    {
+        "id": "ai",
+        "title": "Bring your own AI",
+        "blurb": "Connect an AI provider, see what it is sent, and add or generate images.",
+        "paths": [
+            "help/connect-your-own-ai-provider.md",
+            "help/add-images-to-your-media-library.md",
+        ],
+    },
+    {
+        "id": "data",
+        "title": "Your data and privacy",
+        "blurb": "What stays on this machine, what can leave it, your LinkedIn session, and backups.",
+        "paths": [
+            "help/what-leaves-this-machine.md",
+            "help/connect-your-linkedin-session.md",
+            "help/back-up-restore-and-export.md",
+        ],
+    },
+    {
+        "id": "troubleshooting",
+        "title": "Fix a problem",
+        "blurb": "The studio will not open, a list is empty, or an error message needs explaining.",
+        "paths": [
+            "help/the-studio-will-not-open.md",
+            "help/why-is-my-lead-list-empty.md",
+        ],
+    },
+    # ---- For maintainers: current, and checked against the code ----------
+    {
+        "id": "maintainers",
+        "title": "For maintainers",
+        "blurb": "How the studio is built: data, architecture, the API, the desktop shell, packaging, and the rules the interface is held to.",
+        "paths": [
+            "DATA_ARCHITECTURE.md",
+            "ARCHITECTURE.md",
+            "API_REFERENCE.md",
+            "BYO_AI_ARCHITECTURE.md",
+            "DESKTOP_SHELL.md",
+            "FIRST_RUN.md",
+            "PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md",
+            "DEEP_QA_BRIEF.md",
+            "UI_CONVENTIONS.md",
+            "ICON_SYSTEM.md",
+            "UI_AGENT_WORKFLOW.md",
+            "linkedin_studio_reimagined_design.md",
+            "README.md",
+        ],
+    },
+    # ---- Kept for the record --------------------------------------------
+    #
+    # These are not deleted, because they are the project's own history and
+    # several maintainer documents cite them. But the review that produced the
+    # help articles found them contradicted by the code: "356 vaulted
+    # blueprints" where the table holds a handful, Chart.js curves in an
+    # interface that has none, a Chrome-only extension setup Chrome ignores,
+    # "zero cloud egress" beside four egress categories that are on by
+    # default. Filing them under help would be the studio repeating claims it
+    # knows to be false, so they sit here, under a title that says so, and
+    # the reader shows a notice above each one.
+    {
+        "id": "retired",
+        "title": "Retired manuals and history",
+        "blurb": "The original module manuals, early guides and the day by day build record. Kept for the record; they describe behaviour the studio no longer has.",
         "paths": [
             "modules/01_STUDIO_AND_EDITOR.md",
             "modules/02_SCHEDULE_AND_QUEUE.md",
@@ -541,57 +628,11 @@ HELP_SECTIONS = [
             "modules/05_ANALYTICS.md",
             "modules/06_AI_COMMAND.md",
             "ENTERPRISE_USAGE.md",
-            "strategy_playbook.md",
-        ],
-    },
-    {
-        "id": "ai",
-        "title": "Bringing your own AI",
-        "blurb": "Choosing a provider, what runs locally with no network at all, and what a key is used for.",
-        "paths": [
+            "GETTING_STARTED.md",
             "AI_ENGINE.md",
-            "BYO_AI_ARCHITECTURE.md",
-        ],
-    },
-    {
-        "id": "data",
-        "title": "Your data and privacy",
-        "blurb": "What the studio captures, where it is stored, and what does or does not leave this machine.",
-        "paths": [
-            "DATA_ARCHITECTURE.md",
-            "ARCHITECTURE.md",
             "EXTENSION_AND_SYNC.md",
-        ],
-    },
-    {
-        "id": "running",
-        "title": "Installing and maintaining",
-        "blurb": "The desktop shell, packaging and release, and how to test a build as a user rather than as its author.",
-        "paths": [
-            "DESKTOP_SHELL.md",
-            "PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md",
-            "DEEP_QA_BRIEF.md",
-        ],
-    },
-    {
-        "id": "building",
-        "title": "Building on it",
-        "blurb": "The REST API, the design system, and the conventions the interface is held to.",
-        "paths": [
-            "API_REFERENCE.md",
             "DESIGN.md",
-            "linkedin_studio_reimagined_design.md",
-            "UI_CONVENTIONS.md",
-            "ICON_SYSTEM.md",
-            "UI_AGENT_WORKFLOW.md",
             "PRD_AGNO_AGENTOS_MEDIA_STUDIO.md",
-        ],
-    },
-    {
-        "id": "history",
-        "title": "Project history",
-        "blurb": "Day by day implementation briefs, and the feedback reports written back against them.",
-        "paths": [
             "prudent_handoff/README_AGENT_INSTRUCTIONS.md",
             "prudent_handoff/DAY_01_IMPLEMENTATION_SPEC.md",
             "prudent_handoff/DAY_01_FEEDBACK.md",
@@ -618,6 +659,28 @@ for _section in HELP_SECTIONS:
         _SECTION_OF_PATH[_path] = _section["id"]
 
 _SECTION_BY_ID = {section["id"]: section for section in HELP_SECTIONS}
+
+# Sections whose documents the reader marks as out of date.
+RETIRED_SECTIONS = {"retired"}
+
+# Sections written for whoever maintains the studio rather than uses it.
+MAINTAINER_SECTIONS = {"maintainers"}
+
+
+def section_kind(section_id):
+    """
+    "help", "reference" or "retired".
+
+    The landing view gives help the cards and the other two a quieter row, and
+    the reader puts a notice above a retired document. Both decisions read this
+    rather than matching on a title, so renaming a section cannot silently move
+    a contradicted manual back up among the help.
+    """
+    if section_id in RETIRED_SECTIONS:
+        return "retired"
+    if section_id in MAINTAINER_SECTIONS:
+        return "reference"
+    return "help"
 
 # Where a file that nobody has filed goes.
 #
@@ -661,6 +724,7 @@ def help_sections(docs_dir=None):
             "id": section["id"],
             "title": section["title"],
             "blurb": section["blurb"],
+            "kind": section_kind(section["id"]),
             "documents": documents,
             "count": len(documents),
             "words": sum(entry["words"] for entry in documents),
@@ -672,6 +736,7 @@ def help_sections(docs_dir=None):
             "id": UNFILED["id"],
             "title": UNFILED["title"],
             "blurb": UNFILED["blurb"],
+            "kind": "help",
             "documents": stray,
             "count": len(stray),
             "words": sum(entry["words"] for entry in stray),
