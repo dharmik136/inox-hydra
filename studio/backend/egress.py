@@ -8,8 +8,27 @@ visible refusal rather than failing quietly. The other six modules, fourteen
 calls between them, reached nine hosts with no guard, no counter, and no way to
 say no. The claim was true of the part someone had written a guard for.
 
-So this is that guard, generalised. Every outbound call in the backend now
+So this is that guard, generalised. Every HTTP call this backend makes now
 passes through `guard()` before it opens a socket.
+
+What it does not cover
+----------------------
+Two paths reach the network without coming through here, and saying so is the
+difference between a chokepoint and a claim about one.
+
+`browser_launcher` starts the creator's own browser at a LinkedIn URL through
+`subprocess`. The machine then contacts LinkedIn, and nothing here sees it, so
+the `linkedin` counter can read zero immediately after this studio opened
+LinkedIn with the creator's session. That is not a leak to fix by counting: it
+is the creator's browser doing what they asked. It is a gap in what the ledger
+can honestly claim, which is why the interface now names it.
+
+An MCP source is a program on this machine started by `mcp_client.protocol`.
+Its pipe is local, but what it does with the network is its own business: a
+fetch or a GitHub server makes requests under no category, in no counter, and
+`INOX_NO_EGRESS` cannot stop them. The only honest handling is to say so where
+a creator reads the numbers, and to keep the client unable to invoke tools, so
+what a source can do stays limited to answering with text it already holds.
 
 What it is not
 --------------
