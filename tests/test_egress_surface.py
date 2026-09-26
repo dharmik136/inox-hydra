@@ -166,8 +166,18 @@ def test_the_publish_dialog_claims_only_what_it_knows():
         "the dialog asserts something about the whole product that is not true "
         "of the whole product"
     )
-    assert "NEITHER SENDS ANYTHING TO LINKEDIN" in rendered, (
-        "the dialog no longer says what its two buttons do and do not do"
+
+    # The dialog now has three controls, not two: one of them hands the post to
+    # LinkedIn's scheduler and really does send. So the claim narrowed from
+    # "neither sends anything" to "neither of those two", and the sentence has
+    # to stay scoped to the controls it is true of. A blanket claim here would
+    # be the same mistake as the line removed above, one control later.
+    assert "NEITHER OF THOSE TWO SENDS ANYTHING" in rendered, (
+        "the dialog no longer scopes its claim to the controls it is true of"
+    )
+    assert "THIS ONE REALLY SENDS" in rendered, (
+        "the control that reaches LinkedIn does not say so, which is the same "
+        "defect in the opposite direction"
     )
 
 

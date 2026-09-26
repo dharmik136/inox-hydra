@@ -2280,6 +2280,135 @@ class NativeStageRequest(BaseModel):
     mock: bool = False
 
 
+class StagePostRequest(BaseModel):
+    scheduled_at: str
+    confirm: bool = False
+
+
+@app.post("/api/v1/posts/{post_id}/stage-to-linkedin", tags=["LinkedIn Native Scheduler"])
+def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
+    """
+    Hands a stored post to LinkedIn's own scheduler, for real.
+
+    This is the one route in this product that reaches LinkedIn on the
+    creator's behalf, and everything about its shape follows from that.
+
+    It schedules rather than posts. The Voyager payload carries
+    lifecycleState SCHEDULED and a scheduledAt, so LinkedIn holds the post and
+    publishes it at the given time. That is the point: it solves the sleeping
+    laptop, which a local scheduler cannot.
+
+    `confirm` must be true. A missing confirmation is a 400 rather than a
+    default, because the request is not reversible from here: once LinkedIn has
+    it, cancelling means going to LinkedIn. An interface that can fire this by
+    accident is the wrong interface.
+
+    The content is read from the record rather than accepted from the caller.
+    The creator approved what is in the row; a body that carried its own text
+    could post something they never saw.
+
+    Three refusals are possible and all three are returned rather than
+    swallowed. No saved session means nothing to authenticate with. The egress
+    guard refuses the `linkedin` category by default, so this returns the
+    refusal naming INOX_ALLOW_LINKEDIN_EGRESS unless the creator has opted in.
+    And the circuit breaker refuses after repeated 401 or 403, which on this
+    endpoint means LinkedIn has noticed.
+    """
+    if not req.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This sends the post to LinkedIn and cannot be undone from here. "
+                "Set confirm to true to proceed."
+            ),
+        )
+
+    scheduled = normalize_datetime_to_utc_iso(req.scheduled_at)
+    if not scheduled:
+        raise HTTPException(status_code=400, detail="Invalid scheduled_at timestamp.")
+
+    parsed = parse_datetime_flexible(scheduled)
+    if parsed is None:
+        raise HTTPException(status_code=400, detail="Invalid scheduled_at timestamp.")
+    if parsed <= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=400,
+            detail="LinkedIn will not hold a post for a time that has passed.",
+        )
+
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT id, content, status FROM posts WHERE id = ?", (post_id,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Post not found")
+        if row["status"] == "published":
+            raise HTTPException(status_code=400, detail="Post is already published")
+        content = row["content"] or ""
+    finally:
+        conn.close()
+
+    if not content.strip():
+        raise HTTPException(status_code=400, detail="This post has no content to send.")
+
+    result = linkedin_client.schedule_norm_share(
+        content=content,
+        scheduled_at_ms=int(parsed.timestamp() * 1000),
+    )
+
+    if result.get("status") != "success":
+        # Returned as-is with a 502. The refusal text names the flag or the
+        # breaker, and rewording it here would lose the one thing the creator
+        # needs in order to act.
+        raise HTTPException(status_code=502, detail=result)
+
+    # A mock result is not a send, and must never be reported as one.
+    #
+    # schedule_norm_share has a fast path that returns status "success" with
+    # mode "mock" when there is no saved li_at, which is the default state of a
+    # fresh install. The first version of this route checked only the status,
+    # so a creator with no session was told "LinkedIn is holding this post" and
+    # the row moved to scheduled while nothing left the machine. That is the
+    # precise failure this product has spent its history removing, reintroduced
+    # by the route added to fix a different one. Caught by its own test.
+    #
+    # The mock path is useful to the suite and to an air-gapped run. It is not
+    # an acceptable answer to someone who pressed a button that says it sends.
+    if result.get("mode") == "mock":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Nothing was sent. This studio has no saved LinkedIn session, so "
+                "the scheduler ran in mock mode. Capture your session from the "
+                "browser extension first, then try again."
+            ),
+        )
+
+    # Recorded only after LinkedIn accepted it. Writing the row first would
+    # leave a post marked as handed over when it was not, which is the failure
+    # this product keeps finding in its own history.
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE posts SET status = 'scheduled', scheduled_for = ? WHERE id = ?",
+            (scheduled, post_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "mode": result.get("mode", "live"),
+        "scheduled_urn": result.get("scheduled_urn", ""),
+        "scheduled_for": scheduled,
+        "message": (
+            "LinkedIn is holding this post and will publish it at the scheduled time."
+        ),
+    }
+
+
 @app.post("/api/v1/scheduler/native/stage", tags=["LinkedIn Native Scheduler"])
 def stage_native_scheduled_post(req: NativeStageRequest):
     """

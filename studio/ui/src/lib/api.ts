@@ -663,13 +663,53 @@ export async function fetchImageProgress(taskId: string): Promise<ImageProgress>
  * Marks a stored post as published in the local record.
  *
  * This does not post to LinkedIn and cannot: the handler writes the row's
- * status and published_at and opens no connection. The product's real path is
- * /api/v1/scheduler/native/stage, which stages through Voyager with the saved
- * session, and this interface does not call it. See
- * tests/test_publishing_claims.py.
+ * status and published_at and opens no connection. It is the right control for
+ * a post the author published themselves, which is still the ordinary case.
+ *
+ * stageToLinkedIn below is the one that really sends. They are separate calls
+ * because they do genuinely different things, and one of them cannot be
+ * undone from here.
  */
 export async function publishNow(postId: string): Promise<void> {
   await call(`/api/posts/${encodeURIComponent(postId)}/publish-now`, { method: "POST" });
+}
+
+export interface StagedToLinkedIn {
+  status: string;
+  mode: string;
+  scheduled_urn: string;
+  scheduled_for: string;
+  message: string;
+}
+
+/**
+ * Hands a post to LinkedIn's own scheduler. This one really sends.
+ *
+ * It schedules rather than posts: LinkedIn holds the post and publishes it at
+ * the given time, which is the point, because a local scheduler cannot fire
+ * while the laptop is asleep.
+ *
+ * `confirm` is required by the backend and passed explicitly here rather than
+ * defaulted, so a reader of this call site can see that a confirmation
+ * happened somewhere. The call cannot be undone from this side: once LinkedIn
+ * has the post, cancelling means going to LinkedIn.
+ *
+ * Three refusals are expected rather than exceptional, and each arrives as a
+ * thrown error carrying the server's own words, because each one tells the
+ * author something different about what to do next: no saved session, the
+ * linkedin egress category still switched off, or LinkedIn itself declining.
+ */
+export async function stageToLinkedIn(
+  postId: string,
+  scheduledAt: string,
+): Promise<StagedToLinkedIn> {
+  return call<StagedToLinkedIn>(
+    `/api/v1/posts/${encodeURIComponent(postId)}/stage-to-linkedin`,
+    {
+      method: "POST",
+      body: JSON.stringify({ scheduled_at: scheduledAt, confirm: true }),
+    },
+  );
 }
 
 export interface CadenceVerdict {
