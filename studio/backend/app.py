@@ -2037,7 +2037,7 @@ def get_doc_module(module_id: str):
 #   a notes directory on the next draft.
 # -------------------------------------------------------------
 
-def _active_provider() -> str:
+def _active_provider():
     """
     The provider in force right now, for the egress answer.
 
@@ -2053,9 +2053,13 @@ def _active_provider() -> str:
     except ImportError:
         from agno_agentos.model_gateway import get_current_ai_config
     try:
-        return getattr(get_current_ai_config(), "provider", "") or ""
+        config = get_current_ai_config()
+        return (
+            getattr(config, "provider", "") or "",
+            getattr(config, "base_url", "") or "",
+        )
     except Exception:
-        return ""
+        return "", ""
 
 
 class McpServerRequest(BaseModel):
@@ -2090,7 +2094,7 @@ def list_mcp_servers():
     return {
         "status": "success",
         "servers": mcp_client.list_servers(),
-        "egress": mcp_client.egress_report(_active_provider()),
+        "egress": mcp_client.egress_report(*_active_provider()),
     }
 
 
@@ -2152,7 +2156,8 @@ def preview_mcp_grounding():
     takes, so this is a preview of the real thing rather than a description
     of it.
     """
-    gathered = mcp_client.gather(provider=_active_provider())
+    provider, base_url = _active_provider()
+    gathered = mcp_client.gather(provider=provider, base_url=base_url)
     return {
         "status": "success",
         "egress": gathered["egress"],

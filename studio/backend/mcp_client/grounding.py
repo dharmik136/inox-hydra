@@ -52,14 +52,53 @@ except ImportError:  # pragma: no cover - direct script use
     from protocol import McpServer
     from servers import enabled_servers
 
-# Providers that run on the creator's own machine. Material sent to these
-# never leaves it, so grounding carries no disclosure cost.
+# Providers that open no socket at all, so there is nothing to disclose.
+NO_NETWORK_PROVIDERS = frozenset({"local_deterministic"})
+
+# This was a list of provider NAMES: local_deterministic, ollama, llamacpp and
+# lmstudio. Every part of that was wrong.
 #
-# Kept as a deny-by-default list rather than a check for "localhost" in a URL:
-# a base URL pointing at a loopback port that tunnels somewhere else would pass
-# a naive string test, and being wrong in that direction means telling someone
-# their notes stayed home when they did not.
-LOCAL_PROVIDERS = frozenset({"local_deterministic", "ollama", "llamacpp", "lmstudio"})
+# A name says nothing about a destination, because these base URLs are
+# configurable. An ollama config pointed at a remote host was reported as
+# staying on this machine, which is exactly the failure the old comment claimed
+# the list existed to prevent. In the other direction custom_openai defaults to
+# a loopback port and its whole purpose is self-hosting, and it was absent from
+# the list, so a creator running a local vLLM was told their private notes were
+# going to a hosted service. And llamacpp and lmstudio are not in
+# SUPPORTED_PROVIDERS at all, so those two entries could never match anything.
+#
+# The examples above are described rather than written as URLs on purpose:
+# test_egress_surface scans this tree for destination literals and cannot tell
+# a comment from a call site. Adding a fictional host to KNOWN_HOSTS to quiet
+# it would put a lie in the file that exists to stop exactly that.
+#
+# The destination is what matters, so the destination is what gets inspected.
+# Only loopback counts as staying here: a box on the same LAN is still another
+# machine, and notes sent to it have left this one.
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0", ""})
+
+
+def _host_is_loopback(base_url: str) -> bool:
+    """
+    True only when this URL addresses the machine the studio runs on.
+
+    Anything unparseable reads as remote. A destination nobody can identify is
+    not one to reassure a creator about.
+    """
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(str(base_url or "").strip())
+        if not parsed.scheme or not parsed.netloc:
+            return False
+        host = (parsed.hostname or "").strip().lower().strip("[]")
+    except Exception:
+        return False
+
+    if host in _LOOPBACK_HOSTS:
+        return True
+    # 127.0.0.0/8 in full, not just 127.0.0.1.
+    return host.startswith("127.")
 
 # What the whole grounding block may occupy. A prompt is a fixed budget shared
 # with the creator's own draft and the agent's instructions, and material that
@@ -84,31 +123,64 @@ def _summarise(text: str, limit: int = MAX_PER_RESOURCE_BYTES) -> str:
     return cut + " [trimmed]"
 
 
-def egress_report(provider: str) -> Dict[str, Any]:
+def egress_report(provider: str, base_url: str = "") -> Dict[str, Any]:
     """
     Whether grounding this draft would send the creator's material off the
-    machine, and to whom.
+    machine, and where to.
 
-    Computed from the provider in force rather than stored, because the
-    provider can change between one draft and the next and a cached answer
-    would be a claim about the wrong configuration.
+    Takes the base URL as well as the provider name, because the name does not
+    determine the destination: every self-hostable provider here has a
+    configurable endpoint. Judged on the URL, an ollama pointed at a remote box
+    reads as remote and a custom_openai pointed at loopback reads as local,
+    both of which the old name list got backwards.
+
+    Computed per call rather than stored, because the provider can change
+    between one draft and the next and a cached answer would be a claim about
+    a configuration that is no longer in force.
+
+    Absent or unparseable destination reads as remote. Deny by default: being
+    wrong in that direction over-warns, and being wrong in the other tells
+    someone their notes stayed home when they did not.
     """
     name = str(provider or "local_deterministic").strip().lower()
-    local = name in LOCAL_PROVIDERS
+    destination = str(base_url or "").strip()
+
+    if name in NO_NETWORK_PROVIDERS:
+        return {
+            "provider": name,
+            "destination": "",
+            "leaves_this_machine": False,
+            "summary": "Grounding stays on this machine. The local engine makes no network request.",
+        }
+
+    local = _host_is_loopback(destination)
+    if local:
+        summary = (
+            f"Grounding stays on this machine. {name} is answering at "
+            f"{destination}, which is this computer."
+        )
+    elif destination:
+        summary = (
+            f"Grounding material will be sent to {destination}. Anything "
+            f"gathered here leaves your machine as part of the prompt."
+        )
+    else:
+        # No endpoint to judge. Said plainly rather than guessed at.
+        summary = (
+            f"Grounding material will be sent to {name}, and this studio "
+            f"cannot tell where that is. Treat it as leaving your machine."
+        )
+
     return {
         "provider": name,
+        "destination": destination,
         "leaves_this_machine": not local,
-        "summary": (
-            f"Grounding stays on this machine. {name} runs locally."
-            if local else
-            f"Grounding material will be sent to {name}, which is a hosted "
-            f"service. Anything gathered here leaves your machine as part of "
-            f"the prompt."
-        ),
+        "summary": summary,
     }
 
 
 def gather(provider: str = "local_deterministic",
+           base_url: str = "",
            limit_per_server: int = 3) -> Dict[str, Any]:
     """
     Collects grounding material from every enabled server.
@@ -118,7 +190,7 @@ def gather(provider: str = "local_deterministic",
     so the creator can see which one, rather than wondering why their post
     reads generic again.
     """
-    report = egress_report(provider)
+    report = egress_report(provider, base_url)
     gathered: List[Dict[str, str]] = []
     errors: List[Dict[str, str]] = []
     budget = MAX_GROUNDING_BYTES
@@ -223,5 +295,6 @@ def grounding_provenance(gathered: Dict[str, Any]) -> Dict[str, Any]:
         "source_count": len(material),
         "left_this_machine": bool(gathered.get("egress", {}).get("leaves_this_machine")),
         "provider": gathered.get("egress", {}).get("provider"),
+        "destination": gathered.get("egress", {}).get("destination", ""),
         "errors": gathered.get("errors") or [],
     }

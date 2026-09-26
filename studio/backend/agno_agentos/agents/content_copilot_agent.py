@@ -98,7 +98,10 @@ class LinkedInContentCopilotAgent:
         if gather is None or as_brief_inputs is None:
             return empty
         try:
-            gathered = gather(provider=getattr(self.ai_config, "provider", ""))
+            gathered = gather(
+                provider=getattr(self.ai_config, "provider", ""),
+                base_url=getattr(self.ai_config, "base_url", "") or "",
+            )
             return {
                 "inputs": as_brief_inputs(gathered),
                 "provenance": grounding_provenance(gathered),
