@@ -531,6 +531,9 @@ HELP_SECTIONS = [
         "blurb": "Start the studio, see what a fresh install looks like, and find your way around the rail.",
         "paths": [
             "help/open-the-studio-for-the-first-time.md",
+            "help/use-the-command-palette.md",
+            "help/search-the-help-in-docs.md",
+            "help/stop-the-studio-and-use-the-tray-icon.md",
         ],
     },
     {
@@ -538,11 +541,13 @@ HELP_SECTIONS = [
         "title": "Write and publish",
         "blurb": "Write a post, try a new opening, check it before posting, and record, queue or send it.",
         "paths": [
+            "help/start-a-new-post-or-find-an-earlier-one.md",
             "help/write-format-and-save-a-post.md",
             "help/try-a-different-opening-line.md",
             "help/check-a-draft-before-you-post.md",
             "help/publish-queue-or-send-to-linkedin.md",
             "help/how-the-queue-works.md",
+            "help/browse-the-swipe-file.md",
             "strategy_playbook.md",
         ],
     },
@@ -559,9 +564,12 @@ HELP_SECTIONS = [
     {
         "id": "ai",
         "title": "Bring your own AI",
-        "blurb": "Connect an AI provider, see what it is sent, and add or generate images.",
+        "blurb": "Connect an AI provider, use the Command console, set up Brand Studio and its grounding sources, and add images.",
         "paths": [
             "help/connect-your-own-ai-provider.md",
+            "help/use-the-command-console.md",
+            "help/set-up-brand-studio.md",
+            "help/add-a-grounding-source.md",
             "help/add-images-to-your-media-library.md",
         ],
     },
@@ -573,6 +581,7 @@ HELP_SECTIONS = [
             "help/what-leaves-this-machine.md",
             "help/connect-your-linkedin-session.md",
             "help/back-up-restore-and-export.md",
+            "help/check-your-version-and-update-the-studio.md",
         ],
     },
     {
@@ -582,6 +591,8 @@ HELP_SECTIONS = [
         "paths": [
             "help/the-studio-will-not-open.md",
             "help/why-is-my-lead-list-empty.md",
+            "help/why-is-analytics-or-the-swipe-file-empty.md",
+            "help/why-does-the-audit-say-blocked.md",
         ],
     },
     # ---- For maintainers: current, and checked against the code ----------
@@ -590,6 +601,8 @@ HELP_SECTIONS = [
         "title": "For maintainers",
         "blurb": "How the studio is built: data, architecture, the API, the desktop shell, packaging, and the rules the interface is held to.",
         "paths": [
+            "help/command-line-tool-reference.md",
+            "help/turn-on-devtools.md",
             "DATA_ARCHITECTURE.md",
             "ARCHITECTURE.md",
             "API_REFERENCE.md",

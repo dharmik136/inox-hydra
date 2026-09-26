@@ -44,7 +44,7 @@ In the same browser, open `http://127.0.0.1:8000` once. That page load gives the
 | --- | --- | --- |
 | Feed, post pages and activity pages | Name, headline, profile link and the first 140 characters of comment text of commenters; people in an open reactions list | **Leads** |
 | A post's own page | The post's ID and text | Offered to the studio to link to a post you wrote. In this build that link does not complete; see [Read your analytics](read-your-analytics.md). |
-| Any LinkedIn page with `/analytics` in its address | Impressions, engagements and followers from the figure cards, about 2 seconds after load | **Analytics** |
+| Any LinkedIn page with `/analytics` in its address | Impressions, engagements and followers from the figure cards, about 2 seconds after the page loads or after you click through to it from elsewhere on LinkedIn | **Analytics** |
 | In the background, every 15 minutes | Your LinkedIn session cookies, if both exist | The studio's saved LinkedIn session |
 | Some LinkedIn data requests the page makes (feed updates, profiles, creator analytics) | The address (without its query) and status code | The studio's local telemetry store |
 
