@@ -59,8 +59,8 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # studio/ui/src, which is the only interface now that the vanilla page is
 # retired.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 137
-REACHED_BY_INTERFACE = 61
+TOTAL_API_PATHS = 138
+REACHED_BY_INTERFACE = 62
 UNREACHABLE = 76
 
 ROUTE_DECORATOR = re.compile(
