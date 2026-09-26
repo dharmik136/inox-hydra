@@ -8,10 +8,12 @@ import {
   BookOpen,
   Settings2,
   Wrench,
+  UserCheck,
   type LucideIcon,
 } from "lucide-react";
 
 export type SectionId =
+  | "setup"
   | "composer"
   | "queue"
   | "leads"
@@ -51,6 +53,9 @@ export interface StudioSection {
  * the two sets are not mixed inside one surface.
  */
 export const STUDIO_SECTIONS: StudioSection[] = [
+  // First, because it is where a new install starts. It has no screen
+  // registry key: it is a first-run flow rather than a place work happens.
+  { id: "setup", label: "Setup", blurb: "Connect the browser and teach the studio who you are", icon: UserCheck },
   { id: "composer", screenKey: "studio", label: "Composer", blurb: "Write, re-hook and stage the next post", icon: PenLine },
   { id: "queue", screenKey: "queue", label: "Queue", blurb: "Scheduled posts and peak engagement slots", icon: CalendarClock },
   { id: "leads", screenKey: "crm", label: "Leads", blurb: "Lead stream and person dossiers", icon: Users },

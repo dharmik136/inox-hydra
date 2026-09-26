@@ -27,7 +27,16 @@ const STUDIO_TOKEN_HEADER = "X-Inox-Token";
 const RELAYABLE_PATHS = new Set([
   "/api/analytics/ingest",
   "/api/v1/posts/bind-urn",
-  "/api/v1/crm/interactions/ingest"
+  "/api/v1/crm/interactions/ingest",
+  // Onboarding (own_pages.js). Every write is refused by the studio unless it
+  // belongs to the creator the studio has confirmed.
+  "/api/v1/bridge/heartbeat",
+  "/api/v1/identity/me",
+  "/api/v1/identity/observe",
+  "/api/v1/self/posts/ingest",
+  "/api/v1/self/outbound/ingest",
+  "/api/v1/self/imports/pending",
+  "/api/v1/self/imports/event"
 ]);
 
 /**

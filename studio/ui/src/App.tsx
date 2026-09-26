@@ -8,6 +8,7 @@ import { HookFilmstrip } from "@/components/HookFilmstrip";
 import { CommandPalette } from "@/components/CommandPalette";
 import { Inspector } from "@/components/Inspector";
 import { LeadsSurface } from "@/components/LeadsSurface";
+import { OnboardingSurface } from "@/components/OnboardingSurface";
 import { SwipeSurface } from "@/components/SwipeSurface";
 import { AnalyticsSurface } from "@/components/AnalyticsSurface";
 import { BrandStudioSurface } from "@/components/BrandStudioSurface";
@@ -22,6 +23,7 @@ import {
   createDraft,
   fetchDevtoolsStatus,
   fetchLatestDraft,
+  fetchOnboardingState,
   generateHooks,
   updateDraft,
   type GeneratedHook,
@@ -64,6 +66,24 @@ export default function App() {
     let live = true;
     fetchDevtoolsStatus()
       .then((status) => live && setDevMode(status.dev_mode))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // A new install opens on Setup, because nothing else in the studio can be
+  // about the creator until it knows who they are. Asked once. Moving
+  // elsewhere before the answer arrives wins over it, so a creator who clicks
+  // straight to the composer is not pulled back.
+  useEffect(() => {
+    let live = true;
+    fetchOnboardingState()
+      .then((state) => {
+        if (live && !state.steps.identity) {
+          setActive((current) => (current === "composer" ? "setup" : current));
+        }
+      })
       .catch(() => undefined);
     return () => {
       live = false;
@@ -278,6 +298,7 @@ export default function App() {
                   swapKey={swapKey}
                 />
               )}
+              {active === "setup" && <OnboardingSurface />}
               {active === "leads" && <LeadsSurface />}
               {active === "swipe" && <SwipeSurface />}
               {active === "analytics" && <AnalyticsSurface />}

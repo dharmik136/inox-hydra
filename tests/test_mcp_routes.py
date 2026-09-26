@@ -25,6 +25,7 @@ So the tests here are mostly about the boundary rather than the feature.
 
 import json
 import os
+import re
 import sys
 
 import pytest
@@ -75,9 +76,28 @@ def test_the_extension_cannot_reach_these_routes():
         "an MCP route is relayable, so a page on linkedin.com can ask the "
         "studio to run a command"
     )
-    assert block.count("/api/") == 3, (
-        "the relay allowlist changed size; every entry on it is reachable "
-        "from a LinkedIn page and needs to be looked at"
+    # The exact set, not a count. Each entry is reachable from a LinkedIn page,
+    # so a new one has to be named here, which is the moment it gets looked at.
+    #
+    # The onboarding seven were reviewed on adding: each writes only through
+    # onboarding.py, which refuses anything not belonging to the creator the
+    # studio has confirmed, and none executes, fetches or reads beyond the
+    # creator's own identity and an import flag.
+    relayed = set(re.findall(r'"(/api/[^"]+)"', block))
+    assert relayed == {
+        "/api/analytics/ingest",
+        "/api/v1/posts/bind-urn",
+        "/api/v1/crm/interactions/ingest",
+        "/api/v1/bridge/heartbeat",
+        "/api/v1/identity/me",
+        "/api/v1/identity/observe",
+        "/api/v1/self/posts/ingest",
+        "/api/v1/self/outbound/ingest",
+        "/api/v1/self/imports/pending",
+        "/api/v1/self/imports/event",
+    }, (
+        "the relay allowlist changed; every entry on it is reachable from a "
+        f"LinkedIn page and needs to be looked at: {sorted(relayed)}"
     )
 
 

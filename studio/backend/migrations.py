@@ -325,6 +325,140 @@ def _migrate_annotation_context(cursor: sqlite3.Cursor) -> None:
     )
 
 
+def _migrate_creator_self(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 10:
+    Gives the studio a record of who its creator is on LinkedIn.
+
+    Until now every capture path read "a LinkedIn page" and never "my LinkedIn
+    page", because nothing stored which member the creator is. So the profile
+    page was excluded wholesale (a stranger's and the creator's look alike to
+    code that does not know the difference), the creator's own posts could not
+    be recognised, and the creator's likes and comments on other people's
+    posts were stored as the creator being somebody's lead.
+
+    creator_identity holds one row, the creator, with what their own profile
+    shows. The candidate columns hold what a capture believes, and confirmed_at
+    is set only when the creator says "yes, that is me". Every table below
+    trusts a capture only once that has happened.
+    """
+    statements = [
+        # grain: one row per install, the creator. id is always 1.
+        """
+        CREATE TABLE IF NOT EXISTS creator_identity (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            vanity TEXT,
+            profile_url TEXT,
+            display_name TEXT,
+            headline TEXT,
+            location TEXT,
+            about TEXT,
+            current_company TEXT,
+            follower_count INTEGER,
+            connection_count INTEGER,
+            email TEXT,
+            phone TEXT,
+            birthday TEXT,
+            websites TEXT,
+            profile_observed_at TEXT,
+            contact_observed_at TEXT,
+            candidate_vanity TEXT,
+            candidate_evidence TEXT,
+            candidate_observed_at TEXT,
+            confirmed_at TEXT
+        )
+        """,
+        # grain: one row per position on the creator's profile, as last seen.
+        """
+        CREATE TABLE IF NOT EXISTS creator_positions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ordinal INTEGER NOT NULL,
+            title TEXT,
+            company TEXT,
+            date_range TEXT,
+            location TEXT,
+            description TEXT,
+            observed_at TEXT NOT NULL
+        )
+        """,
+        # grain: one row per education entry on the creator's profile, as last seen.
+        """
+        CREATE TABLE IF NOT EXISTS creator_education (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ordinal INTEGER NOT NULL,
+            school TEXT,
+            degree TEXT,
+            date_range TEXT,
+            observed_at TEXT NOT NULL
+        )
+        """,
+        # grain: one row per skill on the creator's profile, as last seen.
+        """
+        CREATE TABLE IF NOT EXISTS creator_skills (
+            skill TEXT PRIMARY KEY,
+            observed_at TEXT NOT NULL
+        )
+        """,
+        # grain: one row per LinkedIn post the creator authored, keyed by URN.
+        # Counts are the latest reading and NULL when never read, never 0.
+        """
+        CREATE TABLE IF NOT EXISTS own_posts (
+            activity_urn TEXT PRIMARY KEY,
+            text TEXT,
+            published_at TEXT,
+            published_at_source TEXT,
+            reactions INTEGER,
+            comments INTEGER,
+            reposts INTEGER,
+            impressions INTEGER,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL
+        )
+        """,
+        # grain: one row per thing the creator did to someone else's post:
+        # a reaction, or one comment they wrote.
+        """
+        CREATE TABLE IF NOT EXISTS outbound_engagements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            target_activity_urn TEXT NOT NULL,
+            target_author TEXT,
+            target_excerpt TEXT,
+            kind TEXT NOT NULL CHECK (kind IN ('reaction', 'comment')),
+            reaction_kind TEXT,
+            my_text TEXT,
+            my_text_key TEXT NOT NULL DEFAULT '',
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            UNIQUE (target_activity_urn, kind, my_text_key)
+        )
+        """,
+        # grain: one row per heartbeat from the browser extension. Pruned to
+        # the last week on write.
+        """
+        CREATE TABLE IF NOT EXISTS bridge_heartbeats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            seen_at TEXT NOT NULL,
+            extension_version TEXT,
+            page_kind TEXT
+        )
+        """,
+        # grain: one row per history import the creator asked for.
+        """
+        CREATE TABLE IF NOT EXISTS self_import_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            kind TEXT NOT NULL CHECK (kind IN ('posts', 'comments', 'reactions')),
+            requested_at TEXT NOT NULL,
+            started_at TEXT,
+            finished_at TEXT,
+            items_seen INTEGER,
+            outcome TEXT
+        )
+        """,
+    ]
+    for statement in statements:
+        cursor.execute(statement)
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -338,6 +472,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (7, "Give a post the activity URN and fingerprint that identify it", _migrate_post_identity),
     (8, "Record screen, section and reproduction context on internal sheet issues", _migrate_annotation_context),
     (9, "Record where a swipe specimen came from", _migrate_template_provenance),
+    (10, "Record who the creator is, their profile, posts and outbound activity", _migrate_creator_self),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

@@ -130,10 +130,18 @@ def test_no_captured_leads_appear_in_tracked_text():
     fixtures outside of obvious placeholders.
     """
     result = subprocess.run(
-        ["git", "grep", "-l", "-E", r"linkedin\.com/in/[a-z0-9]", "--", "."],
+        ["git", "grep", "-o", "-E", r"linkedin\.com/in/[a-z0-9][^\"'`\s)]*", "--", "."],
         cwd=REPO_ROOT, capture_output=True, text=True, timeout=60,
     )
-    files = [f.strip() for f in result.stdout.splitlines() if f.strip()]
+    # linkedin.com/in/me/ is LinkedIn's alias for whoever is signed in, which
+    # onboarding opens so the creator lands on their own profile. It names
+    # nobody. Exempted as a match rather than by file, so a real URL added
+    # beside it in the same file still fails here.
+    files = sorted({
+        line.split(":", 1)[0].strip()
+        for line in result.stdout.splitlines()
+        if ":" in line and not re.fullmatch(r"linkedin\.com/in/me/?", line.split(":", 1)[1].strip())
+    })
 
     # Tests and the extension legitimately construct or match profile URLs.
     allowed_prefixes = ("tests/", "studio/extension/", "docs/")
