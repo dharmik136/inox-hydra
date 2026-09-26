@@ -118,12 +118,20 @@ def test_docs_engine_em_dash_sanitization_in_indexing():
         with open(md_file, "w", encoding="utf-8") as f:
             f.write(f"# Heading One\nSection content with an em-dash{em_dash}here.\n")
 
-        count = init_docs_search_index(docs_dir=tmpdir)
-        assert count >= 1
+        try:
+            count = init_docs_search_index(docs_dir=tmpdir)
+            assert count >= 1
 
-        results = search_docs_fts("content", limit=5)
-        for r in results:
-            assert em_dash not in r["snippet"]
+            results = search_docs_fts("content", limit=5)
+            for r in results:
+                assert em_dash not in r["snippet"]
+        finally:
+            # There is one docs_index table and this rebuilt it from a directory
+            # holding a single file, which is then deleted. Every later test that
+            # searched the real corpus got nothing back, and the two that passed
+            # only did so because they happened to rebuild the index themselves
+            # first. Global state borrowed for a test is handed back.
+            init_docs_search_index()
 
 
 def test_app_docs_search_api_bounds():

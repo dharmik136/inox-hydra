@@ -169,22 +169,88 @@ def test_every_colour_token_is_declared_in_both_palettes(token_blocks):
 # Accessibility floor
 # ---------------------------------------------------------------------------
 
-def _button_regions(source):
-    """Each <button ...> ... </button> body, with nested buttons ignored."""
+def _opening_tag_end(source, start):
+    """
+    Index of the > that closes an opening JSX tag.
+
+    Not source.find(">"), which is what this file used to do, and the reason the
+    button guard below spent its life vacuous: onClick={() => handler()} puts a
+    > inside the attribute list, so the "body" began mid attribute and the
+    leftover className string counted as the button's visible text. Every button
+    in this interface is written with an arrow handler, so the guard passed all
+    of them without ever reading their contents.
+
+    Braces and strings are tracked, so a > inside either is not the end of a tag.
+    """
+    depth = 0
+    quote = None
+    i = start
+    while i < len(source):
+        char = source[i]
+        if quote:
+            if char == "\\":
+                i += 2
+                continue
+            if char == quote:
+                quote = None
+        elif char in "\"'`":
+            quote = char
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        elif char == ">" and depth == 0:
+            return i
+        i += 1
+    return -1
+
+
+def _button_parts(source):
+    """Each button as (opening tag, body), with the tag boundary read properly."""
     for match in re.finditer(r"<button\b", source):
-        start = match.start()
-        end = source.find("</button>", start)
-        if end != -1:
-            yield source[start:end]
+        end = _opening_tag_end(source, match.start())
+        close = source.find("</button>", match.start())
+        if end == -1 or close == -1 or close < end:
+            continue
+        yield source[match.start():end + 1], source[end + 1:close]
 
 
-def _visible_text(region):
-    """What is left of a JSX region once tags and expressions are removed."""
-    body = region[region.find(">") + 1:] if ">" in region else ""
-    body = re.sub(r"\{[^{}]*\}", " ", body)       # simple JSX expressions
-    body = re.sub(r"\{\{.*?\}\}", " ", body, flags=re.S)
-    body = re.sub(r"<[^>]*>", " ", body)          # nested elements
-    return body.strip()
+def _strip_elements(body):
+    """
+    Removes nested tags, leaving only what sits between them.
+
+    Tags are skipped with the same brace aware scanner, not with <[^>]*>, for two
+    reasons: a nested element's prop may contain a > inside an arrow function,
+    and its props certainly contain braces. strokeWidth={1.75} is a brace in an
+    attribute rather than a child expression, and counting it as content is how
+    the first version of this check called an icon-only button "labelled".
+    """
+    out = []
+    i = 0
+    while i < len(body):
+        if body[i] == "<":
+            end = _opening_tag_end(body, i)
+            if end == -1:
+                break
+            i = end + 1
+            continue
+        out.append(body[i])
+        i += 1
+    return "".join(out)
+
+
+def _announces_something(body):
+    """
+    Whether a button body produces anything a screen reader can read.
+
+    A child expression counts: <button>{section.label}</button> announces the
+    label, and demanding a literal there would ask for an aria-label duplicating
+    the text already on screen. A body of nothing but glyph elements does not
+    count, because every decorative glyph in this interface is aria-hidden, which
+    is exactly the case this guard exists for.
+    """
+    between = _strip_elements(body)
+    return "{" in between or bool(between.strip())
 
 
 def test_icon_only_buttons_have_an_accessible_name():
@@ -195,13 +261,55 @@ def test_icon_only_buttons_have_an_accessible_name():
     offenders = []
     for path in _source_files("*.tsx"):
         source = _read(path)
-        for region in _button_regions(source):
-            head = region[: region.find(">") + 1] if ">" in region else region
+        for head, body in _button_parts(source):
             has_name = "aria-label" in head or "aria-labelledby" in head
-            if not has_name and not _visible_text(region):
-                offenders.append(f"{os.path.relpath(path, REPO_ROOT)}: {head[:70]}")
+            if not has_name and not _announces_something(body):
+                offenders.append(f"{os.path.relpath(path, REPO_ROOT)}: {' '.join(head.split())[:80]}")
 
     assert not offenders, "buttons with neither text nor an accessible name:\n" + "\n".join(offenders)
+
+
+def test_the_accessible_name_guard_is_not_vacuous():
+    """
+    The guard above, held to its own claim.
+
+    It passed an icon-only unnamed button for years because of the > in an arrow
+    function, so the rule it enforces is planted here and the detection is
+    asserted rather than assumed. A guard that cannot fail protects nothing, and
+    this interface has already shipped fourteen buttons it did not catch.
+    """
+    unnamed = """
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="grid size-8 place-items-center"
+      >
+        <PanelRight className="size-4" strokeWidth={1.75} aria-hidden="true" />
+      </button>
+    """
+    parts = list(_button_parts(unnamed))
+    assert len(parts) == 1, f"the button was not found at all: {parts}"
+    head, body = parts[0]
+    assert "onClick" in head, "the opening tag stopped before the attributes ended"
+    assert "PanelRight" in body, "the body was cut short of the button's contents"
+    assert not _announces_something(body), (
+        "a button holding one aria-hidden glyph is reported as announcing something, "
+        "which is the exact defect this guard exists to catch"
+    )
+
+    named = unnamed.replace('type="button"', 'type="button" aria-label="Open inspector"')
+    named_head, _ = list(_button_parts(named))[0]
+    assert "aria-label" in named_head, "a label in the opening tag is no longer seen"
+
+    labelled_by_text = """
+      <button type="button" onClick={() => select(id)}>
+        {section.label}
+      </button>
+    """
+    _, text_body = list(_button_parts(labelled_by_text))[0]
+    assert _announces_something(text_body), (
+        "a button whose child expression renders its label was reported as unnamed"
+    )
 
 
 def test_decorative_glyphs_are_hidden_from_assistive_technology():

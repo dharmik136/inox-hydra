@@ -101,6 +101,19 @@ a themed interface quietly stops being themed.
 | Animation honours `prefers-reduced-motion` | `test_reduced_motion_preference_is_honoured` |
 | A scrollable region is reachable from the keyboard | measured, see below |
 
+That first check was itself broken for most of its life, which is worth
+recording because the failure mode is the one this whole page is about. It
+found the end of a button's opening tag with `source.find(">")`, and every
+button in this interface is written with an arrow handler, so the `>` it found
+belonged to `onClick={() => ...}`. The "body" it then searched began in the
+middle of the attribute list, the leftover `className` string counted as
+visible text, and the guard passed all 58 buttons without ever reading one.
+Planting an icon-only unnamed button confirmed it passed that too.
+
+It now scans to the first `>` at brace depth zero outside a string, and
+`test_the_accessible_name_guard_is_not_vacuous` plants the defect and asserts
+the detection, because a guard that cannot fail protects nothing.
+
 Fourteen icon-only buttons previously announced as nothing but "button", and
 125 decorative glyphs were read aloud as unnamed images. Focus was invisible
 throughout: there was no `:focus-visible` rule anywhere in 5,600 lines of CSS.
@@ -139,7 +152,42 @@ TypeScript covers the class of failure that used to need a parser: a duplicated
 `catch` block once left `app.js` unparseable, so the browser aborted the entire
 file and nothing rendered, while every Python test stayed green.
 
-## 5. Adding a surface
+## 5. Rendering a document
+
+The docs surface reads 38 markdown files and used to print each one as a single
+`<pre>` element. Across that corpus it meant 798 table rows, 182 fence lines,
+1,266 bullets and 1,226 bold runs reached the reader as literal markdown
+characters, and the six row penalty table in module 01 is the content of the
+algorithmic audit section rather than an aside.
+
+`studio/ui/src/lib/markdown.ts` parses a document into typed blocks and
+`DocumentView.tsx` draws them. Two rules hold that apart from every other way
+this could have been done:
+
+**Nothing is ever handed to the HTML parser.** No `innerHTML`, no
+`dangerouslySetInnerHTML`, no helper that returns markup as a string. A playbook
+file is allowed to contain markup and several do: angle bracket placeholders
+appear in prose and one table cell carries a literal break tag. Spans render as
+React elements, so text is a text child and is escaped by construction. This is
+the same reasoning `lib/snippet.ts` was written under, applied to a document
+instead of a snippet. `tests/test_markdown_rendering.py` holds it at both ends.
+
+**The dialect is decided by what is in these files, not by a spec.** Three
+choices, each pinned by a test because each is one a plausible cleanup would
+undo:
+
+| Rule | Why |
+|---|---|
+| Underscore never emphasises | The corpus is snake_case throughout, and CommonMark's intraword rules eat identifiers out of a technical document |
+| A table needs its delimiter row | Several files draw ASCII interface mocks out of pipes, and the delimiter is the only thing that tells a sketch from a table |
+| Inline math needs a backslash inside it | There is no typesetter here, so math is shown as source; without the rule a price becomes an equation |
+
+A tone on a callout comes only from the document's own `[!KIND]` marker, and a
+mermaid fence is labelled as source rather than drawn, for the reason in section
+6 item 4: showing something nobody wrote is the same mistake as showing a metric
+nobody measured.
+
+## 6. Adding a surface
 
 1. Build it from tokens. No hex literals, no inline styles except measured
    geometry.
