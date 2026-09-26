@@ -82,7 +82,7 @@ The ordering below is the real dependency chain. Rungs 1 to 4 are required. Ever
 | 10 | Engagers captured | No | Opening the reactor or commenter list on that post | Fills the CRM (`content.js:548-600`) | CRM empty state, section 5 | The panel names the exact page to open |
 | 11 | Analytics captured | No | Opening the creator's own LinkedIn analytics page | The only source of impressions (`content.js:131-146`) | Analytics deferred, section 8 | Stated with the no-backfill fact |
 | 12 | AI provider key | No | BYO key via CLI | Better hooks and rewrites | `Using local rules. Connect your own AI key for model-written variants.` | Link to the CLI command |
-| 13 | Telegram ingress | No | `TELEGRAM_BOT_TOKEN` in the environment | Starts the ingress worker | `Telegram ingress off. The variable is read once at launch, so set it and restart.` | Stated explicitly, because `app.py:177-178` reads it only at process start |
+| 13 | Telegram ingress | No | `TELEGRAM_BOT_TOKEN` **and** `TELEGRAM_CHAT_ID` in the environment | Starts the ingress worker, which accepts messages only from that chat id | `Telegram ingress off. Both variables are read once at launch, so set them and restart.` | Stated explicitly, because `app.py` reads them only at process start. The chat id is not optional: without it the daemon refuses every message, because a bot username is not a secret and Telegram lists bots in search, so any stranger who found the bot could otherwise put text into your drafts |
 
 Dependency notes an implementer must not get wrong:
 

@@ -234,7 +234,11 @@ class TelegramIngressDaemon:
             "has_authorized_chat_id": bool(self.authorized_chat_id),
         }
 
-    def process_incoming_update(self, update: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def process_incoming_update(
+        self,
+        update: Dict[str, Any],
+        from_telegram: bool = True,
+    ) -> Optional[Dict[str, Any]]:
         """Process a single Telegram update dictionary."""
         if not isinstance(update, dict):
             return None
@@ -246,10 +250,54 @@ class TelegramIngressDaemon:
         chat_id = str(message.get("chat", {}).get("id", ""))
         text = message.get("text", "")
 
-        # Security: Whitelist check (silently drop unauthorized chat IDs)
-        if self.authorized_chat_id and chat_id != str(self.authorized_chat_id):
-            logger.warning(f"Unauthorized ingress attempt from chat_id: {chat_id}")
-            return None
+        # The whitelist is not optional.
+        #
+        # This read `if self.authorized_chat_id and chat_id != ...`, so the
+        # check applied only when a chat id had been configured, and
+        # authorized_chat_id defaults to empty. The documented way to start the
+        # daemon is the bot token alone, which means the shipped configuration
+        # was: anyone who learns the bot's username can send it a message and
+        # have the text land in the creator's drafts and their posts table, on
+        # a product whose next step is publishing to LinkedIn.
+        #
+        # A bot username is not a secret. Telegram lists bots in search.
+        #
+        # So an unconfigured whitelist now accepts nothing rather than
+        # everything. That is the same direction every other default in this
+        # product takes: autostart off until asked for, the queue pause failing
+        # closed, an MCP server added switched off. Absence of a preference is
+        # not permission.
+        # The whitelist governs Telegram, and only Telegram.
+        #
+        # /api/v1/ingress/simulate reaches this method too, and its
+        # authorization is a different one that has already happened: the
+        # access middleware required a loopback Host, an allowed Origin and
+        # the session cookie before the request arrived. Someone at the
+        # keyboard of this machine is the creator.
+        #
+        # The two used to share this check, and the simulate route passed a
+        # made up chat id of "local_creator" that the open whitelist happened
+        # to accept. That is how the hole stayed invisible: the local path
+        # appeared to be authorized, when in truth nothing was.
+        #
+        # Separating them is what lets the Telegram side fail closed without
+        # taking the local one with it.
+        if from_telegram:
+            if not self.authorized_chat_id:
+                self.last_error = (
+                    "TELEGRAM_CHAT_ID is not set, so every incoming message is "
+                    "refused. Set it to your own numeric chat id to accept drafts "
+                    "from yourself."
+                )
+                logger.warning(
+                    "Refused an ingress message: TELEGRAM_CHAT_ID is not configured, "
+                    "so this bot has no way to tell you from anybody else."
+                )
+                return None
+
+            if chat_id != str(self.authorized_chat_id):
+                logger.warning(f"Unauthorized ingress attempt from chat_id: {chat_id}")
+                return None
 
         if not text:
             if "voice" in message:
@@ -312,6 +360,36 @@ class TelegramIngressDaemon:
         )
 
         return record
+
+    def _redact(self, text: str) -> str:
+        """
+        Removes the bot token from anything about to be stored or logged.
+
+        The token is a path segment of the getUpdates URL, and requests puts
+        the URL in its exception message, so `str(err)` on a connection failure
+        reads:
+
+            HTTPSConnectionPool(host='api.telegram.org', port=443): Max
+            retries exceeded with url: /bot<THE WHOLE TOKEN>/getUpdates
+
+        That string was assigned to last_error, which GET /api/v1/ingress/status
+        returns verbatim, and logged to stderr, which under the desktop shell
+        is redirected into the engine log, which support.py tails into a
+        diagnostics bundle whose docstring offers it for a public issue. A
+        misconfigured bot on a machine with no network was one support request
+        away from publishing a credential that can read and send the creator's
+        messages.
+
+        Both spellings are removed: the raw token, and `bot<token>` as it
+        appears in the path, so a partial match cannot leave the secret half
+        behind.
+        """
+        cleaned = str(text or "")
+        token = str(self.bot_token or "")
+        if token:
+            cleaned = cleaned.replace(f"bot{token}", "bot<redacted>")
+            cleaned = cleaned.replace(token, "<redacted>")
+        return cleaned
 
     def poll_once(self) -> List[Dict[str, Any]]:
         """Single polling request to Telegram getUpdates API."""
@@ -385,7 +463,9 @@ class TelegramIngressDaemon:
                     self.last_error = None
                     return processed
                 else:
-                    self.last_error = f"Telegram API error: {data.get('description', 'Unknown')}"
+                    self.last_error = self._redact(
+                        f"Telegram API error: {data.get('description', 'Unknown')}"
+                    )
             elif res.status_code == 429:
                 # Telegram says wait. Record it as a deadline, not as a delay.
                 #
@@ -422,10 +502,12 @@ class TelegramIngressDaemon:
                     f"backing off {self.current_delay:.1f}s"
                 )
             else:
-                self.last_error = f"HTTP {res.status_code}: {res.text[:100]}"
+                self.last_error = self._redact(f"HTTP {res.status_code}: {res.text[:100]}")
         except Exception as err:
-            self.last_error = str(err)
-            logger.error(f"Polling error: {err}")
+            # Redacted, because the token is in the URL and the URL is in the
+            # exception. See _redact for the whole path this travels.
+            self.last_error = self._redact(str(err))
+            logger.error("Polling error: %s", self._redact(str(err)))
             raise
         return []
 
@@ -448,7 +530,7 @@ class TelegramIngressDaemon:
                     self.poll_once()
                 except Exception as e:
                     has_err = True
-                    logger.error(f"Worker loop error: {e}")
+                    logger.error("Worker loop error: %s", self._redact(str(e)))
 
                 delay = self.calculate_next_poll_interval(has_error=has_err)
                 if self._stop_event.wait(delay):
