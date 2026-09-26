@@ -22,6 +22,9 @@ from studio.backend.database import DB_PATH, get_db
 from studio.backend.crm import ICPScoringEngine
 from studio.core.rate_limiter import generate_gaussian_interval, GaussianRateLimiter
 
+# conftest provides fixtures automatically; a plain helper has to be imported.
+from conftest import is_repository_content
+
 
 def test_phase4_sqlite_database_footprint():
     """Verify SQLite WAL database footprint is well within the 40MB threshold."""
@@ -117,10 +120,18 @@ def test_phase4_repository_wide_zero_em_dashes():
             ext = os.path.splitext(fname)[1].lower()
             if ext in checked_exts:
                 fpath = os.path.join(root, fname)
+                rel = os.path.relpath(fpath, base_dir)
+                # The docstring above says "tracked repository" and this walk
+                # did not honour it. An untracked scratch file is not this
+                # project's writing, and nothing outside studio/ ships at all.
+                # See conftest.is_repository_content for why studio/ is the
+                # exception.
+                if not is_repository_content(rel, base_dir):
+                    continue
                 try:
                     with open(fpath, "rb") as f:
                         if b"\xe2\x80\x94" in f.read():
-                            violations.append(os.path.relpath(fpath, base_dir))
+                            violations.append(rel)
                 except Exception:
                     pass
 

@@ -25,6 +25,9 @@ import re
 
 import pytest
 
+# conftest provides fixtures automatically; a plain helper has to be imported.
+from conftest import is_repository_content
+
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # Surfaces that reach a user. Internal planning material is excluded: the
@@ -60,6 +63,8 @@ def _shipped_files():
                 continue
             rel = os.path.relpath(os.path.join(dirpath, name), REPO_ROOT)
             if rel in EXCLUDED_RELPATHS:
+                continue
+            if not is_repository_content(rel, REPO_ROOT):
                 continue
             yield rel
 

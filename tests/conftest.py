@@ -92,3 +92,65 @@ def pytest_unconfigure(config):
     if _SESSION_TEST_HOME and os.path.isdir(_SESSION_TEST_HOME):
         shutil.rmtree(_SESSION_TEST_HOME, ignore_errors=True)
         _SESSION_TEST_HOME = None
+
+
+# ---------------------------------------------------------------------------
+# What counts as this repository's own content
+#
+# Several hygiene scans walk the working tree. That is right for studio/ and
+# wrong everywhere else, and the asymmetry is load bearing in both directions.
+#
+# copy_application copies studio/ from the working tree rather than from the
+# index, so an untracked file there does reach a user and has to be scanned.
+# That is the lesson a ten file credential leak taught this project once
+# already.
+#
+# Nothing outside studio/ ships. The portable build copies only studio/, and
+# the wheel declares only studio packages. So an unrelated scratch script left
+# in tools/ was failing a check named for shipped files, while CI, which
+# clones, stayed green. A suite that is red for a reason that cannot affect a
+# user trains people to read red as normal, which costs more than the noise it
+# saves.
+#
+# Shared here rather than copied into each test file, because two copies of a
+# rule about what to inspect is how one of them quietly stops matching.
+# ---------------------------------------------------------------------------
+def _git_tracked_paths(repo_root):
+    """Every path git knows about, or None when git cannot answer."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "ls-files"], cwd=repo_root,
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            return None
+        return {
+            line.replace("/", os.sep)
+            for line in result.stdout.splitlines()
+            if line.strip()
+        }
+    except Exception:
+        return None
+
+
+def is_repository_content(rel_path, repo_root, _cache={}):
+    """
+    True for anything that ships, or that git is tracking.
+
+    Everything under studio/ counts whether tracked or not, because the build
+    copies that directory from disk. Elsewhere, tracked is the test. When git
+    is unavailable the answer is True, so a checkout without git scans more
+    rather than less.
+    """
+    if repo_root not in _cache:
+        _cache[repo_root] = _git_tracked_paths(repo_root)
+    tracked = _cache[repo_root]
+
+    normalised = str(rel_path).replace("/", os.sep)
+    if normalised.startswith("studio" + os.sep):
+        return True
+    if tracked is None:
+        return True
+    return normalised in tracked
