@@ -292,7 +292,14 @@ def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optio
         headline = lead["headline"] or ""
         action_saw = "commented on" if lead["engagement_type"] == "Commented" else "reacted to"
         action_thanks = "commenting on" if lead["engagement_type"] == "Commented" else "reacting to"
-        topic = post_topic or "enterprise systems and architecture"
+        # No invented subject. This used to fall back to "enterprise systems and
+        # architecture", so a creator who left the topic blank sent a stranger a
+        # message naming a post about something they may never have written.
+        # The studio does not know which post the lead engaged with, so without
+        # a topic the sentence says "my recent post" and stops there.
+        topic = (post_topic or "").strip()
+        about = f" on {topic}" if topic else ""
+        regarding = f" regarding {topic}" if topic else ""
     
         # Check if we have specific comment notes to reference
         notes = lead["notes"] or ""
@@ -308,7 +315,7 @@ def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optio
         if style == "resource_share":
             script = (
                 f"Hi {first_name},\n\n"
-                f"Thanks for {action_thanks} my recent post on {topic}!{comment_ref}\n\n"
+                f"Thanks for {action_thanks} my recent post{about}!{comment_ref}\n\n"
                 f"I recently put together a practical architecture blueprint and checklist detailing how engineering teams at organizations like {company} decouple critical systems without downtime.\n\n"
                 f"Would you find it helpful if I sent the diagram over? Happy to drop the link right here."
             )
@@ -316,7 +323,7 @@ def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optio
             action_eng = "in the comments on" if lead["engagement_type"] == "Commented" else "engaging with"
             script = (
                 f"Hi {first_name},\n\n"
-                f"Great seeing you {action_eng} my post regarding {topic}!{comment_ref}\n\n"
+                f"Great seeing you {action_eng} my post{regarding}!{comment_ref}\n\n"
                 f"I have been following {company}'s trajectory and love connecting with fellow leaders navigating technical scale.\n\n"
                 f"If you are ever open to a low-key 15-minute virtual coffee to swap notes on engineering architecture, I would love to connect."
             )
@@ -332,7 +339,7 @@ def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optio
             )
             script = (
                 f"Hi {first_name},\n\n"
-                f"Saw that you {action_saw} my recent post on {topic}."
+                f"Saw that you {action_saw} my recent post{about}."
                 f"{appreciation}{comment_ref}\n\n"
                 f"Curious how you and {company} are currently navigating foundational observability and decoupling logic as you scale?\n\n"
                 f"Would love to exchange notes if you're open to connecting."
