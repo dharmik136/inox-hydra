@@ -142,24 +142,37 @@ function maybeExtractAnalytics(force) {
   analyticsReadTimer = setTimeout(extractAndSyncAnalytics, 2000);
 }
 
-// popstate covers back and forward only. LinkedIn navigates with pushState,
-// which emits no event at all, so wrap the two history methods and announce
-// them ourselves. Without this the extractor never runs for anyone who reaches
-// analytics by clicking through the app rather than by loading the URL cold.
-(function announceSpaNavigation() {
-  const fire = () => window.dispatchEvent(new Event("studio:locationchange"));
-  for (const method of ["pushState", "replaceState"]) {
-    const original = history[method];
-    if (typeof original !== "function" || original.__studioWrapped) continue;
-    const wrapped = function () {
-      const result = original.apply(this, arguments);
-      fire();
-      return result;
-    };
-    wrapped.__studioWrapped = true;
-    history[method] = wrapped;
-  }
-})();
+// Announces in-app navigation by watching the URL, not by patching history.
+//
+// popstate covers back and forward only, and LinkedIn navigates with
+// pushState, which emits no event. The previous fix wrapped history.pushState
+// and replaceState, which looked right and did nothing: a content script runs
+// in an isolated world with its own copy of the page's JavaScript globals, so
+// the wrapper replaced this script's history methods while LinkedIn went on
+// calling its own. Every capture keyed to navigation therefore ran only on a
+// hard load, and a creator who clicked from the feed to their profile was
+// never seen arriving.
+//
+// So the URL itself is the signal. A route change re-renders the page, which
+// the body observer below already sees, and the comparison costs one string
+// check per mutation batch. The interval is a fallback for a route change that
+// arrives before any mutation, and does nothing while the tab is hidden.
+let lastSeenHref = window.location.href;
+
+function checkForNavigation() {
+  const href = window.location.href;
+  if (href === lastSeenHref) return;
+  lastSeenHref = href;
+  window.dispatchEvent(new Event("studio:locationchange"));
+}
+
+new MutationObserver(checkForNavigation).observe(document.documentElement, {
+  childList: true,
+  subtree: true,
+});
+setInterval(() => {
+  if (document.visibilityState === "visible") checkForNavigation();
+}, 1000);
 
 maybeExtractAnalytics();
 window.addEventListener("load", () => maybeExtractAnalytics());
