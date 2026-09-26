@@ -1406,6 +1406,8 @@ export interface SelfImport {
 }
 
 export interface OnboardingState {
+  /** Whether a LinkedIn session is stored for the live send. Never the value. */
+  session: { stored: boolean; saved_at: string | null };
   bridge: BridgeStatus;
   candidate: IdentityCandidate | null;
   identity: CreatorIdentity | null;
@@ -1438,6 +1440,10 @@ export async function requestSelfImport(kind: SelfImportKind): Promise<string> {
   });
   if (!data.open_url) throw new Error("the studio did not say which page to open");
   return data.open_url;
+}
+
+export async function deleteLinkedInSession(): Promise<void> {
+  await call("/api/auth/cookies", { method: "DELETE" });
 }
 
 /** LinkedIn's alias for the signed-in member's own profile. */

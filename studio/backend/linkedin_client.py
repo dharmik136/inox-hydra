@@ -244,6 +244,22 @@ class LinkedInClient:
         self.circuit_breaker.reset()
         print("Session tokens encrypted and saved successfully!")
 
+    def clear_tokens(self) -> None:
+        """
+        Deletes the stored session.
+
+        The session is the one thing in this database that could act as the
+        creator on LinkedIn, so the creator can remove it. The next live send
+        then refuses in mock mode and says how to capture it again.
+        """
+        conn = get_db()
+        try:
+            with conn:
+                conn.execute("DELETE FROM settings WHERE key IN ('li_at', 'JSESSIONID', 'last_token_update')")
+                conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('session_status', 'disconnected')")
+        finally:
+            conn.close()
+
     def build_headers(self, tokens: dict) -> dict:
         jsessionid = tokens.get("JSESSIONID", "")
         csrf_token = jsessionid.strip('"').replace("ajax:", "")

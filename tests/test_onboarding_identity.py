@@ -319,3 +319,35 @@ def test_the_bridge_is_connected_only_while_it_is_heard_from():
         conn.execute("UPDATE bridge_heartbeats SET seen_at = ?", (old,))
     conn.close()
     assert _state()["bridge"]["connected"] is False
+
+
+# ---------------------------------------------------------------------------
+# The LinkedIn session: kept only for the live send, and deletable
+# ---------------------------------------------------------------------------
+
+def test_the_session_is_reported_and_can_be_deleted():
+    app_module.linkedin_client.save_tokens("AQEDAnotarealkey_live_shaped", "ajax:1234567890")
+    session = _state()["session"]
+    assert session["stored"] is True and session["saved_at"]
+    assert "AQED" not in json.dumps(_state()), "the session value itself reached the screen"
+
+    assert client.delete("/api/auth/cookies").status_code == 200
+    assert _state()["session"]["stored"] is False
+    assert app_module.linkedin_client.get_tokens().get("li_at") in (None, "")
+
+
+def test_no_timer_harvests_the_session():
+    """
+    The extension copied li_at into the studio every 15 minutes. The creator
+    chose to keep the session only for the live send, captured when they press
+    Sync, so nothing on a schedule may call the sync.
+    """
+    path = os.path.join(os.path.dirname(__file__), "..", "studio", "extension", "background.js")
+    with open(path, encoding="utf-8") as handle:
+        source = handle.read()
+    code = "\n".join(line for line in source.splitlines() if not line.strip().startswith("//"))
+    assert "alarms.create" not in code, "an alarm is being created again"
+    assert "onAlarm" not in code, "something still runs on an alarm"
+    assert 'alarms.clear("studio_periodic_sync")' in code, (
+        "the alarm an earlier version registered is no longer cleared, and alarms outlive their code"
+    )

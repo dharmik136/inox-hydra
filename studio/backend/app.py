@@ -1862,6 +1862,12 @@ def receive_cookies(payload: CookiePayload):
     }
 
 
+@app.delete("/api/auth/cookies")
+def delete_cookies():
+    linkedin_client.clear_tokens()
+    return {"status": "success", "message": "The stored LinkedIn session is deleted."}
+
+
 @app.get("/api/auth/status")
 def get_auth_status():
     conn = get_db()
@@ -2633,8 +2639,10 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
             status_code=409,
             detail=(
                 "Nothing was sent. This studio has no saved LinkedIn session, so "
-                "the scheduler ran in mock mode. Capture your session from the "
-                "browser extension first, then try again."
+                "the scheduler ran in mock mode. Open the Studio Bridge extension "
+                "in your LinkedIn browser, press Sync LinkedIn Session, then try "
+                "again. The session is kept only for sending to LinkedIn, and "
+                "Setup can delete it."
             ),
         )
 

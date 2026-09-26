@@ -133,18 +133,25 @@ function sanitizeTelemetryPayload(obj) {
   return clean;
 }
 
-// Configure alarms on installation
+// The session is captured when the creator asks, never on a timer.
+//
+// This used to copy li_at and JSESSIONID into the studio every 15 minutes.
+// Nothing that reads LinkedIn needs them: every capture reads the page the
+// creator has open. The one feature that does is the live send, which hands a
+// post to LinkedIn's scheduler, and the creator chose to keep that feature on
+// the condition that the session is stored only for it. So the popup's Sync
+// button captures it, the live send's refusal says to press that button, and
+// the Setup screen shows whether one is held with a Delete control.
+//
+// An install that ran an earlier version still has the alarm registered, and
+// alarms outlive the code that created them, so it is cleared here as well as
+// no longer created.
 chrome.runtime.onInstalled.addListener(() => {
   console.log(`[Studio Bridge v${chrome.runtime.getManifest().version}] Service worker installed.`);
-  // Setup automated periodic sync every 15 minutes
-  chrome.alarms.create("studio_periodic_sync", { periodInMinutes: 15 });
+  chrome.alarms.clear("studio_periodic_sync");
 });
-
-// Periodic alarm listener
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "studio_periodic_sync") {
-    syncActiveSessionToStudio();
-  }
+chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.clear("studio_periodic_sync");
 });
 
 // Check and sync session tokens
