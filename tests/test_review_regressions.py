@@ -292,10 +292,26 @@ def test_spa_navigation_is_actually_observed():
     which emits nothing, so the previous fix did not cover the navigation its
     own comment described.
     """
+    # This used to assert that the word "pushState" appeared in content.js. It
+    # did, inside a wrapper that could not work: a content script's history
+    # object is its own isolated copy, so patching it never intercepted
+    # LinkedIn's navigation. The test checked a spelling and stayed green while
+    # every capture keyed to navigation ran on hard loads only.
+    #
+    # So it now checks the mechanism: navigation is detected by comparing the
+    # URL, and nothing patches history, which from a content script only looks
+    # like it works.
     source = _read(CONTENT_JS)
-    assert "pushState" in source, (
-        "Nothing observes pushState, so the analytics extractor never runs for a "
-        "creator who reaches the page by clicking through the app."
+    code = re.sub(r"//[^\n]*", "", source)
+    assert "window.location.href" in code and re.search(
+        r"\bhref\s*!?===?\s*lastSeenHref|lastSeenHref\s*!?===?\s*[\w.]*href\b", code
+    ), (
+        "In-app navigation is no longer detected by watching the URL, so the "
+        "extractors run only for a creator who loads each page cold."
+    )
+    assert not re.search(r"history\[\w+\]\s*=|history\.pushState\s*=", code), (
+        "content.js patches history again. From an isolated world that replaces "
+        "this script's copy and never sees LinkedIn's own navigation."
     )
 
 
