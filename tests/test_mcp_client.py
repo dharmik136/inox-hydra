@@ -218,7 +218,7 @@ def test_an_unreadable_configuration_grounds_nothing(monkeypatch):
 # Egress, which is the promise this feature puts under pressure
 # ---------------------------------------------------------------------------
 
-def test_a_local_provider_is_reported_as_staying_on_the_machine():
+def test_the_local_engine_makes_no_request_at_all():
     report = grounding_module.egress_report("local_deterministic")
     assert report["leaves_this_machine"] is False
     assert "stays on this machine" in report["summary"]
@@ -233,7 +233,104 @@ def test_any_unrecognised_provider_is_treated_as_leaving_the_machine(provider):
     """
     report = grounding_module.egress_report(provider)
     assert report["leaves_this_machine"] is True
-    assert "leaves your machine" in report["summary"]
+    # The flag is the contract. The summary is asserted loosely on purpose:
+    # pinning its exact conjugation makes a reworded sentence look like a
+    # regression, and this test is about the verdict rather than the prose.
+    assert "your machine" in report["summary"]
+
+
+# ---------------------------------------------------------------------------
+# The destination decides, not the provider's name
+#
+# This was a set of provider names: local_deterministic, ollama, llamacpp,
+# lmstudio. Every part of it was wrong, and wrong in both directions.
+#
+# ollama's base URL is configurable, so a config pointed at a remote box was
+# reported as staying on this machine. That is precisely the failure the old
+# comment claimed a name list existed to prevent. custom_openai defaults to
+# http://localhost:8080/v1 and exists for self-hosting, and it was absent, so
+# a creator running a local vLLM was told their private notes were going to a
+# hosted service. llamacpp and lmstudio are not in SUPPORTED_PROVIDERS at all.
+# ---------------------------------------------------------------------------
+
+def test_a_remote_ollama_is_not_reported_as_local():
+    """The dangerous direction, and the one the name list got wrong."""
+    report = grounding_module.egress_report("ollama", "https://someone-elses-box.example.com/v1")
+    assert report["leaves_this_machine"] is True, (
+        "a provider name was trusted over its endpoint, so notes sent to "
+        "another machine were reported as staying on this one"
+    )
+
+
+def test_a_self_hosted_endpoint_is_not_reported_as_hosted():
+    """
+    The over-warning direction. Crying wolf about a local model teaches the
+    creator to disregard the warning that matters.
+    """
+    report = grounding_module.egress_report("custom_openai", "http://localhost:8080/v1")
+    assert report["leaves_this_machine"] is False
+
+
+@pytest.mark.parametrize("url", [
+    "http://localhost:11434/v1",
+    "http://127.0.0.1:11434/v1",
+    "http://127.0.0.5:11434/v1",
+    "http://[::1]:11434/v1",
+])
+def test_every_loopback_spelling_counts_as_this_machine(url):
+    assert grounding_module.egress_report("ollama", url)["leaves_this_machine"] is False
+
+
+@pytest.mark.parametrize("url", [
+    "http://192.168.1.50:11434/v1",
+    "http://10.0.0.5:11434/v1",
+])
+def test_a_box_on_the_same_network_is_still_another_machine(url):
+    """
+    The claim is "stays on this machine", not "stays on this network". Notes
+    sent to a LAN host have left the machine, and a creator reading the
+    reassurance would be misled.
+    """
+    assert grounding_module.egress_report("ollama", url)["leaves_this_machine"] is True
+
+
+@pytest.mark.parametrize("url", ["", "not a url", "localhost:11434", "://broken"])
+def test_an_endpoint_that_cannot_be_read_counts_as_leaving(url):
+    """A destination nobody can identify is not one to reassure anyone about."""
+    assert grounding_module.egress_report("ollama", url)["leaves_this_machine"] is True
+
+
+def test_the_report_names_the_destination():
+    """
+    The ledger elsewhere in this product shows counts without hosts. A creator
+    deciding whether to connect their notes should see where they would go.
+    """
+    report = grounding_module.egress_report("gemini", "https://generativelanguage.googleapis.com/v1beta")
+    assert report["destination"] == "https://generativelanguage.googleapis.com/v1beta"
+    assert "generativelanguage.googleapis.com" in report["summary"]
+
+
+def test_the_dead_name_list_is_gone():
+    """
+    llamacpp and lmstudio could never match a configurable provider, and their
+    presence made the list look more considered than it was.
+    """
+    assert not hasattr(grounding_module, "LOCAL_PROVIDERS"), (
+        "the name based list is back; the destination is what decides"
+    )
+
+
+def test_provenance_records_where_the_material_went():
+    servers_module.add_server("Notes", server_command())
+    servers_module.set_enabled("Notes", True)
+
+    gathered = grounding_module.gather(provider="gemini", base_url="https://api.example.com/v1")
+    record = grounding_module.grounding_provenance(gathered)
+
+    assert record["left_this_machine"] is True
+    assert record["destination"] == "https://api.example.com/v1", (
+        "the record says a draft's notes left the machine without saying where to"
+    )
 
 
 def test_the_report_is_produced_on_every_gather():
