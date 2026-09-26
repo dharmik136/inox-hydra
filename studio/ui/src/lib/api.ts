@@ -489,38 +489,87 @@ export async function dispatchQueueNow(): Promise<string[]> {
 // Offline documentation
 // ---------------------------------------------------------------------------
 
+/** One of the seven hand written module manuals. */
 export interface DocModule {
   id: string;
-  number: number;
+  /** "01" through "06", or "Master". A label, despite the name. */
+  number: string;
   title: string;
   summary: string;
   category: string;
 }
 
+/**
+ * One file in the offline library.
+ *
+ * The search index has always covered every markdown file under the docs
+ * directory and the product listed seven, so most of what a search could match
+ * had no route and the hit could not be opened. This is the whole set, each
+ * entry carrying the id that opens it.
+ */
+export interface DocLibraryEntry {
+  id: string;
+  /** Forward slashed, relative to the docs directory. Relative links resolve against it. */
+  path: string;
+  title: string;
+  category: string;
+  words: number;
+  /** The document's own opening line. Markdown, rendered through the parser. */
+  excerpt: string;
+  /** Set when this file is also one of the curated modules. */
+  module_id: string | null;
+}
+
 export interface DocHit {
   filename: string;
   section: string;
+  /** Carries the FTS5 <mark> pairs. Parse with lib/snippet.ts, never innerHTML. */
   snippet: string;
   relevance_rank: number;
+  /** The document this section lives in, which is what makes a hit a destination. */
+  document_id: string;
 }
 
-export async function fetchDocModules(): Promise<DocModule[]> {
-  const data = await call<{ modules?: DocModule[] }>("/api/docs");
-  return data.modules ?? [];
+export interface DocLibrary {
+  modules: DocModule[];
+  library: DocLibraryEntry[];
 }
 
-export async function searchDocs(query: string, limit = 12): Promise<DocHit[]> {
+export interface DocContent {
+  id: string;
+  title: string;
+  path: string;
+  category: string;
+  words: number;
+  content: string;
+}
+
+export async function fetchDocLibrary(): Promise<DocLibrary> {
+  const data = await call<{ modules?: DocModule[]; library?: DocLibraryEntry[] }>("/api/docs");
+  return { modules: data.modules ?? [], library: data.library ?? [] };
+}
+
+export async function searchDocs(query: string, limit = 20): Promise<DocHit[]> {
   const data = await call<{ results?: DocHit[] }>(
     `/api/docs/search?q=${encodeURIComponent(query)}&limit=${limit}`,
   );
   return data.results ?? [];
 }
 
-export async function fetchDocModule(moduleId: string): Promise<{ title: string; content: string }> {
-  const data = await call<{ title?: string; content?: string; markdown?: string }>(
-    `/api/docs/${encodeURIComponent(moduleId)}`,
+export async function fetchDocument(documentId: string): Promise<DocContent> {
+  const data = await call<Partial<DocContent> & { markdown?: string }>(
+    `/api/docs/${encodeURIComponent(documentId)}`,
   );
-  return { title: data.title ?? moduleId, content: data.content ?? data.markdown ?? "" };
+  return {
+    id: data.id ?? documentId,
+    // The response had no title field and the client read one, so every
+    // document in the reader used to be headed by its own raw id.
+    title: data.title ?? documentId,
+    path: data.path ?? "",
+    category: data.category ?? "",
+    words: data.words ?? 0,
+    content: data.content ?? data.markdown ?? "",
+  };
 }
 
 // ---------------------------------------------------------------------------

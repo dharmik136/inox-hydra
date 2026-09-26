@@ -12,6 +12,7 @@ Zero Cloud Egress Guarantee:
 
 import os
 import io
+import logging
 import csv
 import json
 import uuid
@@ -76,7 +77,8 @@ try:
     from .paths import (get_assets_dir, get_uploads_dir, get_generated_dir, get_data_dir,
                         get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
                         describe as describe_paths)
-    from .docs_engine import search_docs_fts, init_docs_search_index
+    from .docs_engine import (search_docs_fts, init_docs_search_index,
+                              document_library, document_slug)
     from .carousel_engine import carousel_engine
     from . import post_identity
     from . import mcp_client
@@ -137,7 +139,8 @@ except ImportError:
     from paths import (get_assets_dir, get_uploads_dir, get_generated_dir, get_data_dir,
                        get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
                         describe as describe_paths)
-    from docs_engine import search_docs_fts, init_docs_search_index
+    from docs_engine import (search_docs_fts, init_docs_search_index,
+                            document_library, document_slug)
     from carousel_engine import carousel_engine
     import post_identity
     import mcp_client
@@ -185,6 +188,22 @@ OPENAPI_TAGS = [
 async def lifespan(app: FastAPI):
     init_db()
     seed_initial_data()
+    # The offline documentation index, built here rather than on whichever
+    # search happened to run first. It was imported into this module and never
+    # called, so the index was a snapshot of the corpus as it stood the first
+    # time anyone searched, for the life of the database. Cheap: 38 files.
+    try:
+        init_docs_search_index()
+    except Exception:
+        # A documentation index that cannot build is not a reason to refuse to
+        # start. search_docs_fts retries, and the reader opens documents from
+        # disk either way. Logged through the docs_engine logger, which already
+        # records the specific failures; this module declares none of its own,
+        # and reaching for an undefined one here would turn a warning into a
+        # NameError inside the startup path.
+        logging.getLogger("studio.docs").warning(
+            "The documentation search index did not build at startup.", exc_info=True
+        )
     start_scheduler()
     if os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN"):
         ingress_daemon.start_worker()
@@ -1939,15 +1958,91 @@ DOCS_MODULES = [
 ]
 
 
+def _docs_catalogue():
+    """
+    Every openable document, keyed by the one id that opens it.
+
+    Two vocabularies name these files. Seven have a curated id, a title and a
+    category written by hand in DOCS_MODULES; all 38 that the search index
+    covers have a path derived slug from docs_engine. The curated id wins where
+    both exist, so a file has exactly one id and a search hit and a sidebar
+    click land on the same document.
+
+    Every value in here was produced by walking the docs directory. A request
+    supplies an id, which selects a row; it never contributes a path segment.
+    """
+    catalogue = {}
+    by_path = {}
+
+    library = document_library(DOCS_DIR)
+    for entry in library:
+        catalogue[entry["id"]] = {
+            "id": entry["id"],
+            "path": entry["path"],
+            "title": entry["title"],
+            "category": entry["folder"],
+            "words": entry["words"],
+            "excerpt": entry["excerpt"],
+            "module_id": None,
+        }
+        by_path[entry["path"]] = entry["id"]
+
+    for module in DOCS_MODULES:
+        # The curated list names a bare filename; it lives either in modules/ or
+        # at the root of the docs directory, which is what the old two step
+        # lookup in this endpoint was doing.
+        for candidate in ("modules/" + module["file"], module["file"]):
+            if candidate not in by_path:
+                continue
+            slug = by_path[candidate]
+            record = dict(catalogue[slug])
+            record.update({
+                "id": module["id"],
+                "title": module["title"],
+                "category": module["category"],
+                "module_id": module["id"],
+            })
+            # Both ids resolve, and both resolve to the curated record, so an
+            # older link built from the slug keeps working.
+            catalogue[module["id"]] = record
+            catalogue[slug] = record
+            by_path[candidate] = module["id"]
+            break
+
+    return catalogue, by_path
+
+
 @app.get("/api/docs", tags=["Documentation"])
 def list_docs_modules():
     """
-    Returns the list of all available enterprise documentation modules.
+    The documentation suite: the seven curated modules, and the whole library.
+
+    The index has always covered every markdown file under the docs directory
+    and this endpoint reported seven of them, so four fifths of what the search
+    could match had no route and the interface could not offer the hit it had
+    just rendered. "library" closes that: one entry per indexed file, carrying
+    the id that opens it and the curated module id when it has one.
     """
+    catalogue, by_path = _docs_catalogue()
+    library = []
+    for path in sorted(by_path):
+        record = catalogue[by_path[path]]
+        library.append({
+            "id": record["id"],
+            "path": record["path"],
+            "title": record["title"],
+            "category": record["category"],
+            "words": record["words"],
+            "excerpt": record["excerpt"],
+            "module_id": record["module_id"],
+        })
+
     return {
         "status": "success",
         "count": len(DOCS_MODULES),
-        "modules": DOCS_MODULES
+        "modules": DOCS_MODULES,
+        "library": library,
+        "library_count": len(library)
     }
 
 
@@ -1962,6 +2057,16 @@ def search_documentation(q: str, limit: int = 10):
     except (TypeError, ValueError):
         safe_limit = 10
     results = search_docs_fts(safe_q, limit=safe_limit)
+
+    # A hit named a file and stopped there, so the interface rendered a snippet
+    # it could not act on. The id of the document the section lives in is what
+    # turns a result into a destination.
+    _, by_path = _docs_catalogue()
+    for hit in results:
+        filename = str(hit.get("filename") or "").replace("\\", "/")
+        hit["filename"] = filename
+        hit["document_id"] = by_path.get(filename) or document_slug(filename)
+
     return {
         "status": "success",
         "query": safe_q,
@@ -1975,33 +2080,51 @@ def get_doc_module(module_id: str):
     """
     Retrieves the full markdown content of a documentation module by ID or number.
     """
-    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(module_id or ""))[:60]
+    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(module_id or ""))[:120]
     if not safe_id:
         raise HTTPException(status_code=400, detail="Invalid documentation module ID.")
 
-    target = None
-    for m in DOCS_MODULES:
-        if m["id"].lower() == safe_id.lower() or m["number"] == safe_id:
-            target = m
-            break
+    catalogue, _ = _docs_catalogue()
+    record = catalogue.get(safe_id) or catalogue.get(safe_id.lower())
 
-    if not target:
+    if record is None:
+        # A curated module may also be addressed by its number, which is the one
+        # key that is not a slug.
+        for module in DOCS_MODULES:
+            if module["number"] == safe_id:
+                record = catalogue.get(module["id"])
+                break
+
+    if record is None:
         raise HTTPException(status_code=404, detail=f"Documentation module '{safe_id}' not found.")
 
-    # Locate the file (either in modules/ or directly in docs/)
-    file_path = os.path.join(MODULES_DIR, target["file"])
+    # A lookup, not a join. The path came from walking the docs directory, so
+    # nothing the caller sent reaches the filesystem.
+    file_path = os.path.join(DOCS_DIR, *record["path"].split("/"))
     if not os.path.exists(file_path):
-        file_path = os.path.join(DOCS_DIR, target["file"])
+        raise HTTPException(status_code=404, detail=f"Documentation file for '{safe_id}' not found on disk.")
 
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail=f"Documentation file for '{module_id}' not found on disk.")
-
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
         content = f.read()
+
+    target = None
+    if record["module_id"]:
+        for module in DOCS_MODULES:
+            if module["id"] == record["module_id"]:
+                target = module
+                break
 
     return {
         "status": "success",
         "module": target,
+        # The interface read data.title and this response never had one, so every
+        # document in the reader was headed by its own raw id. The path is here
+        # because a relative link inside a document resolves against it.
+        "id": record["id"],
+        "title": record["title"],
+        "path": record["path"],
+        "category": record["category"],
+        "words": record["words"],
         "content": content
     }
 
