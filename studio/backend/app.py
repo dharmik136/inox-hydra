@@ -2241,9 +2241,14 @@ def simulate_ingress(req: IngressSimulateRequest):
             "from": {"first_name": req.sender_name}
         }
     }
-    result = ingress_daemon.process_incoming_update(update_payload)
+    # from_telegram=False, because this request is not from Telegram. It came
+    # through the local API, which already required a loopback Host, an allowed
+    # Origin and the session cookie, so the caller is someone at this machine's
+    # keyboard. The Telegram chat id whitelist answers a different question and
+    # must not be the thing standing between the creator and their own tray.
+    result = ingress_daemon.process_incoming_update(update_payload, from_telegram=False)
     if not result:
-        return {"status": "skipped", "message": "Message dropped by whitelist security filter or empty."}
+        return {"status": "skipped", "message": "Message was empty or carried no usable text."}
     return {"status": "success", "record": result}
 
 
