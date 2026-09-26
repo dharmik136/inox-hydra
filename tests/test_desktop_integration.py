@@ -292,7 +292,23 @@ def test_the_worker_is_registered():
 
 
 def test_the_manifest_and_icon_are_served():
-    """The manifest is fetched by the browser before any token exists."""
+    """
+    The manifest is fetched by the browser before any token exists.
+
+    Skipped when the interface has not been built, for the same reason three
+    other tests in this suite already do: studio/frontend_next is gitignored
+    build output, get_frontend_dir() has no fallback since the vanilla page was
+    retired, and these paths are served from it. Without the skip this fails
+    for anyone who has not run `npm run build` in studio/ui, which is a
+    legitimate state for a checkout and says nothing about whether the routes
+    work. CI builds the interface, so the assertion below still runs there.
+
+    A test that fails for an ordinary local reason is worse than no test: it
+    trains people to read a red suite as normal.
+    """
+    if not os.path.isfile(os.path.join(REPO_ROOT, "studio", "frontend_next", "index.html")):
+        pytest.skip("studio/frontend_next is not built in this checkout")
+
     for path in ("/manifest.webmanifest", "/icons/icon-192.png", "/sw.js"):
         res = client.get(path)
         assert res.status_code == 200, f"{path} is not served"
