@@ -333,7 +333,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
             type="text"
             value={topic}
             onChange={(event) => setTopic(event.target.value)}
-            placeholder="enterprise systems and architecture"
+            placeholder="Optional. Left blank, the draft says only “my recent post”"
             className="mt-1 w-full rounded-md border border-edge bg-ink px-2.5 py-1.5 text-[13px] text-ink-primary placeholder:text-ink-muted focus:border-edge-strong focus:outline-none"
           />
         </label>
