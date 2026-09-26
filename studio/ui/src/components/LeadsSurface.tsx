@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { Download, Loader2 } from "lucide-react";
+import { Copy, Download, ExternalLink, Loader2 } from "lucide-react";
 import {
   LEADS_CSV_URL,
   LEAD_STATUSES,
+  copyExtensionPath,
+  fetchBrowserBridge,
   fetchLeadTimeline,
   fetchLeads,
+  launchBridge,
   generateLeadDm,
   updateLeadStatus,
+  type BrowserBridge,
   type Lead,
   type LeadInteraction,
 } from "@/lib/api";
@@ -46,13 +50,7 @@ export function LeadsSurface() {
   if (failed) return <Centered>LEAD PIPELINE UNAVAILABLE</Centered>;
   if (!leads) return <Centered>LOADING LEADS</Centered>;
   if (leads.length === 0) {
-    return (
-      <Centered>
-        NO LEADS CAPTURED YET
-        <br />
-        <span className="text-ink-muted">CAPTURED PASSIVELY FROM PEOPLE WHO ENGAGE WITH YOUR POSTS</span>
-      </Centered>
-    );
+    return <EmptyStream />;
   }
 
   return (
@@ -332,6 +330,149 @@ function Centered({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid h-full place-items-center px-8">
       <p className="studio-meta max-w-[40ch] text-center leading-relaxed text-ink-muted">{children}</p>
+    </div>
+  );
+}
+
+/**
+ * The empty stream, and the reason it is empty.
+ *
+ * Leads arrive from an extension watching LinkedIn pages you open yourself.
+ * Until it is loaded there is nothing to capture, so this surface stays empty
+ * no matter how long it is left, and the previous copy stated that outcome
+ * without offering the step that changes it.
+ *
+ * Which browsers can carry it is a measured fact, not a preference. Chrome
+ * accepts --load-extension and ignores it, so listing it as an equal option
+ * would send someone to the one browser where this silently does nothing.
+ */
+function EmptyStream() {
+  const [bridge, setBridge] = useState<BrowserBridge | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetchBrowserBridge()
+      .then((result) => live && setBridge(result))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  async function open(browserId: string) {
+    setBusy(browserId);
+    setNote(null);
+    try {
+      const result = await launchBridge(browserId);
+      setNote(result.message);
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "The browser could not be launched.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function copyPath() {
+    setBusy("copy");
+    setNote(null);
+    try {
+      const path = await copyExtensionPath();
+      setNote(`Copied to the clipboard: ${path}`);
+    } catch {
+      setNote("The path could not be copied.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const carriers = (bridge?.browsers ?? []).filter((b) => b.carries_extension === true);
+  const others = (bridge?.browsers ?? []).filter((b) => b.carries_extension !== true);
+
+  return (
+    <div className="grid h-full place-items-center px-8">
+      <div className="max-w-[54ch]">
+        <p className="studio-label">No leads captured yet</p>
+        <p className="mt-3 text-[14px] leading-relaxed text-ink-secondary">
+          Leads are captured passively, by an extension watching the LinkedIn pages you open
+          yourself. Nothing is scraped and nothing is requested on your behalf, which is also why
+          this stays empty until the bridge is running.
+        </p>
+
+        {failed ? (
+          <p className="studio-meta mt-5 text-ink-muted">BROWSER DETECTION UNAVAILABLE</p>
+        ) : bridge === null ? (
+          <p className="studio-meta mt-5 text-ink-muted">LOOKING FOR A BROWSER</p>
+        ) : bridge.browsers.length === 0 ? (
+          <p className="studio-meta mt-5 leading-relaxed text-ink-muted">
+            NO CHROMIUM BROWSER FOUND ON THIS MACHINE. INSTALL EDGE OR BRAVE TO RUN THE BRIDGE.
+          </p>
+        ) : (
+          <>
+            {carriers.length > 0 && (
+              <div className="mt-5">
+                <p className="studio-meta mb-2 text-[10px]">OPEN LINKEDIN WITH THE BRIDGE</p>
+                <div className="flex flex-wrap gap-2">
+                  {carriers.map((browser) => (
+                    <button
+                      key={browser.id}
+                      type="button"
+                      onClick={() => void open(browser.id)}
+                      disabled={busy !== null}
+                      className="flex items-center gap-1.5 rounded-md bg-signal-orange px-3 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+                    >
+                      {busy === browser.id ? (
+                        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <ExternalLink className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                      )}
+                      {browser.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {others.length > 0 && (
+              <p className="studio-meta mt-4 leading-relaxed text-ink-muted">
+                {others.map((b) => b.name.toUpperCase()).join(", ")}{" "}
+                {others.length === 1 ? "IS" : "ARE"} INSTALLED BUT{" "}
+                {others.some((b) => b.carries_extension === false)
+                  ? "IGNORES THE EXTENSION FLAG, SO THE BRIDGE WOULD NOT ATTACH."
+                  : "HAS NOT BEEN CHECKED ON THIS MACHINE."}
+              </p>
+            )}
+
+            <div className="mt-5 border-t border-edge pt-4">
+              <p className="studio-meta mb-2 text-[10px]">OR LOAD IT BY HAND</p>
+              <p className="text-[13px] leading-relaxed text-ink-secondary">
+                Open your browser&rsquo;s extensions page, turn on developer mode, choose Load
+                unpacked, and point it at this folder.
+              </p>
+              <button
+                type="button"
+                onClick={() => void copyPath()}
+                disabled={busy !== null}
+                className="mt-2 flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+              >
+                <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                Copy the folder path
+              </button>
+              <p className="studio-meta mt-2 break-all text-[10px] text-ink-muted">
+                {bridge.extension_path}
+              </p>
+            </div>
+          </>
+        )}
+
+        {note && (
+          <p role="status" className="studio-meta mt-4 leading-snug text-ink-secondary">
+            {note}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

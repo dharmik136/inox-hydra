@@ -163,6 +163,40 @@ def _candidate_paths(candidate: Dict[str, Any]) -> List[str]:
     return []
 
 
+# Which browsers actually load an unpacked extension from --load-extension.
+#
+# Not all of them do, and the ones that do not fail silently: the browser opens,
+# reports success, and the bridge is simply not there. Leads then never arrive
+# and nothing on screen explains why.
+#
+# Probed on this machine by launching each browser headless with a throwaway
+# profile and the extension flag, then reading the DevTools target list for the
+# bridge's own service worker:
+#
+#   chrome   the worker never appears
+#   edge     chrome-extension://<id>/background.js  present
+#   brave    chrome-extension://<id>/background.js  present
+#
+# The first version of that probe counted any chrome-extension:// worker and
+# reported Chrome as working, because every Chromium browser ships component
+# extensions of its own. Matching the bridge's declared background.js is what
+# separated them.
+#
+# Unlisted browsers are recorded as unknown rather than guessed at. Saying "we
+# have not checked" is a different statement from "this will not work", and the
+# interface renders them differently.
+EXTENSION_SUPPORT = {
+    "chrome": False,
+    "edge": True,
+    "brave": True,
+}
+
+
+def carries_extension(browser_id: str):
+    """True, False, or None when this browser has not been probed."""
+    return EXTENSION_SUPPORT.get(browser_id)
+
+
 def detect_installed_browsers() -> Dict[str, Dict[str, str]]:
     """
     Scans this machine for installed Chromium browsers.
@@ -218,7 +252,10 @@ def detect_installed_browsers() -> Dict[str, Dict[str, str]]:
                 "id": browser_id,
                 "name": browser_name,
                 "path": found_path,
-                "is_available": True
+                "is_available": True,
+                # Installed and useful are different questions. Chrome is
+                # installed on most machines and cannot carry the bridge.
+                "carries_extension": carries_extension(browser_id),
             }
 
     return results
@@ -491,7 +528,9 @@ def launch_browser_with_extension(
 ) -> Dict[str, Any]:
     """
     Spawns the target browser as an independent process with --load-extension.
-    If browser_id is 'auto', picks Chrome first, then Edge, then Brave.
+    If browser_id is 'auto', prefers a browser that actually loads the
+    bridge. This used to prefer Chrome, which does not, so the default path
+    opened the one option that silently fails.
     """
     browsers = detect_installed_browsers()
     if not browsers:
@@ -504,8 +543,11 @@ def launch_browser_with_extension(
     if browser_id != "auto" and browser_id in browsers:
         selected = browsers[browser_id]
     else:
-        # Preference order: Chrome -> Edge -> Brave -> others
-        for pref in ["chrome", "edge", "brave", "opera", "vivaldi"]:
+        # Capability before popularity. Chrome is installed on nearly every
+        # machine and ignores --load-extension, so preferring it by name meant
+        # the automatic choice was the one that cannot work.
+        order = ["edge", "brave", "chrome", "opera", "vivaldi"]
+        for pref in sorted(order, key=lambda b: (carries_extension(b) is not True, order.index(b))):
             if pref in browsers:
                 selected = browsers[pref]
                 break
@@ -545,13 +587,34 @@ def launch_browser_with_extension(
         else:
             subprocess.Popen(args, close_fds=True)
 
+        # What happened is that a browser was launched. Whether the bridge
+        # came with it is a separate fact, and claiming it for a browser that
+        # drops the flag is how someone ends up waiting for leads that cannot
+        # arrive.
+        carries = carries_extension(selected["id"])
+        if carries is True:
+            message = f"Launched {selected['name']} with the bridge loaded."
+        elif carries is False:
+            message = (
+                f"Launched {selected['name']}, but it ignores --load-extension, so the "
+                "bridge is not attached and no leads will be captured. Use Edge or Brave, "
+                "or load the extension by hand from the path below."
+            )
+        else:
+            message = (
+                f"Launched {selected['name']}. Whether it loads an unpacked extension has "
+                "not been checked on this machine, so the bridge may or may not be attached."
+            )
+
         return {
             "status": "success",
             "browser": selected["name"],
+            "browser_id": selected["id"],
             "browser_path": exe_path,
             "target_url": target_url,
             "extension_path": ext_path,
-            "message": f"Successfully launched {selected['name']} with LinkedIn Studio Bridge loaded."
+            "carries_extension": carries,
+            "message": message,
         }
     except Exception as e:
         return {

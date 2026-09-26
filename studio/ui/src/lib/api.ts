@@ -1154,3 +1154,72 @@ export async function fetchEgressStatus(): Promise<EgressStatus> {
     total_refused: data.total_refused ?? 0,
   };
 }
+
+
+// ---------------------------------------------------------------------------
+// The browser bridge
+//
+// Leads are captured by an extension observing LinkedIn pages you open, so
+// until it is loaded the Leads surface can only ever be empty. Four endpoints
+// have existed for this since before the interface did and none was reachable,
+// which left the one question a new install actually has, "how do leads get
+// here", with no answer on screen.
+// ---------------------------------------------------------------------------
+
+export interface DetectedBrowser {
+  id: string;
+  name: string;
+  path: string;
+  is_available: boolean;
+  /**
+   * Whether this browser loads an unpacked extension from --load-extension.
+   * False for Chrome, which accepts the flag and ignores it. Null means it was
+   * never probed, which is a different statement from "will not work".
+   */
+  carries_extension: boolean | null;
+}
+
+export interface BrowserBridge {
+  browsers: DetectedBrowser[];
+  extension_path: string;
+}
+
+export async function fetchBrowserBridge(): Promise<BrowserBridge> {
+  const data = await call<{ browsers?: Record<string, DetectedBrowser>; extension_path?: string }>(
+    "/api/v1/browser/status",
+  );
+  return {
+    browsers: Object.values(data.browsers ?? {}),
+    extension_path: data.extension_path ?? "",
+  };
+}
+
+export interface BrowserLaunch {
+  browser: string;
+  carries_extension: boolean | null;
+  message: string;
+  extension_path: string;
+}
+
+/** Opens a browser on LinkedIn with the bridge attached, where it can be. */
+export async function launchBridge(browserId: string): Promise<BrowserLaunch> {
+  const data = await call<Partial<BrowserLaunch>>("/api/v1/browser/launch", {
+    method: "POST",
+    body: JSON.stringify({ browser_id: browserId }),
+  });
+  return {
+    browser: data.browser ?? "",
+    carries_extension: data.carries_extension ?? null,
+    message: data.message ?? "",
+    extension_path: data.extension_path ?? "",
+  };
+}
+
+/** Puts the extension folder on the clipboard, for Load Unpacked by hand. */
+export async function copyExtensionPath(): Promise<string> {
+  const data = await call<{ path?: string; extension_path?: string }>(
+    "/api/v1/browser/copy-path",
+    { method: "POST" },
+  );
+  return data.path ?? data.extension_path ?? "";
+}
