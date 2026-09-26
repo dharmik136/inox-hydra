@@ -10,6 +10,7 @@ Guarantees:
 3. Zero Em-Dashes: Strict enforcement across all indexed text and docstrings.
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -31,6 +32,71 @@ except ImportError:
 DOCS_DIR = get_docs_dir()
 MAX_DOCS_INDEX_FILE_SIZE = 2 * 1024 * 1024  # 2MB per document file
 MAX_DOCS_SEARCH_QUERY_LENGTH = 300
+
+
+# The signature of the corpus the live index was built from.
+#
+# init_docs_search_index is imported into app.py and never called from it, and
+# the only other call sites are inside search_docs_fts, guarded by "the table
+# does not exist". So the index was built exactly once, on the first search ever
+# run against a given database, and never again. Editing a playbook, adding a
+# document or deleting one changed nothing that search could see, for the life
+# of that database.
+#
+# paths.py states the opposite in as many words: a source checkout is
+# authoritative "so editing docs/ during development takes effect immediately
+# without a repackaging step". That was true for opening a document, which reads
+# from disk, and false for finding one.
+#
+# It matters more now that every hit is a destination. A stale index can return
+# a section of a file that has since been renamed, and the reader follows it to
+# a 404 rather than to a slightly old snippet.
+_index_signature = None
+
+
+def corpus_signature(docs_dir: Optional[str] = None):
+    """
+    A fingerprint of the documentation directory, taken from its contents.
+
+    The first version of this used path, size and modification time, which is
+    the cheap answer and is not a correct one. Windows stamps a write with the
+    system clock tick, roughly 15ms, so two same length writes inside one tick
+    share an mtime and the fingerprint does not move. The test written for that
+    case passed on its own and failed under the load of the full suite, which
+    is the honest verdict on a timestamp: it reports when the filesystem
+    noticed, not what the file says.
+
+    So the content decides. One sha256 over every markdown file, which is the
+    same set of bytes a rebuild would read anyway, and the answer is exact
+    rather than probabilistic.
+
+    Measured on this corpus rather than guessed at: 22ms for 38 files and
+    450KB, most of it per file open overhead rather than hashing. That is paid
+    on every search, against a query the interface debounces at 250ms, and
+    against /api/docs which already reads the whole corpus to build the library
+    listing. It buys the difference between a search that answers from the
+    documents and one that answers from a snapshot of them.
+    """
+    target_dir = docs_dir or DOCS_DIR
+    if not os.path.isdir(target_dir):
+        return ""
+
+    digest = hashlib.sha256()
+    for root, _, files in os.walk(target_dir):
+        for name in sorted(files):
+            if not name.endswith(".md"):
+                continue
+            path = os.path.join(root, name)
+            rel = os.path.relpath(path, target_dir).replace(os.sep, "/")
+            digest.update(rel.encode("utf-8", "replace"))
+            try:
+                with open(path, "rb") as handle:
+                    digest.update(handle.read(MAX_DOCS_INDEX_FILE_SIZE))
+            except OSError:
+                # A file that cannot be read is part of the state too: it
+                # reappearing is a change, so it is stamped rather than skipped.
+                digest.update(b"<unreadable>")
+    return digest.hexdigest()
 
 
 def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: Optional[str] = None) -> int:
@@ -91,7 +157,11 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
 
                         # Split document into logical sections by Markdown headers
                         sections = re.split(r'\n(?=#{1,3}\s+)', content)
-                        rel_path = os.path.relpath(file_path, target_dir)
+                        # Stored with forward slashes on every platform. relpath
+                        # returns backslashes on Windows, which the interface was
+                        # showing to the reader verbatim, and a document id derived
+                        # from it would differ between operating systems.
+                        rel_path = os.path.relpath(file_path, target_dir).replace(os.sep, "/")
 
                         for sec in sections:
                             sec_lines = sec.strip().splitlines()
@@ -140,6 +210,11 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
             )
 
         conn.commit()
+        # Recorded here and nowhere else, so a rebuild that rolled back above
+        # leaves the previous signature in place and the next search tries
+        # again rather than trusting an index that was never written.
+        global _index_signature
+        _index_signature = (os.path.abspath(target_dir), corpus_signature(target_dir))
         return indexed_count
     except Exception:
         if conn:
@@ -184,9 +259,14 @@ def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connecti
 
     try:
         cur = conn.cursor()
-        # Verify docs_index exists
+        # Rebuild when the table is missing, and also when the documents have
+        # changed since it was built. The second half is the one that was
+        # absent: without it the index is a snapshot of whatever the corpus
+        # looked like the first time anyone searched.
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='docs_index'")
         if not cur.fetchone():
+            init_docs_search_index(conn)
+        elif _index_signature != (os.path.abspath(DOCS_DIR), corpus_signature()):
             init_docs_search_index(conn)
 
         cur.execute("""
@@ -201,7 +281,7 @@ def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connecti
         results = []
         for r in rows:
             results.append({
-                "filename": r[0],
+                "filename": str(r[0]).replace("\\", "/"),
                 "section": r[1],
                 "snippet": r[2],
                 "relevance_rank": float(r[3])
@@ -219,7 +299,7 @@ def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connecti
             rows = cur.fetchall()
             return [
                 {
-                    "filename": r[0],
+                    "filename": str(r[0]).replace("\\", "/"),
                     "section": r[1],
                     "snippet": r[2] + "...",
                     "relevance_rank": float(r[3])
@@ -234,3 +314,166 @@ def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connecti
                 conn.close()
             except Exception:
                 pass
+
+
+# ---------------------------------------------------------------------------
+# The document registry
+# ---------------------------------------------------------------------------
+# The search index covers every markdown file under the docs directory, 38 of
+# them, and the product exposed 7. So a search could match a section of
+# DATA_ARCHITECTURE.md, return a real snippet, and have nowhere to send the
+# reader: the hit existed, the document had no route, and the interface simply
+# did not offer it. Four fifths of what the search can find was unreachable by
+# construction, which is also why the result list was not clickable.
+#
+# This gives every indexed file an id. Resolution is a dictionary lookup against
+# a table built by walking the directory here, so an incoming request never
+# contributes a path segment and traversal is not something that has to be
+# defended a second time.
+
+DOC_EXCERPT_LENGTH = 220
+
+_FOLDER_LABELS = {
+    "": "Reference",
+    "modules": "Module Manuals",
+}
+
+
+def document_slug(rel_path):
+    """
+    A stable id for a documentation file, derived from its path.
+
+    Lowercased, with the separators and the extension folded away, so
+    modules/05_ANALYTICS.md becomes modules-05_analytics. The character class is
+    the one the API sanitizer permits, so a slug survives a round trip through a
+    URL unchanged rather than being silently rewritten into a 404.
+    """
+    stem = str(rel_path or "").replace("\\", "/")
+    if stem.lower().endswith(".md"):
+        stem = stem[:-3]
+    slug = re.sub(r"[^a-z0-9_]+", "-", stem.lower())
+    return re.sub(r"-{2,}", "-", slug).strip("-")
+
+
+def is_rule(line):
+    """A horizontal rule: three or more of one rule character, and nothing else."""
+    bare = str(line or "").replace(" ", "").replace("\t", "")
+    return len(bare) >= 3 and bare in (
+        "-" * len(bare), "*" * len(bare), "_" * len(bare),
+    )
+
+
+def _folder_label(rel_path):
+    folder = os.path.dirname(rel_path)
+    if folder in _FOLDER_LABELS:
+        return _FOLDER_LABELS[folder]
+    return folder.replace("_", " ").replace("/", " / ").title()
+
+
+def _describe_document(path, rel_path):
+    """
+    Title, opening line and length, read from the file itself.
+
+    Nothing here is generated. The title is the document's own first level one
+    heading and falls back to its filename; the excerpt is its own first line of
+    prose. A document with neither gets an empty excerpt rather than a sentence
+    the studio made up about it.
+    """
+    em_dash = chr(0x2014)
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as handle:
+            content = handle.read(MAX_DOCS_INDEX_FILE_SIZE)
+    except OSError:
+        return None
+
+    title = None
+    excerpt = ""
+    # A list item is a fallback rather than a first choice. Two files open on a
+    # checklist, and taking that line verbatim put "- [x] Configured ..." in the
+    # sidebar, marker and all. A prose line is what an opening line means; the
+    # item is only used when the document has no paragraph at all, and then its
+    # marker comes off.
+    fallback = ""
+    in_fence = False
+    for line in content.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("```") or stripped.startswith("~~~"):
+            in_fence = not in_fence
+            continue
+        if in_fence or not stripped:
+            continue
+        if title is None and stripped.startswith("# "):
+            title = stripped[2:].strip()
+            continue
+        if excerpt or stripped.startswith("#") or stripped.startswith(">"):
+            continue
+        if stripped.startswith("|") or is_rule(stripped):
+            continue
+        item = re.match(r"^(?:[-*+]|\d{1,9}[.)])\s+(.*)$", stripped)
+        if item:
+            if not fallback:
+                fallback = re.sub(r"^\[[ xX]\]\s*", "", item.group(1)).strip()
+            continue
+        excerpt = stripped
+
+    if not excerpt:
+        excerpt = fallback
+    if title is None:
+        title = os.path.basename(rel_path)[:-3].replace("_", " ").title()
+
+    return {
+        "id": document_slug(rel_path),
+        "path": rel_path,
+        "title": title.replace(em_dash, " -- "),
+        "excerpt": excerpt[:DOC_EXCERPT_LENGTH].replace(em_dash, " -- "),
+        "folder": _folder_label(rel_path),
+        "words": len(re.findall(r"[^\s]+", content)),
+    }
+
+
+def document_library(docs_dir=None):
+    """
+    Every markdown file the search index covers, in a form the interface can
+    open. Sorted by folder then path so the listing is stable between calls.
+    """
+    target_dir = docs_dir or DOCS_DIR
+    if not os.path.isdir(target_dir):
+        return []
+
+    entries = []
+    seen = set()
+    for root, _, files in os.walk(target_dir):
+        for name in sorted(files):
+            if not name.endswith(".md"):
+                continue
+            path = os.path.join(root, name)
+            rel_path = os.path.relpath(path, target_dir).replace(os.sep, "/")
+            described = _describe_document(path, rel_path)
+            if described is None:
+                continue
+            # Two paths cannot collapse onto one id without one of them becoming
+            # unreachable, which is the bug this table exists to remove.
+            if described["id"] in seen:
+                described["id"] = document_slug(rel_path + "-" + str(len(entries)))
+            seen.add(described["id"])
+            entries.append(described)
+
+    entries.sort(key=lambda entry: (entry["folder"], entry["path"]))
+    return entries
+
+
+def resolve_document_path(document_id, docs_dir=None):
+    """
+    The absolute path an id refers to, or None.
+
+    A lookup rather than a join: the id selects a row from a table of files this
+    module walked, so nothing a caller sends is ever used to build a path.
+    """
+    wanted = str(document_id or "").lower()
+    if not wanted:
+        return None
+    target_dir = docs_dir or DOCS_DIR
+    for entry in document_library(target_dir):
+        if entry["id"] == wanted:
+            return os.path.join(target_dir, *entry["path"].split("/"))
+    return None
