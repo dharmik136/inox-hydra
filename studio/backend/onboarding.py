@@ -661,8 +661,20 @@ def onboarding_state() -> Dict[str, Any]:
         identity["education"] = education
         identity["skills"] = skills
 
+    # Whether a LinkedIn session is held, and since when. Read here rather than
+    # through linkedin_client so this module stays free of anything that could
+    # reach the network. Never the value itself.
+    conn = get_db()
+    try:
+        held = {r["key"]: r["value"] for r in conn.execute(
+            "SELECT key, value FROM settings WHERE key IN ('li_at', 'last_token_update')")}
+    finally:
+        conn.close()
+    session = {"stored": bool(held.get("li_at")), "saved_at": held.get("last_token_update")}
+
     bridge = bridge_status()
     return {
+        "session": session,
         "status": "success",
         "bridge": bridge,
         "candidate": candidate,

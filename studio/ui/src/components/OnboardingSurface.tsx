@@ -3,6 +3,7 @@ import { Check, ExternalLink, Loader2 } from "lucide-react";
 import {
   OWN_PROFILE_URL,
   confirmIdentity,
+  deleteLinkedInSession,
   fetchBrowserBridge,
   fetchOnboardingState,
   forgetIdentity,
@@ -231,6 +232,33 @@ export function OnboardingSurface() {
           )}
         </Step>
       </ol>
+
+      {/* The one stored thing that could act as the creator on LinkedIn.
+          Captured only from the extension's Sync button, kept only for the
+          live send in the publish dialog, and deletable here. */}
+      <section className="border-t border-edge pt-4">
+        <p className="studio-meta text-[10px] text-ink-muted">LINKEDIN SESSION</p>
+        <div className="mt-1 flex items-center justify-between gap-4">
+          <p className="text-[13px] text-ink-secondary">
+            {state.session.stored
+              ? `Stored${state.session.saved_at ? ` since ${state.session.saved_at.slice(0, 10)}` : ""}, used only to hand a post to LinkedIn's scheduler.`
+              : "Not stored. Only needed to schedule posts on LinkedIn itself; the extension's Sync button captures it."}
+          </p>
+          {state.session.stored && (
+            <Secondary
+              disabled={busy !== null}
+              onPress={() =>
+                void act("session", async () => {
+                  await deleteLinkedInSession();
+                  return "The LinkedIn session is deleted.";
+                })
+              }
+            >
+              Delete
+            </Secondary>
+          )}
+        </div>
+      </section>
 
       {note && (
         <p role="status" className="studio-meta mt-6 leading-snug text-ink-secondary">
