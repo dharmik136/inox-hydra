@@ -1325,10 +1325,12 @@ export interface BrowserLaunch {
 }
 
 /** Opens a browser on LinkedIn with the bridge attached, where it can be. */
-export async function launchBridge(browserId: string): Promise<BrowserLaunch> {
+export async function launchBridge(browserId: string, url?: string): Promise<BrowserLaunch> {
   const data = await call<Partial<BrowserLaunch>>("/api/v1/browser/launch", {
     method: "POST",
-    body: JSON.stringify({ browser_id: browserId }),
+    // The backend accepts only https LinkedIn URLs and falls back to the feed
+    // for anything else, so a URL here is a destination, never a command.
+    body: JSON.stringify(url ? { browser_id: browserId, url } : { browser_id: browserId }),
   });
   return {
     browser: data.browser ?? "",
@@ -1346,3 +1348,97 @@ export async function copyExtensionPath(): Promise<string> {
   );
   return data.path ?? data.extension_path ?? "";
 }
+
+// -------------------------------------------------------------
+// Onboarding: who the creator is, and their own history
+// -------------------------------------------------------------
+
+export interface BridgeStatus {
+  connected: boolean;
+  last_seen_at: string | null;
+  seconds_ago: number | null;
+  extension_version: string | null;
+  page_kind: string | null;
+}
+
+export interface IdentityCandidate {
+  vanity: string;
+  display_name: string | null;
+  headline: string | null;
+  location: string | null;
+  /** Why the studio thinks this profile is yours, in words to show. */
+  evidence: string[];
+  observed_at: string | null;
+}
+
+export interface CreatorIdentity {
+  vanity: string;
+  profile_url: string | null;
+  display_name: string | null;
+  headline: string | null;
+  location: string | null;
+  about: string | null;
+  current_company: string | null;
+  follower_count: number | null;
+  connection_count: number | null;
+  email: string | null;
+  phone: string | null;
+  birthday: string | null;
+  websites: string[];
+  profile_observed_at: string | null;
+  contact_observed_at: string | null;
+  confirmed_at: string;
+  positions: { title: string | null; company: string | null; date_range: string | null; location: string | null }[];
+  education: { school: string | null; degree: string | null; date_range: string | null }[];
+  skills: string[];
+}
+
+export type SelfImportKind = "posts" | "comments" | "reactions";
+
+export interface SelfImport {
+  id: number;
+  kind: SelfImportKind;
+  requested_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  items_seen: number | null;
+  outcome: string | null;
+}
+
+export interface OnboardingState {
+  bridge: BridgeStatus;
+  candidate: IdentityCandidate | null;
+  identity: CreatorIdentity | null;
+  counts: { posts: number; comments: number; reactions: number };
+  imports: SelfImport[];
+  steps: { bridge: boolean; identity: boolean; posts: boolean; activity: boolean };
+}
+
+export async function fetchOnboardingState(): Promise<OnboardingState> {
+  return call<OnboardingState>("/api/v1/onboarding/state");
+}
+
+export async function confirmIdentity(vanity: string): Promise<void> {
+  await call("/api/v1/identity/confirm", { method: "POST", body: JSON.stringify({ vanity }) });
+}
+
+export async function rejectIdentityCandidate(): Promise<void> {
+  await call("/api/v1/identity/reject", { method: "POST" });
+}
+
+export async function forgetIdentity(): Promise<void> {
+  await call("/api/v1/identity", { method: "DELETE" });
+}
+
+/** Asks the extension to scroll one of your activity pages. Returns the page to open. */
+export async function requestSelfImport(kind: SelfImportKind): Promise<string> {
+  const data = await call<{ open_url?: string }>("/api/v1/self/imports", {
+    method: "POST",
+    body: JSON.stringify({ kind }),
+  });
+  if (!data.open_url) throw new Error("the studio did not say which page to open");
+  return data.open_url;
+}
+
+/** LinkedIn's alias for the signed-in member's own profile. */
+export const OWN_PROFILE_URL = "https://www.linkedin.com/in/me/";

@@ -68,6 +68,7 @@ try:
     from .intelligence_sync import intelligence_sync_engine
     from .gstack_governance import gstack_engine
     from .internal_sheet import internal_sheet_manager
+    from . import onboarding
     from . import devtools
     from . import security
     from . import desktop as desktop_integration
@@ -130,6 +131,7 @@ except ImportError:
     from intelligence_sync import intelligence_sync_engine
     from gstack_governance import gstack_engine
     from internal_sheet import internal_sheet_manager
+    import onboarding
     import devtools
     import security
     import desktop as desktop_integration
@@ -1451,6 +1453,134 @@ def get_lead_enrichment_endpoint(lead_id: str):
         "status": "success",
         "enrichment": enrichment
     }
+
+
+# -------------------------------------------------------------
+# Module: Onboarding, the creator's own identity and history
+# -------------------------------------------------------------
+# The extension reaches the POST routes through its service worker relay, and
+# the onboarding screen reads the state. Every write goes through onboarding.py,
+# which refuses anything that is not the confirmed creator's. A refusal is a 409
+# with the reason, because the extension logs it and the screen may show it.
+
+class BridgeHeartbeat(BaseModel):
+    extension_version: Optional[str] = None
+    page_kind: Optional[str] = None
+
+
+class IdentityConfirm(BaseModel):
+    vanity: str
+
+
+class OwnPostsIngest(BaseModel):
+    author: str
+    posts: List[Dict[str, Any]]
+
+
+class OutboundIngest(BaseModel):
+    actor: str
+    items: List[Dict[str, Any]]
+
+
+class ImportRequest(BaseModel):
+    kind: str
+
+
+class ImportEvent(BaseModel):
+    id: int
+    event: str
+    items_seen: Optional[int] = None
+    outcome: Optional[str] = None
+
+
+def _refusal(error: "onboarding.RefusedCapture"):
+    raise HTTPException(status_code=409, detail=str(error))
+
+
+@app.get("/api/v1/onboarding/state", tags=["Onboarding"])
+def get_onboarding_state():
+    return onboarding.onboarding_state()
+
+
+@app.post("/api/v1/bridge/heartbeat", tags=["Onboarding"])
+def post_bridge_heartbeat(payload: BridgeHeartbeat):
+    return onboarding.record_heartbeat(payload.extension_version, payload.page_kind)
+
+
+@app.post("/api/v1/identity/observe", tags=["Onboarding"])
+def post_identity_observe(payload: Dict[str, Any]):
+    try:
+        return onboarding.observe_profile(payload)
+    except onboarding.RefusedCapture as error:
+        _refusal(error)
+
+
+@app.post("/api/v1/identity/me", tags=["Onboarding"])
+def post_identity_me():
+    """
+    The confirmed vanity, or null. POST only so the extension's relay, which
+    forwards a fixed allowlist of paths, can reach it without a query string.
+    The extension uses it to recognise the creator's own pages, and to send a
+    profile only when that profile could be the creator's.
+    """
+    return {"status": "success", "vanity": onboarding.confirmed_vanity() or None}
+
+
+@app.post("/api/v1/identity/confirm", tags=["Onboarding"])
+def post_identity_confirm(payload: IdentityConfirm):
+    try:
+        return onboarding.confirm_identity(payload.vanity)
+    except onboarding.RefusedCapture as error:
+        _refusal(error)
+
+
+@app.post("/api/v1/identity/reject", tags=["Onboarding"])
+def post_identity_reject():
+    return onboarding.reject_candidate()
+
+
+@app.delete("/api/v1/identity", tags=["Onboarding"])
+def delete_identity():
+    return onboarding.forget_identity()
+
+
+@app.post("/api/v1/self/posts/ingest", tags=["Onboarding"])
+def post_own_posts(payload: OwnPostsIngest):
+    try:
+        return onboarding.ingest_own_posts(payload.author, payload.posts)
+    except onboarding.RefusedCapture as error:
+        _refusal(error)
+
+
+@app.post("/api/v1/self/outbound/ingest", tags=["Onboarding"])
+def post_outbound(payload: OutboundIngest):
+    try:
+        return onboarding.ingest_outbound(payload.actor, payload.items)
+    except onboarding.RefusedCapture as error:
+        _refusal(error)
+
+
+@app.post("/api/v1/self/imports", tags=["Onboarding"])
+def post_import_request(payload: ImportRequest):
+    try:
+        return onboarding.request_import(payload.kind)
+    except onboarding.RefusedCapture as error:
+        _refusal(error)
+
+
+@app.post("/api/v1/self/imports/pending", tags=["Onboarding"])
+def get_pending_import(payload: ImportRequest):
+    kind = payload.kind
+    return {"status": "success", "request": onboarding.pending_import(kind),
+            "vanity": onboarding.confirmed_vanity() or None}
+
+
+@app.post("/api/v1/self/imports/event", tags=["Onboarding"])
+def post_import_event(payload: ImportEvent):
+    try:
+        return onboarding.update_import(payload.id, payload.event, payload.items_seen, payload.outcome)
+    except onboarding.RefusedCapture as error:
+        _refusal(error)
 
 
 # -------------------------------------------------------------

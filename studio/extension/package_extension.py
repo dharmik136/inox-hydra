@@ -27,6 +27,7 @@ REQUIRED_FILES = [
     "manifest.json",
     "background.js",
     "content.js",
+    "own_pages.js",
     "content.css",
     "popup.html",
     "popup.js",

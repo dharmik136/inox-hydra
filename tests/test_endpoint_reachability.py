@@ -67,9 +67,18 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # for as long as it has existed, in the direction that makes the product look
 # worse than it is, which is the less dangerous direction but still wrong.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 138
-REACHED_BY_INTERFACE = 67
-UNREACHABLE = 71
+#
+# Then 138 -> 150 paths, with onboarding. Twelve new paths: five the Setup
+# screen calls, seven only the extension calls (heartbeat, identity/me,
+# identity/observe, self/posts/ingest, self/outbound/ingest, the two import
+# routes). Those seven are unreachable by this file's definition, which counts
+# the interface, and that is the right answer rather than a gap: they are the
+# extension's to call. In the same change the prefix rule was removed (see
+# measured() below), which takes back one route it had been crediting falsely.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 150
+REACHED_BY_INTERFACE = 71
+UNREACHABLE = 79
 
 ROUTE_DECORATOR = re.compile(
     r"^\s*@app\.(get|post|put|delete|patch)\(\s*[\"']([^\"']+)[\"']", re.MULTILINE
@@ -134,9 +143,17 @@ def measured():
     reached = set()
     for route in declared:
         for called in reached_paths:
-            # A called path may carry a query string or be a prefix the client
-            # appends to, so containment in either direction counts as reached.
-            if route == called or called.startswith(route + "/") or route.startswith(called):
+            # Exact, or the interface calls a longer path under this one.
+            #
+            # There was a third clause, route.startswith(called), meant for a
+            # client that appends to a prefix. Normalisation already turns
+            # every ${...} into *, so that case never needed it, and what it
+            # actually did was credit a route whenever a SHORTER path was
+            # called: DELETE /api/v1/identity counted /api/v1/identity/observe
+            # as reached, and /api/v1/internal-sheet/issues/*/promote had been
+            # counted for as long as this file existed although nothing in the
+            # interface calls it.
+            if route == called or called.startswith(route + "/"):
                 reached.add(route)
                 break
 
