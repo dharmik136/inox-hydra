@@ -78,6 +78,24 @@ fn engine_log_path() -> Option<PathBuf> {
     Some(home.join("logs").join("engine.log"))
 }
 
+/// Appends one line from the shell itself to the engine log.
+///
+/// A release build has no stderr, so an eprintln from the shell is written
+/// nowhere a user or a diagnostics bundle can find it. This is the one place
+/// the shell can leave a note that survives. Failure is ignored for the same
+/// reason as in open_engine_log: logging is never a precondition.
+pub fn note(line: &str) {
+    use std::io::Write;
+    let Some(path) = engine_log_path() else { return };
+    let Some(parent) = path.parent() else { return };
+    if std::fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(file, "[shell] {}", line);
+    }
+}
+
 /// Opens the engine log, appending, and marks the start of this launch.
 ///
 /// Returns None on any failure. Logging is a diagnostic aid and never a
