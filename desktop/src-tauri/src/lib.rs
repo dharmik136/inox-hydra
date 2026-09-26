@@ -23,11 +23,16 @@
 //!
 //! Strict Invariants:
 //! - Zero em-dashes.
-//! - Closing the window hides it. Quitting is an explicit act from the tray.
+//! - Closing the window hides it, when there is a tray to bring it back, and
+//!   quitting is then an explicit act from the tray. With no tray, closing
+//!   quits, because a hidden window nobody can reach is worse than an exit.
+//! - Nothing in setup is allowed to panic. A release build has no console, so
+//!   a panic there is an application that silently never opens.
 //! - The backend is stopped on exit only if this process started it.
 
 mod backend;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -43,6 +48,9 @@ const READY_TIMEOUT: Duration = Duration::from_secs(45);
 const MAIN_WINDOW: &str = "studio";
 
 struct BackendState(Mutex<Option<backend::Backend>>);
+
+/// Whether a tray icon was created, which decides what closing the window does.
+struct TrayState(AtomicBool);
 
 fn show_studio(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW) {
@@ -61,6 +69,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_shell::init())
         .manage(BackendState(Mutex::new(None)))
+        .manage(TrayState(AtomicBool::new(false)))
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -77,7 +86,26 @@ pub fn run() {
                 eprintln!("[shell] updates are not available in this build: {}", error);
             }
 
-            build_tray(app)?;
+            // Allowed to fail, and the failure changes what closing means.
+            //
+            // This used to be `build_tray(app)?`, ahead of the engine starting,
+            // so any tray error aborted setup and the .expect below turned it
+            // into a panic. A release build has no console, so the user saw an
+            // application that did not open and nothing else. A tray error is
+            // not exotic: a Linux desktop without an appindicator library
+            // refuses one, and so did a missing window icon via an unwrap.
+            //
+            // The studio works without a tray. What does not work is hiding
+            // the window on close with no tray to bring it back, which would
+            // leave the engine running behind nothing the user can reach. So
+            // the outcome is recorded, and on_window_event reads it.
+            match build_tray(app) {
+                Ok(()) => app.state::<TrayState>().0.store(true, Ordering::SeqCst),
+                Err(error) => backend::note(&format!(
+                    "no tray icon ({}); closing the window will quit the studio",
+                    error
+                )),
+            }
 
             let resources = app
                 .path()
@@ -130,9 +158,16 @@ pub fn run() {
             // Close hides. The studio runs a scheduler, so the window closing
             // must not take the engine with it, and a creator who clicks the X
             // means "get this off my screen", not "stop posting".
+            //
+            // Only while a tray exists to bring it back. Without one, a hidden
+            // window is unreachable and the engine would keep running behind
+            // it, so the close goes through and the exit path stops the engine.
             if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+                let has_tray = window.app_handle().state::<TrayState>().0.load(Ordering::SeqCst);
+                if has_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .build(tauri::generate_context!())
@@ -220,7 +255,11 @@ fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let update_item = update.clone();
 
     TrayIconBuilder::with_id("studio-tray")
-        .icon(app.default_window_icon().unwrap().clone())
+        .icon(
+            app.default_window_icon()
+                .ok_or("the bundle carries no window icon for the tray to use")?
+                .clone(),
+        )
         .tooltip("LinkedIn Studio")
         .menu(&menu)
         // Left click opens, right click gets the menu. Showing the menu on
