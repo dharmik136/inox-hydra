@@ -88,24 +88,67 @@ def test_the_endpoint_behind_the_button_only_writes_a_local_row():
     )
 
 
-def test_the_interface_is_not_wired_to_the_staging_path():
+def test_a_live_send_exists_and_is_guarded():
     """
-    Establishes why the copy has to be cautious, and fails loudly if that
-    changes.
+    This replaces a tripwire, and the reason is worth recording.
 
-    /api/v1/scheduler/native/stage does reach LinkedIn. The day the composer
-    calls it, "mark as published" becomes the wrong words in the other
-    direction, and this test is where that is noticed.
+    The previous version asserted that api.ts did not contain the string
+    "/api/v1/scheduler/native/stage", to catch the day the composer gained a
+    real send. That day came, the send was wired through a different route,
+    /api/v1/posts/{id}/stage-to-linkedin, and the test stayed green while its
+    own premise went false. It guarded a spelling rather than a property.
+
+    So this asserts the property: if the interface can reach LinkedIn, the
+    guards that make that defensible have to be present. Matched by shape
+    rather than by exact path, so renaming the route does not silently reopen
+    the gap a second time.
     """
-    # Comments are stripped first. api.ts documents the gap by naming the
-    # endpoint, and a check against the raw file fails on its own explanation.
     client = re.sub(r"/\*.*?\*/", "", _read(API_CLIENT), flags=re.DOTALL)
     client = re.sub(r"//[^\n]*", "", client)
 
-    assert "/api/v1/scheduler/native/stage" not in client, (
-        "the interface now calls the native staging endpoint, which really does "
-        "post to LinkedIn. The publish copy should be revisited: it currently "
-        "tells the author that nothing is sent"
+    sends = re.findall(r"/api/[^\s\"'`]*stage[^\s\"'`]*", client)
+    if not sends:
+        pytest.skip("the interface has no live send, which is also a valid state")
+
+    app = _read(APP)
+    assert "confirm" in app, "the live send has no confirmation requirement"
+    assert 'result.get("mode") == "mock"' in app, (
+        "a mock run could be reported to the author as a real send, which is "
+        "the defect this route introduced once already"
+    )
+
+
+def test_the_live_send_asks_a_second_time():
+    """
+    The action cannot be undone from this side, so one press is the wrong
+    interface for it. Asserted on the component's state rather than on the
+    copy, because copy gets reworded and a state machine does not vanish by
+    accident.
+    """
+    source = _read(PUBLISH_DIALOG)
+    if "stageToLinkedIn" not in source:
+        pytest.skip("the dialog has no live send")
+
+    assert "confirmingSend" in source, "the live send fires on one press"
+    assert "cannot be undone" in source, (
+        "nothing tells the author that this one is irreversible"
+    )
+
+
+def test_the_local_actions_still_say_they_are_local():
+    """
+    Adding a real send must not blur the two that are not. The earlier copy
+    said "neither sends anything", which was true of two controls and is the
+    wrong sentence for three.
+    """
+    rendered = _read(PUBLISH_DIALOG)
+    rendered = rendered[rendered.index("return ("):]
+
+    assert "NEITHER OF THOSE TWO SENDS ANYTHING" in rendered, (
+        "the local actions no longer distinguish themselves from the live one"
+    )
+    assert "Mark as published" in rendered, (
+        "the honest control for a post the author published themselves is gone"
     )
 
 
