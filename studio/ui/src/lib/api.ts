@@ -537,6 +537,8 @@ export interface DocSection {
   id: string;
   title: string;
   blurb: string;
+  /** Help for the user, reference for a maintainer, or retired material kept for the record. */
+  kind: "help" | "reference" | "retired";
   count: number;
   words: number;
   document_ids: string[];
@@ -576,6 +578,8 @@ export interface DocContent {
   category: string;
   /** The help section it is filed under, which is the reader's breadcrumb. */
   section: string;
+  /** Kept for the record, and contradicted by the code in places. */
+  retired: boolean;
   words: number;
   content: string;
 }
@@ -606,6 +610,7 @@ export async function fetchDocument(documentId: string): Promise<DocContent> {
     path: data.path ?? "",
     category: data.category ?? "",
     section: data.section ?? "",
+    retired: data.retired ?? false,
     words: data.words ?? 0,
     content: data.content ?? data.markdown ?? "",
   };

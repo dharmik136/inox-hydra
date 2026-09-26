@@ -41,7 +41,12 @@ export interface HelpHomeProps {
 export function HelpHome({ sections, library, query, onQuery, onOpenSection, onOpenDocument }: HelpHomeProps) {
   // "Start here" is the section the table puts first, not a hand picked list
   // kept somewhere else that could disagree with it.
-  const [first, ...rest] = sections;
+  const helpSections = sections.filter((section) => section.kind === "help");
+  const [first, ...rest] = helpSections;
+  // Maintainer reference and retired manuals are reachable, but they are not
+  // what somebody opening help came for, so they sit in a quieter row below
+  // the topics rather than as cards of equal weight beside them.
+  const elsewhere = sections.filter((section) => section.kind !== "help");
   const firstDocuments = (first?.document_ids ?? [])
     .map((id) => library.get(id))
     .filter((entry): entry is DocLibraryEntry => entry !== undefined);
@@ -148,6 +153,37 @@ export function HelpHome({ sections, library, query, onQuery, onOpenSection, onO
             ))}
           </div>
         </section>
+
+        {elsewhere.length > 0 && (
+          <section aria-labelledby="help-elsewhere" className="mt-10 border-t border-edge pt-6">
+            <h2 id="help-elsewhere" className="studio-label">
+              Also in the library
+            </h2>
+            <ul className="mt-2 flex flex-col">
+              {elsewhere.map((section) => (
+                <li key={section.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenSection(section.id)}
+                    className="group flex w-full items-baseline justify-between gap-4 py-2 text-left"
+                  >
+                    <span className="min-w-0">
+                      <span className="text-[13px] text-ink-primary group-hover:text-signal-orange-text">
+                        {section.title}
+                      </span>
+                      <span className="mt-0.5 block text-[12px] leading-snug text-ink-muted">
+                        {section.blurb}
+                      </span>
+                    </span>
+                    <span className="studio-meta shrink-0 text-[10px] text-ink-muted">
+                      {section.count} {section.count === 1 ? "DOCUMENT" : "DOCUMENTS"}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
     </div>
   );
@@ -216,6 +252,8 @@ export interface ResultsViewProps {
   searching: boolean;
   hits: DocHit[] | null;
   byName: DocLibraryEntry[];
+  /** Which part of the help a name match is filed under, so a retired title cannot pass for help. */
+  sectionTitle: (sectionId: string) => string;
   onOpenDocument: (id: string, anchor: string | null) => void;
   slugFor: (section: string) => string;
 }
@@ -233,7 +271,7 @@ export interface ResultsViewProps {
  * the second, and a document whose title matches is not competing with a
  * paragraph that mentions the term.
  */
-export function ResultsView({ query, searching, hits, byName, onOpenDocument, slugFor }: ResultsViewProps) {
+export function ResultsView({ query, searching, hits, byName, sectionTitle, onOpenDocument, slugFor }: ResultsViewProps) {
   const sections = hits ?? [];
   const nothing = !searching && hits !== null && sections.length === 0 && byName.length === 0;
 
@@ -269,6 +307,9 @@ export function ResultsView({ query, searching, hits, byName, onOpenDocument, sl
                     onClick={() => onOpenDocument(entry.id, null)}
                     className="group w-full border-t border-edge py-3 text-left transition-colors duration-(--studio-motion-fast) last:border-b hover:bg-soft/50"
                   >
+                    {sectionTitle(entry.section) && (
+                      <span className="studio-label block text-ink-secondary">{sectionTitle(entry.section)}</span>
+                    )}
                     <span className="flex items-baseline justify-between gap-4">
                       <span className="text-[14px] font-medium text-ink-primary group-hover:text-signal-orange-text">
                         <InlineText spans={readableInline(entry.title)} />

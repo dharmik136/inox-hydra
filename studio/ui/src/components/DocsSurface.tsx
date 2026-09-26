@@ -53,6 +53,7 @@ interface OpenDocument {
   title: string;
   path: string;
   section: string;
+  retired: boolean;
   words: number;
   blocks: Block[];
   outline: Outline[];
@@ -152,6 +153,7 @@ export function DocsSurface() {
           title: result.title,
           path: result.path,
           section: result.section,
+          retired: result.retired,
           words: result.words,
           blocks: parsed.blocks,
           outline: parsed.outline,
@@ -284,13 +286,31 @@ export function DocsSurface() {
     setView("section");
   }, []);
 
+  /** Each section's kind and title, for ordering and labelling a name match. */
+  const sectionOf = useMemo(() => {
+    const map = new Map<string, DocSection>();
+    for (const section of sections) map.set(section.id, section);
+    return map;
+  }, [sections]);
+
+  /**
+   * Documents whose name matches, help first.
+   *
+   * The server groups passage results by kind, and this list is filtered here
+   * from the library, so it has to do the same. Before it did, searching
+   * "extension" led with the retired Chrome-only setup guide, the one the help
+   * article exists to correct, because its title happens to contain the word.
+   */
   const byName = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return [];
-    return library.filter(
-      (entry) => entry.title.toLowerCase().includes(term) || entry.path.toLowerCase().includes(term),
-    );
-  }, [library, query]);
+    const order: Record<string, number> = { help: 0, reference: 1, retired: 2 };
+    return library
+      .filter((entry) => entry.title.toLowerCase().includes(term) || entry.path.toLowerCase().includes(term))
+      .map((entry, index) => ({ entry, index, rank: order[sectionOf.get(entry.section)?.kind ?? "help"] }))
+      .sort((a, b) => a.rank - b.rank || a.index - b.index)
+      .map(({ entry }) => entry);
+  }, [library, query, sectionOf]);
 
   if (failed) return <Centered>THE DOCUMENTATION LIBRARY COULD NOT BE READ</Centered>;
   if (!library.length) return <Centered>OPENING THE LIBRARY</Centered>;
@@ -325,6 +345,7 @@ export function DocsSurface() {
             searching={searching}
             hits={hits}
             byName={byName}
+            sectionTitle={(id) => sectionOf.get(id)?.title ?? ""}
             onOpenDocument={selectDocument}
             slugFor={slugify}
           />
@@ -353,6 +374,31 @@ export function DocsSurface() {
                 </button>
 
                 <DocumentMeta path={doc.path} section={doc.section} words={doc.words} />
+
+                {doc.retired && (
+                  // Served, because it is the project's record, but not
+                  // without saying so. The review behind the help articles
+                  // found these contradicted by the code in places, and a
+                  // reader who lands here from a search has no other way to
+                  // know that "356 vaulted blueprints" was never true.
+                  <aside
+                    role="note"
+                    className="mt-4 mb-6 max-w-[76ch] rounded-r-md border-l-2 border-l-signal-orange bg-soft py-3 pr-4 pl-4"
+                  >
+                    <p className="studio-label text-signal-orange-text">Kept for the record</p>
+                    <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
+                      This document describes an earlier version of the studio, and parts of it no
+                      longer match what the studio does. For how things work now, use the help topics.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={goHome}
+                      className="studio-meta mt-2 text-ink-primary underline decoration-signal-orange underline-offset-2 hover:text-signal-orange-text"
+                    >
+                      GO TO THE HELP TOPICS
+                    </button>
+                  </aside>
+                )}
 
                 {/* A document with no level one heading of its own would open
                     with no name at all, so the curated title stands in. */}
