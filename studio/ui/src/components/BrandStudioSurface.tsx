@@ -1,14 +1,20 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useState as useLocalState } from "react";
-import { Check, Loader2, ShieldCheck } from "lucide-react";
+import { Archive, Check, Loader2, ShieldCheck } from "lucide-react";
 import {
+  createBackup,
+  exportData,
   fetchAiStatus,
   fetchAuthStatus,
+  fetchBackups,
+  fetchEgressStatus,
   fetchProfile,
   saveSessionCookies,
   saveProfile,
   type AiStatus,
   type AuthStatus,
+  type BackupListing,
+  type EgressStatus,
   type CreatorProfile,
   type ProfileResponse,
 } from "@/lib/api";
@@ -368,16 +374,255 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
         ))}
       </dl>
 
-      <p className="studio-meta mt-5 leading-relaxed text-ink-muted">
-        CONFIGURING A CLOUD PROVIDER KEY SENDS PROMPT TEXT TO THAT PROVIDER.
-        <br />
-        <span className="text-ink-muted">NOTHING ELSE IN THE STUDIO LEAVES THIS MACHINE.</span>
-      </p>
+      {/* This used to end "NOTHING ELSE IN THE STUDIO LEAVES THIS MACHINE",
+          which is not true. Four features reach out, and a blanket sentence a
+          reader cannot verify is worth less than a list they can. What stays
+          is the part that actually matters: the work itself never moves.
+
+          tests/test_egress_surface.py holds this list to the code, so adding
+          an outbound call without saying so here fails the suite. */}
+      <div className="mt-5">
+        <p className="studio-meta leading-relaxed text-ink-muted">
+          YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THIS MACHINE.
+        </p>
+      </div>
+
+      <EgressLedger />
 
       <SessionConnection />
+
+      <YourData />
     </div>
   );
 }
+
+/**
+ * Taking a copy of your own work.
+ *
+ * Everything the studio holds is one SQLite file plus a media directory. The
+ * backup and export endpoints have existed, and been tested, since before this
+ * interface did, and no surface ever called them, so the only way to take a
+ * copy was to know the CLI existed. For a product built on keeping your work
+ * on your machine, that left the entire burden of not losing it on the machine.
+ *
+ * Paths are shown rather than downloaded. The archive is written by the server
+ * to a directory on this machine, and telling you where it went is more useful
+ * than handing back bytes the browser would put somewhere else.
+ */
+function YourData() {
+  const [listing, setListing] = useState<BackupListing | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      setListing(await fetchBackups());
+    } catch {
+      setFailed(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function run(what: "backup" | "json" | "csv") {
+    setBusy(what);
+    setNote(null);
+    try {
+      if (what === "backup") {
+        const made = await createBackup("manual");
+        setNote(`Saved ${readableBytes(made.bytes)} to ${made.archive}`);
+        await load();
+      } else {
+        const out = await exportData(what);
+        setNote(out.note ? `${out.path}. ${out.note}` : out.path);
+      }
+    } catch (caught) {
+      // The server's reason, not a generic failure. A backup that did not
+      // happen must never read like one that did.
+      setNote(caught instanceof Error ? caught.message : "The request was refused.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="mt-6 border-t border-edge pt-5">
+      <p className="studio-label mb-2">Your data</p>
+      <p className="mb-3 text-[13px] leading-relaxed text-ink-secondary">
+        Your drafts, leads and settings are one file on this machine. Nothing copies them
+        anywhere unless you do.
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => void run("backup")}
+          disabled={busy !== null}
+          className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+        >
+          {busy === "backup" ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Archive className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          )}
+          Back up now
+        </button>
+        <button
+          type="button"
+          onClick={() => void run("json")}
+          disabled={busy !== null}
+          className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+        >
+          Export JSON
+        </button>
+        <button
+          type="button"
+          onClick={() => void run("csv")}
+          disabled={busy !== null}
+          className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+        >
+          Export CSV
+        </button>
+      </div>
+
+      {note && (
+        <p role="status" className="studio-meta mt-3 leading-snug break-all text-ink-secondary">
+          {note}
+        </p>
+      )}
+
+      {failed ? (
+        <p className="studio-meta mt-4 text-ink-muted">BACKUP FOLDER COULD NOT BE READ</p>
+      ) : listing === null ? (
+        <p className="studio-meta mt-4 text-ink-muted">READING</p>
+      ) : listing.backups.length === 0 ? (
+        <p className="studio-meta mt-4 text-ink-muted">NO BACKUPS YET</p>
+      ) : (
+        <div className="mt-4">
+          <p className="studio-meta mb-2 text-[10px]">
+            {listing.count} ARCHIVE{listing.count === 1 ? "" : "S"}
+          </p>
+          <ul className="flex flex-col gap-1">
+            {listing.backups.slice(0, 5).map((archive) => (
+              <li key={archive.name} className="flex items-baseline justify-between gap-3">
+                <span className="truncate text-[12px] text-ink-secondary">{archive.name}</span>
+                <span className="studio-meta shrink-0 text-[10px] text-ink-muted">
+                  {readableBytes(archive.bytes)}
+                  <span className="mx-1.5">·</span>
+                  {archive.modified.slice(0, 16).replace("T", " ")}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="studio-meta mt-2 break-all text-[10px] text-ink-muted">
+            {listing.directory}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * What has left this machine, counted.
+ *
+ * This replaced a four line list of things that reach out. The list was true
+ * when it was written, which is the problem with a list: the sentence above it
+ * previously claimed nothing else ever left, and that had been false for as
+ * long as image generation existed. Counters come from the chokepoint every
+ * outbound call passes through, so they cannot describe a version of the code
+ * that is no longer running.
+ *
+ * Categories with nothing to report are still shown. An absence of requests is
+ * the answer most of these should give, and hiding them would turn a zero into
+ * a blank.
+ */
+function EgressLedger() {
+  const [status, setStatus] = useState<EgressStatus | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    fetchEgressStatus()
+      .then((result) => live && setStatus(result))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (failed) {
+    return (
+      <div className="mt-6 border-t border-edge pt-5">
+        <p className="studio-label mb-2">What has left this machine</p>
+        <p className="studio-meta text-ink-muted">EGRESS LEDGER UNAVAILABLE</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-6 border-t border-edge pt-5">
+      <p className="studio-label mb-2">What has left this machine</p>
+
+      {status === null ? (
+        <p className="studio-meta text-ink-muted">READING</p>
+      ) : (
+        <>
+          <p className="mb-3 text-[13px] leading-relaxed text-ink-secondary">
+            Counted since the studio started, at the one point every outbound request passes
+            through.{" "}
+            {status.total_performed === 0
+              ? "Nothing has left this machine."
+              : `${status.total_performed} request${status.total_performed === 1 ? "" : "s"} left this machine.`}
+            {status.total_refused > 0 && ` ${status.total_refused} refused.`}
+          </p>
+
+          {status.master_off && (
+            <p className="studio-meta mb-3 leading-snug text-signal-green-text">
+              {status.master_flag} IS SET. NOTHING MAY OPEN A CONNECTION.
+            </p>
+          )}
+
+          <ul className="flex flex-col gap-1">
+            {status.categories.map((category) => (
+              <li key={category.name} className="flex items-baseline justify-between gap-3">
+                <span className="text-[12px] text-ink-secondary">
+                  {category.name}
+                  {!category.allowed && (
+                    <span className="studio-meta ml-2 text-[10px] text-ink-muted">OFF</span>
+                  )}
+                </span>
+                <span className="studio-meta shrink-0 text-[10px] text-ink-muted tabular-nums">
+                  {category.performed} sent
+                  {category.refused > 0 && (
+                    <>
+                      <span className="mx-1.5">·</span>
+                      {category.refused} refused
+                    </>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          <p className="studio-meta mt-3 leading-snug text-ink-muted">
+            SET {status.master_flag}=1 TO REFUSE EVERY CATEGORY, INCLUDING THE ONES ON BY DEFAULT.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function readableBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 
 function Field({
   label,

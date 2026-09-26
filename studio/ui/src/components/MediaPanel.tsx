@@ -9,6 +9,7 @@ import {
   uploadMedia,
   type MediaAsset,
 } from "@/lib/api";
+import { formatDimensions } from "@/lib/media";
 import { cn } from "@/lib/utils";
 
 /** Bytes as a person reads them. Binary units, because file managers use them. */
@@ -155,10 +156,13 @@ export function MediaPanel() {
                     <p className="truncate text-[12px] text-ink-primary">{asset.filename}</p>
                     <p className="studio-meta text-[10px]">
                       {readableSize(asset.size_bytes)}
-                      {asset.dimensions && (
+                      {/* Stored as a JSON string, so printing the field put
+                          {"width": 1080, "height": 1080} in front of the
+                          author on every generated image. */}
+                      {formatDimensions(asset.dimensions) && (
                         <>
                           <span className="mx-1.5 text-ink-muted">·</span>
-                          {asset.dimensions}
+                          {formatDimensions(asset.dimensions)}
                         </>
                       )}
                       {asset.page_count !== null && (

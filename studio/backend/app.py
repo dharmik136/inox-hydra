@@ -53,6 +53,7 @@ try:
     from .repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from .leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from .linkedin_client import linkedin_client
+    from . import egress as egress_policy
     from .scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                             parse_datetime_flexible, normalize_datetime_to_utc_iso,
                             is_queue_paused, set_queue_paused)
@@ -113,6 +114,7 @@ except ImportError:
     from repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from linkedin_client import linkedin_client
+    import egress as egress_policy
     from scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                            parse_datetime_flexible, normalize_datetime_to_utc_iso,
                            is_queue_paused, set_queue_paused)
@@ -1621,8 +1623,28 @@ def search_inspirations(query: Optional[str] = None, topic: Optional[str] = None
                     "author_headline": t.get("archetype", "Engineering"),
                     "topic": t.get("archetype", "Engineering"),
                     "content": (t.get("hook_text") or "") + "\n\n" + (t.get("pacing_style") or ""),
-                    "likes_count": int(float(t.get("velocity_score") or 8.0) * 1000),
-                    "comments_count": 50,
+                    # No reactions, no comments.
+                    #
+                    # These used to be int(velocity_score * 1000) and a literal
+                    # 50, so every card on the swipe wall showed "9,800
+                    # REACTIONS . 50 COMMENTS" for a template nobody had ever
+                    # posted. Neither number is stored anywhere. Both were
+                    # manufactured here at render time and then displayed as
+                    # though they had been measured.
+                    #
+                    # velocity_score survives because it is a real stored
+                    # field: a rating of how strongly the form performs, which
+                    # is the whole point of a template library. A reaction
+                    # count is a claim about an event, and there was no event.
+                    "likes_count": None,
+                    "comments_count": None,
+                    # Passed through, never defaulted. viral_templates has
+                    # three insert paths (the offline seeder, the bundle feed,
+                    # and a local import), so filling a NULL in with 'shipped'
+                    # would assert where a row came from on no evidence. Rows
+                    # written before migration 9 stay unknown, which is what
+                    # migration 4 does for the same reason.
+                    "origin": t.get("origin"),
                     "key_hook": t.get("hook_text", ""),
                     "archetype": t.get("archetype", "Engineering"),
                     "velocity_score": t.get("velocity_score", 8.0),
@@ -1700,10 +1722,24 @@ def get_auth_status():
         row = cursor.fetchone()
         status = row["value"] if row else "disconnected"
         conn.close()
+        # is_connected requires both halves, not just the stored string.
+        #
+        # It used to read the settings row alone, so a fresh install with no
+        # credentials at all answered {"is_connected": true,
+        # "client_session": false}: the endpoint certifying a session in the
+        # same breath as reporting that none is held. The interface already
+        # worked around it by reading client_session and ignoring this field,
+        # which is the shape of a bug that survives because everyone routes
+        # around it.
+        #
+        # Both are still reported separately, because they mean different
+        # things and a caller may need to tell "the app believes it connected
+        # once" apart from "usable tokens are on disk right now".
+        held = linkedin_client.is_authenticated()
         return {
             "status": status,
-            "is_connected": status in ["connected", "ready"],
-            "client_session": linkedin_client.is_authenticated()
+            "is_connected": status in ["connected", "ready"] and held,
+            "client_session": held
         }
     finally:
         conn.close()
@@ -2616,6 +2652,18 @@ def get_post_engagers(post_id: str):
         "count": len(engagers),
         "engagers": engagers,
     }
+
+
+@app.get("/api/v1/egress/status", tags=["Support & Maintenance"])
+def get_egress_status():
+    """
+    What has left this machine, and what currently may.
+
+    Counters, not a promise. The interface used to state that nothing but
+    provider prompts ever left, which was untrue of four other features, and
+    there was no way for a reader to check. This is the check.
+    """
+    return egress_policy.describe()
 
 
 @app.get("/api/v1/session/health", tags=["LinkedIn Session & Telemetry"])

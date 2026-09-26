@@ -2,6 +2,11 @@ import os
 import re
 import json
 import requests
+
+try:  # the shared egress chokepoint
+    from . import egress as _egress
+except ImportError:
+    import egress as _egress
 from typing import List, Dict, Optional, Any
 
 try:
@@ -92,6 +97,8 @@ def call_gemini_api(prompt: str, system_instruction: str = "") -> Optional[str]:
 
     try:
         headers = {"Content-Type": "application/json"}
+        # Refuses rather than connecting when this category is off. See egress.py.
+        _egress.require(url, "model")
         resp = requests.post(url, json=payload, headers=headers, timeout=12)
         if resp.status_code == 200:
             data = resp.json()

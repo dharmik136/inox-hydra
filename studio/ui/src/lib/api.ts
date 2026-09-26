@@ -97,11 +97,18 @@ export async function fetchHookTemplates(limit = 12): Promise<HookTemplate[]> {
 }
 
 /** The formatters the selection toolbar offers, and their endpoints. */
-export type FormatKind = "bold" | "italic" | "monospace" | "strikethrough" | "clean";
+export type FormatKind =
+  | "bold"
+  | "italic"
+  | "underline"
+  | "monospace"
+  | "strikethrough"
+  | "clean";
 
 const FORMAT_PATHS: Record<FormatKind, string> = {
   bold: "/api/format/bold",
   italic: "/api/format/italic",
+  underline: "/api/format/underline",
   monospace: "/api/format/monospace",
   strikethrough: "/api/format/strikethrough",
   clean: "/api/format/clean",
@@ -318,10 +325,19 @@ export interface Inspiration {
   key_hook: string | null;
   author_name: string | null;
   author_headline: string | null;
-  likes_count: number;
-  comments_count: number;
+  /**
+   * Null for a specimen that was never posted, which is all of the ones
+   * shipped in the box. The endpoint used to synthesise these from the
+   * velocity score, so the wall reported reactions on posts that had never
+   * existed. A number here means someone captured it.
+   */
+  likes_count: number | null;
+  comments_count: number | null;
+  /** A real stored rating of the form, unlike the two fields above. */
   velocity_score: number;
   pacing_style: string | null;
+  /** 'shipped' came in the box, 'captured' was saved by the creator. */
+  origin: string | null;
 }
 
 export async function fetchInspirations(): Promise<Inspiration[]> {
@@ -643,7 +659,15 @@ export async function fetchImageProgress(taskId: string): Promise<ImageProgress>
 // Publishing
 // ---------------------------------------------------------------------------
 
-/** Dispatches a draft immediately and marks it published. */
+/**
+ * Marks a stored post as published in the local record.
+ *
+ * This does not post to LinkedIn and cannot: the handler writes the row's
+ * status and published_at and opens no connection. The product's real path is
+ * /api/v1/scheduler/native/stage, which stages through Voyager with the saved
+ * session, and this interface does not call it. See
+ * tests/test_publishing_claims.py.
+ */
 export async function publishNow(postId: string): Promise<void> {
   await call(`/api/posts/${encodeURIComponent(postId)}/publish-now`, { method: "POST" });
 }
@@ -1034,4 +1058,168 @@ export async function previewGrounding(): Promise<GroundingPreview> {
     bytes_used: typeof data.bytes_used === "number" ? data.bytes_used : 0,
     bytes_budget: typeof data.bytes_budget === "number" ? data.bytes_budget : 0,
   };
+}
+
+
+// ---------------------------------------------------------------------------
+// Your data
+//
+// Everything the studio holds lives in one SQLite file. The backup and export
+// endpoints have existed and been tested since before this interface did, and
+// nothing ever called them, so the only way to take a copy was the CLI. For a
+// product whose whole claim is that your work stays on your machine, that put
+// the burden of not losing it entirely on the machine.
+// ---------------------------------------------------------------------------
+
+export interface BackupArchive {
+  name: string;
+  bytes: number;
+  modified: string;
+}
+
+export interface BackupListing {
+  directory: string;
+  count: number;
+  backups: BackupArchive[];
+}
+
+export async function fetchBackups(): Promise<BackupListing> {
+  const data = await call<Partial<BackupListing>>("/api/v1/support/backups");
+  return {
+    directory: data.directory ?? "",
+    count: data.count ?? 0,
+    backups: Array.isArray(data.backups) ? data.backups : [],
+  };
+}
+
+/** Snapshots the database and media. Returns the archive path on disk. */
+export async function createBackup(label = "manual"): Promise<{ archive: string; bytes: number }> {
+  const data = await call<{ archive?: string; bytes?: number }>("/api/v1/support/backup", {
+    method: "POST",
+    body: JSON.stringify({ label }),
+  });
+  return { archive: data.archive ?? "", bytes: data.bytes ?? 0 };
+}
+
+/**
+ * Writes your content out in a portable format.
+ *
+ * Content only. The server excludes credentials deliberately, and the note it
+ * returns says so, which is worth showing rather than paraphrasing.
+ */
+export async function exportData(format: "json" | "csv"): Promise<{ path: string; note: string }> {
+  const data = await call<{ path?: string; note?: string }>("/api/v1/support/export", {
+    method: "POST",
+    body: JSON.stringify({ format }),
+  });
+  return { path: data.path ?? "", note: data.note ?? "" };
+}
+
+
+// ---------------------------------------------------------------------------
+// Egress
+//
+// What has actually left this machine, counted at the one chokepoint every
+// outbound call now passes through. The Local security tab used to assert
+// that nothing but provider prompts ever left, which was untrue of four other
+// features and impossible for a reader to verify. Counters can be checked.
+// ---------------------------------------------------------------------------
+
+export interface EgressCategory {
+  name: string;
+  allowed: boolean;
+  flag: string;
+  default_allowed: boolean;
+  performed: number;
+  refused: number;
+  last_destination: string | null;
+  last_refused_endpoint: string | null;
+}
+
+export interface EgressStatus {
+  master_off: boolean;
+  master_flag: string;
+  categories: EgressCategory[];
+  total_performed: number;
+  total_refused: number;
+}
+
+export async function fetchEgressStatus(): Promise<EgressStatus> {
+  const data = await call<Partial<EgressStatus>>("/api/v1/egress/status");
+  return {
+    master_off: data.master_off ?? false,
+    master_flag: data.master_flag ?? "INOX_NO_EGRESS",
+    categories: Array.isArray(data.categories) ? data.categories : [],
+    total_performed: data.total_performed ?? 0,
+    total_refused: data.total_refused ?? 0,
+  };
+}
+
+
+// ---------------------------------------------------------------------------
+// The browser bridge
+//
+// Leads are captured by an extension observing LinkedIn pages you open, so
+// until it is loaded the Leads surface can only ever be empty. Four endpoints
+// have existed for this since before the interface did and none was reachable,
+// which left the one question a new install actually has, "how do leads get
+// here", with no answer on screen.
+// ---------------------------------------------------------------------------
+
+export interface DetectedBrowser {
+  id: string;
+  name: string;
+  path: string;
+  is_available: boolean;
+  /**
+   * Whether this browser loads an unpacked extension from --load-extension.
+   * False for Chrome, which accepts the flag and ignores it. Null means it was
+   * never probed, which is a different statement from "will not work".
+   */
+  carries_extension: boolean | null;
+}
+
+export interface BrowserBridge {
+  browsers: DetectedBrowser[];
+  extension_path: string;
+}
+
+export async function fetchBrowserBridge(): Promise<BrowserBridge> {
+  const data = await call<{ browsers?: Record<string, DetectedBrowser>; extension_path?: string }>(
+    "/api/v1/browser/status",
+  );
+  return {
+    browsers: Object.values(data.browsers ?? {}),
+    extension_path: data.extension_path ?? "",
+  };
+}
+
+export interface BrowserLaunch {
+  browser: string;
+  carries_extension: boolean | null;
+  message: string;
+  extension_path: string;
+}
+
+/** Opens a browser on LinkedIn with the bridge attached, where it can be. */
+export async function launchBridge(browserId: string): Promise<BrowserLaunch> {
+  const data = await call<Partial<BrowserLaunch>>("/api/v1/browser/launch", {
+    method: "POST",
+    body: JSON.stringify({ browser_id: browserId }),
+  });
+  return {
+    browser: data.browser ?? "",
+    carries_extension: data.carries_extension ?? null,
+    message: data.message ?? "",
+    extension_path: data.extension_path ?? "",
+  };
+}
+
+/** Puts the extension folder on the clipboard, for Load Unpacked by hand. */
+export async function copyExtensionPath(): Promise<string> {
+  const data = await call<{ path?: string; extension_path?: string }>(
+    "/api/v1/browser/copy-path",
+    { method: "POST" },
+  );
+  return data.path ?? data.extension_path ?? "";
 }

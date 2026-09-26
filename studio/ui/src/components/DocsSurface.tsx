@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { fetchDocModule, fetchDocModules, searchDocs, type DocHit, type DocModule } from "@/lib/api";
+import { splitSnippet } from "@/lib/snippet";
 import { cn } from "@/lib/utils";
 
 /**
@@ -112,9 +113,24 @@ export function DocsSurface() {
                     <li key={`${hit.filename}-${index}`} className="border-l border-edge pl-3">
                       <p className="studio-meta text-[10px]">{hit.section.toUpperCase()}</p>
                       {/* The snippet is served with the matched terms wrapped
-                          in markers by FTS5. It is rendered as text, never as
-                          markup, because it is database content. */}
-                      <p className="mt-1 text-[12px] leading-snug text-ink-secondary">{hit.snippet}</p>
+                          in markers by FTS5. Those are parsed into runs rather
+                          than handed to the HTML parser, because the snippet
+                          is document content and a playbook file may contain
+                          markup of its own. */}
+                      <p className="mt-1 text-[12px] leading-snug text-ink-secondary">
+                        {splitSnippet(hit.snippet).map((run, runIndex) =>
+                          run.matched ? (
+                            <mark
+                              key={runIndex}
+                              className="rounded-sm bg-signal-orange-subtle px-0.5 text-ink-primary"
+                            >
+                              {run.text}
+                            </mark>
+                          ) : (
+                            <span key={runIndex}>{run.text}</span>
+                          ),
+                        )}
+                      </p>
                       <p className="studio-meta mt-1 text-[10px] text-ink-muted">{hit.filename}</p>
                     </li>
                   ))}

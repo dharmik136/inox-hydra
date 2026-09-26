@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { Search } from "lucide-react";
+import { AlertTriangle, Search } from "lucide-react";
 import { fetchInspirations, type Inspiration } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -82,6 +82,31 @@ export function SwipeSurface() {
           </div>
         </div>
 
+        {/* The same statement Analytics makes above its chart, for the same
+            reason, and stated about the whole library rather than a count.
+
+            The first version of this counted rows whose origin was 'shipped'.
+            That was wrong twice over: viral_templates has three insert paths,
+            so a row can also be 'synced' or 'imported', and rows written
+            before migration 9 carry no origin at all. More to the point, the
+            claim does not depend on any of that. The table holds hook forms
+            and has no reaction or comment columns in the first place, so
+            nothing in it was ever measured, whichever way it arrived. */}
+        <div className="mt-3 flex items-start gap-2 rounded-md border border-signal-orange/40 bg-signal-orange-subtle p-2.5">
+          <AlertTriangle
+            className="mt-0.5 size-3.5 shrink-0 text-signal-orange-text"
+            strokeWidth={1.75}
+            aria-hidden="true"
+          />
+          <p className="text-[12px] leading-snug text-ink-secondary">
+            <span className="font-medium text-ink-primary">
+              These are hook forms, not posts anyone measured.
+            </span>{" "}
+            Velocity rates how strongly the shape performs. No reactions or comments are shown
+            because none were recorded: the studio stores the pattern, not an event.
+          </p>
+        </div>
+
         <ul className="mt-3 flex flex-wrap gap-1">
           {archetypes.map((candidate) => (
             <li key={candidate}>
@@ -138,10 +163,20 @@ function Specimen({ specimen }: { specimen: Inspiration }) {
          columns, which CSS multi column will happily do otherwise. */
       className="break-inside-avoid rounded-md border border-edge bg-ink p-4 transition-colors duration-(--studio-motion-fast) hover:border-edge-strong"
     >
+      {/* The two fields carry the same value for every specimen the product
+          seeds, so printing both rendered "CONTRARIAN TRUTHS · CONTRARIAN
+          TRUTHS" on all 36 cards: a separator with nothing on either side of
+          it. The topic is shown only when it says something the archetype has
+          not already said, which keeps the pair meaningful if the two ever
+          diverge. */}
       <p className="studio-meta text-[10px]">
         {specimen.archetype.toUpperCase()}
-        <span className="mx-1.5 text-ink-muted">·</span>
-        {specimen.topic.toUpperCase()}
+        {specimen.topic.trim().toLowerCase() !== specimen.archetype.trim().toLowerCase() && (
+          <>
+            <span className="mx-1.5 text-ink-muted">·</span>
+            {specimen.topic.toUpperCase()}
+          </>
+        )}
       </p>
 
       <p className="mt-2 text-[13px] leading-snug font-medium text-ink-primary">
@@ -167,12 +202,33 @@ function Specimen({ specimen }: { specimen: Inspiration }) {
         </p>
       </motion.div>
 
+      {/* Reactions and comments render only if they were ever recorded, and
+          for this table they never are: it has no columns for them. The
+          endpoint used to compute both at render time, which is what put
+          "9,800 REACTIONS" on a form nobody had posted. Origin is shown only
+          when it says something the reader does not already know from the
+          banner, so a synced or imported specimen is marked and the shipped
+          ones are not. */}
       <p className="studio-meta mt-3 border-t border-edge pt-2 text-[10px]">
-        {specimen.likes_count.toLocaleString()} REACTIONS
-        <span className="mx-1.5 text-ink-muted">·</span>
-        {specimen.comments_count.toLocaleString()} COMMENTS
-        <span className="mx-1.5 text-ink-muted">·</span>
+        {specimen.likes_count !== null && (
+          <>
+            {specimen.likes_count.toLocaleString()} REACTIONS
+            <span className="mx-1.5 text-ink-muted">·</span>
+          </>
+        )}
+        {specimen.comments_count !== null && (
+          <>
+            {specimen.comments_count.toLocaleString()} COMMENTS
+            <span className="mx-1.5 text-ink-muted">·</span>
+          </>
+        )}
         VELOCITY {specimen.velocity_score.toFixed(1)}
+        {specimen.origin && specimen.origin !== "shipped" && (
+          <>
+            <span className="mx-1.5 text-ink-muted">·</span>
+            <span className="text-ink-muted">{specimen.origin.toUpperCase()}</span>
+          </>
+        )}
       </p>
     </motion.article>
   );
