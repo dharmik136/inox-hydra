@@ -614,6 +614,40 @@ export async function generateLeadDm(
   return data.suggested_dm;
 }
 
+/**
+ * The three openers the backend writes, and the only DM path that needs no
+ * comment.
+ *
+ * generateLeadDm above drafts a reply to something the lead said, so a lead who
+ * reacted rather than commented had no draft available at all. This one builds
+ * from the stored row, their name, company and how they engaged, which is
+ * present for every lead in the stream.
+ */
+export const DM_STYLES = [
+  { id: "value_add", label: "Peer question" },
+  { id: "resource_share", label: "Offer a blueprint" },
+  { id: "quick_chat", label: "Suggest a call" },
+] as const;
+
+export type DmStyle = (typeof DM_STYLES)[number]["id"];
+
+export async function fetchLeadDmScript(
+  leadId: string,
+  style: DmStyle,
+  topic?: string,
+): Promise<string> {
+  const params = new URLSearchParams({ style });
+  if (topic?.trim()) params.set("topic", topic.trim());
+  const data = await call<{ dm_script?: string; error?: string }>(
+    `/api/leads/${encodeURIComponent(leadId)}/dm-script?${params}`,
+  );
+  // The route answers 200 with an error field rather than a status code, so a
+  // missing lead would otherwise render as an empty draft panel.
+  if (data.error) throw new Error(data.error);
+  if (!data.dm_script) throw new Error("the server returned no draft");
+  return data.dm_script;
+}
+
 /** The CSV route streams a file, so it is a navigation rather than a fetch. */
 export const LEADS_CSV_URL = "/api/leads/export/csv";
 

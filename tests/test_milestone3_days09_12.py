@@ -38,13 +38,77 @@ def test_day09_offline_docs_engine_and_fts5():
     indexed_count = init_docs_search_index()
     assert indexed_count > 50, f"Expected >50 sections indexed, got {indexed_count}"
 
-    # 2. Benchmark search latency (< 15ms target)
+    # 2. Two budgets, because search_docs_fts spends its time on two unrelated
+    #    things and this test used to bill them to one number.
+    #
+    # The old assertion timed the whole call and required under 50ms. That
+    # failed here roughly one run in three, and averaging did not help, because
+    # the problem was not noise. Every call to search_docs_fts first computes
+    # corpus_signature(), a sha256 over every markdown file, so the index can
+    # never answer from a stale snapshot of the documents. That check is
+    # deliberate and is documented where it lives. It costs 54ms on this machine
+    # for 39 files and 440KB, mostly per file open overhead, against the 22ms
+    # recorded when it was written on faster storage.
+    #
+    # So the fixed cost of the freshness check alone exceeded the budget for the
+    # whole operation. The test was not detecting a slow index. It was failing
+    # the index for the price of the guarantee that it is current, and the
+    # margin it failed by was how quickly this disk opens files.
+    #
+    # Measured here instead, separately:
+    #
+    #   the query        0.38ms median, 0.66ms worst of nine
+    #   the whole call  56.8ms median, 54ms of it the corpus hash
+    #
+    # The query gets the 15ms this test's own docstring claims, which it clears
+    # by a factor of forty, so it stays stable while still catching the
+    # regression worth catching: the index dropped and the search falling back
+    # to a LIKE scan over every section.
+    #
+    # The whole call gets 250ms, which is not an arbitrary loosening either. It
+    # is the interval the interface already debounces typing by, so it is the
+    # real requirement: the search has to answer inside the gap the reader waits
+    # anyway. If the corpus grows until it does not, the fix is to make the
+    # freshness check cheaper, and this is the test that should say so.
+    timing_conn = get_db()
+    try:
+        timing_conn.execute("SELECT 1 FROM docs_index LIMIT 1")  # warm the cache
+        query_timings = []
+        for _ in range(5):
+            t0 = time.perf_counter()
+            timing_conn.execute(
+                """
+                SELECT filename, section,
+                       snippet(docs_index, 2, '<mark>', '</mark>', '...', 25), rank
+                FROM docs_index WHERE docs_index MATCH ? ORDER BY rank LIMIT ?
+                """,
+                ('"algorithm"*', 5),
+            ).fetchall()
+            query_timings.append((time.perf_counter() - t0) * 1000.0)
+    finally:
+        timing_conn.close()
+
+    query_ms = sorted(query_timings)[len(query_timings) // 2]
+    assert query_ms < 15.0, (
+        f"the BM25 index query took {query_ms:.2f}ms (budget < 15ms), runs: "
+        f"{', '.join(f'{t:.2f}' for t in query_timings)}ms. This is the "
+        f"measurement that says the FTS index is being used. A figure orders of "
+        f"magnitude above it means the index is gone and the fallback LIKE scan "
+        f"is answering searches."
+    )
+
     t0 = time.perf_counter()
     results = search_docs_fts("algorithm", limit=5)
-    t_elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    whole_call_ms = (time.perf_counter() - t0) * 1000.0
 
     assert len(results) > 0, "FTS5 search for 'algorithm' returned 0 results"
-    assert t_elapsed_ms < 50.0, f"FTS5 query took {t_elapsed_ms:.2f}ms (budget < 50ms)"
+    assert whole_call_ms < 250.0, (
+        f"a search took {whole_call_ms:.0f}ms (budget < 250ms, the interface's "
+        f"own debounce). The query itself measured {query_ms:.2f}ms, so the time "
+        f"is in corpus_signature(), which hashes every markdown file on every "
+        f"search. Either the corpus has outgrown that approach or the check "
+        f"needs to get cheaper."
+    )
 
     # Verify snippet highlighting
     first_match = results[0]

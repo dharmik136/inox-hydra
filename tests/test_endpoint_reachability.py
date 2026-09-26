@@ -55,13 +55,21 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # ---------------------------------------------------------------------------
 # The recorded state. Update deliberately, with the reason in the commit.
 #
-# Measured 26 Sep 2026 at b9c0e1c. The interface is the React source in
-# studio/ui/src, which is the only interface now that the vanilla page is
-# retired.
+# Measured 27 Sep 2026. The interface is the React source in studio/ui/src,
+# which is the only interface now that the vanilla page is retired.
+#
+# Reached moved 62 -> 67 in one change, and only one of those five is new work.
+# Surfacing /api/leads/*/dm-script accounts for one. The other four,
+# /api/analytics/export, /api/analytics/kpis, /api/analytics/overview and
+# /api/v1/intelligence/templates, were being called by the interface the whole
+# time and counted as unreachable, because _normalise never stripped the query
+# string those four calls carry. So this ledger was understating its own subject
+# for as long as it has existed, in the direction that makes the product look
+# worse than it is, which is the less dangerous direction but still wrong.
 # ---------------------------------------------------------------------------
 TOTAL_API_PATHS = 138
-REACHED_BY_INTERFACE = 62
-UNREACHABLE = 76
+REACHED_BY_INTERFACE = 67
+UNREACHABLE = 71
 
 ROUTE_DECORATOR = re.compile(
     r"^\s*@app\.(get|post|put|delete|patch)\(\s*[\"']([^\"']+)[\"']", re.MULTILINE
@@ -76,7 +84,16 @@ def _normalise(path):
     `/api/v1/mcp/servers/${encodeURIComponent(name)}/enabled`. Both become
     `/api/v1/mcp/servers/*/enabled`, so a parameterised route is not counted
     as unreachable merely because the two spell the hole differently.
+
+    The query string goes too, and this was a real miss rather than a
+    refinement. The containment check below was written on the assumption that a
+    called path "may carry a query string", but nothing ever removed one, so
+    `/api/leads/*/dm-script?*` failed all three comparisons against the route
+    `/api/leads/*/dm-script`. A freshly surfaced endpoint therefore stayed in
+    the unreachable column, which is the one outcome this file exists to
+    prevent: a real improvement measured as no change at all.
     """
+    path = path.split("?", 1)[0]
     path = re.sub(r"\$\{[^}]*\}", "*", path)
     path = re.sub(r"\{[^}]*\}", "*", path)
     return path.rstrip("/") or "/"
