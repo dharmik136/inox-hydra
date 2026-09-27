@@ -18,6 +18,7 @@ import {
   type LeadInteraction,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import type { SearchFocus } from "@/lib/search";
 
 /**
  * The CRM (blueprint section 11).
@@ -25,10 +26,10 @@ import { cn } from "@/lib/utils";
  * A split inbox and dossier rather than a grid of KPI cards. The stream is a
  * compact table; the dossier reads like a research sheet on one person.
  */
-export function LeadsSurface() {
+export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = {}) {
   const [leads, setLeads] = useState<Lead[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(focus?.id ?? null);
 
   // Re-read after an action so the row and the dossier cannot disagree about
   // a lead's status. The stream shows the status on every row, so a change
@@ -48,6 +49,18 @@ export function LeadsSurface() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  // A lead opened from search is selected, and its row brought into view, once
+  // the list holding it has rendered. Keyed on the nonce so choosing the same
+  // person twice still scrolls back to them.
+  useEffect(() => {
+    if (!focus || !leads) return;
+    if (!leads.some((lead) => lead.id === focus.id)) return;
+    setSelected(focus.id);
+    window.requestAnimationFrame(() => {
+      document.querySelector(`[data-lead-id="${CSS.escape(focus.id)}"]`)?.scrollIntoView({ block: "nearest" });
+    });
+  }, [focus, leads]);
 
   if (failed) return <Centered>LEAD PIPELINE UNAVAILABLE</Centered>;
   if (!leads) return <Centered>LOADING LEADS</Centered>;
@@ -78,6 +91,7 @@ export function LeadsSurface() {
             <li key={lead.id}>
               <button
                 type="button"
+                data-lead-id={lead.id}
                 onClick={() => setSelected(lead.id)}
                 aria-current={selected === lead.id ? "true" : undefined}
                 className={cn(

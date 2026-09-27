@@ -12,7 +12,7 @@ You do not need it to write, queue, publish or read analytics. Nothing on it cha
 
 - **The rail hides it.** When the studio loads, it asks the server whether dev mode is on. Devtools appears in the rail only when the answer is yes, and it is always the last entry.
 - **The server refuses it.** Every route behind the surface answers `404 Not Found` while dev mode is off. The only one that answers either way is the status check the rail uses.
-- **The command palette still lists it.** **Go to Devtools** is in the [command palette](use-the-command-palette.md) even when dev mode is off. Choosing it shows **MAINTAINER SURFACE IS OFF**, followed by "SET THE DEV MODE FLAG TO TURN IT ON. EVERY ROUTE BEHIND IT ANSWERS 404 UNTIL THEN."
+- **Search leaves it out.** **Go to Devtools** appears in the [search box](use-the-command-palette.md) only when dev mode is on, the same as the rail.
 
 That message is expected on a normal install. It is not a fault.
 

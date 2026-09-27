@@ -66,6 +66,7 @@ try:
     from .crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from .rate_limiter import rate_limiter, write_actor
     from .intelligence_sync import intelligence_sync_engine
+    from . import universal_search
     from .gstack_governance import gstack_engine
     from .internal_sheet import internal_sheet_manager
     from . import onboarding
@@ -130,6 +131,7 @@ except ImportError:
     from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from rate_limiter import rate_limiter, write_actor
     from intelligence_sync import intelligence_sync_engine
+    import universal_search
     from gstack_governance import gstack_engine
     from internal_sheet import internal_sheet_manager
     import onboarding
@@ -2262,6 +2264,94 @@ def search_documentation(q: str, limit: int = 10):
         "query": safe_q,
         "count": len(results),
         "results": results
+    }
+
+
+@app.get("/api/v1/search", tags=["Search"])
+def search_everything(q: str = "", limit: int = 6):
+    """
+    One query across posts, leads, Swipe File specimens and the help.
+
+    The command palette used to search its own list of actions and nothing
+    else, so a post from last week, a lead whose name you half remember or the
+    specimen you liked could only be found from the surface that held it, and
+    an earlier post could not be found at all.
+
+    Everything here is local: SQLite and the offline documentation index. Each
+    group is searched by the module that owns it, so a specimen carries the id
+    the Swipe File renders and a help hit is ranked the way the Docs search
+    ranks it, help before reference before retired material.
+    """
+    terms = universal_search.terms_of(q)
+    try:
+        per_group = max(1, min(int(limit), 20))
+    except (TypeError, ValueError):
+        per_group = 6
+
+    groups = {"posts": [], "leads": [], "specimens": [], "help": []}
+    if not terms:
+        return {"status": "success", "query": "", "terms": [], "groups": groups, "total": 0}
+
+    failures = {}
+    try:
+        groups["posts"] = universal_search.search_posts(terms, limit=per_group)
+    except Exception as exc:
+        failures["posts"] = str(exc)[:200]
+    try:
+        groups["leads"] = universal_search.search_leads(terms, limit=per_group)
+    except Exception as exc:
+        failures["leads"] = str(exc)[:200]
+
+    # Specimens through the same engine /api/inspirations reads, so the id is
+    # the one the Swipe File renders ("tpl-" and the template id) and opening a
+    # result can find it on that surface.
+    try:
+        found = []
+        for template in intelligence_sync_engine.get_templates(limit=500):
+            hook = template.get("hook_text") or ""
+            haystack = " ".join(str(template.get(key) or "") for key in
+                                ("hook_text", "archetype", "pacing_style")).lower()
+            if all(term in haystack for term in terms):
+                found.append({
+                    "kind": "specimen",
+                    "id": f"tpl-{template.get('id')}",
+                    "title": universal_search.snippet_around(hook, terms, radius=45) or "Untitled specimen",
+                    "snippet": template.get("pacing_style") or "",
+                    "meta": str(template.get("archetype") or "").upper(),
+                    "opens": "swipe",
+                })
+            if len(found) >= per_group:
+                break
+        groups["specimens"] = found
+    except Exception as exc:
+        failures["specimens"] = str(exc)[:200]
+
+    # The help, ranked exactly as the Docs surface ranks it.
+    try:
+        docs = search_documentation(" ".join(terms), limit=per_group)
+        groups["help"] = [{
+            "kind": "help",
+            "id": hit.get("document_id") or "",
+            "title": hit.get("section") or hit.get("document_title") or "",
+            "snippet": hit.get("snippet") or "",
+            "meta": hit.get("help_section") or "",
+            "document_title": hit.get("document_title") or "",
+            "anchor_text": hit.get("section") or "",
+            "retired": hit.get("kind") == "retired",
+            "opens": "docs",
+        } for hit in docs.get("results", [])]
+    except Exception as exc:
+        failures["help"] = str(exc)[:200]
+
+    return {
+        "status": "success",
+        "query": " ".join(terms),
+        "terms": terms,
+        "groups": groups,
+        "total": sum(len(items) for items in groups.values()),
+        # A group that failed is reported, not dropped, so an empty section in
+        # the palette can say "could not be searched" instead of "no matches".
+        "failures": failures,
     }
 
 

@@ -10,7 +10,7 @@ If you closed it:
 1. Go to **Composer** in the rail.
 2. Select the small panel icon at the top right of the Composer. It has no visible text; screen readers announce it as **Open inspector**.
 
-You can also press `Ctrl+K` and choose **Toggle inspector**. The palette entries **Audit for reach** and **Check fold safety** do the same thing: they open or close the inspector. They do not switch to a particular tab, so if the inspector is already open they close it.
+You can also press `Ctrl+K` and choose **Show or hide the inspector**. It switches to the Composer and opens or closes the inspector; it does not pick a tab, so if the inspector is already open it closes it.
 
 ## Preview
 

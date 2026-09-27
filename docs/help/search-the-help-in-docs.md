@@ -3,7 +3,7 @@ Find an answer in the studio's built-in help and playbook, and see what happens 
 
 ## Open Docs
 
-Click **Docs** in the rail. You can also press **Ctrl+K** and choose **Search the playbook**, which only opens Docs; it does not run a search. See [Use the command palette (Ctrl+K)](use-the-command-palette.md).
+Click **Docs** in the rail. You can also press **Ctrl+K** from any surface and type: the **Help** group lists the same documents, ranked the same way, and choosing one opens it here at the section that matched. See [Search everything with Ctrl+K](use-the-command-palette.md).
 
 ## The home page
 

@@ -3,6 +3,7 @@ import { motion } from "motion/react";
 import { AlertTriangle, Search } from "lucide-react";
 import { fetchInspirations, type Inspiration } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import type { SearchFocus } from "@/lib/search";
 
 /**
  * The swipe file (blueprint section 12).
@@ -16,11 +17,29 @@ import { cn } from "@/lib/utils";
  * measured layout would need a resize observer for no gain over what the
  * browser already does correctly.
  */
-export function SwipeSurface() {
+export function SwipeSurface({ focus = null }: { focus?: SearchFocus | null } = {}) {
   const [specimens, setSpecimens] = useState<Inspiration[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [archetype, setArchetype] = useState<string>("All");
+  /** The specimen search opened, outlined until the reader moves on. */
+  const [highlighted, setHighlighted] = useState<string | null>(null);
+
+  // A specimen opened from search has to be on screen to be found, so the
+  // surface's own filters are cleared first: a filter left on from earlier
+  // would otherwise hide exactly the card the reader asked for.
+  useEffect(() => {
+    if (!focus || !specimens) return;
+    if (!specimens.some((specimen) => String(specimen.id) === focus.id)) return;
+    setQuery("");
+    setArchetype("All");
+    setHighlighted(focus.id);
+    window.requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-specimen-id="${CSS.escape(focus.id)}"]`)
+        ?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  }, [focus, specimens]);
 
   useEffect(() => {
     let live = true;
@@ -143,7 +162,7 @@ export function SwipeSurface() {
         ) : (
           <div className="columns-1 gap-4 lg:columns-2 xl:columns-3 [&>*]:mb-4">
             {shown.map((specimen) => (
-              <Specimen key={specimen.id} specimen={specimen} />
+              <Specimen key={specimen.id} specimen={specimen} highlighted={highlighted === String(specimen.id)} />
             ))}
           </div>
         )}
@@ -152,16 +171,21 @@ export function SwipeSurface() {
   );
 }
 
-function Specimen({ specimen }: { specimen: Inspiration }) {
+function Specimen({ specimen, highlighted = false }: { specimen: Inspiration; highlighted?: boolean }) {
   const [open, setOpen] = useState(false);
 
   return (
     <motion.article
+      data-specimen-id={String(specimen.id)}
+      aria-current={highlighted ? "true" : undefined}
       onHoverStart={() => setOpen(true)}
       onHoverEnd={() => setOpen(false)}
       /* break-inside-avoid keeps a specimen from being split across two
          columns, which CSS multi column will happily do otherwise. */
-      className="break-inside-avoid rounded-md border border-edge bg-ink p-4 transition-colors duration-(--studio-motion-fast) hover:border-edge-strong"
+      className={cn(
+        "break-inside-avoid rounded-md border bg-ink p-4 transition-colors duration-(--studio-motion-fast) hover:border-edge-strong",
+        highlighted ? "border-signal-orange ring-1 ring-signal-orange" : "border-edge",
+      )}
     >
       {/* The two fields carry the same value for every specimen the product
           seeds, so printing both rendered "CONTRARIAN TRUTHS · CONTRARIAN
