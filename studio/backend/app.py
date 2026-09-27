@@ -2329,7 +2329,17 @@ def search_documentation(q: str, limit: int = 10):
     # no search. Within each kind the index's own order stands, so this is a
     # grouping, not a second relevance model.
     rank = {"help": 0, "reference": 1, "retired": 2}
-    results = sorted(results, key=lambda hit: rank.get(hit.get("kind"), 0))[:safe_limit]
+    # Whole-word hits before prefix hits, then kind within each.
+    #
+    # The first version grouped by kind first, so a help article that only
+    # mentioned a "folder" outranked a maintainer document about the fold.
+    # A whole-word hit is a match; a prefix hit is a guess that the last word
+    # is unfinished, and it should only ever fill space the matches left.
+    # Python's sort is stable, so the index's own order holds inside each.
+    how = {"word": 0, "prefix": 1}
+    results = sorted(
+        results, key=lambda hit: (how.get(hit.get("match"), 0), rank.get(hit.get("kind"), 0))
+    )[:safe_limit]
 
     return {
         "status": "success",
