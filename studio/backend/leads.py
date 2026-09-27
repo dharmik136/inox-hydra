@@ -14,7 +14,7 @@ Lifecycle States:
 import uuid
 import re
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 try:
     from .crm import qualification_tier
@@ -230,6 +230,7 @@ def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = Non
     conn = get_db()
     try:
         c = conn.cursor()
+        previous = c.execute("SELECT status FROM leads WHERE id = ?", (lead_id,)).fetchone()
         # Dual write for one release. `status` is the older human-facing vocabulary
         # ("Meeting Booked"); `lead_status` is the machine vocabulary every analytic
         # reads. Writing only the first meant the funnel and the conversion rate
@@ -248,6 +249,14 @@ def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = Non
                 (new_status, mapped_status, lead_id),
             )
         updated = c.rowcount
+        # The change itself, kept. The status column holds only where the lead
+        # is now; this is how the studio knows it moved, when, and from where.
+        # Re-selecting the current status is not a change and is not recorded.
+        if updated and previous is not None and previous[0] != new_status:
+            c.execute(
+                "INSERT INTO lead_stage_events (lead_id, from_status, to_status, changed_at) VALUES (?,?,?,?)",
+                (lead_id, previous[0], new_status, datetime.now(timezone.utc).isoformat()),
+            )
         conn.commit()
         conn.close()
         if updated == 0:

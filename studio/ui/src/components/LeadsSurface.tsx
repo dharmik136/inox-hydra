@@ -19,6 +19,7 @@ import {
   type Lead,
   type LeadInteraction,
   type LeadReview,
+  type LeadStageEvent,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { SearchFocus } from "@/lib/search";
@@ -137,7 +138,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
  * The person dossier. A research sheet, not a modal.
  */
 function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void }) {
-  const [data, setData] = useState<{ lead: Lead; interactions: LeadInteraction[] } | null>(null);
+  const [data, setData] = useState<{ lead: Lead; interactions: LeadInteraction[]; stage_history?: LeadStageEvent[] } | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   // The label travels with the text, so the panel can say which of the four
@@ -346,6 +347,17 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
             </button>
           ))}
         </div>
+        {/* How this lead got here. Each change is recorded now, so "which
+            post brought people I ended up talking to" has an answer. */}
+        {(data.stage_history ?? []).length > 0 && (
+          <ol className="mt-2 flex flex-col gap-0.5">
+            {(data.stage_history ?? []).map((event) => (
+              <li key={event.changed_at} className="studio-meta text-[10px] text-ink-muted">
+                {event.changed_at.slice(0, 10)}: {event.from_status ?? "NEW"} TO {event.to_status.toUpperCase()}
+              </li>
+            ))}
+          </ol>
+        )}
       </section>
 
       {/* Drafting a message.

@@ -10,12 +10,16 @@ import {
   Wrench,
   UserCheck,
   Sunrise,
+  Newspaper,
+  Send,
   type LucideIcon,
 } from "lucide-react";
 
 export type SectionId =
   | "setup"
   | "today"
+  | "posts"
+  | "outbound"
   | "composer"
   | "queue"
   | "leads"
@@ -64,6 +68,8 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   { id: "composer", screenKey: "studio", label: "Composer", blurb: "Write, re-hook and stage the next post", icon: PenLine },
   { id: "queue", screenKey: "queue", label: "Queue", blurb: "Scheduled posts and peak engagement slots", icon: CalendarClock },
   { id: "leads", screenKey: "crm", label: "Leads", blurb: "Lead stream and person dossiers", icon: Users },
+  { id: "posts", label: "Posts", blurb: "Which of your posts worked, and who each one brought", icon: Newspaper },
+  { id: "outbound", label: "Outbound", blurb: "Whose content you engage with, and whether it comes back", icon: Send },
   { id: "swipe", screenKey: "swipe", label: "Swipe File", blurb: "Saved specimens and structural patterns", icon: Bookmark },
   { id: "analytics", screenKey: "analytics", label: "Analytics", blurb: "Time series, observations and comparisons", icon: BarChart3 },
   { id: "command", screenKey: "ai_command", label: "Command", blurb: "Agent runs and local model routing", icon: Terminal },

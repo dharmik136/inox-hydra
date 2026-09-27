@@ -10,6 +10,8 @@ import { Inspector } from "@/components/Inspector";
 import { LeadsSurface } from "@/components/LeadsSurface";
 import { OnboardingSurface } from "@/components/OnboardingSurface";
 import { TodaySurface } from "@/components/TodaySurface";
+import { PostsSurface } from "@/components/PostsSurface";
+import { OutboundSurface } from "@/components/OutboundSurface";
 import { SwipeSurface } from "@/components/SwipeSurface";
 import { AnalyticsSurface } from "@/components/AnalyticsSurface";
 import { BrandStudioSurface } from "@/components/BrandStudioSurface";
@@ -404,6 +406,16 @@ export default function App() {
                 />
               )}
               {active === "leads" && <LeadsSurface focus={focusFor("leads")} />}
+              {active === "posts" && (
+                <PostsSurface
+                  onOpenLead={(leadId) => {
+                    focusNonce.current += 1;
+                    setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
+                    setActive("leads");
+                  }}
+                />
+              )}
+              {active === "outbound" && <OutboundSurface />}
               {active === "swipe" && <SwipeSurface focus={focusFor("swipe")} />}
               {active === "analytics" && <AnalyticsSurface />}
               {active === "settings" && <BrandStudioSurface />}
