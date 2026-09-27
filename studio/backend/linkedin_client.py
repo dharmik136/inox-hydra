@@ -375,11 +375,15 @@ class LinkedInClient:
                         COALESCE(?, (SELECT followers FROM analytics_daily WHERE date = ?)),
                         COALESCE(?, (SELECT connections FROM analytics_daily WHERE date = ?)),
                         COALESCE(?, (SELECT profile_views FROM analytics_daily WHERE date = ?)),
-                        COALESCE(?, (SELECT impressions FROM analytics_daily WHERE date = ?), 0),
-                        COALESCE(?, (SELECT reactions FROM analytics_daily WHERE date = ?), 0),
-                        COALESCE(?, (SELECT comments FROM analytics_daily WHERE date = ?), 0),
-                        COALESCE(?, (SELECT shares FROM analytics_daily WHERE date = ?), 0),
-                        COALESCE(?, (SELECT engagement_rate FROM analytics_daily WHERE date = ?), 0.0),
+                        -- No trailing 0. A metric never read stays NULL: the
+                        -- creator analytics card shows impressions, reactions
+                        -- and followers, never comments or shares, so those
+                        -- were stored as a measured 0 on every captured day.
+                        COALESCE(?, (SELECT impressions FROM analytics_daily WHERE date = ?)),
+                        COALESCE(?, (SELECT reactions FROM analytics_daily WHERE date = ?)),
+                        COALESCE(?, (SELECT comments FROM analytics_daily WHERE date = ?)),
+                        COALESCE(?, (SELECT shares FROM analytics_daily WHERE date = ?)),
+                        COALESCE(?, (SELECT engagement_rate FROM analytics_daily WHERE date = ?)),
                         'observed', ?, ?,
                         COALESCE((SELECT unique_members_reached FROM analytics_daily WHERE date = ?), 0),
                         COALESCE((SELECT created_at FROM analytics_daily WHERE date = ?), CURRENT_TIMESTAMP))

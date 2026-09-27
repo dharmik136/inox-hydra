@@ -378,6 +378,10 @@ export async function fetchAnalyticsOverview(range: AnalyticsRange): Promise<Ana
 }
 
 export interface AnalyticsKpis {
+  /** Days of single-day figures the totals are made of. */
+  days_counted?: number;
+  /** Captured days left out because their window was not one day. */
+  days_excluded_unknown_window?: number;
   impressions: number | null;
   impressions_delta_pct: number | null;
   total_engagements: number | null;
