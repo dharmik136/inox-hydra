@@ -516,8 +516,32 @@ export interface DocLibraryEntry {
   words: number;
   /** The document's own opening line. Markdown, rendered through the parser. */
   excerpt: string;
+  /** Which help section this is filed under. See HELP_SECTIONS in docs_engine.py. */
+  section: string;
   /** Set when this file is also one of the curated modules. */
   module_id: string | null;
+}
+
+/**
+ * One part of the help, and what is filed under it.
+ *
+ * Documents used to be grouped by the folder they sit in, which put "Prudent
+ * Handoff" and "Builder Feedback" at the top level of a help centre. Those are
+ * facts about the filesystem: nobody looking for what leaves this machine
+ * would guess to look under a directory named after a handoff process.
+ *
+ * Sections carry ids rather than repeating the records, so a grouping cannot
+ * drift away from the library it groups.
+ */
+export interface DocSection {
+  id: string;
+  title: string;
+  blurb: string;
+  /** Help for the user, reference for a maintainer, or retired material kept for the record. */
+  kind: "help" | "reference" | "retired";
+  count: number;
+  words: number;
+  document_ids: string[];
 }
 
 export interface DocHit {
@@ -528,11 +552,23 @@ export interface DocHit {
   relevance_rank: number;
   /** The document this section lives in, which is what makes a hit a destination. */
   document_id: string;
+  /** That document's title, so a result reads as an answer and not a filename. */
+  document_title: string;
+  /**
+   * Which part of the help it came from.
+   *
+   * Deliberately not called "section": that name is taken by the heading FTS5
+   * matched inside the document, and the anchor a result scrolls to is derived
+   * from it. Reusing the name broke every jump to a passage while leaving the
+   * result list looking right.
+   */
+  help_section: string;
 }
 
 export interface DocLibrary {
   modules: DocModule[];
   library: DocLibraryEntry[];
+  sections: DocSection[];
 }
 
 export interface DocContent {
@@ -540,13 +576,19 @@ export interface DocContent {
   title: string;
   path: string;
   category: string;
+  /** The help section it is filed under, which is the reader's breadcrumb. */
+  section: string;
+  /** Kept for the record, and contradicted by the code in places. */
+  retired: boolean;
   words: number;
   content: string;
 }
 
 export async function fetchDocLibrary(): Promise<DocLibrary> {
-  const data = await call<{ modules?: DocModule[]; library?: DocLibraryEntry[] }>("/api/docs");
-  return { modules: data.modules ?? [], library: data.library ?? [] };
+  const data = await call<{ modules?: DocModule[]; library?: DocLibraryEntry[]; sections?: DocSection[] }>(
+    "/api/docs",
+  );
+  return { modules: data.modules ?? [], library: data.library ?? [], sections: data.sections ?? [] };
 }
 
 export async function searchDocs(query: string, limit = 20): Promise<DocHit[]> {
@@ -567,6 +609,8 @@ export async function fetchDocument(documentId: string): Promise<DocContent> {
     title: data.title ?? documentId,
     path: data.path ?? "",
     category: data.category ?? "",
+    section: data.section ?? "",
+    retired: data.retired ?? false,
     words: data.words ?? 0,
     content: data.content ?? data.markdown ?? "",
   };

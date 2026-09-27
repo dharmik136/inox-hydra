@@ -79,7 +79,8 @@ try:
                         get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
                         describe as describe_paths)
     from .docs_engine import (search_docs_fts, init_docs_search_index,
-                              document_library, document_slug)
+                              document_library, document_slug,
+                              help_sections, section_meta, section_kind)
     from .carousel_engine import carousel_engine
     from . import post_identity
     from . import mcp_client
@@ -142,7 +143,8 @@ except ImportError:
                        get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
                         describe as describe_paths)
     from docs_engine import (search_docs_fts, init_docs_search_index,
-                            document_library, document_slug)
+                            document_library, document_slug,
+                            help_sections, section_meta, section_kind)
     from carousel_engine import carousel_engine
     import post_identity
     import mcp_client
@@ -2119,6 +2121,7 @@ def _docs_catalogue():
             "category": entry["folder"],
             "words": entry["words"],
             "excerpt": entry["excerpt"],
+            "section": entry["section"],
             "module_id": None,
         }
         by_path[entry["path"]] = entry["id"]
@@ -2170,7 +2173,23 @@ def list_docs_modules():
             "category": record["category"],
             "words": record["words"],
             "excerpt": record["excerpt"],
+            "section": record["section"],
             "module_id": record["module_id"],
+        })
+
+    # Sections carry ids rather than repeating the records. The library above
+    # is the one copy of a document's title, length and excerpt, so a grouping
+    # cannot drift away from what it groups.
+    sections = []
+    for section in help_sections(DOCS_DIR):
+        sections.append({
+            "id": section["id"],
+            "title": section["title"],
+            "blurb": section["blurb"],
+            "kind": section["kind"],
+            "count": section["count"],
+            "words": section["words"],
+            "document_ids": [catalogue[by_path[entry["path"]]]["id"] for entry in section["documents"]],
         })
 
     return {
@@ -2178,7 +2197,8 @@ def list_docs_modules():
         "count": len(DOCS_MODULES),
         "modules": DOCS_MODULES,
         "library": library,
-        "library_count": len(library)
+        "library_count": len(library),
+        "sections": sections
     }
 
 
@@ -2192,16 +2212,39 @@ def search_documentation(q: str, limit: int = 10):
         safe_limit = max(1, min(int(limit), 100))
     except (TypeError, ValueError):
         safe_limit = 10
-    results = search_docs_fts(safe_q, limit=safe_limit)
+    # A wider window than was asked for, because the order below is decided
+    # across kinds of document, and the best help article can sit outside the
+    # top N by text match alone.
+    results = search_docs_fts(safe_q, limit=min(100, max(safe_limit * 4, 40)))
 
     # A hit named a file and stopped there, so the interface rendered a snippet
     # it could not act on. The id of the document the section lives in is what
     # turns a result into a destination.
-    _, by_path = _docs_catalogue()
+    catalogue, by_path = _docs_catalogue()
     for hit in results:
         filename = str(hit.get("filename") or "").replace("\\", "/")
         hit["filename"] = filename
         hit["document_id"] = by_path.get(filename) or document_slug(filename)
+        record = catalogue.get(hit["document_id"])
+        hit["document_title"] = record["title"] if record else filename
+        # help_section, not section. "section" is the heading FTS5 matched
+        # inside the document, and the anchor a result scrolls to is derived
+        # from it. Overwriting it with the help category silently broke every
+        # jump to a passage while leaving the result list looking correct.
+        hit["help_section"] = section_meta(record["section"])["title"] if record else ""
+        hit["kind"] = section_kind(record["section"]) if record else "help"
+
+    # Help first, then maintainer reference, then retired material.
+    #
+    # BM25 knows how often a word appears and nothing about which documents are
+    # true. Searching "extension" put the retired Chrome-only setup guide at the
+    # top, above the help article written because that guide is wrong: Chrome
+    # ignores the flag the old guide relies on. A help centre that leads with
+    # the instructions it has already found to be false is worse than one with
+    # no search. Within each kind the index's own order stands, so this is a
+    # grouping, not a second relevance model.
+    rank = {"help": 0, "reference": 1, "retired": 2}
+    results = sorted(results, key=lambda hit: rank.get(hit.get("kind"), 0))[:safe_limit]
 
     return {
         "status": "success",
@@ -2260,6 +2303,10 @@ def get_doc_module(module_id: str):
         "title": record["title"],
         "path": record["path"],
         "category": record["category"],
+        "section": section_meta(record["section"])["title"],
+        # A retired manual is served, because it is the record, but the reader
+        # is told before it reads a claim the code contradicts.
+        "retired": section_kind(record["section"]) == "retired",
         "words": record["words"],
         "content": content
     }

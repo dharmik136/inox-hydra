@@ -54,49 +54,86 @@ MAX_DOCS_SEARCH_QUERY_LENGTH = 300
 _index_signature = None
 
 
-def corpus_signature(docs_dir: Optional[str] = None):
+# The stat of the corpus the last content hash was taken from, so an unchanged
+# directory costs 38 stat calls instead of reading 450KB.
+_stat_gate = None
+
+
+def corpus_stat(docs_dir: Optional[str] = None):
     """
-    A fingerprint of the documentation directory, taken from its contents.
+    Path, size and modification time of every markdown file. No content.
 
-    The first version of this used path, size and modification time, which is
-    the cheap answer and is not a correct one. Windows stamps a write with the
-    system clock tick, roughly 15ms, so two same length writes inside one tick
-    share an mtime and the fingerprint does not move. The test written for that
-    case passed on its own and failed under the load of the full suite, which
-    is the honest verdict on a timestamp: it reports when the filesystem
-    noticed, not what the file says.
-
-    So the content decides. One sha256 over every markdown file, which is the
-    same set of bytes a rebuild would read anyway, and the answer is exact
-    rather than probabilistic.
-
-    Measured on this corpus rather than guessed at: 22ms for 38 files and
-    450KB, most of it per file open overhead rather than hashing. That is paid
-    on every search, against a query the interface debounces at 250ms, and
-    against /api/docs which already reads the whole corpus to build the library
-    listing. It buys the difference between a search that answers from the
-    documents and one that answers from a snapshot of them.
+    This is the gate, not the answer. It is here to say "nothing has been
+    touched", which is true on almost every call, and it costs about a
+    millisecond because it opens nothing.
     """
     target_dir = docs_dir or DOCS_DIR
     if not os.path.isdir(target_dir):
-        return ""
-
-    digest = hashlib.sha256()
+        return ()
+    entries = []
     for root, _, files in os.walk(target_dir):
         for name in sorted(files):
             if not name.endswith(".md"):
                 continue
             path = os.path.join(root, name)
-            rel = os.path.relpath(path, target_dir).replace(os.sep, "/")
-            digest.update(rel.encode("utf-8", "replace"))
             try:
-                with open(path, "rb") as handle:
-                    digest.update(handle.read(MAX_DOCS_INDEX_FILE_SIZE))
+                stat = os.stat(path)
             except OSError:
-                # A file that cannot be read is part of the state too: it
-                # reappearing is a change, so it is stamped rather than skipped.
-                digest.update(b"<unreadable>")
-    return digest.hexdigest()
+                continue
+            rel = os.path.relpath(path, target_dir).replace(os.sep, "/")
+            entries.append((rel, stat.st_size, stat.st_mtime_ns))
+    return tuple(sorted(entries))
+
+
+def corpus_signature(docs_dir: Optional[str] = None):
+    """
+    A fingerprint of the documentation directory, taken from its contents.
+
+    The first version used path, size and modification time alone, which is the
+    cheap answer and not a correct one: Windows stamps a write with the system
+    clock tick, so two same length writes inside one tick share an mtime and the
+    fingerprint does not move. So the content decides, with one sha256 over
+    every markdown file.
+
+    The content hash costs 22ms for 38 files and 450KB, almost all of it per
+    file open overhead. Run on every search that was not free: an existing
+    budget guard for the FTS5 query, which allows 50ms, started reporting 104ms.
+    Making a search four times slower to notice an edit nobody made is a bad
+    trade, and one nobody would have measured without that guard.
+
+    So it is gated. An unchanged stat means an unchanged corpus and the cached
+    hash stands; a changed stat is what triggers the read. The residual hole is
+    narrow and worth naming: an edit that preserves byte length AND lands in the
+    same filesystem timestamp tick as the previous check is not seen. A person
+    saving a file never does that, because the tick has passed; only a program
+    rewriting the same file within milliseconds can, which is what the test for
+    this had to do on purpose.
+    """
+    global _stat_gate
+    target_dir = docs_dir or DOCS_DIR
+    if not os.path.isdir(target_dir):
+        return ""
+
+    stat = corpus_stat(target_dir)
+    cached = _stat_gate
+    if cached is not None and cached[0] == os.path.abspath(target_dir) and cached[1] == stat:
+        return cached[2]
+
+    digest = hashlib.sha256()
+    for rel, _size, _mtime in stat:
+        path = os.path.join(target_dir, *rel.split("/"))
+        digest.update(rel.encode("utf-8", "replace"))
+        try:
+            with open(path, "rb") as handle:
+                digest.update(handle.read(MAX_DOCS_INDEX_FILE_SIZE))
+        except OSError:
+            # A file that cannot be read is part of the state too: it
+            # reappearing is a change, so it is stamped rather than skipped.
+            digest.update(b"<unreadable>")
+
+    hashed = digest.hexdigest()
+    _stat_gate = (os.path.abspath(target_dir), stat, hashed)
+    return hashed
 
 
 def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: Optional[str] = None) -> int:
@@ -427,6 +464,7 @@ def _describe_document(path, rel_path):
         "title": title.replace(em_dash, " -- "),
         "excerpt": excerpt[:DOC_EXCERPT_LENGTH].replace(em_dash, " -- "),
         "folder": _folder_label(rel_path),
+        "section": section_for_path(rel_path),
         "words": len(re.findall(r"[^\s]+", content)),
     }
 
@@ -460,6 +498,263 @@ def document_library(docs_dir=None):
 
     entries.sort(key=lambda entry: (entry["folder"], entry["path"]))
     return entries
+
+
+# ---------------------------------------------------------------------------
+# The help sections
+# ---------------------------------------------------------------------------
+# Documents were grouped by the folder they sit in, which produced "Reference",
+# "Prudent Handoff" and "Builder Feedback" as the top level of a help centre.
+# Those are facts about the filesystem. Somebody looking for how to connect a
+# model, or what leaves this machine, has no reason to guess that the answer is
+# filed under a directory named after a handoff process.
+#
+# So the grouping is by what a reader came to do. It is a written table rather
+# than keyword matching on titles, for the same reason template provenance is
+# recorded rather than inferred: a guess that is right most of the time files
+# the rest somewhere wrong and nothing says which. Every indexed file must
+# appear here exactly once, and tests/test_docs_library.py fails on a document
+# that is missing, listed twice, or listed but absent from disk. A new file is
+# a deliberate decision about where it belongs, not a silent fall through into
+# whichever bucket happened to be last.
+
+HELP_SECTIONS = [
+    # ---- Help: written for the person using the studio -----------------
+    #
+    # Every article under docs/help was drafted from a brief written by a
+    # researcher who walked the interface and the routes behind it, then had
+    # every claim checked against the code by a separate reviewer told to
+    # assume each sentence was wrong. 127 corrections came out of that pass.
+    {
+        "id": "start",
+        "title": "Get started",
+        "blurb": "Start the studio, see what a fresh install looks like, and find your way around the rail.",
+        "paths": [
+            "help/open-the-studio-for-the-first-time.md",
+            "help/use-the-command-palette.md",
+            "help/search-the-help-in-docs.md",
+            "help/stop-the-studio-and-use-the-tray-icon.md",
+        ],
+    },
+    {
+        "id": "write",
+        "title": "Write and publish",
+        "blurb": "Write a post, try a new opening, check it before posting, and record, queue or send it.",
+        "paths": [
+            "help/start-a-new-post-or-find-an-earlier-one.md",
+            "help/write-format-and-save-a-post.md",
+            "help/try-a-different-opening-line.md",
+            "help/check-a-draft-before-you-post.md",
+            "help/publish-queue-or-send-to-linkedin.md",
+            "help/how-the-queue-works.md",
+            "help/browse-the-swipe-file.md",
+            "strategy_playbook.md",
+        ],
+    },
+    {
+        "id": "audience",
+        "title": "Leads and analytics",
+        "blurb": "Install the browser extension, review the people who engaged, and read your own numbers.",
+        "paths": [
+            "help/install-the-browser-extension.md",
+            "help/review-leads-and-draft-a-message.md",
+            "help/read-your-analytics.md",
+        ],
+    },
+    {
+        "id": "ai",
+        "title": "Bring your own AI",
+        "blurb": "Connect an AI provider, use the Command console, set up Brand Studio and its grounding sources, and add images.",
+        "paths": [
+            "help/connect-your-own-ai-provider.md",
+            "help/use-the-command-console.md",
+            "help/set-up-brand-studio.md",
+            "help/add-a-grounding-source.md",
+            "help/add-images-to-your-media-library.md",
+        ],
+    },
+    {
+        "id": "data",
+        "title": "Your data and privacy",
+        "blurb": "What stays on this machine, what can leave it, your LinkedIn session, and backups.",
+        "paths": [
+            "help/what-leaves-this-machine.md",
+            "help/connect-your-linkedin-session.md",
+            "help/back-up-restore-and-export.md",
+            "help/check-your-version-and-update-the-studio.md",
+        ],
+    },
+    {
+        "id": "troubleshooting",
+        "title": "Fix a problem",
+        "blurb": "The studio will not open, a list is empty, or an error message needs explaining.",
+        "paths": [
+            "help/the-studio-will-not-open.md",
+            "help/why-is-my-lead-list-empty.md",
+            "help/why-is-analytics-or-the-swipe-file-empty.md",
+            "help/why-does-the-audit-say-blocked.md",
+        ],
+    },
+    # ---- For maintainers: current, and checked against the code ----------
+    {
+        "id": "maintainers",
+        "title": "For maintainers",
+        "blurb": "How the studio is built: data, architecture, the API, the desktop shell, packaging, and the rules the interface is held to.",
+        "paths": [
+            "help/command-line-tool-reference.md",
+            "help/turn-on-devtools.md",
+            "DATA_ARCHITECTURE.md",
+            "ARCHITECTURE.md",
+            "API_REFERENCE.md",
+            "BYO_AI_ARCHITECTURE.md",
+            "DESKTOP_SHELL.md",
+            "FIRST_RUN.md",
+            "PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md",
+            "DEEP_QA_BRIEF.md",
+            "UI_CONVENTIONS.md",
+            "ICON_SYSTEM.md",
+            "UI_AGENT_WORKFLOW.md",
+            "linkedin_studio_reimagined_design.md",
+            "README.md",
+        ],
+    },
+    # ---- Kept for the record --------------------------------------------
+    #
+    # These are not deleted, because they are the project's own history and
+    # several maintainer documents cite them. But the review that produced the
+    # help articles found them contradicted by the code: "356 vaulted
+    # blueprints" where the table holds a handful, Chart.js curves in an
+    # interface that has none, a Chrome-only extension setup Chrome ignores,
+    # "zero cloud egress" beside four egress categories that are on by
+    # default. Filing them under help would be the studio repeating claims it
+    # knows to be false, so they sit here, under a title that says so, and
+    # the reader shows a notice above each one.
+    {
+        "id": "retired",
+        "title": "Retired manuals and history",
+        "blurb": "The original module manuals, early guides and the day by day build record. Kept for the record; they describe behaviour the studio no longer has.",
+        "paths": [
+            "modules/01_STUDIO_AND_EDITOR.md",
+            "modules/02_SCHEDULE_AND_QUEUE.md",
+            "modules/03_INBOUND_CRM.md",
+            "modules/04_VIRAL_SWIPE_FILE.md",
+            "modules/05_ANALYTICS.md",
+            "modules/06_AI_COMMAND.md",
+            "ENTERPRISE_USAGE.md",
+            "GETTING_STARTED.md",
+            "AI_ENGINE.md",
+            "EXTENSION_AND_SYNC.md",
+            "DESIGN.md",
+            "PRD_AGNO_AGENTOS_MEDIA_STUDIO.md",
+            "prudent_handoff/README_AGENT_INSTRUCTIONS.md",
+            "prudent_handoff/DAY_01_IMPLEMENTATION_SPEC.md",
+            "prudent_handoff/DAY_01_FEEDBACK.md",
+            "prudent_handoff/DAY_01_ENGINEERING_OBSERVATIONS_AND_RISKS.md",
+            "prudent_handoff/DAY_02_IMPLEMENTATION_SPEC.md",
+            "prudent_handoff/DAY_02_FEEDBACK.md",
+            "prudent_handoff/DAY_03_IMPLEMENTATION_SPEC.md",
+            "prudent_handoff/DAY_03_FEEDBACK.md",
+            "prudent_handoff/DAY_04_IMPLEMENTATION_SPEC.md",
+            "prudent_handoff/DAY_04_FEEDBACK.md",
+            "prudent_handoff/PRODUCTIZATION_FEEDBACK.md",
+            "builder_feedback/DAY_03_FEEDBACK.md",
+        ],
+    },
+]
+
+# Path to section id. Built once from the table above, which is also where a
+# duplicate would be caught rather than quietly overwriting an earlier entry.
+_SECTION_OF_PATH = {}
+for _section in HELP_SECTIONS:
+    for _path in _section["paths"]:
+        if _path in _SECTION_OF_PATH:
+            raise ValueError(f"{_path} is filed under two help sections")
+        _SECTION_OF_PATH[_path] = _section["id"]
+
+_SECTION_BY_ID = {section["id"]: section for section in HELP_SECTIONS}
+
+# Sections whose documents the reader marks as out of date.
+RETIRED_SECTIONS = {"retired"}
+
+# Sections written for whoever maintains the studio rather than uses it.
+MAINTAINER_SECTIONS = {"maintainers"}
+
+
+def section_kind(section_id):
+    """
+    "help", "reference" or "retired".
+
+    The landing view gives help the cards and the other two a quieter row, and
+    the reader puts a notice above a retired document. Both decisions read this
+    rather than matching on a title, so renaming a section cannot silently move
+    a contradicted manual back up among the help.
+    """
+    if section_id in RETIRED_SECTIONS:
+        return "retired"
+    if section_id in MAINTAINER_SECTIONS:
+        return "reference"
+    return "help"
+
+# Where a file that nobody has filed goes.
+#
+# It is its own section rather than an existing one, and it is named for what
+# it is. A document quietly appended to "Building on it" reads as a decision
+# somebody made; one sitting under "Not yet filed" reads as the open question
+# it actually is, and the test that fails is what gets it moved.
+UNFILED = {
+    "id": "unfiled",
+    "title": "Not yet filed",
+    "blurb": "Indexed and readable, but nobody has said yet which part of the help this belongs to.",
+}
+
+
+def section_for_path(rel_path):
+    """The help section a document belongs to, or the unfiled one."""
+    return _SECTION_OF_PATH.get(str(rel_path or "").replace("\\", "/"), UNFILED["id"])
+
+
+def section_meta(section_id):
+    """Title and blurb for a section id."""
+    return _SECTION_BY_ID.get(section_id, UNFILED)
+
+
+def help_sections(docs_dir=None):
+    """
+    The sections, each carrying the documents filed under it.
+
+    Ordered as HELP_SECTIONS is written, because that order is the reading
+    order: installing it comes before using it, and the project's own history
+    comes last. Within a section the written order wins too, so Getting Started
+    sits above First Run rather than being alphabetised away from it.
+    """
+    library = document_library(docs_dir)
+    by_path = {entry["path"]: entry for entry in library}
+
+    sections = []
+    for section in HELP_SECTIONS:
+        documents = [by_path[path] for path in section["paths"] if path in by_path]
+        sections.append({
+            "id": section["id"],
+            "title": section["title"],
+            "blurb": section["blurb"],
+            "kind": section_kind(section["id"]),
+            "documents": documents,
+            "count": len(documents),
+            "words": sum(entry["words"] for entry in documents),
+        })
+
+    stray = [entry for entry in library if entry["path"] not in _SECTION_OF_PATH]
+    if stray:
+        sections.append({
+            "id": UNFILED["id"],
+            "title": UNFILED["title"],
+            "blurb": UNFILED["blurb"],
+            "kind": "help",
+            "documents": stray,
+            "count": len(stray),
+            "words": sum(entry["words"] for entry in stray),
+        })
+    return sections
 
 
 def resolve_document_path(document_id, docs_dir=None):
