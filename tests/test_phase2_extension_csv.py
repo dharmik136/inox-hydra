@@ -62,7 +62,7 @@ def test_phase2_leads_export_csv_backward_compatible():
     assert "Qualification Tier" in content
 
 
-def test_phase2_extension_ingest_contract():
+def test_phase2_extension_ingest_contract(confirmed_creator):
     """Verify that extension content.js payload schema correctly maps into CRM ingest."""
     extension_payload = {
         "full_name": "Dr. Sarah Jenkins",
@@ -71,7 +71,8 @@ def test_phase2_extension_ingest_contract():
         "company": "NeuralCore",
         "interaction_type": "COMMENT",
         "comment_text": "Can you explain how the deterministic fold pacing compares against standard heuristics?",
-        "post_topic": "sovereign creator architecture"
+        "post_topic": "sovereign creator architecture",
+        "post_author": confirmed_creator,
     }
 
     resp = client.post("/api/v1/crm/interactions/ingest", json=extension_payload)

@@ -520,8 +520,9 @@ function EmptyStream() {
         <p className="studio-label">No leads captured yet</p>
         <p className="mt-3 text-[14px] leading-relaxed text-ink-secondary">
           Leads are captured passively, by an extension watching the LinkedIn pages you open
-          yourself. Nothing is scraped and nothing is requested on your behalf, which is also why
-          this stays empty until the bridge is running.
+          yourself, and only from people engaging with your own posts. The studio needs to know
+          which posts are yours, so this stays empty until the bridge is running and you have
+          confirmed your profile in Setup.
         </p>
 
         {failed ? (

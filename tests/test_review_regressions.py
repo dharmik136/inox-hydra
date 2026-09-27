@@ -324,17 +324,22 @@ def test_the_capture_toast_waits_for_the_writes_it_reports_on():
     )
 
 
-def test_unidentified_people_are_excluded_from_both_writes():
+def test_each_engager_is_written_once_through_the_gated_route():
     """
-    Filtering only the CRM call left them in the leads table via the batch
-    endpoint, so the toast said "skipped" about rows that had just been stored.
+    There were two writes per engager, a batch into /api/analytics/ingest and a
+    per-person CRM ingest. They keyed people differently, so one person could
+    become two leads, and filtering only one of them once left people the toast
+    called skipped in the table anyway.
+
+    Now there is one write, to the route that decides whether the engagement
+    was on the creator's own post, and it carries whose post that was.
     """
     source = _read(CONTENT_JS)
-    # The call moved from a direct fetch to the service worker relay, because a
-    # request made from the LinkedIn page carries the LinkedIn origin and the
-    # studio refuses it. What this test cares about is unchanged: the batch
-    # POST must send the filtered array, not the raw one.
-    assert 'studioApi("/api/analytics/ingest", { leads: identified })' in source, (
-        "The batch lead POST still sends the unfiltered array, so people the "
-        "toast reports as skipped are written to the leads table anyway."
+    code = re.sub(r"//[^\n]*", "", source)
+    assert "{ leads:" not in code and "leads: identified" not in code, (
+        "content.js batch-writes leads again, beside the gated per-person write"
+    )
+    assert "post_author: lead.post_author" in code, (
+        "the capture no longer says whose post the engagement was on, so the "
+        "studio cannot tell the creator's engagers from a stranger's"
     )

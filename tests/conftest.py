@@ -154,3 +154,37 @@ def is_repository_content(rel_path, repo_root, _cache={}):
     if tracked is None:
         return True
     return normalised in tracked
+
+
+# The creator a test's captured engagement belongs to.
+#
+# A lead is someone who engaged with the creator's own post, and the studio
+# can only tell whose post it is once the creator has confirmed who they are
+# (onboarding.engagement_gate). Tests of lead capture, attribution and DMs
+# therefore start from a confirmed creator and say the post is theirs, which is
+# the state a real install is in after Setup.
+TEST_CREATOR_VANITY = "studio-test-creator"
+
+
+@pytest.fixture
+def confirmed_creator():
+    from database import get_db
+
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute("DELETE FROM creator_identity")
+            conn.execute(
+                "INSERT INTO creator_identity (id, vanity, display_name, confirmed_at) "
+                "VALUES (1, ?, 'Studio Test Creator', '2026-09-27T00:00:00+00:00')",
+                (TEST_CREATOR_VANITY,),
+            )
+    finally:
+        conn.close()
+    yield TEST_CREATOR_VANITY
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute("DELETE FROM creator_identity")
+    finally:
+        conn.close()

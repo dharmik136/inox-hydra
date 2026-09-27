@@ -34,7 +34,7 @@ ACTIVITY_URN = "urn:li:activity:9000000000000000001"
 
 
 @pytest.fixture
-def published_post_with_engager():
+def published_post_with_engager(confirmed_creator):
     """
     The state the product exists to produce: a published post bound to its
     LinkedIn activity, and a real person who commented on it.
@@ -68,8 +68,12 @@ def published_post_with_engager():
         "interaction_type": "COMMENT",
         "comment_text": "This matches our incident review exactly.",
         "post_urn": ACTIVITY_URN,
+        "post_author": confirmed_creator,
     })
     assert res.status_code == 200, f"the ingest path itself failed: {res.text}"
+    # A 200 alone is not a stored lead: a refused capture answers 200 with
+    # status "skipped" and its reason.
+    assert res.json()["status"] == "success", f"the engager was not stored: {res.text}"
 
     yield post_id, profile
 

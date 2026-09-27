@@ -536,6 +536,50 @@ def ingest_outbound(actor: Any, items: Any) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Who counts as a lead
+# ---------------------------------------------------------------------------
+
+def _activity_id(urn: Any) -> str:
+    """The numeric id of an activity, share or ugcPost URN, or ""."""
+    match = re.search(r"urn:li:(?:activity|share|ugcPost):(\d+)", urn or "")
+    return match.group(1) if match else ""
+
+
+def engagement_gate(engager_profile: Any, post_urn: Any, post_author: Any) -> Optional[str]:
+    """
+    Whether a captured engager may be stored as a lead. None means yes; a
+    string is the reason not.
+
+    A lead is someone who engaged with the creator's post. The capture used to
+    accept anyone engaging with anything on the feed, which filled the CRM with
+    other creators' audiences and listed the creator as their own lead. Drafts
+    then told those strangers "thanks for commenting on my post".
+
+    The post is the creator's when its author is the confirmed vanity, or when
+    its URN is one the studio has already recorded as theirs. Before the
+    creator is confirmed neither can be known, so nothing is accepted, and the
+    reason says where to fix that.
+    """
+    me = confirmed_vanity()
+    if not me:
+        return "confirm your profile in Setup first, so the studio can tell your posts from other people's"
+    if normalise_vanity(engager_profile) == me:
+        return "that is you"
+    if normalise_vanity(post_author) == me:
+        return None
+    wanted = _activity_id(post_urn)
+    if wanted:
+        conn = get_db()
+        try:
+            for row in conn.execute("SELECT activity_urn FROM own_posts"):
+                if _activity_id(row["activity_urn"]) == wanted:
+                    return None
+        finally:
+            conn.close()
+    return "not on one of your posts"
+
+
+# ---------------------------------------------------------------------------
 # History imports: the creator asks, the extension scrolls
 # ---------------------------------------------------------------------------
 

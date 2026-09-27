@@ -351,3 +351,92 @@ def test_no_timer_harvests_the_session():
     assert 'alarms.clear("studio_periodic_sync")' in code, (
         "the alarm an earlier version registered is no longer cleared, and alarms outlive their code"
     )
+
+
+# ---------------------------------------------------------------------------
+# Who counts as a lead
+# ---------------------------------------------------------------------------
+
+def _engager(**extra):
+    body = {
+        "full_name": "Asha Kulkarni",
+        "linkedin_urn": "https://www.linkedin.com/in/asha-kulkarni-9",
+        "headline": "Head of Platform at Loomwork",
+        "interaction_type": "COMMENT",
+        "comment_text": "How did you stage the rollout?",
+        "post_urn": URN_2024,
+    }
+    body.update(extra)
+    return client.post("/api/v1/crm/interactions/ingest", json=body).json()
+
+
+def _lead_count():
+    conn = get_db()
+    try:
+        return conn.execute(
+            "SELECT COUNT(*) FROM leads WHERE profile_url LIKE '%asha-kulkarni-9%' OR name = 'Asha Kulkarni'"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+
+@pytest.fixture
+def no_asha():
+    yield
+    conn = get_db()
+    with conn:
+        conn.execute("DELETE FROM lead_interactions WHERE lead_id IN (SELECT id FROM leads WHERE name = 'Asha Kulkarni')")
+        conn.execute("DELETE FROM leads WHERE name = 'Asha Kulkarni'")
+    conn.close()
+
+
+def test_before_setup_no_engager_is_a_lead(no_asha):
+    """
+    Without a confirmed creator the studio cannot tell whose post anything is,
+    so it stores nothing and says where that gets fixed.
+    """
+    result = _engager(post_author=ME)
+    assert result["status"] == "skipped" and "Setup" in result["reason"]
+    assert _lead_count() == 0
+
+
+def test_a_strangers_commenter_is_not_your_lead(no_asha):
+    """The failure the audit ranked third: the feed filling the CRM with other creators' audiences."""
+    _confirm()
+    result = _engager(post_author="another-creator", post_urn=URN_OTHER)
+    assert result["status"] == "skipped"
+    assert _lead_count() == 0
+
+
+def test_you_are_never_your_own_lead(no_asha):
+    _confirm()
+    result = _engager(full_name="Priya Raman", linkedin_urn=f"https://www.linkedin.com/in/{ME}/", post_author=ME)
+    assert result["status"] == "skipped" and result["reason"] == "that is you"
+
+
+def test_an_engager_on_your_post_is_a_lead(no_asha):
+    _confirm()
+    assert _engager(post_author=ME)["status"] == "success"
+    assert _lead_count() == 1
+
+
+def test_a_post_you_imported_is_recognised_by_its_urn(no_asha):
+    """When the card's author link was not readable, a URN already known to be yours still counts."""
+    _confirm()
+    client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [{"activity_urn": URN_2024, "actor": ME}]})
+    assert _engager(post_author=None)["status"] == "success"
+
+
+def test_the_batch_path_cannot_step_around_the_rule(no_asha):
+    """
+    /api/analytics/ingest is relayable from a LinkedIn page for analytics, and
+    it also accepts leads. Without the same gate there, any script on the page
+    could write a stranger as a lead through it.
+    """
+    _confirm()
+    result = client.post("/api/analytics/ingest", json={"leads": [{
+        "name": "Asha Kulkarni", "headline": "Head of Platform",
+        "profile_url": "https://www.linkedin.com/in/asha-kulkarni-9", "post_author": "another-creator",
+    }]}).json()
+    assert result["leads_skipped"] == 1
+    assert _lead_count() == 0
