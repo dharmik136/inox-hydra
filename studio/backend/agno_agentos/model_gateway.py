@@ -158,6 +158,10 @@ def _resolve_base_url(provider, requested, prov_meta):
 
     return candidate
 
+try:
+    from ..secret_settings import seal as _seal_setting, unseal as _unseal_setting
+except ImportError:
+    from secret_settings import seal as _seal_setting, unseal as _unseal_setting
 
 class AIProviderConfig:
     """Encapsulates active AI provider settings."""
@@ -232,11 +236,11 @@ def get_current_ai_config() -> AIProviderConfig:
                 gem_row = cursor.fetchone()
                 if gem_row and gem_row[0]:
                     provider = "gemini"
-                    api_key = gem_row[0]
+                    api_key = _unseal_setting("gemini_api_key", gem_row[0])
                     model = "gemini-2.5-flash"
             else:
                 provider = rows.get("ai_provider", "local_deterministic")
-                api_key = rows.get("ai_api_key", "")
+                api_key = _unseal_setting("ai_api_key", rows.get("ai_api_key", ""))
                 model = rows.get("ai_model", "")
                 base_url = rows.get("ai_base_url", "")
                 verified_at = rows.get("ai_verified_at", "")
@@ -322,17 +326,19 @@ def save_ai_config(
                     ("ai_status", config.status)
                 ]
                 for key, val in settings:
+                    # Sealed on the way in. The key used to be written here as
+                    # typed, into a table the README called an encrypted vault.
                     cursor.execute("""
                     INSERT OR REPLACE INTO settings (key, value, updated_at)
                     VALUES (?, ?, CURRENT_TIMESTAMP)
-                    """, (key, val or ""))
+                    """, (key, _seal_setting(key, val or "")))
 
                 # Also sync legacy gemini_api_key if provider is gemini
                 if config.provider == "gemini":
                     cursor.execute("""
                     INSERT OR REPLACE INTO settings (key, value, updated_at)
                     VALUES ('gemini_api_key', ?, CURRENT_TIMESTAMP)
-                    """, (config.api_key,))
+                    """, (_seal_setting("gemini_api_key", config.api_key),))
         except Exception as e:
             print(f"[ModelGateway] SQLite save failed: {e}")
         finally:
