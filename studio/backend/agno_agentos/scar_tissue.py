@@ -8,6 +8,11 @@ Strict negative constraints checked before any text is returned or persisted.
 import re
 from typing import Tuple, List, Any
 
+try:
+    from ..fold import MOBILE_FOLD_CHARS
+except ImportError:
+    from fold import MOBILE_FOLD_CHARS
+
 # Banned tropes that trigger LinkedIn algorithmic downranking or scream generic AI
 BANNED_TROPES = [
     "game-changing",
@@ -79,7 +84,7 @@ def clean_banned_vocabulary(text: str) -> str:
     return cleaned
 
 
-def validate_pre_fold_hook(first_lines: str, max_chars: int = 180) -> Tuple[bool, int]:
+def validate_pre_fold_hook(first_lines: str, max_chars: int = MOBILE_FOLD_CHARS) -> Tuple[bool, int]:
     """
     Validates that the post opening hook falls within the mobile '...see more' fold limit.
     Returns (is_safe, character_count).

@@ -3,6 +3,11 @@ import unicodedata
 import math
 from typing import Any
 
+try:
+    from .fold import MOBILE_FOLD_CHARS, MOBILE_FOLD_LINES
+except ImportError:
+    from fold import MOBILE_FOLD_CHARS, MOBILE_FOLD_LINES
+
 MAX_FORMAT_TEXT_LENGTH = 50000
 
 
@@ -319,7 +324,7 @@ def analyze_hook(text: Any) -> dict:
     char_count = len(text)
     
     # Check mobile fold physics (strictly 140 characters or 3 visual lines per Day 05 PRD)
-    mobile_cutoff_chars = 140
+    mobile_cutoff_chars = MOBILE_FOLD_CHARS
     desktop_cutoff_chars = 320
 
     first_3_lines = raw_lines[:3] if len(raw_lines) >= 3 else raw_lines

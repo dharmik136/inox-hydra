@@ -55,7 +55,7 @@ class CopilotDraftResponse(BaseModel):
     optimized_content: str = Field(..., description="Cleaned, formatted post with line breaks and mathematical bold")
     hook_variants: List[str] = Field(default_factory=list, description="5-10 scroll-stopping hook alternatives")
     dwell_time_seconds: int = Field(default=45, description="Estimated reading dwell time in seconds")
-    fold_safe: bool = Field(default=True, description="Whether the primary hook fits under the 180-char fold")
+    fold_safe: bool = Field(default=True, description="Whether the primary hook fits under the 140-char mobile fold")
     pre_fold_chars: int = Field(default=140, description="Exact character count of opening hook")
     media_callout: Optional[str] = Field(default=None, description="Contextual swipe or watch callout for attached media")
     # Dict[str, Any] rather than Dict[str, str] because provenance now carries

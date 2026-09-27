@@ -14,6 +14,10 @@ from ..contracts import CopilotDraftInput, CopilotDraftResponse
 from ..scar_tissue import scrub_em_dashes, validate_pre_fold_hook
 from ..briefing import Brief, provenance, strip_preamble, validate_response
 from ..model_gateway import get_current_ai_config, execute_llm_completion, AIProviderConfig
+try:
+    from ...fold import MOBILE_FOLD_CHARS
+except ImportError:
+    from fold import MOBILE_FOLD_CHARS
 
 # Grounding is optional in the strongest sense: the studio has to keep writing
 # posts on a machine where this package failed to import for any reason. The
@@ -39,7 +43,7 @@ except Exception:  # pragma: no cover - the fallback below is the common path
 # LinkedIn truncates the opening line on mobile at roughly this width. A hook
 # that crosses it loses its payoff behind a "see more", which is the one failure
 # this product exists to prevent, so a model is not permitted to cross it either.
-HOOK_FOLD_LIMIT = 140
+HOOK_FOLD_LIMIT = MOBILE_FOLD_CHARS
 
 
 def to_sans_bold(text: str) -> str:
@@ -150,7 +154,9 @@ class LinkedInContentCopilotAgent:
 
         # Check fold safety of hook
         opening_hook = paragraphs[0] if paragraphs else ""
-        fold_safe, pre_fold_chars = validate_pre_fold_hook(opening_hook, max_chars=180)
+        # 180 here contradicted HOOK_FOLD_LIMIT two screens up, so the copilot
+        # passed hooks the formatter called truncated.
+        fold_safe, pre_fold_chars = validate_pre_fold_hook(opening_hook, max_chars=HOOK_FOLD_LIMIT)
 
         # Contextual media callout based on media type
         media_callout = None

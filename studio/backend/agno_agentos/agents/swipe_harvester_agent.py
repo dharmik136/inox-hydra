@@ -80,7 +80,7 @@ class SwipeFileHarvesterAgent:
         )
 
         takeaways = [
-            "Open with a high-contrast tension line before the 180-char fold.",
+            "Open with a high-contrast tension line before the 140-char fold.",
             "Use line breaks to maintain reading momentum on mobile screens.",
             "End with a practitioner question rather than generic self-promotion."
         ]
