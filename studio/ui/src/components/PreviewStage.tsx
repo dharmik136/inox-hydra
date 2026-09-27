@@ -92,7 +92,7 @@ export function PreviewStage({ draft }: { draft: string }) {
 /**
  * The post as the feed renders it.
  *
- * Truncation applies on mobile only. The 180 character fold is a mobile
+ * Truncation applies on mobile only. The fold (FOLD_CHARS) is a mobile
  * measurement, and this product has no sourced figure for where the desktop
  * feed cuts, so desktop shows the post whole rather than cutting it at a
  * number that would be invented.

@@ -6,10 +6,18 @@ import { measurableLength, rawIndexAtMeasurableOffset } from "@/lib/text";
 
 /**
  * LinkedIn collapses the post body behind "see more" at roughly this many
- * characters. Blueprint section 7C labels the mark "LINKEDIN FOLD / 180 CHARS",
- * so that is the number the ruler is drawn from.
+ * characters on mobile.
+ *
+ * This must equal MOBILE_FOLD_CHARS in studio/backend/fold.py. It was 180,
+ * from the blueprint's "LINKEDIN FOLD / 180 CHARS" label, while the backend
+ * settled on 140 for every check it runs: the audit, the hook generator, the
+ * formatter and the ingress parser. The editor then drew its fold at 180 and
+ * called a draft within it, and the Audit tab called the same draft over the
+ * limit. One product, two answers to its central question.
+ *
+ * tests/test_fold_is_one_number.py reads both files and fails if they differ.
  */
-export const FOLD_CHARS = 180;
+export const FOLD_CHARS = 140;
 
 interface ComposerCanvasProps {
   value: string;
