@@ -1599,3 +1599,54 @@ export async function fetchDraftById(id: string): Promise<Draft | null> {
   const row = (data.posts ?? []).find((post) => post.id === id);
   return row ? { id: row.id, content: row.content } : null;
 }
+
+// -------------------------------------------------------------
+// Today
+// -------------------------------------------------------------
+
+export interface TodayPerson {
+  lead_id: string;
+  name: string;
+  headline: string | null;
+  /** How many of your posts they engaged with in the last two weeks. */
+  posts_engaged: number;
+  commented: boolean;
+  latest_comment: string | null;
+  last_seen_at: string | null;
+}
+
+export interface MetricComparison {
+  this_post: number;
+  your_usual: number;
+  posts_compared: number;
+  ratio: number | null;
+}
+
+export interface TodayLatestPost {
+  activity_urn: string;
+  excerpt: string | null;
+  published_at: string;
+  age_hours: number;
+  current: { age_hours: number | null; impressions: number | null; reactions: number | null; comments: number | null } | null;
+  /** Present only when the post and enough earlier ones were read at about two days old. */
+  comparison: Partial<Record<"impressions" | "reactions" | "comments", MetricComparison>> | null;
+  not_compared_because: string | null;
+  url: string;
+  analytics_url: string;
+}
+
+export interface TodayBrief {
+  identity: { known: boolean; name: string | null };
+  freshness: { bridge: BridgeStatus; drifting: string[]; last_capture_at: string | null };
+  reply_to: TodayPerson[];
+  latest_post: TodayLatestPost | null;
+  queue: {
+    next_scheduled: { post_id: string; scheduled_for: string; excerpt: string } | null;
+    next_open_slot: { local_datetime: string; day_name: string; time_slot: string; label: string | null } | null;
+  };
+  open_next: { action: "open" | "setup"; url?: string; reason: string };
+}
+
+export async function fetchToday(): Promise<TodayBrief> {
+  return call<TodayBrief>("/api/v1/today");
+}

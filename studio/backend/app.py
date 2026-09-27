@@ -70,6 +70,7 @@ try:
     from .gstack_governance import gstack_engine
     from .internal_sheet import internal_sheet_manager
     from . import onboarding
+    from . import today as today_module
     from . import devtools
     from . import security
     from . import desktop as desktop_integration
@@ -135,6 +136,7 @@ except ImportError:
     from gstack_governance import gstack_engine
     from internal_sheet import internal_sheet_manager
     import onboarding
+    import today as today_module
     import devtools
     import security
     import desktop as desktop_integration
@@ -1538,6 +1540,12 @@ def _refusal(error: "onboarding.RefusedCapture"):
     raise HTTPException(status_code=409, detail=str(error))
 
 
+@app.get("/api/v1/today", tags=["Onboarding"])
+def get_today():
+    """What to do in the next hour. See today.py."""
+    return today_module.today_brief()
+
+
 @app.get("/api/v1/onboarding/state", tags=["Onboarding"])
 def get_onboarding_state():
     return onboarding.onboarding_state()
@@ -1598,6 +1606,20 @@ def delete_identity():
 def post_own_posts(payload: OwnPostsIngest):
     try:
         return onboarding.ingest_own_posts(payload.author, payload.posts)
+    except onboarding.RefusedCapture as error:
+        _refusal(error)
+
+
+class PostAnalyticsIngest(BaseModel):
+    author: str
+    activity_urn: str
+    metrics: Dict[str, Any]
+
+
+@app.post("/api/v1/self/posts/analytics", tags=["Onboarding"])
+def post_own_post_analytics(payload: PostAnalyticsIngest):
+    try:
+        return onboarding.ingest_post_analytics(payload.author, payload.activity_urn, payload.metrics)
     except onboarding.RefusedCapture as error:
         _refusal(error)
 

@@ -9,6 +9,7 @@ import { CommandPalette } from "@/components/CommandPalette";
 import { Inspector } from "@/components/Inspector";
 import { LeadsSurface } from "@/components/LeadsSurface";
 import { OnboardingSurface } from "@/components/OnboardingSurface";
+import { TodaySurface } from "@/components/TodaySurface";
 import { SwipeSurface } from "@/components/SwipeSurface";
 import { AnalyticsSurface } from "@/components/AnalyticsSurface";
 import { BrandStudioSurface } from "@/components/BrandStudioSurface";
@@ -94,8 +95,9 @@ export default function App() {
     let live = true;
     fetchOnboardingState()
       .then((state) => {
-        if (live && !state.steps.identity) {
-          setActive((current) => (current === "composer" ? "setup" : current));
+        // Setup until the studio knows who you are, Today afterwards.
+        if (live) {
+          setActive((current) => (current === "composer" ? (state.steps.identity ? "today" : "setup") : current));
         }
       })
       .catch(() => undefined);
@@ -391,6 +393,16 @@ export default function App() {
                 />
               )}
               {active === "setup" && <OnboardingSurface />}
+              {active === "today" && (
+                <TodaySurface
+                  onOpenSetup={() => setActive("setup")}
+                  onOpenLead={(leadId) => {
+                    focusNonce.current += 1;
+                    setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
+                    setActive("leads");
+                  }}
+                />
+              )}
               {active === "leads" && <LeadsSurface focus={focusFor("leads")} />}
               {active === "swipe" && <SwipeSurface focus={focusFor("swipe")} />}
               {active === "analytics" && <AnalyticsSurface />}

@@ -194,6 +194,7 @@ EXTRACTORS = {
     "activity_comments": "Your comments",
     "activity_reactions": "Your reactions",
     "analytics": "Creator analytics",
+    "post_analytics": "Your posts' analytics pages",
 }
 
 CAPTURE_RETENTION = timedelta(days=7)
@@ -499,7 +500,8 @@ def forget_identity() -> Dict[str, Any]:
     try:
         with conn:
             for table in ("creator_identity", "creator_positions", "creator_education",
-                          "creator_skills", "own_posts", "outbound_engagements", "self_import_requests"):
+                          "creator_skills", "own_posts", "outbound_engagements", "self_import_requests",
+                          "post_metric_observations"):
                 conn.execute(f"DELETE FROM {table}")
     finally:
         conn.close()
@@ -564,6 +566,8 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
                      now, now),
                 )
                 written += 1
+                # The counts shown on the activity page are a reading too.
+                _record_observation(conn, urn, "activity_page", counts)
                 how = _bind_to_studio(conn, urn, _text(item.get("text"), 10000), published_at_from_urn(urn))
                 if how:
                     bound[how] += 1
@@ -571,6 +575,81 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
         conn.close()
     return {"status": "success", "written": written, "skipped": skipped,
             "bound_to_posts": bound["post"], "bound_to_drafts": bound["draft"]}
+
+
+METRIC_FIELDS = ("impressions", "members_reached", "reactions", "comments", "reposts", "saves", "sends")
+
+
+def _record_observation(conn, activity_urn: str, source: str, metrics: Dict[str, Any]) -> bool:
+    """
+    Keeps one reading of a post's figures, with the post's age at that moment.
+
+    One per post per source per hour: re-reading a page within the hour
+    refreshes that hour's reading rather than adding another, so scrolling
+    the activity page twice does not double the history.
+    """
+    values = {k: _count(metrics.get(k)) for k in METRIC_FIELDS}
+    if all(v is None for v in values.values()):
+        return False
+    now = datetime.now(timezone.utc)
+    published = published_at_from_urn(activity_urn)
+    age = round((now - datetime.fromisoformat(published)).total_seconds() / 3600.0, 2) if published else None
+    conn.execute(
+        f"""
+        INSERT INTO post_metric_observations
+            (activity_urn, observed_at, observed_hour, age_hours, source, {", ".join(METRIC_FIELDS)})
+        VALUES (?, ?, ?, ?, ?, {", ".join("?" for _ in METRIC_FIELDS)})
+        ON CONFLICT(activity_urn, source, observed_hour) DO UPDATE SET
+            observed_at = excluded.observed_at, age_hours = excluded.age_hours,
+            {", ".join(f"{k} = COALESCE(excluded.{k}, post_metric_observations.{k})" for k in METRIC_FIELDS)}
+        """,
+        (activity_urn, now.isoformat(), now.strftime("%Y-%m-%dT%H"), age, source,
+         *[values[k] for k in METRIC_FIELDS]),
+    )
+    return True
+
+
+def ingest_post_analytics(author: Any, activity_urn: Any, metrics: Any) -> Dict[str, Any]:
+    """
+    Figures from one of the creator's posts' own analytics page.
+
+    That page shows more than the activity feed does (members reached, saves,
+    sends), and only to the post's author, so the extension sends it only from
+    the creator's own post. It is refused unless the URN is one of the
+    creator's recorded posts: a post analytics page for anyone else's post is
+    not something the creator can open, and a URN the studio has never seen as
+    theirs is not evidence that it is.
+    """
+    if not isinstance(metrics, dict):
+        raise RefusedCapture("metrics must be an object")
+    urn = _text(activity_urn, 80) or ""
+    if not _ACTIVITY_URN.match(urn):
+        raise RefusedCapture("not an activity URN")
+    conn = get_db()
+    try:
+        with conn:
+            _require_me(conn, author)
+            if not conn.execute("SELECT 1 FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone():
+                raise RefusedCapture("this post is not one of your recorded posts; import your posts first")
+            recorded = _record_observation(conn, urn, "post_analytics", metrics)
+            impressions = _count(metrics.get("impressions"))
+            if impressions is not None:
+                conn.execute("UPDATE own_posts SET impressions = ?, last_seen_at = ? WHERE activity_urn = ?",
+                             (impressions, _now(), urn))
+    finally:
+        conn.close()
+    return {"status": "success", "recorded": recorded}
+
+
+def post_readings(activity_urn: str) -> List[Dict[str, Any]]:
+    """Every reading of one post, oldest first."""
+    conn = get_db()
+    try:
+        return [dict(r) for r in conn.execute(
+            f"SELECT observed_at, age_hours, source, {', '.join(METRIC_FIELDS)} "
+            "FROM post_metric_observations WHERE activity_urn = ? ORDER BY observed_at", (activity_urn,))]
+    finally:
+        conn.close()
 
 
 def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: Optional[str]) -> Optional[str]:

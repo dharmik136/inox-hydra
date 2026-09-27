@@ -562,6 +562,45 @@ def _migrate_capture_log(cursor: sqlite3.Cursor) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_captures_extractor ON captures(extractor, observed_at DESC)")
 
 
+def _migrate_post_metric_observations(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 13:
+    Readings of each of the creator's posts over time, not one mutable number.
+
+    posts.impressions and own_posts.reactions each hold one value, overwritten
+    by every read, so "how did this post do by day two" could not be asked:
+    the day-two figure was replaced on day three. And comparing a post read at
+    six hours with one read at six weeks says nothing about either.
+
+    Each reading is kept with when it was taken and how old the post was, so a
+    post can be compared with the creator's others at the same age. Counts not
+    shown on the page are NULL, never 0.
+    """
+    # grain: one row per reading of one post's figures. At most one per post
+    # per source per hour, so re-reading a page does not multiply readings.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS post_metric_observations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            activity_urn TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            observed_hour TEXT NOT NULL,
+            age_hours REAL,
+            source TEXT NOT NULL,
+            impressions INTEGER,
+            members_reached INTEGER,
+            reactions INTEGER,
+            comments INTEGER,
+            reposts INTEGER,
+            saves INTEGER,
+            sends INTEGER,
+            UNIQUE (activity_urn, source, observed_hour)
+        )
+    """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_post_metrics_urn ON post_metric_observations(activity_urn, observed_at)"
+    )
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -578,6 +617,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (10, "Record who the creator is, their profile, posts and outbound activity", _migrate_creator_self),
     (11, "One lead interaction per interaction, not per page load, and no placeholder text", _migrate_interaction_grain),
     (12, "Record each capture run, so a broken selector is visible", _migrate_capture_log),
+    (13, "Keep readings of each post over time, with the post's age", _migrate_post_metric_observations),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
