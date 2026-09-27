@@ -440,3 +440,28 @@ def test_the_batch_path_cannot_step_around_the_rule(no_asha):
     }]}).json()
     assert result["leads_skipped"] == 1
     assert _lead_count() == 0
+
+
+def test_the_sync_button_goes_through_the_worker():
+    """
+    The popup's Sync button is now the only way a session reaches the studio.
+    It made its request with a bare fetch, which carries no studio token, so
+    every press was refused and reported as "server not reachable". It must
+    ask the service worker, which carries the token, and the worker must only
+    accept that request from the popup, never from a LinkedIn page.
+    """
+    ext = os.path.join(os.path.dirname(__file__), "..", "studio", "extension")
+    with open(os.path.join(ext, "popup.js"), encoding="utf-8") as handle:
+        popup = handle.read()
+    with open(os.path.join(ext, "background.js"), encoding="utf-8") as handle:
+        background = handle.read()
+
+    assert "/api/auth/cookies" not in popup, "the popup calls the studio directly again, without a token"
+    assert 'action: "SYNC_NOW"' in popup, "the Sync button no longer asks the worker"
+
+    handler = background[background.index('message.action === "SYNC_NOW"'):]
+    handler = handler[:handler.index("return true;\n  }") + 20]
+    assert "sender.tab" in handler, (
+        "the worker copies the session for anyone who asks, including a content "
+        "script running inside a LinkedIn page"
+    )

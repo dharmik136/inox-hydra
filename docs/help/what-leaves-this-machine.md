@@ -49,7 +49,7 @@ The page says so itself:
 - **Opening LinkedIn in your browser from the studio.** Your browser contacts LinkedIn directly with your own login. The `linkedin` counter can read zero right after this.
 - **A connected MCP source.** It is a separate program on your computer, and whatever it does on the network is outside the studio's view. `INOX_NO_EGRESS` cannot stop it.
 
-The browser extension talks to the local studio at `127.0.0.1:8000`, not to a server of ours. When it sees certain LinkedIn API requests, it forwards the address without its query string, the status code and the method, with authentication fields removed. It also copies your LinkedIn session cookies to the local studio every 15 minutes. See [Install the browser extension](install-the-browser-extension.md).
+The browser extension talks to the local studio at `127.0.0.1:8000`, not to a server of ours. When it sees certain LinkedIn API requests, it forwards the address without its query string, the status code and the method, with authentication fields removed. It copies your LinkedIn session cookies to the local studio only when you press **Sync LinkedIn Session** in its popup, and never on a timer. On your own profile and activity pages it reads your profile, posts, comments and reactions into the local studio, and when you start an import from **Setup** it scrolls your activity page to read further. It reads what the page shows and makes no requests of its own. See [Install the browser extension](install-the-browser-extension.md).
 
 ## Who can talk to the studio
 

@@ -10,11 +10,15 @@ The session is two LinkedIn cookies, `li_at` and `JSESSIONID`.
 > [!CAUTION]
 > `li_at` is a full LinkedIn login. Anyone holding it can act as you. Paste it only into the studio, never into a chat, a document or a support request.
 
-## Option A: let the extension copy it
+## Option A: press Sync in the extension
 
-If the [browser extension](install-the-browser-extension.md) is loaded in the browser where you are logged in to LinkedIn, it copies both cookies to the studio every 15 minutes. The first copy happens about 15 minutes after the extension is installed or reloaded. Open the studio once in that same browser so the extension has the studio's access key.
+1. In the browser where you are logged in to LinkedIn and the [browser extension](install-the-browser-extension.md) is loaded, open `http://127.0.0.1:8000` once, so the extension has the studio's access key.
+2. Click the extension's toolbar icon.
+3. Click **Sync LinkedIn Session**.
 
-The extension popup has a **Sync LinkedIn Session** button, but it sends the cookies without that access key, so the studio refuses them and the popup reports that the server is not reachable. Rely on the automatic copy.
+The popup says what happened: "Session saved to the studio, for sending to LinkedIn only." on success, "Sign in to LinkedIn in this browser first." if you are not logged in, "The studio is not running on port 8000." if it cannot reach the studio, or "The studio refused this browser." if step 1 was skipped.
+
+The session is copied only when you press the button. Nothing copies it on a timer.
 
 ## Option B: paste it
 
@@ -29,7 +33,7 @@ The fields clear and the note reads "Saved to the local vault."
 
 The studio does not tell you how to find these values. As general browser steps, not studio behaviour: on linkedin.com, open your browser's developer tools, go to the storage or application panel, open the cookies for `https://www.linkedin.com`, and copy the value of each cookie.
 
-If the extension is loaded, its next 15-minute copy overwrites what you pasted.
+Pressing **Sync LinkedIn Session** in the extension later overwrites what you pasted.
 
 ## Check it
 
@@ -52,14 +56,10 @@ PRESENT only means values are stored. Nothing checks that LinkedIn still accepts
 
 ## Remove it
 
-There is no disconnect button. The studio's only way to remove the session is to reset its configuration. Run this from the folder that contains the `studio` folder:
+1. Open **Setup** from the rail.
+2. Under **LINKEDIN SESSION**, click **Delete**.
 
-`python -m studio.cli reset --yes`
-
-> [!WARNING]
-> This clears the whole settings table, not just the session. Your AI provider settings and your Brand Studio profile go too. Your drafts, leads and analytics are kept, and a safety backup is taken first. That backup still holds the encrypted session.
-
-If the extension is loaded, it will copy the session back within 15 minutes. Remove the extension first, or log out of LinkedIn in that browser.
+The line changes to "Not stored." Only the session is removed; nothing else in your settings changes. It is not copied back unless you press **Sync LinkedIn Session** again. Backups taken before you deleted it still hold the encrypted session.
 
 ## If it does not work
 
