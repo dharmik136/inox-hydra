@@ -19,7 +19,9 @@ While your lead list is empty, **Leads** shows the launcher.
 
 1. Open **Leads** in the rail.
 2. Under **OPEN LINKEDIN WITH THE BRIDGE**, click your browser, for example **Microsoft Edge** or **Brave Browser**.
-3. The browser opens at your LinkedIn feed and the studio shows a message such as "Launched Microsoft Edge with the bridge loaded."
+3. The browser opens at your LinkedIn feed, with the studio in a second tab, and the studio shows a message such as "Launched Microsoft Edge with the bridge loaded."
+
+The browser opens in its own profile, separate from your usual one, so the bridge attaches even when that browser is already open. The first time, sign in to LinkedIn in that window. Your usual browser windows are not touched. The profile is kept in your user data folder, never in the studio's own folder, because it holds your LinkedIn sign-in.
 
 Other installed browsers are named underneath in a single line. It ends "IGNORES THE EXTENSION FLAG, SO THE BRIDGE WOULD NOT ATTACH." when Chrome is among them, and "HAS NOT BEEN CHECKED ON THIS MACHINE." otherwise. If you see "NO CHROMIUM BROWSER FOUND ON THIS MACHINE. INSTALL EDGE OR BRAVE TO RUN THE BRIDGE.", install one of them first.
 
@@ -36,7 +38,7 @@ The studio shows "Copied to the clipboard:" followed by the path even when the c
 
 ## Pair it with the studio
 
-In the same browser, open `http://127.0.0.1:8000` once. That page load gives the browser the studio's access token as a cookie, and the extension's background worker sends it with every request it makes. Opening the studio only in another browser, or only in the tray icon's app window (which opens in Google Chrome when Chrome is installed), does not count. Without the token the studio refuses every capture.
+If you used option A, this is already done: the studio tab that opened beside LinkedIn paired it. If you loaded the extension by hand, open `http://127.0.0.1:8000` once in the same browser. That page load gives the browser the studio's access token as a cookie, and the extension's background worker sends it with every request it makes. Opening the studio only in another browser, or only in the tray icon's app window (which opens in Google Chrome when Chrome is installed), does not count. Without the token the studio refuses every capture.
 
 ## What it captures, and when
 

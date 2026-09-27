@@ -133,6 +133,11 @@ ALWAYS_SECRET = (
     # The local API bearer token. It has no extension, so every pattern that
     # works by suffix misses it, and it is matched by name instead.
     "*.token", "api_token",
+    # A Chromium profile's session and password stores. The bridge browser's
+    # profile holds the creator's LinkedIn login; paths.py keeps it outside
+    # studio/, and this refuses the build if one ever lands in the tree anyway.
+    "cookies", "cookies-journal", "login data", "login data-journal",
+    "web data", "web data-journal",
 )
 
 # Markers that make a PEM a private key rather than a public certificate.
