@@ -50,7 +50,7 @@ If you used option A, this is already done: the studio tab that opened beside Li
 | When you press **Sync LinkedIn Session** in the popup | Your LinkedIn session cookies, if both exist | The studio's saved LinkedIn session |
 | Some LinkedIn data requests the page makes (feed updates, profiles, creator analytics) | The address (without its query) and status code | The studio's local telemetry store |
 
-Everything goes only to the studio at `127.0.0.1:8000`. Lead capture skips profile pages. On the feed, it captures commenters and reactors on any post you can see, not only your own. Nothing copies your session on a timer; see [Connect your LinkedIn session](connect-your-linkedin-session.md).
+Everything goes only to the studio at `127.0.0.1:8000`. Lead capture skips profile pages. On the feed, the extension reads commenters and reactors on any post you can see, but the studio keeps only people who engaged with your own posts, and only after you have confirmed your profile in **Setup**. See [Why is my lead list empty?](why-is-my-lead-list-empty.md) Nothing copies your session on a timer; see [Connect your LinkedIn session](connect-your-linkedin-session.md).
 
 ## What it never does
 

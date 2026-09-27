@@ -12,11 +12,11 @@ Open **Leads** in the rail. The left column, **Lead stream**, shows how many peo
 - how they engaged, such as COMMENTED or LIKED (ENGAGED when unknown)
 - their pipeline stage
 
-The first lead opens automatically. Click any row to open that person. The list loads when you open **Leads**, so leave and reopen it to see people captured since. There is no search, filter or delete.
+The first lead opens automatically. Click any row to open that person. The list loads when you open **Leads**, so leave and reopen it to see people captured since. The stream has no filter of its own. To find one person, press **Ctrl+K** and type their name, their company or something they said; see [Search everything with Ctrl+K](use-the-command-palette.md).
 
 ## The dossier
 
-The right side is a sheet on one person:
+The right side is a sheet on one person. Under their name, **OPEN THEIR PROFILE ON LINKEDIN** opens their LinkedIn profile in your browser, so you can look at the right person before messaging them. It appears only when the studio holds a LinkedIn profile address for them.
 
 | Field | What it shows |
 | --- | --- |
@@ -27,7 +27,24 @@ The right side is a sheet on one person:
 
 The ICP score is calculated on this machine by fixed rules: seniority words in the headline, how they engaged and how long their comment was, whether a company is known and what it is called, and whether the comment contains a question mark. It is worked out again at every capture, from their current headline and their best recorded engagement, so it can fall as well as rise.
 
-**Recent interactions** lists up to 8 engagements with any comment text. Each comment appears once, however often you reopened the post, with the time it was first recorded. A reaction carries no text. **Notes** appears when the record has notes. Notes cannot be edited here.
+**Recent interactions** lists up to 8 engagements with any comment text. Each comment appears once, however often you reopened the post, with the time it was first recorded. A reaction carries no text. Under each one, the studio says where it happened:
+
+- **ON YOUR POST**, followed by the opening of that post when the studio has it.
+- **ON SOMEONE ELSE'S POST, CAPTURED BEFORE THE STUDIO KNEW WHICH POSTS WERE YOURS**, in orange, for an engagement recorded before you set up the studio. See the next section.
+- Nothing, when the studio cannot tell. **Notes** appears when the record has notes. Notes cannot be edited here.
+
+## Remove leads from other people's posts
+
+Before you confirmed your profile in **Setup**, the extension kept anyone who engaged with any post on your feed. Those people are other creators' audiences, and a message thanking them for commenting on your post would be wrong. The studio can find them, but only once it has your whole post history, because until then a post it does not recognise may simply be an older post of yours.
+
+- **Your post history is not fully imported yet.** If any leads are undecided, the top of the lead stream reads "IMPORT YOUR POSTS IN SETUP AND THE STUDIO CAN TELL WHICH OF THESE LEADS CAME FROM YOUR POSTS." Nothing is offered for removal. Run **Posts you wrote** in [Setup](set-up-the-studio-from-your-linkedin.md) until it finishes.
+- **Your post history is imported.** If some leads engaged only with other people's posts, the top of the lead stream reads, for example, "3 LEADS ENGAGED ONLY WITH OTHER PEOPLE'S POSTS. REVIEW".
+
+1. Click it to see their names. Click again (it now ends **HIDE**) to close the list.
+2. Click **Remove these 3**. The button turns orange and reads **Delete these 3, it cannot be undone**.
+3. Click it again to delete them, or **CANCEL** to keep them.
+
+A lead counts as someone else's only when every engagement the studio recorded names a post and none of those posts is yours. A lead with any engagement on your posts is always kept, and so is anyone you added yourself. The check runs again at the moment you delete, so someone who has engaged with your post since you opened the list is kept, and the message says so: "REMOVED 2. KEPT 1 THAT HAVE SINCE ENGAGED WITH YOUR POSTS." Deleting removes the lead and their recorded engagements from this machine. Take a [backup](back-up-restore-and-export.md) first if you might want them back.
 
 ## Move a lead through the pipeline
 
@@ -69,3 +86,4 @@ Click **CSV** above the stream to download every lead as `linkedin_studio_crm_le
 | **Reply to their comment** is greyed out | Hover it: "This lead has left no comment to reply to". Use one of the other three. |
 | "Say which post they commented on, above, and a reply can be drafted." | **Reply to their comment** needs the topic box. Type the subject of the post and press it again. |
 | "Lead not found" | The lead no longer exists. Reopen **Leads**. |
+| "The removal was refused." or another message under **Remove these** | The deletion did not run. Nothing was removed. Reopen **Leads** and try again. |
