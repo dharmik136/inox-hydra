@@ -923,3 +923,93 @@ def test_name_matches_are_ordered_and_labelled_too():
     assert "a.rank - b.rank" in source, "name matches are not grouped by kind"
     results = _rendered(os.path.join(UI_SRC, "components", "HelpCentre.tsx"))
     assert "sectionTitle(entry.section)" in results, "a name match does not say where it is filed"
+
+
+# ---------------------------------------------------------------------------
+# Whole words, not the starts of words
+# ---------------------------------------------------------------------------
+# Every query word used to be a prefix, so "fold" matched "folder": 12 of the
+# top 20 help hits for it were about folders and not one about the fold. "key"
+# found "keyframes". Words are now matched whole, stemmed by the index so
+# endings still count, and only a half-typed last word falls back to a prefix,
+# ranked after every whole-word hit.
+
+import re as _re
+
+
+def _marked(hit):
+    return [m.lower() for m in _re.findall(r"<mark>(.*?)</mark>", hit["snippet"])]
+
+
+def test_a_word_does_not_match_a_longer_word_that_starts_with_it():
+    hits = docs_engine.search_docs_fts("fold", limit=20)
+    assert hits, "no hits for the fold at all"
+    for hit in hits:
+        assert "folder" not in _marked(hit) or "fold" in _marked(hit), (
+            f"'fold' matched a passage only about folders: {hit['section']}"
+        )
+    assert all(hit["match"] == "word" for hit in hits[:5]), [h["match"] for h in hits[:5]]
+
+
+def test_an_ending_still_counts():
+    """Stemming, not prefixes, is what lets "folds" find "fold"."""
+    assert docs_engine.search_docs_fts("folds", limit=5), "a plural found nothing"
+    marked = {m for hit in docs_engine.search_docs_fts("folding", limit=10) for m in _marked(hit)}
+    assert marked & {"fold", "folds", "folding"}, marked
+
+
+def test_a_word_still_being_typed_is_found():
+    """Docs searches as you type, and a half-typed word matches nothing whole."""
+    hits = docs_engine.search_docs_fts("extens", limit=10)
+    assert hits, "a half-typed last word found nothing"
+    assert all(hit["match"] == "prefix" for hit in hits), [h["match"] for h in hits]
+
+
+def test_prefix_hits_rank_after_whole_word_hits():
+    """
+    "fold" gives both kinds: passages about the fold, then, to fill the page,
+    passages that only mention a folder. The first version of this used
+    "post sched", which gives only prefix hits, so it could not fail.
+    """
+    hits = docs_engine.search_docs_fts("fold", limit=100)
+    order = [hit["match"] for hit in hits]
+    assert {"word", "prefix"} <= set(order), f"the query no longer mixes both kinds: {set(order)}"
+    assert order == sorted(order, key={"word": 0, "prefix": 1}.get), order
+
+
+def test_only_the_last_word_is_treated_as_half_typed():
+    """"sched post" has a whole last word, so "sched" must match whole."""
+    hits = docs_engine.search_docs_fts("sched post", limit=10)
+    assert all(hit["match"] == "word" for hit in hits), [h["match"] for h in hits]
+
+
+def test_an_index_built_without_stemming_is_rebuilt():
+    conn = docs_engine.get_db()
+    try:
+        conn.execute("DROP TABLE IF EXISTS docs_index")
+        conn.execute("CREATE VIRTUAL TABLE docs_index USING fts5(filename, section, content)")
+        conn.commit()
+        docs_engine.init_docs_search_index(conn)
+        sql = conn.execute("SELECT sql FROM sqlite_master WHERE name='docs_index'").fetchone()[0]
+    finally:
+        conn.close()
+    assert "porter" in sql.lower(), f"an unstemmed index was reused: {sql}"
+    assert docs_engine.search_docs_fts("folds", limit=3)
+
+
+def test_the_route_puts_every_whole_word_hit_before_any_prefix_hit():
+    """
+    Match first, kind second. Grouping by kind first let a help article that
+    only mentioned a "folder" outrank a maintainer document about the fold.
+    """
+    hits = client.get("/api/docs/search?q=fold&limit=100").json()["results"]
+    key = [({"word": 0, "prefix": 1}[h["match"]], {"help": 0, "reference": 1, "retired": 2}[h["kind"]]) for h in hits]
+    assert {k[0] for k in key} == {0, 1}, f"the query no longer mixes both kinds of hit: {sorted(set(key))}"
+    assert len({k[1] for k in key if k[0] == 1}) > 0 and len({k[1] for k in key}) > 1
+    assert key == sorted(key), key
+
+
+def test_a_page_of_results_for_a_whole_word_holds_no_prefix_guess():
+    hits = client.get("/api/docs/search?q=fold&limit=20").json()["results"]
+    marked = [m for hit in hits for m in _marked(hit)]
+    assert "folder" not in marked and "folders" not in marked, marked

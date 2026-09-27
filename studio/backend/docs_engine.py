@@ -33,6 +33,11 @@ DOCS_DIR = get_docs_dir()
 MAX_DOCS_INDEX_FILE_SIZE = 2 * 1024 * 1024  # 2MB per document file
 MAX_DOCS_SEARCH_QUERY_LENGTH = 300
 
+# Words are stemmed, so "folds" and "folding" find "fold", and "folder" does
+# not, because it stems to itself. See search_docs_fts for why this replaced
+# prefix matching on every word.
+DOCS_TOKENIZER = "porter unicode61"
+
 
 # The signature of the corpus the live index was built from.
 #
@@ -168,10 +173,20 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
                 existing = {row[1] for row in cur.execute("PRAGMA table_info(docs_index)").fetchall()}
             except Exception:
                 existing = set()
-            if not {"filename", "section", "content"}.issubset(existing):
+            # The tokenizer is part of the index too. An index built before
+            # stemming was added answers "folds" with nothing and has to be
+            # rebuilt, not reused, and nothing about its columns says so.
+            definition = cur.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='docs_index'"
+            ).fetchone()
+            stemmed = bool(definition and DOCS_TOKENIZER.split()[0] in str(definition[0]).lower())
+            if not {"filename", "section", "content"}.issubset(existing) or not stemmed:
                 cur.execute("DROP TABLE IF EXISTS docs_index")
 
-        cur.execute("CREATE VIRTUAL TABLE IF NOT EXISTS docs_index USING fts5(filename, section, content)")
+        cur.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS docs_index "
+            f"USING fts5(filename, section, content, tokenize='{DOCS_TOKENIZER}')"
+        )
         cur.execute("DELETE FROM docs_index")
 
         indexed_count = 0
@@ -285,9 +300,21 @@ def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connecti
     except (TypeError, ValueError):
         bounded_limit = 10
 
-    # Format words for FTS5 prefix / token matching
+    # Whole words first, then a half-typed last word.
+    #
+    # Every word used to be a prefix, '"fold"*', so "fold" matched "folder"
+    # and "folders" too: 12 of the top 20 help hits for it were about folders,
+    # none about the fold. "key" found "keyframes". Prefix matching exists for
+    # one reason, which is that the Docs search runs as you type, and a word
+    # still being typed ("extens", "sched") matches nothing whole.
+    #
+    # So the words are matched whole, stemmed by the index so plurals and
+    # endings still count. Only if that leaves room is a second pass run with
+    # the LAST word as a prefix, because that is the only word that can still
+    # be half typed, and what it adds is ranked after every whole-word hit.
     tokens = clean_q.split()
-    fts_query = " ".join([f'"{t}"*' for t in tokens])
+    whole_query = " ".join(f'"{t}"' for t in tokens)
+    prefix_query = " ".join([f'"{t}"' for t in tokens[:-1]] + [f'"{tokens[-1]}"*'])
 
     should_close = False
     if conn is None:
@@ -306,23 +333,36 @@ def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connecti
         elif _index_signature != (os.path.abspath(DOCS_DIR), corpus_signature()):
             init_docs_search_index(conn)
 
-        cur.execute("""
-        SELECT filename, section, snippet(docs_index, 2, '<mark>', '</mark>', '...', 25) AS snippet, rank
-        FROM docs_index
-        WHERE docs_index MATCH ?
-        ORDER BY rank
-        LIMIT ?
-        """, (fts_query, bounded_limit))
+        def run(match_query, how, exclude):
+            rows = cur.execute("""
+            SELECT rowid, filename, section,
+                   snippet(docs_index, 2, '<mark>', '</mark>', '...', 25) AS snippet, rank
+            FROM docs_index
+            WHERE docs_index MATCH ?
+            ORDER BY rank
+            LIMIT ?
+            """, (match_query, bounded_limit + len(exclude))).fetchall()
+            found = []
+            for r in rows:
+                if r[0] in exclude:
+                    continue
+                exclude.add(r[0])
+                found.append({
+                    "filename": str(r[1]).replace("\\", "/"),
+                    "section": r[2],
+                    "snippet": r[3],
+                    "relevance_rank": float(r[4]),
+                    # Whether the hit matched whole words or only the start of
+                    # a half-typed last word. Callers that regroup results
+                    # keep this order within each group.
+                    "match": how,
+                })
+            return found
 
-        rows = cur.fetchall()
-        results = []
-        for r in rows:
-            results.append({
-                "filename": str(r[0]).replace("\\", "/"),
-                "section": r[1],
-                "snippet": r[2],
-                "relevance_rank": float(r[3])
-            })
+        seen = set()
+        results = run(whole_query, "word", seen)[:bounded_limit]
+        if len(results) < bounded_limit:
+            results += run(prefix_query, "prefix", seen)[: bounded_limit - len(results)]
         return results
     except Exception:
         # Fallback to basic LIKE query if FTS5 syntax fails
