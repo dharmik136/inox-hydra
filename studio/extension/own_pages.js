@@ -67,6 +67,24 @@
     });
   }
 
+  // One extractor run, for the studio's capture log (see content.js
+  // reportCapture for why). Throttled per extractor per page.
+  const lastReport = {};
+  function reportCapture(extractor, itemsSeen, itemsKept, drift) {
+    const key = extractor + "|" + window.location.pathname;
+    const now = Date.now();
+    if (lastReport[key] && now - lastReport[key] < 60000) return;
+    lastReport[key] = now;
+    studio("/api/v1/bridge/capture", {
+      extractor,
+      page_kind: pageKind(),
+      items_seen: itemsSeen,
+      items_kept: itemsKept,
+      drift: drift && drift.length ? drift : null,
+      extension_version: EXTENSION_VERSION,
+    });
+  }
+
   let confirmedVanity; // undefined: not asked yet; null: nobody confirmed
   async function getConfirmedVanity(force) {
     if (confirmedVanity !== undefined && !force) return confirmedVanity;
@@ -332,6 +350,13 @@
     if (skills && kind === "skills") payload.skills = skills;
     if (kind === "contact") payload.contact = readContact();
 
+    if (kind === "profile") {
+      // A profile page always has a name heading. Not finding one on the
+      // creator's own profile means the reader no longer matches the page.
+      const read = ["display_name", "headline", "location", "about"].filter((k) => payload[k]);
+      reportCapture("profile", read.length, read.length, payload.display_name ? [] : ["name"]);
+    }
+
     const result = await studio("/api/v1/identity/observe", payload);
     if (result && result.status === "candidate") {
       toast("The studio found your profile. Confirm it's you in the studio's Setup screen.");
@@ -429,7 +454,15 @@
   const sentKeys = new Set();
 
   async function sendActivity(kind, me) {
-    const fresh = readActivity(kind, me).filter((item) => {
+    const cards = activityCards();
+    const items = readActivity(kind, me);
+    // Post cards on the page whose author link could not be read are the
+    // markup changing: every post would then be skipped as not the creator's.
+    const drift = [];
+    if (kind === "activity_posts" && cards.length && items.every((i) => !i.actor)) drift.push("post_author");
+    reportCapture(kind, cards.length, items.length, drift);
+
+    const fresh = items.filter((item) => {
       const key = JSON.stringify([item.activity_urn || item.target_activity_urn, item.kind, item.my_text]);
       if (sentKeys.has(key)) return false;
       sentKeys.add(key);

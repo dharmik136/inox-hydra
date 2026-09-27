@@ -40,7 +40,7 @@ URN_2024 = "urn:li:activity:" + str(int(datetime(2024, 3, 5, tzinfo=timezone.utc
 URN_OTHER = "urn:li:activity:" + str(int(datetime(2024, 6, 1, tzinfo=timezone.utc).timestamp() * 1000) << 22)
 
 TABLES = ("creator_identity", "creator_positions", "creator_education", "creator_skills",
-          "own_posts", "outbound_engagements", "self_import_requests", "bridge_heartbeats")
+          "own_posts", "outbound_engagements", "self_import_requests", "bridge_heartbeats", "captures")
 
 
 @pytest.fixture(autouse=True)
@@ -628,3 +628,50 @@ def test_the_dossier_says_where_they_engaged(legacy_leads):
     theirs = client.get(f"/api/v1/crm/leads/{legacy_leads['theirs']}/timeline").json()["interactions"]
     assert mine[0]["post_origin"] == "yours"
     assert theirs[0]["post_origin"] == "not_yours"
+
+
+# ---------------------------------------------------------------------------
+# Capture health: a broken selector is visible rather than silent
+# ---------------------------------------------------------------------------
+
+def _health():
+    return {entry["extractor"]: entry for entry in _state()["health"]}
+
+
+def test_every_extractor_is_listed_even_before_it_runs():
+    """An absent row is the question the creator is asking, so it is shown as never run."""
+    health = _health()
+    assert set(health) >= {"engagers", "profile", "activity_posts", "analytics"}
+    assert all(entry["state"] == "never_run" for entry in health.values())
+
+
+def test_a_run_that_could_not_read_the_page_is_drift():
+    client.post("/api/v1/bridge/capture", json={"extractor": "engagers", "items_seen": 12, "items_kept": 12})
+    client.post("/api/v1/bridge/capture", json={
+        "extractor": "engagers", "items_seen": 9, "items_kept": 0, "drift": ["commenter_name"]})
+    entry = _health()["engagers"]
+    assert entry["state"] == "drifting"
+    assert entry["drift"] == ["commenter_name"]
+    assert entry["last_good_at"], "when it last worked is what tells the creator how long it has been broken"
+
+
+def test_a_working_run_clears_drift():
+    client.post("/api/v1/bridge/capture", json={"extractor": "profile", "items_seen": 1, "drift": ["name"]})
+    client.post("/api/v1/bridge/capture", json={"extractor": "profile", "items_seen": 4, "items_kept": 4})
+    assert _health()["profile"]["state"] == "working"
+
+
+def test_an_unknown_extractor_is_refused():
+    assert client.post("/api/v1/bridge/capture", json={"extractor": "anything"}).status_code == 409
+
+
+def test_the_extension_reports_what_it_could_not_read():
+    """The canaries are the point: each reader says when a page had content it could not parse."""
+    ext = os.path.join(os.path.dirname(__file__), "..", "studio", "extension")
+    with open(os.path.join(ext, "content.js"), encoding="utf-8") as handle:
+        content = handle.read()
+    with open(os.path.join(ext, "own_pages.js"), encoding="utf-8") as handle:
+        own = handle.read()
+    assert '"commenter_name"' in content and 'reportCapture("engagers"' in content
+    assert 'reportCapture("analytics"' in content
+    assert 'reportCapture("profile"' in own and '"post_author"' in own
