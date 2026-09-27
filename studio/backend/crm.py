@@ -17,10 +17,50 @@ import logging
 
 try:
     from .database import get_db
+    from .migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 except ImportError:
     from database import get_db
+    from migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 
 logger = logging.getLogger("studio.crm")
+
+
+def _find_lead(cursor, linkedin_urn: Optional[str]):
+    """
+    The existing lead for this person, found by their profile and nothing else.
+
+    This used to match `linkedin_urn = ? OR (name = ? AND company = ?)`. The
+    capture rarely knows a company, so the second half became "same display
+    name", and two different people called Rahul Sharma were one lead: the
+    creator could then open the dossier of one and quote the other's comment
+    to him. Across writers the profile was also spelled differently (with and
+    without a trailing slash or query string, http or https), so one person
+    could just as easily become two.
+
+    Now only the profile decides, compared by its /in/ identifier. Someone
+    without a profile link is never merged into anyone; a duplicate costs far
+    less than a wrong merge.
+    """
+    if not linkedin_urn:
+        return None
+    match = re.search(r"linkedin\.com/in/([^/?#]+)", linkedin_urn, re.IGNORECASE)
+    if not match:
+        cursor.execute("SELECT id, icp_score FROM leads WHERE linkedin_urn = ?", (linkedin_urn,))
+        return cursor.fetchone()
+    # LIKE treats _ and % as wildcards, and both are legal in a vanity, so
+    # they are escaped: "asha_k" must not find "ashaxk".
+    vanity = match.group(1).lower().replace("!", "!!").replace("%", "!%").replace("_", "!_")
+    for column in ("linkedin_urn", "profile_url"):
+        cursor.execute(
+            f"SELECT id, icp_score FROM leads WHERE lower({column}) LIKE ? ESCAPE '!' "
+            f"OR lower({column}) LIKE ? ESCAPE '!' OR lower({column}) LIKE ? ESCAPE '!' "
+            f"ORDER BY created_at LIMIT 1",
+            (f"%linkedin.com/in/{vanity}", f"%linkedin.com/in/{vanity}/%", f"%linkedin.com/in/{vanity}?%"),
+        )
+        row = cursor.fetchone()
+        if row:
+            return row
+    return None
 
 # -- Validation constants --------------------------------------------------
 MAX_CRM_NAME_LENGTH = 200
@@ -382,6 +422,11 @@ class ReverseCRMManager:
         headline = (headline or "").strip()[:MAX_CRM_HEADLINE_LENGTH]
         company = (company or "").strip()[:MAX_CRM_COMPANY_LENGTH] if company else company
         comment_text = comment_text[:MAX_CRM_COMMENT_LENGTH] if comment_text else comment_text
+        # The capture's own placeholders are not words anybody wrote. Stored as
+        # comment text, "Reacted to post on LinkedIn" was shown in the dossier
+        # as the person's comment, beside a Reply button that could only fail.
+        if comment_text and comment_text.strip().lower() in INTERACTION_PLACEHOLDERS:
+            comment_text = None
 
         seniority = ICPScoringEngine.classify_seniority(headline)
         icp_score = ICPScoringEngine.calculate_icp_score(headline, company, comment_text, interaction_type)
@@ -400,10 +445,7 @@ class ReverseCRMManager:
         try:
             with conn:
                 cursor = conn.cursor()
-                # Check if lead exists by linkedin_urn or name
-                cursor.execute("SELECT id, icp_score FROM leads WHERE linkedin_urn = ? OR (name = ? AND company = ?)",
-                               (linkedin_urn, full_name, company or ""))
-                row = cursor.fetchone()
+                row = _find_lead(cursor, linkedin_urn)
 
                 if row:
                     lead_id = row["id"]
@@ -429,15 +471,26 @@ class ReverseCRMManager:
                     """, (new_id, linkedin_urn, full_name, full_name, headline, company, seniority, icp_score))
                     lead_id = new_id
 
-                # Record interaction
+                # One row per interaction. Reading the same comment again, which
+                # happens every time the post is reopened, updates when it was
+                # last seen instead of counting as a second engagement.
                 cursor.execute("""
                 INSERT INTO lead_interactions (
                     lead_id, post_id, post_urn, interaction_type,
-                    comment_text, suggested_dm_reply, capture_context, interacted_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    comment_text, suggested_dm_reply, capture_context, interacted_at,
+                    comment_key, first_seen_at, last_seen_at, seen_count
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
+                ON CONFLICT(lead_id, COALESCE(post_urn, ''), interaction_type, comment_key) DO UPDATE SET
+                    last_seen_at = CURRENT_TIMESTAMP,
+                    seen_count = lead_interactions.seen_count + 1,
+                    post_id = COALESCE(lead_interactions.post_id, excluded.post_id)
                 """, (lead_id, post_id, post_urn, interaction_type, comment_text,
-                      suggested_dm, capture_context))
-                interaction_id = cursor.lastrowid
+                      suggested_dm, capture_context, interaction_comment_key(comment_text)))
+                interaction_id = cursor.execute(
+                    "SELECT id FROM lead_interactions WHERE lead_id = ? AND COALESCE(post_urn, '') = ? "
+                    "AND interaction_type = ? AND comment_key = ?",
+                    (lead_id, post_urn or "", interaction_type, interaction_comment_key(comment_text)),
+                ).fetchone()[0]
         finally:
             conn.close()
 

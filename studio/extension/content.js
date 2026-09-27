@@ -722,7 +722,10 @@ function observeAndCaptureEngagers() {
             headline: lead.headline,
             company: lead.company,
             interaction_type: (lead.engagement_type || "COMMENT").toUpperCase(),
-            comment_text: commentOnly || lead.notes || "",
+            // Only words the person wrote. A reaction sent lead.notes here,
+            // "Reacted to post on LinkedIn", which was stored and shown as
+            // their comment.
+            comment_text: commentOnly || "",
             // Where this row was read from, so a bad selector can be found and
             // its rows removed rather than left to look like observations.
             capture_context: window.location.pathname,

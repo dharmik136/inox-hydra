@@ -459,6 +459,81 @@ def _migrate_creator_self(cursor: sqlite3.Cursor) -> None:
         cursor.execute(statement)
 
 
+INTERACTION_PLACEHOLDERS = ("reacted to post on linkedin", "commented on post")
+
+
+def interaction_comment_key(comment_text) -> str:
+    """
+    What makes one comment the same comment when it is read again.
+
+    Whitespace and case are normalised, because LinkedIn re-renders both. Empty
+    for a reaction, which has no words.
+    """
+    import hashlib
+
+    text = " ".join((comment_text or "").split()).lower()
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:24] if text else ""
+
+
+def _migrate_interaction_grain(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 11:
+    One row per interaction, not one row per time the page was loaded.
+
+    The extension re-sends what is on screen every time a post is opened, and
+    every send inserted a row. So "most engaged" meant "most often reopened",
+    and a creator checking the same post five times gave one commenter five
+    interactions. The revisit is kept as seen_count and last_seen_at, which is
+    the signal worth having, without being counted as engagement.
+
+    It also removes the capture's placeholders. A reaction was stored with the
+    comment text "Reacted to post on LinkedIn", which the interface then showed
+    as words the person had written.
+    """
+    cursor.execute("PRAGMA table_info(lead_interactions)")
+    columns = {row[1] for row in cursor.fetchall()}
+    for name, ddl in (
+        ("comment_key", "TEXT NOT NULL DEFAULT ''"),
+        ("first_seen_at", "TIMESTAMP"),
+        ("last_seen_at", "TIMESTAMP"),
+        ("seen_count", "INTEGER NOT NULL DEFAULT 1"),
+    ):
+        if name not in columns:
+            cursor.execute(f"ALTER TABLE lead_interactions ADD COLUMN {name} {ddl}")
+
+    placeholders = ",".join("?" for _ in INTERACTION_PLACEHOLDERS)
+    cursor.execute(
+        f"UPDATE lead_interactions SET comment_text = NULL "
+        f"WHERE lower(trim(comment_text)) IN ({placeholders})",
+        INTERACTION_PLACEHOLDERS,
+    )
+
+    rows = cursor.execute(
+        "SELECT id, lead_id, COALESCE(post_urn, '') AS post_urn, interaction_type, comment_text, "
+        "interacted_at FROM lead_interactions ORDER BY id"
+    ).fetchall()
+    groups = {}
+    for row in rows:
+        key = (row[1], row[2], row[3], interaction_comment_key(row[4]))
+        groups.setdefault(key, []).append(row)
+
+    for (_lead, _urn, _type, comment_key), members in groups.items():
+        keep = members[0]
+        seen = [m[5] for m in members if m[5]]
+        cursor.execute(
+            "UPDATE lead_interactions SET comment_key = ?, seen_count = ?, "
+            "first_seen_at = ?, last_seen_at = ? WHERE id = ?",
+            (comment_key, len(members), min(seen) if seen else None, max(seen) if seen else None, keep[0]),
+        )
+        for duplicate in members[1:]:
+            cursor.execute("DELETE FROM lead_interactions WHERE id = ?", (duplicate[0],))
+
+    cursor.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_interactions_grain ON lead_interactions "
+        "(lead_id, COALESCE(post_urn, ''), interaction_type, comment_key)"
+    )
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -473,6 +548,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (8, "Record screen, section and reproduction context on internal sheet issues", _migrate_annotation_context),
     (9, "Record where a swipe specimen came from", _migrate_template_provenance),
     (10, "Record who the creator is, their profile, posts and outbound activity", _migrate_creator_self),
+    (11, "One lead interaction per interaction, not per page load, and no placeholder text", _migrate_interaction_grain),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
