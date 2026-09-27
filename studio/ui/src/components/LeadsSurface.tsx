@@ -8,14 +8,17 @@ import {
   copyExtensionPath,
   fetchBrowserBridge,
   fetchLeadDmScript,
+  fetchLeadReview,
   fetchLeadTimeline,
   fetchLeads,
   launchBridge,
   generateLeadDm,
+  removeLeadsNotOnYourPosts,
   updateLeadStatus,
   type BrowserBridge,
   type Lead,
   type LeadInteraction,
+  type LeadReview,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { SearchFocus } from "@/lib/search";
@@ -86,6 +89,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
             </a>
           </div>
         </div>
+        <LeadReviewPanel onChanged={reload} />
         <ul className="min-h-0 flex-1 overflow-y-auto">
           {leads.map((lead) => (
             <li key={lead.id}>
@@ -210,6 +214,20 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
       <p className="studio-label">{lead.status}</p>
       <h2 className="studio-title mt-2">{lead.name}</h2>
       {lead.headline && <p className="mt-2 text-[14px] text-ink-secondary">{lead.headline}</p>}
+      {/* Stored on every captured lead and never shown, so a creator who
+          wanted to look at the person before messaging them had to search
+          LinkedIn by name, and could open the wrong one. */}
+      {profileLink(lead) && (
+        <a
+          href={profileLink(lead) as string}
+          target="_blank"
+          rel="noreferrer"
+          className="studio-meta mt-2 inline-flex items-center gap-1 text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+        >
+          <ExternalLink className="size-3" strokeWidth={2} aria-hidden="true" />
+          OPEN THEIR PROFILE ON LINKEDIN
+        </a>
+      )}
 
       <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-2 border-y border-edge py-4">
         <Field label="Company" value={lead.company} />
@@ -260,6 +278,19 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
                 </p>
                 {entry.comment_text && (
                   <p className="mt-1 text-[13px] leading-snug text-ink-secondary">{entry.comment_text}</p>
+                )}
+                {/* Which post it was on. The URN was stored and never shown,
+                    and the reply controls asked the creator to type the post
+                    from memory. */}
+                {entry.post_origin === "yours" && (
+                  <p className="studio-meta mt-1 text-[10px] text-ink-muted">
+                    ON YOUR POST{entry.post_excerpt ? `: ${entry.post_excerpt}` : ""}
+                  </p>
+                )}
+                {entry.post_origin === "not_yours" && (
+                  <p className="studio-meta mt-1 text-[10px] text-signal-orange-text">
+                    ON SOMEONE ELSE&rsquo;S POST, CAPTURED BEFORE THE STUDIO KNEW WHICH POSTS WERE YOURS
+                  </p>
                 )}
               </li>
             ))}
@@ -451,6 +482,125 @@ function DraftButton({
       {pending && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
       {label}
     </button>
+  );
+}
+
+/** A link to the person's LinkedIn profile, from whichever column holds it. */
+function profileLink(lead: Lead): string | null {
+  for (const candidate of [lead.profile_url, lead.linkedin_urn]) {
+    if (candidate && /^https?:\/\/([a-z]+\.)?linkedin\.com\/in\//i.test(candidate)) return candidate;
+  }
+  return null;
+}
+
+/**
+ * Leads captured before the studio could tell your posts from anyone else's.
+ *
+ * Until onboarding, the capture kept anyone engaging with any post on the
+ * feed. Those people are not your audience and a message to them would thank
+ * them for engaging with a post that was not yours. They are listed here only
+ * once your post history has been imported to the end, because before that a
+ * post the studio does not recognise may just be an older post of yours.
+ *
+ * Removal is a list you read and then confirm, never automatic, and the
+ * studio re-checks each name at the moment of removal.
+ */
+function LeadReviewPanel({ onChanged }: { onChanged: () => void }) {
+  const [review, setReview] = useState<LeadReview | null>(null);
+  const [open, setOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    fetchLeadReview().then(setReview).catch(() => setReview(null));
+  }, []);
+  useEffect(load, [load]);
+
+  if (!review) return null;
+  const count = review.counts.not_yours;
+
+  if (!review.history_complete) {
+    if (review.counts.unknown === 0) return null;
+    return (
+      <p className="studio-meta border-b border-edge px-4 py-2 text-[10px] leading-snug text-ink-muted">
+        IMPORT YOUR POSTS IN SETUP AND THE STUDIO CAN TELL WHICH OF THESE LEADS CAME FROM YOUR POSTS.
+      </p>
+    );
+  }
+  if (count === 0 && !note) return null;
+
+  return (
+    <div className="border-b border-edge px-4 py-2.5">
+      {note && <p className="studio-meta text-[10px] text-ink-secondary">{note}</p>}
+      {count > 0 && (
+        <>
+          <button
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+            className="studio-meta text-left text-[10px] leading-snug text-signal-orange-text"
+          >
+            {count} {count === 1 ? "LEAD" : "LEADS"} ENGAGED ONLY WITH OTHER PEOPLE&rsquo;S POSTS. {open ? "HIDE" : "REVIEW"}
+          </button>
+          {open && (
+            <div className="mt-2">
+              <ul className="max-h-48 overflow-y-auto">
+                {review.not_yours.map((lead) => (
+                  <li key={lead.id} className="truncate text-[12px] text-ink-secondary">
+                    {lead.name}
+                    {lead.headline && <span className="text-ink-muted">, {lead.headline}</span>}
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={async () => {
+                    if (!confirming) {
+                      setConfirming(true);
+                      return;
+                    }
+                    setBusy(true);
+                    try {
+                      const result = await removeLeadsNotOnYourPosts(review.not_yours.map((l) => l.id));
+                      setNote(
+                        `REMOVED ${result.removed}.${result.kept ? ` KEPT ${result.kept} THAT HAVE SINCE ENGAGED WITH YOUR POSTS.` : ""}`,
+                      );
+                      setConfirming(false);
+                      setOpen(false);
+                      load();
+                      onChanged();
+                    } catch (caught) {
+                      setNote(caught instanceof Error ? caught.message : "The removal was refused.");
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  className={cn(
+                    "rounded-md border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-40",
+                    confirming
+                      ? "border-signal-orange bg-signal-orange text-on-signal"
+                      : "border-edge text-ink-secondary hover:bg-soft",
+                  )}
+                >
+                  {confirming ? `Delete these ${count}, it cannot be undone` : `Remove these ${count}`}
+                </button>
+                {confirming && (
+                  <button
+                    type="button"
+                    onClick={() => setConfirming(false)}
+                    className="studio-meta text-[10px] text-ink-muted hover:text-ink-primary"
+                  >
+                    CANCEL
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 

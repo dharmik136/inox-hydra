@@ -80,9 +80,13 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Then 150 -> 151, with universal search. One new path, /api/v1/search, and
 # the palette calls it, so reached moves with the total and the unreachable
 # count stays where it was.
+#
+# Then 151 -> 153, with the lead review. /api/v1/leads/review and its /remove,
+# both called by the Leads stream's review panel, so again reached moves with
+# the total.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 151
-REACHED_BY_INTERFACE = 72
+TOTAL_API_PATHS = 153
+REACHED_BY_INTERFACE = 74
 UNREACHABLE = 79
 
 ROUTE_DECORATOR = re.compile(

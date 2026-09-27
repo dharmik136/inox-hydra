@@ -558,3 +558,73 @@ def test_an_unrelated_post_binds_nothing(studio_records):
     _studio_post(studio_records, "bindprobe-other", "A completely different post about hiring your first platform engineer and what to ask them.")
     assert _import(OPENING)["bound_to_posts"] == 0
     assert _post("bindprobe-other")["activity_urn"] is None
+
+
+# ---------------------------------------------------------------------------
+# Sorting leads captured before the studio knew which posts were yours
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def legacy_leads():
+    """Three leads as the old capture would have left them."""
+    from crm import reverse_crm
+
+    made = {}
+    for key, urn in (("mine", URN_2024), ("theirs", URN_OTHER), ("nopost", None)):
+        made[key] = reverse_crm.ingest_interaction(
+            f"Legacy {key}", f"https://www.linkedin.com/in/legacy-{key}-probe", "Engineer",
+            None, "COMMENT", f"A comment from {key}.", post_urn=urn,
+        )["lead_id"]
+    yield made
+    conn = get_db()
+    with conn:
+        for lead_id in made.values():
+            conn.execute("DELETE FROM lead_interactions WHERE lead_id = ?", (lead_id,))
+            conn.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
+    conn.close()
+
+
+def _history_imported():
+    _confirm()
+    client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [{"activity_urn": URN_2024, "actor": ME}]})
+    request_id = client.post("/api/v1/self/imports", json={"kind": "posts"}).json()["id"]
+    client.post("/api/v1/self/imports/event", json={"id": request_id, "event": "finished", "items_seen": 1})
+
+
+def test_nothing_is_called_a_stranger_before_your_history_is_read(legacy_leads):
+    """A post the studio does not recognise may just be an older post of yours."""
+    _confirm()
+    client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [{"activity_urn": URN_2024, "actor": ME}]})
+    review = client.get("/api/v1/leads/review").json()
+    assert review["history_complete"] is False
+    assert review["counts"]["not_yours"] == 0
+
+
+def test_leads_are_sorted_once_your_history_is_complete(legacy_leads):
+    _history_imported()
+    review = client.get("/api/v1/leads/review").json()
+    flagged = {lead["id"] for lead in review["not_yours"]}
+    assert legacy_leads["theirs"] in flagged
+    assert legacy_leads["mine"] not in flagged, "someone who engaged with your post was offered for removal"
+    assert legacy_leads["nopost"] not in flagged, "a lead with no known post was called a stranger"
+
+
+def test_removal_rechecks_every_name(legacy_leads):
+    """A lead that is yours is kept even if its id is on the list sent for removal."""
+    _history_imported()
+    result = client.post("/api/v1/leads/review/remove",
+                         json={"lead_ids": [legacy_leads["theirs"], legacy_leads["mine"]]}).json()
+    assert result == {"status": "success", "removed": 1, "kept": 1}
+    conn = get_db()
+    remaining = {r[0] for r in conn.execute("SELECT id FROM leads WHERE id IN (?, ?)",
+                                             (legacy_leads["theirs"], legacy_leads["mine"]))}
+    conn.close()
+    assert remaining == {legacy_leads["mine"]}
+
+
+def test_the_dossier_says_where_they_engaged(legacy_leads):
+    _history_imported()
+    mine = client.get(f"/api/v1/crm/leads/{legacy_leads['mine']}/timeline").json()["interactions"]
+    theirs = client.get(f"/api/v1/crm/leads/{legacy_leads['theirs']}/timeline").json()["interactions"]
+    assert mine[0]["post_origin"] == "yours"
+    assert theirs[0]["post_origin"] == "not_yours"
