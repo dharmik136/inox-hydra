@@ -2780,6 +2780,10 @@ class IngestInteractionRequest(BaseModel):
     # message as though it described the creator's actual post.
     post_topic: Optional[str] = None
     capture_context: Optional[str] = None
+    # The vanity of whoever wrote the post this engagement is on, as the
+    # extension read it from the card. With the URN, it is how the studio
+    # decides the post is the creator's and the engager is therefore a lead.
+    post_author: Optional[str] = None
 
 
 @app.post("/api/v1/crm/interactions/ingest", tags=["Enterprise Reverse CRM"])
@@ -2787,7 +2791,15 @@ def ingest_crm_interaction(req: IngestInteractionRequest):
     """
     Ingests commenter or reactor, calculates deterministic multi-factor ICP score,
     and synthesizes anti-slop 1-to-1 personalized DM.
+
+    Only for engagement on the creator's own posts. Anything else answers
+    "skipped" with the reason, rather than an error, because the extension
+    reports what was stored and a stranger's commenter not being stored is the
+    correct outcome, not a failure.
     """
+    refused = onboarding.engagement_gate(req.linkedin_urn or req.profile_url, req.post_urn, req.post_author)
+    if refused:
+        return {"status": "skipped", "reason": refused}
     # An unidentified person gets a clearly local key. Minting a urn:li:person:
     # put a value this studio invented into LinkedIn's own namespace, where it
     # was indistinguishable from one LinkedIn issued.

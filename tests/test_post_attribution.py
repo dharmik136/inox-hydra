@@ -208,7 +208,7 @@ def test_a_malformed_urn_is_refused(client):
 # End to end
 # --------------------------------------------------------------------------
 
-def test_the_whole_chain_answers_who_engaged_with_which_post(client, cleanup):
+def test_the_whole_chain_answers_who_engaged_with_which_post(client, cleanup, confirmed_creator):
     """
     The question this product exists to answer, asked of data that travelled
     the real path: injected, bound, captured, queried.
@@ -242,6 +242,7 @@ def test_the_whole_chain_answers_who_engaged_with_which_post(client, cleanup):
             "comment_text": comment,
             "post_urn": ACTIVITY_URN,
             "capture_context": f"/feed/update/{ACTIVITY_URN}/",
+            "post_author": confirmed_creator,
         })
         assert r.status_code == 200, r.text
         cleanup["leads"].append(r.json()["interaction"]["lead_id"])

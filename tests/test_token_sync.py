@@ -68,7 +68,7 @@ def test_auth_status_endpoint():
     assert data["client_session"] is True
 
 
-def test_analytics_ingest_endpoint():
+def test_analytics_ingest_endpoint(confirmed_creator):
     test_date = "2026-09-15"
     payload = {
         "series": [
@@ -104,7 +104,9 @@ def test_analytics_ingest_endpoint():
                 "company": "NexusScale",
                 "profile_url": "https://linkedin.com/in/arun-kothari-test",
                 "engagement_type": "Commented",
-                "notes": "Interested in distributed transaction boundaries"
+                "notes": "Interested in distributed transaction boundaries",
+                # A lead is stored only for engagement on the creator's post.
+                "post_author": confirmed_creator,
             }
         ]
     }
@@ -144,8 +146,8 @@ def test_analytics_ingest_endpoint():
     conn.close()
 
 
-def test_mock_ingestion_verification_helper():
-    res = linkedin_client.mock_ingestion_verification()
+def test_mock_ingestion_verification_helper(confirmed_creator):
+    res = linkedin_client.mock_ingestion_verification(post_author=confirmed_creator)
     assert res["status"] == "success"
     assert res["buckets_ingested"] >= 1
     assert res["posts_updated"] >= 1

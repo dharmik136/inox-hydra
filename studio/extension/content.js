@@ -338,6 +338,26 @@ function extractActivityUrn(text) {
 }
 
 /**
+ * The vanity of whoever wrote the post an element belongs to, or "".
+ *
+ * The studio stores an engager as a lead only when the post is the creator's,
+ * and this is how it knows: the actor link on the update card that contains
+ * the element. A comment card has its own author link, so the search starts at
+ * the containing update rather than at the element. On a permalink the page's
+ * first actor is the post's. A company page's post links to /company/, which
+ * yields "" and is correctly not the creator's.
+ */
+function postAuthorFor(element) {
+  const actorSelector =
+    ".update-components-actor__meta-link, a.update-components-actor__image, .update-components-actor a[href*='/in/']";
+  const card = element.closest('[data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"], [data-urn*="ugcPost"], [data-urn*="share"]');
+  const link = (card && card.querySelector(actorSelector)) || document.querySelector("main " + actorSelector);
+  if (!link) return "";
+  const match = /\/in\/([^/?#]+)/.exec(link.getAttribute("href") || "");
+  return match ? decodeURIComponent(match[1]).toLowerCase() : "";
+}
+
+/**
  * The URN of the post a given element belongs to.
  *
  * On a permalink the URL is authoritative and needs no markup at all. In the
@@ -426,6 +446,9 @@ setTimeout(maybeBindPostUrn, 2500);
 // -------------------------------------------------------------
 let lastCommentScrapeTime = 0;
 const knownEngagersSet = new Set();
+// Shown once per page, so a creator browsing the feed before Setup is told
+// once why nothing is captured, not on every post.
+let setupHintShown = false;
 
 /**
  * Identifies an engagement, not a person.
@@ -593,6 +616,7 @@ function observeAndCaptureEngagers() {
         // engagement with no subject, which is why three complete attribution
         // surfaces have returned zero for this product's entire existence.
         post_urn: postUrnFor(card),
+        post_author: postAuthorFor(card),
         _isNew: isNew
       });
     } catch (e) {}
@@ -645,6 +669,7 @@ function observeAndCaptureEngagers() {
           engagement_type: "Liked",
           notes: "Reacted to post on LinkedIn",
           post_urn: postUrnFor(item),
+          post_author: postAuthorFor(item),
           _isNew: isNew
         });
       });
@@ -672,14 +697,16 @@ function observeAndCaptureEngagers() {
       return;
     }
 
+    // One write per person, to the one route that decides whether they are a
+    // lead at all.
+    //
+    // There used to be two: a batch into /api/analytics/ingest and this one.
+    // They matched people by different keys (profile URL there, name plus
+    // headline here), so one person could become two leads and two namesakes
+    // one. And only this route now carries the rule that a lead engaged with
+    // the creator's own post, so the batch write would have stored every
+    // stranger this one refuses.
     const writes = [];
-
-    // 1. Batch ingest into the leads store.
-    writes.push(
-      studioApi("/api/analytics/ingest", { leads: identified }).then(r => r !== null)
-    );
-
-    // 2. Per-person CRM ingest, which carries the interaction and its context.
     identified.forEach(lead => {
       let commentOnly = "";
       if (lead.notes && lead.notes.startsWith('Commented: "')) {
@@ -700,30 +727,42 @@ function observeAndCaptureEngagers() {
             // its rows removed rather than left to look like observations.
             capture_context: window.location.pathname,
             post_urn: lead.post_urn || null,
+            // Whose post this is. The studio keeps the engager only when it is
+            // the creator's.
+            post_author: lead.post_author || null,
             // The post this happened on is not known yet. A fixed string here
             // ended up quoted in every generated message.
             post_topic: null
-          }).then(r => r !== null)
+          })
       );
     });
 
     // Report what was actually stored. This used to run synchronously, outside
     // the promise chain, so with the studio not running every request failed
     // and the creator was still told their engagers had been captured.
+    //
+    // Three outcomes now, not two. A refusal because the post is someone
+    // else's is the rule working, and is silent: the feed is full of other
+    // people's posts, and announcing each one would turn the toast into noise
+    // the creator learns to ignore.
     Promise.allSettled(writes).then(results => {
-      const ok = results.filter(r => r.status === "fulfilled" && r.value).length;
-      if (ok === 0) {
+      const answers = results.map(r => (r.status === "fulfilled" ? r.value : null));
+      const stored = answers.filter(a => a && a.status === "success").length;
+      const unreachable = answers.filter(a => a === null).length;
+      const needsSetup = answers.some(a => a && a.status === "skipped" && /Setup/.test(a.reason || ""));
+
+      if (stored > 0) {
+        const note = skipped > 0 ? ` (${skipped} had no profile link)` : "";
+        showInPageToast(`LinkedIn Studio: ${stored} engager(s) on your post captured${note}.`, "success");
+      } else if (unreachable === answers.length) {
+        showInPageToast("LinkedIn Studio: could not reach your studio, so nothing was saved.", "warning");
+      } else if (needsSetup && !setupHintShown) {
+        setupHintShown = true;
         showInPageToast(
-          "LinkedIn Studio: could not reach your studio, so nothing was saved.",
+          "LinkedIn Studio: confirm your profile in the studio's Setup screen to start capturing leads from your posts.",
           "warning"
         );
-        return;
       }
-      const note = skipped > 0 ? ` (${skipped} had no profile link)` : "";
-      showInPageToast(
-        `LinkedIn Studio: ${identified.length} engager(s) captured from this post${note}.`,
-        "success"
-      );
     });
   }
 }

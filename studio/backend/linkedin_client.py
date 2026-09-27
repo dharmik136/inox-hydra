@@ -518,11 +518,24 @@ class LinkedInClient:
             leads = raw_data.get("leads") or []
             leads_added = 0
             leads_updated = 0
+            leads_skipped = 0
+            # The same rule as /api/v1/crm/interactions/ingest, applied here
+            # too. The extension no longer sends leads down this path, but it is
+            # still on the relay allowlist for analytics, so without the gate
+            # a script on any LinkedIn page could write a stranger as a lead
+            # through it and step around the rule entirely.
+            try:
+                from . import onboarding as _onboarding
+            except ImportError:
+                import onboarding as _onboarding
             for l in leads:
                 name = (l.get("name") or "").strip()
                 if not name:
                     continue
                 profile_url = (l.get("profile_url") or "").strip()
+                if _onboarding.engagement_gate(profile_url, l.get("post_urn"), l.get("post_author")):
+                    leads_skipped += 1
+                    continue
                 headline = (l.get("headline") or "").strip()
                 company = (l.get("company") or "").strip()
                 notes = l.get("notes") or "Captured live from LinkedIn engagement"
@@ -576,7 +589,8 @@ class LinkedInClient:
                 "buckets_ingested": saved_count,
                 "posts_updated": posts_updated,
                 "leads_added": leads_added,
-                "leads_updated": leads_updated
+                "leads_updated": leads_updated,
+                "leads_skipped": leads_skipped
             }
         finally:
             conn.close()
@@ -785,10 +799,14 @@ class LinkedInClient:
                 "circuit_breaker": self.circuit_breaker.get_status()
             }
 
-    def mock_ingestion_verification(self) -> dict:
+    def mock_ingestion_verification(self, post_author: Optional[str] = None) -> dict:
         """
         Generates and ingests a simulated telemetry payload for local testing
         and contract verification without requiring external LinkedIn credentials.
+
+        post_author names whose post the sample lead engaged with. A lead is
+        stored only when that is the confirmed creator, so a caller wanting the
+        lead written passes the creator's vanity.
         """
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         payload = {
@@ -826,7 +844,8 @@ class LinkedInClient:
                     "company": "FinPlatform",
                     "profile_url": "https://linkedin.com/in/vikram-patel-mock",
                     "engagement_type": "Commented",
-                    "notes": "Interested in event-driven state machines"
+                    "notes": "Interested in event-driven state machines",
+                    "post_author": post_author
                 }
             ]
         }

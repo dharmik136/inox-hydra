@@ -201,7 +201,7 @@ def test_day11_algorithmic_penalties_auditor():
     conn.close()
 
 
-def test_day12_inbound_crm_and_warm_engagers():
+def test_day12_inbound_crm_and_warm_engagers(confirmed_creator):
     """
     Day 12: Verify Inbound CRM passive comment capture, 4-factor ICP scoring,
     contextual DM generation, and telemetry metrics.
@@ -214,7 +214,8 @@ def test_day12_inbound_crm_and_warm_engagers():
         "profile_url": "https://linkedin.com/in/marcus-vance-test",
         "interaction_type": "Commented",
         "comment_text": "How do you handle schema migrations across air-gapped workstations without network sync?",
-        "post_urn": "urn:li:activity:day12-test-urn"
+        "post_urn": "urn:li:activity:day12-test-urn",
+        "post_author": confirmed_creator,
     }
     resp = client.post("/api/v1/crm/interactions/ingest", json=interaction_payload)
     assert resp.status_code == 200

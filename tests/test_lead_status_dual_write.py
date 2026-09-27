@@ -82,7 +82,7 @@ def test_batch_add_leads_writes_both_vocabularies(human):
     )
 
 
-def test_the_analytics_ingest_writes_both_vocabularies():
+def test_the_analytics_ingest_writes_both_vocabularies(confirmed_creator):
     """Leads arriving with an analytics payload rather than through the CRM."""
     name = f"{MARKER} Ingest {uuid.uuid4().hex[:8]}"
     linkedin_client.ingest_analytics_payload({"leads": [{
@@ -91,6 +91,7 @@ def test_the_analytics_ingest_writes_both_vocabularies():
         "company": "Acme",
         "profile_url": f"https://www.linkedin.com/in/{uuid.uuid4().hex[:10]}",
         "status": "Connected",
+        "post_author": confirmed_creator,
     }]})
 
     row = _row(name)
