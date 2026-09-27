@@ -50,7 +50,7 @@ The tab opens with "This install processes your work on this machine." and four 
 | Row | What it shows | What it really means |
 | --- | --- | --- |
 | Server binding | LOOPBACK ONLY | Fixed text. The server listens on 127.0.0.1 |
-| Credential store | LOCAL SQLITE VAULT | Fixed text, always green. Your LinkedIn session is encrypted, but an AI provider key is stored as plain text. See [Connect your own AI provider](connect-your-own-ai-provider.md) |
+| Credential store | LOCAL SQLITE VAULT | Fixed text, always green. Your LinkedIn session and your AI provider key are both sealed before they are stored. See [Connect your own AI provider](connect-your-own-ai-provider.md) |
 | Model engine | RUNS LOCALLY or SENDS TO PROVIDER | SENDS TO PROVIDER when an AI key is saved. UNKNOWN if the status could not be read |
 | LinkedIn session | CONNECTED or NOT CONNECTED | Shown in green either way |
 

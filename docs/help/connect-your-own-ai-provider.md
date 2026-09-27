@@ -32,8 +32,8 @@ Without a key, the text features still answer, from local templates on this mach
 
 **Verify and save** first sends a short test request to the provider. If that fails, nothing is saved and your previous settings stay. If it succeeds, the provider, key, model and base URL are written to the settings table in your local database.
 
-> [!WARNING]
-> The panel says the key is stored in an encrypted vault. It is not. The key is stored as plain text in the local database. Backups contain it. Exports leave it out, and the diagnostics bundle records only whether it is set and how long it is.
+> [!NOTE]
+> The key is sealed before it is saved, the same way as your LinkedIn session: with Windows' own data protection on Windows, and the studio's local vault key on macOS and Linux. The database holds the sealed form, never the key as typed. A key saved by an older version is sealed the next time the studio starts. Because the seal is tied to this computer and your account on it, a database or backup moved elsewhere reads as having no key, and you enter it again there. Exports leave the key out, and the diagnostics bundle records only whether it is set and how long it is.
 
 Once connected, this is what reaches the provider:
 

@@ -6,7 +6,7 @@ See how your daily figures reach the studio, and read the chart, the three obser
 
 The studio does not fetch your analytics. The browser extension reads them from LinkedIn's own analytics page while you have it open. You need the extension loaded and paired first; see [Install the browser extension that captures leads and analytics](install-the-browser-extension.md).
 
-1. In that browser, open your LinkedIn analytics page.
+1. In that browser, open your LinkedIn creator analytics page, whose address starts `linkedin.com/analytics/creator`. A single post's analytics page is not read.
 2. Set LinkedIn's range selector to the past 24 hours.
 3. Wait a couple of seconds. The extension reads the impressions, engagements and followers cards and saves them under today's date (UTC).
 
@@ -17,7 +17,7 @@ One visit records one day. A second visit the same day updates that day. Days yo
 | "LinkedIn Studio: creator analytics synced to your local studio." | The extension sent the figures. It also shows this when the studio could not be reached, so confirm on **Analytics**. |
 | "...so they were not saved as today's numbers. Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses. Change the range; the extension reads again. |
 
-If the extension cannot tell which range is selected, it still saves the figures, labelled as an unknown period. Check the selector before you visit. Abbreviated figures such as 1.2K are stored as the rounded number, 1200, and marked as rounded.
+If the extension cannot tell which range is selected, it still saves the figures, labelled as an unknown period. The chart still plots that day, but the totals under **What changed** leave it out and say how many days they left out. Check the selector before you visit. Abbreviated figures such as 1.2K are stored as the rounded number, 1200, and marked as rounded.
 
 ## Read the page
 
@@ -29,12 +29,12 @@ If the extension cannot tell which range is selected, it still saves the figures
 | Impressions | The impressions card |
 | Reactions | The engagements card |
 | Followers | The followers card |
-| Comments | Not captured. It reads 0 on every captured day. |
+| Comments | Not captured. Days captured now hold no figure; days captured by an earlier version read 0. |
 | Profile views | Not captured. The chart shows NOTHING MEASURED IN THIS RANGE. |
 
 ## The three observations
 
-- **What changed**: Impressions and Engagements (reactions, comments and shares) summed over the range and compared with the previous period of the same length. Profile views compares the last day's figure with the first day's, and Followers is the difference between them. If the first day has no figure, the last day stands in for it, so the change reads 0. With nothing in the previous period, a change reads +100.0%.
+- **What changed**: Impressions and Engagements (reactions, comments and shares) summed over the range, counting only days that hold a single day's figures, and compared with the previous period of the same length. Days captured with an unknown range are left out, and a note under the list says how many. Profile views compares the last day's figure with the first day's, and Followers is the difference between them. If either day has no figure, or the previous period holds nothing to compare with, the change reads "not measured" rather than 0 or +100.0%.
 - **What moved with it**: one sentence on how reach and engagement moved together.
 - **What to look at next**: your post with the highest engagement rate.
 
@@ -63,7 +63,7 @@ Click **CSV** beside the range buttons. It downloads every stored day, whatever 
 | --- | --- |
 | ANALYTICS UNAVAILABLE | The studio did not answer or refused the request. Check it is running and reload. |
 | NOTHING MEASURED IN THIS RANGE | No figures exist for that measure in this range. Visit your LinkedIn analytics page with the extension running. Profile views always shows this. |
-| "not measured" | That figure was never captured for that day or post. Under **What changed**, it was not captured on the latest day the studio holds, or nothing has been captured at all. |
+| "not measured" | That figure was never captured for that day or post. Under **What changed**, one of the figures it compares was not captured, or the previous period holds nothing to compare with. |
 | NO PUBLISHED POSTS TO COMPARE | No post has the published status yet. |
 
 Audience demographics are not shown anywhere in the studio.

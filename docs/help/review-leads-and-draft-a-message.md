@@ -2,7 +2,7 @@
 
 Read each captured person's dossier, set their pipeline stage, and draft a message you send yourself.
 
-Leads are people the browser extension saw commenting on or reacting to posts. If the list is empty, see [Why is my lead list empty?](why-is-my-lead-list-empty.md).
+Leads are people the browser extension saw commenting on or reacting to posts. Each person is one lead, matched only by the `/in/` part of their profile link, never by name. If the list is empty, see [Why is my lead list empty?](why-is-my-lead-list-empty.md).
 
 ## The lead stream
 
@@ -25,9 +25,9 @@ The right side is a sheet on one person:
 | ICP score | 0 to 100, or "Not scored" |
 | First seen | The date the studio recorded them |
 
-The ICP score is calculated on this machine by fixed rules: seniority words in the headline, how they engaged and how long their comment was, whether a company is known and what it is called, and whether the comment contains a question mark.
+The ICP score is calculated on this machine by fixed rules: seniority words in the headline, how they engaged and how long their comment was, whether a company is known and what it is called, and whether the comment contains a question mark. It is worked out again at every capture, from their current headline and their best recorded engagement, so it can fall as well as rise.
 
-**Recent interactions** lists up to 8 engagements with any comment text. **Notes** appears when the record has notes. Notes cannot be edited here.
+**Recent interactions** lists up to 8 engagements with any comment text. Each comment appears once, however often you reopened the post, with the time it was first recorded. A reaction carries no text. **Notes** appears when the record has notes. Notes cannot be edited here.
 
 ## Move a lead through the pipeline
 
@@ -48,9 +48,9 @@ Under **Pipeline**, click one of the four stages: **New Lead**, **Outreach Sent*
 | Reply to their comment | Quotes up to the first 60 characters of their latest comment |
 
 > [!IMPORTANT]
-> The drafts contain fixed wording about architecture and engineering. If a comment contains a question, **Reply to their comment** also adds "We found decoupling background ingestion eliminates write lock contention entirely." Rewrite anything that is not true of you before sending.
+> The drafts contain fixed wording about architecture and engineering. If a comment contains a question, **Reply to their comment** says it saw their question instead of thanking them for the comment. Rewrite anything that is not true of you before sending.
 
-If the topic box is empty, the first three name no subject: **Peer question** and **Offer a blueprint** say only "my recent post", and **Suggest a call** says only "my post". **Reply to their comment** still uses "sovereign creator stack".
+If the topic box is empty, the first three name no subject: **Peer question** and **Offer a blueprint** say only "my recent post", and **Suggest a call** says only "my post". **Reply to their comment** writes nothing until you fill in the box.
 
 ## What happens
 
@@ -58,7 +58,7 @@ Each draft is a fill-in template built from the stored record: first name, compa
 
 ## Export your leads
 
-Click **CSV** above the stream to download every lead as `linkedin_studio_crm_leads.csv`.
+Click **CSV** above the stream to download every lead as `linkedin_studio_crm_leads.csv`. Its Qualification Tier column uses the studio's one tier rule: TIER_1_VIP from an ICP score of 80, QUALIFIED from 60, NURTURE from 30, otherwise DISQUALIFIED.
 
 ## If it does not work
 
@@ -67,5 +67,5 @@ Click **CSV** above the stream to download every lead as `linkedin_studio_crm_le
 | LEAD PIPELINE UNAVAILABLE | The lead list could not be loaded. Check the studio is running and reload. |
 | DOSSIER UNAVAILABLE | That person's record could not be loaded. |
 | **Reply to their comment** is greyed out | Hover it: "This lead has left no comment to reply to". Use one of the other three. |
-| "the server returned no draft" | The stored comment is a capture placeholder, such as "Reacted to post on LinkedIn", not something they wrote. This is usual for people who reacted. |
+| "Say which post they commented on, above, and a reply can be drafted." | **Reply to their comment** needs the topic box. Type the subject of the post and press it again. |
 | "Lead not found" | The lead no longer exists. Reopen **Leads**. |

@@ -46,11 +46,11 @@ If you used option A, this is already done: the studio tab that opened beside Li
 | --- | --- | --- |
 | Feed, post pages and activity pages | Name, headline, profile link and the first 140 characters of comment text of commenters; people in an open reactions list | **Leads** |
 | A post's own page | The post's ID and text | Offered to the studio to link to a post you wrote. In this build that link does not complete; see [Read your analytics](read-your-analytics.md). |
-| Any LinkedIn page with `/analytics` in its address | Impressions, engagements and followers from the figure cards, about 2 seconds after the page loads or after you click through to it from elsewhere on LinkedIn | **Analytics** |
-| In the background, every 15 minutes | Your LinkedIn session cookies, if both exist | The studio's saved LinkedIn session |
+| Your creator analytics page, any address starting `/analytics/creator` | Impressions, engagements and followers from the figure cards, about 2 seconds after the page loads or after you click through to it from elsewhere on LinkedIn | **Analytics** |
+| When you press **Sync LinkedIn Session** in the popup | Your LinkedIn session cookies, if both exist | The studio's saved LinkedIn session |
 | Some LinkedIn data requests the page makes (feed updates, profiles, creator analytics) | The address (without its query) and status code | The studio's local telemetry store |
 
-Everything goes only to the studio at `127.0.0.1:8000`. Lead capture skips profile pages. On the feed, it captures commenters and reactors on any post you can see, not only your own. The first session copy can take up to 15 minutes after install; see [Connect your LinkedIn session](connect-your-linkedin-session.md).
+Everything goes only to the studio at `127.0.0.1:8000`. Lead capture skips profile pages. On the feed, it captures commenters and reactors on any post you can see, not only your own. Nothing copies your session on a timer; see [Connect your LinkedIn session](connect-your-linkedin-session.md).
 
 ## What it never does
 
@@ -59,13 +59,13 @@ It does not post, comment, react, message or follow on your behalf, and it does 
 The part of the extension that runs inside LinkedIn pages relays to just three studio functions: saving analytics, linking a post, and saving an engagement. Fields named after LinkedIn session credentials are stripped out first.
 
 > [!NOTE]
-> Do not rely on the extension's toolbar popup or side panel for status. They call the studio without the studio token, so the popup's sync button reports the studio as not reachable and their lists stay empty or stuck on loading, even when it is running.
+> The toolbar popup and side panel ask the studio through the extension's background worker, which carries the studio token. The popup's server line reads Online, Not paired or Offline, and a side panel list that cannot load names the reason: the studio is not running, has not paired with this browser, or answered with an error status.
 
 ## Check it works
 
 Open one of your posts with comments. A small notice appears on the LinkedIn page for people it has not already seen on that post since the page loaded:
 
-- "LinkedIn Studio: N engager(s) captured from this post." The people are now in **Leads**. Reopen **Leads** to see them.
+- "LinkedIn Studio: N engager(s) on your post captured." The people are now in **Leads**. Reopen **Leads** to see them.
 - "LinkedIn Studio: N engager(s) had no profile link and were not saved."
 - "LinkedIn Studio: could not reach your studio, so nothing was saved." The studio is not running, or this browser was never paired.
 

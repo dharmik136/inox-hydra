@@ -57,8 +57,8 @@ The browser extension talks to the local studio at `127.0.0.1:8000`, not to a se
 - **Allowed origins.** When a browser sends an API call, it is accepted only from the studio's own page and the extension. Any other website gets "This origin is not permitted to use the local studio." A call with no origin, such as from a local script, still needs the token.
 - **A token.** API calls must carry the studio token or get "Missing or invalid studio token." The token is set as an HttpOnly, SameSite=Strict cookie when the studio page loads, so scripts and other sites cannot borrow it.
 
-> [!WARNING]
-> If you entered your AI key in the studio, it is stored unencrypted in the local database. It does not leave the machine because of that, but every backup carries it. See [Back up, restore or export your data](back-up-restore-and-export.md).
+> [!NOTE]
+> If you entered your AI key in the studio, it is sealed before it is stored, like your LinkedIn session, and only the sealed form is in the database and in backups. It is unsealed in memory when a request to your provider needs it. See [Back up, restore or export your data](back-up-restore-and-export.md).
 
 ## If it does not work
 
