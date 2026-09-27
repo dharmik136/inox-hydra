@@ -532,6 +532,7 @@ HELP_SECTIONS = [
         "paths": [
             "help/open-the-studio-for-the-first-time.md",
             "help/set-up-the-studio-from-your-linkedin.md",
+            "help/what-to-do-today.md",
             "help/use-the-command-palette.md",
             "help/search-the-help-in-docs.md",
             "help/stop-the-studio-and-use-the-tray-icon.md",
