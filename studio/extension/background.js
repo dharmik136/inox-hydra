@@ -31,6 +31,7 @@ const RELAYABLE_PATHS = new Set([
   // Onboarding (own_pages.js). Every write is refused by the studio unless it
   // belongs to the creator the studio has confirmed.
   "/api/v1/bridge/heartbeat",
+  "/api/v1/bridge/capture",
   "/api/v1/identity/me",
   "/api/v1/identity/observe",
   "/api/v1/self/posts/ingest",

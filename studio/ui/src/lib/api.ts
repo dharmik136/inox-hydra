@@ -282,6 +282,8 @@ export interface Lead {
   headline: string | null;
   company: string | null;
   profile_url: string | null;
+  /** The CRM writer stores the profile here rather than in profile_url. */
+  linkedin_urn?: string | null;
   engagement_type: string | null;
   status: string;
   seniority_level: string | null;
@@ -300,10 +302,33 @@ export async function fetchLeads(status?: string): Promise<Lead[]> {
 export interface LeadInteraction {
   id: number;
   post_id: string | null;
+  post_urn?: string | null;
   interaction_type: string | null;
   comment_text: string | null;
   suggested_dm_reply: string | null;
   interacted_at: string;
+  /**
+   * Whether this was on one of your posts. "unknown" until your post history
+   * has been imported to the end, and for captures that named no post.
+   */
+  post_origin?: "yours" | "not_yours" | "unknown";
+  /** The opening of the post it was on, when the studio holds that post. */
+  post_excerpt?: string | null;
+}
+
+export interface LeadReview {
+  history_complete: boolean;
+  counts: { yours: number; not_yours: number; unknown: number };
+  not_yours: { id: string; name: string; headline: string | null; interactions: number }[];
+}
+
+export async function fetchLeadReview(): Promise<LeadReview> {
+  return call<LeadReview>("/api/v1/leads/review");
+}
+
+/** Deletes those of the named leads that are still classified as not from your posts. */
+export async function removeLeadsNotOnYourPosts(leadIds: string[]): Promise<{ removed: number; kept: number }> {
+  return call("/api/v1/leads/review/remove", { method: "POST", body: JSON.stringify({ lead_ids: leadIds }) });
 }
 
 export async function fetchLeadTimeline(
@@ -1460,7 +1485,18 @@ export interface SelfImport {
   outcome: string | null;
 }
 
+export interface CaptureHealth {
+  extractor: string;
+  label: string;
+  last_run_at: string | null;
+  last_good_at: string | null;
+  /** Required fields the latest run could not read on a page that had them. */
+  drift: string[];
+  state: "never_run" | "working" | "drifting";
+}
+
 export interface OnboardingState {
+  health: CaptureHealth[];
   /** Whether a LinkedIn session is stored for the live send. Never the value. */
   session: { stored: boolean; saved_at: string | null };
   bridge: BridgeStatus;

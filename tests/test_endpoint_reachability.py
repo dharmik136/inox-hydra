@@ -80,10 +80,19 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Then 150 -> 151, with universal search. One new path, /api/v1/search, and
 # the palette calls it, so reached moves with the total and the unreachable
 # count stays where it was.
+#
+# Then 151 -> 153, with the lead review. /api/v1/leads/review and its /remove,
+# both called by the Leads stream's review panel, so again reached moves with
+# the total.
+#
+# Then 153 -> 154, with capture health. /api/v1/bridge/capture is written by
+# the extension only (the Setup screen reads the result through the onboarding
+# state), so it joins the unreachable column by design, like the other
+# extension routes.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 151
-REACHED_BY_INTERFACE = 72
-UNREACHABLE = 79
+TOTAL_API_PATHS = 154
+REACHED_BY_INTERFACE = 74
+UNREACHABLE = 80
 
 ROUTE_DECORATOR = re.compile(
     r"^\s*@app\.(get|post|put|delete|patch)\(\s*[\"']([^\"']+)[\"']", re.MULTILINE
