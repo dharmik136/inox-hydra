@@ -1485,7 +1485,18 @@ export interface SelfImport {
   outcome: string | null;
 }
 
+export interface CaptureHealth {
+  extractor: string;
+  label: string;
+  last_run_at: string | null;
+  last_good_at: string | null;
+  /** Required fields the latest run could not read on a page that had them. */
+  drift: string[];
+  state: "never_run" | "working" | "drifting";
+}
+
 export interface OnboardingState {
+  health: CaptureHealth[];
   /** Whether a LinkedIn session is stored for the live send. Never the value. */
   session: { stored: boolean; saved_at: string | null };
   bridge: BridgeStatus;

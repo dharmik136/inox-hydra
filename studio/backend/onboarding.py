@@ -183,6 +183,89 @@ def bridge_status() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Capture health
+# ---------------------------------------------------------------------------
+
+# The extractors the extension reports on, in the words the Setup screen uses.
+EXTRACTORS = {
+    "engagers": "Comments and reactions on your posts",
+    "profile": "Your profile",
+    "activity_posts": "Your posts",
+    "activity_comments": "Your comments",
+    "activity_reactions": "Your reactions",
+    "analytics": "Creator analytics",
+}
+
+CAPTURE_RETENTION = timedelta(days=7)
+
+
+def record_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    One extractor run on one page, as the extension saw it.
+
+    drift names the required fields the extractor could not read on a page
+    that plainly had the thing it looks for: comment cards with no readable
+    name, a profile with no readable heading. That is the signature of LinkedIn
+    changing its markup, and the one failure a creator cannot see for
+    themselves, because it looks exactly like nobody engaging.
+    """
+    if not isinstance(payload, dict) or payload.get("extractor") not in EXTRACTORS:
+        raise RefusedCapture("unknown extractor")
+    drift = [d for d in (payload.get("drift") or []) if isinstance(d, str)][:10]
+    now = datetime.now(timezone.utc)
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept, drift, extension_version) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (now.isoformat(), payload["extractor"], _text(payload.get("page_kind"), 40),
+                 _count(payload.get("items_seen")), _count(payload.get("items_kept")),
+                 json.dumps([_text(d, 60) for d in drift]) if drift else None,
+                 _text(payload.get("extension_version"), 40)),
+            )
+            conn.execute("DELETE FROM captures WHERE observed_at < ?", ((now - CAPTURE_RETENTION).isoformat(),))
+    finally:
+        conn.close()
+    return {"status": "success"}
+
+
+def capture_health() -> List[Dict[str, Any]]:
+    """
+    Per extractor: when it last read something, and whether its latest run
+    drifted. Extractors that have never run are listed too, as never run,
+    because an absent row is the question the creator is asking.
+    """
+    conn = get_db()
+    try:
+        rows = {}
+        for extractor in EXTRACTORS:
+            latest = conn.execute(
+                "SELECT observed_at, items_seen, items_kept, drift FROM captures "
+                "WHERE extractor = ? ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
+            last_good = conn.execute(
+                "SELECT observed_at FROM captures WHERE extractor = ? AND drift IS NULL "
+                "AND COALESCE(items_seen, 0) > 0 ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
+            rows[extractor] = (latest, last_good)
+    finally:
+        conn.close()
+
+    health = []
+    for extractor, label in EXTRACTORS.items():
+        latest, last_good = rows[extractor]
+        drift = json.loads(latest["drift"]) if latest and latest["drift"] else []
+        health.append({
+            "extractor": extractor,
+            "label": label,
+            "last_run_at": latest["observed_at"] if latest else None,
+            "last_good_at": last_good["observed_at"] if last_good else None,
+            "drift": drift,
+            "state": "never_run" if not latest else ("drifting" if drift else "working"),
+        })
+    return health
+
+
+# ---------------------------------------------------------------------------
 # Identity
 # ---------------------------------------------------------------------------
 
@@ -915,6 +998,7 @@ def onboarding_state() -> Dict[str, Any]:
 
     bridge = bridge_status()
     return {
+        "health": capture_health(),
         "session": session,
         "status": "success",
         "bridge": bridge,

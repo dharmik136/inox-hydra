@@ -1548,6 +1548,15 @@ def post_bridge_heartbeat(payload: BridgeHeartbeat):
     return onboarding.record_heartbeat(payload.extension_version, payload.page_kind)
 
 
+@app.post("/api/v1/bridge/capture", tags=["Onboarding"])
+def post_bridge_capture(payload: Dict[str, Any]):
+    """One extractor run, as the extension saw it. See onboarding.record_capture."""
+    try:
+        return onboarding.record_capture(payload)
+    except onboarding.RefusedCapture as error:
+        _refusal(error)
+
+
 @app.post("/api/v1/identity/observe", tags=["Onboarding"])
 def post_identity_observe(payload: Dict[str, Any]):
     try:

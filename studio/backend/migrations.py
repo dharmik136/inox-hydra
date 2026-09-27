@@ -534,6 +534,34 @@ def _migrate_interaction_grain(cursor: sqlite3.Cursor) -> None:
     )
 
 
+def _migrate_capture_log(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 12:
+    A record of each extractor run, so a broken capture is visible.
+
+    Every capture reads LinkedIn's markup, which is undocumented and changes.
+    When a selector stops matching, the extractor finds nothing and says
+    nothing, and the creator sees a lead list that has gone quiet and cannot
+    tell a slow week from a broken bridge. Each run now leaves a row: what it
+    looked at, how much it found, and which required fields it could not read
+    on a page that plainly had them.
+    """
+    # grain: one row per extractor run on one page view. Pruned to a week.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS captures (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            observed_at TEXT NOT NULL,
+            extractor TEXT NOT NULL,
+            page_kind TEXT,
+            items_seen INTEGER,
+            items_kept INTEGER,
+            drift TEXT,
+            extension_version TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_captures_extractor ON captures(extractor, observed_at DESC)")
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -549,6 +577,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (9, "Record where a swipe specimen came from", _migrate_template_provenance),
     (10, "Record who the creator is, their profile, posts and outbound activity", _migrate_creator_self),
     (11, "One lead interaction per interaction, not per page load, and no placeholder text", _migrate_interaction_grain),
+    (12, "Record each capture run, so a broken selector is visible", _migrate_capture_log),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
