@@ -45,7 +45,7 @@ In the table, *n* stands for the number the message shows.
 - **A post with no line break fails Gate 4**, and usually Gate 3 as well, because Gate 3 then measures the whole post.
 - **Gate 2's limit is lower than the save limit.** The studio saves posts of up to 5,000 characters, so a post between 3,001 and 5,000 characters saves, and the studio lets you publish or queue it, while it reads BLOCKED.
 - **Gate 1 counts only em dashes.** En dashes do not trip it, though the Distribution audit's dash penalty flags them.
-- **Gate 3 is not the Preview fold.** The Mobile preview cuts at 180 characters. Gate 3 uses its own 140 and 210 limits, so the two can disagree.
+- **Gate 3 is not the Preview fold.** The Mobile preview cuts the whole post at 140 characters, counted as a reader sees them. Gate 3 checks the first line against 140 and the first three lines against 210, in raw characters, so the two can disagree.
 - **Formatting marks count.** Gates 2 and 3 count raw characters, so the marks that **Underline** and **Strikethrough** add push the counts up.
 
 ## What happens
