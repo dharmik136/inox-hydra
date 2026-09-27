@@ -36,7 +36,7 @@ The server listens only on `127.0.0.1`, so only this PC can reach it. Your draft
 
 A new database starts almost empty, on purpose. Nothing about you or your account is invented.
 
-The studio opens on **Setup** until you have confirmed your profile there. It connects the bridge browser and reads your own LinkedIn: see [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).
+The studio opens on **Setup** until you have confirmed your profile there, and on **Today** afterwards (see [What to do today](what-to-do-today.md)). It connects the bridge browser and reads your own LinkedIn: see [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).
 
 - **Composer**: an empty editor. Above it, the hook rail shows specimens from the 36 built-in hook forms.
 - **Queue**: 11 default weekly posting slots and no posts.
@@ -51,6 +51,7 @@ The rail on the left lists the surfaces. Hover an icon to see its name.
 | Rail label | What it is for |
 | --- | --- |
 | Setup | Connect the browser and teach the studio who you are |
+| Today | Who to reply to and how your latest post is doing |
 | Composer | Write, re-hook and stage the next post |
 | Queue | Scheduled posts and peak engagement slots |
 | Leads | Lead stream and person dossiers |

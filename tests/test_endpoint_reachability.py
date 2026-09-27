@@ -89,10 +89,14 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # the extension only (the Setup screen reads the result through the onboarding
 # state), so it joins the unreachable column by design, like the other
 # extension routes.
+#
+# Then 154 -> 156, with Today and per-post readings. /api/v1/today is the
+# Today screen's, so it is reached; /api/v1/self/posts/analytics is written by
+# the extension from a post's analytics page, so it is unreachable by design.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 154
-REACHED_BY_INTERFACE = 74
-UNREACHABLE = 80
+TOTAL_API_PATHS = 156
+REACHED_BY_INTERFACE = 75
+UNREACHABLE = 81
 
 ROUTE_DECORATOR = re.compile(
     r"^\s*@app\.(get|post|put|delete|patch)\(\s*[\"']([^\"']+)[\"']", re.MULTILINE
