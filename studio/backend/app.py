@@ -1436,25 +1436,36 @@ def get_lead_dm(lead_id: str, style: Optional[str] = "value_add", topic: Optiona
     return generate_dm_script(lead_id, style=style, post_topic=topic)
 
 
+# Enrichment is retired, and answers 410 so a caller learns why rather than
+# meeting a 404 that reads like a typo.
+#
+# The dossier was a keyword match on the headline presented as research: one
+# of five prewritten paragraphs with the company name interpolated, so a
+# two-person consultancy and a bank with the same job title got the same
+# "Kubernetes, Kafka, PostgreSQL" stack and the same friction. The side panel
+# showed it as an intelligence dossier, and a creator reading it would repeat
+# an invented fact to the person it describes. When a Gemini key was stored,
+# the call also went straight to Gemini, around the creator's chosen provider
+# and the egress controls.
+#
+# agno_agent keeps the code, and its tests, so a real lookup can replace the
+# guess later. That would need labelling as what it is before it returns here;
+# tests/test_lead_outreach_claims.py holds that condition.
+_ENRICHMENT_RETIRED = (
+    "Lead enrichment is retired. It guessed a company's technology and problems "
+    "from the person's job title and presented the guess as research. The "
+    "dossier shows what the studio actually knows about this person."
+)
+
+
 @app.post("/api/leads/{lead_id}/enrich", tags=["Leads & CRM"])
 def enrich_lead_endpoint(lead_id: str):
-    try:
-        return agno_orchestrator.enrich_lead(lead_id)
-    except ValueError as ve:
-        raise HTTPException(status_code=404, detail=str(ve))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Agno enrichment failed: {str(e)}")
+    raise HTTPException(status_code=410, detail=_ENRICHMENT_RETIRED)
 
 
 @app.get("/api/leads/{lead_id}/enrichment", tags=["Leads & CRM"])
 def get_lead_enrichment_endpoint(lead_id: str):
-    enrichment = agno_orchestrator.get_enrichment(lead_id)
-    if not enrichment:
-        raise HTTPException(status_code=404, detail=f"No enrichment dossier found for lead '{lead_id}'. Run POST /api/leads/{lead_id}/enrich first.")
-    return {
-        "status": "success",
-        "enrichment": enrichment
-    }
+    raise HTTPException(status_code=410, detail=_ENRICHMENT_RETIRED)
 
 
 # -------------------------------------------------------------
@@ -2847,7 +2858,10 @@ def get_crm_telemetry():
 class GenerateDMRequest(BaseModel):
     lead_name: str
     comment_text: str
-    post_topic: Optional[str] = "sovereign creator stack"
+    # No default. A fixed topic here reached every draft as though it named the
+    # creator's post. Without one a reply is not drafted, and the variants say
+    # "my recent post".
+    post_topic: Optional[str] = None
     custom_insight: Optional[str] = None
 
 
@@ -2857,7 +2871,7 @@ def generate_lead_dm(req: GenerateDMRequest):
     dm = ICPScoringEngine.generate_contextual_dm(
         lead_name=req.lead_name,
         comment_text=req.comment_text,
-        post_topic=req.post_topic or "sovereign creator stack",
+        post_topic=req.post_topic,
         custom_insight=req.custom_insight,
     )
     return {"status": "success", "suggested_dm": dm}
@@ -2869,7 +2883,7 @@ def generate_anti_slop_dm_variants(req: GenerateDMRequest):
     variants = ICPScoringEngine.generate_anti_slop_dm_variants(
         lead_name=req.lead_name,
         comment_text=req.comment_text,
-        post_topic=req.post_topic or "sovereign creator stack",
+        post_topic=req.post_topic,
         custom_insight=req.custom_insight,
     )
     return {"status": "success", "variants": variants}
