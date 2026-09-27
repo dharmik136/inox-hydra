@@ -221,3 +221,14 @@ def test_a_fresh_post_sends_you_to_its_analytics_page():
     step = _today()["open_next"]
     assert step["action"] == "open"
     assert step["url"].endswith(f"/analytics/post-summary/{latest}/")
+
+
+def test_an_old_post_is_not_sent_to_read_its_analytics_too_late():
+    """
+    Found on a live install: a 13 day old post was told to open its analytics
+    "to read it now", which cannot produce a two day reading.
+    """
+    _confirm()
+    _posts(urn_days_ago(13, 8))
+    reason = _today()["latest_post"]["not_compared_because"]
+    assert "read it now" not in reason and "next post" in reason

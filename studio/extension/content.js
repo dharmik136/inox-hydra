@@ -46,7 +46,11 @@ function studioApi(path, body, method) {
  */
 const lastCaptureReport = {};
 function reportCapture(extractor, itemsSeen, itemsKept, drift) {
-  const key = extractor + "|" + window.location.pathname;
+  // Keyed on whether this run drifted, so a clean read always gets through
+    // after a drifted one. Otherwise an early read that ran before the page
+    // finished rendering logged drift, and the good read that followed was
+    // throttled away, leaving a working reader marked broken for a minute.
+    const key = extractor + "|" + window.location.pathname + "|" + (drift && drift.length ? "drift" : "ok");
   const now = Date.now();
   if (lastCaptureReport[key] && now - lastCaptureReport[key] < 60000) return;
   lastCaptureReport[key] = now;
@@ -596,6 +600,65 @@ function looksLikeReactionsList(container) {
   return /reaction|reacted|likes\b/.test(title);
 }
 
+/**
+ * Commenters in LinkedIn's rebuilt post layout.
+ *
+ * Measured on a live post page, 27 Sep 2026: none of the comment classes the
+ * reader above looks for exist any more; class names are hashed per build.
+ * The comment list keeps a data-testid containing "commentList", and each
+ * comment is a block holding one person's profile link, then their name,
+ * connection degree, headline, age and words. A reply nests inside the
+ * comment it answers, so a comment's block is the largest ancestor of its
+ * profile link that still contains links to that person only.
+ */
+function vanityFromHref(href) {
+  const match = /\/in\/([^/?#]+)/i.exec(href || "");
+  return match ? decodeURIComponent(match[1]).toLowerCase() : "";
+}
+
+function readNewLayoutComments() {
+  const found = [];
+  const lists = document.querySelectorAll('[data-testid*="commentList"]');
+  for (const list of lists) {
+    const seen = new Set();
+    for (const link of list.querySelectorAll('a[href*="/in/"]')) {
+      const vanity = vanityFromHref(link.getAttribute("href"));
+      if (!vanity || seen.has(vanity)) continue;
+      // The list also holds the post's reactor faces, and a commenter who also
+      // reacted appears there first, as an avatar with no words beside it.
+      if (link.closest('[data-testid^="ReactionFacepile"]')) continue;
+
+      let block = link;
+      while (block.parentElement && block.parentElement !== list) {
+        const people = new Set(Array.from(block.parentElement.querySelectorAll('a[href*="/in/"]'))
+          .map((a) => vanityFromHref(a.getAttribute("href"))).filter(Boolean));
+        if (people.size > 1) break;
+        block = block.parentElement;
+      }
+
+      const lines = (block.innerText || "").split("\n").map((l) => l.trim()).filter(Boolean);
+      // Marked as read only once a block with words is found, so an earlier
+      // bare avatar link cannot hide the comment that follows it.
+      if (lines.length < 3) continue;
+      seen.add(vanity);
+      const degreeAt = lines.findIndex((l) => /^•\s*(1st|2nd|3rd\+?|author|you)/i.test(l) || /^author$/i.test(l));
+      const name = degreeAt > 0 ? lines[degreeAt - 1] : lines.find((l) => !/premium|profile|•/i.test(l));
+      const timeAt = lines.findIndex((l, i) => i > degreeAt && /^\d+\s*(s|m|h|d|w|mo|yr)s?$/i.test(l));
+      const headline = degreeAt >= 0 && lines[degreeAt + 1] && degreeAt + 1 !== timeAt ? lines[degreeAt + 1] : "";
+      const text = timeAt >= 0 ? (lines[timeAt + 1] || "") : "";
+      if (!name) continue;
+      found.push({
+        name,
+        headline,
+        profileUrl: `https://www.linkedin.com/in/${encodeURIComponent(vanity)}/`,
+        vanity,
+        commentText: /^\d+$/.test(text) ? "" : text,
+      });
+    }
+  }
+  return found;
+}
+
 function observeAndCaptureEngagers() {
   if (!isPostEngagementSurface()) return;
 
@@ -660,6 +723,35 @@ function observeAndCaptureEngagers() {
     } catch (e) {}
   });
 
+  // 1b. The rebuilt layout, where none of the selectors above match. Tried
+  // only when they found nothing, so a page in the older layout is read once.
+  let newLayoutCommenters = [];
+  if (!commentCards.length) {
+    newLayoutCommenters = readNewLayoutComments();
+    const list = document.querySelector('[data-testid*="commentList"]');
+    const authorLink = list && list.querySelector('a[href*="/in/"]');
+    // The list opens with the post header, so its first profile link is the
+    // post's author, which the studio uses to decide the post is yours.
+    const author = authorLink ? vanityFromHref(authorLink.getAttribute("href")) : "";
+    newLayoutCommenters.forEach((c) => {
+      const postUrn = postUrnFor(document.body);
+      const dedupeKey = engagerDedupeKey(c.profileUrl, c.name, c.headline, postUrn);
+      const isNew = !knownEngagersSet.has(dedupeKey);
+      knownEngagersSet.add(dedupeKey);
+      leads.push({
+        name: c.name,
+        headline: c.headline,
+        company: c.headline.includes(" at ") ? c.headline.split(" at ")[1].split("|")[0].trim() : "",
+        profile_url: c.profileUrl,
+        engagement_type: "Commented",
+        notes: c.commentText ? `Commented: "${c.commentText.slice(0, 140)}"` : "Commented on post",
+        post_urn: postUrn,
+        post_author: author,
+        _isNew: isNew
+      });
+    });
+  }
+
   // 2. Capture Reactors from LinkedIn Reactions Modal Dialog
   // Scoped to the reactions surface itself. The bare `li` fallback that used to
   // sit at the end of this selector list is what turned every dialog on the site
@@ -717,8 +809,9 @@ function observeAndCaptureEngagers() {
   // Comment cards on screen but not one readable name among them is the
   // markup changing, not an empty thread.
   const commentersRead = leads.length - leadsBeforeComments;
-  if (commentCards.length || reactorModals.length) {
-    reportCapture("engagers", commentCards.length, leads.length,
+  const newLayoutList = !commentCards.length && document.querySelector('[data-testid*="commentList"]');
+  if (commentCards.length || reactorModals.length || newLayoutList) {
+    reportCapture("engagers", commentCards.length || newLayoutCommenters.length, leads.length,
       commentCards.length > 0 && commentersRead === 0 ? ["commenter_name"] : []);
   }
 
