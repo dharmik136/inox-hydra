@@ -1,62 +1,63 @@
-# Use the command palette (Ctrl+K)
-Open the palette with Ctrl+K, find an action by typing, and see which actions do something and which only move you to a surface.
+# Search everything with Ctrl+K
 
-## Open and close it
+Find a post, a lead, a Swipe File specimen or a help article from any surface, and open it where it lives.
 
-- Press **Ctrl+K** (**Cmd+K** on a Mac). It works from every surface, including while you are typing in the editor.
-- Press **Ctrl+K** again, press **Escape**, or click the dimmed area around the box to close it.
-- Choosing an action also closes it.
+## Open search
 
-## Find an action
+- Click the magnifier at the top of the rail, above the surfaces. Its name is **Search everything (Ctrl+K)**.
+- On every surface except the Composer, you can also click **Search everything** at the right of the header.
+- Or press **Ctrl+K** (**Cmd+K** on a Mac). It works from every surface, including while you are typing in the editor.
 
-1. Start typing in the **Search actions** box. Your text is matched against each action's name and against the grey hint shown on its right.
-2. Use the arrow keys to move through the list (it wraps from the last item back to the first) and press **Enter**, or click an action.
-3. If nothing fits, the list reads "Nothing matches that."
+To close it, press **Escape**, press **Ctrl+K** again, or click the dimmed area around the box.
 
-Actions are grouped in this order: Write, Review, Publish, Research, Organize, Inspect.
+## Find something
 
-## Every action and what it really does
+1. Type in the box. Every word you type has to appear somewhere in an item for it to match, so `northwind platform` finds the platform lead at Northwind rather than everyone at Northwind and every platform engineer.
+2. Results arrive grouped, up to six in each group:
 
-| Group | Action | What happens |
+| Group | What is searched | Choosing a result |
 | --- | --- | --- |
-| Write | **Generate 5 hooks** | Opens the Composer. Nothing is generated |
-| Write | **Make sharper** | Opens the Composer. Your text is not changed |
-| Write | **Add contrarian angle** | Opens the Composer. Your text is not changed |
-| Review | **Audit for reach** | Opens or closes the inspector. Does not run an audit |
-| Review | **Check fold safety** | Opens or closes the inspector |
-| Publish | **Turn into carousel** | Opens the Composer. No carousel is made |
-| Publish | **Schedule at peak slot** | Opens the Queue. Nothing is scheduled |
-| Research | **Search the playbook** | Opens Docs. No search is run |
-| Research | **Find a similar specimen** | Opens the Swipe File. No search is run |
-| Organize | **Go to** Composer, Queue, Leads, Swipe File, Analytics, Command, Docs, Brand Studio, Devtools | Switches to that surface |
-| Inspect | **Switch theme** | Swaps between dark and light |
-| Inspect | **Toggle inspector** | Opens or closes the inspector |
+| **Actions** | The names of the actions listed below | Runs it |
+| **Posts** | The saved text and tags of every post, whatever its status | A draft opens in the **Composer**. A queued or scheduled post opens **Queue**. A published post opens **Analytics** |
+| **Leads** | Name, company, headline and notes, and every comment the person left | Opens **Leads** with that person selected. A lead found by a comment shows the comment, starting "Commented:" |
+| **Swipe File** | The hook, archetype and pacing pattern of each specimen | Opens **Swipe File** with that card outlined in orange. Any search or archetype filter you had set there is cleared first, so the card is not hidden |
+| **Help** | Every document in **Docs** | Opens the article at the section that matched. Help articles come first and reference after. Retired manuals come last and are marked **RETIRED** |
 
-The grey hints, such as "Re-open the first paragraph", "Next local peak window" or "Offline FTS5 index", describe where the action points you. They are not something the palette does.
+3. Move with the arrow keys and press **Enter**, or click a result. The selected result shows where it will open, for example "Opens in Composer".
 
-## Why some actions only switch screens
+A group with more than six matches shows the first six. There is no "show more": add another word to narrow it.
 
-These entries are shortcuts to the surface where the real control lives. Once you are there, use that control:
+## What happens
 
-- For new opening lines, select text in the editor and press **Re-Hook** in the toolbar that appears. See [Try a different opening line](try-a-different-opening-line.md).
-- To schedule a post, use **Queue it** from the publish options. See [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md).
-- To search the help and the playbook, type in the search box on Docs. See [Search the help and the playbook in Docs](search-the-help-in-docs.md).
+- Each search goes to the studio's own server on this computer. It reads the local database and the offline documentation index, and nothing else. The footer says **SEARCHES THIS MACHINE ONLY**, and nothing you type is sent anywhere. See [What leaves this machine, and when](what-leaves-this-machine.md).
+- Posts are searched as they were last saved. Text you have typed in the Composer but not saved is not in the database yet, so it cannot be found.
+- Only a draft is ever loaded into the Composer. The Composer holds one post, and **Save** writes over whichever post it holds, so a queued or published post opens where it is listed instead of in the editor.
 
-## The inspector and theme actions
+## Opening a draft over unsaved text
 
-**Audit for reach**, **Check fold safety** and **Toggle inspector** all do the same thing: they flip the inspector between open and closed. None of them switches surface or picks a tab.
+If the Composer holds text you have not saved, choosing a different draft first asks: "The post in the Composer has unsaved changes. Open the other draft and discard them?"
 
-The inspector is only drawn on the Composer. If you use one of these actions from another surface, nothing visible happens, but the setting still flips. You may then return to the Composer and find the inspector closed. Open it again with the same action, or with the small panel icon button at the top right of the Composer, which appears while the inspector is closed.
+- **Cancel** keeps your text where it is. Nothing else changes.
+- **OK** replaces it with the draft you chose. The unsaved text is gone, because the studio does not autosave.
 
-**Switch theme** starts from dark every time the page loads. Your choice is not remembered after a reload or restart.
+See [Start a new post, or find one you wrote earlier](start-a-new-post-or-find-an-earlier-one.md).
 
-## Go to Devtools
+## Actions
 
-**Go to Devtools** is listed even though the rail hides Devtools in a normal install. Choosing it opens a page that reads MAINTAINER SURFACE IS OFF. That surface is for the maintainer; see [Turn on the Devtools surface](turn-on-devtools.md) if you need it.
+With nothing typed, the box lists what it can do without searching:
 
-## Other ways to move around
+- **Go to** each surface on the rail. **Go to Devtools** appears only when that surface is switched on. See [Turn on the Devtools surface](turn-on-devtools.md).
+- **Switch theme** changes between the light and dark themes. The choice is not saved, so reloading brings back the dark theme.
+- **Show or hide the inspector** switches to the Composer and opens or closes the inspector.
 
-- The rail on the left has a button for each surface.
-- The mark at the top of the rail opens the **Workspaces** tray, which lists every surface with a one-line description. Press **Escape** or click outside it to close it.
+Each action does what its label says. Earlier versions listed entries such as "Generate 5 hooks" and "Schedule at peak slot" that only switched screens; they have been removed.
 
-[Open the studio for the first time](open-the-studio-for-the-first-time.md) has a table of what each surface in the rail is for.
+## If it does not work
+
+| You see | What it means |
+| --- | --- |
+| "Nothing in your posts, leads, Swipe File or help matches that." | No saved item contains every word you typed. Try fewer words |
+| "The search could not run" followed by a reason | The studio's server did not answer. See [The studio will not open](the-studio-will-not-open.md) |
+| "Leads could not be searched." (or another group) | That one group failed. The other groups are still searched and shown |
+| A post you just wrote is missing | It has not been saved yet. Press **Save** in the Composer, then search again |
+| A lead is missing | Only people the browser extension captured are stored. See [Why is my lead list empty?](why-is-my-lead-list-empty.md) |

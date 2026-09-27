@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ShieldCheck } from "lucide-react";
+import { Search, ShieldCheck } from "lucide-react";
 import { type SectionId, type StudioSection } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,8 @@ interface StudioRailProps {
   onSelect: (id: SectionId) => void;
   trayOpen: boolean;
   onToggleTray: () => void;
+  /** Opens universal search, the same palette Ctrl+K opens. */
+  onSearch: () => void;
 }
 
 /**
@@ -20,7 +22,7 @@ interface StudioRailProps {
  * work surface rather than resizing the application, which is what keeps the
  * writing column from reflowing every time someone navigates.
  */
-export function StudioRail({ sections, active, onSelect, trayOpen, onToggleTray }: StudioRailProps) {
+export function StudioRail({ sections, active, onSelect, trayOpen, onToggleTray, onSearch }: StudioRailProps) {
   const [hovered, setHovered] = useState<SectionId | null>(null);
 
   return (
@@ -55,6 +57,25 @@ export function StudioRail({ sections, active, onSelect, trayOpen, onToggleTray 
           <path d="M14 3v5h5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" className="text-ink-primary" />
           <path d="M8 13h8M8 17h5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" className="text-signal-orange-text" />
         </svg>
+      </button>
+
+      {/* Search was reachable only through Ctrl+K, which nothing on screen
+          mentioned, so for anyone who had not read the help it did not exist.
+          A control at the top of the rail, above the destinations it can
+          reach, says that it does. */}
+      <button
+        type="button"
+        onClick={onSearch}
+        aria-label="Search everything (Ctrl+K)"
+        title="Search everything (Ctrl+K)"
+        aria-keyshortcuts="Control+K Meta+K"
+        className={cn(
+          "mt-2 grid size-9 place-items-center rounded-md text-ink-muted",
+          "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
+          "hover:bg-soft hover:text-ink-primary",
+        )}
+      >
+        <Search className="size-[18px]" strokeWidth={1.75} aria-hidden="true" />
       </button>
 
       <div className="mt-2 h-px w-6 bg-edge" />

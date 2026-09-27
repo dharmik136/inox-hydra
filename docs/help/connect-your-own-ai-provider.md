@@ -22,7 +22,7 @@ Without a key, the text features still answer, from local templates on this mach
 ## Connect
 
 1. Open **Composer** from the rail.
-2. If the inspector is closed, click **Open inspector** at the top right, or press Ctrl+K and choose **Toggle inspector**.
+2. If the inspector is closed, click **Open inspector** at the top right, or press Ctrl+K and choose **Show or hide the inspector**.
 3. Choose the **Prompt** tab.
 4. Under **Connect a provider**, pick the provider id from the list.
 5. Paste your key into the **API key** field. Leave it empty for `ollama`.

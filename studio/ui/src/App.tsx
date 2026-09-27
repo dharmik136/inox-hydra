@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PanelRight } from "lucide-react";
+import { PanelRight, Search } from "lucide-react";
 import { StudioRail } from "@/components/StudioRail";
 import { NavigationTray } from "@/components/NavigationTray";
 import { ContextBar, type SaveState } from "@/components/ContextBar";
@@ -26,8 +26,11 @@ import {
   fetchOnboardingState,
   generateHooks,
   updateDraft,
+  fetchDraftById,
   type GeneratedHook,
+  type SearchResult,
 } from "@/lib/api";
+import type { SearchFocus } from "@/lib/search";
 import { measurableLength, measurableWordCount } from "@/lib/text";
 
 /** Average adult reading speed. Used for an estimate that is labelled as one. */
@@ -57,6 +60,17 @@ export default function App() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);
+
+  /**
+   * Which item a surface should show, when search asked it to.
+   *
+   * One value for the whole app rather than one per surface, because only the
+   * surface being shown can use it, and a focus left behind on a surface you
+   * then navigate away from and back to would re-open something you had
+   * already moved on from.
+   */
+  const [focus, setFocus] = useState<{ section: SectionId; target: SearchFocus } | null>(null);
+  const focusNonce = useRef(0);
 
   // Devtools is a maintainer surface. Every route behind it answers 404 in
   // a consumer build, so the rail does not offer a destination that cannot
@@ -232,6 +246,73 @@ export default function App() {
     }
   }, [draft, draftId]);
 
+  /**
+   * Opens what a search result names.
+   *
+   * Only a draft is loaded into the Composer. The server already routes a
+   * published or queued post to Queue or Analytics, because Save writes over
+   * whatever post the editor holds, and a draft that has since been published
+   * elsewhere is treated the same way when it turns out to be gone from the
+   * draft list.
+   *
+   * Loading a draft replaces the editor's text, and there is no autosave, so
+   * unsaved work is asked about first rather than silently discarded. The
+   * help article on drafts had to warn that the interface could not hold two
+   * drafts; this is the one place that would otherwise lose one.
+   */
+  const onOpenResult = useCallback(
+    async (result: SearchResult) => {
+      const point = (target: SectionId, id: string, anchor: string | null = null) => {
+        focusNonce.current += 1;
+        setFocus({ section: target, target: { id, anchor, nonce: focusNonce.current } });
+        setActive(target);
+      };
+
+      if (result.kind === "post") {
+        if (result.opens !== "composer") {
+          setActive(result.opens === "queue" ? "queue" : "analytics");
+          return;
+        }
+        if (result.id === draftId) {
+          setActive("composer");
+          return;
+        }
+        const unsaved = (saveState === "dirty" || saveState === "failed") && draft.trim().length > 0;
+        if (
+          unsaved &&
+          !window.confirm(
+            "The post in the Composer has unsaved changes. Open the other draft and discard them?",
+          )
+        ) {
+          return;
+        }
+        const found = await fetchDraftById(result.id).catch(() => null);
+        if (!found) {
+          // Published or queued since the search ran, so it no longer belongs
+          // in the editor.
+          setActive("analytics");
+          return;
+        }
+        touched.current = true;
+        setDraft(found.content);
+        setDraftId(found.id);
+        setSaveState("idle");
+        setSavedAt(null);
+        setSaveError(null);
+        setGenerated(null);
+        setActive("composer");
+        return;
+      }
+
+      if (result.kind === "lead") point("leads", result.id);
+      else if (result.kind === "specimen") point("swipe", result.id);
+      else if (result.kind === "help") point("docs", result.id, result.anchor_text ?? null);
+    },
+    [draft, draftId, saveState],
+  );
+
+  const focusFor = (target: SectionId) => (focus && focus.section === target ? focus.target : null);
+
   const section = sectionById(active);
 
   return (
@@ -242,6 +323,7 @@ export default function App() {
         onSelect={setActive}
         trayOpen={trayOpen}
         onToggleTray={() => setTrayOpen((open) => !open)}
+        onSearch={() => setPaletteOpen(true)}
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
@@ -273,7 +355,17 @@ export default function App() {
         ) : (
           <header className="flex h-12 shrink-0 items-center gap-3 border-b border-edge bg-ink px-4">
             <span className="studio-meta uppercase">{section.label}</span>
-            <span className="truncate text-[13px] text-ink-muted">{section.blurb}</span>
+            <span className="min-w-0 flex-1 truncate text-[13px] text-ink-muted">{section.blurb}</span>
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              aria-keyshortcuts="Control+K Meta+K"
+              className="flex shrink-0 items-center gap-2 rounded-md border border-edge bg-canvas py-1 pr-1.5 pl-2.5 text-[12px] text-ink-muted transition-colors duration-(--studio-motion-fast) hover:border-edge-strong hover:text-ink-primary"
+            >
+              <Search className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              Search everything
+              <kbd className="studio-meta rounded-sm border border-edge px-1 text-[10px] text-ink-muted">Ctrl K</kbd>
+            </button>
           </header>
         )}
 
@@ -299,12 +391,12 @@ export default function App() {
                 />
               )}
               {active === "setup" && <OnboardingSurface />}
-              {active === "leads" && <LeadsSurface />}
-              {active === "swipe" && <SwipeSurface />}
+              {active === "leads" && <LeadsSurface focus={focusFor("leads")} />}
+              {active === "swipe" && <SwipeSurface focus={focusFor("swipe")} />}
               {active === "analytics" && <AnalyticsSurface />}
               {active === "settings" && <BrandStudioSurface />}
               {active === "queue" && <QueueSurface />}
-              {active === "docs" && <DocsSurface />}
+              {active === "docs" && <DocsSurface focus={focusFor("docs")} />}
               {active === "command" && <CommandSurface />}
               {active === "devtools" && <DevtoolsSurface />}
 
@@ -360,6 +452,8 @@ export default function App() {
       <CommandPalette
         open={paletteOpen}
         onOpenChange={setPaletteOpen}
+        sections={sections}
+        onOpenResult={(result) => void onOpenResult(result)}
         onNavigate={setActive}
         onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
         onToggleInspector={() => setInspectorOpen((open) => !open)}
