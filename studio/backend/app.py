@@ -3059,7 +3059,28 @@ def get_lead_interaction_timeline(lead_id: str):
     res = reverse_crm.get_lead_timeline(lead_id)
     if res["status"] == "not_found":
         raise HTTPException(status_code=404, detail="Lead not found")
+    # Where each engagement happened, so the dossier can name the post.
+    res["interactions"] = onboarding.annotate_interactions(res["interactions"])
     return res
+
+
+class LeadRemoval(BaseModel):
+    lead_ids: List[str]
+
+
+@app.get("/api/v1/leads/review", tags=["Leads & CRM"])
+def get_lead_review():
+    """Leads sorted by whether they engaged with the creator's own posts."""
+    return onboarding.lead_review()
+
+
+@app.post("/api/v1/leads/review/remove", tags=["Leads & CRM"])
+def post_lead_review_remove(payload: LeadRemoval):
+    """Deletes the named leads that are still classified as not from the creator's posts."""
+    try:
+        return onboarding.remove_leads_not_on_your_posts(payload.lead_ids)
+    except onboarding.RefusedCapture as error:
+        raise HTTPException(status_code=409, detail=str(error))
 
 
 # -------------------------------------------------------------
