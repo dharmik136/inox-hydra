@@ -17,6 +17,11 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime
 
 try:
+    from .crm import qualification_tier
+except ImportError:
+    from crm import qualification_tier
+
+try:
     from .database import get_db
 except ImportError:
     from database import get_db
@@ -376,14 +381,7 @@ def export_leads_csv(status: Optional[str] = None, search: Optional[str] = None)
     ])
     for l in leads:
         score = float(l.get("icp_score") or 0.0)
-        if score >= 80.0:
-            tier = "TIER_1_VIP"
-        elif score >= 60.0:
-            tier = "QUALIFIED"
-        elif score >= 30.0:
-            tier = "NURTURE"
-        else:
-            tier = "DISQUALIFIED"
+        tier = qualification_tier(score)
 
         writer.writerow([
             l.get("id", ""),
