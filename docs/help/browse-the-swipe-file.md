@@ -16,13 +16,13 @@ Each card on the wall is one specimen.
 | Top line, in capitals | The type of hook, for example CONTRARIAN TRUTHS |
 | Second line, in larger type | The opening line itself |
 | Blue line, in capitals | The structure behind it, for example 1-LINE CONFESSION HOOK + BLANK LINE + 2-LINE CONTEXT + 3-POINT REVELATION |
-| Bottom line | VELOCITY and a score such as 9.8 |
-| Extra tag after the score | SYNCED or IMPORTED, only when the specimen is recorded as having arrived by a sync or an import. Shipped specimens, and older rows with no recorded origin, carry no tag |
+| Bottom line | EDITOR'S RATING and a number such as 9.8 |
+| Extra tag after the rating | SYNCED or IMPORTED, only when the specimen is recorded as having arrived by a sync or an import. Shipped specimens, and older rows with no recorded origin, carry no tag |
 
 Hover over a card to expand it. The expanded text is the opening line and the structure again, as ordinary body text; there is nothing else hidden. Cards expand only on mouse hover, so with a keyboard or a touch screen you read the same content from the lines already visible.
 
 > [!NOTE]
-> The velocity score is a fixed number written into the studio's shipped library, between 8.2 and 9.8. It is an editorial rating, not something calculated from your posts or from anything the studio captured.
+> The editor's rating is a fixed number written into the studio's shipped library, between 8.2 and 9.8. It is an editorial rating, not something calculated from your posts or from anything the studio captured.
 
 ## Find a specimen
 

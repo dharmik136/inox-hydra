@@ -10,15 +10,15 @@ Open **Composer** from the rail. The editor is the large writing area in the mid
 
 ## Watch the fold
 
-On a phone, LinkedIn hides a long post behind "see more". The studio draws that cut at 180 characters.
+On a phone, LinkedIn hides a long post behind "see more". The studio draws that cut at 140 characters.
 
-- Once your post passes 180 characters, a dashed orange line appears in the editor at the point where the cut falls, labelled **LINKEDIN FOLD 180 CHARS**.
-- The status strip in the top bar reads, for example, `142 chars · 79% of fold · ~12s read` while you are under the fold, and `352 chars · 172 past fold · ~25s read` once you are over it. The strip is hidden when the window is narrow.
+- Once your post passes 140 characters, a dashed orange line appears in the editor at the point where the cut falls, labelled **LINKEDIN FOLD 140 CHARS**.
+- The status strip in the top bar reads, for example, `126 chars · 90% of fold · ~6s read` while you are under the fold, and `352 chars · 212 past fold · ~25s read` once you are over it. The strip is hidden when the window is narrow.
 - The read time assumes 200 words per minute. It is an estimate.
 
 Characters are counted as a reader sees them, so bold letters and struck-through letters count once each, not twice.
 
-The 180 figure is the product's own approximation, taken from its design blueprint. It is not a number LinkedIn publishes, so treat it as a guide.
+The 140 figure is the product's own approximation, and the studio's server-side checks use the same number. It is not a number LinkedIn publishes, so treat it as a guide.
 
 ## Format a selection
 

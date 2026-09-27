@@ -121,8 +121,14 @@ export function SwipeSurface({ focus = null }: { focus?: SearchFocus | null } = 
             <span className="font-medium text-ink-primary">
               These are hook forms, not posts anyone measured.
             </span>{" "}
-            Velocity rates how strongly the shape performs. No reactions or comments are shown
-            because none were recorded: the studio stores the pattern, not an event.
+            {/* This sentence said "Velocity rates how strongly the shape
+                performs" after the cards below it had been relabelled
+                EDITOR'S RATING, precisely because the number predicts
+                nothing. The banner was left asserting the claim the label
+                change withdrew. */}
+            The editor&rsquo;s rating on each card was typed in by whoever wrote the form; it is not a
+            measurement. No reactions or comments are shown because none were recorded: the studio
+            stores the pattern, not an event.
           </p>
         </div>
 
