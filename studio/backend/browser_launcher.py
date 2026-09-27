@@ -18,6 +18,11 @@ import shutil
 from typing import Dict, List, Optional, Any
 from pathlib import Path
 
+try:
+    from .paths import get_browser_profile_dir
+except ImportError:
+    from paths import get_browser_profile_dir
+
 # Paths
 BACKEND_DIR = Path(__file__).resolve().parent
 STUDIO_DIR = BACKEND_DIR.parent
@@ -342,13 +347,14 @@ def _posix_launcher(b_id, b_info, desktop_dir, ext_path, safe_url):
     name = b_info["name"]
     exe = b_info["path"]
     argument = "--load-extension=" + ext_path
+    profile = "--user-data-dir=" + get_browser_profile_dir(b_id)
 
     if sys.platform == "darwin":
         path = os.path.join(desktop_dir, f"LinkedIn Studio ({name}).command")
         body = (
             "#!/bin/sh\n"
             "# Opens " + name + " with the Inox Hydra bridge extension loaded.\n"
-            "exec " + shlex.quote(exe) + " " + shlex.quote(argument)
+            "exec " + shlex.quote(exe) + " " + shlex.quote(profile) + " " + shlex.quote(argument)
             + " " + shlex.quote(safe_url) + "\n"
         )
     else:
@@ -361,7 +367,7 @@ def _posix_launcher(b_id, b_info, desktop_dir, ext_path, safe_url):
             "Comment=Launch with the Inox Hydra bridge extension loaded\n"
             # Exec is not a shell, so shlex.quote is the wrong tool: the spec
             # wants double quotes around a field containing spaces.
-            f'Exec="{exe}" "{argument}" "{safe_url}"\n'
+            f'Exec="{exe}" "{profile}" "{argument}" "{safe_url}"\n'
             "Terminal=false\n"
             "Categories=Network;WebBrowser;\n"
         )
@@ -449,7 +455,8 @@ def create_desktop_shortcuts(
             f"$w = New-Object -ComObject WScript.Shell; "
             f"$s = $w.CreateShortcut('{ps_quote(shortcut_dest)}'); "
             f"$s.TargetPath = '{ps_quote(b_path)}'; "
-            f"$s.Arguments = '--load-extension=\"{ps_quote(ext_path)}\" {ps_quote(safe_url)}'; "
+            f"$s.Arguments = '--user-data-dir=\"{ps_quote(get_browser_profile_dir(b_id))}\" "
+            f"--load-extension=\"{ps_quote(ext_path)}\" {ps_quote(safe_url)}'; "
             f"$s.IconLocation = '{ps_quote(b_path)},0'; "
             f"$s.Description = 'Launch {ps_quote(b_name)} with LinkedIn Studio Bridge'; "
             f"$s.WorkingDirectory = '{ps_quote(os.path.dirname(b_path))}'; "
@@ -488,6 +495,11 @@ def create_desktop_shortcuts(
 
 
 DEFAULT_TARGET_URL = "https://www.linkedin.com/feed/"
+
+# Opened beside LinkedIn so the bridge browser's profile receives the studio's
+# access token. A fixed value, never caller supplied, so it is not an argv
+# injection surface the way the target URL is.
+STUDIO_TAB_URL = "http://127.0.0.1:8000/"
 
 # Hosts this launcher will open. Everything else, including anything that could
 # be read as a Chromium switch, falls back to the feed.
@@ -569,10 +581,26 @@ def launch_browser_with_extension(
     # that is the only thing it will open.
     safe_url = _validated_target(target_url)
 
+    # A dedicated profile, so the flag is honoured whatever else is open.
+    #
+    # Without it, Edge already running with the creator's normal profile took
+    # this launch as a request to open a tab and dropped --load-extension, so
+    # on the ordinary Windows path the "one-click" setup opened LinkedIn with
+    # no bridge and nothing said so. The profile lives outside studio/, see
+    # paths.get_browser_profile_dir.
+    #
+    # The studio itself opens in a second tab. The extension reads the studio's
+    # access token from a cookie that only a page load in this same profile
+    # sets, so without that tab every capture would be refused with a 401
+    # until the creator thought to open the studio in the new window.
     args = [
         exe_path,
+        f'--user-data-dir={get_browser_profile_dir(selected["id"])}',
+        "--no-first-run",
+        "--no-default-browser-check",
         f'--load-extension={ext_path}',
-        safe_url
+        safe_url,
+        STUDIO_TAB_URL,
     ]
 
     try:

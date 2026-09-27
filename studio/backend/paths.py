@@ -65,6 +65,28 @@ def get_app_home() -> str:
     return _platform_user_data_dir()
 
 
+def get_browser_profile_dir(browser_id: str) -> str:
+    """
+    The dedicated browser profile the bridge browser runs in.
+
+    A separate profile is what makes the one-click launch work: Edge or Brave
+    already running with the creator's normal profile receives a relaunch as a
+    request to open a tab, and drops --load-extension, so the bridge never
+    attaches. A different --user-data-dir is a different browser instance and
+    always honours the flag.
+
+    It never lives under studio/, even in a portable or source install where
+    every other kind of state does. This profile holds the creator's LinkedIn
+    cookies, and the build copies studio/ from the working tree, so a profile
+    there would ship a logged-in LinkedIn session inside the next build.
+    INOX_HYDRA_HOME still redirects it, for tests.
+    """
+    safe_id = "".join(ch for ch in (browser_id or "browser") if ch.isalnum() or ch in "-_") or "browser"
+    override = os.environ.get("INOX_HYDRA_HOME")
+    root = os.path.abspath(os.path.expanduser(override)) if override else _platform_user_data_dir()
+    return _ensure(os.path.join(root, "browser-profiles", safe_id))
+
+
 def is_portable() -> bool:
     """True when state lives beside the code rather than in the user profile."""
     return get_app_home() == _STUDIO_DIR
