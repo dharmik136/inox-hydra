@@ -35,6 +35,7 @@ const RELAYABLE_PATHS = new Set([
   "/api/v1/identity/me",
   "/api/v1/identity/observe",
   "/api/v1/self/posts/ingest",
+  "/api/v1/self/posts/analytics",
   "/api/v1/self/outbound/ingest",
   "/api/v1/self/imports/pending",
   "/api/v1/self/imports/event"

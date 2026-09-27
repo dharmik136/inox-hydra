@@ -109,6 +109,7 @@
 
   function pageKind() {
     const path = window.location.pathname;
+    if (/^\/analytics\/post-summary\//.test(path)) return "post_analytics";
     if (!/^\/in\/[^/]+/.test(path)) return path.startsWith("/feed") ? "feed" : "other";
     if (/\/recent-activity\/(all|shares)\/?/.test(path)) return "activity_posts";
     if (/\/recent-activity\/comments\/?/.test(path)) return "activity_comments";
@@ -478,6 +479,70 @@
   }
 
   // ---------------------------------------------------------------
+  // One post's analytics page: /analytics/post-summary/<urn>/
+  // ---------------------------------------------------------------
+  //
+  // Shown only to the post's author, and fuller than the feed: members
+  // reached, saves and sends appear nowhere else. Read by label rather than
+  // by class name: each figure sits near the words LinkedIn prints for it, and
+  // those words change far less often than the markup around them.
+
+  const POST_METRIC_LABELS = [
+    ["members reached", "members_reached"],
+    ["impressions", "impressions"],
+    ["reactions", "reactions"],
+    ["comments", "comments"],
+    ["reposts", "reposts"],
+    ["saves", "saves"],
+    ["sends", "sends"],
+  ];
+  const NUMBER_ONLY = /^[\d.,]+\s*[KkMm]?$/;
+
+  function postAnalyticsUrn() {
+    let path = window.location.pathname;
+    try {
+      path = decodeURIComponent(path);
+    } catch (err) {
+      // Leave it encoded; the pattern below still fails cleanly.
+    }
+    const match = /urn:li:activity:(\d+)/.exec(path);
+    return match ? `urn:li:activity:${match[1]}` : null;
+  }
+
+  function readPostAnalytics() {
+    const main = document.querySelector("main") || document.body;
+    const leaves = Array.from(main.querySelectorAll("*")).filter(
+      (el) => el.children.length === 0 && clean(el.textContent).length > 0 && clean(el.textContent).length < 40
+    );
+    const metrics = {};
+    for (const el of leaves) {
+      const text = clean(el.textContent).toLowerCase();
+      const hit = POST_METRIC_LABELS.find(([label, key]) => metrics[key] === undefined && text.startsWith(label));
+      if (!hit) continue;
+      // The figure is a sibling leaf within a few levels of the label.
+      let box = el.parentElement;
+      for (let depth = 0; depth < 3 && box && metrics[hit[1]] === undefined; depth += 1, box = box.parentElement) {
+        const figure = Array.from(box.querySelectorAll("*")).find(
+          (node) => node !== el && node.children.length === 0 && NUMBER_ONLY.test(clean(node.textContent))
+        );
+        if (figure) metrics[hit[1]] = parseCount(clean(figure.textContent));
+      }
+    }
+    return metrics;
+  }
+
+  async function capturePostAnalytics() {
+    const urn = postAnalyticsUrn();
+    const me = await getConfirmedVanity();
+    if (!urn || !me) return;
+    const metrics = readPostAnalytics();
+    const found = Object.keys(metrics).length;
+    reportCapture("post_analytics", found, found, found ? [] : ["metric_labels"]);
+    if (!found) return;
+    await studio("/api/v1/self/posts/analytics", { author: me, activity_urn: urn, metrics });
+  }
+
+  // ---------------------------------------------------------------
   // The scroll, which happens only because the creator asked
   // ---------------------------------------------------------------
 
@@ -618,6 +683,8 @@
         if (kind === "profile") setTimeout(() => { if (pageKind() === kind) captureProfile(); }, 6000);
       } else if (IMPORT_KIND[kind]) {
         onActivityPage(kind);
+      } else if (kind === "post_analytics") {
+        capturePostAnalytics();
       }
     }, 2500);
   }
