@@ -246,7 +246,8 @@ function Specimen({ specimen, highlighted = false }: { specimen: Inspiration; hi
             <span className="mx-1.5 text-ink-muted">·</span>
           </>
         )}
-        VELOCITY {specimen.velocity_score.toFixed(1)}
+        {/* A rating typed by the template's author, not a measured rate. */}
+        EDITOR&rsquo;S RATING {specimen.velocity_score.toFixed(1)}
         {specimen.origin && specimen.origin !== "shipped" && (
           <>
             <span className="mx-1.5 text-ink-muted">·</span>

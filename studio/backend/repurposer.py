@@ -304,8 +304,12 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
                         "archetype": item.get("archetype", "High-Converting Hook"),
                         "hook_text": hk,
                         "char_count": len(hk),
+                        # There was a "predicted_score" here: 92 if the hook
+                        # fit the fold, 80 if not. The interface showed it as
+                        # "SCORE 92", which read as a forecast of performance.
+                        # Its only information is the fold verdict, which
+                        # mobile_safe already carries under its real name.
                         "mobile_safe": is_safe,
-                        "predicted_score": 92 if is_safe else 80
                     })
                 return out
         except Exception as e:
@@ -361,13 +365,13 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
         first_line_hk = hk.split("\n")[0]
         char_len = len(first_line_hk)
         is_safe = char_len <= 140 and len(hk) <= 240
-        score = 90 if is_safe else 75
+        # No score. See the model path above: it was the fold verdict restated
+        # as a number that looked like a prediction.
         out.append({
             "archetype": t["archetype"],
             "hook_text": hk,
             "char_count": len(hk),
             "mobile_safe": is_safe,
-            "predicted_score": score
         })
 
     return out

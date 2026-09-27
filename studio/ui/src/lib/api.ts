@@ -147,7 +147,6 @@ export interface GeneratedHook {
   hook_text: string;
   char_count: number;
   mobile_safe: boolean;
-  predicted_score: number;
 }
 
 /**

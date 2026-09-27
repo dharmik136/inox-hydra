@@ -79,7 +79,7 @@ def test_p6_scar_tissue_banned_vocabulary():
 
 
 def test_p6_scar_tissue_pre_fold_hook():
-    """Verify P6: Flag hooks that exceed mobile dwell preview boundary (>180 chars)."""
+    """Verify P6: Flag hooks that exceed the mobile fold (fold.MOBILE_FOLD_CHARS)."""
     short_hook = "Most enterprise pipelines fail silently at 2 AM."
     is_safe, count = validate_pre_fold_hook(short_hook)
     assert is_safe is True

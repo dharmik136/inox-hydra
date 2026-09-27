@@ -20,9 +20,9 @@ interface Specimen {
   category: string;
   text: string;
   /**
-   * The ranking under its own name. The two sources score differently: the
-   * vault stores a velocity score, generated hooks come back with a predicted
-   * one. Showing them under a single label would imply they are comparable.
+   * The vault's editorial rating, under that name. Generated hooks carry none:
+   * the "predicted score" they used to show was the fold verdict restated as
+   * 92 or 80, which read as a forecast of how the hook would perform.
    */
   score: { label: string; value: number } | null;
   /** Generated hooks report whether they clear the fold. The vault does not. */
@@ -38,9 +38,9 @@ interface Specimen {
  * percentage, because the product holds neither, and a number with the wrong
  * label is worse than no number.
  *
- * The two sources are not interchangeable. The vault stores a velocity score
- * and nothing about the fold; generated hooks come back with a predicted score
- * and a mobile_safe flag. So each is labelled for what it is, and the fold
+ * The two sources are not interchangeable. The vault stores an editorial rating
+ * and nothing about the fold; generated hooks come back with a mobile_safe flag
+ * and no score. So each is labelled for what it is, and the fold
  * verdict appears only on the specimens that actually carry one.
  */
 export function HookFilmstrip({ onApply, generated, onClearGenerated }: HookFilmstripProps) {
@@ -62,14 +62,16 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated }: HookFilm
         key: `generated-${index}`,
         category: hook.archetype,
         text: hook.hook_text,
-        score: { label: "SCORE", value: hook.predicted_score },
+        score: null,
         fits: hook.mobile_safe,
       }))
     : templates?.map((template) => ({
         key: `template-${template.id}`,
         category: template.archetype,
         text: template.hook_text,
-        score: { label: "VELOCITY", value: template.velocity_score },
+        // Typed by whoever wrote the template, not measured, so it is not
+        // called velocity: that name read as a rate someone had observed.
+        score: { label: "EDITOR'S RATING", value: template.velocity_score },
         fits: null,
       })) ?? null;
 
