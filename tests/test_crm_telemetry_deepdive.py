@@ -107,7 +107,7 @@ def test_icp_breakdown_contributions_and_intent_signals():
     # Intent signals verification
     signals = breakdown["intent_signals"]
     assert "EXECUTIVE_DECISION_MAKER" in signals
-    assert "DIRECT_BUYING_INQUIRY" in signals
+    assert "ASKED_A_QUESTION" in signals
     assert "TIER_1_ENTERPRISE_AFFINITY" in signals
 
     # Disqualified student lead
@@ -242,4 +242,4 @@ def test_fastapi_crm_endpoints():
     assert "contributions" in s_data
     assert "intent_signals" in s_data
     assert "EXECUTIVE_DECISION_MAKER" in s_data["intent_signals"]
-    assert "DIRECT_BUYING_INQUIRY" in s_data["intent_signals"]
+    assert "ASKED_A_QUESTION" in s_data["intent_signals"]

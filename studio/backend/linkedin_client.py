@@ -499,21 +499,28 @@ class LinkedInClient:
                 p_id = p.get("id") or p.get("urn")
                 if not p_id:
                     continue
+                # Unread counts are None, so COALESCE keeps what is stored. They
+                # defaulted to 0, which is not NULL, so the first payload
+                # missing a count would have overwritten a real figure with a
+                # zero. And an unknown publish time stays unknown: it was
+                # stamped with the moment of ingest, which is when the studio
+                # looked, not when LinkedIn published.
                 cursor.execute("""
                 INSERT INTO posts (id, content, impressions, reactions, comments, shares, published_at, status)
-                VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, datetime('now')), 'published')
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'published')
                 ON CONFLICT(id) DO UPDATE SET
                     impressions = COALESCE(excluded.impressions, posts.impressions),
                     reactions = COALESCE(excluded.reactions, posts.reactions),
                     comments = COALESCE(excluded.comments, posts.comments),
-                    shares = COALESCE(excluded.shares, posts.shares)
+                    shares = COALESCE(excluded.shares, posts.shares),
+                    published_at = COALESCE(posts.published_at, excluded.published_at)
                 """, (
                     p_id,
                     p.get("content", ""),
-                    p.get("impressions", 0),
-                    p.get("reactions", 0),
-                    p.get("comments", 0),
-                    p.get("shares", 0),
+                    p.get("impressions"),
+                    p.get("reactions"),
+                    p.get("comments"),
+                    p.get("shares"),
                     p.get("published_at")
                 ))
                 posts_updated += 1

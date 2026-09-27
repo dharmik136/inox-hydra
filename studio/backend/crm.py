@@ -70,6 +70,26 @@ MAX_CRM_COMMENT_LENGTH = 5000
 MIN_ARCHIVE_INACTIVE_DAYS = 7
 MAX_HIGH_VALUE_QUERY_LIMIT = 500
 
+# -- Qualification tiers ---------------------------------------------------
+# One definition. The same lead used to be VIP on one screen and not another:
+# tiers were cut at 80/60/30 in four places, the CRM summary counted "high
+# value" from 70 and "qualified" from 50, and the top tier was called VIP in
+# two places and TIER_1_VIP in two others.
+VIP_THRESHOLD = 80.0
+QUALIFIED_THRESHOLD = 60.0
+NURTURE_THRESHOLD = 30.0
+
+
+def qualification_tier(score) -> str:
+    score = float(score or 0.0)
+    if score >= VIP_THRESHOLD:
+        return "TIER_1_VIP"
+    if score >= QUALIFIED_THRESHOLD:
+        return "QUALIFIED"
+    if score >= NURTURE_THRESHOLD:
+        return "NURTURE"
+    return "DISQUALIFIED"
+
 
 def stable_lead_key(identity: str) -> str:
     """
@@ -97,7 +117,14 @@ class ICPScoringEngine:
     """Calculates Ideal Customer Profile (ICP) fit score (0.0 to 100.0) from profile and engagement data."""
 
     # High-value seniority patterns
-    FOUNDER_PATTERN = re.compile(r"\b(founder|co-founder|owner|managing\s+director|partner)\b", re.IGNORECASE)
+    # Bare "owner" and "partner" matched Product Owner, Process Owner, HR
+    # Business Partner and Channel Partner, all scored as founders at 100.
+    # Only the forms that mean owning or running the firm count.
+    FOUNDER_PATTERN = re.compile(
+        r"\b(founder|co-founder|managing\s+director|managing\s+partner|founding\s+partner"
+        r"|general\s+partner|business\s+owner|owner\s+(?:at|of)|partner\s+at)\b",
+        re.IGNORECASE,
+    )
     C_SUITE_PATTERN = re.compile(r"\b(ceo|cto|cpo|coo|cro|cmo|chief\s+\w+\s+officer)\b", re.IGNORECASE)
     VP_DIRECTOR_PATTERN = re.compile(r"\b(vp|vice\s+president|director|head\s+of)\b", re.IGNORECASE)
     SENIOR_PRACTITIONER_PATTERN = re.compile(r"\b(staff|principal|lead|architect|senior\s+software)\b", re.IGNORECASE)
@@ -226,14 +253,7 @@ class ICPScoringEngine:
 
         seniority = cls.classify_seniority(headline)
 
-        if final_score >= 80.0:
-            tier = "TIER_1_VIP"
-        elif final_score >= 60.0:
-            tier = "QUALIFIED"
-        elif final_score >= 30.0:
-            tier = "NURTURE"
-        else:
-            tier = "DISQUALIFIED"
+        tier = qualification_tier(final_score)
 
         intent_signals: List[str] = []
         if w_s >= 90.0:
@@ -243,8 +263,10 @@ class ICPScoringEngine:
         elif w_s < 0:
             intent_signals.append("STUDENT_OR_SEEKER")
 
+        # Named for what it detects. It was DIRECT_BUYING_INQUIRY, raised by any
+        # "?" at all, so "Who else agrees?" was flagged as a buying signal.
         if w_q == 100.0:
-            intent_signals.append("DIRECT_BUYING_INQUIRY")
+            intent_signals.append("ASKED_A_QUESTION")
         if w_i >= 100.0:
             intent_signals.append("HIGH_SUBSTANCE_ENGAGEMENT")
         elif w_i >= 60.0:
@@ -449,7 +471,9 @@ class ReverseCRMManager:
 
                 if row:
                     lead_id = row["id"]
-                    new_icp = max(float(row["icp_score"] or 0.0), icp_score)
+                    # Provisional; the score is recomputed below once this
+                    # interaction is recorded.
+                    new_icp = icp_score
                     cursor.execute("""
                     UPDATE leads SET
                         full_name = ?,
@@ -491,10 +515,27 @@ class ReverseCRMManager:
                     "AND interaction_type = ? AND comment_key = ?",
                     (lead_id, post_urn or "", interaction_type, interaction_comment_key(comment_text)),
                 ).fetchone()[0]
+
+                # The score reflects the person as they are now and the best
+                # engagement on record. It was max(old, new), which only ever
+                # rose: after a headline change from CTO to intern the
+                # seniority updated and the score stayed at 95. Recomputing
+                # every recorded interaction against the current headline keeps
+                # a strong past comment counting without keeping a stale title.
+                icp_score = max(
+                    [icp_score] + [
+                        ICPScoringEngine.calculate_icp_score(headline, company, r["comment_text"], r["interaction_type"])
+                        for r in cursor.execute(
+                            "SELECT interaction_type, comment_text FROM lead_interactions WHERE lead_id = ?",
+                            (lead_id,),
+                        ).fetchall()
+                    ]
+                )
+                cursor.execute("UPDATE leads SET icp_score = ? WHERE id = ?", (icp_score, lead_id))
         finally:
             conn.close()
 
-        tier = "VIP" if icp_score >= 80.0 else ("QUALIFIED" if icp_score >= 60.0 else ("NURTURE" if icp_score >= 30.0 else "DISQUALIFIED"))
+        tier = qualification_tier(icp_score)
         return {
             "lead_id": lead_id,
             "interaction_id": interaction_id,
@@ -626,16 +667,18 @@ class ReverseCRMManager:
             cursor = conn.cursor()
 
             # 1. Macro counts & score aggregates
+            # The same cut points as qualification_tier, so the summary and the
+            # lead list count the same people in each tier.
             cursor.execute("""
                 SELECT
                     COUNT(*) as total_leads,
                     COALESCE(AVG(icp_score), 0.0) as avg_icp_score,
-                    COALESCE(SUM(CASE WHEN icp_score >= 70.0 THEN 1 ELSE 0 END), 0) as high_value_leads,
-                    COALESCE(SUM(CASE WHEN icp_score >= 50.0 AND icp_score < 70.0 THEN 1 ELSE 0 END), 0) as qualified_leads,
-                    COALESCE(SUM(CASE WHEN icp_score >= 30.0 AND icp_score < 50.0 THEN 1 ELSE 0 END), 0) as nurture_leads,
-                    COALESCE(SUM(CASE WHEN icp_score < 30.0 THEN 1 ELSE 0 END), 0) as disqualified_leads
+                    COALESCE(SUM(CASE WHEN icp_score >= :vip THEN 1 ELSE 0 END), 0) as high_value_leads,
+                    COALESCE(SUM(CASE WHEN icp_score >= :qual AND icp_score < :vip THEN 1 ELSE 0 END), 0) as qualified_leads,
+                    COALESCE(SUM(CASE WHEN icp_score >= :nurt AND icp_score < :qual THEN 1 ELSE 0 END), 0) as nurture_leads,
+                    COALESCE(SUM(CASE WHEN icp_score < :nurt THEN 1 ELSE 0 END), 0) as disqualified_leads
                 FROM leads
-            """)
+            """, {"vip": VIP_THRESHOLD, "qual": QUALIFIED_THRESHOLD, "nurt": NURTURE_THRESHOLD})
             row = cursor.fetchone()
             total_leads = int(row["total_leads"]) if row and row["total_leads"] else 0
             avg_icp_score = round(float(row["avg_icp_score"]), 2) if row and row["avg_icp_score"] else 0.0
@@ -834,7 +877,7 @@ class ReverseCRMManager:
 
                 if lid not in deduped_leads:
                     icp = float(r["icp_score"] or 0.0)
-                    tier = "VIP" if icp >= 80.0 else ("QUALIFIED" if icp >= 60.0 else ("NURTURE" if icp >= 30.0 else "DISQUALIFIED"))
+                    tier = qualification_tier(icp)
                     deduped_leads[lid] = {
                         "lead_id": r["lead_id"],
                         "name": r["name"],

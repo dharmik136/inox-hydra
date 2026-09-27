@@ -223,7 +223,7 @@ def test_day12_inbound_crm_and_warm_engagers(confirmed_creator):
     assert ingest_data["status"] == "success"
     lead = ingest_data["lead"]
     assert lead["icp_score"] >= 60.0
-    assert lead["qualification_tier"] in ["VIP", "QUALIFIED"]
+    assert lead["qualification_tier"] in ["TIER_1_VIP", "QUALIFIED"]
 
     # 2. Verify 3-angle Anti-Slop DM generation references the commenter's question
     dm_payload = {
