@@ -129,3 +129,52 @@ def test_a_status_change_is_kept_and_counted_against_its_post():
 
     row = next(p for p in client.get("/api/v1/insights/posts").json()["posts"] if p["activity_urn"] == post)
     assert row["people_count"] == 1 and row["conversations"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Patterns and cadence
+# ---------------------------------------------------------------------------
+
+def _text_post(urn, text, reactions):
+    client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [
+        {"activity_urn": urn, "actor": ME, "text": text, "reactions": reactions}]})
+
+
+def test_a_pattern_needs_posts_on_both_sides():
+    _confirm()
+    _text_post(urn_days_ago(20, 1), "Is this a question?\nBody.", 50)
+    for i in range(4):
+        _text_post(urn_days_ago(21 + i, 10 + i), f"A statement {i}.\nBody.", 10)
+    data = client.get("/api/v1/insights/patterns").json()
+    assert "question_opening" not in [p["key"] for p in data["patterns"]]
+    assert "question_opening" in [p["key"] for p in data["not_enough_posts"]]
+
+
+def test_a_difference_from_another_period_is_marked():
+    """Found live: hashtags looked like 2.7x, and the hashtag posts were two years older."""
+    _confirm()
+    for i in range(3):
+        _text_post(urn_days_ago(700 + i, i), f"Old post {i}\n#tag", 60)
+    for i in range(3):
+        _text_post(urn_days_ago(20 + i, 10 + i), f"New post {i}\nNo tags here.", 20)
+    hashtags = next(p for p in client.get("/api/v1/insights/patterns").json()["patterns"] if p["key"] == "hashtags")
+    assert hashtags["ratio"] == 3.0
+    assert hashtags["different_period"] is True
+
+
+def test_the_opening_is_the_first_line_or_the_first_sentence():
+    import insights
+
+    assert insights.opening_line("Short hook.\n\nThe rest of it.") == "Short hook."
+    assert insights.opening_line("One line post. With two sentences.") == "One line post."
+
+
+def test_cadence_counts_gaps_and_names_no_best_day():
+    _confirm()
+    for days in (100, 70, 10):
+        _text_post(urn_days_ago(days, days), f"Post {days}", 5)
+    data = client.get("/api/v1/insights/cadence").json()
+    assert data["posts"] == 3
+    assert round(data["longest_gap"]["days"]) == 60
+    assert sum(d["posts"] for d in data["by_weekday"]) == 3
+    assert "best_day" not in data and "best_time" not in data

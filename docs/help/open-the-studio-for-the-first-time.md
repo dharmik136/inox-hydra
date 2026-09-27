@@ -56,6 +56,7 @@ The rail on the left lists the surfaces. Hover an icon to see its name.
 | Queue | Scheduled posts and peak engagement slots |
 | Leads | Lead stream and person dossiers |
 | Posts | Which of your posts worked, and who each one brought |
+| Patterns | What your own posts suggest, and how steadily you post |
 | Outbound | Whose content you engage with, and whether it comes back |
 | Swipe File | Saved specimens and structural patterns |
 | Analytics | Time series, observations and comparisons |

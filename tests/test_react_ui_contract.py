@@ -59,8 +59,12 @@ BUILT = os.path.join(REPO_ROOT, "studio", "frontend_next")
 # Raised from 5 to 6 for the image studio's progress bar, which is a width
 # the server reports. The ratchet did its job: it made that a decision with a
 # reason rather than a line nobody looked at.
+#
+# Raised from 6 to 7 for the Patterns screen's posts-per-month strip: each
+# bar's height is its month's count over the busiest month's, which is data,
+# not a value a class could hold.
 MAX_HEX_LITERALS_IN_SOURCE = 0
-MAX_INLINE_STYLES = 6
+MAX_INLINE_STYLES = 7
 
 # Never typed literally, or this file would break the rule it enforces, which
 # is what tests/test_phase4_algorithmic_safety.py caught the moment it was.

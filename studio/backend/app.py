@@ -1563,6 +1563,18 @@ def get_posts_insights():
     return insights.posts_overview()
 
 
+@app.get("/api/v1/insights/patterns", tags=["Insights"])
+def get_patterns_insights():
+    """Which forms of post have gone with more reactions, for you, with counts."""
+    return insights.patterns_overview()
+
+
+@app.get("/api/v1/insights/cadence", tags=["Insights"])
+def get_cadence_insights():
+    """How steadily you post, and what the queue holds."""
+    return insights.cadence_overview()
+
+
 @app.get("/api/v1/insights/outbound", tags=["Insights"])
 def get_outbound_insights():
     """Whose content you engage with, and whether they engage back."""

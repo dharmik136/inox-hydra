@@ -1719,3 +1719,45 @@ export interface OutboundInsights {
 export async function fetchOutboundInsights(): Promise<OutboundInsights> {
   return call<OutboundInsights>("/api/v1/insights/outbound");
 }
+
+export interface PatternFinding {
+  key: string;
+  label: string;
+  with_posts: number;
+  without_posts: number;
+  with_median?: number;
+  without_median?: number;
+  ratio?: number | null;
+  /** The two sides come from different periods, so the difference may be about when. */
+  different_period?: boolean;
+  typical_year_with?: number;
+  typical_year_without?: number;
+}
+
+export interface PatternsInsights {
+  posts_compared: number;
+  metric: string;
+  patterns: PatternFinding[];
+  not_enough_posts: PatternFinding[];
+  min_per_side: number;
+}
+
+export async function fetchPatternsInsights(): Promise<PatternsInsights> {
+  return call<PatternsInsights>("/api/v1/insights/patterns");
+}
+
+export interface CadenceInsights {
+  posts: number;
+  first_post?: string;
+  last_post?: string;
+  days_since_last?: number;
+  median_gap_days?: number | null;
+  longest_gap?: { days: number; from: string; to: string } | null;
+  by_month?: { month: string; posts: number }[];
+  by_weekday?: { day: string; posts: number }[];
+  queue?: { scheduled_next_14_days: number; weekly_slots: number };
+}
+
+export async function fetchCadenceInsights(): Promise<CadenceInsights> {
+  return call<CadenceInsights>("/api/v1/insights/cadence");
+}

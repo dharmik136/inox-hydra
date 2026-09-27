@@ -190,3 +190,12 @@ def test_the_sidebar_cannot_veto_your_own_profile():
     """"People you may know" puts "Invite X to connect" on every profile, including yours."""
     evidence = _function(_code(OWN_PAGES), "selfEvidence")
     assert "topCard()" in evidence and "visitorInCard" in evidence
+
+
+def test_post_text_keeps_its_line_breaks():
+    """
+    Found on the live import: the reader collapsed every newline, so 18 of 18
+    posts were stored as one line and the opening line was lost.
+    """
+    reader = _function(_code(OWN_PAGES), "cardText")
+    assert r'split("\n")' in reader and r'join("\n")' in reader, "post text is flattened to one line again"

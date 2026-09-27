@@ -12,6 +12,7 @@ import { OnboardingSurface } from "@/components/OnboardingSurface";
 import { TodaySurface } from "@/components/TodaySurface";
 import { PostsSurface } from "@/components/PostsSurface";
 import { OutboundSurface } from "@/components/OutboundSurface";
+import { PatternsSurface } from "@/components/PatternsSurface";
 import { SwipeSurface } from "@/components/SwipeSurface";
 import { AnalyticsSurface } from "@/components/AnalyticsSurface";
 import { BrandStudioSurface } from "@/components/BrandStudioSurface";
@@ -416,6 +417,7 @@ export default function App() {
                 />
               )}
               {active === "outbound" && <OutboundSurface />}
+              {active === "patterns" && <PatternsSurface />}
               {active === "swipe" && <SwipeSurface focus={focusFor("swipe")} />}
               {active === "analytics" && <AnalyticsSurface />}
               {active === "settings" && <BrandStudioSurface />}
