@@ -53,30 +53,26 @@ async function checkServerAndSession() {
   const bridgeBadge = document.getElementById("bridge-status");
   const crmEl = document.getElementById("crm-leads-status");
 
-  try {
-    const res = await fetch("http://127.0.0.1:8000/api/analytics/kpis?range=7d");
-    if (res.ok) {
-      serverEl.innerText = "Online";
-      serverEl.style.color = "#34d399";
-      bridgeBadge.innerText = "Ready";
-    }
+  // Through the worker, which carries the studio token. Three outcomes, and
+  // each says what it is: the studio answered, the studio is not running, or
+  // the studio refused this browser because it was never paired.
+  const state = await panelApi("/api/v1/onboarding/state");
+  const paint = (el, text, color) => { if (el) { el.innerText = text; el.style.color = color; } };
 
-    const leadsRes = await fetch("http://127.0.0.1:8000/api/leads");
-    if (leadsRes.ok) {
-      const leadsJson = await leadsRes.json();
-      if (crmEl) {
-        crmEl.innerText = `${leadsJson.leads ? leadsJson.leads.length : 0} Active`;
-        crmEl.style.color = "#34d399";
-      }
-    }
-  } catch {
-    serverEl.innerText = "Offline";
-    serverEl.style.color = "#ef4444";
-    bridgeBadge.innerText = "Server Offline";
-    if (crmEl) {
-      crmEl.innerText = "Offline";
-      crmEl.style.color = "#94a3b8";
-    }
+  if (state.ok) {
+    paint(serverEl, "Online", "#34d399");
+    bridgeBadge.innerText = state.data.identity ? "Ready" : "Finish Setup in the studio";
+    const leads = await panelApi("/api/leads");
+    paint(crmEl, leads.ok ? `${(leads.data.leads || []).length} Active` : "Unavailable",
+          leads.ok ? "#34d399" : "#94a3b8");
+  } else if (state.httpStatus === 401 || state.httpStatus === 403) {
+    paint(serverEl, "Not paired", "#f59e0b");
+    bridgeBadge.innerText = "Open 127.0.0.1:8000 in this browser once";
+    paint(crmEl, "Not paired", "#94a3b8");
+  } else {
+    paint(serverEl, "Offline", "#ef4444");
+    bridgeBadge.innerText = "Studio not running";
+    paint(crmEl, "Offline", "#94a3b8");
   }
 
   const li_at = await getCookie("li_at");
@@ -94,5 +90,26 @@ function getCookie(name) {
     chrome.cookies.get({ url: "https://www.linkedin.com", name: name }, (cookie) => {
       resolve(cookie);
     });
+  });
+}
+
+/**
+ * A GET against the studio, made by the service worker so it carries the
+ * studio token. Resolves to { ok, httpStatus, data }; httpStatus 0 means the
+ * studio could not be reached at all.
+ */
+function panelApi(path) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ action: "PANEL_API", path }, (result) => {
+        if (chrome.runtime.lastError || !result) {
+          resolve({ ok: false, httpStatus: 0, data: {} });
+          return;
+        }
+        resolve({ ok: !!result.ok, httpStatus: result.httpStatus || 0, data: result.data || {} });
+      });
+    } catch (err) {
+      resolve({ ok: false, httpStatus: 0, data: {} });
+    }
   });
 }

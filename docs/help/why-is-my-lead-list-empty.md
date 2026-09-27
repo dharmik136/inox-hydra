@@ -36,14 +36,17 @@ Every link in this chain has to hold:
 
 On the feed, the extension reads commenters and reactions on any post you have open, but the studio keeps only those on posts written by you, or on posts it has already imported as yours. You are never recorded as your own lead. Leads captured before this rule existed are not removed automatically.
 
-## Do not trust the extension popup
+## Check the extension popup
 
-The popup you get by clicking the extension's toolbar icon is not a reliable status check:
+Click the extension's toolbar icon. The popup asks the studio through the extension, the same way a capture does, so what it shows is what a capture would meet:
 
-- The server line starts out as a green "Online". It changes only if the studio cannot be reached at all, so "Online" does not tell you whether the extension's requests are accepted.
-- Its **Sync LinkedIn Session** button copies your session only; it has nothing to do with capturing leads. See [Connect your LinkedIn session](connect-your-linkedin-session.md).
+| Server line | Meaning |
+| --- | --- |
+| Online | The studio answered this browser. The badge beside it reads "Ready", or "Finish Setup in the studio" if you have not confirmed your profile. |
+| Not paired | The studio is running but refuses this browser. Open `http://127.0.0.1:8000` in it once. |
+| Offline | The studio is not running. |
 
-The notices on the LinkedIn page itself come from the capture that saves your leads, so trust those.
+Its **Sync LinkedIn Session** button copies your session only; it has nothing to do with capturing leads. See [Connect your LinkedIn session](connect-your-linkedin-session.md).
 
 ## Analytics empty too?
 
