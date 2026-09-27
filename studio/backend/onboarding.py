@@ -62,6 +62,7 @@ _ACTIVITY_URN = re.compile(r"^urn:li:activity:(\d{10,25})$")
 # onboarding screen can say why the studio thinks this is you, and so an
 # unknown label from a newer extension is refused rather than trusted.
 KNOWN_SELF_EVIDENCE = {
+    "self_profile_flag": "LinkedIn marked the page as your own profile",
     "owner_edit_controls": "Edit controls only you see were on the page",
     "me_redirect": "LinkedIn sent /in/me/ to this profile",
     "nav_profile_link": "Your own navigation menu links to this profile",

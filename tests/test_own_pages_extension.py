@@ -168,3 +168,25 @@ def test_panel_reads_are_for_the_extensions_own_pages_only():
     assert "sender.tab" in handler, "a content script inside a LinkedIn page could read the studio through this"
     assert 'method: "GET"' in handler, "panel reads can do more than read"
     assert "PANEL_PATHS" in handler, "panel reads are not limited to a list of paths"
+
+
+def test_the_readers_match_linkedins_rebuilt_pages():
+    """
+    Measured on a live profile and post, 27 Sep 2026: hashed class names, no
+    h1, no section anchors, comments with no comment classes. These pin the
+    handles that survived, so a change back to class names is deliberate.
+    """
+    own = _code(OWN_PAGES)
+    content = _code(os.path.join(EXT, "content.js"))
+    assert "isSelfProfile" in own, "LinkedIn's own self-profile marker is no longer read"
+    assert "Primary content" in own, "the top card is no longer found by its label"
+    assert "nameFromTitle" in own, "the name no longer falls back to the page title"
+    assert "experienceStream" in own, "experience is no longer read as a stream of headers and roles"
+    assert '"commentList"' in content, "the rebuilt layout's comment list is no longer read"
+    assert "ReactionFacepile" in content, "reactor avatars can hide a commenter again"
+
+
+def test_the_sidebar_cannot_veto_your_own_profile():
+    """"People you may know" puts "Invite X to connect" on every profile, including yours."""
+    evidence = _function(_code(OWN_PAGES), "selfEvidence")
+    assert "topCard()" in evidence and "visitorInCard" in evidence

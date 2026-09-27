@@ -101,8 +101,15 @@ def _latest_post(conn) -> Optional[Dict[str, Any]]:
         verdict = None
     elif age < COMPARE_WINDOW[0]:
         verdict = f"too new to compare: posts are compared at about two days old, and this one is {age:.0f} hours"
+    elif not own and age <= COMPARE_WINDOW[1]:
+        verdict = "not read yet at about two days old; open its analytics page now and it can be compared"
     elif not own:
-        verdict = "not read at about two days old, so it cannot be compared fairly; open its analytics page to read it now"
+        # Past the window, reading it now cannot help: the comparison is at two
+        # days old, and that moment has gone. Found on a live install, where the
+        # screen told the creator to open a 13 day old post's analytics.
+        verdict = ("not read while it was about two days old, so it cannot be compared fairly. "
+                   "Today asks you to open each new post's analytics in its first three days, "
+                   "so your next post will be")
     else:
         verdict = (f"only {len(usual_readings)} of your earlier posts were read at about two days old; "
                    f"{MIN_COMPARISONS} are needed before a comparison means anything")

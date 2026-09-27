@@ -71,7 +71,11 @@
   // reportCapture for why). Throttled per extractor per page.
   const lastReport = {};
   function reportCapture(extractor, itemsSeen, itemsKept, drift) {
-    const key = extractor + "|" + window.location.pathname;
+    // Keyed on whether this run drifted, so a clean read always gets through
+    // after a drifted one. Otherwise an early read that ran before the page
+    // finished rendering logged drift, and the good read that followed was
+    // throttled away, leaving a working reader marked broken for a minute.
+    const key = extractor + "|" + window.location.pathname + "|" + (drift && drift.length ? "drift" : "ok");
     const now = Date.now();
     if (lastReport[key] && now - lastReport[key] < 60000) return;
     lastReport[key] = now;
@@ -116,6 +120,8 @@
     if (/\/recent-activity\/reactions\/?/.test(path)) return "activity_reactions";
     if (/\/overlay\/contact-info\/?/.test(path)) return "contact";
     if (/\/details\/skills\/?/.test(path)) return "skills";
+    if (/\/details\/experience\/?/.test(path)) return "details_experience";
+    if (/\/details\/education\/?/.test(path)) return "details_education";
     if (/^\/in\/[^/]+\/?$/.test(path)) return "profile";
     return "profile_other";
   }
@@ -165,44 +171,94 @@
     return Math.round(value);
   }
 
-  // The section that follows an anchor like <div id="experience">.
-  function sectionFor(anchorId) {
-    const anchor = document.getElementById(anchorId);
+  // ---------------------------------------------------------------
+  // Finding things on a page LinkedIn rebuilds without notice
+  // ---------------------------------------------------------------
+  //
+  // Measured against a live profile, 27 Sep 2026: class names are hashed and
+  // change per build, the old section anchors (<div id="experience">) and the
+  // duplicated screen-reader spans are gone, and the name is an h2, not an h1.
+  // What survived is what a reader sees: each section's visible heading
+  // ("About", "Experience"), the page title, and the lines of text in order.
+  // So these readers find sections by heading and read lines, and keep the old
+  // anchors only as a fallback for accounts still served the previous markup.
+
+  function lines(el) {
+    return el ? el.innerText.split("\n").map((l) => l.trim()).filter(Boolean) : [];
+  }
+
+  function mainElement() {
+    return document.querySelector("main") || document.body;
+  }
+
+  // The section whose own heading reads `heading`, or the old anchored one.
+  function sectionFor(heading) {
+    for (const section of mainElement().querySelectorAll("section")) {
+      const h = section.querySelector(":scope h2, :scope h3, :scope > div h2");
+      if (h && clean(h.innerText).toLowerCase() === heading.toLowerCase()) return section;
+    }
+    const anchor = document.getElementById(heading.toLowerCase());
     return anchor ? anchor.closest("section") : null;
+  }
+
+  // The top card: the first section inside the page's primary content.
+  function topCard() {
+    const primary = mainElement().querySelector('section[aria-label="Primary content"]');
+    return (primary && primary.querySelector("section")) || mainElement().querySelector("section");
+  }
+
+  function topLevelItems(root) {
+    return root ? Array.from(root.querySelectorAll("li")).filter((li) => !li.parentElement.closest("li")) : [];
+  }
+
+  // The display name, from the page title: "(3) Dharmik Shingala | LinkedIn".
+  function nameFromTitle() {
+    const name = clean(document.title.split("|")[0].replace(/^\(\d+\)\s*/, ""));
+    return name && !/^linkedin$/i.test(name) ? name : null;
   }
 
   // ---------------------------------------------------------------
   // Is this profile the viewer's own?
   // ---------------------------------------------------------------
 
-  const OWNER_CONTROL = /^(edit intro|add profile section|open to|enhance profile|add section|edit about|add experience|edit experience)/i;
-  const VISITOR_CONTROL = /^(invite .* to connect|connect|message|follow|pending)/i;
+  const OWNER_CONTROL = /^(edit profile|edit intro|edit about|add profile section|add section|enhance profile|open to\b|add experience|edit experience)/i;
+  const VISITOR_CONTROL = /^(connect|message|follow|pending|invite .* to connect)$/i;
 
   function selfEvidence() {
     const evidence = [];
-    const main = document.querySelector("main") || document.body;
 
-    const labels = Array.from(main.querySelectorAll("button, a"))
-      .slice(0, 400)
+    // LinkedIn's own marker. /in/me/ redirects to /in/<you>/?isSelfProfile=true.
+    try {
+      if (new URLSearchParams(window.location.search).get("isSelfProfile") === "true") {
+        evidence.push("self_profile_flag");
+      }
+    } catch (err) {
+      // URLSearchParams is always present; this guards an odd embedding.
+    }
+
+    // Owner-only controls anywhere in the profile, vetoed only by visitor
+    // controls in the top card. The veto used to look at the whole page, and
+    // "People you may know" puts "Invite X to connect" on every profile,
+    // including your own, so a real owner page was always rejected.
+    const labels = (root) => Array.from(root.querySelectorAll("button, a")).slice(0, 400)
       .map((el) => clean(el.getAttribute("aria-label") || el.innerText || ""));
-    const ownerSeen = labels.some((label) => OWNER_CONTROL.test(label)) ||
-      !!main.querySelector('a[href*="/edit/intro/"], a[href*="/add-edit/"]');
-    const visitorSeen = labels.some((label) => VISITOR_CONTROL.test(label));
-    // Both present is a page we cannot read confidently, so it proves nothing.
-    if (ownerSeen && !visitorSeen) evidence.push("owner_edit_controls");
+    const ownerSeen = labels(mainElement()).some((label) => OWNER_CONTROL.test(label));
+    const card = topCard();
+    const visitorInCard = card ? labels(card).some((label) => VISITOR_CONTROL.test(label)) : false;
+    if (ownerSeen && !visitorInCard) evidence.push("owner_edit_controls");
 
     try {
       const cameFrom = sessionStorage.getItem("studio_me_redirect");
       if (cameFrom && cameFrom === vanityOf(window.location.href)) evidence.push("me_redirect");
     } catch (err) {
-      // sessionStorage can be unavailable; the other signal still stands.
+      // sessionStorage can be unavailable; the other signals still stand.
     }
     return evidence;
   }
 
-  // /in/me/ is LinkedIn's alias for the viewer's own profile. Whether it
-  // redirects on the server or in the page, arriving at /in/me/ and then at a
-  // real vanity is LinkedIn telling us which profile is ours.
+  // /in/me/ is LinkedIn's alias for the viewer's own profile. When the
+  // redirect happens in the page rather than on the server, arriving at
+  // /in/me/ and then at a real vanity is LinkedIn saying which profile is ours.
   function noteMeRedirect() {
     try {
       if (/^\/in\/me\/?/.test(window.location.pathname)) {
@@ -217,7 +273,7 @@
         }
       }
     } catch (err) {
-      // Ignored; this is one of two signals.
+      // Ignored; this is one of several signals.
     }
   }
 
@@ -225,103 +281,194 @@
   // The profile
   // ---------------------------------------------------------------
 
+  const PRONOUNS = /^(he|she|they|ze|xe)\/\w+/i;
+
+  // The top card reads, in order: name, pronouns, headline, location, a
+  // separator, "Contact info", followers, connections, then the controls.
   function readTopCard() {
-    const main = document.querySelector("main") || document.body;
-    const card = main.querySelector("section.artdeco-card") || main;
-    const name = textOf(card, ["h1", ".text-heading-xlarge"]);
-    const headline = textOf(card, [".text-body-medium.break-words", ".text-body-medium"]);
-    const location = textOf(card, [".text-body-small.inline.t-black--light.break-words", ".pv-text-details__left-panel .text-body-small"]);
+    const text = lines(topCard());
+    const name = nameFromTitle() || text[0] || null;
+    let index = name ? text.indexOf(name) : 0;
+    if (index < 0) index = 0;
+    let cursor = index + 1;
+    while (cursor < text.length && (PRONOUNS.test(text[cursor]) || text[cursor] === "·")) cursor += 1;
+    const headline = text[cursor] && !/^contact info$/i.test(text[cursor]) ? text[cursor] : null;
 
-    let followers = null;
-    let connections = null;
-    main.querySelectorAll("li, span, a").forEach((el) => {
-      if (followers !== null && connections !== null) return;
-      const text = clean(el.innerText || el.textContent);
-      if (text.length > 40) return;
-      if (followers === null && /\bfollowers?\b/i.test(text)) followers = parseCount(text);
-      if (connections === null && /\bconnections?\b/i.test(text)) connections = parseCount(text);
-    });
+    const contactAt = text.findIndex((line) => /^contact info$/i.test(line));
+    let location = null;
+    for (let i = contactAt - 1; i > cursor && contactAt > 0; i -= 1) {
+      if (text[i] !== "·") {
+        location = text[i];
+        break;
+      }
+    }
 
-    return { display_name: name, headline, location, follower_count: followers, connection_count: connections };
+    const followersLine = text.find((line) => /\bfollowers?$/i.test(line));
+    const connectionsLine = text.find((line) => /\bconnections?$/i.test(line));
+    return {
+      display_name: name,
+      headline,
+      location,
+      follower_count: followersLine ? parseCount(followersLine) : null,
+      connection_count: connectionsLine ? parseCount(connectionsLine) : null,
+    };
   }
+
+  const MORE_LINE = /^(…|\.\.\.)?\s*(see )?more$|^show (all|more)/i;
 
   function readAbout() {
-    const section = sectionFor("about");
+    const section = sectionFor("About");
     if (!section) return null;
-    const strings = visibleStrings(section).filter((s) => !/^about$/i.test(s));
-    return strings.length ? strings.join("\n") : null;
+    const text = lines(section).filter((line) => !/^about$/i.test(line) && !MORE_LINE.test(line));
+    return text.length ? text.join("\n") : null;
   }
 
-  // One entry per top-level list item in a section. Positional, because the
-  // items carry no labels: title first, then organisation, then dates.
-  function readEntries(anchorId) {
-    const section = sectionFor(anchorId);
-    if (!section) return null; // absent from the page: the studio keeps what it has
-    const items = Array.from(section.querySelectorAll(":scope ul > li")).filter(
-      (li) => !li.parentElement.closest("li")
-    );
-    return items.map((li) => visibleStrings(li)).filter((strings) => strings.length);
+  const EMPLOYMENT = /^(full-time|part-time|internship|contract|freelance|self-employed|apprenticeship|seasonal|temporary)$/i;
+  const DATE_LINE = /\b(19|20)\d{2}\b.*(-|–|present)|\bpresent\b/i;
+  const DURATION_ONLY = /^(\d+\s+yrs?)?\s*(\d+\s+mos?)?$/i;
+
+  // The experience section as a stream: each top-level list item is one role,
+  // and the text between list items is either a company header or a whole
+  // single-role entry. Measured on a live profile, 27 Sep 2026:
+  //
+  //   Motadata / 9 mos / Ahmedabad            <- company header, outside any li
+  //     li: Product Content Strategist / Full-time / Jun 2026 - Aug 2026 ...
+  //     li: Trainee Content Strategist / Internship / Dec 2025 - May 2026 ...
+  //   HARMONY PowerTech / 2 mos               <- header with no logo at all
+  //     li: Electronics Engineering Intern / ...
+  //   Special Teacher / Teach For India · Part-time / Aug 2023 - Dec 2023
+  //                                           <- one role, company inline, no li
+  //
+  // Taking the company from the nearest logo above got HARMONY PowerTech wrong,
+  // because a company with no LinkedIn page has no logo, and missed the
+  // single-role entries entirely because they are not list items.
+  function experienceStream(section) {
+    const stream = [];
+    let run = null;
+    const walker = document.createTreeWalker(section, NodeFilter.SHOW_TEXT);
+    let node;
+    const seenItems = new Set();
+    while ((node = walker.nextNode())) {
+      const text = clean(node.textContent);
+      if (!text) continue;
+      const parent = node.parentElement;
+      let item = parent ? parent.closest("li") : null;
+      while (item && item.parentElement && item.parentElement.closest("li") && section.contains(item.parentElement.closest("li"))) {
+        item = item.parentElement.closest("li");
+      }
+      if (item && section.contains(item)) {
+        if (!seenItems.has(item)) {
+          seenItems.add(item);
+          stream.push({ kind: "item", element: item });
+        }
+        run = null;
+        continue;
+      }
+      if (!run) {
+        run = { kind: "text", lines: [] };
+        stream.push(run);
+      }
+      run.lines.push(text);
+    }
+    return stream;
   }
 
-  function readPositions() {
-    const entries = readEntries("experience");
-    if (!entries) return null;
-    return entries.slice(0, 40).map((s) => ({
-      title: s[0] || null,
-      company: s[1] ? s[1].split(" · ")[0] : null,
-      date_range: s.find((x) => /\b(19|20)\d{2}\b|present/i.test(x)) || null,
-      location: s.find((x, i) => i > 1 && !/\b(19|20)\d{2}\b|present/i.test(x) && x.length < 80) || null,
-      description: s.length > 4 ? s.slice(4).join("\n") : null,
+  function roleFrom(text, company) {
+    const dateAt = text.findIndex((line) => DATE_LINE.test(line));
+    const after = dateAt >= 0 ? text.slice(dateAt + 1) : text.slice(1);
+    const location = after[0] && after[0].length < 80 && !/[.!?:]$/.test(after[0]) && !/skills?$/i.test(after[0])
+      ? after[0] : null;
+    const description = after.slice(location ? 1 : 0)
+      .filter((line) => !MORE_LINE.test(line) && !/^skills:?$/i.test(line) && !/\bskills?$/i.test(line)
+        && !/\.(png|jpe?g|pdf)$/i.test(line) && !/certificate$/i.test(line))
+      .join("\n");
+    return {
+      title: text[0],
+      company,
+      date_range: dateAt >= 0 ? text[dateAt] : null,
+      location,
+      description: description || null,
+    };
+  }
+
+  function readPositions(root) {
+    const section = root || sectionFor("Experience");
+    if (!section) return null;
+    const positions = [];
+    let company = null;
+
+    for (const entry of experienceStream(section)) {
+      if (positions.length >= 40) break;
+      if (entry.kind === "item") {
+        const text = lines(entry.element).filter((line) => !MORE_LINE.test(line));
+        if (text.length && DATE_LINE.test(text.join("\n"))) positions.push(roleFrom(text, company));
+        continue;
+      }
+
+      const text = entry.lines.filter((line) => !MORE_LINE.test(line) && !/^experience$/i.test(line));
+      // A company header: the company's name followed by its total duration.
+      const durationAt = text.findIndex((line, i) => i > 0 && DURATION_ONLY.test(line) && /\d/.test(line));
+      const dateAt = text.findIndex((line) => DATE_LINE.test(line));
+      if (durationAt > 0 && (dateAt < 0 || durationAt < dateAt)) {
+        company = text[durationAt - 1];
+        continue;
+      }
+      // A single-role entry: title, then "Company · Employment type", then dates.
+      if (dateAt >= 1) {
+        const title = dateAt >= 2 ? text[dateAt - 2] : text[0];
+        const companyLine = dateAt >= 2 ? text[dateAt - 1] : null;
+        const parts = companyLine ? companyLine.split(" · ") : [];
+        const single = parts.length && !EMPLOYMENT.test(parts[0]) ? parts[0] : null;
+        positions.push(roleFrom([title, ...text.slice(dateAt)], single));
+        company = null;
+      }
+    }
+    return positions.length ? positions : null;
+  }
+
+  function readEducation(root) {
+    const section = root || sectionFor("Education");
+    if (!section) return null;
+    const entries = topLevelItems(section).map((li) => lines(li)).filter((text) => text.length);
+    if (!entries.length) return null;
+    return entries.slice(0, 20).map((text) => ({
+      school: text[0] || null,
+      degree: text[1] && !DATE_LINE.test(text[1]) ? text[1] : null,
+      date_range: text.find((line) => /\b(19|20)\d{2}\b/.test(line)) || null,
     }));
   }
 
-  function readEducation() {
-    const entries = readEntries("education");
-    if (!entries) return null;
-    return entries.slice(0, 20).map((s) => ({
-      school: s[0] || null,
-      degree: s[1] || null,
-      date_range: s.find((x) => /\b(19|20)\d{2}\b/.test(x)) || null,
-    }));
+  function readSkills(root) {
+    const section = root || sectionFor("Skills");
+    if (!section) return null;
+    const skills = topLevelItems(section)
+      .map((li) => lines(li)[0])
+      .filter((skill) => skill && skill.length < 120 && !MORE_LINE.test(skill) && !/^endorse/i.test(skill));
+    return skills.length ? Array.from(new Set(skills)) : null;
   }
 
-  function readSkills() {
-    // The details page has the whole list; the profile shows only a few.
-    const root = pageKind() === "skills" ? document.querySelector("main") : sectionFor("skills");
-    if (!root) return null;
-    const skills = Array.from(root.querySelectorAll(":scope ul > li"))
-      .filter((li) => !li.parentElement.closest("li"))
-      .map((li) => visibleStrings(li)[0])
-      .filter((s) => s && s.length < 120 && !/^show all/i.test(s));
-    return skills.length ? skills : null;
-  }
-
+  // The contact panel is the dialog whose text begins "Contact info". A profile
+  // page carries several other dialogs (a video player's "This is a modal
+  // window", caption settings, ad options), and taking the first one read the
+  // video player and stored an empty contact card as though it had been read.
   function readContact() {
-    const dialog = document.querySelector('[role="dialog"]') ||
-      document.querySelector(".pv-contact-info") || null;
+    const dialog = Array.from(document.querySelectorAll('dialog, [role="dialog"], .pv-contact-info'))
+      .find((d) => /^contact info/i.test(clean(d.innerText)));
     if (!dialog) return null;
     const contact = { email: null, phone: null, birthday: null, websites: [] };
-    dialog.querySelectorAll("section, .pv-contact-info__contact-type").forEach((block) => {
-      const heading = clean(textOf(block, ["h3", "header"]) || "");
-      const body = clean(
-        Array.from(block.querySelectorAll("a, span, li"))
-          .map((el) => clean(el.innerText))
-          .filter((t) => t && t !== heading)
-          .join(" ")
-      );
-      if (/^email/i.test(heading)) {
-        const mail = block.querySelector('a[href^="mailto:"]');
-        contact.email = mail ? mail.getAttribute("href").slice(7) : body || null;
-      } else if (/^phone/i.test(heading)) {
-        contact.phone = body || null;
-      } else if (/^birthday/i.test(heading)) {
-        contact.birthday = body || null;
-      } else if (/^websites?/i.test(heading)) {
-        block.querySelectorAll("a[href]").forEach((a) => {
-          const href = a.getAttribute("href");
-          if (href && !/linkedin\.com\/in\//.test(href)) contact.websites.push(href);
-        });
-      }
+    const mail = dialog.querySelector('a[href^="mailto:"]');
+    if (mail) contact.email = mail.getAttribute("href").slice(7);
+    const text = lines(dialog);
+    const after = (label) => {
+      const at = text.findIndex((line) => new RegExp("^" + label, "i").test(line));
+      return at >= 0 && text[at + 1] ? text[at + 1] : null;
+    };
+    if (!contact.email) contact.email = after("email");
+    contact.phone = after("phone");
+    contact.birthday = after("birthday");
+    dialog.querySelectorAll("a[href]").forEach((a) => {
+      const href = a.getAttribute("href");
+      if (href && /^https?:/i.test(href) && !/linkedin\.com\//i.test(href)) contact.websites.push(href);
     });
     return contact;
   }
@@ -344,18 +491,34 @@
         payload.positions = positions;
         if (positions[0] && positions[0].company) payload.current_company = positions[0].company;
       }
+      // Education and skills load only as the profile is scrolled, so they are
+      // read from their own details pages; these catch them if already shown.
       const education = readEducation();
       if (education) payload.education = education;
+      const skills = readSkills();
+      if (skills) payload.skills = skills;
+    } else if (kind === "details_experience") {
+      const positions = readPositions(mainElement());
+      if (positions) {
+        payload.positions = positions;
+        if (positions[0] && positions[0].company) payload.current_company = positions[0].company;
+      }
+    } else if (kind === "details_education") {
+      const education = readEducation(mainElement());
+      if (education) payload.education = education;
+    } else if (kind === "skills") {
+      const skills = readSkills(mainElement());
+      if (skills) payload.skills = skills;
+    } else if (kind === "contact") {
+      payload.contact = readContact();
     }
-    const skills = readSkills();
-    if (skills && kind === "skills") payload.skills = skills;
-    if (kind === "contact") payload.contact = readContact();
 
     if (kind === "profile") {
-      // A profile page always has a name heading. Not finding one on the
-      // creator's own profile means the reader no longer matches the page.
+      // A profile page always has a name. Not finding one on the creator's own
+      // profile means the reader no longer matches the page.
       const read = ["display_name", "headline", "location", "about"].filter((k) => payload[k]);
-      reportCapture("profile", read.length, read.length, payload.display_name ? [] : ["name"]);
+      reportCapture("profile", read.length + (payload.positions ? payload.positions.length : 0),
+        read.length, payload.display_name ? [] : ["name"]);
     }
 
     const result = await studio("/api/v1/identity/observe", payload);
@@ -386,8 +549,16 @@
     return link ? vanityOf(link.getAttribute("href")) : "";
   }
 
+  // The author's display name: the first line of the actor title, without
+  // the connection degree LinkedIn appends ("Jaivik Gajjar • 1st"). The
+  // aria-hidden span this used to read no longer exists, so every one of 302
+  // imported reactions and comments came back with no author.
   function cardActorName(card) {
-    return textOf(card, [".update-components-actor__title span[aria-hidden='true']", ".update-components-actor__name"]);
+    const title = card.querySelector(".update-components-actor__title, .update-components-actor__name");
+    if (!title) return null;
+    const firstLine = (title.innerText || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
+    const name = firstLine.replace(/\s*•\s*(1st|2nd|3rd\+?|following|you)\s*$/i, "").replace(/\s*(Verified|Premium)\s*$/i, "").trim();
+    return name || null;
   }
 
   function cardText(card) {
@@ -400,7 +571,19 @@
 
   function cardCounts(card) {
     const counts = { reactions: null, comments: null, reposts: null, impressions: null };
-    counts.reactions = parseCount(textOf(card, [".social-details-social-counts__reactions-count"]));
+    // LinkedIn shows the bare count only when nobody you know reacted. When it
+    // names someone ("Kunjan Solanki and 5 others") the number moves to the
+    // social-proof element, and reading only the first element left most of
+    // a creator's posts with no reaction count at all (measured: four of five).
+    counts.reactions = parseCount(textOf(card, [
+      ".social-details-social-counts__reactions-count",
+      ".social-details-social-counts__social-proof-fallback-number",
+    ]));
+    if (counts.reactions === null) {
+      const named = card.querySelector("button[aria-label$=' others' i], button[aria-label$=' other' i]");
+      const match = named ? / and (\d[\d,]*) others?$/i.exec(named.getAttribute("aria-label") || "") : null;
+      if (match) counts.reactions = parseCount(match[1]) + 1;
+    }
     card.querySelectorAll("button, span, a").forEach((el) => {
       const text = clean(el.getAttribute("aria-label") || el.innerText || "");
       if (text.length > 60) return;
@@ -675,7 +858,7 @@
     // arrive, and collapses a burst of route events into one read.
     settleTimer = setTimeout(() => {
       const kind = pageKind();
-      if (kind === "profile" || kind === "contact" || kind === "skills") {
+      if (["profile", "contact", "skills", "details_experience", "details_education"].includes(kind)) {
         captureProfile();
         // Experience, education and skills render lazily below the top card,
         // so a second read picks up what the first arrived too early for. The

@@ -102,6 +102,11 @@ def test_a_stranger_is_never_offered_as_you():
     assert _state()["candidate"] is None
 
 
+def test_linkedins_own_marker_counts_as_evidence():
+    result = client.post("/api/v1/identity/observe", json=_profile(evidence=("self_profile_flag",))).json()
+    assert result["status"] == "candidate"
+
+
 def test_an_unrecognised_evidence_label_does_not_count():
     result = client.post("/api/v1/identity/observe", json=_profile(evidence=("looks_like_me",))).json()
     assert result["status"] == "ignored"
