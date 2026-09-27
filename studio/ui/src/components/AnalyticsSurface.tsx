@@ -325,6 +325,16 @@ function Observations({ kpis, posts }: { kpis: AnalyticsKpis | null; posts: Anal
             value={kpis.follower_growth === null ? null : `${kpis.follower_growth > 0 ? "+" : ""}${kpis.follower_growth}`}
           />
         </ul>
+        {/* A day captured with the range selector on 7 or 28 days holds a
+            multi-day total, so it is left out of every sum rather than counted
+            as one day. Saying so explains a total that looks low. */}
+        {(kpis.days_excluded_unknown_window ?? 0) > 0 && (
+          <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
+            {kpis.days_excluded_unknown_window} CAPTURED{" "}
+            {kpis.days_excluded_unknown_window === 1 ? "DAY IS" : "DAYS ARE"} LEFT OUT: THEIR FIGURES COVER AN
+            UNKNOWN NUMBER OF DAYS. SET LINKEDIN&rsquo;S RANGE TO 24 HOURS WHEN YOU OPEN ANALYTICS.
+          </p>
+        )}
       </section>
 
       <section>

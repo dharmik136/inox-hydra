@@ -129,7 +129,11 @@ let analyticsReadTimer = null;
 
 function maybeExtractAnalytics(force) {
   const path = window.location.pathname;
-  if (!path.includes("/analytics")) {
+  // The account's own creator analytics only. Any path containing "/analytics"
+  // used to qualify, which includes one post's summary page
+  // (/analytics/post-summary/...), and that post's figures were then written
+  // as the whole account's numbers for the day.
+  if (!path.startsWith("/analytics/creator")) {
     // Leaving the page clears the latch, so returning to it reads again.
     lastAnalyticsPath = null;
     return;

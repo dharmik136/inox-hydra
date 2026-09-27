@@ -508,42 +508,56 @@ def get_kpis(range: str = "30d"):
         start_prev = start_cur - timedelta(days=days)
         end_prev = start_cur - timedelta(days=1)
 
+        # Only rows that hold one day's figures are summed.
+        #
+        # A capture whose window could not be read is stored labelled
+        # "unknown", deliberately (see ingest_analytics_payload), and legacy
+        # rows from before windows were recorded carry NULL. Summing either as
+        # a day counted a 7 or 28 day card total as one day's impressions, and
+        # a range summed several overlapping totals. The demo series is one row
+        # per day by construction and is labelled by its source. What was left
+        # out is reported, so a smaller total is explained rather than a
+        # surprise.
+        daily_only = "(period_label IN ('1d', 'day', 'daily') OR (period_label IS NULL AND source = 'seed'))"
+
+        def window_totals(start, end):
+            cursor.execute(f"""
+            SELECT COUNT(*), SUM(impressions), SUM(reactions), SUM(comments), SUM(shares)
+            FROM analytics_daily
+            WHERE date >= ? AND date <= ? AND {daily_only}
+            """, (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")))
+            return cursor.fetchone()
+
         # 1. Current Window Totals
-        cursor.execute("""
-        SELECT SUM(impressions), SUM(reactions), SUM(comments), SUM(shares)
-        FROM analytics_daily
-        WHERE date >= ? AND date <= ?
-        """, (start_cur.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
-        cur_imp, cur_rxn, cur_comm, cur_shr = cursor.fetchone()
+        cur_days, cur_imp, cur_rxn, cur_comm, cur_shr = window_totals(start_cur, end_date)
         cur_imp = cur_imp or 0
-        cur_rxn = cur_rxn or 0
-        cur_comm = cur_comm or 0
-        cur_shr = cur_shr or 0
-        cur_eng = cur_rxn + cur_comm + cur_shr
-        cur_eng_rate = round((cur_eng / cur_imp * 100), 2) if cur_imp > 0 else 0.0
+        cur_eng = (cur_rxn or 0) + (cur_comm or 0) + (cur_shr or 0)
+        cur_eng_rate = round((cur_eng / cur_imp * 100), 2) if cur_imp > 0 else None
+
+        cursor.execute(f"""
+        SELECT COUNT(*) FROM analytics_daily
+        WHERE date >= ? AND date <= ? AND NOT {daily_only}
+        """, (start_cur.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
+        excluded_days = cursor.fetchone()[0]
 
         # 2. Previous Window Totals for True Period Deltas
-        cursor.execute("""
-        SELECT SUM(impressions), SUM(reactions), SUM(comments), SUM(shares)
-        FROM analytics_daily
-        WHERE date >= ? AND date <= ?
-        """, (start_prev.strftime("%Y-%m-%d"), end_prev.strftime("%Y-%m-%d")))
-        prev_imp, prev_rxn, prev_comm, prev_shr = cursor.fetchone()
+        prev_days, prev_imp, prev_rxn, prev_comm, prev_shr = window_totals(start_prev, end_prev)
         prev_imp = prev_imp or 0
-        prev_rxn = prev_rxn or 0
-        prev_comm = prev_comm or 0
-        prev_shr = prev_shr or 0
-        prev_eng = prev_rxn + prev_comm + prev_shr
-        prev_eng_rate = round((prev_eng / prev_imp * 100), 2) if prev_imp > 0 else 0.0
+        prev_eng = (prev_rxn or 0) + (prev_comm or 0) + (prev_shr or 0)
+        prev_eng_rate = round((prev_eng / prev_imp * 100), 2) if prev_imp > 0 else None
 
+        # A change needs something to change from. With no daily rows in the
+        # previous window this returned +100% for any activity at all, which
+        # read as doubling when it meant "nothing to compare with".
         def calc_delta(cur, prev):
-            if prev == 0:
-                return 100.0 if cur > 0 else 0.0
+            if not prev_days or prev == 0:
+                return None
             return round(((cur - prev) / prev) * 100.0, 1)
 
         imp_delta = calc_delta(cur_imp, prev_imp)
         eng_delta = calc_delta(cur_eng, prev_eng)
-        eng_rate_delta = round(cur_eng_rate - prev_eng_rate, 2)
+        eng_rate_delta = (round(cur_eng_rate - prev_eng_rate, 2)
+                          if cur_eng_rate is not None and prev_eng_rate is not None else None)
 
         cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (end_date.strftime("%Y-%m-%d"),))
         latest_stat = cursor.fetchone()
@@ -556,21 +570,33 @@ def get_kpis(range: str = "30d"):
 
         cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (start_cur.strftime("%Y-%m-%d"),))
         start_stat = cursor.fetchone()
-        start_followers = start_stat["followers"] if (start_stat and start_stat["followers"] is not None) else cur_followers
-        start_pviews = start_stat["profile_views"] if (start_stat and start_stat["profile_views"] is not None) else cur_pviews
+        # No fallback to the current value. When the window's first day was not
+        # captured, this used today's figure as the starting point, so growth
+        # read as exactly 0: a measured "no change" made from one reading.
+        start_followers = start_stat["followers"] if (start_stat and start_stat["followers"] is not None) else None
+        start_pviews = start_stat["profile_views"] if (start_stat and start_stat["profile_views"] is not None) else None
 
         # A delta between two points needs both points. One missing means no answer,
         # not a zero and not a hundred percent.
         follower_growth = (cur_followers - start_followers) if (cur_followers is not None and start_followers is not None) else None
-        pviews_delta = calc_delta(cur_pviews, start_pviews) if (cur_pviews is not None and start_pviews is not None) else None
+        pviews_delta = (round(((cur_pviews - start_pviews) / start_pviews) * 100.0, 1)
+                        if (cur_pviews is not None and start_pviews) else None)
 
         cursor.execute("SELECT COUNT(*) FROM posts WHERE status = 'scheduled'")
         scheduled_count = cursor.fetchone()[0]
 
         conn.close()
 
+        # No daily rows in the window means the totals are unknown, not zero.
+        if not cur_days:
+            cur_imp = cur_eng = None
+
         return {
             "range": f"{days}d",
+            # How many days the totals are made of, and how many captured days
+            # were left out because their window was not a single day.
+            "days_counted": cur_days,
+            "days_excluded_unknown_window": excluded_days,
             "impressions": cur_imp,
             "impressions_delta_pct": imp_delta,
             "total_engagements": cur_eng,
