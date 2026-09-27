@@ -603,6 +603,7 @@ HELP_SECTIONS = [
             "help/install-the-browser-extension.md",
             "help/after-an-update-reload-the-extension.md",
             "help/review-leads-and-draft-a-message.md",
+            "help/see-what-worked-and-where-your-attention-goes.md",
             "help/read-your-analytics.md",
         ],
     },

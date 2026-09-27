@@ -93,9 +93,12 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Then 154 -> 156, with Today and per-post readings. /api/v1/today is the
 # Today screen's, so it is reached; /api/v1/self/posts/analytics is written by
 # the extension from a post's analytics page, so it is unreachable by design.
+#
+# Then 156 -> 158, with Posts and Outbound: /api/v1/insights/posts and
+# /api/v1/insights/outbound, each called by its own screen.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 156
-REACHED_BY_INTERFACE = 75
+TOTAL_API_PATHS = 158
+REACHED_BY_INTERFACE = 77
 UNREACHABLE = 81
 
 ROUTE_DECORATOR = re.compile(

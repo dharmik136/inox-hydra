@@ -331,9 +331,15 @@ export async function removeLeadsNotOnYourPosts(leadIds: string[]): Promise<{ re
   return call("/api/v1/leads/review/remove", { method: "POST", body: JSON.stringify({ lead_ids: leadIds }) });
 }
 
+export interface LeadStageEvent {
+  from_status: string | null;
+  to_status: string;
+  changed_at: string;
+}
+
 export async function fetchLeadTimeline(
   leadId: string,
-): Promise<{ lead: Lead; interactions: LeadInteraction[] }> {
+): Promise<{ lead: Lead; interactions: LeadInteraction[]; stage_history?: LeadStageEvent[] }> {
   return call(`/api/v1/crm/leads/${encodeURIComponent(leadId)}/timeline`);
 }
 
@@ -1649,4 +1655,67 @@ export interface TodayBrief {
 
 export async function fetchToday(): Promise<TodayBrief> {
   return call<TodayBrief>("/api/v1/today");
+}
+
+// -------------------------------------------------------------
+// Insights: your posts, and your attention
+// -------------------------------------------------------------
+
+export interface PostInsightPerson {
+  lead_id: string;
+  name: string | null;
+  commented: boolean;
+  status: string | null;
+}
+
+export interface PostInsight {
+  activity_urn: string;
+  excerpt: string | null;
+  published_at: string | null;
+  age_days: number | null;
+  /** Old enough (a week) for its numbers to have mostly arrived. */
+  settled: boolean;
+  reactions: number | null;
+  comments: number | null;
+  reposts: number | null;
+  impressions: number | null;
+  /** Against your own median, only for settled posts. 1.0 is your usual. */
+  against_usual: Partial<Record<"reactions" | "comments" | "impressions", number>> | null;
+  people: PostInsightPerson[];
+  people_count: number;
+  conversations: number;
+  url: string;
+}
+
+export interface PostsInsights {
+  posts: PostInsight[];
+  usual: Record<"reactions" | "comments" | "impressions", { median: number | null; posts: number }>;
+  best: string[];
+  settled_after_days: number;
+}
+
+export async function fetchPostsInsights(): Promise<PostsInsights> {
+  return call<PostsInsights>("/api/v1/insights/posts");
+}
+
+export interface OutboundAuthor {
+  name: string;
+  reactions: number;
+  comments: number;
+  total: number;
+  last_at: string | null;
+  engaged_back: number;
+}
+
+export interface OutboundInsights {
+  totals: { reactions: number; comments: number; authors: number; without_author: number };
+  coverage: { posts_read: number; posts_with_engagement: number; share: number; one_way_judged: boolean };
+  authors: OutboundAuthor[];
+  one_way: string[];
+  reciprocal: string[];
+  matched_by: string;
+}
+
+export async function fetchOutboundInsights(): Promise<OutboundInsights> {
+  return call<OutboundInsights>("/api/v1/insights/outbound");
 }

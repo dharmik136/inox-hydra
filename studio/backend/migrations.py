@@ -601,6 +601,29 @@ def _migrate_post_metric_observations(cursor: sqlite3.Cursor) -> None:
     )
 
 
+def _migrate_lead_stage_events(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 14:
+    A history of each lead's status, not only the latest value.
+
+    Moving a lead from Outreach Sent to Connected overwrote the status, so the
+    studio could say where a lead is but never that it had got there, when, or
+    from which post. "Which of my posts brought people I ended up talking to"
+    needs the history, and a conversion rate needs to know a change happened.
+    """
+    # grain: one row per status change of one lead.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS lead_stage_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lead_id TEXT NOT NULL,
+            from_status TEXT,
+            to_status TEXT NOT NULL,
+            changed_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_stage_events_lead ON lead_stage_events(lead_id, changed_at)")
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -618,6 +641,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (11, "One lead interaction per interaction, not per page load, and no placeholder text", _migrate_interaction_grain),
     (12, "Record each capture run, so a broken selector is visible", _migrate_capture_log),
     (13, "Keep readings of each post over time, with the post's age", _migrate_post_metric_observations),
+    (14, "Keep a history of each lead's status changes", _migrate_lead_stage_events),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

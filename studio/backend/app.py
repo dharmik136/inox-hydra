@@ -71,6 +71,7 @@ try:
     from .internal_sheet import internal_sheet_manager
     from . import onboarding
     from . import today as today_module
+    from . import insights
     from . import devtools
     from . import security
     from . import desktop as desktop_integration
@@ -137,6 +138,7 @@ except ImportError:
     from internal_sheet import internal_sheet_manager
     import onboarding
     import today as today_module
+    import insights
     import devtools
     import security
     import desktop as desktop_integration
@@ -1553,6 +1555,18 @@ class ImportEvent(BaseModel):
 
 def _refusal(error: "onboarding.RefusedCapture"):
     raise HTTPException(status_code=409, detail=str(error))
+
+
+@app.get("/api/v1/insights/posts", tags=["Insights"])
+def get_posts_insights():
+    """Your posts against your own median, and who each one brought. See insights.py."""
+    return insights.posts_overview()
+
+
+@app.get("/api/v1/insights/outbound", tags=["Insights"])
+def get_outbound_insights():
+    """Whose content you engage with, and whether they engage back."""
+    return insights.outbound_overview()
 
 
 @app.get("/api/v1/today", tags=["Onboarding"])
@@ -3117,6 +3131,14 @@ def get_lead_interaction_timeline(lead_id: str):
         raise HTTPException(status_code=404, detail="Lead not found")
     # Where each engagement happened, so the dossier can name the post.
     res["interactions"] = onboarding.annotate_interactions(res["interactions"])
+    # How the lead moved through the pipeline, oldest first.
+    conn = get_db()
+    try:
+        res["stage_history"] = [dict(r) for r in conn.execute(
+            "SELECT from_status, to_status, changed_at FROM lead_stage_events WHERE lead_id = ? ORDER BY changed_at",
+            (lead_id,))]
+    finally:
+        conn.close()
     return res
 
 
