@@ -561,8 +561,23 @@
     return name || null;
   }
 
+  // The post's text with its line breaks kept. It went through clean(), which
+  // collapses every run of whitespace, newlines included, so the stored text
+  // of every post was one long line and its opening line could not be told
+  // from the rest: measured on a live import, 18 of 18 posts. The opening
+  // line is what a reader sees before "see more", so it is the one line the
+  // studio most needs to have as written.
   function cardText(card) {
-    return textOf(card, [".update-components-text", ".feed-shared-inline-show-more-text", ".feed-shared-update-v2__description"]);
+    const el = first(card, [".update-components-text", ".feed-shared-inline-show-more-text", ".feed-shared-update-v2__description"]);
+    if (!el) return null;
+    const text = (el.innerText || "")
+      .split("\n")
+      .map((line) => line.replace(/[ \t]+/g, " ").trim())
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .replace(/\n?…\s*more$/i, "")
+      .trim();
+    return text || null;
   }
 
   function cardHeader(card) {

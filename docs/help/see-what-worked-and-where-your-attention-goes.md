@@ -1,8 +1,8 @@
 # See what worked, and where your attention goes
 
-Use **Posts** to see which of your posts did better than your usual and who each one brought, and **Outbound** to see whose content you engage with and whether they engage back.
+Use **Posts** to see which of your posts did better than your usual and who each one brought, **Patterns** to see which forms have gone with more reactions for you, and **Outbound** to see whose content you engage with and whether they engage back.
 
-Both screens are built from your own imported history. Import your posts, comments and reactions from **Setup** first; see [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).
+All three screens are built from your own imported history. Import your posts, comments and reactions from **Setup** first; see [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).
 
 ## Posts
 
@@ -13,6 +13,18 @@ Each post shows its date, opening, and the reactions, comments and impressions l
 The two week-old posts furthest above your usual reactions are marked **WORTH REPURPOSING**: their form has already worked for your audience.
 
 Click a post to see the people the studio captured engaging with it. Click a name to open their dossier in **Leads**. **CONVERSATIONS** counts the people from that post whose lead status you moved to **Connected** or **Meeting Booked**. If a post shows nobody, open it with **Open the post**; its commenters are read when it opens in the bridge browser.
+
+## Patterns
+
+**Patterns** compares your posts that have a form with those that do not, by median reactions, across your posts at least a week old. Each line gives both medians and both counts, for example "MEDIAN 38 REACTIONS ON 7 POSTS WITH IT, 25 ON 11 WITHOUT".
+
+The forms compared are: a short opening line (60 characters or fewer), an opening that asks a question, an opening that starts with an emoji or symbol, an announcement ("excited", "thrilled", "happy to share", a new position), bold or styled Unicode letters, hashtags, and a post over 1,500 characters. A form is compared only when at least three posts have it and three do not; the others are listed as not enough posts.
+
+When most posts on one side are from a different year than the other, the line is moved under **Mixed up with when you posted**. Your account and audience were different then, so the difference may be about the time rather than the form.
+
+These are differences between your posts, not causes. Treat a large one as something to try.
+
+**Cadence**, on the same screen, gives how many posts you have made, days since your last one, your usual gap between posts, how much of the next 14 days of queue slots is filled, your longest gap, posts per month and posts per weekday. It does not name a best day or time: you chose the days you posted on, and a few posts per day cannot separate the day from everything else about those posts.
 
 ## Outbound
 

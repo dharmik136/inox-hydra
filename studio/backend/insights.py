@@ -21,7 +21,7 @@ Strict Invariants:
 """
 
 import statistics
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
@@ -194,4 +194,163 @@ def outbound_overview() -> Dict[str, Any]:
                     if judged else []),
         "reciprocal": [a["name"] for a in ranked if a["engaged_back"]][:12],
         "matched_by": "display name",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Patterns: which forms have gone with more engagement, for you
+# ---------------------------------------------------------------------------
+#
+# Each pattern splits your settled posts in two (has it, does not) and compares
+# the median reactions of each side. A pattern is shown only when both sides
+# have at least MIN_PER_SIDE posts, and always with both counts, because on a
+# few dozen posts a difference is a lead to try, not a finding. The wording is
+# "went with", never "causes": this compares posts, it runs no experiment.
+
+import re as _re
+import unicodedata as _unicodedata
+
+MIN_PER_SIDE = 3
+
+_ANNOUNCEMENT = _re.compile(
+    r"\b(excited|thrilled|happy to share|pleased to|proud to|congratulations|new position|starting a new)\b",
+    _re.IGNORECASE)
+
+
+def opening_line(text: Optional[str]) -> str:
+    """What shows before anything else: the first line, or the first sentence of a one-line post."""
+    lines = [l.strip() for l in (text or "").split("\n") if l.strip()]
+    if not lines:
+        return ""
+    first = lines[0]
+    if len(lines) == 1:
+        match = _re.match(r"(.{1,200}?[.!?])(\s|$)", first)
+        if match:
+            first = match.group(1)
+    return first
+
+
+def _opens_with_symbol(line: str) -> bool:
+    return bool(line) and _unicodedata.category(line[0]) == "So"
+
+
+def _has_bold_unicode(text: str) -> bool:
+    return any(0x1D400 <= ord(ch) <= 0x1D7FF for ch in text)
+
+
+PATTERNS = [
+    ("short_opening", "An opening line of 60 characters or fewer",
+     lambda text, opening: len(opening) <= 60),
+    ("question_opening", "An opening line that asks a question",
+     lambda text, opening: "?" in opening),
+    ("symbol_opening", "An opening that starts with an emoji or symbol",
+     lambda text, opening: _opens_with_symbol(opening)),
+    ("announcement", "An announcement (excited, thrilled, happy to share, new position)",
+     lambda text, opening: bool(_ANNOUNCEMENT.search(opening))),
+    ("bold_unicode", "Bold or styled Unicode letters",
+     lambda text, opening: _has_bold_unicode(text)),
+    ("hashtags", "Hashtags",
+     lambda text, opening: "#" in text),
+    ("long_post", "More than 1,500 characters",
+     lambda text, opening: len(text) > 1500),
+]
+
+
+def patterns_overview() -> Dict[str, Any]:
+    conn = get_db()
+    try:
+        posts = [dict(r) for r in conn.execute(
+            "SELECT text, published_at, reactions FROM own_posts WHERE reactions IS NOT NULL AND text IS NOT NULL")]
+    finally:
+        conn.close()
+    settled = [p for p in posts if (_age_hours(p["published_at"]) or 0) >= SETTLED_AFTER_HOURS]
+
+    found, too_few = [], []
+    for key, label, test in PATTERNS:
+        with_it, without, with_dates, without_dates = [], [], [], []
+        for post in settled:
+            has = test(post["text"], opening_line(post["text"]))
+            (with_it if has else without).append(post["reactions"])
+            (with_dates if has else without_dates).append(datetime.fromisoformat(post["published_at"]).timestamp())
+        entry = {"key": key, "label": label, "with_posts": len(with_it), "without_posts": len(without)}
+        if len(with_it) < MIN_PER_SIDE or len(without) < MIN_PER_SIDE:
+            too_few.append(entry)
+            continue
+        a, b = statistics.median(with_it), statistics.median(without)
+        entry.update({"with_median": a, "without_median": b, "ratio": round(a / b, 2) if b else None})
+        # When the two sides come from different periods, the difference may
+        # be about when rather than how. Measured on the first live install:
+        # hashtags went with 2.7x the reactions, and the hashtag posts were
+        # mostly from two years earlier, when the account and its audience
+        # were different. Flagged rather than hidden.
+        gap_days = abs(statistics.median(with_dates) - statistics.median(without_dates)) / 86400.0
+        entry["different_period"] = gap_days > 270
+        entry["typical_year_with"] = datetime.fromtimestamp(statistics.median(with_dates)).year
+        entry["typical_year_without"] = datetime.fromtimestamp(statistics.median(without_dates)).year
+        found.append(entry)
+
+    found.sort(key=lambda e: abs((e["ratio"] or 1) - 1), reverse=True)
+    return {
+        "status": "success",
+        "posts_compared": len(settled),
+        "metric": "reactions",
+        "patterns": found,
+        "not_enough_posts": too_few,
+        "min_per_side": MIN_PER_SIDE,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Cadence: how steadily you post
+# ---------------------------------------------------------------------------
+#
+# Counts, gaps and the queue. It deliberately does not name a best day or
+# time: the studio does not choose when your posts go out, so the days you
+# posted on are the days you chose, and a few posts per weekday cannot separate
+# the day from everything else about those posts.
+
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+
+def cadence_overview() -> Dict[str, Any]:
+    conn = get_db()
+    try:
+        dates = [datetime.fromisoformat(r["published_at"]).astimezone()
+                 for r in conn.execute("SELECT published_at FROM own_posts WHERE published_at IS NOT NULL "
+                                       "ORDER BY published_at")]
+        now = datetime.now(timezone.utc)
+        horizon = (now + timedelta(days=14)).isoformat()
+        scheduled = conn.execute(
+            "SELECT COUNT(*) FROM posts WHERE status = 'scheduled' AND scheduled_for IS NOT NULL "
+            "AND scheduled_for >= ? AND scheduled_for <= ?", (now.isoformat(), horizon)).fetchone()[0]
+        slots = conn.execute("SELECT COUNT(*) FROM queue_slots WHERE is_active = 1").fetchone()[0]
+    finally:
+        conn.close()
+
+    if not dates:
+        return {"status": "success", "posts": 0}
+
+    gaps = [(b - a).total_seconds() / 86400.0 for a, b in zip(dates, dates[1:])]
+    months: Dict[str, int] = {}
+    cursor = dates[0].replace(day=1)
+    end = datetime.now().astimezone()
+    while (cursor.year, cursor.month) <= (end.year, end.month):
+        months[f"{cursor.year:04d}-{cursor.month:02d}"] = 0
+        cursor = (cursor.replace(day=28) + timedelta(days=4)).replace(day=1)
+    for d in dates:
+        months[f"{d.year:04d}-{d.month:02d}"] = months.get(f"{d.year:04d}-{d.month:02d}", 0) + 1
+
+    longest = max(range(len(gaps)), key=lambda i: gaps[i]) if gaps else None
+    return {
+        "status": "success",
+        "posts": len(dates),
+        "first_post": dates[0].date().isoformat(),
+        "last_post": dates[-1].date().isoformat(),
+        "days_since_last": round((datetime.now().astimezone() - dates[-1]).total_seconds() / 86400.0, 1),
+        "median_gap_days": round(statistics.median(gaps), 1) if gaps else None,
+        "longest_gap": ({"days": round(gaps[longest], 1), "from": dates[longest].date().isoformat(),
+                         "to": dates[longest + 1].date().isoformat()} if longest is not None else None),
+        "by_month": [{"month": m, "posts": n} for m, n in months.items()],
+        "by_weekday": [{"day": WEEKDAYS[i], "posts": sum(1 for d in dates if d.weekday() == i)} for i in range(7)],
+        "queue": {"scheduled_next_14_days": scheduled, "weekly_slots": slots},
     }

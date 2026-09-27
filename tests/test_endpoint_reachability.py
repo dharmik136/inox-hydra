@@ -96,9 +96,12 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 #
 # Then 156 -> 158, with Posts and Outbound: /api/v1/insights/posts and
 # /api/v1/insights/outbound, each called by its own screen.
+#
+# Then 158 -> 160, with Patterns: /api/v1/insights/patterns and
+# /api/v1/insights/cadence, both called by the Patterns screen.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 158
-REACHED_BY_INTERFACE = 77
+TOTAL_API_PATHS = 160
+REACHED_BY_INTERFACE = 79
 UNREACHABLE = 81
 
 ROUTE_DECORATOR = re.compile(
