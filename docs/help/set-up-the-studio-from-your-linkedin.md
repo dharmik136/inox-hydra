@@ -60,6 +60,29 @@ Your comments and reactions are kept as your own activity. They never become lea
 > [!NOTE]
 > Scrolling is the one thing the studio does on LinkedIn on your behalf, and only on your own activity pages, only after you click **Import**. It reads what the page shows. The extension makes no requests to LinkedIn of its own.
 
+## Check the capture is still working
+
+The extension reads LinkedIn's pages, and LinkedIn changes how they are built without notice. When a part of the capture stops matching, it finds nothing and says nothing, which looks exactly like nobody engaging. Setup shows whether each part is still working, under **CAPTURE HEALTH**:
+
+| Part | What it reads |
+| --- | --- |
+| Comments and reactions on your posts | The people who become leads |
+| Your profile | Your name and details, for step 3 |
+| Your posts | The **Posts you wrote** import |
+| Your comments | The **Comments you left** import |
+| Your reactions | The **Posts you reacted to** import |
+| Creator analytics | The figures in **Analytics** |
+
+Each part shows one of three states:
+
+- **NOT SEEN YET**, with a grey dot: the extension has not run that part in the last week. Open the matching LinkedIn page in the bridge browser.
+- **WORKING, LAST READ** and a date and time, with a green dot.
+- **CANNOT READ** and what it cannot read, for example `CANNOT READ NAME`, with an orange dot, and **LAST WORKED** and a date when it has worked before. The page was found, but the fields it needs could not be read.
+
+When a part is orange, Setup adds: "A part marked in orange found the page but could not read it, which usually means LinkedIn has changed how the page is built. Nothing from that part is being captured until the extension is updated." There is nothing to fix on your side. Keep the studio up to date; see [After an update, reload the browser extension](after-an-update-reload-the-extension.md).
+
+The extension reports at most once a minute per part per page, and the studio keeps these reports for a week. They say how much was found and kept, never what it was.
+
 ## What this changes elsewhere
 
 - **Leads** keeps only people who engaged with your own posts, and never you. See [Why is my lead list empty?](why-is-my-lead-list-empty.md)
