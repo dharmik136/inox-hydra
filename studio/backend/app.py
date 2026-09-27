@@ -196,6 +196,21 @@ OPENAPI_TAGS = [
 async def lifespan(app: FastAPI):
     init_db()
     seed_initial_data()
+    # An AI key saved before keys were sealed is still readable in the file
+    # until something saves it again. Sealed here instead, once; a sealed
+    # value is left alone, so this does nothing on every later start.
+    try:
+        from secret_settings import upgrade_plaintext as _upgrade_secrets
+    except ImportError:
+        from .secret_settings import upgrade_plaintext as _upgrade_secrets
+    try:
+        _conn = get_db()
+        try:
+            _upgrade_secrets(_conn)
+        finally:
+            _conn.close()
+    except Exception:
+        logging.getLogger("studio.vault").warning("Could not seal stored secrets at startup.", exc_info=True)
     # The offline documentation index, built here rather than on whichever
     # search happened to run first. It was imported into this module and never
     # called, so the index was a snapshot of the corpus as it stood the first

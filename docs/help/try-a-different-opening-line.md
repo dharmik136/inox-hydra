@@ -28,12 +28,12 @@ The status mark turns to UNSAVED. Press **Save** to keep the change.
 
 | Label | Where it appears | What it means |
 | --- | --- | --- |
-| VELOCITY | Library forms | A rating stored with the form in the library |
-| SCORE | Generated hooks | A fixed number set by the fold check below: 90 if the hook fits and 75 if not when it comes from the local templates, 92 or 80 when it comes from an AI provider |
+| EDITOR'S RATING | Library forms | A rating typed into the library by whoever wrote the form, not a measurement |
+| No score | Generated hooks | Generated hooks show no number, only the fold verdict below |
 | FITS FOLD | Generated hooks | The hook's first line is 140 characters or fewer and the whole hook is 240 or fewer |
 | PAST FOLD | Generated hooks | The hook fails that length check |
 
-This check is not the same as the 180 character fold mark in the editor. Both numbers are the studio's own ratings. They are not LinkedIn measurements, and the two are not on the same scale. Library forms carry no fold verdict.
+This check is not the same as the 140 character fold mark in the editor, which measures the whole post as a reader sees it. The editor's rating and the fold verdict are the studio's own judgements, not LinkedIn measurements. Library forms carry no fold verdict.
 
 ## What happens
 

@@ -32,6 +32,10 @@ MAX_AUDIT_TEXT_LENGTH = 20000
 MAX_REPURPOSE_INPUT_LENGTH = 10000
 MAX_PROMPT_LENGTH = 15000
 
+try:
+    from .secret_settings import seal as _seal_setting, unseal as _unseal_setting
+except ImportError:
+    from secret_settings import seal as _seal_setting, unseal as _unseal_setting
 
 def get_gemini_api_key() -> Optional[str]:
     """
@@ -48,8 +52,9 @@ def get_gemini_api_key() -> Optional[str]:
         cursor = conn.cursor()
         cursor.execute("SELECT value FROM settings WHERE key = 'gemini_api_key'")
         row = cursor.fetchone()
-        if row and row["value"] and len(row["value"].strip()) > 10:
-            return row["value"].strip()
+        stored = _unseal_setting("gemini_api_key", row["value"]).strip() if row and row["value"] else ""
+        if len(stored) > 10:
+            return stored
     except Exception:
         pass
     finally:

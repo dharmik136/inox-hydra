@@ -28,7 +28,7 @@ When it finishes, a note reads "Saved *size* to *archive path*". Below the butto
 The studio also saves a timestamped copy of the database in the same folder before any schema upgrade, named `linkedin_studio_premigration_<date>_<time>.db`. Those appear in the list too, and because of the name order they are listed before your ZIP backups.
 
 > [!WARNING]
-> A backup contains your whole database, including the settings table. Your AI key is stored there in plain text, next to your leads' names and comments. Store backup files as carefully as a password file.
+> A backup contains your whole database, including your leads' names and comments, so store backup files carefully. Your AI key, and your LinkedIn session if one is stored, are in it only in sealed form, locked to this computer and your account on it. Restore the backup somewhere else and they read as not set: enter the AI key again there, and reconnect LinkedIn if you use it.
 
 ## Export JSON or Export CSV
 

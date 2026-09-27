@@ -536,6 +536,7 @@ HELP_SECTIONS = [
             "help/use-the-command-palette.md",
             "help/search-the-help-in-docs.md",
             "help/stop-the-studio-and-use-the-tray-icon.md",
+            "help/put-the-studio-on-your-desktop.md",
         ],
     },
     {
@@ -550,6 +551,7 @@ HELP_SECTIONS = [
             "help/publish-queue-or-send-to-linkedin.md",
             "help/how-the-queue-works.md",
             "help/browse-the-swipe-file.md",
+            "help/send-a-post-idea-from-telegram.md",
             "strategy_playbook.md",
         ],
     },
@@ -559,6 +561,7 @@ HELP_SECTIONS = [
         "blurb": "Install the browser extension, review the people who engaged, and read your own numbers.",
         "paths": [
             "help/install-the-browser-extension.md",
+            "help/after-an-update-reload-the-extension.md",
             "help/review-leads-and-draft-a-message.md",
             "help/read-your-analytics.md",
         ],
@@ -584,6 +587,7 @@ HELP_SECTIONS = [
             "help/connect-your-linkedin-session.md",
             "help/back-up-restore-and-export.md",
             "help/check-your-version-and-update-the-studio.md",
+            "help/remove-the-studio-from-this-computer.md",
         ],
     },
     {

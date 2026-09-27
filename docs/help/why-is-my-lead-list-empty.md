@@ -29,6 +29,10 @@ Every link in this chain has to hold:
 > [!NOTE]
 > If Chrome is installed, the empty Leads surface names it but offers no button for it, because Chrome ignores the flag that loads the extension. The surface says so ("IGNORES THE EXTENSION FLAG, SO THE BRIDGE WOULD NOT ATTACH"). The studio also suggests loading the extension by hand, but it does not check whether that works in Chrome. Use Edge or Brave.
 
+## Check whether LinkedIn changed its pages
+
+If leads used to arrive and stopped, open **Setup** and look under **CAPTURE HEALTH**. When **Comments and reactions on your posts** is orange and reads **CANNOT READ**, the extension still finds the comments on the page but can no longer read the names in them, usually because LinkedIn changed how the page is built. Nothing is captured until the extension is updated. See [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md#check-the-capture-is-still-working).
+
 ## Pages that never produce leads
 
 - **Profile pages** (any address under `/in/`). This is deliberate. A profile page shows that person's comments on other people's posts, and recording those would credit your content with engagement it never got. Your own profile and activity pages are read, but for **Setup**, never as leads.
