@@ -139,3 +139,32 @@ def test_activity_pages_are_read_only_when_they_are_yours():
     assert re.search(r"vanityOf\(window\.location\.href\)\s*!==\s*me\)\s*return", handler), (
         "someone else's activity page would be read as the creator's"
     )
+
+
+def test_the_extension_pages_reach_the_studio_through_the_worker():
+    """
+    Audit W6. The popup and side panel fetched the studio directly, which
+    carries no studio token, so every call was refused, and each page reported
+    something else: "No prospects yet", "No scheduled posts", and a green
+    "Online" written into the popup's HTML before anything was checked.
+    """
+    for name in ("popup.js", "sidepanel.js"):
+        source = _code(os.path.join(EXT, name))
+        assert not re.search(r"\bfetch\s*\(", source), (
+            f"{name} calls the studio directly again, without the token, so every call is refused"
+        )
+
+    with open(os.path.join(EXT, "popup.html"), encoding="utf-8") as handle:
+        popup_html = handle.read()
+    assert not re.search(r'id="server-status"[^>]*>\s*Online', popup_html), (
+        "the popup says Online before it has checked anything"
+    )
+
+
+def test_panel_reads_are_for_the_extensions_own_pages_only():
+    background = _code(BACKGROUND)
+    handler = background[background.index('message.action === "PANEL_API"'):]
+    handler = handler[:handler.index("return true;\n  }\n\n  if (message.action")]
+    assert "sender.tab" in handler, "a content script inside a LinkedIn page could read the studio through this"
+    assert 'method: "GET"' in handler, "panel reads can do more than read"
+    assert "PANEL_PATHS" in handler, "panel reads are not limited to a list of paths"

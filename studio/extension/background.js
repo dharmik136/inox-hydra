@@ -39,6 +39,16 @@ const RELAYABLE_PATHS = new Set([
   "/api/v1/self/imports/event"
 ]);
 
+// What the popup and side panel may read, through PANEL_API. Reads only, and
+// only from the extension's own pages, never from a content script.
+const PANEL_PATHS = [
+  /^\/api\/analytics\/kpis$/,
+  /^\/api\/leads$/,
+  /^\/api\/posts$/,
+  /^\/api\/leads\/[A-Za-z0-9_.:-]+\/dm-script$/,
+  /^\/api\/v1\/onboarding\/state$/
+];
+
 /**
  * Reads the studio's access token.
  *
@@ -267,6 +277,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.sidePanel.open({ windowId: sender.tab ? sender.tab.windowId : undefined })
       .then(() => sendResponse({ status: "opened" }))
       .catch((err) => sendResponse({ status: "error", error: err.message }));
+    return true;
+  }
+
+  // Reads for the popup and side panel.
+  //
+  // They used to fetch the studio directly. An extension page's fetch carries
+  // no studio token, so every call was refused with a 401, and each page then
+  // reported something else: the side panel said "No prospects yet", the popup
+  // kept a green "Online" written into its HTML. The creator had no way to see
+  // that nothing was working.
+  //
+  // So they ask this worker, which carries the token, and get the HTTP status
+  // back to report. Only from the extension's own pages (a content script's
+  // message carries sender.tab), only GET, and only these paths.
+  if (message.action === "PANEL_API") {
+    const fromOwnPage = !sender.tab && sender.id === chrome.runtime.id &&
+      typeof sender.url === "string" && sender.url.startsWith(chrome.runtime.getURL(""));
+    const path = String(message.path || "");
+    const bare = path.split("?")[0];
+    if (!fromOwnPage || !PANEL_PATHS.some((pattern) => pattern.test(bare))) {
+      sendResponse({ ok: false, httpStatus: 0, reason: "refused" });
+      return true;
+    }
+    studioFetch(path, { method: "GET" })
+      .then(res => res.json().catch(() => ({})).then(data => ({ ok: res.ok, httpStatus: res.status, data })))
+      .then(result => sendResponse(result))
+      .catch(() => sendResponse({ ok: false, httpStatus: 0, reason: "unreachable" }));
     return true;
   }
 

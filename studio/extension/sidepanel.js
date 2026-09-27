@@ -27,7 +27,37 @@ function studioApiFromPanel(path, options) {
 // -------------------------------------------------------------
 // LinkedIn Studio - Side Panel Controller
 // -------------------------------------------------------------
-const LOCAL_API = "http://127.0.0.1:8000/api";
+/**
+ * A GET against the studio, made by the service worker so it carries the
+ * studio token. This page used to fetch the studio directly, which carries
+ * none, so every call was refused and the panel showed "No prospects yet" and
+ * "No scheduled posts" over a studio that was full of both.
+ * Resolves to { ok, httpStatus, data }; httpStatus 0 means unreachable.
+ */
+function panelApi(path) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ action: "PANEL_API", path }, (result) => {
+        if (chrome.runtime.lastError || !result) {
+          resolve({ ok: false, httpStatus: 0, data: {} });
+          return;
+        }
+        resolve({ ok: !!result.ok, httpStatus: result.httpStatus || 0, data: result.data || {} });
+      });
+    } catch (err) {
+      resolve({ ok: false, httpStatus: 0, data: {} });
+    }
+  });
+}
+
+/** Why a panel read failed, in words the creator can act on. */
+function failureText(result, what) {
+  if (result.httpStatus === 401 || result.httpStatus === 403) {
+    return `Could not load ${what}: the studio has not paired with this browser. Open http://127.0.0.1:8000 in this browser once.`;
+  }
+  if (result.httpStatus === 0) return `Could not load ${what}: the studio is not running.`;
+  return `Could not load ${what} (the studio answered ${result.httpStatus}).`;
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   const textarea = document.getElementById("sp-text");
@@ -36,15 +66,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const toast = document.getElementById("sp-toast");
 
   // Load scheduled post by default
-  fetch(`${LOCAL_API}/posts?status=scheduled`)
-    .then(r => r.json())
-    .then(data => {
-      if (data.posts && data.posts.length && !textarea.value) {
-        textarea.value = data.posts[0].content;
-        updateStats();
-      }
-    })
-    .catch(() => {});
+  panelApi("/api/posts?status=scheduled").then(result => {
+    const posts = result.ok ? result.data.posts || [] : [];
+    if (posts.length && !textarea.value) {
+      textarea.value = posts[0].content;
+      updateStats();
+    }
+  });
 
   textarea.addEventListener("input", updateStats);
 
@@ -239,9 +267,16 @@ async function loadSideQueue() {
   const container = document.getElementById("queue-mini-list");
   container.innerHTML = "<p style='color: var(--text-dim);'>Loading queue...</p>";
   try {
-    const res = await fetch(`${LOCAL_API}/posts?status=scheduled`);
-    const json = await res.json();
-    const posts = json.posts || [];
+    const result = await panelApi("/api/posts?status=scheduled");
+    if (!result.ok) {
+      container.innerHTML = "";
+      const p = document.createElement("p");
+      p.style.color = "var(--text-dim)";
+      p.textContent = failureText(result, "the queue");
+      container.appendChild(p);
+      return;
+    }
+    const posts = result.data.posts || [];
     container.innerHTML = "";
 
     if (!posts.length) {
@@ -273,9 +308,17 @@ async function loadSideCRM() {
   const countBadge = document.getElementById("sp-crm-count");
   container.innerHTML = "<p style='color: var(--text-dim);'>Loading prospects...</p>";
   try {
-    const res = await fetch(`${LOCAL_API}/leads`);
-    const json = await res.json();
-    const leads = json.leads || [];
+    const result = await panelApi("/api/leads");
+    if (!result.ok) {
+      container.innerHTML = "";
+      const p = document.createElement("p");
+      p.style.color = "var(--text-dim)";
+      p.textContent = failureText(result, "your leads");
+      container.appendChild(p);
+      if (countBadge) countBadge.innerText = "";
+      return;
+    }
+    const leads = result.data.leads || [];
     container.innerHTML = "";
     if (countBadge) countBadge.innerText = `${leads.length} Leads`;
 
@@ -312,9 +355,11 @@ async function loadSideCRM() {
         const id = btn.getAttribute("data-id");
         btn.innerText = "Fetching...";
         try {
-          const dmRes = await fetch(`${LOCAL_API}/leads/${id}/dm-script`);
-          const dmJson = await dmRes.json();
-          if (dmJson.dm_script) {
+          const result = await panelApi(`/api/leads/${encodeURIComponent(id)}/dm-script`);
+          const dmJson = result.ok ? result.data : {};
+          if (!dmJson.dm_script) {
+            btn.innerText = "Failed";
+          } else {
             await navigator.clipboard.writeText(dmJson.dm_script);
             btn.innerText = "✓ Copied!";
             const toast = document.getElementById("sp-toast");
