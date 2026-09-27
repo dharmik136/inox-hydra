@@ -531,6 +531,7 @@ HELP_SECTIONS = [
         "blurb": "Start the studio, see what a fresh install looks like, and find your way around the rail.",
         "paths": [
             "help/open-the-studio-for-the-first-time.md",
+            "help/set-up-the-studio-from-your-linkedin.md",
             "help/use-the-command-palette.md",
             "help/search-the-help-in-docs.md",
             "help/stop-the-studio-and-use-the-tray-icon.md",

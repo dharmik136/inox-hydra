@@ -1,4 +1,3 @@
-const LOCAL_API_URL = "http://127.0.0.1:8000/api/auth/cookies";
 const STUDIO_URL = "http://127.0.0.1:8000";
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -25,39 +24,26 @@ document.addEventListener("DOMContentLoaded", async () => {
     const statusEl = document.getElementById("status-text");
     statusEl.innerText = "Reading session cookies...";
 
-    try {
-      const li_at = await getCookie("li_at");
-      const jsessionid = await getCookie("JSESSIONID");
-
-      if (!li_at || !jsessionid) {
-        statusEl.innerText = "⚠️ Please log into LinkedIn in Chrome first!";
-        document.getElementById("session-status").innerText = "Not Logged In";
-        document.getElementById("session-status").style.color = "#f59e0b";
+    // Through the service worker, which carries the studio token. This used
+    // to be a bare fetch from the popup, which carries none, so every press
+    // was refused with a 401 and reported as the server being unreachable.
+    // It is now the only way the session reaches the studio, so the worker's
+    // own words are shown rather than a guess at what went wrong.
+    chrome.runtime.sendMessage({ action: "SYNC_NOW" }, (result) => {
+      const sessionEl = document.getElementById("session-status");
+      if (chrome.runtime.lastError || !result) {
+        statusEl.innerText = "The extension could not run the sync. Reload it and try again.";
         return;
       }
-
-      statusEl.innerText = "Pushing tokens to local Studio...";
-      const response = await fetch(LOCAL_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          li_at: li_at.value,
-          JSESSIONID: jsessionid.value
-        })
-      });
-
-      if (response.ok) {
-        statusEl.innerText = "✅ Session synced to Local Studio!";
-        document.getElementById("bridge-status").innerText = "Connected & Active";
-        document.getElementById("session-status").innerText = "Authenticated";
-        document.getElementById("session-status").style.color = "#34d399";
-      } else {
-        statusEl.innerText = "❌ Studio server not reachable on port 8000.";
+      statusEl.innerText = result.message || result.status;
+      if (result.status === "synced") {
+        sessionEl.innerText = "Saved to the studio";
+        sessionEl.style.color = "#34d399";
+      } else if (result.status === "not_signed_in") {
+        sessionEl.innerText = "Not signed in";
+        sessionEl.style.color = "#f59e0b";
       }
-    } catch (err) {
-      console.error(err);
-      statusEl.innerText = "Error: Is local studio server running?";
-    }
+    });
   });
 });
 

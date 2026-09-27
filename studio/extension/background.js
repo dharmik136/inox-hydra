@@ -154,32 +154,39 @@ chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.clear("studio_periodic_sync");
 });
 
-// Check and sync session tokens
+// Copies the LinkedIn session into the studio, when the creator presses Sync.
+//
+// Returns what happened in words the popup can show, because this is now the
+// only way a session reaches the studio and a silent failure here means the
+// live send stays in mock mode with no explanation. The popup used to make
+// this request itself with a bare fetch, which carries no studio token, so
+// every press answered 401 and was reported as "server not reachable".
 async function syncActiveSessionToStudio() {
-  try {
-    const li_at = await getCookie("li_at");
-    const jsessionid = await getCookie("JSESSIONID");
-
-    if (li_at && jsessionid) {
-      const response = await studioFetch("/api/auth/cookies", {
-        method: "POST",
-        body: JSON.stringify({
-          li_at: li_at.value,
-          JSESSIONID: jsessionid.value
-        })
-      });
-      if (response && !response.ok) {
-        console.warn(
-          "[Studio Bridge] The studio refused the session sync (" + response.status +
-          "). If this is 401 the extension has no token: open the studio once so it issues one."
-        );
-      } else {
-        console.log("[Studio Bridge] Background session sync completed successfully.");
-      }
-    }
-  } catch (err) {
-    console.debug("[Studio Bridge] Background sync skipped (server offline or not logged in):", err.message);
+  const li_at = await getCookie("li_at");
+  const jsessionid = await getCookie("JSESSIONID");
+  if (!li_at || !jsessionid) {
+    return { status: "not_signed_in", message: "Sign in to LinkedIn in this browser first." };
   }
+
+  let response;
+  try {
+    response = await studioFetch("/api/auth/cookies", {
+      method: "POST",
+      body: JSON.stringify({ li_at: li_at.value, JSESSIONID: jsessionid.value })
+    });
+  } catch (err) {
+    return { status: "unreachable", message: "The studio is not running on port 8000." };
+  }
+  if (response.status === 401 || response.status === 403) {
+    return {
+      status: "no_token",
+      message: "The studio refused this browser. Open http://127.0.0.1:8000 once in this browser, then press Sync again."
+    };
+  }
+  if (!response.ok) {
+    return { status: "error", message: "The studio refused the session (" + response.status + ")." };
+  }
+  return { status: "synced", message: "Session saved to the studio, for sending to LinkedIn only." };
 }
 
 function getCookie(name) {
@@ -264,9 +271,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.action === "SYNC_NOW") {
+    // From the extension's own popup only. A message from a content script
+    // carries sender.tab, and copying the session is not something a LinkedIn
+    // page, or anything injected into one, gets to ask for.
+    if (sender.tab || sender.id !== chrome.runtime.id) {
+      sendResponse({ status: "refused", message: "Session sync is only available from the extension popup." });
+      return true;
+    }
     syncActiveSessionToStudio()
-      .then(() => sendResponse({ status: "synced" }))
-      .catch((err) => sendResponse({ status: "error", error: err.message }));
+      .then((result) => sendResponse(result))
+      .catch((err) => sendResponse({ status: "error", message: err.message }));
     return true;
   }
 
