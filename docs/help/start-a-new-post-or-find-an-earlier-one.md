@@ -34,7 +34,9 @@ If you want to keep a draft and write something different, copy its text somewhe
 
 ## Find an earlier post
 
-No surface reopens an older post in the Composer. You can still read your posts in these places:
+Press **Ctrl+K**, or click the magnifier at the top of the rail, and type a word from the post. Choosing a draft reopens it in the **Composer**; if the Composer holds unsaved text, you are asked first. A queued or published post opens **Queue** or **Analytics** instead, because **Save** would write over it. See [Search everything with Ctrl+K](use-the-command-palette.md).
+
+You can also read your posts in these places:
 
 | Where | What you see | Which posts |
 | --- | --- | --- |

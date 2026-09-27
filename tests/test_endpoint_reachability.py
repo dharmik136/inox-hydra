@@ -76,8 +76,13 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # extension's to call. In the same change the prefix rule was removed (see
 # measured() below), which takes back one route it had been crediting falsely.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 150
-REACHED_BY_INTERFACE = 71
+#
+# Then 150 -> 151, with universal search. One new path, /api/v1/search, and
+# the palette calls it, so reached moves with the total and the unreachable
+# count stays where it was.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 151
+REACHED_BY_INTERFACE = 72
 UNREACHABLE = 79
 
 ROUTE_DECORATOR = re.compile(

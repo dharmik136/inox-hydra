@@ -14,6 +14,7 @@ import { DocumentView, InlineText, type ResolvedLink } from "@/components/Docume
 import { readableInline, readablePlain } from "@/lib/snippet";
 import { HelpHome, ResultsView, SectionView } from "@/components/HelpCentre";
 import { cn } from "@/lib/utils";
+import type { SearchFocus } from "@/lib/search";
 
 /**
  * The offline playbook.
@@ -59,7 +60,7 @@ interface OpenDocument {
   outline: Outline[];
 }
 
-export function DocsSurface() {
+export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {}) {
   const [modules, setModules] = useState<DocModule[]>([]);
   const [library, setLibrary] = useState<DocLibraryEntry[]>([]);
   const [sections, setSections] = useState<DocSection[]>([]);
@@ -188,10 +189,19 @@ export function DocsSurface() {
   useEffect(() => {
     if (!doc) return;
     const anchor = pendingAnchor.current;
-    pendingAnchor.current = null;
-    if (anchor) jumpTo(anchor);
-    else readerRef.current?.scrollTo({ top: 0 });
-  }, [doc, jumpTo]);
+    if (anchor) {
+      // Only spent once the heading is actually on the page. Opened from
+      // universal search, this surface mounts from nothing, and the document
+      // can arrive before the library does, while the surface is still
+      // rendering its loading state. The jump used to run then, find no
+      // heading, clear itself, and leave the article open at the top.
+      if (!document.getElementById(anchor)) return;
+      pendingAnchor.current = null;
+      jumpTo(anchor);
+    } else {
+      readerRef.current?.scrollTo({ top: 0 });
+    }
+  }, [doc, jumpTo, library.length]);
 
   /** The reading column starts at the top whenever it changes what it is showing. */
   useEffect(() => {
@@ -301,6 +311,15 @@ export function DocsSurface() {
    * "extension" led with the retired Chrome-only setup guide, the one the help
    * article exists to correct, because its title happens to contain the word.
    */
+  // An article opened from the universal search, landing on the heading the
+  // hit matched. The anchor arrives as that heading's text and is slugged the
+  // same way the parser slugs headings, which is what makes them agree.
+  useEffect(() => {
+    if (!focus) return;
+    setQuery("");
+    selectDocument(focus.id, focus.anchor ? slugify(focus.anchor) : null);
+  }, [focus, selectDocument]);
+
   const byName = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!term) return [];

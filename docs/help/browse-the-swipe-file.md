@@ -26,7 +26,7 @@ Hover over a card to expand it. The expanded text is the opening line and the st
 
 ## Find a specimen
 
-1. Open **Swipe File** from the rail, or press **Ctrl+K** and choose **Find a similar specimen**, which only opens this surface.
+1. Open **Swipe File** from the rail. To go straight to one specimen, press **Ctrl+K**, type a word from its hook, and choose it: Swipe File opens with that card outlined. See [Search everything with Ctrl+K](use-the-command-palette.md).
 2. Type in **Search specimens**. The wall narrows as you type, matching the opening line, the structure and the type.
 3. Press a type chip to show one type only: **All**, **Architecture**, **Benchmarks**, **Contrarian Truths**, **Economics**, **Failure Analysis** or **Reverse Engineering**.
 4. The count at the top right, for example **6 OF 36**, tells you how many cards are showing out of the whole library.

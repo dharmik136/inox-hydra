@@ -1500,3 +1500,63 @@ export async function deleteLinkedInSession(): Promise<void> {
 
 /** LinkedIn's alias for the signed-in member's own profile. */
 export const OWN_PROFILE_URL = "https://www.linkedin.com/in/me/";
+
+// ---------------------------------------------------------------------------
+// Universal search
+// ---------------------------------------------------------------------------
+
+/** Where a result opens. Chosen by the server from the row's own state. */
+export type SearchOpens = "composer" | "queue" | "analytics" | "leads" | "swipe" | "docs";
+
+export interface SearchResult {
+  kind: "post" | "lead" | "specimen" | "help";
+  id: string;
+  title: string;
+  /** Plain text. Help snippets carry FTS5 mark pairs; read them through lib/snippet. */
+  snippet: string;
+  meta: string;
+  opens: SearchOpens;
+  status?: string;
+  document_title?: string;
+  /** The heading a help hit matched, which is what its anchor is derived from. */
+  anchor_text?: string;
+  retired?: boolean;
+}
+
+export interface SearchResponse {
+  terms: string[];
+  groups: { posts: SearchResult[]; leads: SearchResult[]; specimens: SearchResult[]; help: SearchResult[] };
+  total: number;
+  /** A group that could not be searched, so its silence is not read as "no matches". */
+  failures: Record<string, string>;
+}
+
+export async function searchEverything(query: string, limit = 6): Promise<SearchResponse> {
+  const data = await call<Partial<SearchResponse>>(
+    `/api/v1/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+  );
+  return {
+    terms: data.terms ?? [],
+    groups: {
+      posts: data.groups?.posts ?? [],
+      leads: data.groups?.leads ?? [],
+      specimens: data.groups?.specimens ?? [],
+      help: data.groups?.help ?? [],
+    },
+    total: data.total ?? 0,
+    failures: data.failures ?? {},
+  };
+}
+
+/**
+ * One draft by id, read fresh from the database the Composer saves to.
+ *
+ * There is no single-post route, and the draft list is small, so this reads
+ * the list rather than adding one. Only drafts: a published or queued post is
+ * never loaded into the editor, because Save writes over whatever it holds.
+ */
+export async function fetchDraftById(id: string): Promise<Draft | null> {
+  const data = await call<{ posts?: PostRow[] }>("/api/posts?status=draft");
+  const row = (data.posts ?? []).find((post) => post.id === id);
+  return row ? { id: row.id, content: row.content } : null;
+}
