@@ -448,6 +448,7 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
         raise RefusedCapture("posts must be a list")
     now = _now()
     written = skipped = 0
+    bound = {"post": 0, "draft": 0}
     conn = get_db()
     try:
         with conn:
@@ -480,9 +481,80 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
                      now, now),
                 )
                 written += 1
+                how = _bind_to_studio(conn, urn, _text(item.get("text"), 10000), published_at_from_urn(urn))
+                if how:
+                    bound[how] += 1
     finally:
         conn.close()
-    return {"status": "success", "written": written, "skipped": skipped}
+    return {"status": "success", "written": written, "skipped": skipped,
+            "bound_to_posts": bound["post"], "bound_to_drafts": bound["draft"]}
+
+
+def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: Optional[str]) -> Optional[str]:
+    """
+    Connects one of the creator's LinkedIn posts to the studio record it came
+    from. Returns how it bound ("post", "draft"), or None.
+
+    Binding used to have one route: inject a draft through the composer
+    button, which stored a fingerprint, then open the permalink. A post marked
+    as published, handed to LinkedIn's scheduler, or retyped on LinkedIn never
+    bound, so "which of my posts brought which people" had no answer for most
+    of what the creator actually published.
+
+    An imported own post is already proven to be the creator's, by its actor.
+    What remains is which studio record it is, and that is decided by the text:
+
+      1. an unbound posts row whose opening matches, else
+      2. a draft whose opening matches, which gets a posts row created for it.
+
+    Exactly one match binds. Two or more bind nothing, because a wrong binding
+    credits one post's engagers to another and is very hard to notice. The
+    fingerprint is the same deliberately loose one the permalink binding uses,
+    which survives LinkedIn's rewriting of whitespace and characters.
+    """
+    try:
+        from . import post_identity
+    except ImportError:
+        import post_identity
+
+    if not text or post_identity.content_fingerprint(text) is None:
+        return None
+    if conn.execute("SELECT 1 FROM posts WHERE activity_urn = ?", (activity_urn,)).fetchone():
+        return None
+
+    def matches(stored_fingerprint, content):
+        fingerprint = stored_fingerprint or post_identity.content_fingerprint(content or "")
+        return bool(fingerprint) and post_identity.fingerprint_matches(text, fingerprint)
+
+    posts = [r for r in conn.execute(
+        "SELECT id, content, content_fingerprint, status, published_at FROM posts "
+        "WHERE activity_urn IS NULL AND COALESCE(content, '') != ''")
+        if matches(r["content_fingerprint"], r["content"])]
+    if len(posts) == 1:
+        row = posts[0]
+        conn.execute(
+            "UPDATE posts SET activity_urn = ?, "
+            "content_fingerprint = COALESCE(content_fingerprint, ?), "
+            "status = 'published', published_at = COALESCE(?, published_at) WHERE id = ?",
+            (activity_urn, post_identity.content_fingerprint(row["content"]), published_at, row["id"]),
+        )
+        return "post"
+    if len(posts) > 1:
+        return None
+
+    drafts = [r for r in conn.execute(
+        "SELECT id, raw_content FROM drafts WHERE COALESCE(raw_content, '') != '' "
+        "AND id NOT IN (SELECT draft_id FROM posts WHERE draft_id IS NOT NULL)")
+        if matches(None, r["raw_content"])]
+    if len(drafts) == 1:
+        conn.execute(
+            "INSERT INTO posts (id, content, status, published_at, content_fingerprint, draft_id, activity_urn) "
+            "VALUES (?, ?, 'published', ?, ?, ?, ?)",
+            (f"post-{hashlib.sha256(activity_urn.encode()).hexdigest()[:12]}", text, published_at,
+             post_identity.content_fingerprint(text), drafts[0]["id"], activity_urn),
+        )
+        return "draft"
+    return None
 
 
 def ingest_outbound(actor: Any, items: Any) -> Dict[str, Any]:

@@ -213,7 +213,7 @@ def test_a_repost_is_not_your_writing():
         {"activity_urn": URN_2024, "actor": ME, "text": "Mine"},
         {"activity_urn": URN_OTHER, "actor": "someone-else", "text": "Theirs"},
     ]}).json()
-    assert result == {"status": "success", "written": 1, "skipped": 1}
+    assert (result["written"], result["skipped"]) == (1, 1)
 
 
 def test_a_post_date_comes_from_its_urn_and_unread_counts_stay_unknown():
@@ -465,3 +465,96 @@ def test_the_sync_button_goes_through_the_worker():
         "the worker copies the session for anyone who asks, including a content "
         "script running inside a LinkedIn page"
     )
+
+
+# ---------------------------------------------------------------------------
+# Your LinkedIn posts, joined to the studio records they came from
+# ---------------------------------------------------------------------------
+
+OPENING = "Most teams think their migration failed because of the database. It failed because nobody owned the rollback plan until it was needed."
+
+
+@pytest.fixture
+def studio_records():
+    made = {"posts": [], "drafts": []}
+    yield made
+    conn = get_db()
+    with conn:
+        for pid in made["posts"]:
+            conn.execute("DELETE FROM posts WHERE id = ?", (pid,))
+        for did in made["drafts"]:
+            conn.execute("DELETE FROM posts WHERE draft_id = ?", (did,))
+            conn.execute("DELETE FROM drafts WHERE id = ?", (did,))
+    conn.close()
+
+
+def _studio_post(made, pid, content, status="published"):
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO posts (id, content, status) VALUES (?,?,?)", (pid, content, status))
+    conn.close()
+    made["posts"].append(pid)
+
+
+def _import(text, urn=URN_2024):
+    return client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [
+        {"activity_urn": urn, "actor": ME, "text": text}]}).json()
+
+
+def _post(pid):
+    conn = get_db()
+    row = conn.execute("SELECT * FROM posts WHERE id = ?", (pid,)).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def test_a_post_marked_published_binds_without_the_composer_button(studio_records):
+    """
+    Binding needed a fingerprint that only the composer's inject button stored,
+    so a post marked as published or sent to LinkedIn's scheduler never bound.
+    """
+    _confirm()
+    _studio_post(studio_records, "bindprobe-marked", OPENING + " Here is what we changed.")
+
+    # LinkedIn rewrites whitespace and punctuation; the fingerprint survives it.
+    result = _import(OPENING.replace(". ", ".\n\n") + " Here is what we changed.")
+
+    assert result["bound_to_posts"] == 1
+    row = _post("bindprobe-marked")
+    assert row["activity_urn"] == URN_2024
+    assert row["published_at"].startswith("2024-03-05"), "the publish date is LinkedIn's, from the URN"
+
+
+def test_a_draft_retyped_on_linkedin_finds_its_post(studio_records):
+    """A draft that was never queued or injected still becomes the post it turned into."""
+    _confirm()
+    conn = get_db()
+    with conn:
+        draft_id = conn.execute("INSERT INTO drafts (title, raw_content) VALUES (?, ?)",
+                                ("Rollback", OPENING)).lastrowid
+    conn.close()
+    studio_records["drafts"].append(draft_id)
+
+    assert _import(OPENING)["bound_to_drafts"] == 1
+    conn = get_db()
+    row = conn.execute("SELECT activity_urn, status FROM posts WHERE draft_id = ?", (draft_id,)).fetchone()
+    conn.close()
+    assert row["activity_urn"] == URN_2024 and row["status"] == "published"
+
+
+def test_two_candidates_bind_neither(studio_records):
+    """A wrong binding credits one post's engagers to another, so an ambiguous match binds nothing."""
+    _confirm()
+    _studio_post(studio_records, "bindprobe-a", OPENING + " Version A.")
+    _studio_post(studio_records, "bindprobe-b", OPENING + " Version B.")
+
+    result = _import(OPENING)
+    assert result["bound_to_posts"] == 0
+    assert _post("bindprobe-a")["activity_urn"] is None and _post("bindprobe-b")["activity_urn"] is None
+
+
+def test_an_unrelated_post_binds_nothing(studio_records):
+    _confirm()
+    _studio_post(studio_records, "bindprobe-other", "A completely different post about hiring your first platform engineer and what to ask them.")
+    assert _import(OPENING)["bound_to_posts"] == 0
+    assert _post("bindprobe-other")["activity_urn"] is None
