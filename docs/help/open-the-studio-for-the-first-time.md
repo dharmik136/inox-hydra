@@ -58,12 +58,9 @@ The rail on the left lists the surfaces. Hover an icon to see its name.
 | Brand Studio | Identity, watermark and local security |
 
 - The mark at the top of the rail opens a tray that lists the same surfaces with their labels.
-- Press **Ctrl+K** (**Cmd+K** on a Mac) to open the command palette. Press **Escape** to close it. It has a "Go to" entry for each surface, plus **Switch theme** and **Toggle inspector**.
+- Press **Ctrl+K** (**Cmd+K** on a Mac), or click the magnifier at the top of the rail, to search your posts, leads, Swipe File and help from anywhere. Press **Escape** to close it. See [Search everything with Ctrl+K](use-the-command-palette.md).
 - On the Composer, the inspector sits on the right with the tabs **Preview**, **Audit**, **Media**, **Brand** and **Prompt**. If you close it, a small panel icon in the top right corner (named **Open inspector**) brings it back.
 - The studio opens in the dark theme. **Switch theme** changes it, but the choice is not saved: reloading the page or reopening the studio brings back the dark theme.
-
-> [!NOTE]
-> Some palette entries only move you to a surface. **Generate 5 hooks**, **Make sharper**, **Add contrarian angle** and **Turn into carousel** switch to the Composer and change nothing. **Go to Devtools** is listed but leads to a surface that does not work in a normal install.
 
 The **LOCAL** shield at the bottom of the rail says all processing is local. That stops being fully true once you connect a cloud AI provider or generate an image. See [What leaves this machine, and when](what-leaves-this-machine.md).
 
