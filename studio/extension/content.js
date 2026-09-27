@@ -35,6 +35,31 @@ function studioApi(path, body, method) {
   });
 }
 
+/**
+ * Records one extractor run in the studio's capture log.
+ *
+ * When LinkedIn changes its markup, an extractor finds nothing and says
+ * nothing, which from the creator's side looks exactly like nobody engaging.
+ * drift names what could not be read on a page that plainly had it, so the
+ * Setup screen can say "capture has stopped working" instead of silence.
+ * Once per extractor per page per minute, so a busy feed is not a flood.
+ */
+const lastCaptureReport = {};
+function reportCapture(extractor, itemsSeen, itemsKept, drift) {
+  const key = extractor + "|" + window.location.pathname;
+  const now = Date.now();
+  if (lastCaptureReport[key] && now - lastCaptureReport[key] < 60000) return;
+  lastCaptureReport[key] = now;
+  studioApi("/api/v1/bridge/capture", {
+    extractor,
+    page_kind: window.location.pathname.split("/")[1] || "home",
+    items_seen: itemsSeen,
+    items_kept: itemsKept,
+    drift: drift && drift.length ? drift : null,
+    extension_version: chrome.runtime.getManifest().version
+  });
+}
+
 console.log("[LinkedIn Studio Bridge] Content script active on linkedin.com");
 
 // Listen for messages from Side Panel or Background
@@ -280,6 +305,14 @@ function extractAndSyncAnalytics() {
       else if (text.includes("engagement") || text.includes("reaction")) { engagements = parsed.value; seen.reactions = parsed.precision; }
       else if (text.includes("follower")) { followers = parsed.value; seen.followers = parsed.precision; }
     });
+
+    // Cards on the page but no label recognised, or an analytics page with no
+    // cards at all: either way the reader no longer matches LinkedIn's markup.
+    const analyticsDrift = [];
+    if (!metricElements.length) analyticsDrift.push("metric_cards");
+    else if (impressions === null && followers === null) analyticsDrift.push("metric_labels");
+    reportCapture("analytics", metricElements.length,
+      [impressions, engagements, followers].filter(v => v !== null).length, analyticsDrift);
 
     if (impressions === null && followers === null) return;
 
@@ -583,6 +616,7 @@ function observeAndCaptureEngagers() {
   ].join(', ');
 
   const commentCards = document.querySelectorAll(commentSelectors);
+  const leadsBeforeComments = leads.length;
   commentCards.forEach(card => {
     try {
       const nameEl = firstNamedElement(card, [
@@ -679,6 +713,14 @@ function observeAndCaptureEngagers() {
       });
     } catch (e) {}
   });
+
+  // Comment cards on screen but not one readable name among them is the
+  // markup changing, not an empty thread.
+  const commentersRead = leads.length - leadsBeforeComments;
+  if (commentCards.length || reactorModals.length) {
+    reportCapture("engagers", commentCards.length, leads.length,
+      commentCards.length > 0 && commentersRead === 0 ? ["commenter_name"] : []);
+  }
 
   // Only POST if we have valid leads
   if (leads.length) {

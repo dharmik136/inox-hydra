@@ -183,6 +183,89 @@ def bridge_status() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Capture health
+# ---------------------------------------------------------------------------
+
+# The extractors the extension reports on, in the words the Setup screen uses.
+EXTRACTORS = {
+    "engagers": "Comments and reactions on your posts",
+    "profile": "Your profile",
+    "activity_posts": "Your posts",
+    "activity_comments": "Your comments",
+    "activity_reactions": "Your reactions",
+    "analytics": "Creator analytics",
+}
+
+CAPTURE_RETENTION = timedelta(days=7)
+
+
+def record_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    One extractor run on one page, as the extension saw it.
+
+    drift names the required fields the extractor could not read on a page
+    that plainly had the thing it looks for: comment cards with no readable
+    name, a profile with no readable heading. That is the signature of LinkedIn
+    changing its markup, and the one failure a creator cannot see for
+    themselves, because it looks exactly like nobody engaging.
+    """
+    if not isinstance(payload, dict) or payload.get("extractor") not in EXTRACTORS:
+        raise RefusedCapture("unknown extractor")
+    drift = [d for d in (payload.get("drift") or []) if isinstance(d, str)][:10]
+    now = datetime.now(timezone.utc)
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept, drift, extension_version) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (now.isoformat(), payload["extractor"], _text(payload.get("page_kind"), 40),
+                 _count(payload.get("items_seen")), _count(payload.get("items_kept")),
+                 json.dumps([_text(d, 60) for d in drift]) if drift else None,
+                 _text(payload.get("extension_version"), 40)),
+            )
+            conn.execute("DELETE FROM captures WHERE observed_at < ?", ((now - CAPTURE_RETENTION).isoformat(),))
+    finally:
+        conn.close()
+    return {"status": "success"}
+
+
+def capture_health() -> List[Dict[str, Any]]:
+    """
+    Per extractor: when it last read something, and whether its latest run
+    drifted. Extractors that have never run are listed too, as never run,
+    because an absent row is the question the creator is asking.
+    """
+    conn = get_db()
+    try:
+        rows = {}
+        for extractor in EXTRACTORS:
+            latest = conn.execute(
+                "SELECT observed_at, items_seen, items_kept, drift FROM captures "
+                "WHERE extractor = ? ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
+            last_good = conn.execute(
+                "SELECT observed_at FROM captures WHERE extractor = ? AND drift IS NULL "
+                "AND COALESCE(items_seen, 0) > 0 ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
+            rows[extractor] = (latest, last_good)
+    finally:
+        conn.close()
+
+    health = []
+    for extractor, label in EXTRACTORS.items():
+        latest, last_good = rows[extractor]
+        drift = json.loads(latest["drift"]) if latest and latest["drift"] else []
+        health.append({
+            "extractor": extractor,
+            "label": label,
+            "last_run_at": latest["observed_at"] if latest else None,
+            "last_good_at": last_good["observed_at"] if last_good else None,
+            "drift": drift,
+            "state": "never_run" if not latest else ("drifting" if drift else "working"),
+        })
+    return health
+
+
+# ---------------------------------------------------------------------------
 # Identity
 # ---------------------------------------------------------------------------
 
@@ -652,6 +735,131 @@ def engagement_gate(engager_profile: Any, post_urn: Any, post_author: Any) -> Op
 
 
 # ---------------------------------------------------------------------------
+# Whether an engagement was on one of the creator's posts
+# ---------------------------------------------------------------------------
+#
+# The engagement gate decides this for new captures. Leads captured before it
+# existed were taken from any post on the feed, so some are the creator's
+# audience and some are other creators'. The same question sorts them, with one
+# condition: "not on your post" can only be said once the creator's post
+# history has been read to the end. Before that, a post missing from own_posts
+# may simply be older than what was imported, so the answer is "unknown", and
+# nothing is ever offered for removal on an unknown.
+
+def _own_activity_ids(conn) -> set:
+    ids = {_activity_id(r["activity_urn"]) for r in conn.execute("SELECT activity_urn FROM own_posts")}
+    ids |= {_activity_id(r["activity_urn"]) for r in conn.execute(
+        "SELECT activity_urn FROM posts WHERE activity_urn IS NOT NULL")}
+    ids.discard("")
+    return ids
+
+
+def post_history_complete(conn) -> bool:
+    """True once an import of the creator's posts has run to the end of the list."""
+    return conn.execute(
+        "SELECT 1 FROM self_import_requests WHERE kind = 'posts' AND outcome = 'completed' LIMIT 1"
+    ).fetchone() is not None
+
+
+def _origin(post_urn, own_ids, complete) -> str:
+    wanted = _activity_id(post_urn)
+    if wanted and wanted in own_ids:
+        return "yours"
+    if wanted and complete:
+        return "not_yours"
+    return "unknown"
+
+
+def annotate_interactions(interactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Adds, to each interaction, whether it was on the creator's post and the
+    opening of that post, so the dossier can say where someone engaged rather
+    than leaving the creator to guess which post to mention.
+    """
+    conn = get_db()
+    try:
+        own_ids = _own_activity_ids(conn)
+        complete = post_history_complete(conn)
+        texts = {}
+        for row in conn.execute("SELECT activity_urn, text FROM own_posts WHERE text IS NOT NULL"):
+            texts[_activity_id(row["activity_urn"])] = row["text"]
+        for row in conn.execute("SELECT activity_urn, content FROM posts WHERE activity_urn IS NOT NULL"):
+            texts.setdefault(_activity_id(row["activity_urn"]), row["content"])
+    finally:
+        conn.close()
+
+    for item in interactions:
+        item["post_origin"] = _origin(item.get("post_urn"), own_ids, complete)
+        text = texts.get(_activity_id(item.get("post_urn")))
+        item["post_excerpt"] = " ".join(text.split())[:140] if text else None
+    return interactions
+
+
+def lead_review() -> Dict[str, Any]:
+    """
+    Every lead sorted by whether their engagement was on the creator's posts.
+
+    A lead is "yours" if any interaction was on your post, "not_yours" only if
+    every interaction names a post and none of them is yours (and your history
+    is complete), and "unknown" otherwise, including leads added by hand, which
+    have no captured interaction at all.
+    """
+    conn = get_db()
+    try:
+        own_ids = _own_activity_ids(conn)
+        complete = post_history_complete(conn)
+        leads = {r["id"]: dict(r) for r in conn.execute(
+            "SELECT id, COALESCE(full_name, name) AS name, headline, created_at FROM leads")}
+        origins: Dict[str, List[str]] = {lead_id: [] for lead_id in leads}
+        for row in conn.execute("SELECT lead_id, post_urn FROM lead_interactions"):
+            key = str(row["lead_id"])
+            if key in origins:
+                origins[key].append(_origin(row["post_urn"], own_ids, complete))
+    finally:
+        conn.close()
+
+    groups = {"yours": [], "not_yours": [], "unknown": []}
+    for lead_id, seen in origins.items():
+        if "yours" in seen:
+            verdict = "yours"
+        elif seen and all(o == "not_yours" for o in seen):
+            verdict = "not_yours"
+        else:
+            verdict = "unknown"
+        groups[verdict].append({**leads[lead_id], "interactions": len(seen)})
+
+    return {
+        "status": "success",
+        "history_complete": complete,
+        "counts": {k: len(v) for k, v in groups.items()},
+        "not_yours": sorted(groups["not_yours"], key=lambda l: l.get("created_at") or ""),
+    }
+
+
+def remove_leads_not_on_your_posts(lead_ids: Any) -> Dict[str, Any]:
+    """
+    Deletes the named leads, each only if it is still classified not_yours.
+
+    The creator confirms a list they have seen. Re-checking each id at delete
+    time means a lead that became "yours" in between, because a new comment
+    arrived on one of the creator's posts, is kept even if it was on that list.
+    """
+    if not isinstance(lead_ids, list) or not lead_ids:
+        raise RefusedCapture("name the leads to remove")
+    allowed = {l["id"] for l in lead_review()["not_yours"]}
+    chosen = [str(i) for i in lead_ids[:1000] if str(i) in allowed]
+    conn = get_db()
+    try:
+        with conn:
+            for lead_id in chosen:
+                conn.execute("DELETE FROM lead_interactions WHERE lead_id = ?", (lead_id,))
+                conn.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
+    finally:
+        conn.close()
+    return {"status": "success", "removed": len(chosen), "kept": len(lead_ids) - len(chosen)}
+
+
+# ---------------------------------------------------------------------------
 # History imports: the creator asks, the extension scrolls
 # ---------------------------------------------------------------------------
 
@@ -790,6 +998,7 @@ def onboarding_state() -> Dict[str, Any]:
 
     bridge = bridge_status()
     return {
+        "health": capture_health(),
         "session": session,
         "status": "success",
         "bridge": bridge,

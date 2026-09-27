@@ -40,7 +40,7 @@ URN_2024 = "urn:li:activity:" + str(int(datetime(2024, 3, 5, tzinfo=timezone.utc
 URN_OTHER = "urn:li:activity:" + str(int(datetime(2024, 6, 1, tzinfo=timezone.utc).timestamp() * 1000) << 22)
 
 TABLES = ("creator_identity", "creator_positions", "creator_education", "creator_skills",
-          "own_posts", "outbound_engagements", "self_import_requests", "bridge_heartbeats")
+          "own_posts", "outbound_engagements", "self_import_requests", "bridge_heartbeats", "captures")
 
 
 @pytest.fixture(autouse=True)
@@ -558,3 +558,120 @@ def test_an_unrelated_post_binds_nothing(studio_records):
     _studio_post(studio_records, "bindprobe-other", "A completely different post about hiring your first platform engineer and what to ask them.")
     assert _import(OPENING)["bound_to_posts"] == 0
     assert _post("bindprobe-other")["activity_urn"] is None
+
+
+# ---------------------------------------------------------------------------
+# Sorting leads captured before the studio knew which posts were yours
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def legacy_leads():
+    """Three leads as the old capture would have left them."""
+    from crm import reverse_crm
+
+    made = {}
+    for key, urn in (("mine", URN_2024), ("theirs", URN_OTHER), ("nopost", None)):
+        made[key] = reverse_crm.ingest_interaction(
+            f"Legacy {key}", f"https://www.linkedin.com/in/legacy-{key}-probe", "Engineer",
+            None, "COMMENT", f"A comment from {key}.", post_urn=urn,
+        )["lead_id"]
+    yield made
+    conn = get_db()
+    with conn:
+        for lead_id in made.values():
+            conn.execute("DELETE FROM lead_interactions WHERE lead_id = ?", (lead_id,))
+            conn.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
+    conn.close()
+
+
+def _history_imported():
+    _confirm()
+    client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [{"activity_urn": URN_2024, "actor": ME}]})
+    request_id = client.post("/api/v1/self/imports", json={"kind": "posts"}).json()["id"]
+    client.post("/api/v1/self/imports/event", json={"id": request_id, "event": "finished", "items_seen": 1})
+
+
+def test_nothing_is_called_a_stranger_before_your_history_is_read(legacy_leads):
+    """A post the studio does not recognise may just be an older post of yours."""
+    _confirm()
+    client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [{"activity_urn": URN_2024, "actor": ME}]})
+    review = client.get("/api/v1/leads/review").json()
+    assert review["history_complete"] is False
+    assert review["counts"]["not_yours"] == 0
+
+
+def test_leads_are_sorted_once_your_history_is_complete(legacy_leads):
+    _history_imported()
+    review = client.get("/api/v1/leads/review").json()
+    flagged = {lead["id"] for lead in review["not_yours"]}
+    assert legacy_leads["theirs"] in flagged
+    assert legacy_leads["mine"] not in flagged, "someone who engaged with your post was offered for removal"
+    assert legacy_leads["nopost"] not in flagged, "a lead with no known post was called a stranger"
+
+
+def test_removal_rechecks_every_name(legacy_leads):
+    """A lead that is yours is kept even if its id is on the list sent for removal."""
+    _history_imported()
+    result = client.post("/api/v1/leads/review/remove",
+                         json={"lead_ids": [legacy_leads["theirs"], legacy_leads["mine"]]}).json()
+    assert result == {"status": "success", "removed": 1, "kept": 1}
+    conn = get_db()
+    remaining = {r[0] for r in conn.execute("SELECT id FROM leads WHERE id IN (?, ?)",
+                                             (legacy_leads["theirs"], legacy_leads["mine"]))}
+    conn.close()
+    assert remaining == {legacy_leads["mine"]}
+
+
+def test_the_dossier_says_where_they_engaged(legacy_leads):
+    _history_imported()
+    mine = client.get(f"/api/v1/crm/leads/{legacy_leads['mine']}/timeline").json()["interactions"]
+    theirs = client.get(f"/api/v1/crm/leads/{legacy_leads['theirs']}/timeline").json()["interactions"]
+    assert mine[0]["post_origin"] == "yours"
+    assert theirs[0]["post_origin"] == "not_yours"
+
+
+# ---------------------------------------------------------------------------
+# Capture health: a broken selector is visible rather than silent
+# ---------------------------------------------------------------------------
+
+def _health():
+    return {entry["extractor"]: entry for entry in _state()["health"]}
+
+
+def test_every_extractor_is_listed_even_before_it_runs():
+    """An absent row is the question the creator is asking, so it is shown as never run."""
+    health = _health()
+    assert set(health) >= {"engagers", "profile", "activity_posts", "analytics"}
+    assert all(entry["state"] == "never_run" for entry in health.values())
+
+
+def test_a_run_that_could_not_read_the_page_is_drift():
+    client.post("/api/v1/bridge/capture", json={"extractor": "engagers", "items_seen": 12, "items_kept": 12})
+    client.post("/api/v1/bridge/capture", json={
+        "extractor": "engagers", "items_seen": 9, "items_kept": 0, "drift": ["commenter_name"]})
+    entry = _health()["engagers"]
+    assert entry["state"] == "drifting"
+    assert entry["drift"] == ["commenter_name"]
+    assert entry["last_good_at"], "when it last worked is what tells the creator how long it has been broken"
+
+
+def test_a_working_run_clears_drift():
+    client.post("/api/v1/bridge/capture", json={"extractor": "profile", "items_seen": 1, "drift": ["name"]})
+    client.post("/api/v1/bridge/capture", json={"extractor": "profile", "items_seen": 4, "items_kept": 4})
+    assert _health()["profile"]["state"] == "working"
+
+
+def test_an_unknown_extractor_is_refused():
+    assert client.post("/api/v1/bridge/capture", json={"extractor": "anything"}).status_code == 409
+
+
+def test_the_extension_reports_what_it_could_not_read():
+    """The canaries are the point: each reader says when a page had content it could not parse."""
+    ext = os.path.join(os.path.dirname(__file__), "..", "studio", "extension")
+    with open(os.path.join(ext, "content.js"), encoding="utf-8") as handle:
+        content = handle.read()
+    with open(os.path.join(ext, "own_pages.js"), encoding="utf-8") as handle:
+        own = handle.read()
+    assert '"commenter_name"' in content and 'reportCapture("engagers"' in content
+    assert 'reportCapture("analytics"' in content
+    assert 'reportCapture("profile"' in own and '"post_author"' in own

@@ -1563,6 +1563,15 @@ def post_bridge_heartbeat(payload: BridgeHeartbeat):
     return onboarding.record_heartbeat(payload.extension_version, payload.page_kind)
 
 
+@app.post("/api/v1/bridge/capture", tags=["Onboarding"])
+def post_bridge_capture(payload: Dict[str, Any]):
+    """One extractor run, as the extension saw it. See onboarding.record_capture."""
+    try:
+        return onboarding.record_capture(payload)
+    except onboarding.RefusedCapture as error:
+        _refusal(error)
+
+
 @app.post("/api/v1/identity/observe", tags=["Onboarding"])
 def post_identity_observe(payload: Dict[str, Any]):
     try:
@@ -3074,7 +3083,28 @@ def get_lead_interaction_timeline(lead_id: str):
     res = reverse_crm.get_lead_timeline(lead_id)
     if res["status"] == "not_found":
         raise HTTPException(status_code=404, detail="Lead not found")
+    # Where each engagement happened, so the dossier can name the post.
+    res["interactions"] = onboarding.annotate_interactions(res["interactions"])
     return res
+
+
+class LeadRemoval(BaseModel):
+    lead_ids: List[str]
+
+
+@app.get("/api/v1/leads/review", tags=["Leads & CRM"])
+def get_lead_review():
+    """Leads sorted by whether they engaged with the creator's own posts."""
+    return onboarding.lead_review()
+
+
+@app.post("/api/v1/leads/review/remove", tags=["Leads & CRM"])
+def post_lead_review_remove(payload: LeadRemoval):
+    """Deletes the named leads that are still classified as not from the creator's posts."""
+    try:
+        return onboarding.remove_leads_not_on_your_posts(payload.lead_ids)
+    except onboarding.RefusedCapture as error:
+        raise HTTPException(status_code=409, detail=str(error))
 
 
 # -------------------------------------------------------------

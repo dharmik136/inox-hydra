@@ -89,6 +89,7 @@ def test_the_extension_cannot_reach_these_routes():
         "/api/v1/posts/bind-urn",
         "/api/v1/crm/interactions/ingest",
         "/api/v1/bridge/heartbeat",
+        "/api/v1/bridge/capture",
         "/api/v1/identity/me",
         "/api/v1/identity/observe",
         "/api/v1/self/posts/ingest",
