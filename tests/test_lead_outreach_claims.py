@@ -315,3 +315,63 @@ def test_the_same_headline_yields_the_same_dossier_for_any_company():
         "the company name is interpolated into a prewritten paragraph, and if "
         "that stopped being true this file's description of the mechanism is stale"
     )
+
+
+# ---------------------------------------------------------------------------
+# The reply and variant generators say only what the creator supplied
+# ---------------------------------------------------------------------------
+
+INVENTED = (
+    "write lock contention",
+    "sqlite wal eliminating",
+    "when we benchmarked",
+    "benchmark numbers",
+    "sovereign creator",
+)
+
+
+def _all_drafts(**kwargs):
+    from crm import ICPScoringEngine
+
+    drafts = [ICPScoringEngine.generate_contextual_dm("Asha Kulkarni", "How did you stage the rollout?", **kwargs),
+              ICPScoringEngine.generate_contextual_dm("Asha Kulkarni", "Great breakdown of the rollout.", **kwargs)]
+    drafts += [v["dm_text"] for v in ICPScoringEngine.generate_anti_slop_dm_variants(
+        "Asha Kulkarni", "How did you stage the rollout?", **kwargs)]
+    return drafts
+
+
+def test_no_draft_carries_a_claim_the_creator_did_not_make():
+    """
+    The generators appended a canned finding as the creator's own ("We found
+    decoupling background ingestion eliminates write lock contention
+    entirely.") and two invented results ("When we benchmarked this
+    architecture on localhost...", "our offline-first benchmark numbers").
+    """
+    for text in _all_drafts(post_topic="our rollout"):
+        lowered = text.lower()
+        for phrase in INVENTED:
+            assert phrase not in lowered, f"a draft claims something nobody supplied ({phrase}):\n{text}"
+
+
+def test_the_creators_own_insight_is_used_when_given():
+    drafts = _all_drafts(post_topic="our rollout", custom_insight="We rolled back twice before it held.")
+    assert any("We rolled back twice before it held." in text for text in drafts)
+
+
+def test_the_routes_no_longer_supply_a_topic():
+    """
+    The API filled in "sovereign creator stack" before the generator's own
+    no-topic rule could run, so that rule never took effect through the API.
+    """
+    from fastapi.testclient import TestClient
+    import app as app_module
+
+    client = TestClient(app_module.app)
+    body = {"lead_name": "Asha Kulkarni", "comment_text": "How did you stage the rollout?"}
+
+    reply = client.post("/api/v1/crm/leads/generate-dm", json=body).json()
+    assert reply["suggested_dm"] == "", "a reply was drafted about a post nobody named"
+
+    for variant in client.post("/api/v1/crm/dm/variants", json=body).json()["variants"]:
+        assert "sovereign" not in variant["dm_text"].lower()
+        assert " on ." not in variant["dm_text"] and "post ." not in variant["dm_text"]

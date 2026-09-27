@@ -236,7 +236,7 @@ class ICPScoringEngine:
     def generate_contextual_dm(
         lead_name: str,
         comment_text: str,
-        post_topic: str = "local-first architecture",
+        post_topic: Optional[str] = None,
         custom_insight: Optional[str] = None,
     ) -> str:
         """
@@ -273,12 +273,16 @@ class ICPScoringEngine:
         if excerpt.endswith((".", "!", "?")):
             excerpt = excerpt[:-1]
 
+        # The creator's own words, only when they supplied some. This used to
+        # fall back to a canned sentence, "We found decoupling background
+        # ingestion eliminates write lock contention entirely.", sent under
+        # the creator's name as a finding they never made.
+        insight = f"{custom_insight.strip()} " if custom_insight and custom_insight.strip() else ""
         if "?" in text:
-            insight = custom_insight or "We found decoupling background ingestion eliminates write lock contention entirely."
             return (
                 f"Hi {first_name}, saw your question on my recent post about {post_topic}. "
                 f"Specifically regarding \"{excerpt}...\", wanted to share a quick perspective directly. "
-                f"{insight} "
+                f"{insight}"
                 f"Are you testing similar workflows in your stack?"
             )
         else:
@@ -293,7 +297,7 @@ class ICPScoringEngine:
         cls,
         lead_name: str,
         comment_text: str,
-        post_topic: str = "sovereign creator architecture",
+        post_topic: Optional[str] = None,
         custom_insight: Optional[str] = None,
     ) -> List[Dict[str, str]]:
         """
@@ -305,38 +309,46 @@ class ICPScoringEngine:
         if excerpt.endswith((".", "!", "?")):
             excerpt = excerpt[:-1]
 
-        insight = custom_insight or "We found local-first SQLite WAL eliminating cloud egress and network latency completely."
+        # Nothing below is a claim the creator did not make. These used to carry
+        # a default topic ("sovereign creator architecture"), a canned finding
+        # presented as the creator's, and two invented results: "When we
+        # benchmarked this architecture on localhost..." and "our offline-first
+        # benchmark numbers". A prospect reads any of those as something the
+        # creator did. The topic and the insight now appear only when supplied,
+        # and the other two angles ask rather than assert.
+        insight = f"{custom_insight.strip()} " if custom_insight and custom_insight.strip() else ""
+        topic = (post_topic or "").strip()
+        about = f" about {topic}" if topic else ""
+        on = f" on {topic}" if topic else ""
         has_question = "?" in (comment_text or "")
 
         variants = [
             {
                 "angle": "Direct Technical Perspective",
                 "dm_text": (
-                    f"Hi {first_name}, saw your question on my recent post about {post_topic}. "
+                    f"Hi {first_name}, saw your question on my recent post{about}. "
                     f"Specifically regarding \"{excerpt}...\", wanted to share a quick perspective directly. "
-                    f"{insight} "
+                    f"{insight}"
                     f"Are you testing similar workflows in your stack?"
                 ) if has_question else (
-                    f"Hi {first_name}, thanks for the comment on the {post_topic} breakdown. "
+                    f"Hi {first_name}, thanks for the comment on my recent post{about}. "
                     f"Your point about \"{excerpt}...\" was spot on. "
-                    f"{insight} "
+                    f"{insight}"
                     f"Are you testing similar workflows in your stack?"
                 )
             },
             {
                 "angle": "Architecture Teardown",
                 "dm_text": (
-                    f"Hi {first_name}, great insight on \"{excerpt}...\". "
-                    f"When we benchmarked this architecture on localhost, the bottleneck was always network egress rather than local CPU cycles. "
-                    f"Curious how your team currently handles data boundaries for these tools?"
+                    f"Hi {first_name}, your point about \"{excerpt}...\" stayed with me. "
+                    f"What led you to it? I would like to understand how it plays out on your side."
                 )
             },
             {
                 "angle": "Peer-to-Peer Exchange",
                 "dm_text": (
-                    f"Hi {first_name}, really appreciated you joining the conversation on {post_topic}. "
-                    f"Given your focus on this space, thought you might find our offline-first benchmark numbers interesting. "
-                    f"Happy to share the raw notes if you are exploring similar patterns."
+                    f"Hi {first_name}, really appreciated you joining the conversation{on}. "
+                    f"Would you be open to comparing notes on what you are working on?"
                 )
             }
         ]

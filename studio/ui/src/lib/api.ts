@@ -651,10 +651,18 @@ export async function generateLeadDm(
     body: JSON.stringify({
       lead_name: leadName,
       comment_text: commentText,
-      post_topic: postTopic || "sovereign creator stack",
+      // No default topic. The server drafts nothing without one rather than
+      // naming a post the creator may never have written.
+      post_topic: postTopic || null,
     }),
   });
-  if (!data.suggested_dm) throw new Error("the server returned no draft");
+  if (!data.suggested_dm) {
+    throw new Error(
+      postTopic
+        ? "No reply could be drafted from this comment."
+        : "Say which post they commented on, above, and a reply can be drafted.",
+    );
+  }
   return data.suggested_dm;
 }
 

@@ -101,23 +101,13 @@ def test_orchestrator_enrichment_persistence():
     assert len(saved["icebreakers"]) == 3
 
 
-def test_api_enrich_endpoints_contract():
-    # 1. Trigger enrichment on lead-2
-    enrich_resp = client.post("/api/leads/lead-2/enrich")
-    assert enrich_resp.status_code == 200
-    data = enrich_resp.json()
-    assert data["status"] == "success"
-    assert "enrichment" in data
-    assert data["enrichment"]["lead_id"] == "lead-2"
-
-    # 2. Fetch enriched dossier
-    get_resp = client.get("/api/leads/lead-2/enrichment")
-    assert get_resp.status_code == 200
-    get_data = get_resp.json()
-    assert get_data["status"] == "success"
-    assert get_data["enrichment"]["lead_id"] == "lead-2"
-    assert len(get_data["enrichment"]["icebreakers"]) == 3
-
-    # 3. 404 for invalid lead
-    bad_resp = client.post("/api/leads/nonexistent-lead-999/enrich")
-    assert bad_resp.status_code == 404
+def test_the_enrichment_routes_are_retired_and_say_why():
+    """
+    The routes served a headline keyword match as a research dossier, and a
+    Gemini call that bypassed the chosen provider and the egress controls. The
+    class above is kept so a real lookup can replace it; the routes answer 410
+    with the reason, so nothing reaches either the guess or the bypass.
+    """
+    for response in (client.post("/api/leads/lead-2/enrich"), client.get("/api/leads/lead-2/enrichment")):
+        assert response.status_code == 410
+        assert "job title" in response.json()["detail"]
