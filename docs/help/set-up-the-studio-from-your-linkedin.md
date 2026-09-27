@@ -62,7 +62,7 @@ Your comments and reactions are kept as your own activity. They never become lea
 
 ## Check the capture is still working
 
-The extension reads LinkedIn's pages, and LinkedIn changes how they are built without notice. When a part of the capture stops matching, it finds nothing and says nothing, which looks exactly like nobody engaging. Setup shows whether each part is still working, under **CAPTURE HEALTH**:
+The extension reads LinkedIn's pages, and LinkedIn changes how they are built without notice. When a part of the capture stops matching, it finds nothing and says nothing, which looks exactly like nobody engaging. Setup shows whether each of these seven parts is still working, under **CAPTURE HEALTH**:
 
 | Part | What it reads |
 | --- | --- |
@@ -72,6 +72,7 @@ The extension reads LinkedIn's pages, and LinkedIn changes how they are built wi
 | Your comments | The **Comments you left** import |
 | Your reactions | The **Posts you reacted to** import |
 | Creator analytics | The figures in **Analytics** |
+| Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends. Only your recorded posts are read |
 
 Each part shows one of three states:
 
