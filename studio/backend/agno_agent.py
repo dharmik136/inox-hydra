@@ -58,6 +58,10 @@ def clean_no_em_dashes(text: Any) -> str:
         s = s.replace("  ", " ")
     return s.strip()
 
+try:
+    from .secret_settings import seal as _seal_setting, unseal as _unseal_setting
+except ImportError:
+    from secret_settings import seal as _seal_setting, unseal as _unseal_setting
 
 class LeadResearchAgent:
     """
@@ -245,8 +249,9 @@ class EnrichmentOrchestrator:
             cursor = conn.cursor()
             cursor.execute("SELECT value FROM settings WHERE key = 'gemini_api_key'")
             row = cursor.fetchone()
-            if row and row["value"] and str(row["value"]).strip():
-                return str(row["value"]).strip()
+            key = _unseal_setting("gemini_api_key", row["value"]).strip() if row and row["value"] else ""
+            if key:
+                return key
             return os.environ.get("GEMINI_API_KEY")
         finally:
             conn.close()
