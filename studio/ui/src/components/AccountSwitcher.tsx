@@ -93,6 +93,7 @@ export function AccountSwitcher({
       if (res.account) {
         await switchAccount(res.account.id);
         setActiveId(res.account.id);
+        setOpen(false);
         if (onAccountSwitched) {
           onAccountSwitched(res.account);
         }
