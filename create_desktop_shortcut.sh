@@ -8,7 +8,7 @@ set -e
 
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAUNCHER="$INSTALL_DIR/launch_studio.sh"
-ICON="$INSTALL_DIR/assets/inox_hydra.png"
+ICON="$INSTALL_DIR/studio/extension/icons/icon-128.png"
 
 if [ ! -f "$LAUNCHER" ]; then
     echo "[!] Could not find launch_studio.sh next to this script."
