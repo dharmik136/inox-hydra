@@ -624,6 +624,80 @@ def _migrate_lead_stage_events(cursor: sqlite3.Cursor) -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_stage_events_lead ON lead_stage_events(lead_id, changed_at)")
 
 
+def _migrate_schema_drift_events(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 15:
+    Record schema drift events from Voyager network interception.
+
+    When LinkedIn modifies their internal Voyager API response JSON structure,
+    network interception records which fields could not be extracted, the
+    observed schema version, and top-level response keys. This allows the studio
+    to monitor API stability and serve schema patches without requiring an
+    extension store re-approval.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS schema_drift_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            observed_at TEXT NOT NULL,
+            schema_name TEXT NOT NULL,
+            schema_version TEXT NOT NULL,
+            drift_fields TEXT,
+            confidence REAL,
+            success INTEGER,
+            source_url TEXT,
+            response_top_keys TEXT,
+            extension_version TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_schema_drift_name ON schema_drift_events(schema_name, observed_at DESC)")
+
+
+def _migrate_creator_accounts(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 16:
+    Create creator_accounts table for enterprise multi-tenant account switching.
+
+    Allows managing multiple LinkedIn creator profiles within one local studio instance.
+    Each profile retains its own account_id, name, headline, vanity, and active status.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS creator_accounts (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            vanity TEXT,
+            headline TEXT,
+            avatar_initials TEXT,
+            is_default INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_accounts_default ON creator_accounts(is_default)")
+
+    cursor.execute("SELECT COUNT(*) FROM creator_accounts WHERE id = 'default'")
+    if cursor.fetchone()[0] == 0:
+        name = "Default Profile"
+        vanity = ""
+        headline = "Creator"
+        try:
+            cursor.execute("SELECT display_name, vanity, headline FROM creator_identity WHERE id = 1")
+            row = cursor.fetchone()
+            if row and row[0]:
+                name = row[0]
+                vanity = row[1] or ""
+                headline = row[2] or "Creator"
+        except Exception:
+            pass
+
+        parts = name.split()
+        initials = (parts[0][0] + (parts[1][0] if len(parts) > 1 else ""))[:2].upper() if parts else "DP"
+
+        cursor.execute("""
+            INSERT INTO creator_accounts (id, name, vanity, headline, avatar_initials, is_default)
+            VALUES ('default', ?, ?, ?, ?, 1)
+        """, (name, vanity, headline, initials))
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -642,6 +716,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (12, "Record each capture run, so a broken selector is visible", _migrate_capture_log),
     (13, "Keep readings of each post over time, with the post's age", _migrate_post_metric_observations),
     (14, "Keep a history of each lead's status changes", _migrate_lead_stage_events),
+    (15, "Record schema drift events from Voyager network interception", _migrate_schema_drift_events),
+    (16, "Create creator_accounts table for enterprise multi-tenant profiles", _migrate_creator_accounts),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

@@ -1761,3 +1761,56 @@ export interface CadenceInsights {
 export async function fetchCadenceInsights(): Promise<CadenceInsights> {
   return call<CadenceInsights>("/api/v1/insights/cadence");
 }
+
+// ---------------------------------------------------------------------------
+// Multi-tenant creator accounts and profile switching
+// ---------------------------------------------------------------------------
+
+export interface CreatorAccount {
+  id: string;
+  name: string;
+  vanity: string;
+  headline: string;
+  avatar_initials: string;
+  is_default: boolean;
+  is_active: boolean;
+  created_at: string;
+  posts_count: number;
+  drafts_count: number;
+  leads_count: number;
+}
+
+export interface AccountsResponse {
+  status: string;
+  accounts: CreatorAccount[];
+  active_account_id: string;
+}
+
+export async function fetchAccounts(): Promise<AccountsResponse> {
+  return call<AccountsResponse>("/api/v1/accounts");
+}
+
+export async function createAccount(data: {
+  name: string;
+  headline?: string;
+  vanity?: string;
+  id?: string;
+}): Promise<{ status: string; account: CreatorAccount }> {
+  return call("/api/v1/accounts", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function switchAccount(accountId: string): Promise<{ status: string; active_account_id: string; account?: CreatorAccount }> {
+  return call("/api/v1/accounts/switch", {
+    method: "POST",
+    body: JSON.stringify({ account_id: accountId }),
+  });
+}
+
+export async function deleteAccount(accountId: string): Promise<{ status: string; message: string; active_account_id?: string }> {
+  return call(`/api/v1/accounts/${encodeURIComponent(accountId)}`, {
+    method: "DELETE",
+  });
+}

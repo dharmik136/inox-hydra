@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
+import { AccountSwitcher } from "@/components/AccountSwitcher";
 import { type SectionId, type StudioSection } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
@@ -76,7 +77,13 @@ export function NavigationTray({ sections, open, active, onSelect, onClose }: Na
             transition={{ duration: 0.46, ease: [0.32, 0.72, 0.24, 1] }}
             className="absolute top-3 left-3 z-30 w-80 origin-top-left rounded-lg border border-edge bg-raised p-2 shadow-2xl outline-none"
           >
-            <p className="studio-label px-2 pt-2 pb-1">Workspaces</p>
+            {/* Active profile & account switching */}
+            <div className="mb-2 border-b border-edge px-1 pb-2">
+              <p className="studio-label px-1 pt-1 pb-1.5">Active Profile</p>
+              <AccountSwitcher condensed={false} onAccountSwitched={() => onClose()} />
+            </div>
+
+            <p className="studio-label px-2 pt-1 pb-1">Workspaces</p>
             <ul className="flex flex-col">
               {sections.map((section) => {
                 const Icon = section.icon;

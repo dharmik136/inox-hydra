@@ -35,6 +35,116 @@ function studioApi(path, body, method) {
   });
 }
 
+// -------------------------------------------------------------
+// Voyager API Network Capture (Phase 1: Self-Healing)
+// -------------------------------------------------------------
+// The MAIN-world interceptor (voyager_interceptor.js) patches fetch() on the
+// LinkedIn page and posts structured JSON from Voyager responses via
+// window.postMessage. This listener receives those messages in the extension's
+// isolated world, where chrome.runtime is available.
+//
+// WHY DUAL-PATH:
+// DOM scraping (the original approach) breaks when LinkedIn rehashes class
+// names, loses precision with "1.2K" abbreviations, and misses data the user
+// hasn't scrolled to. Network capture gives us exact numbers in structured
+// JSON. But LinkedIn can also change their API response shapes, so we keep
+// DOM as a fallback and report drift when network extraction fails.
+//
+// The schema registry (voyager_schema.js, loaded before this file) maps
+// Voyager response structures to our internal data model. When fields move,
+// updating the schema fixes extraction without touching this code.
+
+const voyagerCaptureStats = {
+  total: 0,
+  successful: 0,
+  drifted: 0,
+  lastCaptureTime: 0
+};
+
+window.addEventListener("message", (event) => {
+  // Only accept messages from the same page (our MAIN-world interceptor).
+  if (event.source !== window) return;
+  if (!event.data || event.data.type !== "INOX_VOYAGER_CAPTURE") return;
+  if (event.data.source !== "inox-voyager-interceptor") return;
+
+  const payload = event.data.payload;
+  if (!payload || !payload.url || !payload.body) return;
+
+  // The schema registry is loaded as voyager_schema.js before this file and
+  // exposes its API on window.__InoxVoyagerSchema.
+  const VSchema = window.__InoxVoyagerSchema;
+  if (!VSchema) {
+    console.debug("[Studio Bridge] Voyager schema registry not loaded, skipping capture.");
+    return;
+  }
+
+  try {
+    voyagerCaptureStats.total++;
+
+    const schema = VSchema.resolveSchema(payload.url);
+    if (!schema) {
+      // URL doesn't match any known schema - ignore silently.
+      // This is normal for Voyager endpoints we don't care about.
+      return;
+    }
+
+    const result = VSchema.extractWithSchema(schema, payload.body);
+
+    if (result.success) {
+      voyagerCaptureStats.successful++;
+      voyagerCaptureStats.lastCaptureTime = Date.now();
+
+      // Forward structured data to the backend.
+      studioApi("/api/v1/bridge/voyager-ingest", {
+        schema_name: Object.keys(VSchema.VOYAGER_SCHEMAS).find(
+          k => VSchema.VOYAGER_SCHEMAS[k] === schema
+        ),
+        schema_version: result.schema_version,
+        confidence: result.confidence,
+        data: result.data,
+        source_url: payload.url,
+        http_status: payload.status,
+        capture_id: payload.captureId,
+        timestamp: payload.timestamp,
+        extension_version: chrome.runtime.getManifest().version
+      });
+    }
+
+    // Report drift whenever extraction found missing fields, whether or not
+    // the extraction itself "succeeded" (required fields present but optional
+    // ones missing still counts as drift worth tracking).
+    if (result.drift && result.drift.length > 0) {
+      voyagerCaptureStats.drifted++;
+
+      studioApi("/api/v1/bridge/schema-drift", {
+        schema_name: Object.keys(VSchema.VOYAGER_SCHEMAS).find(
+          k => VSchema.VOYAGER_SCHEMAS[k] === schema
+        ),
+        schema_version: result.schema_version,
+        drift_fields: result.drift,
+        confidence: result.confidence,
+        success: result.success,
+        source_url: payload.url,
+        // Include the top-level keys from the response so the backend can
+        // diagnose what LinkedIn changed. Only keys, never values, so no
+        // private data leaks into drift telemetry.
+        response_top_keys: Object.keys(payload.body || {}),
+        timestamp: payload.timestamp,
+        extension_version: chrome.runtime.getManifest().version
+      });
+    }
+
+    console.debug(
+      `[Studio Bridge] Voyager capture: ${result.success ? "OK" : "DRIFT"}`,
+      `confidence=${result.confidence}`,
+      `drift=[${(result.drift || []).join(", ")}]`
+    );
+  } catch (err) {
+    // Never interrupt the user experience for a capture failure.
+    console.debug("[Studio Bridge] Voyager capture error:", err.message);
+  }
+});
+
 /**
  * Records one extractor run in the studio's capture log.
  *

@@ -62,7 +62,7 @@ inox-hydra/
 │   ├── frontend/               # Single-page studio interface (no build step)
 │   └── extension/              # Chrome Extension (Manifest V3)
 ├── tools/                      # Build and release tooling
-│   ├── build_portable.py       # Produces the portable Windows ZIP
+│   ├── build_portable.py       # Produces the portable standalone bundle
 │   ├── smoke_portable.py       # Boots the artifact with a scrubbed environment
 │   ├── verify_package.py       # Builds, installs and boots a wheel in isolation
 │   ├── prepare_package.py      # Stages bundled docs into the package
@@ -72,6 +72,8 @@ inox-hydra/
 ├── release/latest.json         # Manifest read by opt-in update checks
 ├── pyproject.toml              # Packaging metadata and dependencies
 ├── launch_studio.bat           # 1-click Windows launcher (source checkout)
+├── launch_studio.sh            # 1-click Linux / macOS launcher
+├── create_desktop_shortcut.sh  # Desktop shortcut & app menu installer (Linux)
 └── studio_cli.py               # BYO-AI provider configuration
 ```
 
@@ -181,16 +183,19 @@ python studio_cli.py ai reset
 > [!IMPORTANT]
 > The CLI performs an **active ping verification**. If an API key is invalid or an endpoint is unreachable, the CLI will reject the configuration, display the exact error code, and leave existing settings untouched.
 
-### 2. Launch Desktop App (Windows)
-Double-click [`launch_studio.bat`](launch_studio.bat) or the **LinkedIn Studio** desktop shortcut.
+### 2. Launch Desktop App
+* **Windows**: Double-click [`launch_studio.bat`](launch_studio.bat) or create a shortcut with `create_desktop_shortcut.vbs`.
+* **Linux / macOS**: Run [`./launch_studio.sh`](launch_studio.sh) or create an application launcher with [`./create_desktop_shortcut.sh`](create_desktop_shortcut.sh).
 
 ### 3. Manual Server Startup
 ```bash
 # Start backend server
-python -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000
+python3 -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000
 
 # Open in browser
-start http://127.0.0.1:8000
+xdg-open http://127.0.0.1:8000  # Linux
+open http://127.0.0.1:8000      # macOS
+start http://127.0.0.1:8000     # Windows
 ```
 
 ---

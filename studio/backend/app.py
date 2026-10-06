@@ -70,6 +70,7 @@ try:
     from .gstack_governance import gstack_engine
     from .internal_sheet import internal_sheet_manager
     from . import onboarding
+    from . import accounts
     from . import today as today_module
     from . import insights
     from . import devtools
@@ -137,6 +138,7 @@ except ImportError:
     from gstack_governance import gstack_engine
     from internal_sheet import internal_sheet_manager
     import onboarding
+    import accounts
     import today as today_module
     import insights
     import devtools
@@ -1604,6 +1606,30 @@ def post_bridge_capture(payload: Dict[str, Any]):
         return onboarding.record_capture(payload)
     except onboarding.RefusedCapture as error:
         _refusal(error)
+
+
+@app.post("/api/v1/bridge/voyager-ingest", tags=["Onboarding"])
+def post_bridge_voyager_ingest(payload: Dict[str, Any]):
+    """Ingests structured data captured via Voyager API network interception."""
+    try:
+        return onboarding.record_voyager_ingest(payload)
+    except onboarding.RefusedCapture as error:
+        _refusal(error)
+
+
+@app.post("/api/v1/bridge/schema-drift", tags=["Onboarding"])
+def post_bridge_schema_drift(payload: Dict[str, Any]):
+    """Records Voyager API schema drift events when response shapes change."""
+    try:
+        return onboarding.record_schema_drift(payload)
+    except onboarding.RefusedCapture as error:
+        _refusal(error)
+
+
+@app.get("/api/v1/extension/health", tags=["Onboarding"])
+def get_extension_health():
+    """Returns aggregated health status of the Chrome extension and Voyager interception."""
+    return onboarding.extension_health()
 
 
 @app.post("/api/v1/identity/observe", tags=["Onboarding"])
@@ -4018,6 +4044,61 @@ def import_internal_sheet_json(req: InternalSheetImport):
     except ValueError as err:
         raise HTTPException(status_code=400, detail=str(err))
     return {"status": "success", **result}
+
+
+# -------------------------------------------------------------
+# Module 17: Multi-Tenant Creator Accounts & Profile Switching
+# -------------------------------------------------------------
+class CreateAccountPayload(BaseModel):
+    name: str = Field(..., max_length=120, description="Creator or company profile name")
+    headline: Optional[str] = Field("", max_length=300, description="Professional headline or title")
+    vanity: Optional[str] = Field("", max_length=100, description="LinkedIn vanity handle")
+    id: Optional[str] = Field(None, max_length=40, description="Optional custom account slug")
+
+
+class SwitchAccountPayload(BaseModel):
+    account_id: str = Field(..., min_length=1, max_length=60, description="Target account identifier")
+
+
+@app.get("/api/v1/accounts", tags=["Multi-Tenancy & Profiles"])
+def get_accounts():
+    """
+    Returns all registered creator profile accounts, active account, and metrics.
+    """
+    return accounts.list_accounts()
+
+
+@app.post("/api/v1/accounts", tags=["Multi-Tenancy & Profiles"])
+def post_create_account(payload: CreateAccountPayload):
+    """
+    Registers a new creator profile account in the local studio.
+    """
+    res = accounts.create_account(payload.model_dump())
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message", "Could not create account"))
+    return res
+
+
+@app.post("/api/v1/accounts/switch", tags=["Multi-Tenancy & Profiles"])
+def post_switch_account(payload: SwitchAccountPayload):
+    """
+    Switches the active studio creator profile to the target account.
+    """
+    res = accounts.switch_account(payload.account_id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=404, detail=res.get("message", "Account not found"))
+    return res
+
+
+@app.delete("/api/v1/accounts/{account_id}", tags=["Multi-Tenancy & Profiles"])
+def delete_creator_account(account_id: str):
+    """
+    Deletes a secondary creator profile. Default profile cannot be deleted.
+    """
+    res = accounts.delete_account(account_id)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message", "Cannot delete account"))
+    return res
 
 
 # -------------------------------------------------------------

@@ -253,6 +253,86 @@ if "%~1"=="" (
 )
 """
 
+UNIX_LAUNCHER = r"""#!/usr/bin/env bash
+# ==========================================================
+#   Inox Hydra - Local Creator Engine
+#   100% local. Zero cloud egress. Port 8000.
+# ==========================================================
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+export INOX_DEV_MODE=""
+
+# Already running? Reuse existing server
+SERVER_RUNNING=0
+if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 8000 >/dev/null 2>&1; then
+    SERVER_RUNNING=1
+elif command -v curl >/dev/null 2>&1 && curl -s http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+    SERVER_RUNNING=1
+fi
+
+if [ "$SERVER_RUNNING" -eq 1 ]; then
+    echo "[*] Already running on http://127.0.0.1:8000"
+else
+    echo "[*] Starting local engine..."
+    PYTHON_EXE="$SCRIPT_DIR/runtime/bin/python3"
+    if [ ! -x "$PYTHON_EXE" ]; then
+        PYTHON_EXE="$SCRIPT_DIR/runtime/python"
+    fi
+    if [ ! -x "$PYTHON_EXE" ]; then
+        PYTHON_EXE="python3"
+    fi
+    nohup "$PYTHON_EXE" -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000 >/dev/null 2>&1 &
+    sleep 3
+fi
+
+# Open browser
+BROWSER=""
+for b in google-chrome google-chrome-stable chromium chromium-browser brave-browser brave; do
+    if command -v "$b" >/dev/null 2>&1; then
+        BROWSER="$b"
+        break
+    fi
+done
+
+if [ -n "$BROWSER" ]; then
+    echo "[*] Opening the studio in app mode..."
+    nohup "$BROWSER" --app="http://127.0.0.1:8000" --window-size=1440,920 >/dev/null 2>&1 &
+elif command -v xdg-open >/dev/null 2>&1; then
+    echo "[*] Opening default browser via xdg-open..."
+    xdg-open http://127.0.0.1:8000 >/dev/null 2>&1 &
+elif command -v open >/dev/null 2>&1; then
+    echo "[*] Opening default browser via open (macOS)..."
+    open http://127.0.0.1:8000 >/dev/null 2>&1 &
+else
+    echo "[*] Studio running at http://127.0.0.1:8000"
+fi
+
+echo "[*] Ready."
+exit 0
+"""
+
+UNIX_CLI_LAUNCHER = r"""#!/usr/bin/env bash
+# Inox Hydra support toolkit.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+PYTHON_EXE="$SCRIPT_DIR/runtime/bin/python3"
+if [ ! -x "$PYTHON_EXE" ]; then
+    PYTHON_EXE="$SCRIPT_DIR/runtime/python"
+fi
+if [ ! -x "$PYTHON_EXE" ]; then
+    PYTHON_EXE="python3"
+fi
+
+if [ "$#" -eq 0 ]; then
+    exec "$PYTHON_EXE" -m studio.cli --help
+else
+    exec "$PYTHON_EXE" -m studio.cli "$@"
+fi
+"""
+
 README = """Inox Hydra - LinkedIn Studio (Portable)
 =======================================
 
@@ -662,11 +742,14 @@ def copy_application(app_dir):
 def main():
     skip_download = "--skip-download" in sys.argv
 
-    if platform.system() != "Windows":
-        log("warn", "building a Windows artifact from a non-Windows host. "
-                    "Compiled wheels will be wrong. Use a windows runner.")
+    if platform.system() == "Windows":
+        platform_tag = "win64"
+    elif platform.system() == "Darwin":
+        platform_tag = "darwin-universal"
+    else:
+        platform_tag = f"linux-{platform.machine()}"
 
-    log("prep", "staging bundled content and propagating version")
+    log("prep", f"staging bundled content for {platform_tag}")
     if subprocess.run([sys.executable, os.path.join(REPO_ROOT, "tools", "prepare_package.py")],
                       cwd=REPO_ROOT).returncode != 0:
         raise SystemExit("prepare_package failed")
@@ -674,7 +757,7 @@ def main():
     sys.path.insert(0, REPO_ROOT)
     from studio.__version__ import __version__
 
-    name = f"InoxHydra-{__version__}-win64"
+    name = f"InoxHydra-{__version__}-{platform_tag}"
     staging = os.path.join(BUILD_ROOT, name)
     if os.path.exists(staging):
         shutil.rmtree(staging)
@@ -684,10 +767,18 @@ def main():
     runtime_zip = fetch_runtime(skip_download)
     runtime_dir = os.path.join(staging, "runtime")
     os.makedirs(runtime_dir)
-    with zipfile.ZipFile(runtime_zip) as z:
-        z.extractall(runtime_dir)
-    embedded = os.path.join(runtime_dir, "python.exe")
-    assert os.path.exists(embedded), "embeddable runtime is missing python.exe"
+    extract_runtime(runtime_zip, runtime_dir)
+
+    if platform.system() == "Windows":
+        embedded = os.path.join(runtime_dir, "python.exe")
+        assert os.path.exists(embedded), "embeddable runtime is missing python.exe"
+    else:
+        embedded = get_runtime_interpreter(runtime_dir)
+        assert os.path.exists(embedded), f"runtime is missing python interpreter at {embedded}"
+        try:
+            os.chmod(embedded, 0o755)
+        except OSError:
+            pass
     write_path_file(runtime_dir)
 
     lib_dir = os.path.join(staging, "lib")
@@ -705,20 +796,35 @@ def main():
                         *SECRET_PATTERNS, *ALWAYS_SECRET))
     log("app", "copied unpacked extension for store submission and fallback")
 
+    # Windows batch launchers
     with open(os.path.join(staging, "InoxHydra.bat"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write(LAUNCHER)
     with open(os.path.join(staging, "InoxHydra-CLI.bat"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write(CLI_LAUNCHER)
+
+    # Unix shell launchers for Linux / macOS
+    sh_launcher = os.path.join(staging, "InoxHydra.sh")
+    with open(sh_launcher, "w", encoding="utf-8", newline="\n") as f:
+        f.write(UNIX_LAUNCHER)
+    os.chmod(sh_launcher, 0o755)
+
+    sh_cli = os.path.join(staging, "InoxHydra-CLI.sh")
+    with open(sh_cli, "w", encoding="utf-8", newline="\n") as f:
+        f.write(UNIX_CLI_LAUNCHER)
+    os.chmod(sh_cli, 0o755)
+
+    if os.path.exists(os.path.join(REPO_ROOT, "create_desktop_shortcut.sh")):
+        sh_shortcut = os.path.join(staging, "create_desktop_shortcut.sh")
+        shutil.copy2(os.path.join(REPO_ROOT, "create_desktop_shortcut.sh"), sh_shortcut)
+        os.chmod(sh_shortcut, 0o755)
+
     with open(os.path.join(staging, "README.txt"), "w", encoding="utf-8", newline="\r\n") as f:
         f.write(README)
 
     shutil.copy2(os.path.join(REPO_ROOT, "create_desktop_shortcut.vbs"), staging)
     shutil.copy2(os.path.join(REPO_ROOT, "LICENSE"), staging)
 
-    # The application icon. Shipped at the staging root, beside the launcher,
-    # because that is what the shortcut and the tray both resolve against. Its
-    # absence is why this product wore the generic Windows icon, so the build
-    # refuses rather than quietly producing that artifact again.
+    # Application icons
     icon_source = os.path.join(REPO_ROOT, "assets", "inox_hydra.ico")
     assert os.path.isfile(icon_source), (
         "assets/inox_hydra.ico is missing. Run tools/generate_icons.py before building, "
@@ -726,18 +832,14 @@ def main():
     )
     os.makedirs(os.path.join(staging, "assets"), exist_ok=True)
     shutil.copy2(icon_source, os.path.join(staging, "assets", "inox_hydra.ico"))
-    log("app", "copied the application icon")
+    png_icon = os.path.join(REPO_ROOT, "assets", "inox_hydra.png")
+    if os.path.isfile(png_icon):
+        shutil.copy2(png_icon, os.path.join(staging, "assets", "inox_hydra.png"))
+    log("app", "copied application icons")
 
-    # Everything, immediately before the zip is written.
-    #
-    # copy_application checks what it copied, but four more trees are staged
-    # after it returns: the runtime, the vendored lib directory, the unpacked
-    # extension and the loose root files. A check that covers one of five is
-    # not a check, and the argument it is given is the part a grep over source
-    # text cannot verify.
     assert_no_secrets(staging)
 
-    log("zip", "compressing")
+    log("zip", "compressing zip package")
     archive = os.path.join(BUILD_ROOT, name + ".zip")
     if os.path.exists(archive):
         os.remove(archive)
@@ -745,7 +847,23 @@ def main():
         for dirpath, _, filenames in os.walk(staging):
             for filename in filenames:
                 full = os.path.join(dirpath, filename)
-                z.write(full, os.path.join(name, os.path.relpath(full, staging)))
+                zinfo = zipfile.ZipInfo(os.path.join(name, os.path.relpath(full, staging)))
+                zinfo.date_time = (2026, 1, 1, 0, 0, 0)
+                if os.access(full, os.X_OK):
+                    zinfo.external_attr = 0o755 << 16
+                else:
+                    zinfo.external_attr = 0o644 << 16
+                with open(full, "rb") as fp:
+                    z.writestr(zinfo, fp.read(), compress_type=zipfile.ZIP_DEFLATED)
+
+    if platform.system() != "Windows":
+        log("tar", "compressing tarball package")
+        tar_archive = os.path.join(BUILD_ROOT, name + ".tar.gz")
+        if os.path.exists(tar_archive):
+            os.remove(tar_archive)
+        with tarfile.open(tar_archive, "w:gz") as tar:
+            tar.add(staging, arcname=name)
+        log("done", f"tarball created: {tar_archive}")
 
     extracted = sum(
         os.path.getsize(os.path.join(d, f))

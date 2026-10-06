@@ -36,7 +36,13 @@
   "content_scripts": [
     {
       "matches": ["https://*.linkedin.com/*"],
-      "js": ["content.js", "own_pages.js"],
+      "js": ["voyager_interceptor.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://*.linkedin.com/*"],
+      "js": ["voyager_schema.js", "content.js", "own_pages.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
     }
