@@ -32,6 +32,13 @@ const RELAYABLE_PATHS = new Set([
   // belongs to the creator the studio has confirmed.
   "/api/v1/bridge/heartbeat",
   "/api/v1/bridge/capture",
+  // Voyager API interception (voyager_schema.js + content.js). Structured JSON
+  // captured from LinkedIn's network layer, far more reliable than DOM scraping.
+  "/api/v1/bridge/voyager-ingest",
+  // Schema drift telemetry. When a Voyager response no longer matches the
+  // expected field structure, the extension reports what changed so the backend
+  // can serve an updated schema without requiring an extension update.
+  "/api/v1/bridge/schema-drift",
   "/api/v1/identity/me",
   "/api/v1/identity/observe",
   "/api/v1/self/posts/ingest",
@@ -48,7 +55,8 @@ const PANEL_PATHS = [
   /^\/api\/leads$/,
   /^\/api\/posts$/,
   /^\/api\/leads\/[A-Za-z0-9_.:-]+\/dm-script$/,
-  /^\/api\/v1\/onboarding\/state$/
+  /^\/api\/v1\/onboarding\/state$/,
+  /^\/api\/v1\/extension\/health$/
 ];
 
 /**

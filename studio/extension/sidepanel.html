@@ -212,6 +212,7 @@
     <button class="tab-btn active" id="tab-composer-btn">Composer</button>
     <button class="tab-btn" id="tab-queue-btn">Queued</button>
     <button class="tab-btn" id="tab-crm-btn">Warm CRM</button>
+    <button class="tab-btn" id="tab-health-btn">Health</button>
   </div>
 
   <!-- Panel 1: Composer & Quick Injector -->
@@ -253,6 +254,17 @@
       <span class="status-badge" id="sp-crm-count">0 Leads</span>
     </div>
     <div class="queue-list-mini" id="crm-mini-list">
+      <!-- Dynamically populated -->
+    </div>
+  </div>
+
+  <!-- Panel 4: Health & Self-Healing Telemetry -->
+  <div id="panel-health" style="display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+      <span style="font-size: 11.5px; color: var(--text-muted);">Self-Healing Observer</span>
+      <span class="status-badge" id="sp-health-badge">Online</span>
+    </div>
+    <div class="queue-list-mini" id="health-mini-list">
       <!-- Dynamically populated -->
     </div>
   </div>

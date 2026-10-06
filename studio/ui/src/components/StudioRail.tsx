@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Search, ShieldCheck } from "lucide-react";
+import { AccountSwitcher } from "@/components/AccountSwitcher";
 import { type SectionId, type StudioSection } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 
@@ -142,6 +143,11 @@ export function StudioRail({ sections, active, onSelect, trayOpen, onToggleTray,
           );
         })}
       </ul>
+
+      {/* Multi-tenant profile switcher */}
+      <div className="mb-2">
+        <AccountSwitcher condensed />
+      </div>
 
       {/* Local shield. Blueprint section 14 asks for a persistent trust signal
           that stays calm rather than shouting. It is the one always visible

@@ -194,26 +194,32 @@ document.addEventListener("DOMContentLoaded", () => {
   const tabComposer = document.getElementById("tab-composer-btn");
   const tabQueue = document.getElementById("tab-queue-btn");
   const tabCrm = document.getElementById("tab-crm-btn");
+  const tabHealth = document.getElementById("tab-health-btn");
   const panelComposer = document.getElementById("panel-composer");
   const panelQueue = document.getElementById("panel-queue");
   const panelCrm = document.getElementById("panel-crm");
+  const panelHealth = document.getElementById("panel-health");
 
   tabComposer.addEventListener("click", () => {
     tabComposer.classList.add("active");
     tabQueue.classList.remove("active");
     tabCrm.classList.remove("active");
+    tabHealth.classList.remove("active");
     panelComposer.style.display = "block";
     panelQueue.style.display = "none";
     panelCrm.style.display = "none";
+    panelHealth.style.display = "none";
   });
 
   tabQueue.addEventListener("click", () => {
     tabQueue.classList.add("active");
     tabComposer.classList.remove("active");
     tabCrm.classList.remove("active");
+    tabHealth.classList.remove("active");
     panelComposer.style.display = "none";
     panelQueue.style.display = "block";
     panelCrm.style.display = "none";
+    panelHealth.style.display = "none";
     loadSideQueue();
   });
 
@@ -221,10 +227,24 @@ document.addEventListener("DOMContentLoaded", () => {
     tabCrm.classList.add("active");
     tabComposer.classList.remove("active");
     tabQueue.classList.remove("active");
+    tabHealth.classList.remove("active");
     panelComposer.style.display = "none";
     panelQueue.style.display = "none";
     panelCrm.style.display = "block";
+    panelHealth.style.display = "none";
     loadSideCRM();
+  });
+
+  tabHealth.addEventListener("click", () => {
+    tabHealth.classList.add("active");
+    tabComposer.classList.remove("active");
+    tabQueue.classList.remove("active");
+    tabCrm.classList.remove("active");
+    panelComposer.style.display = "none";
+    panelQueue.style.display = "none";
+    panelCrm.style.display = "none";
+    panelHealth.style.display = "block";
+    loadSideHealth();
   });
 
   function showToast(msg) {
@@ -376,6 +396,89 @@ async function loadSideCRM() {
     });
   } catch (err) {
     container.innerHTML = "<p style='color: #ef4444;'>Local server offline.</p>";
+  }
+}
+
+async function loadSideHealth() {
+  const container = document.getElementById("health-mini-list");
+  const badge = document.getElementById("sp-health-badge");
+  container.innerHTML = "<p style='color: var(--text-dim);'>Checking telemetry health...</p>";
+
+  try {
+    const result = await panelApi("/api/v1/extension/health");
+    if (!result.ok) {
+      container.innerHTML = `<p style="color: #ef4444;">${escapeHtml(failureText(result, "health diagnostics"))}</p>`;
+      badge.innerText = "Offline";
+      badge.style.color = "#ef4444";
+      return;
+    }
+
+    const health = result.data || {};
+    const bridge = health.bridge || {};
+    const extractors = health.extractors || [];
+    const drift = health.recent_drift || [];
+    const voyagerActive = health.voyager_active;
+
+    if (bridge.connected) {
+      badge.innerText = voyagerActive ? "Voyager Active" : "DOM Fallback";
+      badge.style.color = voyagerActive ? "var(--success)" : "#f59e0b";
+    } else {
+      badge.innerText = "Bridge Idle";
+      badge.style.color = "var(--text-dim)";
+    }
+
+    let html = `
+      <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+          <span style="color: var(--text-muted);">Network Interceptor</span>
+          <span style="font-weight: 600; color: ${voyagerActive ? "var(--success)" : "#f59e0b"};">
+            ${voyagerActive ? "🟢 Active (Exact JSON)" : "🟡 Standby"}
+          </span>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+          <span style="color: var(--text-muted);">Schema Registry</span>
+          <span style="color: var(--accent); font-family: monospace;">v${escapeHtml(health.schema_version || "2026.10.1")}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+          <span style="color: var(--text-muted);">24h Network Captures</span>
+          <span style="font-weight: 600;">${health.voyager_24h_captures || 0}</span>
+        </div>
+      </div>
+    `;
+
+    if (drift.length > 0) {
+      html += `
+        <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; padding: 8px; margin-bottom: 8px;">
+          <div style="color: #f87171; font-weight: 600; margin-bottom: 4px; font-size: 11px;">⚠️ Detected API Drift (${drift.length})</div>
+          <div style="font-size: 10.5px; color: var(--text-muted);">
+            ${escapeHtml(drift[0].schema_name)}: missing ${escapeHtml((drift[0].drift_fields || []).join(", "))}
+          </div>
+        </div>
+      `;
+    } else {
+      html += `
+        <div style="background: rgba(16, 185, 129, 0.06); border: 1px solid rgba(16, 185, 129, 0.15); border-radius: 6px; padding: 8px; margin-bottom: 8px; text-align: center; color: var(--success); font-size: 11px;">
+          ✓ Zero drift detected - 100% schema match
+        </div>
+      `;
+    }
+
+    html += `<div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">Observer Pipelines:</div>`;
+    extractors.forEach(ext => {
+      const isOk = ext.state === "working";
+      const isDrift = ext.state === "drifting";
+      const dot = isOk ? "🟢" : (isDrift ? "🔴" : "⚪");
+      html += `
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.03); font-size: 11px;">
+          <span style="color: var(--text);">${dot} ${escapeHtml(ext.label)}</span>
+          <span style="color: var(--text-dim); font-size: 10px;">${ext.state}</span>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = `<p style="color: #ef4444;">Could not load health metrics.</p>`;
   }
 }
 

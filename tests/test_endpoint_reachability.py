@@ -99,10 +99,20 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 #
 # Then 158 -> 160, with Patterns: /api/v1/insights/patterns and
 # /api/v1/insights/cadence, both called by the Patterns screen.
+#
+# Then 160 -> 163, with Voyager self-healing and extension health:
+# /api/v1/bridge/voyager-ingest and /api/v1/bridge/schema-drift are written by
+# the extension only; /api/v1/extension/health is read by the extension sidepanel,
+# so all three join the unreachable column by design.
+#
+# Then 163 -> 166, with Multi-Tenant Creator Profiles:
+# /api/v1/accounts, /api/v1/accounts/switch, and /api/v1/accounts/*, all three
+# called by the AccountSwitcher in StudioRail and NavigationTray, so reached
+# moves with the total and unreachable count stays at 84.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 160
-REACHED_BY_INTERFACE = 79
-UNREACHABLE = 81
+TOTAL_API_PATHS = 166
+REACHED_BY_INTERFACE = 82
+UNREACHABLE = 84
 
 ROUTE_DECORATOR = re.compile(
     r"^\s*@app\.(get|post|put|delete|patch)\(\s*[\"']([^\"']+)[\"']", re.MULTILINE

@@ -28,6 +28,8 @@ REQUIRED_FILES = [
     "background.js",
     "content.js",
     "own_pages.js",
+    "voyager_interceptor.js",
+    "voyager_schema.js",
     "content.css",
     "popup.html",
     "popup.js",

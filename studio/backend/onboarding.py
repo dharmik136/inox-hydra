@@ -196,9 +196,12 @@ EXTRACTORS = {
     "activity_reactions": "Your reactions",
     "analytics": "Creator analytics",
     "post_analytics": "Your posts' analytics pages",
+    "voyager_feed_updates": "Voyager feed updates interception",
+    "voyager_creator_analytics": "Voyager creator analytics interception",
 }
 
 CAPTURE_RETENTION = timedelta(days=7)
+DRIFT_RETENTION = timedelta(days=30)
 
 
 def record_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -265,6 +268,167 @@ def capture_health() -> List[Dict[str, Any]]:
             "state": "never_run" if not latest else ("drifting" if drift else "working"),
         })
     return health
+
+
+def record_schema_drift(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Records one schema drift event from the extension's Voyager interceptor."""
+    if not isinstance(payload, dict):
+        raise RefusedCapture("payload must be an object")
+    schema_name = _text(payload.get("schema_name"), 80)
+    schema_version = _text(payload.get("schema_version"), 40)
+    if not schema_name or not schema_version:
+        raise RefusedCapture("schema_name and schema_version required")
+    drift_fields = payload.get("drift_fields") or []
+    top_keys = payload.get("response_top_keys") or []
+    now = datetime.now(timezone.utc)
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO schema_drift_events
+                    (observed_at, schema_name, schema_version, drift_fields, confidence,
+                     success, source_url, response_top_keys, extension_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    now.isoformat(),
+                    schema_name,
+                    schema_version,
+                    json.dumps(drift_fields) if drift_fields else None,
+                    float(payload.get("confidence", 0.0)),
+                    1 if payload.get("success") else 0,
+                    _text(payload.get("source_url"), 500),
+                    json.dumps(top_keys) if top_keys else None,
+                    _text(payload.get("extension_version"), 40),
+                )
+            )
+            conn.execute(
+                "DELETE FROM schema_drift_events WHERE observed_at < ?",
+                ((now - DRIFT_RETENTION).isoformat(),)
+            )
+    finally:
+        conn.close()
+    return {"status": "success"}
+
+
+def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Ingests structured data captured directly from LinkedIn Voyager network responses.
+    Updates post metric observations, creator analytics, and records capture health.
+    """
+    if not isinstance(payload, dict):
+        raise RefusedCapture("payload must be an object")
+    schema_name = payload.get("schema_name")
+    data = payload.get("data")
+    if not schema_name or data is None:
+        raise RefusedCapture("schema_name and data are required")
+
+    items_seen = len(data) if isinstance(data, list) else (1 if isinstance(data, dict) else 0)
+    items_kept = 0
+    now = datetime.now(timezone.utc)
+
+    conn = get_db()
+    try:
+        with conn:
+            if schema_name == "feed_updates" and isinstance(data, list):
+                for item in data:
+                    urn = item.get("urn")
+                    if not urn or not _ACTIVITY_URN.match(urn):
+                        continue
+                    metrics = {
+                        "impressions": item.get("impressions"),
+                        "reactions": item.get("likes"),
+                        "comments": item.get("comments"),
+                    }
+                    if _record_observation(conn, urn, "voyager_network", metrics):
+                        items_kept += 1
+                        if metrics.get("impressions") is not None:
+                            conn.execute(
+                                "UPDATE own_posts SET impressions = ?, last_seen_at = ? WHERE activity_urn = ?",
+                                (metrics["impressions"], now.isoformat(), urn)
+                            )
+            elif schema_name == "creator_analytics" and isinstance(data, list) and data:
+                entry = data[0] if data else {}
+                followers = _count(entry.get("followers"))
+                impressions = _count(entry.get("impressions"))
+                if followers is not None or impressions is not None:
+                    today = now.strftime("%Y-%m-%d")
+                    conn.execute(
+                        """
+                        INSERT INTO analytics_daily (date, impressions, followers, precision, observation_window)
+                        VALUES (?, ?, ?, 'exact', '1d')
+                        ON CONFLICT(date) DO UPDATE SET
+                            impressions = COALESCE(excluded.impressions, analytics_daily.impressions),
+                            followers = COALESCE(excluded.followers, analytics_daily.followers),
+                            precision = 'exact'
+                        """,
+                        (today, impressions, followers)
+                    )
+                    items_kept += 1
+
+            # Log to captures table for health visibility
+            conn.execute(
+                """
+                INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept, drift, extension_version)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    now.isoformat(),
+                    f"voyager_{schema_name}",
+                    "voyager_api",
+                    items_seen,
+                    items_kept,
+                    None,
+                    _text(payload.get("extension_version"), 40)
+                )
+            )
+    finally:
+        conn.close()
+
+    return {"status": "success", "items_seen": items_seen, "items_kept": items_kept}
+
+
+def extension_health() -> Dict[str, Any]:
+    """Aggregated health report of the Chrome extension, Voyager capture, and drift."""
+    conn = get_db()
+    try:
+        drift_rows = conn.execute(
+            """
+            SELECT schema_name, schema_version, drift_fields, confidence, success, observed_at
+            FROM schema_drift_events
+            ORDER BY observed_at DESC LIMIT 20
+            """
+        ).fetchall()
+        recent_drift = [
+            {
+                "schema_name": r["schema_name"],
+                "schema_version": r["schema_version"],
+                "drift_fields": json.loads(r["drift_fields"]) if r["drift_fields"] else [],
+                "confidence": r["confidence"],
+                "success": bool(r["success"]),
+                "observed_at": r["observed_at"]
+            }
+            for r in drift_rows
+        ]
+        voyager_captures = conn.execute(
+            """
+            SELECT COUNT(*) FROM captures
+            WHERE extractor LIKE 'voyager_%' AND observed_at > ?
+            """,
+            ((datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+
+    return {
+        "bridge": bridge_status(),
+        "extractors": capture_health(),
+        "voyager_active": voyager_captures > 0,
+        "voyager_24h_captures": voyager_captures,
+        "recent_drift": recent_drift,
+        "schema_version": "2026.10.1"
+    }
 
 
 # ---------------------------------------------------------------------------
