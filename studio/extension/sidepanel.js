@@ -11,10 +11,13 @@ function studioApiFromPanel(path, options) {
     if (options && options.body) {
       try { body = JSON.parse(options.body); } catch (e) { body = null; }
     }
+    // PANEL_WRITE, not STUDIO_API: that relay serves content scripts and its
+    // allowlist rightly refuses this path, which is why the call used to fail
+    // without a word.
     chrome.runtime.sendMessage(
-      { action: "STUDIO_API", path: path, method: (options && options.method) || "POST", body: body },
+      { action: "PANEL_WRITE", path: path, body: body },
       (response) => {
-        const ok = !chrome.runtime.lastError && response && response.status === "success";
+        const ok = !chrome.runtime.lastError && Boolean(response && response.ok);
         resolve({
           ok: ok,
           json: () => Promise.resolve(ok && response ? response.data : {})

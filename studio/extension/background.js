@@ -59,6 +59,15 @@ const PANEL_PATHS = [
   /^\/api\/v1\/extension\/health$/
 ];
 
+// The one write the side panel makes: bookkeeping for a post the studio itself
+// just placed in LinkedIn's composer. It has its own action and its own list,
+// so PANEL_API stays read-only and the page relay above stays closed to it.
+// Sent through STUDIO_API it was refused there, silently, so injected posts
+// never got the row that later attribution attaches to.
+const PANEL_WRITE_PATHS = new Set([
+  "/api/v1/posts/injected"
+]);
+
 /**
  * Reads the studio's access token.
  *
@@ -324,6 +333,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
     studioFetch(path, { method: "GET" })
+      .then(res => res.json().catch(() => ({})).then(data => ({ ok: res.ok, httpStatus: res.status, data })))
+      .then(result => sendResponse(result))
+      .catch(() => sendResponse({ ok: false, httpStatus: 0, reason: "unreachable" }));
+    return true;
+  }
+
+  if (message.action === "PANEL_WRITE") {
+    const fromOwnPage = !sender.tab && sender.id === chrome.runtime.id &&
+      typeof sender.url === "string" && sender.url.startsWith(chrome.runtime.getURL(""));
+    const path = String(message.path || "");
+    if (!fromOwnPage || !PANEL_WRITE_PATHS.has(path)) {
+      sendResponse({ ok: false, httpStatus: 0, reason: "refused" });
+      return true;
+    }
+    studioFetch(path, { method: "POST", body: JSON.stringify(message.body || {}) })
       .then(res => res.json().catch(() => ({})).then(data => ({ ok: res.ok, httpStatus: res.status, data })))
       .then(result => sendResponse(result))
       .catch(() => sendResponse({ ok: false, httpStatus: 0, reason: "unreachable" }));

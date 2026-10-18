@@ -219,6 +219,32 @@ def test_panel_reads_are_for_the_extensions_own_pages_only():
     assert "PANEL_PATHS" in handler, "panel reads are not limited to a list of paths"
 
 
+def test_the_side_panel_write_reaches_the_studio():
+    """
+    The side panel recorded an injected post through STUDIO_API, whose list is
+    for content scripts and does not hold /api/v1/posts/injected. The worker
+    refused it, the catch swallowed the refusal, and the post never got the row
+    that attribution attaches to later.
+    """
+    background = _code(BACKGROUND)
+    panel = _code(os.path.join(EXT, "sidepanel.js"))
+
+    relay = set(re.findall(r'"(/api/[^"]+)"', background.split("RELAYABLE_PATHS = new Set([")[1].split("]);")[0]))
+    writes = set(re.findall(r'"(/api/[^"]+)"', background.split("PANEL_WRITE_PATHS = new Set([")[1].split("]);")[0]))
+    assert "/api/v1/posts/injected" in writes
+    assert "/api/v1/posts/injected" not in relay, "a LinkedIn page could create post rows through the content relay"
+
+    handler = background[background.index('message.action === "PANEL_WRITE"'):]
+    handler = handler[:handler.index("return true;\n  }\n\n  if (message.action")]
+    assert "sender.tab" in handler, "a content script inside a LinkedIn page could write through this"
+    assert "PANEL_WRITE_PATHS" in handler
+
+    for call in re.findall(r'studioApiFromPanel\("(/api/[^"]+)"', panel):
+        assert call in writes, f"the side panel writes {call}, which no lane it uses will carry"
+    helper = _function(panel, "studioApiFromPanel")
+    assert '"PANEL_WRITE"' in helper and '"STUDIO_API"' not in helper
+
+
 def test_the_readers_match_linkedins_rebuilt_pages():
     """
     Measured on a live profile and post, 27 Sep 2026: hashed class names, no
