@@ -82,17 +82,22 @@ def test_test_code_is_not_shipped_to_users(manifest):
 
 
 def test_every_runtime_package_is_declared(manifest):
-    """Each importable subpackage the app needs must be listed explicitly."""
+    """
+    Each importable subpackage under studio/ must be listed explicitly.
+
+    Found on disk rather than named here: a hand-kept list let
+    studio.backend.routers ship out of the wheel, and the installed app failed
+    at its first import while every test passed.
+    """
     packages = set(manifest["tool"]["setuptools"]["packages"])
-    for required in (
-        "studio",
-        "studio.backend",
-        "studio.backend.agno_agentos",
-        "studio.backend.agno_agentos.agents",
-        "studio.backend.mcp_client",
-        "studio.core",
-    ):
-        assert required in packages, f"{required} would be missing from the wheel"
+    on_disk = set()
+    for root, dirs, files in os.walk(os.path.join(REPO_ROOT, "studio")):
+        dirs[:] = [d for d in dirs if d not in ("node_modules", "__pycache__", "tests")]
+        if "__init__.py" in files:
+            on_disk.add(os.path.relpath(root, REPO_ROOT).replace(os.sep, "."))
+    assert "studio.backend" in on_disk
+    missing = sorted(on_disk - packages)
+    assert not missing, f"{missing} would be missing from the wheel"
 
 
 def test_non_python_content_is_declared(manifest):

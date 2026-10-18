@@ -27,6 +27,9 @@ released. Version numbers follow `studio/__version__.py`.
   the response records which parts went.
 
 ### Fixed
+- An installed copy of the studio starts again. The package left out the
+  folder that holds most of its API routes, so a fresh install failed at its
+  first import; CI now finds every package on disk instead of trusting a list.
 - Carousel slides are signed with your own name and headline from Brand Studio
   (or your confirmed LinkedIn profile), or left unsigned. They used to fall back
   to the original author's job title, which every new user's slides carried.

@@ -38,6 +38,7 @@ packages = [
     "studio.backend.agno_agentos",
     "studio.backend.agno_agentos.agents",
     "studio.backend.mcp_client",
+    "studio.backend.routers",
     "studio.core",
 ]
 
