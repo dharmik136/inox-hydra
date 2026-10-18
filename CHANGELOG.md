@@ -27,6 +27,12 @@ released. Version numbers follow `studio/__version__.py`.
   the response records which parts went.
 
 ### Fixed
+- A first-message draft no longer tells someone who only reacted to your post
+  that they commented on it. Every lead the bridge captured was labelled
+  "Commented"; the label now follows how they actually engaged, and leads
+  captured before this are corrected from their own records when the studio
+  upgrades its database (a backup is taken first, as always).
+- A captured lead's LinkedIn profile link is stored where the dossier reads it.
 - Follower counts read from LinkedIn's network responses were never saved: the
   write named a column that does not exist, and failed every time without a
   trace. They are saved now. The impressions figure beside them is not, because

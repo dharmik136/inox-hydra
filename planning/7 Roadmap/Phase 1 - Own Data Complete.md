@@ -15,5 +15,6 @@ tags:
 - [ ] [[Voice Pack]] into the hook rail, repurposer and DM drafter.
 - [ ] Real account scoping ([[Gap - Account scoping is cosmetic]]).
 - [ ] Decide on the discarded Voyager schemas ([[Gap - Voyager data discarded]]).
-- [ ] [[Gap - Lead fields mislabelled]], [[Gap - Outbound has no identity]].
+- [x] [[Gap - Lead fields mislabelled]] (labels and profile URL; post topic still open).
+- [ ] [[Gap - Outbound has no identity]].
 - [ ] [[Content Pillars]].

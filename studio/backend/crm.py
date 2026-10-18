@@ -62,6 +62,21 @@ def _find_lead(cursor, linkedin_urn: Optional[str]):
             return row
     return None
 
+# How a lead engaged, as the leads table and the first-message drafts word it,
+# strongest first. A lead keeps the strongest interaction on record: someone
+# who commented and later reacted still commented.
+ENGAGEMENT_LABELS = {"COMMENT": "Commented", "REPOST": "Reposted", "LIKE": "Liked"}
+_ENGAGEMENT_RANK = {"Commented": 3, "Reposted": 2, "Liked": 1}
+
+
+def strongest_engagement(current: Optional[str], interaction_type: Optional[str]) -> str:
+    """The label to keep after this interaction, given the one already stored."""
+    new = ENGAGEMENT_LABELS.get((interaction_type or "").upper(), "Liked")
+    if _ENGAGEMENT_RANK.get(current or "", 0) >= _ENGAGEMENT_RANK[new]:
+        return current
+    return new
+
+
 # -- Validation constants --------------------------------------------------
 MAX_CRM_NAME_LENGTH = 200
 MAX_CRM_HEADLINE_LENGTH = 500
@@ -468,9 +483,20 @@ class ReverseCRMManager:
             with conn:
                 cursor = conn.cursor()
                 row = _find_lead(cursor, linkedin_urn)
+                # The capture sends the profile URL as linkedin_urn. The rest
+                # of the studio reads profile_url, which stayed empty.
+                profile_url = linkedin_urn if (linkedin_urn or "").lower().startswith("http") else None
 
                 if row:
                     lead_id = row["id"]
+                    stored = cursor.execute(
+                        "SELECT engagement_type FROM leads WHERE id = ?", (lead_id,)
+                    ).fetchone()["engagement_type"]
+                    cursor.execute(
+                        "UPDATE leads SET engagement_type = ?, "
+                        "profile_url = COALESCE(NULLIF(profile_url, ''), ?) WHERE id = ?",
+                        (strongest_engagement(stored, interaction_type), profile_url, lead_id),
+                    )
                     # Provisional; the score is recomputed below once this
                     # interaction is recorded.
                     new_icp = icp_score
@@ -489,10 +515,11 @@ class ReverseCRMManager:
                     new_id = f"lead-{stable_lead_key(linkedin_urn or full_name)}"
                     cursor.execute("""
                     INSERT INTO leads (
-                        id, linkedin_urn, full_name, name, headline, company,
-                        seniority_level, icp_score, lead_status, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NEW', CURRENT_TIMESTAMP)
-                    """, (new_id, linkedin_urn, full_name, full_name, headline, company, seniority, icp_score))
+                        id, linkedin_urn, profile_url, full_name, name, headline, company,
+                        seniority_level, icp_score, engagement_type, lead_status, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NEW', CURRENT_TIMESTAMP)
+                    """, (new_id, linkedin_urn, profile_url, full_name, full_name, headline, company,
+                          seniority, icp_score, strongest_engagement(None, interaction_type)))
                     lead_id = new_id
 
                 # One row per interaction. Reading the same comment again, which

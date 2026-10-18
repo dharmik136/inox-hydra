@@ -698,6 +698,40 @@ def _migrate_creator_accounts(cursor: sqlite3.Cursor) -> None:
         """, (name, vanity, headline, initials))
 
 
+def _migrate_lead_engagement_labels(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 17:
+    A captured lead says how they actually engaged, and where their profile is.
+
+    The capture path created leads without an engagement_type, so the schema
+    default 'Commented' applied to people who had only reacted, and the first
+    message draft read it: "I saw you commented on my post" to someone who had
+    liked it. The same path left profile_url empty and kept the URL in
+    linkedin_urn.
+
+    Both are derived from what is already recorded, and only for leads that
+    have interactions, which is every lead the capture created. A lead entered
+    by hand or by a batch import has no interaction rows and keeps the label
+    it was given.
+    """
+    cursor.execute("""
+        UPDATE leads SET engagement_type = (
+            SELECT CASE
+                WHEN SUM(CASE WHEN li.interaction_type = 'COMMENT' THEN 1 ELSE 0 END) > 0 THEN 'Commented'
+                WHEN SUM(CASE WHEN li.interaction_type = 'REPOST' THEN 1 ELSE 0 END) > 0 THEN 'Reposted'
+                ELSE 'Liked'
+            END
+            FROM lead_interactions li WHERE li.lead_id = leads.id
+        )
+        WHERE EXISTS (SELECT 1 FROM lead_interactions li WHERE li.lead_id = leads.id)
+    """)
+    cursor.execute("""
+        UPDATE leads SET profile_url = linkedin_urn
+        WHERE (profile_url IS NULL OR profile_url = '')
+          AND lower(COALESCE(linkedin_urn, '')) LIKE 'http%'
+    """)
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -718,6 +752,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (14, "Keep a history of each lead's status changes", _migrate_lead_stage_events),
     (15, "Record schema drift events from Voyager network interception", _migrate_schema_drift_events),
     (16, "Create creator_accounts table for enterprise multi-tenant profiles", _migrate_creator_accounts),
+    (17, "A captured lead says how they engaged, and where their profile is", _migrate_lead_engagement_labels),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
