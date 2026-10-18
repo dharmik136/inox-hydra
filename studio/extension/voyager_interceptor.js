@@ -51,9 +51,10 @@
 
     const originalFetch = window.fetch;
 
-    // A Proxy rather than a wrapper function, so calls, properties and
-    // toString() behave as the original fetch does and LinkedIn's app is
-    // unaffected by the wrapping.
+    // A Proxy rather than a wrapper function, so calls and properties behave as
+    // the original fetch does and LinkedIn's app is unaffected by the wrapping.
+    // It is not invisible: fetch.toString() no longer names the original, and
+    // the popup says the page's fetch is wrapped.
     const fetchProxy = new Proxy(originalFetch, {
         apply: function(target, thisArg, argumentsList) {
             // Immediately execute the original fetch to ensure zero blocking/delay
@@ -142,7 +143,7 @@
         Object.defineProperty(window, 'fetch', {
             value: fetchProxy,
             configurable: true,
-            enumerable: false, // Stealth requirement
+            enumerable: false,
             writable: true
         });
     } catch (e) {
@@ -150,59 +151,5 @@
         window.fetch = fetchProxy;
     }
 
-    // Bridge React Props to DOM attributes for isolated world extension scripts
-    function stampCardUrns() {
-        try {
-            const cards = document.querySelectorAll('div[id^="expanded"][id*="FeedType_"], div[id*="FeedType_"], [data-view-name="feed-full-update"], .feed-shared-update-v2, .occludable-update');
-            for (let c = 0; c < cards.length; c++) {
-                const card = cards[c];
-                if (card.getAttribute('data-urn')) continue;
-
-                // Fast path: check root element first
-                let foundUrn = null;
-                for (const k in card) {
-                    if (k.startsWith('__reactProps')) {
-                        try {
-                            const str = JSON.stringify(card[k]);
-                            const match = /urn:li:(?:activity|share|ugcPost):(\d+)/.exec(str);
-                            if (match) {
-                                foundUrn = 'urn:li:activity:' + match[1];
-                                break;
-                            }
-                        } catch (e) {}
-                    }
-                }
-                if (foundUrn) {
-                    card.setAttribute('data-urn', foundUrn);
-                    continue;
-                }
-
-                // Fallback: check descendants
-                const inners = card.querySelectorAll('*');
-                for (let i = 0; i < Math.min(inners.length, 50); i++) {
-                    const el = inners[i];
-                    for (const k in el) {
-                        if (k.startsWith('__reactProps')) {
-                            try {
-                                const str = JSON.stringify(el[k]);
-                                const match = /urn:li:(?:activity|share|ugcPost):(\d+)/.exec(str);
-                                if (match) {
-                                    card.setAttribute('data-urn', 'urn:li:activity:' + match[1]);
-                                    break;
-                                }
-                            } catch (e) {}
-                        }
-                    }
-                    if (card.getAttribute('data-urn')) break;
-                }
-            }
-        } catch (err) {}
-    }
-
-    if (typeof document !== 'undefined') {
-        stampCardUrns();
-        setInterval(stampCardUrns, 1500);
-        document.addEventListener('DOMContentLoaded', stampCardUrns);
-    }
 })();
 

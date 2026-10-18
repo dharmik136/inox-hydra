@@ -370,9 +370,23 @@ def export_data(destination: Optional[str] = None, fmt: str = "json") -> str:
                 writer = csv.DictWriter(buffer, fieldnames=list(rows[0].keys()))
                 writer.writeheader()
                 for row in rows:
-                    writer.writerow(row)
+                    writer.writerow({k: _cell(v) for k, v in row.items()})
             z.writestr(f"{table}.csv", buffer.getvalue())
     return destination
+
+
+def _cell(value: Any) -> Any:
+    """
+    A CSV cell a spreadsheet will show as text.
+
+    Names, headlines and comments come from other people, and a cell that
+    begins with =, +, - or @ runs as a formula when the file is opened in a
+    spreadsheet. Such a cell is prefixed with an apostrophe, the spreadsheet
+    convention for "this is text". JSON exports are left exactly as stored.
+    """
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
 
 
 def reset_configuration(keep_data: bool = True) -> Dict[str, Any]:

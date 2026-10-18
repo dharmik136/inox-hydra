@@ -42,7 +42,8 @@ LinkedIn's User Agreement restricts automated access. The bridge is built to sta
 | What | How |
 | :--- | :--- |
 | **Page reading** | Content scripts read the page you have open, as it renders, and follow your own scrolling. They never click, type, post, react, comment, message or connect. |
-| **Network reading (off by default)** | Only when you switch on **Read LinkedIn's network responses** in the extension's popup: `voyager_interceptor.js` wraps `window.fetch` in LinkedIn's page and copies the JSON of responses LinkedIn's own app already fetched, for exact rather than rounded figures. It never sends a request of its own. Wrapping fetch is visible to LinkedIn's page code, which may treat it as automation; switch it off to stop at once. |
+| **Network reading (off by default)** | Only when you switch on **Read LinkedIn's network responses** in the extension's popup: `voyager_interceptor.js` wraps `window.fetch` in LinkedIn's page and copies the JSON of responses LinkedIn's own app already fetched, for exact rather than rounded figures, and the worker notes which of LinkedIn's data requests a page made (address and status, never contents). It never sends a request of its own. Wrapping fetch is visible to LinkedIn's page code, which may treat it as automation. Switching it off stops the copying at once; an open tab keeps the inert wrapper until reloaded. |
+| **Post ids on feed cards** | `card_urns.js` runs in the page, always, and copies each feed card's post id from LinkedIn's React properties onto the card, so the readers know which post a commenter belongs to. It reads and marks the page; it does not touch fetch. |
 | **Requests to LinkedIn** | None from the extension. The studio contacts LinkedIn only for features that are off by default, and from your machine, never from a server. |
 | **Session** | Copied into the studio only when you press **Sync LinkedIn Session** in the popup, read through `chrome.cookies`, and sealed at rest. |
 

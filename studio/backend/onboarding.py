@@ -114,6 +114,22 @@ def _count(value: Any) -> Optional[int]:
     return number if number >= 0 else None
 
 
+def find_archive_twin(conn, urn: str, text: str, archive_only: bool = True) -> Optional[str]:
+    try:
+        from .archive_import import find_twin
+    except ImportError:
+        from archive_import import find_twin
+    return find_twin(conn, urn, text, archive_only=archive_only)
+
+
+def forget_archive(conn) -> None:
+    try:
+        from .archive_import import forget
+    except ImportError:
+        from archive_import import forget
+    forget(conn)
+
+
 def published_at_from_urn(activity_urn: str) -> Optional[str]:
     """
     When a post was published, read from its activity id.
@@ -675,6 +691,8 @@ def forget_identity() -> Dict[str, Any]:
                           "creator_skills", "own_posts", "outbound_engagements", "self_import_requests",
                           "post_metric_observations"):
                 conn.execute(f"DELETE FROM {table}")
+            # And what LinkedIn's archive brought: connections and the record of each import.
+            forget_archive(conn)
     finally:
         conn.close()
     return {"status": "forgotten"}
@@ -720,13 +738,26 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
                     skipped += 1
                     continue
                 counts = {k: _count(item.get(k)) for k in ("reactions", "comments", "reposts", "impressions")}
+                # LinkedIn's archive names a post by its share or ugcPost id;
+                # the page names it by its activity id. If the archive brought
+                # this post in already, that row becomes this one, so the post
+                # is one row with the archive's date and full text and the
+                # page's figures, not two.
+                if not conn.execute("SELECT 1 FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone():
+                    twin = find_archive_twin(conn, urn, _text(item.get("text"), 10000) or "", archive_only=True)
+                    if twin:
+                        conn.execute("UPDATE own_posts SET activity_urn = ? WHERE activity_urn = ?", (urn, twin))
                 conn.execute(
                     """
                     INSERT INTO own_posts (activity_urn, text, published_at, published_at_source,
                                            reactions, comments, reposts, impressions, first_seen_at, last_seen_at)
                     VALUES (?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(activity_urn) DO UPDATE SET
-                        text = COALESCE(excluded.text, own_posts.text),
+                        text = CASE
+                            WHEN own_posts.published_at_source = 'archive' AND own_posts.text IS NOT NULL
+                                 AND (excluded.text IS NULL OR length(own_posts.text) >= length(excluded.text))
+                            THEN own_posts.text
+                            ELSE COALESCE(excluded.text, own_posts.text) END,
                         reactions = COALESCE(excluded.reactions, own_posts.reactions),
                         comments = COALESCE(excluded.comments, own_posts.comments),
                         reposts = COALESCE(excluded.reposts, own_posts.reposts),
@@ -1336,7 +1367,7 @@ def onboarding_state() -> Dict[str, Any]:
         from .archive_import import archive_state
     except ImportError:
         from archive_import import archive_state
-    archive = archive_state()
+    archive = archive_state(look=False)
     return {
         "archive": archive,
         "health": capture_health(),

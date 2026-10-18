@@ -30,7 +30,7 @@ const vm = require("vm");
 const source = fs.readFileSync(process.argv[process.argv.length - 1], "utf8");
 
 const storage = {};
-const listeners = { installed: [], startup: [], changed: [], message: [] };
+const listeners = { installed: [], startup: [], changed: [], message: [], request: [] };
 const registered = [];
 const calls = { register: [], unregister: [], fetch: [] };
 const event = (bucket) => ({ addListener: (fn) => listeners[bucket].push(fn) });
@@ -60,7 +60,7 @@ const chrome = {
   alarms: { clear: () => {} },
   cookies: { get: (_q, cb) => cb({ value: "token" }) },
   sidePanel: { open: async () => {} },
-  webRequest: { onCompleted: { addListener: () => {} } },
+  webRequest: { onCompleted: { addListener: (fn) => listeners.request.push(fn) } },
 };
 const fakeFetch = async (url, opts) => {
   calls.fetch.push(url);
@@ -87,6 +87,9 @@ const setting = async (value) => {
   await tick();
   out.registeredAfterInstall = registered.map((s) => s.id);
 
+  for (const fn of listeners.request) fn({ url: "https://www.linkedin.com/voyager/api/feed/updatesV2?q=x", statusCode: 200, method: "GET" });
+  await tick();
+  out.requestNotesWhileOff = calls.fetch.filter((u) => u.endsWith("/api/analytics/ingest")).length;
   out.offIngest = await relay("/api/v1/bridge/voyager-ingest");
   out.offDrift = await relay("/api/v1/bridge/schema-drift");
   out.fetchesWhileOff = calls.fetch.length;
@@ -95,6 +98,9 @@ const setting = async (value) => {
   out.registerCalls = calls.register;
   out.onIngest = await relay("/api/v1/bridge/voyager-ingest");
   out.fetchesWhileOn = calls.fetch.filter((u) => u.endsWith("/api/v1/bridge/voyager-ingest")).length;
+  for (const fn of listeners.request) fn({ url: "https://www.linkedin.com/voyager/api/feed/updatesV2?q=x", statusCode: 200, method: "GET" });
+  await tick();
+  out.requestNotesWhileOn = calls.fetch.filter((u) => u.endsWith("/api/analytics/ingest")).length;
 
   await setting(false);
   out.unregisterCalls = calls.unregister;
@@ -121,7 +127,23 @@ def test_the_manifest_no_longer_injects_it():
         manifest = json.load(handle)
     for entry in manifest.get("content_scripts", []):
         assert "voyager_interceptor.js" not in entry.get("js", []), "the interceptor is a static content script again"
-        assert entry.get("world") != "MAIN"
+        if entry.get("world") == "MAIN":
+            assert entry["js"] == ["card_urns.js"], "something else runs in LinkedIn's page unconditionally"
+
+
+def test_feed_cards_get_their_post_id_whether_or_not_network_reading_is_on():
+    """
+    Feed cards carry their post id only in React's properties, which only a
+    page-world script can read. That used to live in the interceptor, so the
+    default (off) left feed engagers without a post.
+    """
+    with open(os.path.join(EXT, "card_urns.js"), encoding="utf-8") as handle:
+        stamper = handle.read()
+    assert "data-urn" in stamper and "__reactProps" in stamper
+    for forbidden in ("fetch", "postMessage", "XMLHttpRequest", "chrome."):
+        assert forbidden not in stamper.split("*/", 1)[1], f"card_urns.js uses {forbidden}; it must only read the page"
+    with open(os.path.join(EXT, "voyager_interceptor.js"), encoding="utf-8") as handle:
+        assert "stampCardUrns" not in handle.read()
 
 
 def test_nothing_else_injects_it():
@@ -168,3 +190,8 @@ def test_the_switch_says_what_it_does():
     note = popup.split("NETWORK_READING_NOTE_OFF =", 1)[1].split(";", 1)[0]
     for claim in ("Off.", "wrapping", "fetch", "automation", "never sends a request"):
         assert claim in note, f"the disclosure no longer says '{claim}'"
+
+
+def test_watching_linkedins_requests_follows_the_same_switch(run):
+    assert run["requestNotesWhileOff"] == 0, "LinkedIn's requests were noted while network reading was off"
+    assert run["requestNotesWhileOn"] == 1

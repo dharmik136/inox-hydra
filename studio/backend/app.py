@@ -19,6 +19,7 @@ import sqlite3
 import uuid
 import re
 from typing import Optional, List, Dict, Any
+from urllib.parse import unquote
 from datetime import datetime, date, timedelta, timezone
 from contextlib import asynccontextmanager
 import time
@@ -26,6 +27,7 @@ import time
 from fastapi import FastAPI, HTTPException, Response, UploadFile, File, Form, Request, Header, Depends
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
 
@@ -2698,8 +2700,12 @@ def _archive_call(work):
 
 @app.get("/api/v1/archive", tags=["Onboarding"])
 def get_archive_state():
-    """When the LinkedIn archive was asked for, what is waiting in Downloads, and the last import."""
-    return archive_import.archive_state()
+    """
+    When the LinkedIn archive was asked for, what is waiting in Downloads, and
+    the last import. Called by the Setup step while it is open; nothing else
+    makes the studio look in Downloads.
+    """
+    return archive_import.archive_state(look=True)
 
 
 @app.post("/api/v1/archive/requested", tags=["Onboarding"])
@@ -2709,12 +2715,41 @@ def post_archive_requested():
 
 
 @app.post("/api/v1/archive/upload", tags=["Onboarding"])
-def post_archive_upload(file: UploadFile = File(...)):
-    """Keeps an archive the creator chose by hand, and previews it. Nothing is imported."""
+async def post_archive_upload(request: Request):
+    """
+    Keeps an archive the creator chose by hand, and previews it. Nothing is imported.
+
+    The file is the raw request body, streamed to disk with the size cap
+    checked as it arrives. A multipart form would be spooled to the system's
+    temporary folder in full before any check could run.
+    """
+    declared = request.headers.get("content-length") or ""
+    if declared.isdigit() and int(declared) > archive_import.MAX_ARCHIVE_BYTES:
+        raise HTTPException(status_code=413, detail="That file is larger than any LinkedIn archive the studio expects.")
+    writer = archive_import.UploadWriter(unquote(request.headers.get("x-archive-name") or "archive.zip"))
+    try:
+        async for chunk in request.stream():
+            writer.write(chunk)
+    except archive_import.ArchiveError as error:
+        raise HTTPException(status_code=413, detail=str(error))
+    except BaseException:
+        writer.abort()
+        raise
+    source = writer.finish()
+
     def work():
-        source = archive_import.store_upload(file.file, file.filename or "archive.zip")
-        return archive_import.preview(source)
-    return _archive_call(work)
+        try:
+            return archive_import.preview(source)
+        except BaseException:
+            archive_import.discard(source)
+            raise
+    return await run_in_threadpool(_archive_call, work)
+
+
+@app.post("/api/v1/archive/discard", tags=["Onboarding"])
+def post_archive_discard(payload: ArchiveSourcePayload):
+    """Deletes the copy of an archive the creator chose by hand and then set aside."""
+    return archive_import.discard(payload.source)
 
 
 @app.post("/api/v1/archive/preview", tags=["Onboarding"])

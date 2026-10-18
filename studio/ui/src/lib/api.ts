@@ -1597,7 +1597,9 @@ export type ArchiveKindTally =
 export interface ArchiveState {
   download_page: string;
   requested_at: string | null;
-  /** LinkedIn export files in Downloads; looked for only once the archive was requested. */
+  /** Asked for, and nothing imported since: the Setup step looks in Downloads while this is true. */
+  waiting: boolean;
+  /** LinkedIn export files in Downloads. Only GET /api/v1/archive looks; elsewhere this is empty. */
   found: FoundArchive[];
   last_import: { archive_name: string; imported_at: string; summary: Record<string, ArchiveKindTally> } | null;
 }
@@ -1622,6 +1624,15 @@ export interface ArchivePreview {
   recognised: boolean;
 }
 
+/** Looks in Downloads for LinkedIn's export. Called by the Setup step only, while it waits. */
+export async function fetchArchiveState(): Promise<ArchiveState> {
+  return call<ArchiveState>("/api/v1/archive");
+}
+
+export async function discardArchive(source: string): Promise<void> {
+  await call("/api/v1/archive/discard", { method: "POST", body: JSON.stringify({ source }) });
+}
+
 export async function markArchiveRequested(): Promise<ArchiveState> {
   return call<ArchiveState>("/api/v1/archive/requested", { method: "POST" });
 }
@@ -1630,11 +1641,18 @@ export async function previewArchive(source: string): Promise<ArchivePreview> {
   return call<ArchivePreview>("/api/v1/archive/preview", { method: "POST", body: JSON.stringify({ source }) });
 }
 
-/** Sends a chosen archive to the studio on this machine, which keeps it until it is imported. */
+/**
+ * Sends a chosen archive to the studio on this machine, which keeps it until
+ * it is imported. The file is the request body itself, so the studio can stop
+ * at its size cap as the bytes arrive.
+ */
 export async function uploadArchive(file: File): Promise<ArchivePreview> {
-  const form = new FormData();
-  form.append("file", file);
-  const response = await fetch("/api/v1/archive/upload", { method: "POST", credentials: "same-origin", body: form });
+  const response = await fetch("/api/v1/archive/upload", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/zip", "X-Archive-Name": encodeURIComponent(file.name) },
+    body: file,
+  });
   if (!response.ok) {
     let reason = `${response.status}`;
     try {

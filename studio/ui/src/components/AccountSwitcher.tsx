@@ -9,6 +9,19 @@ import {
   type CreatorAccount,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { hasUnsavedWork } from "@/lib/unsaved";
+
+const LICENCE_CHANGED = "inox:licence-changed";
+
+/** Each profile is its own database, so switching reloads the studio. Asks first if that would lose work. */
+function mayReload(): boolean {
+  return (
+    !hasUnsavedWork() ||
+    window.confirm(
+      "The post in the Composer has unsaved changes. Switching profile reloads the studio and discards them. Switch anyway?",
+    )
+  );
+}
 
 interface AccountSwitcherProps {
   onAccountSwitched?: (account: CreatorAccount) => void;
@@ -41,6 +54,7 @@ export function AccountSwitcher({
 
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -56,6 +70,10 @@ export function AccountSwitcher({
 
   useEffect(() => {
     loadAccounts();
+    // A licence entered or removed in Brand Studio changes how many profiles fit.
+    const onLicence = () => void loadAccounts();
+    window.addEventListener(LICENCE_CHANGED, onLicence);
+    return () => window.removeEventListener(LICENCE_CHANGED, onLicence);
   }, [loadAccounts]);
 
   const activeAccount = accounts.find((a) => a.id === activeId) ?? accounts[0];
@@ -65,6 +83,7 @@ export function AccountSwitcher({
       setOpen(false);
       return;
     }
+    if (!mayReload()) return;
     try {
       await switchAccount(account.id);
       setActiveId(account.id);
@@ -83,6 +102,7 @@ export function AccountSwitcher({
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) return;
+    if (!mayReload()) return;
 
     try {
       setSubmitting(true);
@@ -132,6 +152,7 @@ export function AccountSwitcher({
       setDeleting(null);
       setConfirmText("");
       await loadAccounts();
+      closeRef.current?.focus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to remove profile");
     }
@@ -223,6 +244,7 @@ export function AccountSwitcher({
                   </span>
                 </div>
                 <button
+                  ref={closeRef}
                   type="button"
                   onClick={() => setOpen(false)}
                   aria-label="Close profile switcher"
@@ -256,6 +278,7 @@ export function AccountSwitcher({
                   <input
                     id="confirm-delete-profile"
                     type="text"
+                    autoFocus
                     value={confirmText}
                     onChange={(e) => setConfirmText(e.target.value)}
                     autoComplete="off"
@@ -264,7 +287,10 @@ export function AccountSwitcher({
                   <div className="mt-2 flex justify-end gap-2">
                     <button
                       type="button"
-                      onClick={() => setDeleting(null)}
+                      onClick={() => {
+                        setDeleting(null);
+                        closeRef.current?.focus();
+                      }}
                       className="rounded px-2 py-1 text-xs text-ink-muted hover:text-ink-primary"
                     >
                       Keep it
@@ -287,28 +313,25 @@ export function AccountSwitcher({
                   return (
                     <div
                       key={acc.id}
-                      onClick={() => handleSwitch(acc)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          handleSwitch(acc);
-                        }
-                      }}
                       className={cn(
-                        "group relative flex cursor-pointer items-start gap-2.5 rounded-lg border p-2 transition-colors",
+                        "group relative flex items-start gap-2.5 rounded-lg border p-2 transition-colors",
                         isActive
                           ? "border-signal-orange/40 bg-soft/70 shadow-xs"
                           : "border-transparent hover:border-edge hover:bg-soft/40",
                       )}
                     >
-                      <div className="grid size-8 shrink-0 place-items-center rounded-full bg-ink font-mono text-xs font-semibold text-ink-primary ring-1 ring-edge">
+                      <button
+                        type="button"
+                        onClick={() => handleSwitch(acc)}
+                        aria-current={isActive ? "true" : undefined}
+                        className="flex min-w-0 flex-1 cursor-pointer items-start gap-2.5 text-left"
+                      >
+                      <span className="grid size-8 shrink-0 place-items-center rounded-full bg-ink font-mono text-xs font-semibold text-ink-primary ring-1 ring-edge">
                         {acc.avatar_initials}
-                      </div>
+                      </span>
 
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
+                      <span className="block min-w-0 flex-1">
+                        <span className="flex items-center gap-1.5">
                           <span className="truncate text-xs font-medium text-ink-primary">
                             {acc.name}
                           </span>
@@ -322,20 +345,21 @@ export function AccountSwitcher({
                               ACTIVE
                             </span>
                           )}
-                        </div>
+                        </span>
 
                         {acc.headline && (
-                          <p className="truncate text-[11px] text-ink-muted">{acc.headline}</p>
+                          <span className="block truncate text-[11px] text-ink-muted">{acc.headline}</span>
                         )}
 
-                        <div className="mt-1 flex items-center gap-2 studio-meta text-[10px] text-ink-muted">
+                        <span className="mt-1 flex items-center gap-2 studio-meta text-[10px] text-ink-muted">
                           <span>{acc.drafts_count ?? 0} drafts</span>
                           <span>·</span>
                           <span>{acc.posts_count ?? 0} posts</span>
                           <span>·</span>
                           <span>{acc.leads_count ?? 0} leads</span>
-                        </div>
-                      </div>
+                        </span>
+                      </span>
+                      </button>
 
                       <div className="flex shrink-0 items-center gap-1">
                         {isActive ? (

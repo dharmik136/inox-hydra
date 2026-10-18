@@ -56,6 +56,7 @@ import os
 import re
 import uuid
 import zipfile
+import zlib
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import unquote
@@ -72,9 +73,25 @@ ARCHIVE_NAME = re.compile(r"linkedin.*data.*export.*\.zip$|linkedindataexport.*\
 REQUESTED_KEY = "archive_requested_at"
 
 MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
-MAX_MEMBER_BYTES = 200 * 1024 * 1024
+# LinkedIn's CSVs are small: years of posts are a few megabytes. These bound
+# what a crafted file can make the parser hold, which runs to many times the
+# file's own size once it is rows and dictionaries.
+MAX_MEMBER_BYTES = 50 * 1024 * 1024
+MAX_RATIO = 100
+MAX_ROWS = 200_000
+MAX_HEADER_SCAN = 50
 MAX_MEMBERS = 5000
 UPLOAD_TTL = timedelta(hours=24)
+# A post is at most 3,000 characters and a comment 1,250; csv's default field
+# limit (131,072) is enough for those, but not for the odd long "about".
+csv.field_size_limit(max(csv.field_size_limit(), 1_000_000))
+# Two posts by one creator whose ids decode to within this much of each other,
+# and whose text agrees, are the same post seen two ways: LinkedIn's archive
+# names a post by its share or ugcPost id, the page by its activity id.
+TWIN_WINDOW = timedelta(minutes=10)
+# The words the bridge uses for reaction types, for LinkedIn's internal ones.
+REACTION_WORDS = {"LIKE": "like", "PRAISE": "celebrate", "APPRECIATION": "support", "EMPATHY": "love",
+                  "INTEREST": "insightful", "ENTERTAINMENT": "funny", "MAYBE": "curious"}
 
 _URN = re.compile(r"urn:li:(activity|share|ugcPost):(\d{6,25})")
 
@@ -182,7 +199,7 @@ def _uploads_dir() -> str:
 
 
 def _sweep_uploads() -> None:
-    """An uploaded archive is kept only until it is imported, or for a day."""
+    """An uploaded archive is kept only until it is imported or set aside, or for a day."""
     directory = _uploads_dir()
     cutoff = datetime.now().timestamp() - UPLOAD_TTL.total_seconds()
     for name in os.listdir(directory):
@@ -194,26 +211,54 @@ def _sweep_uploads() -> None:
             pass
 
 
+class UploadWriter:
+    """
+    Writes an uploaded archive to the profile's uploads folder as it arrives.
+
+    The cap is checked chunk by chunk, so an oversized upload stops at the
+    cap instead of landing on disk in full first.
+    """
+
+    def __init__(self, filename: str):
+        _sweep_uploads()
+        self.token = uuid.uuid4().hex
+        self.path = os.path.join(_uploads_dir(), f"{self.token}.zip")
+        self.filename = os.path.basename(filename or "archive.zip")[:200]
+        self.written = 0
+        self._handle = open(self.path, "wb")
+
+    def write(self, chunk: bytes) -> None:
+        self.written += len(chunk)
+        if self.written > MAX_ARCHIVE_BYTES:
+            self.abort()
+            raise ArchiveError("That file is larger than any LinkedIn archive the studio expects.")
+        self._handle.write(chunk)
+
+    def finish(self) -> str:
+        self._handle.close()
+        with open(self.path + ".name", "w", encoding="utf-8") as handle:
+            handle.write(self.filename)
+        return f"upload:{self.token}"
+
+    def abort(self) -> None:
+        self._handle.close()
+        if os.path.exists(self.path):
+            os.remove(self.path)
+
+
 def store_upload(stream, filename: str) -> str:
     """Keeps an uploaded archive until it is imported. Returns its source token."""
-    _sweep_uploads()
-    token = uuid.uuid4().hex
-    target = os.path.join(_uploads_dir(), f"{token}.zip")
-    written = 0
-    with open(target, "wb") as handle:
+    writer = UploadWriter(filename)
+    try:
         while True:
             chunk = stream.read(1024 * 1024)
             if not chunk:
                 break
-            written += len(chunk)
-            if written > MAX_ARCHIVE_BYTES:
-                handle.close()
-                os.remove(target)
-                raise ArchiveError("That file is larger than any LinkedIn archive the studio expects.")
-            handle.write(chunk)
-    with open(target + ".name", "w", encoding="utf-8") as handle:
-        handle.write(os.path.basename(filename or "archive.zip")[:200])
-    return f"upload:{token}"
+            writer.write(chunk)
+    except BaseException:
+        writer.abort()
+        raise
+    return writer.finish()
 
 
 def _resolve(source: str) -> Tuple[str, str]:
@@ -243,12 +288,31 @@ def _resolve(source: str) -> Tuple[str, str]:
 
 def _discard(source: str) -> None:
     if source.startswith("upload:"):
-        path, _name = _resolve(source)
+        try:
+            path, _name = _resolve(source)
+        except ArchiveError:
+            return
         for leftover in (path, path + ".name"):
             try:
                 os.remove(leftover)
             except OSError:
                 pass
+
+
+def discard(source: str) -> Dict[str, Any]:
+    """Deletes an uploaded copy the creator decided not to import. A Downloads file is never touched."""
+    _discard(source or "")
+    return {"status": "success"}
+
+
+def preview_upload(stream, filename: str) -> Dict[str, Any]:
+    """Keeps an upload and previews it, deleting the copy again if it cannot be read."""
+    source = store_upload(stream, filename)
+    try:
+        return preview(source)
+    except BaseException:
+        _discard(source)
+        raise
 
 
 # ---------------------------------------------------------------------------
@@ -260,10 +324,10 @@ def _norm(header: str) -> str:
 
 
 def _members(path: str) -> Dict[str, zipfile.ZipInfo]:
-    """CSV members by lower-case base name. Refuses archives built to exhaust memory."""
+    """CSV members by lower-case base name. Refuses archives built to exhaust memory or that cannot be opened."""
     try:
         archive = zipfile.ZipFile(path)
-    except (zipfile.BadZipFile, OSError) as error:
+    except (zipfile.BadZipFile, OSError, ValueError) as error:
         raise ArchiveError("That file is not a ZIP archive LinkedIn produced.") from error
     with archive:
         infos = archive.infolist()
@@ -276,60 +340,83 @@ def _members(path: str) -> Dict[str, zipfile.ZipInfo]:
         if info.is_dir():
             continue
         base = os.path.basename(info.filename).lower()
-        if base and base not in found:
+        if not base.endswith(".csv"):
+            continue
+        if info.flag_bits & 0x1:
+            raise ArchiveError("That archive is password-protected. LinkedIn's is not; download it again.")
+        if info.file_size > 1024 * 1024 and info.file_size > MAX_RATIO * max(info.compress_size, 1):
+            raise ArchiveError(f"{info.filename} unpacks to far more than its size. LinkedIn's files do not.")
+        if base not in found:
             found[base] = info
     return found
 
 
 def _read_text(path: str, info: zipfile.ZipInfo) -> str:
     if info.file_size > MAX_MEMBER_BYTES:
-        raise ArchiveError(f"{info.filename} is larger than the studio reads.")
-    with zipfile.ZipFile(path) as archive:
-        with archive.open(info) as handle:
-            raw = handle.read(MAX_MEMBER_BYTES + 1)
+        raise ArchiveError(f"{info.filename} is larger than any file in LinkedIn's archive.")
+    try:
+        with zipfile.ZipFile(path) as archive:
+            with archive.open(info) as handle:
+                raw = handle.read(MAX_MEMBER_BYTES + 1)
+    except (zipfile.BadZipFile, zlib.error, RuntimeError, OSError, EOFError, NotImplementedError, ValueError) as error:
+        raise ArchiveError(f"{info.filename} is damaged and cannot be read. Download the archive again.") from error
+    if len(raw) > MAX_MEMBER_BYTES:
+        raise ArchiveError(f"{info.filename} is larger than any file in LinkedIn's archive.")
     return raw.decode("utf-8-sig", errors="replace")
 
 
-def _table(text: str, spec: Dict[str, Any]) -> Tuple[Optional[List[Dict[str, str]]], List[str]]:
+def _table(text: str, spec: Dict[str, Any]) -> Tuple[Optional[List[Dict[str, str]]], List[str], str]:
     """
-    Rows keyed by the spec's own names, or None and the headers that were found.
+    (rows keyed by the spec's own names, the header found, a problem or "").
 
     LinkedIn puts a few lines of notes above the header in some files, so the
-    header is the first line naming every required column.
+    header is the first line naming every required column. A row that cannot
+    be parsed stops the file there, and the problem says so: what was read is
+    kept, and nothing after it is guessed at.
     """
     required: Dict[str, List[str]] = spec["columns"]
     optional: Dict[str, List[str]] = spec.get("optional", {})
-    lines = text.splitlines(keepends=True)
-    for index, line in enumerate(lines[:20]):
+    stream = io.StringIO(text)
+    first: List[str] = []
+    for index in range(MAX_HEADER_SCAN):
+        start = stream.tell()
+        line = stream.readline()
+        if not line:
+            break
         try:
-            cells = next(csv.reader([line]))
+            cells = [_norm(c) for c in next(csv.reader([line]))]
         except (csv.Error, StopIteration):
             continue
-        normalised = [_norm(c) for c in cells]
-        if all(any(alias in normalised for alias in aliases) for aliases in required.values()):
-            reader = csv.reader(io.StringIO("".join(lines[index:])))
-            header = [_norm(c) for c in next(reader)]
-            where = {}
-            for key, aliases in {**required, **optional}.items():
-                for alias in aliases:
-                    if alias in header:
-                        where[key] = header.index(alias)
-                        break
-            rows = []
-            try:
-                for cells in reader:
-                    if not any(c.strip() for c in cells):
-                        continue
-                    rows.append({key: (cells[i].strip() if i < len(cells) else "") for key, i in where.items()})
-            except csv.Error:
-                pass
-            return rows, header
-    first = lines[0] if lines else ""
-    try:
-        found = [_norm(c) for c in next(csv.reader([first]))] if first else []
-    except csv.Error:
-        found = []
-    return None, found
+        if index == 0:
+            first = cells
+        if not all(any(alias in cells for alias in aliases) for aliases in required.values()):
+            continue
+        stream.seek(start)
+        # Strict, so a stray quote stops the file at that row rather than
+        # quietly swallowing every row after it into one field.
+        reader = csv.reader(stream, strict=True)
+        header = [_norm(c) for c in next(reader)]
+        where = {}
+        for key, aliases in {**required, **optional}.items():
+            for alias in aliases:
+                if alias in header:
+                    where[key] = header.index(alias)
+                    break
+        rows: List[Dict[str, str]] = []
+        problem = ""
+        try:
+            for cells in reader:
+                if not any(c.strip() for c in cells):
+                    continue
+                if len(rows) >= MAX_ROWS:
+                    problem = f"Only the first {MAX_ROWS:,} rows were read."
+                    break
+                rows.append({key: (cells[i].strip() if i < len(cells) else "") for key, i in where.items()})
+        except csv.Error:
+            problem = (f"Row {reader.line_num} could not be read, so the {len(rows)} rows before it were "
+                       "read and the rest of the file was not.")
+        return rows, header, problem
+    return None, first, ""
 
 
 def _parse(path: str) -> Dict[str, Any]:
@@ -339,11 +426,11 @@ def _parse(path: str) -> Dict[str, Any]:
         info = members.get(spec["file"])
         if info is None:
             continue
-        rows, header = _table(_read_text(path, info), spec)
-        parsed[kind] = {"file": info.filename, "rows": rows, "header": header}
+        rows, header, problem = _table(_read_text(path, info), spec)
+        parsed[kind] = {"file": info.filename, "rows": rows, "header": header, "problem": problem}
     others = sorted(
         info.filename for base, info in members.items()
-        if base.endswith(".csv") and base not in {s["file"] for s in FILES.values()}
+        if base not in {s["file"] for s in FILES.values()}
     )
     return {"parsed": parsed, "others": others, "bytes": os.path.getsize(path)}
 
@@ -365,7 +452,7 @@ def preview(source: str) -> Dict[str, Any]:
             "rows": len(entry["rows"]) if understood else None,
             "importable": understood and len(entry["rows"]) > 0,
             "default": spec["default"],
-            "note": "" if understood else
+            "note": entry["problem"] if understood else
                     "The columns are not the ones the studio knows: " + ", ".join(entry["header"][:12]),
         })
     not_imported = []
@@ -391,14 +478,45 @@ def _now() -> str:
 
 
 def _when(text: str) -> Optional[str]:
-    """LinkedIn's export timestamps are UTC, as 2024-03-05 10:22:11."""
+    """
+    A timestamp from LinkedIn's export, as UTC ISO, or None when it cannot be read.
+
+    The export writes UTC as 2024-03-05 10:22:11; a few other spellings are
+    accepted. An unreadable date is never replaced with today's.
+    """
     text = (text or "").strip()
-    for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+    for suffix in (" UTC", " GMT", "Z"):
+        if text.endswith(suffix):
+            text = text[: -len(suffix)].strip()
+    for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%d %H:%M",
+                    "%Y/%m/%d %H:%M:%S", "%Y-%m-%d", "%d %b %Y", "%b %d, %Y"):
         try:
             return datetime.strptime(text, pattern).replace(tzinfo=timezone.utc).isoformat()
         except ValueError:
             continue
     return None
+
+
+def _moment(urn: str) -> Optional[datetime]:
+    """When a post was created, from its id: activity, share and ugcPost ids carry milliseconds in their high bits."""
+    match = _URN.search(urn or "")
+    if not match:
+        return None
+    try:
+        moment = datetime.fromtimestamp((int(match.group(2)) >> 22) / 1000.0, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+    return moment if datetime(2003, 1, 1, tzinfo=timezone.utc) < moment < datetime(2100, 1, 1, tzinfo=timezone.utc) else None
+
+
+def _parse_iso(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 def _urn(link: str) -> Optional[str]:
@@ -407,7 +525,57 @@ def _urn(link: str) -> Optional[str]:
 
 
 def _fingerprint(text: str) -> str:
-    return " ".join((text or "").split()).lower()[:200]
+    """Text as compared: whitespace collapsed, lower case, the page's "...more" cut off."""
+    text = " ".join((text or "").split()).lower()
+    for tail in ("\u2026more", "...more", "\u2026 more", "... more", "\u2026", "..."):
+        if text.endswith(tail):
+            text = text[: -len(tail)].rstrip()
+    return text
+
+
+def _texts_agree(a: str, b: str) -> bool:
+    """
+    Whether two readings of a post's text can be the same post.
+
+    The page shows a post cut before "...more", the archive in full, so the
+    shorter must begin the longer. Empty text says nothing either way.
+    """
+    a, b = _fingerprint(a), _fingerprint(b)
+    if not a or not b:
+        return True
+    shorter = min(len(a), len(b), 160)
+    return a[:shorter] == b[:shorter]
+
+
+def find_twin(conn, urn: str, text: str, when: Optional[str] = None, archive_only: bool = False) -> Optional[str]:
+    """
+    The own_posts row that is this post under another id, if one is.
+
+    Used both ways: the archive import looks for a post the bridge already
+    read, and the bridge, reading a post, looks for the archive's row of it,
+    so the two become one row whichever came first.
+    """
+    moment = _parse_iso(when) or _moment(urn)
+    mine = _fingerprint(text)
+    query = "SELECT activity_urn, text, published_at FROM own_posts WHERE activity_urn != ?"
+    if archive_only:
+        query += " AND published_at_source = 'archive' AND activity_urn NOT LIKE 'urn:li:activity:%'"
+    for row in conn.execute(query, (urn,)):
+        # The same words in full, long enough not to be a one-liner anyone
+        # might post twice, are the same post whenever it was read.
+        if len(mine) >= 30 and _fingerprint(row[1] or "") == mine:
+            return row[0]
+        # Either reading of the other row's time: the date it was stored with,
+        # or the moment its own id carries.
+        gaps = [abs(other - mine_at) for other in (_parse_iso(row[2]), _moment(row[0])) if other
+                for mine_at in (moment, _moment(urn)) if mine_at]
+        if not gaps or min(gaps) > TWIN_WINDOW:
+            continue
+        if not text and not row[1] and min(gaps) > timedelta(minutes=2):
+            continue
+        if _texts_agree(text, row[1] or ""):
+            return row[0]
+    return None
 
 
 def _text_key(text: str) -> str:
@@ -421,72 +589,71 @@ def _counter() -> Dict[str, int]:
 
 def _import_posts(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
     tally = _counter()
-    known = {r["activity_urn"]: r["published_at"] for r in conn.execute("SELECT activity_urn, published_at FROM own_posts")}
-    texts = {_fingerprint(r["text"]): r["activity_urn"] for r in conn.execute(
-        "SELECT activity_urn, text FROM own_posts WHERE text IS NOT NULL")}
     now = _now()
     for row in rows:
-        text, urn, when = row.get("text", ""), _urn(row.get("link", "")), _when(row.get("date", ""))
+        text, urn = row.get("text", ""), _urn(row.get("link", ""))
         if not text.strip() or not urn:
             # A repost with nothing written, or a row with no post link.
             tally["skipped"] += 1
             continue
-        same = urn if urn in known else texts.get(_fingerprint(text))
+        when = _when(row.get("date", "")) or (_moment(urn).isoformat() if _moment(urn) else None)
+        existing = conn.execute("SELECT published_at FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone()
+        same = urn if existing else find_twin(conn, urn, text, when)
         if same:
-            if when and not known.get(same):
-                conn.execute(
-                    "UPDATE own_posts SET published_at = ?, published_at_source = 'archive' "
-                    "WHERE activity_urn = ? AND published_at IS NULL", (when, same))
+            # The bridge's row stays, with its figures. The archive adds what
+            # it alone has: the date, and the text in full where the page cut it.
+            conn.execute(
+                "UPDATE own_posts SET "
+                "published_at = COALESCE(published_at, ?), "
+                "published_at_source = CASE WHEN published_at IS NULL THEN 'archive' ELSE published_at_source END, "
+                "text = CASE WHEN text IS NULL OR length(text) < length(?) THEN ? ELSE text END "
+                "WHERE activity_urn = ?",
+                (when, text[:10000], text[:10000], same),
+            )
             tally["already_there"] += 1
             continue
         conn.execute(
             "INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, reactions, comments, "
-            "reposts, impressions, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)",
-            (urn, text[:10000], when, "archive" if when else None, now, now),
+            "reposts, impressions, first_seen_at, last_seen_at) VALUES (?, ?, ?, 'archive', NULL, NULL, NULL, NULL, ?, ?)",
+            (urn, text[:10000], when, now, now),
         )
-        known[urn] = when
-        texts[_fingerprint(text)] = urn
         tally["added"] += 1
     return tally
 
 
 def _import_comments(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
+    """One row per comment on a post, keyed as the bridge keys it: the post and the text."""
     tally = _counter()
-    keys = {r[0] for r in conn.execute("SELECT my_text_key FROM outbound_engagements WHERE kind = 'comment'")}
     for row in rows:
-        message, urn = row.get("message", ""), _urn(row.get("link", ""))
-        when = _when(row.get("date", "")) or _now()
-        if not message.strip() or not urn:
+        message, urn, when = row.get("message", ""), _urn(row.get("link", "")), _when(row.get("date", ""))
+        if not message.strip() or not urn or not when:
+            # No text, no post, or no date the studio can read: a comment
+            # dated today because its date was unreadable would be invented.
             tally["skipped"] += 1
             continue
-        key = _text_key(message)
-        if key in keys:
-            tally["already_there"] += 1
-            continue
-        conn.execute(
+        cursor = conn.execute(
             "INSERT OR IGNORE INTO outbound_engagements (target_activity_urn, target_author, target_excerpt, kind, "
             "reaction_kind, my_text, my_text_key, first_seen_at, last_seen_at) "
             "VALUES (?, NULL, NULL, 'comment', NULL, ?, ?, ?, ?)",
-            (urn, message[:4000], key, when, when),
+            (urn, message[:4000], _text_key(message), when, when),
         )
-        keys.add(key)
-        tally["added"] += 1
+        tally["added" if cursor.rowcount else "already_there"] += 1
     return tally
 
 
 def _import_reactions(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
     tally = _counter()
     for row in rows:
-        urn = _urn(row.get("link", ""))
-        when = _when(row.get("date", "")) or _now()
-        if not urn:
+        urn, when = _urn(row.get("link", "")), _when(row.get("date", ""))
+        if not urn or not when:
             tally["skipped"] += 1
             continue
+        kind = (row.get("type") or "").strip().upper()
         cursor = conn.execute(
             "INSERT OR IGNORE INTO outbound_engagements (target_activity_urn, target_author, target_excerpt, kind, "
             "reaction_kind, my_text, my_text_key, first_seen_at, last_seen_at) "
             "VALUES (?, NULL, NULL, 'reaction', ?, NULL, '', ?, ?)",
-            (urn, (row.get("type") or "").upper()[:40] or None, when, when),
+            (urn, REACTION_WORDS.get(kind, kind.lower()[:40] or None), when, when),
         )
         tally["added" if cursor.rowcount else "already_there"] += 1
     return tally
@@ -656,11 +823,18 @@ def mark_requested() -> Dict[str, Any]:
             conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (REQUESTED_KEY, _now()))
     finally:
         conn.close()
-    return archive_state()
+    return archive_state(look=True)
 
 
-def archive_state() -> Dict[str, Any]:
-    """When it was asked for, what is waiting in Downloads, and the last import."""
+def archive_state(look: bool = False) -> Dict[str, Any]:
+    """
+    When it was asked for, what is waiting in Downloads, and the last import.
+
+    Downloads is looked in only when the caller asks (the Setup step, while it
+    is open), only once the creator has said they asked LinkedIn for the
+    archive, only until an archive has been imported since, and only for
+    LinkedIn's export names.
+    """
     conn = get_db()
     try:
         row = conn.execute("SELECT value FROM settings WHERE key = ?", (REQUESTED_KEY,)).fetchone()
@@ -668,17 +842,31 @@ def archive_state() -> Dict[str, Any]:
             "SELECT archive_name, imported_at, summary FROM archive_imports ORDER BY id DESC LIMIT 1").fetchone()
     finally:
         conn.close()
+    _sweep_uploads()
     requested_at = row["value"] if row else None
+    waiting = bool(requested_at) and (last is None or last["imported_at"] < requested_at)
     return {
         "download_page": DOWNLOAD_PAGE,
         "requested_at": requested_at,
-        # Downloads is looked in only after the creator says they asked for
-        # the archive, and only for LinkedIn's export names.
-        "found": find_archives() if requested_at else [],
+        "waiting": waiting,
+        "found": find_archives() if look and waiting else [],
         "last_import": {
             "archive_name": last["archive_name"],
             "imported_at": last["imported_at"],
             "summary": json.loads(last["summary"]),
         } if last else None,
     }
+
+
+def forget(conn) -> None:
+    """Everything the archive brought, for when the creator deletes what the studio holds about them."""
+    for table in ("connections", "archive_imports"):
+        conn.execute(f"DELETE FROM {table}")
+    conn.execute("DELETE FROM settings WHERE key = ?", (REQUESTED_KEY,))
+    for name in os.listdir(_uploads_dir()):
+        try:
+            os.remove(os.path.join(_uploads_dir(), name))
+        except OSError:
+            pass
+
 

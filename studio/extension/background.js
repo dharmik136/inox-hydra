@@ -261,9 +261,19 @@ async function forwardPassiveTelemetry(eventType, metadata) {
   }
 }
 
-// Intercept LinkedIn Voyager API responses passively
+// Notes which of LinkedIn's data requests a page made: address, status and
+// method, never contents. Watching LinkedIn's requests is network reading,
+// so it follows the same switch as the interceptor and is off by default.
 chrome.webRequest.onCompleted.addListener(
   (details) => {
+    networkReadingEnabled().then((enabled) => {
+      if (enabled) observeLinkedInRequest(details);
+    });
+  },
+  { urls: ["https://www.linkedin.com/voyager/api/*"] }
+);
+
+function observeLinkedInRequest(details) {
     const url = details.url;
 
     // 1. Post impressions and feed analytics
@@ -299,9 +309,7 @@ chrome.webRequest.onCompleted.addListener(
         statusCode: details.statusCode
       });
     }
-  },
-  { urls: ["https://www.linkedin.com/voyager/api/*"] }
-);
+}
 
 // Message broker between Side Panel, Popup, and Content Script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -457,7 +465,16 @@ function networkReadingEnabled() {
   });
 }
 
-async function applyNetworkReading(enabled) {
+// One change at a time: two overlapping calls could each see the script as
+// not yet registered, or not yet removed, and leave it out of step.
+let networkReadingChange = Promise.resolve();
+
+function applyNetworkReading(enabled) {
+  networkReadingChange = networkReadingChange.then(() => applyNetworkReadingNow(enabled));
+  return networkReadingChange;
+}
+
+async function applyNetworkReadingNow(enabled) {
   try {
     const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [INTERCEPTOR_SCRIPT_ID] });
     if (enabled && registered.length === 0) {
@@ -481,10 +498,15 @@ async function syncNetworkReading() {
   await applyNetworkReading(await networkReadingEnabled());
 }
 
+// The latest stored value wins, whatever order the change events arrive in.
+async function followNetworkReadingSetting() {
+  await applyNetworkReading(await networkReadingEnabled());
+}
+
 chrome.runtime.onInstalled.addListener(syncNetworkReading);
 chrome.runtime.onStartup.addListener(syncNetworkReading);
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes[NETWORK_READING_KEY]) {
-    applyNetworkReading(changes[NETWORK_READING_KEY].newValue === true);
+    followNetworkReadingSetting();
   }
 });

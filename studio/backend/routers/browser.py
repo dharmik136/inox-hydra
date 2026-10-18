@@ -188,7 +188,7 @@ def get_activity_stream(limit: int = 25):
             SELECT target_author, my_text, target_excerpt, target_activity_urn, last_seen_at
             FROM outbound_engagements
             WHERE kind = 'comment'
-            ORDER BY id DESC
+            ORDER BY last_seen_at DESC, id DESC
             LIMIT ?
             """,
             (limit,),
@@ -210,7 +210,7 @@ def get_activity_stream(limit: int = 25):
             SELECT target_author, reaction_kind, target_excerpt, target_activity_urn, last_seen_at
             FROM outbound_engagements
             WHERE kind = 'reaction'
-            ORDER BY id DESC
+            ORDER BY last_seen_at DESC, id DESC
             LIMIT ?
             """,
             (limit,),

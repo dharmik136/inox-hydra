@@ -44,6 +44,7 @@ export function LicenceWorkspace() {
       setState(result.licence);
       setKey("");
       setNote("Licence accepted.");
+      window.dispatchEvent(new Event("inox:licence-changed"));
     } catch (caught) {
       setNote(caught instanceof Error ? caught.message : "The licence was refused.");
     } finally {
@@ -57,6 +58,7 @@ export function LicenceWorkspace() {
     try {
       setState((await removeLicence()).licence);
       setNote("Licence removed from this machine.");
+      window.dispatchEvent(new Event("inox:licence-changed"));
     } catch (caught) {
       setNote(caught instanceof Error ? caught.message : "The licence could not be removed.");
     } finally {

@@ -6,7 +6,9 @@ By default the studio makes no requests to LinkedIn itself. Apart from optional 
 
 ## Network reading is off unless you switch it on
 
-The extension's popup has a switch, **Read LinkedIn's network responses**. Off, which is how it starts, the bridge reads only what is on the pages you open. On, it also copies the figures LinkedIn's own app has already downloaded for those pages, which are exact rather than rounded, by wrapping the page's `fetch` function. LinkedIn's page code can see that wrapping and may treat it as automation, so leave it off unless you want the exact figures. It takes effect on LinkedIn pages you open or reload after switching it, and stops at once when you switch it off.
+The extension's popup has a switch, **Read LinkedIn's network responses**. Off, which is how it starts, the bridge reads only what is on the pages you open. On, it also copies the figures LinkedIn's own app has already downloaded for those pages, which are exact rather than rounded, and notes which of LinkedIn's data requests they made (the address and status, not the contents). It does this by wrapping the page's `fetch` function. LinkedIn's page code can see that wrapping and may treat it as automation, so leave it off unless you want the exact figures.
+
+Switching it on applies to LinkedIn pages you open or reload afterwards. Switching it off stops the copying at once; a LinkedIn tab that was already open keeps the wrapper in place, doing nothing, until you reload it.
 
 ## Which browser to use
 

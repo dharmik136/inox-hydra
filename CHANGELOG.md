@@ -102,6 +102,12 @@ released. Version numbers follow `studio/__version__.py`.
 - The repository no longer holds the owner's own posts, figures, post
   graphics or Taplio scripts, or real members' names; demo seeds use
   labelled samples.
+- The desktop shell's installer now carries the name Inox Hydra. A
+  development install made under the old name is not upgraded in place;
+  uninstall it first. No release ever shipped the desktop shell.
+- CSV exports prefix a cell that begins with =, +, - or @ with an
+  apostrophe, so a name or comment someone else wrote cannot run as a
+  spreadsheet formula.
 - `tools/licence_keys.py` makes the licence signing key outside the
   repository and issues licences. Ed25519 is the RFC 8032 reference code,
   checked against the RFC's vectors.

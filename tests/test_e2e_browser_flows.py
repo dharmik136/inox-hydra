@@ -257,14 +257,16 @@ def test_e2e_multi_tenant_account_switching(page, monkeypatch):
         marcus_id = next(key for key in counts if key.startswith("marcus-vance"))
         assert counts[marcus_id] == counts["default"] + 1, "a post written in one profile reached another"
         with page.expect_navigation():
-            dialog.locator('div[role="button"]:has-text("My studio")').click()
+            dialog.locator("div.group", has_text="My studio").locator("button").first.click()
         page.wait_for_load_state("networkidle")
         assert trigger.locator("span").first.inner_text() == "MS"
 
         open_switcher()
-        marcus = dialog.locator('div[role="button"]:has-text("Marcus Vance")')
-        marcus.hover()
-        marcus.locator('button[aria-label="Delete Marcus Vance profile"]').click()
+        marcus = dialog.locator("div.group", has_text="Marcus Vance")
+        bin_button = marcus.locator('button[aria-label="Delete Marcus Vance profile"]')
+        # Enter on the bin opens the confirmation; it used to switch profile.
+        bin_button.focus()
+        page.keyboard.press("Enter")
         confirm = dialog.locator('form[aria-label="Delete Marcus Vance"]')
         delete = confirm.locator('button:has-text("Delete profile")')
         assert delete.is_disabled(), "a profile can be deleted without typing its name"

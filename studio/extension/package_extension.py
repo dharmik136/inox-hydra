@@ -29,6 +29,7 @@ REQUIRED_FILES = [
     "content.js",
     "own_pages.js",
     "voyager_interceptor.js",
+    "card_urns.js",
     "voyager_schema.js",
     "content.css",
     "popup.html",

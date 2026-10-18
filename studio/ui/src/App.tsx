@@ -38,6 +38,7 @@ import {
 import type { SearchFocus } from "@/lib/search";
 import { measurableLength, measurableWordCount } from "@/lib/text";
 import { DOCKED_INSPECTOR_QUERY, useMediaQuery } from "@/lib/viewport";
+import { setUnsavedCheck } from "@/lib/unsaved";
 
 /** Average adult reading speed. Used for an estimate that is labelled as one. */
 const WORDS_PER_MINUTE = 200;
@@ -70,6 +71,11 @@ export default function App() {
   const [draft, setDraft] = useState("");
   const [draftId, setDraftId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+
+  // Read by anything that reloads the studio, such as switching profile.
+  useEffect(() => {
+    setUnsavedCheck(() => (saveState === "dirty" || saveState === "failed") && draft.trim().length > 0);
+  }, [saveState, draft]);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [publishOpen, setPublishOpen] = useState(false);

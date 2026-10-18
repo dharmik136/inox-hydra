@@ -148,8 +148,12 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # and /api/v1/archive/import added, surfaced in ArchiveImport and api.ts.
 # Reached moves 89 -> 94, unreachable stays at 84, total moves 173 -> 178.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 178
-REACHED_BY_INTERFACE = 94
+# Then 178 -> 179: /api/v1/archive/discard, so "Not now" deletes an uploaded
+# archive at once (surfaced in ArchiveImport and api.ts).
+# Reached moves 94 -> 95, unreachable stays at 84, total moves 178 -> 179.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 179
+REACHED_BY_INTERFACE = 95
 UNREACHABLE = 84
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

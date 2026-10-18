@@ -3,12 +3,14 @@ const STUDIO_URL = "http://127.0.0.1:8000";
 const NETWORK_READING_NOTE_OFF =
   "Off. The bridge reads only what is on the LinkedIn pages you open. " +
   "Switched on, it also copies the figures LinkedIn's own app has already downloaded " +
-  "for those pages, which are exact rather than rounded. It does this by wrapping the " +
-  "page's fetch function, which LinkedIn may treat as automation. It never sends a request of its own.";
+  "for those pages, which are exact rather than rounded, and notes which of LinkedIn's data " +
+  "requests they made. It does this by wrapping the page's fetch function, which LinkedIn " +
+  "may treat as automation. It never sends a request of its own.";
 const NETWORK_READING_NOTE_ON =
-  "On, for LinkedIn pages you open or reload from now. The bridge copies the figures " +
-  "LinkedIn's own app has already downloaded for the page, by wrapping its fetch function, " +
-  "which LinkedIn may treat as automation. Switch it off to stop at once.";
+  "On. The bridge copies the figures LinkedIn's own app has already downloaded, by wrapping " +
+  "the page's fetch function, which LinkedIn may treat as automation. It applies to LinkedIn " +
+  "pages you open or reload from now; switching it off stops the copying at once, and a tab " +
+  "already open keeps the wrapper until you reload it.";
 
 function paintNetworkReading(enabled) {
   const box = document.getElementById("network-reading");

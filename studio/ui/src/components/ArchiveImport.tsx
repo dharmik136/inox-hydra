@@ -1,6 +1,8 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ExternalLink, FileArchive, Loader2 } from "lucide-react";
 import {
+  discardArchive,
+  fetchArchiveState,
   importArchive,
   markArchiveRequested,
   previewArchive,
@@ -8,7 +10,10 @@ import {
   type ArchiveKindTally,
   type ArchivePreview,
   type ArchiveState,
+  type FoundArchive,
 } from "@/lib/api";
+
+const LOOK_MS = 4000;
 
 /**
  * Setup, LinkedIn's data archive.
@@ -36,7 +41,52 @@ export function ArchiveImport({
   const [preview, setPreview] = useState<ArchivePreview | null>(null);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<Record<string, ArchiveKindTally> | null>(null);
+  const [found, setFound] = useState<FoundArchive[]>([]);
+  const [waiting, setWaiting] = useState(state.waiting);
   const picker = useRef<HTMLInputElement>(null);
+  const chooser = useRef<HTMLButtonElement>(null);
+  const previewTitle = useRef<HTMLParagraphElement>(null);
+  const resultTitle = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => setWaiting(state.waiting), [state.waiting]);
+
+  // Downloads is looked in only from here, while this step is on screen and
+  // waiting for an archive the creator said they asked for.
+  useEffect(() => {
+    if (!waiting) {
+      setFound([]);
+      return;
+    }
+    let live = true;
+    const look = () =>
+      fetchArchiveState()
+        .then((fresh) => {
+          if (!live) return;
+          setFound(fresh.found);
+          setWaiting(fresh.waiting);
+        })
+        .catch(() => undefined);
+    void look();
+    const timer = window.setInterval(look, LOOK_MS);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [waiting]);
+
+  // Focus follows the step: to the preview when it opens, to the result after
+  // an import, and back to "Choose the file" when either is closed.
+  useEffect(() => {
+    if (result) resultTitle.current?.focus();
+    else if (preview) previewTitle.current?.focus();
+  }, [preview, result]);
+
+  function close() {
+    if (preview && !result && preview.source.startsWith("upload:")) void discardArchive(preview.source);
+    setPreview(null);
+    setResult(null);
+    window.requestAnimationFrame(() => chooser.current?.focus());
+  }
 
   async function run(key: string, work: () => Promise<void>) {
     setBusy(key);
@@ -57,7 +107,6 @@ export function ArchiveImport({
     if (!found.recognised) setNote("This file does not look like LinkedIn's data archive.");
   }
 
-  const requested = state.requested_at !== null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -91,13 +140,15 @@ export function ArchiveImport({
               )}
               Open LinkedIn&rsquo;s download page
             </button>
-            {!requested && (
+            {!waiting && (
               <button
                 type="button"
                 disabled={busy !== null}
                 onClick={() =>
                   void run("requested", async () => {
-                    await markArchiveRequested();
+                    const fresh = await markArchiveRequested();
+                    setFound(fresh.found);
+                    setWaiting(fresh.waiting);
                     onChanged();
                   })
                 }
@@ -107,6 +158,7 @@ export function ArchiveImport({
               </button>
             )}
             <button
+              ref={chooser}
               type="button"
               disabled={busy !== null}
               onClick={() => picker.current?.click()}
@@ -123,6 +175,7 @@ export function ArchiveImport({
               ref={picker}
               type="file"
               accept=".zip,application/zip"
+              tabIndex={-1}
               className="sr-only"
               aria-label="Choose your LinkedIn data archive"
               onChange={(event) => {
@@ -133,14 +186,14 @@ export function ArchiveImport({
             />
           </div>
 
-          {requested && (
+          {waiting && (
             <div>
               <p className="studio-meta text-[10px] text-ink-muted">
-                IN YOUR DOWNLOADS FOLDER{state.found.length === 0 ? ": NOTHING FROM LINKEDIN YET" : ""}
+                IN YOUR DOWNLOADS FOLDER{found.length === 0 ? ": NOTHING FROM LINKEDIN YET" : ""}
               </p>
-              {state.found.length > 0 && (
+              {found.length > 0 && (
                 <ul className="mt-1.5 flex flex-col gap-1.5">
-                  {state.found.map((hit) => (
+                  {found.map((hit) => (
                     <li key={hit.path} className="flex items-center justify-between gap-3">
                       <span className="min-w-0 truncate text-[13px] text-ink-secondary">
                         {hit.name}
@@ -180,7 +233,9 @@ export function ArchiveImport({
           className="rounded-md border border-edge-strong p-4"
           aria-label="What to import from the archive"
         >
-          <p className="text-[13px] font-medium text-ink-primary">{preview.archive.name}</p>
+          <p ref={previewTitle} tabIndex={-1} className="text-[13px] font-medium text-ink-primary outline-none">
+            {preview.archive.name}
+          </p>
           <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
             {readable(preview.archive.bytes)} · NOTHING IS IMPORTED UNTIL YOU SAY SO
           </p>
@@ -241,7 +296,7 @@ export function ArchiveImport({
             <button
               type="button"
               disabled={busy !== null}
-              onClick={() => setPreview(null)}
+              onClick={close}
               className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
             >
               Not now
@@ -252,7 +307,9 @@ export function ArchiveImport({
 
       {result && (
         <div className="rounded-md border border-edge p-4" role="status">
-          <p className="text-[13px] font-medium text-ink-primary">Imported from {preview?.archive.name}</p>
+          <p ref={resultTitle} tabIndex={-1} className="text-[13px] font-medium text-ink-primary outline-none">
+            Imported from {preview?.archive.name}
+          </p>
           <ul className="mt-2 flex flex-col gap-0.5">
             {Object.entries(result).map(([kind, tally]) => (
               <li key={kind} className="text-[12px] text-ink-secondary">
@@ -262,10 +319,7 @@ export function ArchiveImport({
           </ul>
           <button
             type="button"
-            onClick={() => {
-              setPreview(null);
-              setResult(null);
-            }}
+            onClick={close}
             className="mt-3 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
           >
             Done
