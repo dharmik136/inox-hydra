@@ -233,3 +233,9 @@ def test_the_support_export_writes_a_vault(creator):
     assert os.path.isfile(os.path.join(path, "Home.md"))
     assert os.path.isfile(os.path.join(path, obsidian_export.MANIFEST))
     assert path.startswith(paths.get_app_home())
+
+
+def test_bold_unicode_and_emoji_do_not_reach_a_note_name():
+    bold = "".join(chr(0x1D5D4 + ord(c) - ord("A")) if c.isupper() else chr(0x1D5EE + ord(c) - ord("a")) for c in "Stepping")
+    assert obsidian_export.safe_name(bold + " into systems") == "Stepping into systems"
+    assert obsidian_export.safe_name("\U0001F4E2 Exciting News! \U0001F389") == "Exciting News!"

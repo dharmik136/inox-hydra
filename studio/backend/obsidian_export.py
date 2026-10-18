@@ -39,6 +39,7 @@ import json
 import os
 import re
 import sqlite3
+import unicodedata
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -139,8 +140,18 @@ def read_record() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 def safe_name(text: Any, limit: int = 80) -> str:
-    """A note name Obsidian and every filesystem accept, from arbitrary text."""
-    name = _UNSAFE_NAME.sub(" ", str(text or ""))
+    """
+    A note name Obsidian and every filesystem accept, from arbitrary text.
+
+    LinkedIn posts are often set in mathematical bold, which is a different
+    alphabet as far as a file name or a search is concerned: a note called
+    "\U0001d5e6\U0001d601\U0001d5f2\U0001d5fd" is not found by typing "Step". NFKC folds those
+    letters back to plain ones, and symbols (emoji among them) are dropped from
+    the name. The note's text keeps everything exactly as written.
+    """
+    folded = unicodedata.normalize("NFKC", str(text or ""))
+    folded = "".join(ch for ch in folded if unicodedata.category(ch) not in ("So", "Cs", "Co", "Cn"))
+    name = _UNSAFE_NAME.sub(" ", folded)
     name = re.sub(r"\s+", " ", name).strip().strip(".")
     if len(name) > limit:
         name = name[:limit].rsplit(" ", 1)[0].rstrip(" ,;-") or name[:limit]
@@ -161,6 +172,10 @@ class _Names:
             n += 1
         self.taken.add(name.lower())
         return name
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
 
 
 def _figure(value: Any) -> str:
@@ -461,8 +476,13 @@ def build_notes(record: Dict[str, Any]) -> Dict[str, str]:
         f"Exported {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC. "
         "Open the graph view to see posts as hubs and the people around them.", "",
         "- [[Me]]",
-        f"- {len(posts)} posts, {len(leads)} people, {len(topic_note)} topics, "
-        f"{len(outbound)} people you engage with, {len(record['drafts'])} drafts", "",
+        "- " + ", ".join([
+            _plural(len(posts), "post", "posts"),
+            _plural(len(leads), "person", "people"),
+            _plural(len(topic_note), "topic", "topics"),
+            _plural(len(outbound), "person", "people") + " you engage with",
+            _plural(len(record["drafts"]), "draft", "drafts"),
+        ]), "",
     ]
     regulars = [(n, lid) for n, lid in repeat if n >= 2][:10]
     if regulars:
