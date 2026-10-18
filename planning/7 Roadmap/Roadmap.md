@@ -18,7 +18,7 @@ From a working personal tool to a product strangers pay for. Dates assume one bu
 | [[Phase 3 - Design Partner Beta]] | Dec 7 to Jan 10 | 15 creators on clean machines for three weeks; top 20 issues fixed; retention and the "meeting from a comment" story measured by interview, not telemetry |
 | [[Phase 4 - Launch]] | Jan 11 to Jan 31, 2027 | Public store listing, pricing page, launch posts written in the studio itself |
 
-Underneath every phase: [[UI Program]].
+Underneath every phase: [[UI Program]]. What only the owner can decide: [[Decisions Needed]].
 
 The model: [[Commercial Model]], [[Pricing Hypothesis]], [[Competitive Landscape]].
 The risks: [[Risk - LinkedIn terms and detection]], [[Risk - Personal data of third parties]], [[Risk - Distribution and signing]].

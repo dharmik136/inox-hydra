@@ -103,6 +103,8 @@ Start with [[Content Plan Overview]] for the data, or [[Roadmap]] for the plan.
 - [[Fixed - Voyager analytics column]]
 - [[Fixed - Side panel write refused]]
 - [[Fixed - me alias could file another account]]
+- [[Fixed - Founder identity in a fresh install]]
+- [[Gap - Order-dependent roadmap test]]
 
 ## Roadmap
 - [[Roadmap]]
@@ -118,3 +120,4 @@ Start with [[Content Plan Overview]] for the data, or [[Roadmap]] for the plan.
 - [[Risk - Personal data of third parties]]
 - [[Risk - Distribution and signing]]
 - [[UI Program]]
+- [[Decisions Needed]]
