@@ -5,7 +5,46 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
-## Unreleased
+## 2.6.0 (not yet released)
+
+### One name
+- **The product is Inox Hydra**, and the extension is **Inox Hydra Bridge**.
+  Before, it went by five names, one borrowing a competitor's mark.
+  Shortcuts and the extension take the new name; a Startup shortcut made
+  under the old one still works and is replaced the next time autostart is
+  switched on. Your data stays where it was.
+
+### Creator profiles
+- **Each creator profile is its own database.** Profiles used to share one,
+  so switching changed the avatar and nothing else. Now each profile has its
+  own posts, drafts, leads, analytics, media, backups and exports, and
+  nothing one holds appears in another. Your first profile is your studio as
+  it was. Scheduled posts in every profile fall due on time, whichever one is
+  open.
+- Deleting a profile asks you to type its name, and removes its folder.
+
+### Licence and prices
+- **An offline licence.** Brand Studio, Licence: paste the key from your
+  purchase, and it is checked on this machine with nothing sent anywhere.
+  Free; Creator at $12 a month billed yearly, or $249 once with a year of
+  updates; Agency at $39 a month for up to 5 creator profiles. During the
+  beta every Creator feature stays open to everyone; a licence changes the
+  number of profiles you can keep.
+
+### Setup
+- **Your LinkedIn archive is a Setup step.** The studio opens LinkedIn's
+  "Get a copy of your data" page, finds the export in your Downloads folder
+  once you say you asked for it, shows what it holds, and imports only what
+  you keep ticked: your posts with their dates, your comments and reactions,
+  your profile, roles, education and skills, and your connections (never
+  their email addresses). Messages are never imported. Nothing the bridge
+  captured is overwritten.
+
+### The extension
+- **Network reading is off unless you switch it on.** The part of the
+  extension that wraps LinkedIn's page `fetch` to copy exact figures now
+  runs only after you turn on "Read LinkedIn's network responses" in its
+  popup, where what it does is written beside the switch.
 
 ### Your data
 - **Export to Obsidian.** Brand Studio, Local security, Your data. Writes your
@@ -60,6 +99,12 @@ released. Version numbers follow `studio/__version__.py`.
 - Rail labels no longer stay over the page after you click a section.
 
 ### For developers
+- The repository no longer holds the owner's own posts, figures, post
+  graphics or Taplio scripts, or real members' names; demo seeds use
+  labelled samples.
+- `tools/licence_keys.py` makes the licence signing key outside the
+  repository and issues licences. Ed25519 is the RFC 8032 reference code,
+  checked against the RFC's vectors.
 - `tools/ui_audit.py` drives every screen in both themes at desktop and phone
   width and reports console errors, egress, failed API calls, accessibility
   violations and overflow, with screenshots. CI runs it on Linux.

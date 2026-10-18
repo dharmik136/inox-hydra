@@ -1,6 +1,6 @@
 ---
 type: roadmap
-status: open
+status: decided
 tags:
   - roadmap
   - roadmap
@@ -9,12 +9,14 @@ tags:
 
 # Decisions Needed
 
-Calls only the owner can make. Each blocks something on the [[Roadmap]].
+The owner's calls, all made on 2026-10-19, and what was done with each.
 
-1. **Land the branch.** The work of 2026-10-18 is on `feat/commercial-readiness`, in the worktree `../inox-hydra-work`, not pushed. Review, then push and open a pull request, or merge locally.
-2. **One product name.** Today: Inox Hydra, LinkedIn Studio Enterprise, Editorial Motion OS, LocalTaplio, Personal LinkedIn Studio. Drop "LocalTaplio" (a competitor's mark), and choose a name without "LinkedIn" in it, since LinkedIn restricts its mark in product names and the store review will ask. Blocks [[Phase 2 - Commercial Plumbing]].
-3. **How profiles are separated.** [[Gap - Account scoping is cosmetic]]. Recommended: one database per creator profile, chosen at startup, rather than an `account_id` on every table. Isolation is then structural instead of a filter every query must remember, and backup, export and deletion per client come for free. Blocks the agency tier in [[Commercial Model]].
-4. **Keep or retire the network interceptor.** [[Voyager Interceptor]] carries the most platform risk and, after [[Gap - Voyager data discarded]], keeps only follower counts and feed figures the page readers also see. Recommended: off by default behind an explicit setting, then retire if the archive import covers the need. See [[Risk - LinkedIn terms and detection]].
-5. **The commercial model.** Offline signed licence plus a merchant of record ([[Commercial Model]]), and the price points in [[Pricing Hypothesis]], to test with design partners.
-6. **Request a real LinkedIn archive.** Settings, Data privacy, Get a copy of your data. The [[LinkedIn Data Archive Import]] should be built against real files, not guessed column names.
-7. **The old database in history.** Commit 2cc6582 holds a database with real profile URLs in pushed history. Removing it means rewriting history.
+1. **Land the branch.** Merged into main and pushed.
+2. **One product name: Inox Hydra.** Every user-facing name is Inox Hydra, and the extension is Inox Hydra Bridge. Internal identifiers (data folder, database file, Windows app ID) are unchanged so nothing is orphaned.
+3. **One database per creator profile.** Built: see [[Creator Account]]. [[Gap - Account scoping is cosmetic]] is closed.
+4. **The network interceptor: off by default.** Built: see [[Voyager Interceptor]]. Retire it once the archive import is shown to cover what it adds.
+5. **The commercial model and prices.** Offline signed licence, and the prices in [[Pricing Hypothesis]]. Built: see [[Commercial Model]]. Still open: which merchant of record sells it.
+6. **The LinkedIn archive.** Built as Setup step 4, automated where it can be and waiting for the creator where it must: see [[LinkedIn Data Archive Import]]. Still open: run it on a real archive.
+7. **Personal data in history.** The repository now holds the product only. The owner's posts, figures, post graphics and scripts, and real members' names, were removed from the current tree and from history, which was rewritten and force-pushed. Copies that only GitHub can delete (older commits still served by SHA, pull request refs) need a GitHub Support request; a leaked Taplio API key needs rotating by the owner.
+
+**Next for the owner:** pick the merchant of record; request your own archive and import it; file the GitHub Support request; rotate the Taplio key.

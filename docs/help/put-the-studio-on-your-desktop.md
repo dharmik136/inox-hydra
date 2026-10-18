@@ -30,7 +30,7 @@ Make an ordinary Windows shortcut instead. This is a Windows feature, not part o
 2. Right-click `InoxHydra.bat` and choose **Send to**, then **Desktop (create shortcut)**. On Windows 11 you may need **Show more options** first.
 3. Rename the shortcut if you like.
 
-The portable folder's name includes the version, for example `InoxHydra-2.5.2-win64`. After an upgrade, the shortcut points at a folder that no longer exists, so make it again.
+The portable folder's name includes the version, for example `InoxHydra-2.6.0-win64`. After an upgrade, the shortcut points at a folder that no longer exists, so make it again.
 
 ## Desktop app
 

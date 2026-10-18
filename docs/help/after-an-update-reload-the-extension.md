@@ -3,7 +3,7 @@ You do not re-install or re-pair the extension after an update, but if you loade
 
 ## Why this is needed
 
-The extension, listed on your browser's extensions page as **Inox Hydra Bridge** (versions before 2.6 called it **LinkedIn Studio Bridge (LocalTaplio)**, and it takes the new name when you reload it), is an unpacked folder that ships inside the studio, in `studio/extension`. Its version number is kept equal to the studio's (2.5.2 in this build). The studio never updates the copy your browser has loaded, and it does not warn you when the two versions differ.
+The extension, listed on your browser's extensions page as **Inox Hydra Bridge** (versions before 2.6 called it **LinkedIn Studio Bridge (LocalTaplio)**, and it takes the new name when you reload it), is an unpacked folder that ships inside the studio, in `studio/extension`. Its version number is kept equal to the studio's (2.6.0 in this build). The studio never updates the copy your browser has loaded, and it does not warn you when the two versions differ.
 
 ## Which case are you
 
@@ -30,7 +30,7 @@ What happens: the launcher starts the browser with the extension loaded from the
 3. If the folder it was loaded from no longer exists, **Remove** the extension, choose **Load unpacked** and select the new folder.
 4. Reload any LinkedIn tabs that were open. A LinkedIn page opened before the reload cannot reach the studio until it is reloaded too.
 
-A portable folder is named after its version, for example `InoxHydra-2.5.2-win64`. The upgrade steps in [Check your version and update the studio](check-your-version-and-update-the-studio.md) have you delete the old folder and extract the new ZIP, so unless you renamed it, a hand-loaded extension now points at a folder that is gone. In the new folder, use `app\studio\extension`: that is the path the studio's own launcher uses. The ZIP also has a second copy in `extension` at the top of the folder.
+A portable folder is named after its version, for example `InoxHydra-2.6.0-win64`. The upgrade steps in [Check your version and update the studio](check-your-version-and-update-the-studio.md) have you delete the old folder and extract the new ZIP, so unless you renamed it, a hand-loaded extension now points at a folder that is gone. In the new folder, use `app\studio\extension`: that is the path the studio's own launcher uses. The ZIP also has a second copy in `extension` at the top of the folder.
 
 To get the exact path, open **Leads** and click **Copy the folder path** under **OR LOAD IT BY HAND**. The path is also printed under the button. This section appears only while your lead list is empty, and only when the studio found at least one Chromium browser. For the desktop app, the extension sits inside the app's installed files; this guide does not say whether that path changes on update, so copy it again and compare.
 
@@ -50,7 +50,7 @@ You need to pair again only if the token changed or the browser lost the cookie:
 ## Check it
 
 1. In the bridge browser, open a LinkedIn tab and keep it in view. The extension reports its version when the page loads and then about once a minute while the tab is visible.
-2. In **Setup**, step 1 reads "Connected, extension 2.5.2", with your version.
+2. In **Setup**, step 1 reads "Connected, extension 2.6.0", with your version.
 3. Open `http://127.0.0.1:8000/api/v1/health` and compare the `version` it shows. The two should match. Nothing compares them for you.
 
 ## If it does not work

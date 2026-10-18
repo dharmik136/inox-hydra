@@ -1,12 +1,14 @@
 ---
 type: roadmap
-status: proposal
+status: decided
 tags:
   - roadmap
   - commercial
 ---
 
 # Commercial Model
+
+**Chosen by the owner on 2026-10-19**, and built: see [[Phase 2 - Commercial Plumbing]]. The merchant of record is still to pick.
 
 **The constraint:** the product promises nothing leaves the machine, and the master plan rules out licence servers and telemetry for that reason. That ruled out charging at all.
 
@@ -19,6 +21,6 @@ tags:
 **Tiers:**
 - Free: composer, fold simulator, audit, hooks from templates, export.
 - Creator: analytics, leads, Today, patterns, AI with their own key, Obsidian export, archive import.
-- Agency: several [[Creator Account]] profiles with real isolation ([[Gap - Account scoping is cosmetic]]), per-client export, white-label carousels.
+- Agency: up to 5 [[Creator Account]] profiles, each its own database, so per-client export and deletion come with it. Carousels already carry only the creator's name.
 
 Prices: [[Pricing Hypothesis]].

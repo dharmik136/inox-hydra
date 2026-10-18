@@ -1,12 +1,14 @@
 ---
 type: roadmap
-status: proposal
+status: decided
 tags:
   - roadmap
   - commercial
 ---
 
 # Pricing Hypothesis
+
+**Chosen by the owner on 2026-10-19:** the prices below are what the Licence tab shows. Still to test with design partners.
 
 Reference points (late 2026, from public pricing pages and roundups; check again before publishing):
 - Taplio: Starter $39, Growth $69, Pro $199 per month; about 25% less billed annually.

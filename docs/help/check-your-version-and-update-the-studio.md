@@ -6,8 +6,8 @@ Find your version number, turn update checks on or off, and upgrade without losi
 
 The interface does not show the version. Use any of these:
 
-- With the studio running, open `http://127.0.0.1:8000/api/v1/health` in your browser. It answers without a token, for example `{"status": "ok", "app": "inox-hydra", "version": "2.5.2"}`.
-- In a terminal, run `python -m studio.cli --version` (portable copy: `InoxHydra-CLI.bat --version`). It prints `Inox Hydra 2.5.2`.
+- With the studio running, open `http://127.0.0.1:8000/api/v1/health` in your browser. It answers without a token, for example `{"status": "ok", "app": "inox-hydra", "version": "2.6.0"}`.
+- In a terminal, run `python -m studio.cli --version` (portable copy: `InoxHydra-CLI.bat --version`). It prints `Inox Hydra 2.6.0`.
 - Run `doctor`. Its first line starts with `Inox Hydra <version>`. See [Command-line tool reference](command-line-tool-reference.md).
 
 ## Update checks are off until you turn them on
