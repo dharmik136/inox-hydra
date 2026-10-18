@@ -1386,10 +1386,13 @@ export async function createBackup(label = "manual"): Promise<{ archive: string;
 /**
  * Writes your content out in a portable format.
  *
+ * "obsidian" writes a folder of linked notes rather than one file: posts,
+ * the people who engaged with them, topics and drafts, ready to open as a vault.
+ *
  * Content only. The server excludes credentials deliberately, and the note it
  * returns says so, which is worth showing rather than paraphrasing.
  */
-export async function exportData(format: "json" | "csv"): Promise<{ path: string; note: string }> {
+export async function exportData(format: "json" | "csv" | "obsidian"): Promise<{ path: string; note: string }> {
   const data = await call<{ path?: string; note?: string }>("/api/v1/support/export", {
     method: "POST",
     body: JSON.stringify({ format }),

@@ -39,7 +39,27 @@ In the same **Your data** section:
 
 Both go in the data home folder, not the backups folder, and the interface does not list them. The note shows the path followed by "Content only. Credentials are deliberately excluded."
 
-An export holds the drafts, posts, leads, lead interactions, daily analytics, audience demographics and queue items tables. The settings table, which holds your LinkedIn session and AI key, is left out on purpose. Media files are not included.
+An export holds the drafts, posts, leads, lead interactions, daily analytics, audience demographics and queue items tables, and your own LinkedIn record: your profile, roles, education and skills, your posts with every reading of their figures, what you commented on and reacted to elsewhere, and each lead's stage history. The settings table, which holds your LinkedIn session and AI key, is left out on purpose. Media files are not included.
+
+## Export to Obsidian
+
+**Export to Obsidian**, in the same section, writes a folder of linked notes that Obsidian, a free notes app, opens as a vault:
+
+| In the folder | What it holds |
+| --- | --- |
+| `Home.md` | Counts, the people who engaged on more than one post, and your topics |
+| `Me.md` | Your headline, about, roles and skills, once you have confirmed your profile in Setup |
+| `Posts/` | One note per post: its text, its figures, its readings over time, and everyone who engaged, as links |
+| `People/` | One note per lead: every post they engaged with, what they said, and their stage history |
+| `Topics/` | One note per topic, linking its posts |
+| `Outbound/` | One note per person whose posts you engaged with, linked to their People note if they engaged back |
+| `Drafts/` | Your drafts |
+
+The folder is `exports/obsidian_vault_<stamp>` inside the data home, and the note shows its path. In Obsidian choose **Open folder as vault** and pick it, then open the graph view: your posts are the hubs and the people around them are your audience.
+
+A figure the studio never read says "not measured", not 0.
+
+**Keep your own notes in it.** Every note ends with a **Your notes** heading. Anything you write below it, and any note you add yourself, survives the next export into the same folder. To refresh a vault, export from the command line into it: `python -m studio.cli export --format obsidian --output "<vault folder>"`. The studio refuses a folder that has files in it and is not one of its own exports, so it cannot overwrite a vault you already keep.
 
 ## Backup or export?
 
@@ -48,7 +68,7 @@ An export holds the drafts, posts, leads, lead interactions, daily analytics, au
 | Contents | Full database and all media | Content tables only, no media |
 | Credentials | Included | Excluded |
 | Can it be restored? | Yes, from the command line | No |
-| Use it for | Getting your studio back | Taking your content to a spreadsheet or another tool |
+| Use it for | Getting your studio back | Taking your content to a spreadsheet, Obsidian or another tool |
 
 ## Restore a backup
 

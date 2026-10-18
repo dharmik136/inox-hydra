@@ -2177,11 +2177,15 @@ def list_support_backups():
 @app.post("/api/v1/support/export", tags=["Support & Maintenance"])
 def export_user_data(payload: Optional[Dict[str, Any]] = None):
     fmt = (payload or {}).get("format", "json")
-    if fmt not in ("json", "csv"):
-        raise HTTPException(status_code=400, detail="format must be json or csv")
+    if fmt not in support_tools.EXPORT_FORMATS:
+        raise HTTPException(status_code=400, detail="format must be json, csv or obsidian")
+    # No destination from the request: the folder is always a new one under the
+    # app home, so a request can never point the export at an existing vault.
     path = support_tools.export_data(fmt=fmt)
-    return {"status": "success", "path": path, "format": fmt,
-            "note": "Content only. Credentials are deliberately excluded."}
+    note = "Content only. Credentials are deliberately excluded."
+    if fmt == "obsidian":
+        note = "A folder of linked notes. Open it in Obsidian with \"Open folder as vault\". " + note
+    return {"status": "success", "path": path, "format": fmt, "note": note}
 
 
 @app.get("/api/v1/updates/status", tags=["Support & Maintenance"])

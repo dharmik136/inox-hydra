@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useState as useLocalState } from "react";
-import { Archive, Check, Loader2, ShieldCheck } from "lucide-react";
+import { Archive, Check, Loader2, Network, ShieldCheck } from "lucide-react";
 import {
   createBackup,
   exportData,
@@ -427,7 +427,7 @@ function YourData() {
     void load();
   }, [load]);
 
-  async function run(what: "backup" | "json" | "csv") {
+  async function run(what: "backup" | "json" | "csv" | "obsidian") {
     setBusy(what);
     setNote(null);
     try {
@@ -486,7 +486,24 @@ function YourData() {
         >
           Export CSV
         </button>
+        <button
+          type="button"
+          onClick={() => void run("obsidian")}
+          disabled={busy !== null}
+          className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+        >
+          {busy === "obsidian" ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Network className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          )}
+          Export to Obsidian
+        </button>
       </div>
+      <p className="mt-2 text-[12px] leading-relaxed text-ink-muted">
+        Obsidian gets a folder of linked notes: each post, the people who engaged with it, and
+        your topics. Its graph view shows who keeps coming back.
+      </p>
 
       {note && (
         <p role="status" className="studio-meta mt-3 leading-snug break-all text-ink-secondary">

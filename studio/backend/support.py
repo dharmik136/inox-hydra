@@ -69,8 +69,18 @@ CONFIG_TABLES = ("settings",)
 
 # Included in a data export. Content the user authored or accumulated, which
 # they must be able to take elsewhere.
+#
+# The second line is the creator's own LinkedIn record, which the bridge reads
+# into the studio. It was missing, so the most valuable thing a creator has
+# here, their posts with every reading and the history of each lead, could not
+# be taken anywhere. creator_identity holds their own contact details, which is
+# theirs to export; settings, which holds credentials, is still never listed.
 EXPORTABLE_TABLES = ("drafts", "posts", "leads", "lead_interactions",
-                     "analytics_daily", "audience_demographics", "queue_items")
+                     "analytics_daily", "audience_demographics", "queue_items",
+                     "creator_identity", "creator_positions", "creator_education", "creator_skills",
+                     "own_posts", "post_metric_observations", "outbound_engagements", "lead_stage_events")
+
+EXPORT_FORMATS = ("json", "csv", "obsidian")
 
 
 def _connect() -> sqlite3.Connection:
@@ -300,9 +310,18 @@ def export_data(destination: Optional[str] = None, fmt: str = "json") -> str:
 
     This is the anti lock-in guarantee. A creator must be able to leave with
     their drafts, leads and analytics without asking anyone's permission.
+
+    "obsidian" writes a folder rather than a file: the same record as linked
+    notes, see obsidian_export.py.
     """
-    if fmt not in ("json", "csv"):
+    if fmt not in EXPORT_FORMATS:
         raise ValueError(f"unsupported export format: {fmt}")
+    if fmt == "obsidian":
+        try:
+            from .obsidian_export import export_obsidian_vault
+        except ImportError:
+            from obsidian_export import export_obsidian_vault
+        return export_obsidian_vault(destination)["path"]
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if destination is None:

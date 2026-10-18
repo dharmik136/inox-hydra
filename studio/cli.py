@@ -14,7 +14,7 @@ Commands:
     paths       Where this installation keeps its data
     backup      Snapshot the database and media into a single ZIP
     restore     Replace current state with a backup, after a safety snapshot
-    export      Write drafts, leads and analytics to JSON or CSV
+    export      Write your content to JSON, CSV, or an Obsidian vault
     reset       Clear configuration while keeping all content
     migrate     Show or apply pending database schema migrations
     update      Check for a newer release, opt in, or opt out
@@ -146,7 +146,18 @@ def cmd_restore(args) -> int:
 
 
 def cmd_export(args) -> int:
-    destination = support.export_data(args.output, fmt=args.format)
+    try:
+        destination = support.export_data(args.output, fmt=args.format)
+    except ValueError as refused:
+        print(f"Not exported: {refused}", file=sys.stderr)
+        return 1
+    if args.format == "obsidian":
+        print(f"Wrote an Obsidian vault to:\n  {destination}")
+        print()
+        print("Open it in Obsidian with \"Open folder as vault\". Export again into the same")
+        print("folder to refresh it: notes you add, and anything under a \"## Your notes\"")
+        print("heading, are kept.")
+        return 0
     print(f"Exported {args.format.upper()} to:\n  {destination}")
     print()
     print("This contains your drafts, posts, leads and analytics. It deliberately")
@@ -315,9 +326,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", action="store_true", help="Confirm this destructive action")
     p.set_defaults(func=cmd_restore)
 
-    p = sub.add_parser("export", help="Write your content to JSON or CSV")
-    p.add_argument("--format", choices=["json", "csv"], default="json")
-    p.add_argument("--output", help="Destination file")
+    p = sub.add_parser("export", help="Write your content to JSON, CSV, or an Obsidian vault")
+    p.add_argument("--format", choices=list(support.EXPORT_FORMATS), default="json")
+    p.add_argument("--output", help="Destination file, or folder for --format obsidian")
     p.set_defaults(func=cmd_export)
 
     p = sub.add_parser("reset", help="Clear configuration, keep all content")
