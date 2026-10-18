@@ -1,0 +1,72 @@
+{
+  "collapse-filter": false,
+  "search": "",
+  "showTags": false,
+  "showAttachments": false,
+  "hideUnresolved": false,
+  "showOrphans": true,
+  "collapse-color-groups": false,
+  "colorGroups": [
+    {
+      "query": "path:\"1 Sources\"",
+      "color": {
+        "a": 1,
+        "rgb": 2648007
+      }
+    },
+    {
+      "query": "path:\"2 Entities\"",
+      "color": {
+        "a": 1,
+        "rgb": 1477217
+      }
+    },
+    {
+      "query": "path:\"3 AI\"",
+      "color": {
+        "a": 1,
+        "rgb": 10181046
+      }
+    },
+    {
+      "query": "path:\"4 Outputs\"",
+      "color": {
+        "a": 1,
+        "rgb": 15291692
+      }
+    },
+    {
+      "query": "path:\"5 Content Plan\"",
+      "color": {
+        "a": 1,
+        "rgb": 13934615
+      }
+    },
+    {
+      "query": "path:\"6 Gaps\"",
+      "color": {
+        "a": 1,
+        "rgb": 12597547
+      }
+    },
+    {
+      "query": "path:\"7 Roadmap\"",
+      "color": {
+        "a": 1,
+        "rgb": 8359053
+      }
+    }
+  ],
+  "collapse-display": false,
+  "showArrow": true,
+  "textFadeMultiplier": 0,
+  "nodeSizeMultiplier": 1.1,
+  "lineSizeMultiplier": 1,
+  "collapse-forces": false,
+  "centerStrength": 0.5,
+  "repelStrength": 12,
+  "linkStrength": 1,
+  "linkDistance": 220,
+  "scale": 1,
+  "close": false
+}

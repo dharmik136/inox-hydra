@@ -128,3 +128,9 @@ studio/ui/dist/
 studio/ui/tsconfig.tsbuildinfo
 # Built React output, reproducible from studio/ui/ by `npm run build`.
 studio/frontend_next/
+
+# Obsidian keeps per-machine layout next to the planning vault. The graph
+# colours and core plugin list are shared; the open panes are not.
+planning/.obsidian/workspace*.json
+planning/.obsidian/cache
+planning/.trash/
