@@ -37,6 +37,7 @@ import {
 } from "@/lib/api";
 import type { SearchFocus } from "@/lib/search";
 import { measurableLength, measurableWordCount } from "@/lib/text";
+import { DOCKED_INSPECTOR_QUERY, useMediaQuery } from "@/lib/viewport";
 
 /** Average adult reading speed. Used for an estimate that is labelled as one. */
 const WORDS_PER_MINUTE = 200;
@@ -58,7 +59,14 @@ export default function App() {
   const [active, setActive] = useState<SectionId>("composer");
   const [trayOpen, setTrayOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
+  // Docked beside the editor on a wide window; a drawer over it on a narrow
+  // one, where it starts closed so the first thing on screen is the page you
+  // write on.
+  const dockedInspector = useMediaQuery(DOCKED_INSPECTOR_QUERY);
+  const [inspectorOpen, setInspectorOpen] = useState(dockedInspector);
+  useEffect(() => {
+    if (!dockedInspector) setInspectorOpen(false);
+  }, [dockedInspector]);
   const [draft, setDraft] = useState("");
   const [draftId, setDraftId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -458,7 +466,12 @@ export default function App() {
           {/* The inspector inspects a draft, so it is not drawn beside the
               surfaces that are not about one. */}
           {active === "composer" && (
-            <Inspector open={inspectorOpen} onClose={() => setInspectorOpen(false)} draft={draft} />
+            <Inspector
+              open={inspectorOpen}
+              onClose={() => setInspectorOpen(false)}
+              draft={draft}
+              overlay={!dockedInspector}
+            />
           )}
 
           {!inspectorOpen && active === "composer" && (

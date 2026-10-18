@@ -12,6 +12,7 @@ import {
   type TopicAttributionInsights,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { EmptySurface } from "./EmptySurface";
 
 /**
  * Patterns and cadence: what your own posts suggest, and how steadily you post.
@@ -49,7 +50,14 @@ export function PatternsSurface() {
 
   if (failed) return <Centered>PATTERNS ARE UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!patterns || !cadence) return <Centered>LOADING PATTERNS</Centered>;
-  if (!cadence.posts) return <Centered>NO POSTS OF YOURS HAVE BEEN IMPORTED. IMPORT THEM FROM SETUP.</Centered>;
+  if (!cadence.posts) {
+    return (
+      <EmptySurface label="Patterns" title="What your own posts suggest">
+        None of your posts have been imported yet. Once they are, this compares the ones that share a
+        form with the ones that do not, and says only what the sample supports.
+      </EmptySurface>
+    );
+  }
 
   const clean = patterns.patterns.filter((p) => !p.different_period);
   const confounded = patterns.patterns.filter((p) => p.different_period);
@@ -57,7 +65,7 @@ export function PatternsSurface() {
   return (
     <article className="mx-auto max-w-[80ch] px-8 py-8">
       <p className="studio-label">Patterns</p>
-      <h2 className="studio-title mt-2">What your own posts suggest</h2>
+      <h1 className="studio-title mt-2">What your own posts suggest</h1>
       <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
         Each line compares your posts that have a form with those that do not, by median reactions, across your{" "}
         {patterns.posts_compared} posts at least a week old. These are differences between your posts, not causes: treat
@@ -141,7 +149,7 @@ export function PatternsSurface() {
       {contrasts && contrasts.contrasts.length > 0 && (
         <section className="mt-10">
           <p className="studio-label">Feature Contrasts</p>
-          <h3 className="studio-title mt-2 text-[15px]">Binary feature comparisons</h3>
+          <h2 className="studio-title mt-2 text-[15px]">Binary feature comparisons</h2>
           <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
             Compares settled posts older than 7 days across structural forms.
             Requires at least {contrasts.min_arm_size} posts per arm before concluding.
@@ -231,7 +239,7 @@ function TopicAttributionSection({ attribution }: { attribution: TopicAttributio
   return (
     <section className="mt-10">
       <p className="studio-label">Topic to Qualified Lead Attribution</p>
-      <h3 className="studio-title mt-2 text-[15px]">Which topics bring qualified pipeline</h3>
+      <h2 className="studio-title mt-2 text-[15px]">Which topics bring qualified pipeline</h2>
       <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
         {attribution.summary_sentence}
       </p>

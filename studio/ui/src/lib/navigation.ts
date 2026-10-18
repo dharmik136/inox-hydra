@@ -69,7 +69,7 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   // Where a creator starts once the studio knows who they are: who to reply
   // to, how the latest post is doing, and the one page worth opening.
   { id: "today", label: "Today", blurb: "Who to reply to and how your latest post is doing", icon: Sunrise },
-  { id: "activity", label: "Activity", blurb: "Real-time data ingestion and bridge activity stream", icon: Activity },
+  { id: "activity", label: "Activity", blurb: "What the bridge has read from your LinkedIn, as it arrives", icon: Activity },
   { id: "composer", screenKey: "studio", label: "Composer", blurb: "Write, re-hook and stage the next post", icon: PenLine },
   { id: "queue", screenKey: "queue", label: "Queue", blurb: "Scheduled posts and peak engagement slots", icon: CalendarClock },
   { id: "leads", screenKey: "crm", label: "Leads", blurb: "Lead stream and person dossiers", icon: Users },

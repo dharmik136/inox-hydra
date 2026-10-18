@@ -47,9 +47,12 @@ export function ContextBar({
   onPublish,
 }: ContextBarProps) {
   return (
-    <header className="flex h-12 shrink-0 items-center gap-4 border-b border-edge bg-ink px-4">
-      <div className="flex min-w-0 items-baseline gap-3">
-        <span className="studio-meta shrink-0 uppercase">
+    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-edge bg-ink px-3 sm:gap-4 sm:px-4">
+      {/* flex-1 with min-w-0, so the title is what gives way on a narrow
+          window. The reference used to keep its width and slide under the
+          save status on a phone. */}
+      <div className="flex min-w-0 flex-1 items-baseline gap-3 md:flex-initial">
+        <span className="studio-meta hidden shrink-0 uppercase sm:inline">
           {kind} / {draftRef}
         </span>
         <h1 className="truncate text-[13px] font-medium text-ink-primary">{title}</h1>
@@ -101,7 +104,7 @@ export function ContextBar({
           {saveState === "idle" && <span className="text-ink-muted">UNCHANGED</span>}
         </span>
 
-        <span className="h-4 w-px bg-edge" aria-hidden="true" />
+        <span className="hidden h-4 w-px bg-edge sm:block" aria-hidden="true" />
 
         <button
           type="button"

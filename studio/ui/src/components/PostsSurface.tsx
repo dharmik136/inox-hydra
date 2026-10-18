@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Activity, ChevronDown, ExternalLink } from "lucide-react";
 import { fetchPostsInsights, launchBridge, type PostInsight, type PostsInsights } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { EmptySurface } from "./EmptySurface";
 
 /**
  * Posts: which of your posts worked, and whom each one brought.
@@ -29,7 +30,12 @@ export function PostsSurface({
   if (failed) return <Centered>POSTS ARE UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!data) return <Centered>LOADING YOUR POSTS</Centered>;
   if (!data.posts.length) {
-    return <Centered>NO POSTS OF YOURS HAVE BEEN IMPORTED. IMPORT THEM FROM SETUP.</Centered>;
+    return (
+      <EmptySurface label="Posts" title="What worked, and who it brought">
+        None of your posts have been imported yet. Import them in Setup, and each one appears here
+        against your usual, with the people it brought.
+      </EmptySurface>
+    );
   }
 
   const { usual } = data;
@@ -43,7 +49,7 @@ export function PostsSurface({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="studio-label">Posts</p>
-          <h2 className="studio-title mt-2">What worked, and who it brought</h2>
+          <h1 className="studio-title mt-2">What worked, and who it brought</h1>
         </div>
         {onOpenActivity && (
           <button

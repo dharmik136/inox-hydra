@@ -76,7 +76,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
     <div className="flex h-full min-h-0">
       <section aria-label="Lead stream" className="flex w-[340px] shrink-0 flex-col border-r border-edge">
         <div className="flex items-baseline justify-between gap-2 px-4 pt-4 pb-2">
-          <p className="studio-label">Lead stream</p>
+          <h1 className="studio-label">Lead stream</h1>
           <div className="flex items-baseline gap-2">
             <p className="studio-meta text-[10px]">{leads.length}</p>
             {/* A download, not a fetch: the route streams a file, so the
@@ -213,6 +213,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
   return (
     <article className="max-w-[70ch] px-8 py-8">
       <p className="studio-label">{lead.status}</p>
+      {/* A section of the Leads page, whose heading is the stream's label. */}
       <h2 className="studio-title mt-2">{lead.name}</h2>
       {lead.headline && <p className="mt-2 text-[14px] text-ink-secondary">{lead.headline}</p>}
       {/* Stored on every captured lead and never shown, so a creator who

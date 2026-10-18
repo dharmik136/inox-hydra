@@ -96,7 +96,7 @@ export function BrandStudioSurface() {
   return (
     <div className="mx-auto max-w-[86ch] px-8 py-8">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <h2 className="studio-title">Brand Studio</h2>
+        <h1 className="studio-title">Brand Studio</h1>
         <div className="flex items-center gap-3">
           <span className="studio-meta" role="status" aria-live="polite">
             {state === "saving" && (

@@ -78,7 +78,7 @@ export function SwipeSurface({ focus = null }: { focus?: SearchFocus | null } = 
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 border-b border-edge px-8 pt-6 pb-4">
         <div className="flex items-baseline justify-between gap-4">
-          <p className="studio-label">Specimen wall</p>
+          <h1 className="studio-label">Specimen wall</h1>
           <p className="studio-meta text-[10px]">
             {shown.length} OF {specimens.length}
           </p>

@@ -101,7 +101,9 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated }: HookFilm
       <div className="flex items-baseline justify-between gap-3 px-10 pt-3">
         <p className="studio-label">{generated ? "Generated from selection" : "Hook rail"}</p>
         <div className="flex items-center gap-3">
-          <p className="studio-meta text-[10px] text-ink-muted">ALT + NUMBER TO APPLY</p>
+          {/* A keyboard hint, so not on a window narrow enough to be a phone,
+              where it also sat under the inspector's open control. */}
+          <p className="studio-meta hidden text-[10px] text-ink-muted sm:block">ALT + NUMBER TO APPLY</p>
           {generated && (
             <button
               type="button"

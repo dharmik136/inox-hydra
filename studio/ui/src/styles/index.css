@@ -104,6 +104,16 @@
 }
 
 @layer components {
+  /* A row that scrolls sideways when it must, without a scrollbar drawn under
+   * it. Its children are buttons, so the keyboard reaches every one, and a
+   * narrow window scrolls the row rather than clipping its last controls. */
+  .studio-scroll-strip {
+    scrollbar-width: none;
+  }
+  .studio-scroll-strip::-webkit-scrollbar {
+    display: none;
+  }
+
   /* Blueprint section 3: 11px uppercase, 0.08em tracking. Used for rail
    * groups, inspector headers and context bar field labels. */
   .studio-label {

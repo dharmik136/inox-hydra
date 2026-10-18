@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchOutboundInsights, type OutboundInsights } from "@/lib/api";
+import { EmptySurface } from "./EmptySurface";
 
 /**
  * Outbound: whose content you spend your attention on, and whether it comes
@@ -23,14 +24,19 @@ export function OutboundSurface() {
   if (failed) return <Centered>OUTBOUND IS UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!data) return <Centered>LOADING YOUR ACTIVITY</Centered>;
   if (!data.authors.length) {
-    return <Centered>NONE OF YOUR REACTIONS OR COMMENTS HAVE BEEN IMPORTED. IMPORT THEM FROM SETUP.</Centered>;
+    return (
+      <EmptySurface label="Outbound" title="Where your attention goes">
+        None of your reactions or comments have been imported yet. Import them in Setup to see whose
+        posts you engage with, and which of those people engage back.
+      </EmptySurface>
+    );
   }
 
   const { totals, coverage } = data;
   return (
     <article className="mx-auto max-w-[80ch] px-8 py-8">
       <p className="studio-label">Outbound</p>
-      <h2 className="studio-title mt-2">Where your attention goes</h2>
+      <h1 className="studio-title mt-2">Where your attention goes</h1>
       <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
         {totals.reactions.toLocaleString()} reactions and {totals.comments.toLocaleString()} comments on posts by{" "}
         {totals.authors.toLocaleString()} people and pages.

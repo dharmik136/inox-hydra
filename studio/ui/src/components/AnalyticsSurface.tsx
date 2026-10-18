@@ -81,7 +81,7 @@ export function AnalyticsSurface() {
   return (
     <div className="mx-auto max-w-[110ch] px-8 py-8">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <h2 className="studio-title">Analytics</h2>
+        <h1 className="studio-title">Analytics</h1>
         <div className="flex items-center gap-3">
           {/* A file download, so the browser handles it rather than fetch. */}
           <a

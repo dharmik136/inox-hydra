@@ -5,13 +5,9 @@ import {
   Check,
   Copy,
   ExternalLink,
-  FileText,
   Loader2,
-  MessageSquare,
   Radio,
   RefreshCw,
-  ThumbsUp,
-  Users,
 } from "lucide-react";
 import {
   fetchActivityStream,
@@ -110,7 +106,7 @@ export function ActivitySurface({
     return (
       <div className="grid h-full place-items-center px-8">
         <div className="max-w-[44ch] text-center">
-          <p className="studio-label text-signal-orange">ACTIVITY STREAM UNAVAILABLE</p>
+          <p className="studio-label text-signal-orange-text">ACTIVITY STREAM UNAVAILABLE</p>
           <p className="mt-2 text-[13px] text-ink-muted">
             The local studio server is unreachable or returned an authentication error. Verify that the backend service is running on 127.0.0.1:8000.
           </p>
@@ -151,26 +147,28 @@ export function ActivitySurface({
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className="studio-label">ACTIVITY INSPECTOR</span>
+            <span className="studio-label">Activity</span>
+            {/* Token colours only. The raw palette classes this used did not
+                follow the theme, and failed contrast in the light one. Idle is
+                not a warning, so it is not drawn as one. */}
             <span
               className={cn(
                 "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase",
-                bridgeOnline ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400",
+                bridgeOnline ? "bg-signal-green-subtle text-signal-green-text" : "bg-soft text-ink-secondary",
               )}
             >
               <span
-                className={cn(
-                  "size-1.5 rounded-full",
-                  bridgeOnline ? "bg-emerald-400 animate-pulse" : "bg-amber-400",
-                )}
+                className={cn("size-1.5 rounded-full", bridgeOnline ? "bg-signal-green" : "bg-ink-muted")}
                 aria-hidden="true"
               />
-              {bridgeOnline ? "Bridge Live" : "Bridge Idle"}
+              {bridgeOnline ? "Bridge running" : "Bridge idle"}
             </span>
           </div>
-          <h1 className="studio-title mt-1.5">Data Ingestion and Live Stream</h1>
-          <p className="mt-1 text-[13px] text-ink-secondary">
-            Real-time feed of authored posts, outbound engagements, reactions, and audience captures loaded into local SQLite.
+          <h1 className="studio-title mt-1.5">What the bridge has read</h1>
+          <p className="mt-1 max-w-[62ch] text-[13px] leading-relaxed text-ink-secondary">
+            Everything the browser extension has read from your LinkedIn, newest first: your posts, your
+            comments and reactions elsewhere, and the people who engaged. It is kept in this studio's
+            database and nowhere else.
           </p>
         </div>
 
@@ -183,12 +181,12 @@ export function ActivitySurface({
             className={cn(
               "flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[11px] font-medium transition-colors",
               autoRefresh
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
-                : "border-edge bg-soft text-ink-muted hover:text-ink-primary",
+                ? "border-edge-strong bg-signal-green-subtle text-signal-green-text"
+                : "border-edge bg-soft text-ink-secondary hover:text-ink-primary",
             )}
           >
-            <Radio className={cn("size-3.5", autoRefresh && "animate-pulse")} aria-hidden="true" />
-            <span>{autoRefresh ? "Auto-refresh: On" : "Auto-refresh: Off"}</span>
+            <Radio className="size-3.5" aria-hidden="true" />
+            <span>{autoRefresh ? "Live updates on" : "Live updates off"}</span>
           </button>
           <button
             type="button"
@@ -205,18 +203,24 @@ export function ActivitySurface({
       <section className="mt-6 rounded-md border border-edge-strong bg-raised/40 p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="studio-meta text-[10px] text-ink-muted">AUTONOMOUS SYNC CONTROLLER</p>
+            <p className="studio-label">Your history</p>
             <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-ink-primary">
               <span className="font-medium">
                 {stream.creator ? `Creator: @${stream.creator}` : "Unconfirmed identity"}
               </span>
               <span className="text-ink-muted" aria-hidden="true">|</span>
               <span className="text-ink-secondary">
-                Bridge: {summary.bridge_carrier || "Brave"} ({summary.bridge_last_seen ? ago(summary.bridge_last_seen) : "no heartbeats yet"})
+                {/* No browser is named until one has reported in. This used
+                    to say Brave whenever nothing was known. */}
+                {summary.bridge_carrier
+                  ? `Bridge: ${summary.bridge_carrier} (${summary.bridge_last_seen ? ago(summary.bridge_last_seen) : "not heard from yet"})`
+                  : summary.bridge_last_seen
+                    ? `Bridge last heard from ${ago(summary.bridge_last_seen)}`
+                    : "The bridge has not reported in yet"}
               </span>
             </div>
             {summary.active_sync_chain && (
-              <p className="mt-1 text-[11px] text-signal-orange">
+              <p className="mt-1 text-[11px] text-signal-orange-text">
                 Sync in progress: step {summary.active_sync_chain.current_index + 1} of{" "}
                 {summary.active_sync_chain.sequence.length} ({summary.active_sync_chain.sequence[summary.active_sync_chain.current_index]})
               </p>
@@ -242,52 +246,25 @@ export function ActivitySurface({
         </div>
       </section>
 
-      {/* Metric Stat Cards */}
-      <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-md border border-edge bg-soft/50 p-3">
-          <div className="flex items-center justify-between">
-            <span className="studio-meta text-[10px] text-ink-muted">POSTS</span>
-            <FileText className="size-3.5 text-ink-muted" aria-hidden="true" />
+      {/* Counts as one ruled row, not four cards. Blueprint section 18
+          retires the grid of KPI cards as a default, and these are a tally
+          of what has been read, not performance. */}
+      <dl className="mt-6 grid grid-cols-2 border-y border-edge sm:grid-cols-4">
+        {[
+          { label: "Your posts", value: summary.posts_count },
+          { label: "Your comments", value: summary.comments_count },
+          { label: "Your reactions", value: summary.reactions_count },
+          { label: "Leads", value: summary.leads_count },
+        ].map((item, index) => (
+          <div
+            key={item.label}
+            className={cn("px-3 py-3", index > 0 && "sm:border-l sm:border-edge", index % 2 === 1 && "border-l border-edge")}
+          >
+            <dt className="studio-label">{item.label}</dt>
+            <dd className="mt-1 font-mono text-[20px] tabular-nums text-ink-primary">{item.value.toLocaleString()}</dd>
           </div>
-          <p className="mt-1 text-[22px] font-semibold tabular-nums text-ink-primary">
-            {summary.posts_count.toLocaleString()}
-          </p>
-          <p className="mt-0.5 text-[10px] text-ink-muted">Authored & imported</p>
-        </div>
-
-        <div className="rounded-md border border-edge bg-soft/50 p-3">
-          <div className="flex items-center justify-between">
-            <span className="studio-meta text-[10px] text-ink-muted">COMMENTS</span>
-            <MessageSquare className="size-3.5 text-ink-muted" aria-hidden="true" />
-          </div>
-          <p className="mt-1 text-[22px] font-semibold tabular-nums text-ink-primary">
-            {summary.comments_count.toLocaleString()}
-          </p>
-          <p className="mt-0.5 text-[10px] text-ink-muted">Outbound replies</p>
-        </div>
-
-        <div className="rounded-md border border-edge bg-soft/50 p-3">
-          <div className="flex items-center justify-between">
-            <span className="studio-meta text-[10px] text-ink-muted">REACTIONS</span>
-            <ThumbsUp className="size-3.5 text-ink-muted" aria-hidden="true" />
-          </div>
-          <p className="mt-1 text-[22px] font-semibold tabular-nums text-ink-primary">
-            {summary.reactions_count.toLocaleString()}
-          </p>
-          <p className="mt-0.5 text-[10px] text-ink-muted">Likes & engagements</p>
-        </div>
-
-        <div className="rounded-md border border-edge bg-soft/50 p-3">
-          <div className="flex items-center justify-between">
-            <span className="studio-meta text-[10px] text-ink-muted">CRM LEADS</span>
-            <Users className="size-3.5 text-ink-muted" aria-hidden="true" />
-          </div>
-          <p className="mt-1 text-[22px] font-semibold tabular-nums text-ink-primary">
-            {summary.leads_count.toLocaleString()}
-          </p>
-          <p className="mt-0.5 text-[10px] text-ink-muted">Identified audience</p>
-        </div>
-      </section>
+        ))}
+      </dl>
 
       {/* Tabs */}
       <div className="mt-8 border-b border-edge">
@@ -379,7 +356,7 @@ export function ActivitySurface({
                         className="grid size-7 place-items-center rounded border border-edge bg-soft text-ink-muted hover:text-ink-primary"
                       >
                         {copiedUrn === post.activity_urn ? (
-                          <Check className="size-3.5 text-emerald-400" aria-hidden="true" />
+                          <Check className="size-3.5 text-signal-green-text" aria-hidden="true" />
                         ) : (
                           <Copy className="size-3.5" aria-hidden="true" />
                         )}
@@ -542,10 +519,10 @@ export function ActivitySurface({
                           className={cn(
                             "rounded px-1.5 py-0.5 text-[10px] uppercase font-medium",
                             req.outcome === "completed"
-                              ? "bg-emerald-500/15 text-emerald-400"
+                              ? "bg-signal-green-subtle text-signal-green-text"
                               : req.outcome === "pending"
-                              ? "bg-amber-500/15 text-amber-400"
-                              : "bg-soft text-ink-muted",
+                              ? "bg-signal-orange-subtle text-signal-orange-text"
+                              : "bg-soft text-ink-secondary",
                           )}
                         >
                           {req.outcome}

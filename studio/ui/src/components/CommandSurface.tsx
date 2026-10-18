@@ -73,7 +73,7 @@ export function CommandSurface() {
 
   return (
     <div className="mx-auto max-w-[86ch] px-8 py-8">
-      <h2 className="studio-title">Command</h2>
+      <h1 className="studio-title">Command</h1>
 
       {status && (
         <p className="studio-meta mt-3">

@@ -87,7 +87,7 @@ export function QueueSurface() {
   return (
     <div className="mx-auto max-w-[96ch] px-8 py-8">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <h2 className="studio-title">Queue</h2>
+        <h1 className="studio-title">Queue</h1>
         <div className="flex items-center gap-2">
           <button
             type="button"

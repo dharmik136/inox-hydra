@@ -260,6 +260,64 @@ def test_e2e_universal_search_command_palette(page):
     page.wait_for_timeout(300)
 
 
+def _narrow_page(browser_instance, live_studio_url, width, height=800):
+    context = browser_instance.new_context(viewport={"width": width, "height": height})
+    page = context.new_page()
+    page.goto(live_studio_url, wait_until="networkidle")
+    page.click('button[aria-label="Composer"]')
+    page.wait_for_timeout(400)
+    return context, page
+
+
+def test_e2e_the_inspector_can_always_be_closed(page):
+    """
+    The six mode labels overflowed the panel at every width and pushed the
+    close control out of reach. It must stay inside the window.
+    """
+    page.click('button[aria-label="Composer"]')
+    page.wait_for_timeout(400)
+    close = page.locator('aside[aria-label="Inspector"] button[aria-label="Close inspector"]')
+    box = close.bounding_box()
+    assert box is not None, "the inspector has no close control"
+    assert box["x"] + box["width"] <= 1280, "the close control sits outside the window"
+    close.click()
+    page.wait_for_timeout(400)
+    assert page.locator('aside[aria-label="Inspector"]').count() == 0
+    assert page.locator('button[aria-label="Open inspector"]').is_visible()
+
+
+@pytest.mark.parametrize("width", [390, 768])
+def test_e2e_a_narrow_window_keeps_the_editor(browser_instance, live_studio_url, width):
+    """
+    Below 1024 pixels the inspector used to stay docked: at 768 it left the
+    editor a 330 pixel column, and on a phone it left none. It is now a drawer
+    over the editor, closed at first, with Escape to dismiss it.
+    """
+    context, narrow = _narrow_page(browser_instance, live_studio_url, width)
+    try:
+        assert narrow.locator('aside[aria-label="Inspector"]').count() == 0, "the inspector opened over a narrow window"
+        editor = narrow.locator("main textarea, main [contenteditable='true']").first
+        box = editor.bounding_box()
+        assert box is not None and box["width"] >= width * 0.6, "the editor has no room to write in"
+
+        narrow.click('button[aria-label="Open inspector"]')
+        narrow.wait_for_timeout(400)
+        assert narrow.locator('aside[aria-label="Inspector"]').is_visible()
+        narrow.keyboard.press("Escape")
+        narrow.wait_for_timeout(400)
+        assert narrow.locator('aside[aria-label="Inspector"]').count() == 0, "Escape did not close the drawer"
+    finally:
+        context.close()
+
+
+def test_e2e_every_surface_names_itself_once(page):
+    """Each surface owns the page while it is shown, so each carries one level-one heading."""
+    for label in ("Setup", "Today", "Queue", "Posts", "Patterns", "Outbound", "Analytics", "Command", "Brand Studio", "Activity"):
+        page.click(f'nav[aria-label="Studio sections"] button[aria-label="{label}"]')
+        page.wait_for_timeout(500)
+        assert page.locator("h1:visible").count() == 1, f"{label} has {page.locator('h1:visible').count()} level-one headings"
+
+
 def test_strict_zero_em_dashes_in_e2e_test_source():
     """Strict verification: Zero literal em-dashes in this E2E test file."""
     this_file = os.path.abspath(__file__)

@@ -93,7 +93,12 @@ export function StudioRail({ sections, active, onSelect, trayOpen, onToggleTray,
                 onClick={() => onSelect(section.id)}
                 onMouseEnter={() => setHovered(section.id)}
                 onMouseLeave={() => setHovered(null)}
-                onFocus={() => setHovered(section.id)}
+                // Keyboard focus only. A mouse click also focuses the button,
+                // and the label then sat over the page until something else
+                // took focus, covering the first line of the surface it opened.
+                onFocus={(event) => {
+                  if (event.currentTarget.matches(":focus-visible")) setHovered(section.id);
+                }}
                 onBlur={() => setHovered(null)}
                 /* Icon only, so the accessible name has to come from here.
                    Fourteen controls in the vanilla interface announced as

@@ -86,7 +86,7 @@ export function OnboardingSurface() {
   return (
     <article className="mx-auto max-w-[72ch] px-8 py-8">
       <p className="studio-label">Setup</p>
-      <h2 className="studio-title mt-2">Teach the studio who you are</h2>
+      <h1 className="studio-title mt-2">Teach the studio who you are</h1>
       <p className="mt-2 text-[14px] leading-relaxed text-ink-secondary">
         The studio reads your own LinkedIn in a browser it opens for you: your profile, your posts, and what
         you have liked and commented on. It all stays in the database on this machine.

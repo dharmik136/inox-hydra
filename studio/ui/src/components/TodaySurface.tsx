@@ -83,7 +83,7 @@ export function TodaySurface({
   return (
     <article className="mx-auto max-w-[72ch] px-8 py-8">
       <p className="studio-label">Today</p>
-      <h2 className="studio-title mt-2">What to do in the next hour</h2>
+      <h1 className="studio-title mt-2">What to do in the next hour</h1>
       <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">{freshnessLine(brief)}</p>
 
       <section className="mt-6 rounded-md border border-edge-strong p-4">
@@ -141,9 +141,9 @@ export function TodaySurface({
 
       <Section label="Reply to">
         {!brief.identity.known ? (
-          <Empty>ONCE YOU CONFIRM YOUR PROFILE, PEOPLE WHO ENGAGED WITH YOUR POSTS APPEAR HERE.</Empty>
+          <Empty>Once you confirm your profile, people who engaged with your posts appear here.</Empty>
         ) : brief.reply_to.length === 0 ? (
-          <Empty>NOBODY FROM THE LAST TWO WEEKS IS WAITING ON A REPLY.</Empty>
+          <Empty>Nobody from the last two weeks is waiting on a reply.</Empty>
         ) : (
           <ul className="flex flex-col divide-y divide-edge border-y border-edge">
             {brief.reply_to.map((person) => (
@@ -159,8 +159,8 @@ export function TodaySurface({
         ) : (
           <Empty>
             {brief.identity.known
-              ? "NO POST OF YOURS HAS BEEN IMPORTED YET. IMPORT YOUR POSTS IN SETUP."
-              : "YOUR POSTS APPEAR HERE ONCE THE STUDIO KNOWS WHO YOU ARE."}
+              ? "No post of yours has been imported yet. Import your posts in Setup."
+              : "Your posts appear here once the studio knows who you are."}
           </Empty>
         )}
       </Section>
@@ -345,8 +345,11 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+// A sentence, so it is set as one. Ten pixel uppercase monospace is for
+// labels and counts; a whole sentence in it was the hardest text on the page
+// to read, and it is the text a new user meets first.
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="studio-meta text-[10px] leading-snug text-ink-muted">{children}</p>;
+  return <p className="text-[13px] leading-relaxed text-ink-muted">{children}</p>;
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
