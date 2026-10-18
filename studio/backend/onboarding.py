@@ -349,21 +349,28 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
                                 (metrics["impressions"], now.isoformat(), urn)
                             )
             elif schema_name == "creator_analytics" and isinstance(data, list) and data:
+                # Only the follower count is kept. It is a reading of one moment,
+                # so it is today's figure whatever range the page was showing.
+                # impressionAggregate is a total over a window the response does
+                # not name, and storing it as today's impressions is the defect
+                # migration 5 exists to stop. It stays in the capture log only.
                 entry = data[0] if data else {}
                 followers = _count(entry.get("followers"))
-                impressions = _count(entry.get("impressions"))
-                if followers is not None or impressions is not None:
+                if followers is not None:
                     today = now.strftime("%Y-%m-%d")
                     conn.execute(
                         """
-                        INSERT INTO analytics_daily (date, impressions, followers, precision, observation_window)
-                        VALUES (?, ?, ?, 'exact', '1d')
+                        INSERT INTO analytics_daily (
+                            date, followers, precision, period_label, source,
+                            impressions, unique_members_reached, reactions, comments, shares, engagement_rate
+                        )
+                        -- The figures this reading did not carry are NULL, not
+                        -- the schema's DEFAULT 0, which would read as measured.
+                        VALUES (?, ?, 'exact', '1d', 'observed', NULL, NULL, NULL, NULL, NULL, NULL)
                         ON CONFLICT(date) DO UPDATE SET
-                            impressions = COALESCE(excluded.impressions, analytics_daily.impressions),
-                            followers = COALESCE(excluded.followers, analytics_daily.followers),
-                            precision = 'exact'
+                            followers = excluded.followers
                         """,
-                        (today, impressions, followers)
+                        (today, followers)
                     )
                     items_kept += 1
 
