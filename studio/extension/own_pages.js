@@ -277,6 +277,24 @@
     }
   }
 
+  // An activity page is read only when it is the confirmed creator's. /in/me/
+  // is LinkedIn's alias for whoever is signed in to this browser, which is the
+  // creator only while nothing says otherwise: an in-page /in/me/ redirect that
+  // landed on a different vanity means this browser is signed in as someone
+  // else, and their posts would be filed under the creator.
+  function isOwnActivityPage(me) {
+    if (!me) return false;
+    const vanity = vanityOf(window.location.href);
+    if (vanity === me) return true;
+    if (vanity !== "me") return false;
+    try {
+      const resolved = sessionStorage.getItem("studio_me_redirect");
+      return !resolved || resolved === me;
+    } catch (err) {
+      return true; // no sessionStorage, so nothing contradicts the alias
+    }
+  }
+
   // ---------------------------------------------------------------
   // The profile
   // ---------------------------------------------------------------
@@ -1066,8 +1084,7 @@
 
   async function onActivityPage(kind) {
     const me = await getConfirmedVanity();
-    const currVanity = vanityOf(window.location.href);
-    if (!me || (currVanity !== me && currVanity !== "me")) return; // someone else's activity: not read
+    if (!isOwnActivityPage(me)) return; // someone else's activity: not read
 
     // Whatever is on screen is read either way. Scrolling needs a request.
     await sendActivity(kind, me);
@@ -1149,8 +1166,7 @@
     if (scrollDebounce) clearTimeout(scrollDebounce);
     scrollDebounce = setTimeout(async () => {
       const me = await getConfirmedVanity();
-      const currentVanity = vanityOf(window.location.href);
-      if (!me || (currentVanity !== me && currentVanity !== "me")) return;
+      if (!isOwnActivityPage(me)) return;
       await sendActivity(kind, me);
     }, 1200);
   }, { passive: true });

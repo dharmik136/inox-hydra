@@ -26,6 +26,8 @@ The failure each one prevents:
 import json
 import os
 import re
+import shutil
+import subprocess
 
 import pytest
 
@@ -135,9 +137,56 @@ def test_a_strangers_profile_does_not_leave_the_page():
 
 
 def test_activity_pages_are_read_only_when_they_are_yours():
-    handler = _function(_code(OWN_PAGES), "onActivityPage")
-    assert re.search(r"vanityOf\(window\.location\.href\)\s*!==\s*me\)\s*return", handler), (
-        "someone else's activity page would be read as the creator's"
+    source = _code(OWN_PAGES)
+    handler = _function(source, "onActivityPage")
+    guard = re.search(r"if\s*\(\s*!isOwnActivityPage\(me\)\s*\)\s*return", handler)
+    assert guard, "someone else's activity page would be read as the creator's"
+    assert guard.start() < handler.index("sendActivity"), (
+        "the ownership check runs after the activity is sent"
+    )
+
+    # The scroll handler sends activity too, so it must ask the same question.
+    scroll = source[source.index('addEventListener("scroll"'):]
+    scroll_guard = re.search(r"if\s*\(\s*!isOwnActivityPage\(me\)\s*\)\s*return", scroll)
+    assert scroll_guard and scroll_guard.start() < scroll.index("sendActivity"), (
+        "scrolling an activity page sends it without checking whose it is"
+    )
+
+
+def _own_activity(href, me, redirect=None):
+    """Runs isOwnActivityPage under node against a stub location and sessionStorage."""
+    source = _code(OWN_PAGES)
+    script = (
+        _function(source, "vanityOf") + "\n"
+        + _function(source, "isOwnActivityPage") + "\n"
+        + "const window = { location: { href: " + json.dumps(href) + " } };\n"
+        + "const stored = " + json.dumps({"studio_me_redirect": redirect} if redirect else {}) + ";\n"
+        + "const sessionStorage = { getItem: (k) => (k in stored ? stored[k] : null) };\n"
+        + "process.stdout.write(JSON.stringify(isOwnActivityPage(" + json.dumps(me) + ")));"
+    )
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=60)
+    assert result.returncode == 0, "node failed:\n" + result.stderr
+    return json.loads(result.stdout)
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is required to execute the extension logic")
+def test_whose_activity_page_it_is():
+    """
+    /in/me/ is LinkedIn's alias for whoever is signed in to the browser, which
+    is not always the creator the studio has confirmed. Accepting it without
+    a second look filed another account's posts under the creator.
+    """
+    ours = "https://www.linkedin.com/in/ada/recent-activity/all/"
+    theirs = "https://www.linkedin.com/in/grace/recent-activity/all/"
+    alias = "https://www.linkedin.com/in/me/recent-activity/all/"
+
+    assert _own_activity(ours, "ada") is True
+    assert _own_activity(theirs, "ada") is False
+    assert _own_activity(ours, None) is False, "no confirmed creator, yet the page was read"
+    assert _own_activity(alias, "ada") is True, "the creator's own /in/me/ page was refused"
+    assert _own_activity(alias, "ada", redirect="ada") is True
+    assert _own_activity(alias, "ada", redirect="grace") is False, (
+        "/in/me/ resolved to someone else in this browser, and was still read as the creator's"
     )
 
 

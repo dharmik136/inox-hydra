@@ -43,7 +43,7 @@ async def test_async_completion_openai_mock(monkeypatch):
     """Verifies OpenAI-compatible async completion parsing."""
     cfg = AIProviderConfig(
         provider="openai",
-        api_key="sk-test-mock-key-12345678",
+        api_key="sk-notarealkey-openai",
         model="gpt-4o",
         base_url="https://api.openai.com/v1"
     )
@@ -72,7 +72,7 @@ async def test_stream_completion_openai_mock(monkeypatch):
     """Verifies OpenAI SSE streaming token chunk yielding."""
     cfg = AIProviderConfig(
         provider="openai",
-        api_key="sk-test-mock-key-12345678",
+        api_key="sk-notarealkey-openai",
         model="gpt-4o",
         base_url="https://api.openai.com/v1"
     )
@@ -115,7 +115,7 @@ async def test_stream_completion_gemini_mock(monkeypatch):
     """Verifies Gemini SSE streaming token chunk yielding."""
     cfg = AIProviderConfig(
         provider="gemini",
-        api_key="AIzaSy_mock_gemini_key",
+        api_key="notarealkey-gemini",
         model="gemini-2.5-flash",
         base_url="https://generativelanguage.googleapis.com/v1beta"
     )
@@ -157,7 +157,7 @@ async def test_stream_completion_anthropic_mock(monkeypatch):
     """Verifies Anthropic SSE streaming token chunk yielding."""
     cfg = AIProviderConfig(
         provider="anthropic",
-        api_key="sk-ant-mock-key-12345",
+        api_key="sk-ant-notarealkey",
         model="claude-3-5-sonnet-20241022",
         base_url="https://api.anthropic.com/v1"
     )
