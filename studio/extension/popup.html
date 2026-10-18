@@ -103,6 +103,28 @@
     .btn-secondary:hover {
       background: #475569;
     }
+    .setting {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 14px;
+    }
+    .setting-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #f8fafc;
+      cursor: pointer;
+    }
+    .setting-note {
+      font-size: 11.5px;
+      color: #cbd5e1;
+      line-height: 1.45;
+      margin: 6px 0 0;
+    }
     .status-msg {
       font-size: 11.5px;
       text-align: center;
@@ -114,7 +136,7 @@
 </head>
 <body>
   <div class="header">
-    <div class="logo">LS</div>
+    <div class="logo" aria-hidden="true">IH</div>
     <div>
       <h2>Inox Hydra Bridge</h2>
       <span class="badge" id="bridge-status">Checking Engine...</span>
@@ -134,6 +156,14 @@
       <span>Warm Leads in CRM:</span>
       <strong id="crm-leads-status" style="color: #a5b4fc;">Checking...</strong>
     </div>
+  </div>
+
+  <div class="setting">
+    <label class="setting-row" for="network-reading">
+      <input type="checkbox" id="network-reading">
+      Read LinkedIn's network responses
+    </label>
+    <p class="setting-note" id="network-reading-note" aria-live="polite"></p>
   </div>
 
   <button class="btn btn-accent" id="btn-open-sidepanel">

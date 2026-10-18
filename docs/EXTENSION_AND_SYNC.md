@@ -1,6 +1,6 @@
-# Chrome Extension & Zero-Detection Sync Bridge
+# Chrome Extension & Sync Bridge
 
-The **Inox Hydra Chrome Extension** serves as a private, undetectable bridge between your authenticated LinkedIn session and the local studio running on `127.0.0.1:8000`.
+The **Inox Hydra Bridge** extension connects the LinkedIn pages you open in your own browser to the studio running on `127.0.0.1:8000`. It reads; it never acts on LinkedIn for you.
 
 ---
 
@@ -35,21 +35,16 @@ graph TD
 
 ---
 
-## 2. Anti-Detection & Account Safety Principles
+## 2. What the Bridge Does in LinkedIn's Page
 
-Most commercial scrapers get banned because they inject invasive code or send high-frequency synthetic requests. LinkedIn uses advanced client-side bot detection scripts that analyze:
-1. `Function.prototype.toString` inspection to check if `window.fetch` or `XMLHttpRequest` has been monkey-patched.
-2. Inconsistent browser fingerprinting and non-human mouse/scroll velocity.
-3. Automated API requests originating from datacenter IP addresses.
+LinkedIn's User Agreement restricts automated access. The bridge is built to stay a reader of pages you open yourself, and to say plainly what it does there:
 
-### How Inox Hydra Achieves Zero-Detection:
-
-| Vulnerability Vector | Commercial Extensions | Inox Hydra Architecture |
-| :--- | :--- | :--- |
-| **Fetch Monkey-Patching** | Wraps `window.fetch` to intercept headers, tripping bot traps | **Zero prototype modification**. Never alters global browser objects |
-| **Request Origin** | Cloud servers query LinkedIn Voyager API with fake user-agents | **0 cloud requests**. Only your real browser session communicates with LinkedIn |
-| **DOM Scraping** | Executes aggressive automated scrolling and clicking scripts | **Passive Observation**. Listens to natural user scrolling via `MutationObserver` |
-| **Session Capture** | Prompts user for email and password | **Cookie API Isolation**. Reads `li_at` and `JSESSIONID` through secure `chrome.cookies` |
+| What | How |
+| :--- | :--- |
+| **Page reading** | Content scripts read the page you have open, as it renders, and follow your own scrolling. They never click, type, post, react, comment, message or connect. |
+| **Network reading (off by default)** | Only when you switch on **Read LinkedIn's network responses** in the extension's popup: `voyager_interceptor.js` wraps `window.fetch` in LinkedIn's page and copies the JSON of responses LinkedIn's own app already fetched, for exact rather than rounded figures. It never sends a request of its own. Wrapping fetch is visible to LinkedIn's page code, which may treat it as automation; switch it off to stop at once. |
+| **Requests to LinkedIn** | None from the extension. The studio contacts LinkedIn only for features that are off by default, and from your machine, never from a server. |
+| **Session** | Copied into the studio only when you press **Sync LinkedIn Session** in the popup, read through `chrome.cookies`, and sealed at rest. |
 
 ---
 
@@ -72,16 +67,15 @@ When you browse LinkedIn and view comments or open the reaction modal (Likes/Cel
 
 ---
 
-## 4. Background Periodic Token Synchronization
+## 4. Session Sync, When You Ask
 
-In `studio/extension/background.js`, a Chrome Alarm runs periodically (every 15 minutes) and upon browser startup:
+Nothing runs on a timer. When you press **Sync LinkedIn Session** in the popup, `studio/extension/background.js`:
 
-1. Queries Chrome's cookie store for:
-   * `li_at` (LinkedIn authentication token)
-   * `JSESSIONID` (LinkedIn CSRF protection token)
-2. Posts tokens to `http://127.0.0.1:8000/api/auth/cookies`.
-3. The local backend verifies the token by making a single lightweight call to `/voyager/api/me` to fetch your authentic creator name, headline, and profile identifier.
-4. Saves session state to SQLite `settings` table with status `ready`.
+1. Reads `li_at` and `JSESSIONID` from Chrome's cookie store.
+2. Posts them to `http://127.0.0.1:8000/api/auth/cookies`, with the studio token.
+3. The studio seals them at rest. They are used only by the features that need a session, such as staging a post into LinkedIn's scheduler, and the Setup screen shows whether one is held, with a Delete control.
+
+An earlier version copied the session every 15 minutes. That alarm is cleared when the extension starts.
 
 ---
 

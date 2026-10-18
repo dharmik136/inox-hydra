@@ -227,7 +227,7 @@ Inox Hydra is designed as an open, model-agnostic creator studio. You can seamle
 * **Strict Localhost Binding**: The FastAPI backend binds exclusively to `127.0.0.1`.
 * **Zero Telemetry**: No analytics trackers, no tracking pixels, no usage reporting. Every outbound request the studio can make passes one chokepoint and is counted in a ledger you can read in Brand Studio.
 * **Local Storage**: Drafts, leads, analytics and settings stay in one SQLite database on your machine. The database itself is not encrypted; your LinkedIn session and AI key inside it are sealed to your user account.
-* **Reads, Never Acts**: The extension reads the pages you open, including copies of the data LinkedIn's own page fetched for them, which it observes by wrapping `window.fetch` in that page. It never posts, reacts, comments, messages or connects. The studio contacts LinkedIn itself only for features that are off by default (profile sync, staging a post into LinkedIn's scheduler), and history import scrolls your activity pages only when you ask it to.
+* **Reads, Never Acts**: The extension reads the pages you open, and, only if you switch on network reading in the extension's popup, copies of the data LinkedIn's own page fetched for them, which it observes by wrapping `window.fetch` in that page. That setting is off by default. It never posts, reacts, comments, messages or connects. The studio contacts LinkedIn itself only for features that are off by default (profile sync, staging a post into LinkedIn's scheduler), and history import scrolls your activity pages only when you ask it to.
 
 ---
 

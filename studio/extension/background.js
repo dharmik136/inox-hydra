@@ -375,39 +375,22 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // It asks this worker instead, and only for paths on the allowlist.
   if (message.action === "STUDIO_API") {
     const path = message.path || "";
+    if (NETWORK_READING_PATHS.has(path)) {
+      networkReadingEnabled().then((enabled) => {
+        if (!enabled) {
+          sendResponse({ status: "error", error: "Network reading is off." });
+          return;
+        }
+        relayToStudio(message, path, sendResponse);
+      });
+      return true;
+    }
     if (!RELAYABLE_PATHS.has(path)) {
       sendResponse({ status: "error", error: "path not permitted: " + path });
       return true;
     }
-    studioFetch(path, {
-      method: message.method || "POST",
-      body: message.body ? JSON.stringify(sanitizeTelemetryPayload(message.body)) : undefined
-    })
-      .then(res => res.json().catch(() => ({})).then(data => ({ ok: res.ok, httpStatus: res.status, data })))
-      // The HTTP code is reported as httpStatus, never as status. Spreading a
-      // result carrying its own `status` over this object silently replaced
-      // the literal "success" with the number 200, and the content script
-      // tests `response.status !== "success"`, so every relayed capture
-      // resolved to null while appearing to succeed.
-      .then(result => sendResponse({
-        status: result.ok ? "success" : "error",
-        httpStatus: result.httpStatus,
-        data: result.data
-      }))
-      .catch(err => sendResponse({ status: "error", error: err.message }));
+    relayToStudio(message, path, sendResponse);
     return true;
-  }
-
-  if (message.action === "INJECT_INTERCEPTOR") {
-    if (sender.tab && sender.tab.id) {
-      chrome.scripting.executeScript({
-        target: { tabId: sender.tab.id },
-        files: ["voyager_interceptor.js"],
-        world: "MAIN"
-      }).then(() => sendResponse({ status: "success" }))
-        .catch(err => sendResponse({ status: "error", error: err.message }));
-      return true;
-    }
   }
 
   if (message.action === "INGEST_ANALYTICS") {
@@ -423,12 +406,85 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "loading" && tab.url && tab.url.includes("linkedin.com")) {
-    chrome.scripting.executeScript({
-      target: { tabId: tabId },
-      files: ["voyager_interceptor.js"],
-      world: "MAIN"
-    }).catch(() => {});
+function relayToStudio(message, path, sendResponse) {
+  studioFetch(path, {
+    method: message.method || "POST",
+    body: message.body ? JSON.stringify(sanitizeTelemetryPayload(message.body)) : undefined
+  })
+    .then(res => res.json().catch(() => ({})).then(data => ({ ok: res.ok, httpStatus: res.status, data })))
+    // The HTTP code is reported as httpStatus, never as status. Spreading a
+    // result carrying its own `status` over this object silently replaced
+    // the literal "success" with the number 200, and the content script
+    // tests `response.status !== "success"`, so every relayed capture
+    // resolved to null while appearing to succeed.
+    .then(result => sendResponse({
+      status: result.ok ? "success" : "error",
+      httpStatus: result.httpStatus,
+      data: result.data
+    }))
+    .catch(err => sendResponse({ status: "error", error: err.message }));
+}
+
+// -------------------------------------------------------------
+// Network reading: off unless the creator switches it on
+// -------------------------------------------------------------
+// voyager_interceptor.js wraps window.fetch inside LinkedIn's own page and
+// copies the JSON of responses LinkedIn's app already fetched. It is the part
+// of the bridge most visible to LinkedIn, and the page readers and LinkedIn's
+// own data archive cover what it adds, so it runs only after the creator turns
+// it on in the popup, where what it does is written beside the switch.
+//
+// It used to be a static MAIN-world content script, injected again on every
+// tab update and on request from content.js, with no way to turn it off. It
+// is now registered while the setting is on and unregistered when it is off,
+// and the two capture paths it feeds are refused below while it is off.
+const NETWORK_READING_KEY = "networkReading";
+const INTERCEPTOR_SCRIPT_ID = "inox-network-reading";
+const NETWORK_READING_PATHS = new Set([
+  "/api/v1/bridge/voyager-ingest",
+  "/api/v1/bridge/schema-drift"
+]);
+
+function networkReadingEnabled() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(NETWORK_READING_KEY, (items) => {
+        resolve(!chrome.runtime.lastError && !!items && items[NETWORK_READING_KEY] === true);
+      });
+    } catch (err) {
+      resolve(false);
+    }
+  });
+}
+
+async function applyNetworkReading(enabled) {
+  try {
+    const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [INTERCEPTOR_SCRIPT_ID] });
+    if (enabled && registered.length === 0) {
+      await chrome.scripting.registerContentScripts([{
+        id: INTERCEPTOR_SCRIPT_ID,
+        matches: ["https://*.linkedin.com/*"],
+        js: ["voyager_interceptor.js"],
+        runAt: "document_start",
+        world: "MAIN",
+        persistAcrossSessions: true
+      }]);
+    } else if (!enabled && registered.length > 0) {
+      await chrome.scripting.unregisterContentScripts({ ids: [INTERCEPTOR_SCRIPT_ID] });
+    }
+  } catch (err) {
+    console.warn("[Inox Hydra Bridge] Could not apply the network reading setting:", err);
+  }
+}
+
+async function syncNetworkReading() {
+  await applyNetworkReading(await networkReadingEnabled());
+}
+
+chrome.runtime.onInstalled.addListener(syncNetworkReading);
+chrome.runtime.onStartup.addListener(syncNetworkReading);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes[NETWORK_READING_KEY]) {
+    applyNetworkReading(changes[NETWORK_READING_KEY].newValue === true);
   }
 });

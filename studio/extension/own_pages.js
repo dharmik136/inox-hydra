@@ -1111,17 +1111,8 @@
   // Wiring
   // ---------------------------------------------------------------
 
-  function ensureInterceptor() {
-    try {
-      chrome.runtime.sendMessage({ action: "INJECT_INTERCEPTOR" }, () => {
-        if (chrome.runtime.lastError) {}
-      });
-    } catch (e) {}
-  }
-
   let settleTimer = null;
   function onRoute() {
-    ensureInterceptor();
     noteMeRedirect();
     if (settleTimer) clearTimeout(settleTimer);
     // LinkedIn renders sections after the route changes. Waiting lets them
@@ -1149,7 +1140,6 @@
     onRoute();
   });
   window.addEventListener("popstate", onRoute);
-  ensureInterceptor();
   onRoute();
 
   heartbeat();

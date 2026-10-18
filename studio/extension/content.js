@@ -54,10 +54,18 @@ function studioApi(path, body, method) {
 // Voyager response structures to our internal data model. When fields move,
 // updating the schema fixes extraction without touching this code.
 
-// Ensure MAIN world interceptor is injected
+// The interceptor runs only while the creator has network reading switched
+// on (background.js registers it then). Messages claiming to come from it are
+// ignored while it is off: any script on the page can post one.
+let networkReadingOn = false;
 try {
-  chrome.runtime.sendMessage({ action: "INJECT_INTERCEPTOR" }, () => {
-    if (chrome.runtime.lastError) {}
+  chrome.storage.local.get("networkReading", (items) => {
+    networkReadingOn = !chrome.runtime.lastError && !!items && items.networkReading === true;
+  });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.networkReading) {
+      networkReadingOn = changes.networkReading.newValue === true;
+    }
   });
 } catch (e) {}
 
@@ -73,6 +81,7 @@ window.addEventListener("message", (event) => {
   if (event.source !== window) return;
   if (!event.data || event.data.type !== "INOX_VOYAGER_CAPTURE") return;
   if (event.data.source !== "inox-voyager-interceptor") return;
+  if (!networkReadingOn) return;
 
   const payload = event.data.payload;
   if (!payload || !payload.url || !payload.body) return;

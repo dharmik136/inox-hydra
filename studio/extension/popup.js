@@ -1,7 +1,34 @@
 const STUDIO_URL = "http://127.0.0.1:8000";
 
+const NETWORK_READING_NOTE_OFF =
+  "Off. The bridge reads only what is on the LinkedIn pages you open. " +
+  "Switched on, it also copies the figures LinkedIn's own app has already downloaded " +
+  "for those pages, which are exact rather than rounded. It does this by wrapping the " +
+  "page's fetch function, which LinkedIn may treat as automation. It never sends a request of its own.";
+const NETWORK_READING_NOTE_ON =
+  "On, for LinkedIn pages you open or reload from now. The bridge copies the figures " +
+  "LinkedIn's own app has already downloaded for the page, by wrapping its fetch function, " +
+  "which LinkedIn may treat as automation. Switch it off to stop at once.";
+
+function paintNetworkReading(enabled) {
+  const box = document.getElementById("network-reading");
+  const note = document.getElementById("network-reading-note");
+  if (box) box.checked = enabled;
+  if (note) note.innerText = enabled ? NETWORK_READING_NOTE_ON : NETWORK_READING_NOTE_OFF;
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   checkServerAndSession();
+
+  // Off unless set. background.js registers or removes the interceptor when
+  // this value changes, and refuses its captures while it is off.
+  chrome.storage.local.get("networkReading", (items) => {
+    paintNetworkReading(!chrome.runtime.lastError && !!items && items.networkReading === true);
+  });
+  document.getElementById("network-reading").addEventListener("change", (event) => {
+    const enabled = !!event.target.checked;
+    chrome.storage.local.set({ networkReading: enabled }, () => paintNetworkReading(enabled));
+  });
 
   document.getElementById("btn-open-studio").addEventListener("click", () => {
     chrome.tabs.create({ url: STUDIO_URL });
