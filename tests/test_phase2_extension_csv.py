@@ -94,7 +94,9 @@ def test_phase2_extension_ingest_contract(confirmed_creator):
     # Verify lead is retrievable through list_leads with updated metrics
     leads = list_leads(search="Sarah Jenkins")
     assert len(leads) >= 1
-    sarah = leads[0]
+    matching = [l for l in leads if l.get("name") == "Dr. Sarah Jenkins"]
+    assert len(matching) >= 1
+    sarah = matching[0]
     assert sarah["name"] == "Dr. Sarah Jenkins"
     assert sarah["icp_score"] >= 65
 

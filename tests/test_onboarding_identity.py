@@ -680,3 +680,51 @@ def test_the_extension_reports_what_it_could_not_read():
     assert '"commenter_name"' in content and 'reportCapture("engagers"' in content
     assert 'reportCapture("analytics"' in content
     assert 'reportCapture("profile"' in own and '"post_author"' in own
+
+
+def test_sync_all_activity_sequential_chain():
+    """
+    A single click on sync-all begins an autonomous sequential chain
+    (posts -> comments -> reactions) that advances automatically on event completion.
+    """
+    _confirm()
+
+    res = client.post("/api/v1/self/sync-all").json()
+    assert res["status"] == "success"
+    assert res["current_kind"] == "posts"
+    assert res["sequence"] == ["posts", "comments", "reactions"]
+
+    # Posts request is now pending
+    pending_posts = client.post("/api/v1/self/imports/pending", json={"kind": "posts"}).json()
+    assert pending_posts["request"] is not None
+    posts_id = pending_posts["request"]["id"]
+
+    # Complete posts -> advances to comments
+    fin1 = client.post("/api/v1/self/imports/event", json={"id": posts_id, "event": "finished", "items_seen": 25}).json()
+    assert fin1["status"] == "success"
+    assert fin1.get("next_kind") == "comments"
+    assert "recent-activity/comments" in fin1.get("next_url", "")
+    assert fin1.get("is_chain") is True
+
+    # Comments request is now pending
+    pending_comments = client.post("/api/v1/self/imports/pending", json={"kind": "comments"}).json()
+    assert pending_comments["request"] is not None
+    comments_id = pending_comments["request"]["id"]
+
+    # Complete comments -> advances to reactions
+    fin2 = client.post("/api/v1/self/imports/event", json={"id": comments_id, "event": "finished", "items_seen": 15}).json()
+    assert fin2["status"] == "success"
+    assert fin2.get("next_kind") == "reactions"
+    assert "recent-activity/reactions" in fin2.get("next_url", "")
+    assert fin2.get("is_chain") is True
+
+    # Reactions request is now pending
+    pending_reactions = client.post("/api/v1/self/imports/pending", json={"kind": "reactions"}).json()
+    assert pending_reactions["request"] is not None
+    reactions_id = pending_reactions["request"]["id"]
+
+    # Complete reactions -> chain completes
+    fin3 = client.post("/api/v1/self/imports/event", json={"id": reactions_id, "event": "finished", "items_seen": 50}).json()
+    assert fin3["status"] == "success"
+    assert fin3.get("all_completed") is True
+    assert onboarding.get_active_sync_chain() is None

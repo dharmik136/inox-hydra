@@ -347,7 +347,7 @@ def _posix_launcher(b_id, b_info, desktop_dir, ext_path, safe_url):
     name = b_info["name"]
     exe = b_info["path"]
     argument = "--load-extension=" + ext_path
-    profile = "--user-data-dir=" + get_browser_profile_dir(b_id)
+    profile = "--user-data-dir=" + get_browser_profile_dir(b_id, exe_path=exe)
 
     if sys.platform == "darwin":
         path = os.path.join(desktop_dir, f"LinkedIn Studio ({name}).command")
@@ -534,6 +534,156 @@ def _validated_target(target_url):
     return candidate
 
 
+def _ensure_developer_mode_enabled(profile_dir: str) -> None:
+    """
+    Pre-enables developer mode in the target Chromium profile preferences.
+
+    Unpacked extensions loaded via --load-extension require Developer Mode to be
+    enabled on modern Chromium and Brave builds. Pre-seeding this preference prevents
+    the browser from disabling the extension on startup.
+    """
+    try:
+        import json
+        default_dir = os.path.join(profile_dir, "Default")
+        os.makedirs(default_dir, exist_ok=True)
+        pref_file = os.path.join(default_dir, "Preferences")
+        prefs = {}
+        if os.path.isfile(pref_file):
+            try:
+                with open(pref_file, "r", encoding="utf-8") as f:
+                    prefs = json.load(f)
+            except Exception:
+                prefs = {}
+
+        ext_ui = prefs.setdefault("extensions", {}).setdefault("ui", {})
+        changed = False
+        if ext_ui.get("developer_mode") is not True:
+            ext_ui["developer_mode"] = True
+            changed = True
+
+        ext_settings = prefs.setdefault("extensions", {}).setdefault("settings", {})
+        for ext_id, info in ext_settings.items():
+            if isinstance(info, dict) and info.get("disable_reasons"):
+                info["disable_reasons"] = []
+                info["state"] = 1
+                changed = True
+
+        if changed:
+            with open(pref_file, "w", encoding="utf-8") as f:
+                json.dump(prefs, f, indent=2)
+
+        _clean_stale_locks(profile_dir)
+    except Exception:
+        pass
+
+
+def _clean_stale_locks(profile_dir: str) -> None:
+    """
+    Cleans up Chromium Singleton lock symlinks ONLY if the locking process is dead.
+    Never removes locks held by an active running browser process.
+    """
+    lock_path = os.path.join(profile_dir, "SingletonLock")
+    if os.path.islink(lock_path) or os.path.exists(lock_path):
+        is_alive = False
+        try:
+            target = os.readlink(lock_path) if os.path.islink(lock_path) else ""
+            if "-" in target:
+                pid = int(target.rsplit("-", 1)[-1])
+                os.kill(pid, 0)
+                is_alive = True
+        except (OSError, ValueError):
+            is_alive = False
+
+        if not is_alive:
+            for name in ("SingletonLock", "SingletonSocket", "SingletonCookie"):
+                p = os.path.join(profile_dir, name)
+                if os.path.islink(p) or os.path.exists(p):
+                    try:
+                        os.unlink(p)
+                    except OSError:
+                        pass
+
+
+def _try_open_in_running_browser(
+    safe_url: str,
+    selected: Dict[str, Any],
+    ext_path: str
+) -> Optional[Dict[str, Any]]:
+    """
+    If a bridge browser instance is already running with remote debugging active,
+    navigate or activate the tab directly via CDP without spawning conflicting processes.
+    """
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return None
+
+    import http.client
+    import urllib.parse
+    import json
+
+    cdp_hosts = ["::1", "127.0.0.1", "localhost"]
+    for host in cdp_hosts:
+        conn = None
+        try:
+            conn = http.client.HTTPConnection(host, 9222, timeout=1.0)
+            conn.request("GET", "/json", headers={"User-Agent": "LinkedInStudio"})
+            resp = conn.getresponse()
+            if resp.status != 200:
+                continue
+            tabs = json.loads(resp.read().decode("utf-8"))
+
+            match_id = None
+            clean_safe = safe_url.rstrip("/")
+            for t in tabs:
+                if t.get("type") == "page":
+                    tab_url = t.get("url", "").rstrip("/")
+                    if tab_url == clean_safe or (clean_safe in tab_url and "feed" not in clean_safe):
+                        match_id = t.get("id")
+                        break
+
+            carries = carries_extension(selected.get("id", ""))
+            if match_id:
+                conn.request("GET", f"/json/activate/{match_id}")
+                conn.getresponse().read()
+                return {
+                    "status": "success",
+                    "browser": selected.get("name", "Active Browser"),
+                    "browser_id": selected.get("id", "active"),
+                    "browser_path": selected.get("path", ""),
+                    "target_url": safe_url,
+                    "extension_path": ext_path,
+                    "carries_extension": carries,
+                    "message": f"Focused active bridge browser window with {safe_url}.",
+                }
+            else:
+                quoted_url = urllib.parse.quote(safe_url, safe=":/?=&%#+@!$*[]")
+                conn.request("PUT", f"/json/new?{quoted_url}")
+                new_resp = conn.getresponse()
+                new_tab = json.loads(new_resp.read().decode("utf-8"))
+                new_id = new_tab.get("id")
+                if new_id:
+                    conn.request("GET", f"/json/activate/{new_id}")
+                    conn.getresponse().read()
+                return {
+                    "status": "success",
+                    "browser": selected.get("name", "Active Browser"),
+                    "browser_id": selected.get("id", "active"),
+                    "browser_path": selected.get("path", ""),
+                    "target_url": safe_url,
+                    "extension_path": ext_path,
+                    "carries_extension": carries,
+                    "message": f"Opened new tab in active bridge browser with {safe_url}.",
+                }
+        except Exception:
+            continue
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+    return None
+
+
 def launch_browser_with_extension(
     browser_id: str = "auto",
     target_url: str = "https://www.linkedin.com/feed/"
@@ -581,6 +731,13 @@ def launch_browser_with_extension(
     # that is the only thing it will open.
     safe_url = _validated_target(target_url)
 
+    # If the browser is already running with remote debugging attached,
+    # activate or open the tab directly via CDP rather than launching a redundant process
+    # that causes profile lock conflicts and profile error alerts.
+    running_result = _try_open_in_running_browser(safe_url, selected, ext_path)
+    if running_result is not None:
+        return running_result
+
     # A dedicated profile, so the flag is honoured whatever else is open.
     #
     # Without it, Edge already running with the creator's normal profile took
@@ -593,14 +750,17 @@ def launch_browser_with_extension(
     # access token from a cookie that only a page load in this same profile
     # sets, so without that tab every capture would be refused with a 401
     # until the creator thought to open the studio in the new window.
+    profile_dir = get_browser_profile_dir(selected["id"], exe_path=exe_path)
+    _ensure_developer_mode_enabled(profile_dir)
     args = [
         exe_path,
-        f'--user-data-dir={get_browser_profile_dir(selected["id"])}',
+        f'--user-data-dir={profile_dir}',
         "--no-first-run",
         "--no-default-browser-check",
         f'--load-extension={ext_path}',
-        safe_url,
+        "--remote-debugging-port=9222",
         STUDIO_TAB_URL,
+        safe_url,
     ]
 
     try:
@@ -613,7 +773,14 @@ def launch_browser_with_extension(
                 close_fds=True
             )
         else:
-            subprocess.Popen(args, close_fds=True)
+            subprocess.Popen(
+                args,
+                close_fds=True,
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+            )
 
         # What happened is that a browser was launched. Whether the bridge
         # came with it is a separate fact, and claiming it for a browser that
@@ -670,11 +837,25 @@ def copy_extension_path_to_clipboard() -> Dict[str, Any]:
     # The path is always returned either way, so the interface can show it for
     # manual copying when the clipboard is unavailable.
     try:
-        ps_script = f"Set-Clipboard -Value '{ext_path.replace(chr(39), chr(39) * 2)}'"
-        result = subprocess.run(
-            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
-            capture_output=True, text=True, timeout=20,
-        )
+        if sys.platform == "win32":
+            ps_script = f"Set-Clipboard -Value '{ext_path.replace(chr(39), chr(39) * 2)}'"
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+                capture_output=True, text=True, timeout=20,
+            )
+        elif sys.platform == "darwin":
+            result = subprocess.run(["pbcopy"], input=ext_path, text=True, capture_output=True, timeout=5)
+        else:
+            if shutil.which("wl-copy"):
+                result = subprocess.run(["wl-copy"], input=ext_path, text=True, capture_output=True, timeout=5)
+            elif shutil.which("xclip"):
+                result = subprocess.run(["xclip", "-selection", "clipboard"], input=ext_path, text=True, capture_output=True, timeout=5)
+            else:
+                return {
+                    "status": "error",
+                    "extension_path": ext_path,
+                    "message": "Clipboard utility not found. Copy the path shown above by hand.",
+                }
     except Exception as err:
         return {
             "status": "error",

@@ -133,10 +133,6 @@
         }
     });
 
-    // Replace the global fetch with our Proxy
-    // Past bug: simply assigning `window.fetch = fetchProxy` can be easily
-    // enumerated by scripts looking for tampering. Using Object.defineProperty
-    // with enumerable: false improves stealth.
     try {
         Object.defineProperty(window, 'fetch', {
             value: fetchProxy,
@@ -148,4 +144,60 @@
         // Fallback
         window.fetch = fetchProxy;
     }
+
+    // Bridge React Props to DOM attributes for isolated world extension scripts
+    function stampCardUrns() {
+        try {
+            const cards = document.querySelectorAll('div[id^="expanded"][id*="FeedType_"], div[id*="FeedType_"], [data-view-name="feed-full-update"], .feed-shared-update-v2, .occludable-update');
+            for (let c = 0; c < cards.length; c++) {
+                const card = cards[c];
+                if (card.getAttribute('data-urn')) continue;
+
+                // Fast path: check root element first
+                let foundUrn = null;
+                for (const k in card) {
+                    if (k.startsWith('__reactProps')) {
+                        try {
+                            const str = JSON.stringify(card[k]);
+                            const match = /urn:li:(?:activity|share|ugcPost):(\d+)/.exec(str);
+                            if (match) {
+                                foundUrn = 'urn:li:activity:' + match[1];
+                                break;
+                            }
+                        } catch (e) {}
+                    }
+                }
+                if (foundUrn) {
+                    card.setAttribute('data-urn', foundUrn);
+                    continue;
+                }
+
+                // Fallback: check descendants
+                const inners = card.querySelectorAll('*');
+                for (let i = 0; i < Math.min(inners.length, 50); i++) {
+                    const el = inners[i];
+                    for (const k in el) {
+                        if (k.startsWith('__reactProps')) {
+                            try {
+                                const str = JSON.stringify(el[k]);
+                                const match = /urn:li:(?:activity|share|ugcPost):(\d+)/.exec(str);
+                                if (match) {
+                                    card.setAttribute('data-urn', 'urn:li:activity:' + match[1]);
+                                    break;
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                    if (card.getAttribute('data-urn')) break;
+                }
+            }
+        } catch (err) {}
+    }
+
+    if (typeof document !== 'undefined') {
+        stampCardUrns();
+        setInterval(stampCardUrns, 1500);
+        document.addEventListener('DOMContentLoaded', stampCardUrns);
+    }
 })();
+

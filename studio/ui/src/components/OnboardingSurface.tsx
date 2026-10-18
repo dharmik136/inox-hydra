@@ -10,6 +10,7 @@ import {
   launchBridge,
   rejectIdentityCandidate,
   requestSelfImport,
+  syncAllActivity,
   type BrowserBridge,
   type CaptureHealth,
   type CreatorIdentity,
@@ -211,6 +212,32 @@ export function OnboardingSurface() {
                 Each import opens one of your activity pages and scrolls it for you at a steady pace until the list
                 ends. Keep that tab in view; it pauses while hidden, and the Stop button on the page ends it.
               </p>
+              <div className="mb-4 flex items-center justify-between rounded-md border border-edge bg-soft/40 p-3">
+                <div>
+                  <p className="text-[13px] font-medium text-ink-primary">One-Click Complete History Sync</p>
+                  <p className="text-[11px] text-ink-muted">
+                    Automates sequential ingestion across your posts, comments, and reactions via the bridge.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() =>
+                    void act("all", async () => {
+                      const res = await syncAllActivity();
+                      return res.message;
+                    })
+                  }
+                  className="flex items-center gap-1.5 rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+                >
+                  {busy === "all" ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Check className="size-3.5" strokeWidth={2} aria-hidden="true" />
+                  )}
+                  Sync All Activity
+                </button>
+              </div>
               <div className="flex flex-col divide-y divide-edge border-y border-edge">
                 {IMPORTS.map((entry) => (
                   <ImportRow

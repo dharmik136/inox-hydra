@@ -708,7 +708,8 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
                     skipped += 1
                     continue
                 urn = _text(item.get("activity_urn"), 80) or ""
-                if not _ACTIVITY_URN.match(urn) or normalise_vanity(item.get("actor")) != me:
+                actor = normalise_vanity(item.get("actor"))
+                if not _ACTIVITY_URN.match(urn) or (actor != me and actor != "me"):
                     skipped += 1
                     continue
                 counts = {k: _count(item.get(k)) for k in ("reactions", "comments", "reposts", "impressions")}
@@ -1107,13 +1108,62 @@ def remove_leads_not_on_your_posts(lead_ids: Any) -> Dict[str, Any]:
 # History imports: the creator asks, the extension scrolls
 # ---------------------------------------------------------------------------
 
-def request_import(kind: Any) -> Dict[str, Any]:
+_active_sync_chain: Optional[Dict[str, Any]] = None
+
+
+def start_sync_chain(sequence: Optional[List[str]] = None) -> Dict[str, Any]:
+    """
+    Initiates an autonomous sequential sync session across activity streams
+    (posts, comments, reactions). Pushes multi-stream orchestration entirely
+    to the backend so the user has a single-click action.
+    """
+    global _active_sync_chain
+    vanity = confirmed_vanity()
+    if not vanity:
+        raise RefusedCapture("confirm your profile before importing history")
+
+    seq = [k for k in (sequence or ["posts", "comments", "reactions"]) if k in IMPORT_KINDS]
+    if not seq:
+        seq = ["posts", "comments", "reactions"]
+
+    _active_sync_chain = {
+        "sequence": seq,
+        "current_index": 0,
+        "active": True,
+        "started_at": _now(),
+        "vanity": vanity,
+    }
+    first_kind = seq[0]
+    res = request_import(first_kind, is_chain=True)
+    return {
+        "status": "started",
+        "current_kind": first_kind,
+        "open_url": res["open_url"],
+        "id": res["id"],
+        "sequence": seq,
+    }
+
+
+def cancel_sync_chain() -> None:
+    global _active_sync_chain
+    _active_sync_chain = None
+
+
+def get_active_sync_chain() -> Optional[Dict[str, Any]]:
+    return _active_sync_chain
+
+
+def request_import(kind: Any, is_chain: bool = False) -> Dict[str, Any]:
     """
     The creator clicked "import my posts" (or comments, or reactions).
 
     The extension scrolls an activity page only when a request like this is
     pending, so scrolling always traces back to a click in the studio.
     """
+    global _active_sync_chain
+    if not is_chain and _active_sync_chain:
+        _active_sync_chain = None
+
     if kind not in IMPORT_KINDS:
         raise RefusedCapture(f"unknown import: {kind}")
     conn = get_db()
@@ -1157,6 +1207,7 @@ def pending_import(kind: Any) -> Optional[Dict[str, Any]]:
 
 
 def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: Any = None) -> Dict[str, Any]:
+    global _active_sync_chain
     try:
         request_id = int(request_id)
     except (TypeError, ValueError):
@@ -1164,8 +1215,13 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
     if event not in ("started", "finished"):
         raise RefusedCapture("event must be started or finished")
     conn = get_db()
+    req_kind = None
     try:
         with conn:
+            cur = conn.execute("SELECT kind FROM self_import_requests WHERE id = ?", (request_id,))
+            row = cur.fetchone()
+            if row:
+                req_kind = row[0]
             if event == "started":
                 conn.execute(
                     "UPDATE self_import_requests SET started_at = COALESCE(started_at, ?) "
@@ -1179,7 +1235,35 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
                 )
     finally:
         conn.close()
-    return {"status": "success"}
+
+    res: Dict[str, Any] = {"status": "success"}
+    if event == "finished":
+        norm_outcome = (outcome or "").strip().lower()
+        if norm_outcome in ("stopped", "left_page"):
+            _active_sync_chain = None
+        elif _active_sync_chain and _active_sync_chain.get("active"):
+            seq = _active_sync_chain.get("sequence", ["posts", "comments", "reactions"])
+            try:
+                curr_idx = seq.index(req_kind)
+            except (ValueError, TypeError):
+                curr_idx = _active_sync_chain.get("current_index", 0)
+
+            next_idx = curr_idx + 1
+            if next_idx < len(seq):
+                next_kind = seq[next_idx]
+                _active_sync_chain["current_index"] = next_idx
+                next_req = request_import(next_kind, is_chain=True)
+                res["next_kind"] = next_kind
+                res["next_url"] = next_req["open_url"]
+                res["next_id"] = next_req["id"]
+                res["is_chain"] = True
+            else:
+                _active_sync_chain["active"] = False
+                _active_sync_chain = None
+                res["all_completed"] = True
+                res["is_chain"] = True
+
+    return res
 
 
 # ---------------------------------------------------------------------------

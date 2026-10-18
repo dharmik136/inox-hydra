@@ -966,6 +966,79 @@ export async function configureAi(provider: string, apiKey: string, model?: stri
   });
 }
 
+/**
+ * Streams AI completions token by token using Server Sent Events (SSE).
+ * Calls /api/ai/stream with prompt, system_prompt, max_tokens, and temperature.
+ * Invokes onChunk callback as tokens arrive and resolves with the full text.
+ */
+export async function streamAiCompletion(
+  prompt: string,
+  options?: {
+    systemPrompt?: string;
+    maxTokens?: number;
+    temperature?: number;
+    onChunk?: (chunk: string) => void;
+  },
+): Promise<string> {
+  const response = await fetch("/api/ai/stream", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      system_prompt: options?.systemPrompt ?? null,
+      max_tokens: options?.maxTokens ?? 1200,
+      temperature: options?.temperature ?? 0.7,
+    }),
+  });
+
+  if (!response.ok) {
+    let reason = `${response.status} ${response.statusText}`;
+    try {
+      const body = await response.json();
+      if (typeof body?.detail === "string") reason = body.detail;
+    } catch {
+      // not JSON
+    }
+    throw new Error(reason);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    return "";
+  }
+
+  const decoder = new TextDecoder();
+  let accumulated = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const text = decoder.decode(value, { stream: true });
+    const lines = text.split("\n");
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const payloadStr = line.slice(6).trim();
+        if (payloadStr === "[DONE]") {
+          continue;
+        }
+        try {
+          const payload = JSON.parse(payloadStr);
+          if (payload && typeof payload.token === "string") {
+            accumulated += payload.token;
+            if (options?.onChunk) {
+              options.onChunk(payload.token);
+            }
+          }
+        } catch {
+          // ignore incomplete or malformed chunk
+        }
+      }
+    }
+  }
+
+  return accumulated;
+}
+
 /** The analytics CSV streams as a file, so it is a link rather than a fetch. */
 export const ANALYTICS_CSV_URL = "/api/analytics/export?format=csv";
 
@@ -1543,6 +1616,101 @@ export async function deleteLinkedInSession(): Promise<void> {
   await call("/api/auth/cookies", { method: "DELETE" });
 }
 
+export interface SyncActivityResult {
+  status: string;
+  current_kind: string;
+  target_url: string;
+  counts: { posts: number; comments: number; reactions: number };
+  browser: string;
+  message: string;
+}
+
+/** Triggers unified autonomous sync across all three activity streams. */
+export async function syncAllActivity(): Promise<SyncActivityResult> {
+  return call<SyncActivityResult>("/api/v1/self/sync-all", {
+    method: "POST",
+  });
+}
+
+export interface ActivityPostItem {
+  activity_urn: string;
+  excerpt: string;
+  published_at: string | null;
+  reactions: number | null;
+  comments: number | null;
+  reposts: number | null;
+  impressions: number | null;
+  last_seen_at: string;
+}
+
+export interface ActivityCommentItem {
+  target_author: string;
+  my_text: string;
+  target_excerpt: string;
+  target_activity_urn: string;
+  last_seen_at: string;
+}
+
+export interface ActivityReactionItem {
+  target_author: string;
+  reaction_kind: string;
+  target_excerpt: string;
+  target_activity_urn: string;
+  last_seen_at: string;
+}
+
+export interface ActivityLeadItem {
+  id: string;
+  name: string;
+  headline: string;
+  company: string;
+  engagement_type: string;
+  icp_score: number;
+  status: string;
+  created_at: string;
+}
+
+export interface ActivityImportItem {
+  id: number;
+  kind: string;
+  requested_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  items_seen: number | null;
+  outcome: string;
+}
+
+export interface ActivityStreamData {
+  status: string;
+  creator: string | null;
+  summary: {
+    posts_count: number;
+    comments_count: number;
+    reactions_count: number;
+    leads_count: number;
+    bridge_connected: boolean;
+    bridge_last_seen: string | null;
+    bridge_carrier: string | null;
+    active_sync_chain: {
+      sequence: string[];
+      current_index: number;
+      active: boolean;
+      started_at: string;
+      vanity: string;
+    } | null;
+  };
+  recent_posts: ActivityPostItem[];
+  recent_comments: ActivityCommentItem[];
+  recent_reactions: ActivityReactionItem[];
+  recent_leads: ActivityLeadItem[];
+  recent_imports: ActivityImportItem[];
+}
+
+/** Fetches real-time inspection records of all loaded data and activity streams. */
+export async function fetchActivityStream(limit = 25): Promise<ActivityStreamData> {
+  return call<ActivityStreamData>(`/api/v1/self/activity-stream?limit=${limit}`);
+}
+
 /** LinkedIn's alias for the signed-in member's own profile. */
 export const OWN_PROFILE_URL = "https://www.linkedin.com/in/me/";
 
@@ -1760,6 +1928,76 @@ export interface CadenceInsights {
 
 export async function fetchCadenceInsights(): Promise<CadenceInsights> {
   return call<CadenceInsights>("/api/v1/insights/cadence");
+}
+
+export interface ContrastFinding {
+  key: string;
+  label: string;
+  status: "conclusive" | "insufficient_sample";
+  n_with: number;
+  n_without: number;
+  median_with?: number | null;
+  median_without?: number | null;
+  ratio?: number | null;
+  planted_or_significant?: boolean;
+  min_required: number;
+  reason?: string;
+}
+
+export interface ContrastInsights {
+  status: string;
+  settled_posts_count: number;
+  min_arm_size: number;
+  contrasts: ContrastFinding[];
+}
+
+export async function fetchContrastInsights(): Promise<ContrastInsights> {
+  return call<ContrastInsights>("/api/v1/insights/contrasts");
+}
+
+export interface TopicAttributionItem {
+  topic: string;
+  post_count?: number;
+  posts_count?: number;
+  total_reactions: number;
+  median_reactions?: number;
+  qualified_leads: number;
+  lead_conversion_rate: number;
+  summary?: string;
+}
+
+export interface TopicAttributionInsights {
+  status: "success" | "cold_start";
+  message?: string;
+  settled_posts_analyzed?: number;
+  qualified_leads_attributed?: number;
+  topics: TopicAttributionItem[];
+  summary_sentence: string;
+}
+
+export async function fetchTopicAttribution(): Promise<TopicAttributionInsights> {
+  return call<TopicAttributionInsights>("/api/v1/insights/attribution");
+}
+
+export interface EvidenceExemplar {
+  activity_urn?: string;
+  text: string;
+  reactions: number;
+  comments?: number;
+  qualified_leads: number;
+}
+
+export interface RetrievalEvidenceBrief {
+  has_evidence: boolean;
+  message?: string;
+  top_exemplars: EvidenceExemplar[];
+  bottom_exemplars: EvidenceExemplar[];
+  contrast_findings: ContrastFinding[];
+  brief_section: string;
+}
+
+export async function fetchEvidenceBrief(): Promise<RetrievalEvidenceBrief> {
+  return call<RetrievalEvidenceBrief>("/api/v1/insights/evidence");
 }
 
 // ---------------------------------------------------------------------------

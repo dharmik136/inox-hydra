@@ -555,21 +555,222 @@ def execute_llm_completion(
                         return block.get("text", "").strip()
 
     except _egress.EgressRefused:
-        # A policy refusal is not an empty answer, and must not look like one.
-        #
-        # This was caught by the `except Exception` below, printed to stdout,
-        # and turned into "". Every caller reads "" as "the model produced
-        # nothing" and falls through to deterministic output, so with
-        # INOX_NO_EGRESS=1 the studio behaved exactly as though the provider
-        # had returned an empty string: a deterministic draft, no explanation,
-        # and the egress ledger's refused counter as the only evidence
-        # anywhere. The surface that produced the output said nothing.
-        #
-        # Re-raised instead. All three callers already wrap this in try/except
-        # and record the reason, so the refusal reaches provenance and the
-        # creator can see why their draft is the deterministic one.
         raise
     except Exception as e:
         print(f"[ModelGateway] Error executing LLM completion ({config.provider}): {e}")
 
     return ""
+
+
+async def execute_llm_completion_async(
+    config: AIProviderConfig,
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    max_tokens: int = 1200,
+    temperature: float = 0.7
+) -> str:
+    """
+    Non-blocking async completion using httpx.AsyncClient.
+    Preserves strict egress category checks and zero-cloud-egress guarantees.
+    """
+    if config.provider == "local_deterministic" or not config.api_key and config.provider != "ollama":
+        return ""
+
+    import httpx
+
+    try:
+        if config.provider == "gemini":
+            endpoint = f"{config.base_url}/models/{config.model}:generateContent?key={config.api_key}"
+            parts = []
+            if system_prompt:
+                parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
+            parts.append({"text": prompt})
+
+            payload = {
+                "contents": [{"parts": parts}],
+                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature}
+            }
+            _egress.require(endpoint, "model")
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(endpoint, json=payload, headers={"Content-Type": "application/json"})
+                resp.raise_for_status()
+                data = resp.json()
+                return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+        elif config.provider in ("openai", "groq", "ollama", "custom_openai"):
+            endpoint = f"{config.base_url}/chat/completions"
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            payload = {
+                "model": config.model,
+                "messages": messages,
+                "max_tokens": max_tokens,
+                "temperature": temperature
+            }
+            headers = {"Content-Type": "application/json"}
+            if config.api_key:
+                headers["Authorization"] = f"Bearer {config.api_key}"
+
+            _egress.require(endpoint, "model")
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(endpoint, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["choices"][0]["message"]["content"].strip()
+
+        elif config.provider == "anthropic":
+            endpoint = f"{config.base_url}/messages"
+            payload_dict = {
+                "model": config.model,
+                "max_tokens": max_tokens,
+                "messages": [{"role": "user", "content": prompt}]
+            }
+            if system_prompt:
+                payload_dict["system"] = system_prompt
+
+            headers = {
+                "Content-Type": "application/json",
+                "x-api-key": config.api_key,
+                "anthropic-version": "2023-06-01"
+            }
+            _egress.require(endpoint, "model")
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.post(endpoint, json=payload_dict, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+                for block in data.get("content", []):
+                    if block.get("type") == "text":
+                        return block.get("text", "").strip()
+
+    except _egress.EgressRefused:
+        raise
+    except Exception as e:
+        print(f"[ModelGateway] Error in async LLM completion ({config.provider}): {e}")
+
+    return ""
+
+
+async def stream_llm_completion_async(
+    config: AIProviderConfig,
+    prompt: str,
+    system_prompt: Optional[str] = None,
+    max_tokens: int = 1200,
+    temperature: float = 0.7
+):
+    """
+    Streaming token generator yielding text chunks for real-time SSE UI consumption.
+    """
+    if config.provider == "local_deterministic" or not config.api_key and config.provider != "ollama":
+        yield ""
+        return
+
+    import httpx
+
+    if config.provider in ("openai", "groq", "ollama", "custom_openai"):
+        endpoint = f"{config.base_url}/chat/completions"
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": config.model,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "stream": True
+        }
+        headers = {"Content-Type": "application/json"}
+        if config.api_key:
+            headers["Authorization"] = f"Bearer {config.api_key}"
+
+        _egress.require(endpoint, "model")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            async with client.stream("POST", endpoint, json=payload, headers=headers) as response:
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        line = line[6:].strip()
+                    if line == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(line)
+                        delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
+                        if delta:
+                            yield delta
+                    except Exception:
+                        continue
+
+    elif config.provider == "gemini":
+        endpoint = f"{config.base_url}/models/{config.model}:streamGenerateContent?alt=sse&key={config.api_key}"
+        parts = []
+        if system_prompt:
+            parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
+        parts.append({"text": prompt})
+
+        payload = {
+            "contents": [{"parts": parts}],
+            "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature}
+        }
+        _egress.require(endpoint, "model")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            async with client.stream("POST", endpoint, json=payload, headers={"Content-Type": "application/json"}) as response:
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        line = line[6:].strip()
+                    try:
+                        chunk = json.loads(line)
+                        candidates = chunk.get("candidates", [])
+                        if candidates:
+                            c_parts = candidates[0].get("content", {}).get("parts", [])
+                            for p in c_parts:
+                                text_piece = p.get("text", "")
+                                if text_piece:
+                                    yield text_piece
+                    except Exception:
+                        continue
+
+    elif config.provider == "anthropic":
+        endpoint = f"{config.base_url}/messages"
+        payload = {
+            "model": config.model,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": True
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": config.api_key,
+            "anthropic-version": "2023-06-01"
+        }
+        _egress.require(endpoint, "model")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            async with client.stream("POST", endpoint, json=payload, headers=headers) as response:
+                async for line in response.aiter_lines():
+                    if not line:
+                        continue
+                    if line.startswith("data: "):
+                        line = line[6:].strip()
+                    try:
+                        chunk = json.loads(line)
+                        if chunk.get("type") == "content_block_delta":
+                            text_piece = chunk.get("delta", {}).get("text", "")
+                            if text_piece:
+                                yield text_piece
+                    except Exception:
+                        continue
+
+    else:
+        # Fallback to full async completion
+        full_text = await execute_llm_completion_async(config, prompt, system_prompt, max_tokens, temperature)
+        if full_text:
+            yield full_text
+

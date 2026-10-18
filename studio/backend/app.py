@@ -484,443 +484,40 @@ class AICommandPayload(BaseModel):
 
 # -------------------------------------------------------------
 # Module 1: Analytics Endpoints (Multi-Range & Period Deltas)
+# (Modularized into studio/backend/routers/analytics.py)
 # -------------------------------------------------------------
-def get_range_days(range_str: str) -> int:
-    mapping = {"7d": 7, "14d": 14, "30d": 30, "90d": 90}
-    return mapping.get(range_str.lower(), 30)
+try:
+    from .routers import analytics as analytics_router_module
+except (ImportError, ValueError):
+    from routers import analytics as analytics_router_module
 
+app.include_router(analytics_router_module.router)
 
-@app.get("/api/analytics/kpis")
-def get_kpis(range: str = "30d"):
-    days = get_range_days(range)
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT MAX(date) FROM analytics_daily")
-        max_d_row = cursor.fetchone()
-        if not max_d_row or not max_d_row[0]:
-            # Nothing captured yet. Return the full shape with nulls rather than an
-            # empty object: callers should render "not known yet", and an empty dict
-            # made every consumer reach for a fallback constant instead.
-            cursor.execute("SELECT COUNT(*) FROM posts WHERE status = 'scheduled'")
-            scheduled_when_empty = cursor.fetchone()[0]
-            conn.close()
-            return {
-                "range": f"{days}d",
-                "impressions": None,
-                "impressions_delta_pct": None,
-                "total_engagements": None,
-                "engagements_delta_pct": None,
-                "avg_engagement_rate": None,
-                "engagement_rate_delta": None,
-                "total_followers": None,
-                "follower_growth": None,
-                "profile_views": None,
-                "profile_views_delta_pct": None,
-                # Counted, not assumed. An empty analytics table says nothing about
-                # the queue, and the queue screen was showing posts this reported as
-                # zero.
-                "scheduled_posts_count": scheduled_when_empty,
-            }
-
-        end_date = datetime.strptime(max_d_row[0], "%Y-%m-%d").date()
-        start_cur = end_date - timedelta(days=days - 1)
-        start_prev = start_cur - timedelta(days=days)
-        end_prev = start_cur - timedelta(days=1)
-
-        # Only rows that hold one day's figures are summed.
-        #
-        # A capture whose window could not be read is stored labelled
-        # "unknown", deliberately (see ingest_analytics_payload), and legacy
-        # rows from before windows were recorded carry NULL. Summing either as
-        # a day counted a 7 or 28 day card total as one day's impressions, and
-        # a range summed several overlapping totals. The demo series is one row
-        # per day by construction and is labelled by its source. What was left
-        # out is reported, so a smaller total is explained rather than a
-        # surprise.
-        daily_only = "(period_label IN ('1d', 'day', 'daily') OR (period_label IS NULL AND source = 'seed'))"
-
-        def window_totals(start, end):
-            cursor.execute(f"""
-            SELECT COUNT(*), SUM(impressions), SUM(reactions), SUM(comments), SUM(shares)
-            FROM analytics_daily
-            WHERE date >= ? AND date <= ? AND {daily_only}
-            """, (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")))
-            return cursor.fetchone()
-
-        # 1. Current Window Totals
-        cur_days, cur_imp, cur_rxn, cur_comm, cur_shr = window_totals(start_cur, end_date)
-        cur_imp = cur_imp or 0
-        cur_eng = (cur_rxn or 0) + (cur_comm or 0) + (cur_shr or 0)
-        cur_eng_rate = round((cur_eng / cur_imp * 100), 2) if cur_imp > 0 else None
-
-        cursor.execute(f"""
-        SELECT COUNT(*) FROM analytics_daily
-        WHERE date >= ? AND date <= ? AND NOT {daily_only}
-        """, (start_cur.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
-        excluded_days = cursor.fetchone()[0]
-
-        # 2. Previous Window Totals for True Period Deltas
-        prev_days, prev_imp, prev_rxn, prev_comm, prev_shr = window_totals(start_prev, end_prev)
-        prev_imp = prev_imp or 0
-        prev_eng = (prev_rxn or 0) + (prev_comm or 0) + (prev_shr or 0)
-        prev_eng_rate = round((prev_eng / prev_imp * 100), 2) if prev_imp > 0 else None
-
-        # A change needs something to change from. With no daily rows in the
-        # previous window this returned +100% for any activity at all, which
-        # read as doubling when it meant "nothing to compare with".
-        def calc_delta(cur, prev):
-            if not prev_days or prev == 0:
-                return None
-            return round(((cur - prev) / prev) * 100.0, 1)
-
-        imp_delta = calc_delta(cur_imp, prev_imp)
-        eng_delta = calc_delta(cur_eng, prev_eng)
-        eng_rate_delta = (round(cur_eng_rate - prev_eng_rate, 2)
-                          if cur_eng_rate is not None and prev_eng_rate is not None else None)
-
-        cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (end_date.strftime("%Y-%m-%d"),))
-        latest_stat = cursor.fetchone()
-        # An unknown metric is null. It used to fall back to 1873 followers and 120
-        # profile views, which meant a creator who had captured nothing, or who
-        # genuinely had zero profile views, was shown a number that looked measured.
-        # Null travels to the interface and renders as a dash.
-        cur_followers = latest_stat["followers"] if (latest_stat and latest_stat["followers"] is not None) else None
-        cur_pviews = latest_stat["profile_views"] if (latest_stat and latest_stat["profile_views"] is not None) else None
-
-        cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (start_cur.strftime("%Y-%m-%d"),))
-        start_stat = cursor.fetchone()
-        # No fallback to the current value. When the window's first day was not
-        # captured, this used today's figure as the starting point, so growth
-        # read as exactly 0: a measured "no change" made from one reading.
-        start_followers = start_stat["followers"] if (start_stat and start_stat["followers"] is not None) else None
-        start_pviews = start_stat["profile_views"] if (start_stat and start_stat["profile_views"] is not None) else None
-
-        # A delta between two points needs both points. One missing means no answer,
-        # not a zero and not a hundred percent.
-        follower_growth = (cur_followers - start_followers) if (cur_followers is not None and start_followers is not None) else None
-        pviews_delta = (round(((cur_pviews - start_pviews) / start_pviews) * 100.0, 1)
-                        if (cur_pviews is not None and start_pviews) else None)
-
-        cursor.execute("SELECT COUNT(*) FROM posts WHERE status = 'scheduled'")
-        scheduled_count = cursor.fetchone()[0]
-
-        conn.close()
-
-        # No daily rows in the window means the totals are unknown, not zero.
-        if not cur_days:
-            cur_imp = cur_eng = None
-
-        return {
-            "range": f"{days}d",
-            # How many days the totals are made of, and how many captured days
-            # were left out because their window was not a single day.
-            "days_counted": cur_days,
-            "days_excluded_unknown_window": excluded_days,
-            "impressions": cur_imp,
-            "impressions_delta_pct": imp_delta,
-            "total_engagements": cur_eng,
-            "engagements_delta_pct": eng_delta,
-            "avg_engagement_rate": cur_eng_rate,
-            "engagement_rate_delta": eng_rate_delta,
-            "total_followers": cur_followers,
-            "follower_growth": follower_growth,
-            "profile_views": cur_pviews,
-            "profile_views_delta_pct": pviews_delta,
-            "scheduled_posts_count": scheduled_count
-        }
-    finally:
-        conn.close()
-
-
-@app.get("/api/analytics/overview")
-def get_analytics_overview(range: str = "30d"):
-    days = get_range_days(range)
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT MAX(date) FROM analytics_daily")
-        max_d_row = cursor.fetchone()
-        if not max_d_row or not max_d_row[0]:
-            conn.close()
-            return {"status": "success", "count": 0, "series": []}
-
-        end_date = datetime.strptime(max_d_row[0], "%Y-%m-%d").date()
-        start_date = end_date - timedelta(days=days - 1)
-
-        cursor.execute("""
-        SELECT * FROM analytics_daily 
-        WHERE date >= ? AND date <= ? 
-        ORDER BY date ASC
-        """, (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
-        rows = [dict(r) for r in cursor.fetchall()]
-        conn.close()
-
-        return {
-            "status": "success",
-            "range": f"{days}d",
-            "count": len(rows),
-            "series": rows
-        }
-    finally:
-        conn.close()
-
-
-@app.get("/api/analytics/demographics")
-def get_demographics(dimension: Optional[str] = None):
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        if dimension:
-            cursor.execute("SELECT dimension, label, percentage FROM audience_demographics WHERE dimension = ? ORDER BY percentage DESC", (dimension,))
-        else:
-            cursor.execute("SELECT dimension, label, percentage FROM audience_demographics ORDER BY percentage DESC")
-        rows = [dict(r) for r in cursor.fetchall()]
-        conn.close()
-
-        grouped = {}
-        for r in rows:
-            dim = r["dimension"]
-            grouped.setdefault(dim, []).append(r)
-
-        return {"status": "success", "demographics": grouped}
-    finally:
-        conn.close()
-
-
-@app.get("/api/analytics/export")
-def export_analytics(format: str = "csv"):
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM analytics_daily ORDER BY date ASC")
-        rows = [dict(r) for r in cursor.fetchall()]
-        conn.close()
-
-        if format.lower() == "json":
-            return rows
-
-        output = io.StringIO()
-        writer = csv.writer(output)
-        if rows:
-            writer.writerow(rows[0].keys())
-            for r in rows:
-                writer.writerow(r.values())
-    
-        return Response(
-            content=output.getvalue(),
-            media_type="text/csv",
-            headers={"Content-Disposition": "attachment; filename=linkedin_analytics_export.csv"}
-        )
-    finally:
-        conn.close()
-
-
-@app.get("/api/analytics/posts")
-def get_posts_leaderboard():
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-        SELECT id, content, media_urls, status, published_at, impressions, reactions, comments, shares, tags,
-               activity_urn,
-               CASE WHEN impressions > 0 THEN ROUND((reactions + comments + shares) * 100.0 / impressions, 2) ELSE 0.0 END as engagement_rate
-        FROM posts
-        WHERE status = 'published'
-        ORDER BY impressions DESC
-        """)
-        rows = []
-        for r in cursor.fetchall():
-            d = dict(r)
-            d["media_urls"] = json.loads(d["media_urls"]) if d["media_urls"] else []
-            d["tags"] = json.loads(d["tags"]) if d["tags"] else []
-
-            # Attribution correlation summary for post leaderboard.
-            #
-            # Matched on the activity URN, which is what an engagement is actually
-            # recorded under. This used to compare posts.id against li.post_urn,
-            # two different namespaces, so the badge read zero on every post no
-            # matter how many commenters had been captured. li.post_id is an
-            # INTEGER key into drafts(id) and could not match a posts.id string
-            # either, so all three disjuncts were dead.
-            post_id_str = str(d["id"])
-            post_urn = d.get("activity_urn") or ""
-            cursor.execute("""
-                SELECT
-                    COUNT(DISTINCT l.id) as total_leads,
-                    COUNT(DISTINCT CASE WHEN l.icp_score >= 75.0 THEN l.id END) as vip_leads,
-                    ROUND(AVG(l.icp_score), 1) as avg_icp
-                FROM leads l
-                LEFT JOIN lead_interactions li ON l.id = li.lead_id
-                WHERE (li.post_urn != '' AND li.post_urn IN (?, ?)) OR l.post_id = ?
-            """, (post_id_str, post_urn, post_id_str))
-            attr_row = cursor.fetchone()
-            d["attribution"] = {
-                "total_leads": int(attr_row["total_leads"] or 0) if attr_row else 0,
-                "vip_leads": int(attr_row["vip_leads"] or 0) if attr_row else 0,
-                "avg_icp": float(attr_row["avg_icp"] or 0.0) if attr_row and attr_row["avg_icp"] else 0.0,
-            }
-            rows.append(d)
-        conn.close()
-        return {"status": "success", "posts": rows}
-    finally:
-        conn.close()
-
-
-@app.get("/api/v1/analytics/posts/{post_id}/leads", tags=["Enterprise Reverse CRM", "Analytics"])
-def get_post_leads_attribution(post_id: str, account_id: str = "default"):
-    """
-    Returns full post-to-lead attribution analytics and detailed engager dossier list.
-    Supports post ID or LinkedIn activity URN.
-    """
-    return reverse_crm.get_post_attribution(post_id, account_id=account_id)
+get_range_days = analytics_router_module.get_range_days
+get_kpis = analytics_router_module.get_kpis
+get_analytics_overview = analytics_router_module.get_analytics_overview
+get_demographics = analytics_router_module.get_demographics
+export_analytics = analytics_router_module.export_analytics
+get_posts_leaderboard = analytics_router_module.get_posts_leaderboard
+get_post_leads_attribution = analytics_router_module.get_post_leads_attribution
 
 
 # -------------------------------------------------------------
 # Module 2: Post Studio & Simulator Endpoints
+# (Modularized into studio/backend/routers/posts.py)
 # -------------------------------------------------------------
-@app.get("/api/posts")
-def list_posts(status: Optional[str] = None):
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        if status:
-            cursor.execute("SELECT * FROM posts WHERE status = ? ORDER BY COALESCE(scheduled_for, created_at) ASC", (status,))
-        else:
-            cursor.execute("SELECT * FROM posts ORDER BY created_at DESC")
+try:
+    from .routers import posts as posts_router_module
+except (ImportError, ValueError):
+    from routers import posts as posts_router_module
 
-        rows = []
-        for r in cursor.fetchall():
-            d = dict(r)
-            d["media_urls"] = json.loads(d["media_urls"]) if d["media_urls"] else []
-            d["tags"] = json.loads(d["tags"]) if d["tags"] else []
-            rows.append(d)
-        conn.close()
-        return {"status": "success", "posts": rows}
-    finally:
-        conn.close()
+app.include_router(posts_router_module.router)
 
-
-@app.post("/api/posts")
-def create_post(post: PostCreate):
-    if len(post.content) > 5000:
-        raise HTTPException(status_code=400, detail="Post content exceeds maximum 5,000 character limit.")
-
-    cadence_info = None
-    sched_for = post.scheduled_for
-    if post.status == "scheduled" and sched_for:
-        val = native_scheduler.validate_schedule_cadence(sched_for)
-        if not val["valid"]:
-            raise HTTPException(status_code=400, detail=val["error"])
-        cadence_info = {
-            "has_collision": val.get("has_collision", False),
-            "warning": val.get("warning"),
-            "cadence_health_score": val.get("cadence_health_score", 100)
-        }
-        sched_for = normalize_datetime_to_utc_iso(sched_for) or sched_for
-
-    post_id = f"post_{uuid.uuid4().hex[:10]}"
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-        INSERT INTO posts (id, content, media_urls, status, scheduled_for, tags)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            post_id,
-            post.content,
-            json.dumps(post.media_urls),
-            post.status,
-            sched_for,
-            json.dumps(post.tags)
-        ))
-        conn.commit()
-        conn.close()
-        resp = {"status": "success", "id": post_id, "message": "Post created successfully"}
-        if cadence_info:
-            resp["cadence"] = cadence_info
-        return resp
-    finally:
-        conn.close()
-
-
-@app.put("/api/posts/{post_id}")
-def update_post(post_id: str, updates: PostUpdate):
-    if updates.content is not None and len(updates.content) > 5000:
-        raise HTTPException(status_code=400, detail="Post content exceeds maximum 5,000 character limit.")
-
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM posts WHERE id = ?", (post_id,))
-        existing = cursor.fetchone()
-        if not existing:
-            conn.close()
-            raise HTTPException(status_code=404, detail="Post not found")
-
-        content = updates.content if updates.content is not None else existing["content"]
-        media_urls = json.dumps(updates.media_urls) if updates.media_urls is not None else existing["media_urls"]
-        status = updates.status if updates.status is not None else existing["status"]
-        scheduled_for = updates.scheduled_for if updates.scheduled_for is not None else existing["scheduled_for"]
-        tags = json.dumps(updates.tags) if updates.tags is not None else existing["tags"]
-
-        cadence_info = None
-        if status == "scheduled" and scheduled_for:
-            val = native_scheduler.validate_schedule_cadence(scheduled_for, post_id=post_id)
-            if not val["valid"]:
-                conn.close()
-                raise HTTPException(status_code=400, detail=val["error"])
-            cadence_info = {
-                "has_collision": val.get("has_collision", False),
-                "warning": val.get("warning"),
-                "cadence_health_score": val.get("cadence_health_score", 100)
-            }
-            scheduled_for = normalize_datetime_to_utc_iso(scheduled_for) or scheduled_for
-
-        cursor.execute("""
-        UPDATE posts
-        SET content = ?, media_urls = ?, status = ?, scheduled_for = ?, tags = ?
-        WHERE id = ?
-        """, (content, media_urls, status, scheduled_for, tags, post_id))
-        conn.commit()
-        conn.close()
-        resp = {"status": "success", "message": "Post updated successfully"}
-        if cadence_info:
-            resp["cadence"] = cadence_info
-        return resp
-    finally:
-        conn.close()
-
-
-@app.post("/api/posts/{post_id}/reschedule")
-def reschedule_post(post_id: str, payload: ReschedulePayload):
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM posts WHERE id = ?", (post_id,))
-        existing = cursor.fetchone()
-        if not existing:
-            raise HTTPException(status_code=404, detail="Post not found")
-
-        cadence_val = native_scheduler.validate_schedule_cadence(payload.scheduled_for, post_id=post_id)
-        if not cadence_val["valid"]:
-            raise HTTPException(status_code=400, detail=cadence_val["error"])
-
-        normalized_sched = normalize_datetime_to_utc_iso(payload.scheduled_for) or payload.scheduled_for
-        cursor.execute("UPDATE posts SET scheduled_for = ?, status = 'scheduled' WHERE id = ?", (normalized_sched, post_id))
-        conn.commit()
-    finally:
-        conn.close()
-
-    return {
-        "status": "success",
-        "message": f"Post rescheduled to {payload.scheduled_for}",
-        "cadence_warning": cadence_val.get("warning"),
-        "has_collision": cadence_val.get("has_collision", False),
-        "cadence_health_score": cadence_val.get("cadence_health_score", 100)
-    }
+list_posts = posts_router_module.list_posts
+create_post = posts_router_module.create_post
+update_post = posts_router_module.update_post
+reschedule_post = posts_router_module.reschedule_post
+delete_post = posts_router_module.delete_post
 
 
 @app.post("/api/posts/{post_id}/publish-now", tags=["LinkedIn Native Scheduler"])
@@ -965,19 +562,6 @@ async def publish_post_now(post_id: str):
             "post_id": post_id,
             "published_at": now_iso
         }
-    finally:
-        conn.close()
-
-
-@app.delete("/api/posts/{post_id}")
-def delete_post(post_id: str):
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM posts WHERE id = ?", (post_id,))
-        conn.commit()
-        conn.close()
-        return {"status": "success", "message": "Post deleted"}
     finally:
         conn.close()
 
@@ -1187,23 +771,6 @@ def synthesize_image_prompt(req: ImageGenerateRequest):
     return {"status": "success", "synthesized": dump, **dump}
 
 
-# -------------------------------------------------------------
-# Module 5: Agno AgentOS Content Copilot & Pattern Harvester
-# -------------------------------------------------------------
-@app.post("/api/copilot/optimize", tags=["AI Content Copilot"])
-def copilot_optimize(req: CopilotRequest):
-    """Agno Content Copilot post drafting, line formatting, and viral hook formulation."""
-    result = orchestrator.optimize_content(req.model_dump())
-    return {"status": "success", "copilot": result.model_dump()}
-
-
-@app.post("/api/swipe/analyze", tags=["AI Content Copilot"])
-def analyze_swipe_pattern(payload: Dict[str, Any]):
-    """Reverse-engineers viral posts into reusable formulas and blueprints."""
-    result = orchestrator.analyze_swipe(payload)
-    return {"status": "success", "pattern": result.model_dump()}
-
-
 # Backwards compatibility stub for legacy carousel call
 @app.post("/api/carousel/generate", tags=["Media Studio & Dropzone"])
 def legacy_carousel_stub(req: CarouselRequest):
@@ -1252,269 +819,65 @@ def generate_vector_carousel_deck(req: CarouselDeckRequest):
     return res
 
 
-# -------------------------------------------------------------
-# Taplio Pro ($199/mo) Feature 2: 10x Viral Re-Hooker Engine
-# -------------------------------------------------------------
-@app.post("/api/format/re-hook")
-def get_10x_hooks(req: FormatRequest):
-    return {"status": "success", "hooks": generate_10x_hooks(req.text)}
+get_10x_hooks = posts_router_module.get_10x_hooks
+audit_algorithm = posts_router_module.audit_algorithm
+repurpose = posts_router_module.repurpose
 
 
 # -------------------------------------------------------------
-# Taplio Pro ($199/mo) Feature 3: 2026 Algorithm & Shadowban Safety Audit
+# Module 5: Agno AgentOS Content Copilot & Bring-Your-Own-AI
 # -------------------------------------------------------------
-@app.post("/api/format/algorithm-audit")
-def audit_algorithm(req: FormatRequest):
-    return audit_linkedin_algorithm_safety(req.text)
+try:
+    from .routers import ai as ai_router_module
+except ImportError:
+    from routers import ai as ai_router_module
+
+app.include_router(ai_router_module.router)
+ai_status = ai_router_module.ai_status
+get_ai_config_endpoint = ai_router_module.get_ai_config_endpoint
+configure_ai_endpoint = ai_router_module.configure_ai_endpoint
+save_ai_settings = ai_router_module.save_ai_settings
+execute_ai_command = ai_router_module.execute_ai_command
+copilot_optimize = ai_router_module.copilot_optimize
+analyze_swipe_pattern = ai_router_module.analyze_swipe_pattern
+stream_ai_completion = ai_router_module.stream_ai_completion
 
 
-# -------------------------------------------------------------
-# Taplio Pro ($199/mo) Feature 4: Multi-Style Content Repurposer
-# -------------------------------------------------------------
-@app.post("/api/format/repurpose")
-def repurpose(req: FormatRequest):
-    return {"status": "success", "frameworks": repurpose_content(req.text)}
-
-
-# -------------------------------------------------------------
-# Bring-Your-Own-AI (BYO-AI) & Antigravity Intelligence Bridge
-# -------------------------------------------------------------
-@app.get("/api/ai/status", tags=["AI Command Engine"])
-def ai_status():
-    return get_ai_status()
-
-
-@app.get("/api/ai/config", tags=["AI Command Engine"])
-def get_ai_config_endpoint():
-    """Returns active Bring-Your-Own-AI provider, verified model, and available providers."""
-    try:
-        from .agno_agentos.model_gateway import get_current_ai_config, SUPPORTED_PROVIDERS
-    except ImportError:
-        from agno_agentos.model_gateway import get_current_ai_config, SUPPORTED_PROVIDERS
-    cfg = get_current_ai_config()
-    return {
-        "status": "success",
-        "config": cfg.to_dict(),
-        "supported_providers": SUPPORTED_PROVIDERS
-    }
-
-
-@app.post("/api/ai/configure", tags=["AI Command Engine"])
-def configure_ai_endpoint(req: AIConfigureRequest):
-    """
-    Validates connection to the selected AI provider (Gemini, OpenAI, Claude, Groq, Ollama)
-    via live ping. If verified, updates local SQLite configuration.
-    If invalid, rejects configuration with 400 Bad Request and preserves existing settings.
-    """
-    try:
-        from .agno_agentos.model_gateway import verify_ai_connection, save_ai_config
-    except ImportError:
-        from agno_agentos.model_gateway import verify_ai_connection, save_ai_config
-
-    success, message, latency_ms = verify_ai_connection(
-        provider=req.provider,
-        api_key=req.api_key or "",
-        model=req.model,
-        base_url=req.base_url
-    )
-
-    if not success:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "error": "AI Provider Verification Failed",
-                "message": message,
-                "latency_ms": latency_ms
-            }
-        )
-
-    saved_cfg = save_ai_config(
-        provider=req.provider,
-        api_key=req.api_key or "",
-        model=req.model,
-        base_url=req.base_url
-    )
-
-    return {
-        "status": "success",
-        "message": message,
-        "latency_ms": latency_ms,
-        "config": saved_cfg.to_dict()
-    }
-
-
-@app.post("/api/ai/settings", tags=["AI Command Engine"])
-def save_ai_settings(payload: AISettingsPayload):
-    try:
-        from .agno_agentos.model_gateway import save_ai_config
-    except ImportError:
-        from agno_agentos.model_gateway import save_ai_config
-    
-    save_ai_config(provider="gemini", api_key=payload.gemini_api_key.strip(), model="gemini-2.5-flash")
-
-    return {
-        "status": "success",
-        "message": "Gemini API key saved to local SQLite settings",
-        "ai_status": get_ai_status()
-    }
-
-
-@app.post("/api/ai/command", tags=["AI Command Engine"])
-@app.post("/api/repurposer/command", tags=["AI Command Engine"])
-def execute_ai_command(payload: AICommandPayload):
-    return command_ai_engine(payload.command, payload.resolved_context())
-
-
-# -------------------------------------------------------------
-# Formatting Endpoints
-# -------------------------------------------------------------
-@app.post("/api/format/bold")
-def format_bold(req: FormatRequest):
-    return {"formatted": to_sans_bold(req.text)}
-
-
-@app.post("/api/format/italic")
-def format_italic(req: FormatRequest):
-    return {"formatted": to_sans_italic(req.text)}
-
-
-@app.post("/api/format/monospace")
-def format_mono(req: FormatRequest):
-    return {"formatted": to_monospace(req.text)}
-
-
-@app.post("/api/format/strikethrough")
-def format_strike(req: FormatRequest):
-    return {"formatted": to_strikethrough(req.text)}
-
-
-@app.post("/api/format/clean")
-def format_clean(req: FormatRequest):
-    return {"cleaned": clean_text_formatting(req.text)}
-
-
-@app.post("/api/format/analyze")
-def format_analyze(req: FormatRequest):
-    return analyze_hook(req.text)
-
-
-@app.post("/api/format/serif-bold")
-def format_serif_bold(req: FormatRequest):
-    return {"formatted": to_serif_bold(req.text)}
-
-
-@app.post("/api/format/serif-italic")
-def format_serif_italic(req: FormatRequest):
-    return {"formatted": to_serif_italic(req.text)}
-
-
-@app.post("/api/format/blackboard")
-def format_blackboard(req: FormatRequest):
-    return {"formatted": to_blackboard_bold(req.text)}
-
-
-@app.post("/api/format/underline")
-def format_underline(req: FormatRequest):
-    return {"formatted": to_underline(req.text)}
-
-
-@app.post("/api/format/circled-numbers")
-def format_circled_numbers(req: FormatRequest):
-    return {"formatted": to_circled_numbers(req.text)}
-
-
-@app.post("/api/format/dwell")
-def format_dwell(req: FormatRequest):
-    return calculate_dwell_metrics(req.text)
+format_bold = posts_router_module.format_bold
+format_italic = posts_router_module.format_italic
+format_mono = posts_router_module.format_mono
+format_strike = posts_router_module.format_strike
+format_clean = posts_router_module.format_clean
+format_analyze = posts_router_module.format_analyze
+format_serif_bold = posts_router_module.format_serif_bold
+format_serif_italic = posts_router_module.format_serif_italic
+format_blackboard = posts_router_module.format_blackboard
+format_underline = posts_router_module.format_underline
+format_circled_numbers = posts_router_module.format_circled_numbers
+format_dwell = posts_router_module.format_dwell
 
 
 # -------------------------------------------------------------
 # Taplio Pro ($199/mo) Feature 5: Lead Database & Relationship CRM
+# (Modularized into studio/backend/routers/crm.py)
 # -------------------------------------------------------------
-@app.get("/api/leads")
-def get_leads(status: Optional[str] = None, search: Optional[str] = None):
-    return {"status": "success", "leads": list_leads(status, search)}
+try:
+    from .routers import crm as crm_router_module
+except (ImportError, ValueError):
+    from routers import crm as crm_router_module
 
+app.include_router(crm_router_module.router)
 
-@app.get("/api/v1/crm/leads/export-csv", tags=["Enterprise Reverse CRM"])
-@app.get("/api/leads/export/csv", tags=["Inbound CRM"])
-def export_leads_csv_route(status: Optional[str] = None, search: Optional[str] = None):
-    csv_data = export_leads_csv(status, search)
-    return Response(
-        content=csv_data,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=linkedin_studio_crm_leads.csv"}
-    )
-
-
-@app.post("/api/leads")
-def create_lead(lead: LeadCreate):
-    data = lead.model_dump() if hasattr(lead, "model_dump") else lead.dict()
-    return add_lead(data)
-
-
-@app.post("/api/leads/batch")
-def create_leads_batch(payload: Dict[str, Any]):
-    leads_list = payload.get("leads", [])
-    result = batch_add_leads(leads_list)
-    if result.get("status") == "error":
-        raise HTTPException(status_code=400, detail=result["message"])
-    return result
-
-
-@app.put("/api/leads/{lead_id}/status")
-def update_lead(lead_id: str, payload: LeadStatusUpdate):
-    result = update_lead_status(lead_id, payload.status, payload.notes)
-    if result.get("status") == "not_found":
-        raise HTTPException(status_code=404, detail=f"Lead '{lead_id}' not found")
-    if result.get("status") == "error":
-        raise HTTPException(status_code=400, detail=result["message"])
-    return result
-
-
-@app.delete("/api/leads/{lead_id}")
-def remove_lead(lead_id: str):
-    result = delete_lead(lead_id)
-    if result.get("status") == "not_found":
-        raise HTTPException(status_code=404, detail=f"Lead '{lead_id}' not found")
-    return result
-
-
-@app.get("/api/leads/{lead_id}/dm-script")
-def get_lead_dm(lead_id: str, style: Optional[str] = "value_add", topic: Optional[str] = None):
-    return generate_dm_script(lead_id, style=style, post_topic=topic)
-
-
-# Enrichment is retired, and answers 410 so a caller learns why rather than
-# meeting a 404 that reads like a typo.
-#
-# The dossier was a keyword match on the headline presented as research: one
-# of five prewritten paragraphs with the company name interpolated, so a
-# two-person consultancy and a bank with the same job title got the same
-# "Kubernetes, Kafka, PostgreSQL" stack and the same friction. The side panel
-# showed it as an intelligence dossier, and a creator reading it would repeat
-# an invented fact to the person it describes. When a Gemini key was stored,
-# the call also went straight to Gemini, around the creator's chosen provider
-# and the egress controls.
-#
-# agno_agent keeps the code, and its tests, so a real lookup can replace the
-# guess later. That would need labelling as what it is before it returns here;
-# tests/test_lead_outreach_claims.py holds that condition.
-_ENRICHMENT_RETIRED = (
-    "Lead enrichment is retired. It guessed a company's technology and problems "
-    "from the person's job title and presented the guess as research. The "
-    "dossier shows what the studio actually knows about this person."
-)
-
-
-@app.post("/api/leads/{lead_id}/enrich", tags=["Leads & CRM"])
-def enrich_lead_endpoint(lead_id: str):
-    raise HTTPException(status_code=410, detail=_ENRICHMENT_RETIRED)
-
-
-@app.get("/api/leads/{lead_id}/enrichment", tags=["Leads & CRM"])
-def get_lead_enrichment_endpoint(lead_id: str):
-    raise HTTPException(status_code=410, detail=_ENRICHMENT_RETIRED)
+get_leads = crm_router_module.get_leads
+export_leads_csv_route = crm_router_module.export_leads_csv_route
+create_lead = crm_router_module.create_lead
+create_leads_batch = crm_router_module.create_leads_batch
+update_lead = crm_router_module.update_lead
+remove_lead = crm_router_module.remove_lead
+get_lead_dm = crm_router_module.get_lead_dm
+enrich_lead_endpoint = crm_router_module.enrich_lead_endpoint
+get_lead_enrichment_endpoint = crm_router_module.get_lead_enrichment_endpoint
+_ENRICHMENT_RETIRED = crm_router_module._ENRICHMENT_RETIRED
 
 
 # -------------------------------------------------------------
@@ -1559,28 +922,20 @@ def _refusal(error: "onboarding.RefusedCapture"):
     raise HTTPException(status_code=409, detail=str(error))
 
 
-@app.get("/api/v1/insights/posts", tags=["Insights"])
-def get_posts_insights():
-    """Your posts against your own median, and who each one brought. See insights.py."""
-    return insights.posts_overview()
+try:
+    from .routers import insights as insights_router_module
+except (ImportError, ValueError):
+    from routers import insights as insights_router_module
 
+app.include_router(insights_router_module.router)
 
-@app.get("/api/v1/insights/patterns", tags=["Insights"])
-def get_patterns_insights():
-    """Which forms of post have gone with more reactions, for you, with counts."""
-    return insights.patterns_overview()
-
-
-@app.get("/api/v1/insights/cadence", tags=["Insights"])
-def get_cadence_insights():
-    """How steadily you post, and what the queue holds."""
-    return insights.cadence_overview()
-
-
-@app.get("/api/v1/insights/outbound", tags=["Insights"])
-def get_outbound_insights():
-    """Whose content you engage with, and whether they engage back."""
-    return insights.outbound_overview()
+get_posts_insights = insights_router_module.get_posts_insights
+get_patterns_insights = insights_router_module.get_patterns_insights
+get_cadence_insights = insights_router_module.get_cadence_insights
+get_outbound_insights = insights_router_module.get_outbound_insights
+get_contrast_insights = insights_router_module.get_contrast_insights
+get_attribution_insights = insights_router_module.get_attribution_insights
+get_evidence_brief = insights_router_module.get_evidence_brief
 
 
 @app.get("/api/v1/today", tags=["Onboarding"])
@@ -1724,152 +1079,42 @@ def post_import_event(payload: ImportEvent):
 
 # -------------------------------------------------------------
 # Module: Browser Bridge & Extension Launcher
+# (Modularized into studio/backend/routers/browser.py)
 # -------------------------------------------------------------
-@app.get("/api/v1/browser/status", tags=["Browser Bridge"])
-def get_browser_status_endpoint():
-    browsers = detect_installed_browsers()
-    return {
-        "status": "success",
-        "browsers": browsers,
-        "extension_path": get_extension_dir(),
-        "total_detected": len(browsers)
-    }
+try:
+    from .routers import browser as browser_router_module
+except (ImportError, ValueError):
+    from routers import browser as browser_router_module
 
+app.include_router(browser_router_module.router)
 
-@app.post("/api/v1/browser/create-shortcuts", tags=["Browser Bridge"])
-def create_browser_shortcuts_endpoint():
-    shortcuts = create_desktop_shortcuts()
-    return {
-        "status": "success",
-        "shortcuts": shortcuts,
-        "total_created": len([s for s in shortcuts if s.get("status") == "created"])
-    }
-
-
-@app.post("/api/v1/browser/launch", tags=["Browser Bridge"])
-def launch_browser_endpoint(payload: Optional[Dict[str, Any]] = None):
-    browser_id = "auto"
-    url = "https://www.linkedin.com/feed/"
-    if payload and isinstance(payload, dict):
-        browser_id = payload.get("browser_id", "auto")
-        url = payload.get("url", "https://www.linkedin.com/feed/")
-    return launch_browser_with_extension(browser_id=browser_id, target_url=url)
-
-
-@app.post("/api/v1/browser/copy-path", tags=["Browser Bridge"])
-def copy_browser_path_endpoint():
-    return copy_extension_path_to_clipboard()
+get_browser_status_endpoint = browser_router_module.get_browser_status_endpoint
+create_browser_shortcuts_endpoint = browser_router_module.create_browser_shortcuts_endpoint
+launch_browser_endpoint = browser_router_module.launch_browser_endpoint
+copy_browser_path_endpoint = browser_router_module.copy_browser_path_endpoint
+sync_all_activity = browser_router_module.sync_all_activity
+get_activity_stream = browser_router_module.get_activity_stream
 
 
 
 # -------------------------------------------------------------
 # Module 3: Smart Queue & Slots
 # -------------------------------------------------------------
-@app.get("/api/queue/smart-slots")
-def get_smart_slots():
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM queue_slots WHERE is_active = 1 ORDER BY day_of_week, time_slot")
-        slots = [dict(r) for r in cursor.fetchall()]
+try:
+    from .routers import queue as queue_router_module
+except ImportError:
+    from routers import queue as queue_router_module
 
-        day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        for s in slots:
-            s["day_name"] = day_names[s["day_of_week"]]
-
-        cursor.execute("SELECT id, content, scheduled_for FROM posts WHERE status = 'scheduled' ORDER BY scheduled_for ASC")
-        scheduled_posts = [dict(r) for r in cursor.fetchall()]
-        conn.close()
-
-        return {
-            "status": "success",
-            "slots": slots,
-            "scheduled_posts": scheduled_posts
-        }
-    finally:
-        conn.close()
-
-
-class CadenceValidationPayload(BaseModel):
-    scheduled_for: str
-    post_id: Optional[str] = None
-
-
-@app.get("/api/queue/next-slot", tags=["Smart Queue"])
-def get_next_smart_slot(from_time: Optional[str] = None):
-    """Calculates the chronologically next optimal smart slot with 12h cooldown clearance."""
-    cursor_dt = parse_datetime_flexible(from_time) if from_time else None
-    slot = native_scheduler.calculate_next_smart_slot(from_time=cursor_dt)
-    return {"status": "success", "slot": slot}
-
-
-@app.get("/api/queue/cadence-health", tags=["Smart Queue"])
-def get_cadence_health():
-    """Returns global cadence health score (0-100%) and queue collision analysis."""
-    overview = native_scheduler.get_cadence_overview()
-    return overview
-
-
-@app.post("/api/queue/validate-cadence", tags=["Smart Queue"])
-def validate_queue_cadence(payload: CadenceValidationPayload):
-    """Validates proposed scheduling timestamp against the 12-hour cooldown rule."""
-    result = native_scheduler.validate_schedule_cadence(payload.scheduled_for, post_id=payload.post_id)
-    return {"status": "success", "validation": result}
-
-
-@app.post("/api/v1/scheduler/dispatch/now", tags=["LinkedIn Native Scheduler"])
-def trigger_scheduler_dispatch():
-    """Forces an immediate on-demand evaluation of the scheduled queue and grace window recovery."""
-    actions = native_scheduler.check_scheduled_queue()
-    return {"status": "success", "actions": actions, "executed_at": datetime.now(timezone.utc).isoformat()}
-
-
-@app.get("/api/queue/status", tags=["Smart Queue"])
-def get_queue_status():
-    """Returns whether the automated publishing queue is active or paused."""
-    return {
-        "status": "success",
-        "queue_paused": native_scheduler.is_queue_paused()
-    }
-
-
-class QueuePausePayload(BaseModel):
-    paused: Optional[bool] = None
-
-
-@app.post("/api/queue/toggle-pause", tags=["Smart Queue"])
-async def toggle_queue_pause(payload: Optional[QueuePausePayload] = None):
-    """Toggles or sets the automated publishing queue pause state."""
-    current = native_scheduler.is_queue_paused()
-    new_state = payload.paused if (payload and payload.paused is not None) else not current
-
-    # The write is checked, and the state is read back.
-    #
-    # This discarded the result, published queue_status_changed and returned
-    # success regardless. A failed write therefore told the creator their
-    # queue was paused while the dispatcher went on publishing, which is the
-    # one outcome this control exists to prevent.
-    wrote = native_scheduler.set_queue_paused(new_state)
-    actual_state = native_scheduler.is_queue_paused()
-
-    if not wrote or actual_state != new_state:
-        return {
-            "status": "error",
-            "queue_paused": actual_state,
-            "message": (
-                "Could not change the queue state. It is still "
-                + ("paused" if actual_state else "running")
-                + ". Check studio/logs for the database error."
-            ),
-        }
-
-    await event_bus.publish("queue_status_changed", {"queue_paused": actual_state})
-    msg = "Publishing queue paused." if actual_state else "Publishing queue resumed."
-    return {
-        "status": "success",
-        "queue_paused": actual_state,
-        "message": msg
-    }
+app.include_router(queue_router_module.router)
+CadenceValidationPayload = queue_router_module.CadenceValidationPayload
+QueuePausePayload = queue_router_module.QueuePausePayload
+get_smart_slots = queue_router_module.get_smart_slots
+get_next_smart_slot = queue_router_module.get_next_smart_slot
+get_cadence_health = queue_router_module.get_cadence_health
+validate_queue_cadence = queue_router_module.validate_queue_cadence
+trigger_scheduler_dispatch = queue_router_module.trigger_scheduler_dispatch
+get_queue_status = queue_router_module.get_queue_status
+toggle_queue_pause = queue_router_module.toggle_queue_pause
 
 
 
@@ -2039,38 +1284,9 @@ def get_auth_status():
         conn.close()
 
 
-@app.post("/api/analytics/ingest", tags=["Analytics"])
-def ingest_live_analytics(payload: dict):
-    # Asynchronously record in telemetry shard ring buffer without blocking
-    if telemetry_buffer:
-        try:
-            event_type = payload.get("event_type") or ("feed_updates" if "posts" in payload or "feed_updates" in payload else "analytics_ingest")
-            source = payload.get("source", "extension")
-            telemetry_buffer.ingest(event_type=event_type, payload=payload, source=source)
-        except Exception:
-            pass
-
-    result = linkedin_client.ingest_analytics_payload(payload)
-    return result
-
-
-@app.get("/api/v1/telemetry/status", tags=["Analytics"])
-def get_telemetry_shard_status():
-    """Returns telemetry shard diagnostics, event counts, and WAL metrics."""
-    if not telemetry_engine:
-        return {"status": "unavailable", "message": "Telemetry shard not initialized"}
-    status = telemetry_engine.get_status()
-    if telemetry_buffer:
-        status["pending_in_buffer"] = telemetry_buffer.pending_count()
-    return status
-
-
-@app.post("/api/v1/telemetry/flush", tags=["Analytics"])
-def flush_telemetry_shard():
-    """Flushes in-memory staged telemetry events to SQLite."""
-    if not telemetry_buffer:
-        return {"flushed_events": 0, "flushed_dwells": 0}
-    return telemetry_buffer.flush()
+ingest_live_analytics = analytics_router_module.ingest_live_analytics
+get_telemetry_shard_status = analytics_router_module.get_telemetry_shard_status
+flush_telemetry_shard = analytics_router_module.flush_telemetry_shard
 
 
 # -------------------------------------------------------------
@@ -2161,391 +1377,24 @@ def update_creator_profile(payload: CreatorProfilePayload):
 
 
 # -------------------------------------------------------------
-# Enterprise Documentation Suite API
+# Enterprise Documentation Suite & Universal Search API
+# (Modularized into studio/backend/routers/search.py)
 # -------------------------------------------------------------
-DOCS_DIR = get_docs_dir()
-MODULES_DIR = get_modules_docs_dir()
+try:
+    from .routers import search as search_router_module
+except (ImportError, ValueError):
+    from routers import search as search_router_module
 
-DOCS_MODULES = [
-    {
-        "id": "studio-editor",
-        "number": "01",
-        "title": "Studio & Editor",
-        "category": "Core Authoring",
-        "icon": "edit",
-        "file": "01_STUDIO_AND_EDITOR.md",
-        "summary": "Universal top bar telemetry, dynamic glowing fold tracker, 1080×1080 PDF carousel deck, and 6-dimension algorithmic safety audit."
-    },
-    {
-        "id": "schedule-queue",
-        "number": "02",
-        "title": "Schedule & Queue",
-        "category": "Cadence & Timing",
-        "icon": "calendar",
-        "file": "02_SCHEDULE_AND_QUEUE.md",
-        "summary": "Publishing cadence rules, peak smart engagement slots (8:30 AM & 5:30 PM), and local background scheduler daemon."
-    },
-    {
-        "id": "inbound-crm",
-        "number": "03",
-        "title": "Inbound CRM",
-        "category": "Pipeline & Outreach",
-        "icon": "users",
-        "file": "03_INBOUND_CRM.md",
-        "summary": "Relationship pipeline stages, column dictionary, search/filtering, and 3-style contextual DM generator with zero em-dash compliance."
-    },
-    {
-        "id": "viral-swipe-file",
-        "number": "04",
-        "title": "Viral Swipe File",
-        "category": "Research & Blueprints",
-        "icon": "zap",
-        "file": "04_VIRAL_SWIPE_FILE.md",
-        "summary": "356 vaulted blueprints, 13 topic taxonomies, instant search, and Agno Framework autonomous inbound roadmap."
-    },
-    {
-        "id": "analytics",
-        "number": "05",
-        "title": "Creator Analytics",
-        "category": "Performance Telemetry",
-        "icon": "bar-chart",
-        "file": "05_ANALYTICS.md",
-        "summary": "Direct LinkedIn session ingestion (li_at & JSESSIONID), multi-range growth deltas, Chart.js vector curves, and demographics."
-    },
-    {
-        "id": "ai-command",
-        "number": "06",
-        "title": "AI Command Hub",
-        "category": "Dual-Mode Intelligence",
-        "icon": "sparkles",
-        "file": "06_AI_COMMAND.md",
-        "summary": "Dual-mode Gemini 2.5 Flash cloud API + Antigravity local deterministic engine, prompt presets, and direct Studio transfer."
-    },
-    {
-        "id": "enterprise-usage",
-        "number": "Master",
-        "title": "Enterprise Usage Manual",
-        "category": "Master Architecture",
-        "icon": "book",
-        "file": "ENTERPRISE_USAGE.md",
-        "summary": "Master operational reference manual covering all platform capabilities, security, and algorithms."
-    }
-]
+app.include_router(search_router_module.router)
 
-
-def _docs_catalogue():
-    """
-    Every openable document, keyed by the one id that opens it.
-
-    Two vocabularies name these files. Seven have a curated id, a title and a
-    category written by hand in DOCS_MODULES; all 38 that the search index
-    covers have a path derived slug from docs_engine. The curated id wins where
-    both exist, so a file has exactly one id and a search hit and a sidebar
-    click land on the same document.
-
-    Every value in here was produced by walking the docs directory. A request
-    supplies an id, which selects a row; it never contributes a path segment.
-    """
-    catalogue = {}
-    by_path = {}
-
-    library = document_library(DOCS_DIR)
-    for entry in library:
-        catalogue[entry["id"]] = {
-            "id": entry["id"],
-            "path": entry["path"],
-            "title": entry["title"],
-            "category": entry["folder"],
-            "words": entry["words"],
-            "excerpt": entry["excerpt"],
-            "section": entry["section"],
-            "module_id": None,
-        }
-        by_path[entry["path"]] = entry["id"]
-
-    for module in DOCS_MODULES:
-        # The curated list names a bare filename; it lives either in modules/ or
-        # at the root of the docs directory, which is what the old two step
-        # lookup in this endpoint was doing.
-        for candidate in ("modules/" + module["file"], module["file"]):
-            if candidate not in by_path:
-                continue
-            slug = by_path[candidate]
-            record = dict(catalogue[slug])
-            record.update({
-                "id": module["id"],
-                "title": module["title"],
-                "category": module["category"],
-                "module_id": module["id"],
-            })
-            # Both ids resolve, and both resolve to the curated record, so an
-            # older link built from the slug keeps working.
-            catalogue[module["id"]] = record
-            catalogue[slug] = record
-            by_path[candidate] = module["id"]
-            break
-
-    return catalogue, by_path
-
-
-@app.get("/api/docs", tags=["Documentation"])
-def list_docs_modules():
-    """
-    The documentation suite: the seven curated modules, and the whole library.
-
-    The index has always covered every markdown file under the docs directory
-    and this endpoint reported seven of them, so four fifths of what the search
-    could match had no route and the interface could not offer the hit it had
-    just rendered. "library" closes that: one entry per indexed file, carrying
-    the id that opens it and the curated module id when it has one.
-    """
-    catalogue, by_path = _docs_catalogue()
-    library = []
-    for path in sorted(by_path):
-        record = catalogue[by_path[path]]
-        library.append({
-            "id": record["id"],
-            "path": record["path"],
-            "title": record["title"],
-            "category": record["category"],
-            "words": record["words"],
-            "excerpt": record["excerpt"],
-            "section": record["section"],
-            "module_id": record["module_id"],
-        })
-
-    # Sections carry ids rather than repeating the records. The library above
-    # is the one copy of a document's title, length and excerpt, so a grouping
-    # cannot drift away from what it groups.
-    sections = []
-    for section in help_sections(DOCS_DIR):
-        sections.append({
-            "id": section["id"],
-            "title": section["title"],
-            "blurb": section["blurb"],
-            "kind": section["kind"],
-            "count": section["count"],
-            "words": section["words"],
-            "document_ids": [catalogue[by_path[entry["path"]]]["id"] for entry in section["documents"]],
-        })
-
-    return {
-        "status": "success",
-        "count": len(DOCS_MODULES),
-        "modules": DOCS_MODULES,
-        "library": library,
-        "library_count": len(library),
-        "sections": sections
-    }
-
-
-@app.get("/api/docs/search", tags=["Documentation"])
-def search_documentation(q: str, limit: int = 10):
-    """
-    Sub-millisecond full-text search across all offline Markdown playbooks using SQLite FTS5 (Day 09).
-    """
-    safe_q = str(q or "")[:300].strip()
-    try:
-        safe_limit = max(1, min(int(limit), 100))
-    except (TypeError, ValueError):
-        safe_limit = 10
-    # A wider window than was asked for, because the order below is decided
-    # across kinds of document, and the best help article can sit outside the
-    # top N by text match alone.
-    results = search_docs_fts(safe_q, limit=min(100, max(safe_limit * 4, 40)))
-
-    # A hit named a file and stopped there, so the interface rendered a snippet
-    # it could not act on. The id of the document the section lives in is what
-    # turns a result into a destination.
-    catalogue, by_path = _docs_catalogue()
-    for hit in results:
-        filename = str(hit.get("filename") or "").replace("\\", "/")
-        hit["filename"] = filename
-        hit["document_id"] = by_path.get(filename) or document_slug(filename)
-        record = catalogue.get(hit["document_id"])
-        hit["document_title"] = record["title"] if record else filename
-        # help_section, not section. "section" is the heading FTS5 matched
-        # inside the document, and the anchor a result scrolls to is derived
-        # from it. Overwriting it with the help category silently broke every
-        # jump to a passage while leaving the result list looking correct.
-        hit["help_section"] = section_meta(record["section"])["title"] if record else ""
-        hit["kind"] = section_kind(record["section"]) if record else "help"
-
-    # Help first, then maintainer reference, then retired material.
-    #
-    # BM25 knows how often a word appears and nothing about which documents are
-    # true. Searching "extension" put the retired Chrome-only setup guide at the
-    # top, above the help article written because that guide is wrong: Chrome
-    # ignores the flag the old guide relies on. A help centre that leads with
-    # the instructions it has already found to be false is worse than one with
-    # no search. Within each kind the index's own order stands, so this is a
-    # grouping, not a second relevance model.
-    rank = {"help": 0, "reference": 1, "retired": 2}
-    # Whole-word hits before prefix hits, then kind within each.
-    #
-    # The first version grouped by kind first, so a help article that only
-    # mentioned a "folder" outranked a maintainer document about the fold.
-    # A whole-word hit is a match; a prefix hit is a guess that the last word
-    # is unfinished, and it should only ever fill space the matches left.
-    # Python's sort is stable, so the index's own order holds inside each.
-    how = {"word": 0, "prefix": 1}
-    results = sorted(
-        results, key=lambda hit: (how.get(hit.get("match"), 0), rank.get(hit.get("kind"), 0))
-    )[:safe_limit]
-
-    return {
-        "status": "success",
-        "query": safe_q,
-        "count": len(results),
-        "results": results
-    }
-
-
-@app.get("/api/v1/search", tags=["Search"])
-def search_everything(q: str = "", limit: int = 6):
-    """
-    One query across posts, leads, Swipe File specimens and the help.
-
-    The command palette used to search its own list of actions and nothing
-    else, so a post from last week, a lead whose name you half remember or the
-    specimen you liked could only be found from the surface that held it, and
-    an earlier post could not be found at all.
-
-    Everything here is local: SQLite and the offline documentation index. Each
-    group is searched by the module that owns it, so a specimen carries the id
-    the Swipe File renders and a help hit is ranked the way the Docs search
-    ranks it, help before reference before retired material.
-    """
-    terms = universal_search.terms_of(q)
-    try:
-        per_group = max(1, min(int(limit), 20))
-    except (TypeError, ValueError):
-        per_group = 6
-
-    groups = {"posts": [], "leads": [], "specimens": [], "help": []}
-    if not terms:
-        return {"status": "success", "query": "", "terms": [], "groups": groups, "total": 0}
-
-    failures = {}
-    try:
-        groups["posts"] = universal_search.search_posts(terms, limit=per_group)
-    except Exception as exc:
-        failures["posts"] = str(exc)[:200]
-    try:
-        groups["leads"] = universal_search.search_leads(terms, limit=per_group)
-    except Exception as exc:
-        failures["leads"] = str(exc)[:200]
-
-    # Specimens through the same engine /api/inspirations reads, so the id is
-    # the one the Swipe File renders ("tpl-" and the template id) and opening a
-    # result can find it on that surface.
-    try:
-        found = []
-        for template in intelligence_sync_engine.get_templates(limit=500):
-            hook = template.get("hook_text") or ""
-            haystack = " ".join(str(template.get(key) or "") for key in
-                                ("hook_text", "archetype", "pacing_style")).lower()
-            if all(term in haystack for term in terms):
-                found.append({
-                    "kind": "specimen",
-                    "id": f"tpl-{template.get('id')}",
-                    "title": universal_search.snippet_around(hook, terms, radius=45) or "Untitled specimen",
-                    "snippet": template.get("pacing_style") or "",
-                    "meta": str(template.get("archetype") or "").upper(),
-                    "opens": "swipe",
-                })
-            if len(found) >= per_group:
-                break
-        groups["specimens"] = found
-    except Exception as exc:
-        failures["specimens"] = str(exc)[:200]
-
-    # The help, ranked exactly as the Docs surface ranks it.
-    try:
-        docs = search_documentation(" ".join(terms), limit=per_group)
-        groups["help"] = [{
-            "kind": "help",
-            "id": hit.get("document_id") or "",
-            "title": hit.get("section") or hit.get("document_title") or "",
-            "snippet": hit.get("snippet") or "",
-            "meta": hit.get("help_section") or "",
-            "document_title": hit.get("document_title") or "",
-            "anchor_text": hit.get("section") or "",
-            "retired": hit.get("kind") == "retired",
-            "opens": "docs",
-        } for hit in docs.get("results", [])]
-    except Exception as exc:
-        failures["help"] = str(exc)[:200]
-
-    return {
-        "status": "success",
-        "query": " ".join(terms),
-        "terms": terms,
-        "groups": groups,
-        "total": sum(len(items) for items in groups.values()),
-        # A group that failed is reported, not dropped, so an empty section in
-        # the palette can say "could not be searched" instead of "no matches".
-        "failures": failures,
-    }
-
-
-@app.get("/api/docs/{module_id}", tags=["Documentation"])
-def get_doc_module(module_id: str):
-    """
-    Retrieves the full markdown content of a documentation module by ID or number.
-    """
-    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(module_id or ""))[:120]
-    if not safe_id:
-        raise HTTPException(status_code=400, detail="Invalid documentation module ID.")
-
-    catalogue, _ = _docs_catalogue()
-    record = catalogue.get(safe_id) or catalogue.get(safe_id.lower())
-
-    if record is None:
-        # A curated module may also be addressed by its number, which is the one
-        # key that is not a slug.
-        for module in DOCS_MODULES:
-            if module["number"] == safe_id:
-                record = catalogue.get(module["id"])
-                break
-
-    if record is None:
-        raise HTTPException(status_code=404, detail=f"Documentation module '{safe_id}' not found.")
-
-    # A lookup, not a join. The path came from walking the docs directory, so
-    # nothing the caller sent reaches the filesystem.
-    file_path = os.path.join(DOCS_DIR, *record["path"].split("/"))
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail=f"Documentation file for '{safe_id}' not found on disk.")
-
-    with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-        content = f.read()
-
-    target = None
-    if record["module_id"]:
-        for module in DOCS_MODULES:
-            if module["id"] == record["module_id"]:
-                target = module
-                break
-
-    return {
-        "status": "success",
-        "module": target,
-        # The interface read data.title and this response never had one, so every
-        # document in the reader was headed by its own raw id. The path is here
-        # because a relative link inside a document resolves against it.
-        "id": record["id"],
-        "title": record["title"],
-        "path": record["path"],
-        "category": record["category"],
-        "section": section_meta(record["section"])["title"],
-        # A retired manual is served, because it is the record, but the reader
-        # is told before it reads a claim the code contradicts.
-        "retired": section_kind(record["section"]) == "retired",
-        "words": record["words"],
-        "content": content
-    }
-
+DOCS_DIR = search_router_module.DOCS_DIR
+MODULES_DIR = search_router_module.MODULES_DIR
+DOCS_MODULES = search_router_module.DOCS_MODULES
+_docs_catalogue = search_router_module._docs_catalogue
+list_docs_modules = search_router_module.list_docs_modules
+search_documentation = search_router_module.search_documentation
+search_everything = search_router_module.search_everything
+get_doc_module = search_router_module.get_doc_module
 
 # -------------------------------------------------------------
 # Grounding: the creator's own material, through MCP
@@ -3000,384 +1849,35 @@ def evaluate_recovery(req: RecoveryEvaluateRequest):
 
 # -------------------------------------------------------------
 # Enterprise Reverse CRM & Audience Graph
+# (Modularized into studio/backend/routers/crm.py)
 # -------------------------------------------------------------
-class IngestInteractionRequest(BaseModel):
-    full_name: str
-    linkedin_urn: Optional[str] = None
-    profile_url: Optional[str] = None
-    headline: str
-    company: Optional[str] = None
-    interaction_type: Optional[str] = "COMMENT"
-    comment_text: Optional[str] = None
-    post_urn: Optional[str] = None
-    post_id: Optional[int] = None
-    # No default topic. A fixed string here ended up quoted in every generated
-    # message as though it described the creator's actual post.
-    post_topic: Optional[str] = None
-    capture_context: Optional[str] = None
-    # The vanity of whoever wrote the post this engagement is on, as the
-    # extension read it from the card. With the URN, it is how the studio
-    # decides the post is the creator's and the engager is therefore a lead.
-    post_author: Optional[str] = None
-
-
-@app.post("/api/v1/crm/interactions/ingest", tags=["Enterprise Reverse CRM"])
-def ingest_crm_interaction(req: IngestInteractionRequest):
-    """
-    Ingests commenter or reactor, calculates deterministic multi-factor ICP score,
-    and synthesizes anti-slop 1-to-1 personalized DM.
-
-    Only for engagement on the creator's own posts. Anything else answers
-    "skipped" with the reason, rather than an error, because the extension
-    reports what was stored and a stranger's commenter not being stored is the
-    correct outcome, not a failure.
-    """
-    refused = onboarding.engagement_gate(req.linkedin_urn or req.profile_url, req.post_urn, req.post_author)
-    if refused:
-        return {"status": "skipped", "reason": refused}
-    # An unidentified person gets a clearly local key. Minting a urn:li:person:
-    # put a value this studio invented into LinkedIn's own namespace, where it
-    # was indistinguishable from one LinkedIn issued.
-    urn = req.linkedin_urn or req.profile_url or f"local:unresolved:{uuid.uuid4().hex[:12]}"
-    raw_type = (req.interaction_type or "COMMENT").upper()
-    if "COMMENT" in raw_type:
-        norm_type = "COMMENT"
-    elif "LIKE" in raw_type:
-        norm_type = "LIKE"
-    elif "REPOST" in raw_type:
-        norm_type = "REPOST"
-    else:
-        norm_type = "COMMENT"
-
-    result = reverse_crm.ingest_interaction(
-        full_name=req.full_name,
-        linkedin_urn=urn,
-        headline=req.headline,
-        company=req.company,
-        interaction_type=norm_type,
-        comment_text=req.comment_text,
-        post_urn=req.post_urn,
-        post_id=req.post_id,
-        post_topic=req.post_topic,
-        capture_context=req.capture_context,
-    )
-    result["id"] = result.get("lead_id")
-    result["qualification_tier"] = result.get("tier")
-    return {"status": "success", "interaction": result, "lead": result}
-
-
-@app.get("/api/v1/crm/leads/high-value", tags=["Enterprise Reverse CRM"])
-def get_high_value_leads(min_score: float = 60.0, limit: int = 50):
-    """Queries top ICP-matching leads sorted by score descending."""
-    leads = reverse_crm.list_high_value_leads(min_icp_score=min_score, limit=limit)
-    return {"status": "success", "count": len(leads), "leads": leads}
-
-
-@app.get("/api/v1/crm/telemetry", tags=["Enterprise Reverse CRM"])
-def get_crm_telemetry():
-    """Macro telemetry across the reverse CRM: ICP score distribution, status funnel, inquiry metrics."""
-    return reverse_crm.get_crm_telemetry()
-
-
-class GenerateDMRequest(BaseModel):
-    lead_name: str
-    comment_text: str
-    # No default. A fixed topic here reached every draft as though it named the
-    # creator's post. Without one a reply is not drafted, and the variants say
-    # "my recent post".
-    post_topic: Optional[str] = None
-    custom_insight: Optional[str] = None
-
-
-@app.post("/api/v1/crm/leads/generate-dm", tags=["Enterprise Reverse CRM"])
-def generate_lead_dm(req: GenerateDMRequest):
-    """Generates an anti-slop 1-to-1 DM quoting the exact comment excerpt."""
-    dm = ICPScoringEngine.generate_contextual_dm(
-        lead_name=req.lead_name,
-        comment_text=req.comment_text,
-        post_topic=req.post_topic,
-        custom_insight=req.custom_insight,
-    )
-    return {"status": "success", "suggested_dm": dm}
-
-
-@app.post("/api/v1/crm/dm/variants", tags=["Enterprise Reverse CRM"])
-def generate_anti_slop_dm_variants(req: GenerateDMRequest):
-    """Generates 3 non-salesy, anti-slop DM options tailored to comment intent with strictly zero em-dashes."""
-    variants = ICPScoringEngine.generate_anti_slop_dm_variants(
-        lead_name=req.lead_name,
-        comment_text=req.comment_text,
-        post_topic=req.post_topic,
-        custom_insight=req.custom_insight,
-    )
-    return {"status": "success", "variants": variants}
-
-
-class ScorePreviewRequest(BaseModel):
-    headline: str
-    company: Optional[str] = None
-    comment_text: Optional[str] = None
-    interaction_type: Optional[str] = "COMMENT"
-
-
-@app.post("/api/v1/crm/score-preview", tags=["Enterprise Reverse CRM"])
-def preview_icp_score(req: ScorePreviewRequest):
-    """Calculates deterministic ICP score, contributions, qualification tier, and intent signals."""
-    breakdown = ICPScoringEngine.calculate_icp_breakdown(
-        headline=req.headline,
-        company=req.company,
-        comment_text=req.comment_text,
-        interaction_type=req.interaction_type or "COMMENT",
-    )
-    return {
-        "status": "success",
-        **breakdown,
-    }
-
-
-@app.delete("/api/v1/crm/leads/{lead_id}/purge", tags=["Enterprise Reverse CRM"])
-def purge_crm_lead(lead_id: str):
-    """
-    GDPR Right-to-be-Forgotten Compliance Purge.
-    Hard deletes lead and all associated interaction history.
-    """
-    res = reverse_crm.purge_lead(lead_id)
-    if not res["lead_deleted"]:
-        raise HTTPException(status_code=404, detail="Lead not found")
-    return res
-
-
-class ArchiveInactiveRequest(BaseModel):
-    inactive_days: int = 90
-
-
-@app.post("/api/v1/crm/leads/archive-inactive", tags=["Enterprise Reverse CRM"])
-def archive_inactive_crm_leads(req: Optional[ArchiveInactiveRequest] = None):
-    """Archives leads with no activity for more than specified days (default 90)."""
-    days = req.inactive_days if req else 90
-    result = reverse_crm.archive_inactive_leads(days)
-    if result.get("status") == "error":
-        raise HTTPException(status_code=400, detail=result["message"])
-    return result
-
-
-@app.get("/api/v1/crm/leads/{lead_id}/timeline", tags=["Enterprise Reverse CRM"])
-def get_lead_interaction_timeline(lead_id: str):
-    """Retrieves full interaction history and timeline for a given lead."""
-    res = reverse_crm.get_lead_timeline(lead_id)
-    if res["status"] == "not_found":
-        raise HTTPException(status_code=404, detail="Lead not found")
-    # Where each engagement happened, so the dossier can name the post.
-    res["interactions"] = onboarding.annotate_interactions(res["interactions"])
-    # How the lead moved through the pipeline, oldest first.
-    conn = get_db()
-    try:
-        res["stage_history"] = [dict(r) for r in conn.execute(
-            "SELECT from_status, to_status, changed_at FROM lead_stage_events WHERE lead_id = ? ORDER BY changed_at",
-            (lead_id,))]
-    finally:
-        conn.close()
-    return res
-
-
-class LeadRemoval(BaseModel):
-    lead_ids: List[str]
-
-
-@app.get("/api/v1/leads/review", tags=["Leads & CRM"])
-def get_lead_review():
-    """Leads sorted by whether they engaged with the creator's own posts."""
-    return onboarding.lead_review()
-
-
-@app.post("/api/v1/leads/review/remove", tags=["Leads & CRM"])
-def post_lead_review_remove(payload: LeadRemoval):
-    """Deletes the named leads that are still classified as not from the creator's posts."""
-    try:
-        return onboarding.remove_leads_not_on_your_posts(payload.lead_ids)
-    except onboarding.RefusedCapture as error:
-        raise HTTPException(status_code=409, detail=str(error))
+IngestInteractionRequest = crm_router_module.IngestInteractionRequest
+ingest_crm_interaction = crm_router_module.ingest_crm_interaction
+get_high_value_leads = crm_router_module.get_high_value_leads
+get_crm_telemetry = crm_router_module.get_crm_telemetry
+GenerateDMRequest = crm_router_module.GenerateDMRequest
+generate_lead_dm = crm_router_module.generate_lead_dm
+generate_anti_slop_dm_variants = crm_router_module.generate_anti_slop_dm_variants
+ScorePreviewRequest = crm_router_module.ScorePreviewRequest
+preview_icp_score = crm_router_module.preview_icp_score
+purge_crm_lead = crm_router_module.purge_crm_lead
+ArchiveInactiveRequest = crm_router_module.ArchiveInactiveRequest
+archive_inactive_crm_leads = crm_router_module.archive_inactive_crm_leads
+get_lead_interaction_timeline = crm_router_module.get_lead_interaction_timeline
+LeadRemoval = crm_router_module.LeadRemoval
+get_lead_review = crm_router_module.get_lead_review
+post_lead_review_remove = crm_router_module.post_lead_review_remove
 
 
 # -------------------------------------------------------------
 # Post Identity: binding what the creator wrote to what LinkedIn published
+# (Modularized into studio/backend/routers/posts.py)
 # -------------------------------------------------------------
-class InjectedPostRequest(BaseModel):
-    content: str
-    draft_id: Optional[int] = None
-
-
-@app.post("/api/v1/posts/injected", tags=["Post Identity"])
-def record_injected_post(req: InjectedPostRequest):
-    """
-    Record that the creator just put this text into LinkedIn's composer.
-
-    This is bookkeeping on an event the studio itself caused, not an
-    observation of LinkedIn, so it contacts nothing. It is also the first link
-    in the only chain that can answer "which post produced my best leads":
-    without a row here, the URN seen later on the permalink has nothing to
-    attach to.
-    """
-    fingerprint = post_identity.content_fingerprint(req.content)
-    if fingerprint is None:
-        return {
-            "status": "too_short",
-            "message": (
-                "This text is too short to identify the post again later. "
-                "It was injected, but engagement cannot be attributed to it."
-            ),
-        }
-
-    conn = get_db()
-    try:
-        with conn:
-            cursor = conn.cursor()
-            # An unbound post with the same fingerprint is the same post being
-            # injected twice, which happens when the creator retries. Reuse it
-            # rather than creating a second row that will compete for the URN.
-            cursor.execute(
-                "SELECT id FROM posts WHERE content_fingerprint = ? AND activity_urn IS NULL",
-                (fingerprint,),
-            )
-            existing = cursor.fetchone()
-            now = datetime.now(timezone.utc).isoformat()
-
-            if existing:
-                post_id = existing["id"]
-                cursor.execute(
-                    "UPDATE posts SET published_at = ?, status = 'published' WHERE id = ?",
-                    (now, post_id),
-                )
-            else:
-                post_id = f"post-{uuid.uuid4().hex[:12]}"
-                cursor.execute(
-                    """
-                    INSERT INTO posts (id, content, status, published_at, content_fingerprint, draft_id)
-                    VALUES (?, ?, 'published', ?, ?, ?)
-                    """,
-                    (post_id, req.content, now, fingerprint, req.draft_id),
-                )
-    finally:
-        conn.close()
-
-    return {
-        "status": "recorded",
-        "post_id": post_id,
-        "content_fingerprint": fingerprint,
-        "message": "Open this post on LinkedIn once and the studio will bind its URN.",
-    }
-
-
-class BindUrnRequest(BaseModel):
-    activity_urn: str
-    post_text: str
-
-
-@app.post("/api/v1/posts/bind-urn", tags=["Post Identity"])
-def bind_post_urn(req: BindUrnRequest):
-    """
-    Attach a LinkedIn activity URN to the post the creator wrote.
-
-    The extension sends the URN from location.pathname and the text rendered on
-    the page. Matching happens here rather than in the extension so the rule is
-    testable and so the extension never has to track which post is armed.
-
-    Refuses rather than guesses. If no unbound post matches the text, nothing is
-    written, because a wrong binding would attribute one post's engagers to
-    another and be very hard to notice.
-    """
-    urn = post_identity.extract_activity_urn(req.activity_urn) or req.activity_urn
-    if not post_identity.ACTIVITY_URN_PATTERN.fullmatch(urn or ""):
-        return {"status": "invalid_urn", "bound": False, "activity_urn": urn}
-
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM posts WHERE activity_urn = ?", (urn,))
-        already = cursor.fetchone()
-        if already:
-            return {"status": "already_bound", "bound": True, "post_id": already["id"], "activity_urn": urn}
-
-        cursor.execute(
-            """
-            SELECT id, content_fingerprint FROM posts
-            WHERE activity_urn IS NULL AND content_fingerprint IS NOT NULL
-            ORDER BY published_at DESC
-            LIMIT 50
-            """
-        )
-        candidates = cursor.fetchall()
-
-        for row in candidates:
-            if post_identity.fingerprint_matches(req.post_text, row["content_fingerprint"]):
-                with conn:
-                    conn.execute(
-                        "UPDATE posts SET activity_urn = ? WHERE id = ?", (urn, row["id"])
-                    )
-                return {
-                    "status": "bound",
-                    "bound": True,
-                    "post_id": row["id"],
-                    "activity_urn": urn,
-                }
-
-        return {
-            "status": "no_match",
-            "bound": False,
-            "activity_urn": urn,
-            "candidates_considered": len(candidates),
-        }
-    finally:
-        conn.close()
-
-
-@app.get("/api/v1/posts/{post_id}/engagers", tags=["Post Identity"])
-def get_post_engagers(post_id: str):
-    """
-    The people who engaged with one post.
-
-    This is the question the product exists to answer and the first time it can
-    be asked of real data.
-    """
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, activity_urn, content FROM posts WHERE id = ?", (post_id,))
-        post = cursor.fetchone()
-        if not post:
-            raise HTTPException(status_code=404, detail="No such post")
-
-        if not post["activity_urn"]:
-            return {
-                "status": "unbound",
-                "post_id": post_id,
-                "engagers": [],
-                "message": "This post has no LinkedIn URN yet. Open it on LinkedIn once to bind it.",
-            }
-
-        cursor.execute(
-            """
-            SELECT l.id, l.full_name, l.name, l.headline, l.company,
-                   l.seniority_level, l.icp_score, l.profile_url,
-                   i.interaction_type, i.comment_text, i.interacted_at
-            FROM lead_interactions i
-            JOIN leads l ON l.id = i.lead_id
-            WHERE i.post_urn = ?
-            ORDER BY l.icp_score DESC
-            """,
-            (post["activity_urn"],),
-        )
-        engagers = [dict(r) for r in cursor.fetchall()]
-    finally:
-        conn.close()
-
-    return {
-        "status": "success",
-        "post_id": post_id,
-        "activity_urn": post["activity_urn"],
-        "count": len(engagers),
-        "engagers": engagers,
-    }
+InjectedPostRequest = posts_router_module.InjectedPostRequest
+record_injected_post = posts_router_module.record_injected_post
+BindUrnRequest = posts_router_module.BindUrnRequest
+bind_post_urn = posts_router_module.bind_post_urn
+get_post_engagers = posts_router_module.get_post_engagers
 
 
 @app.get("/api/v1/egress/status", tags=["Support & Maintenance"])

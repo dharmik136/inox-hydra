@@ -241,6 +241,15 @@ class LinkedInContentCopilotAgent:
             "post_format": post_format,
             "draft_excerpt": content[:600],
         }
+        # Inject CP3 evidence brief if local post history exists
+        try:
+            from ...evidence_briefing import get_retrieval_evidence_brief
+            ev = get_retrieval_evidence_brief(limit_top=2, limit_bottom=1)
+            if ev.get("has_evidence") and ev.get("brief_section"):
+                brief_inputs["audience_performance_evidence"] = ev["brief_section"]
+        except Exception:
+            pass
+
         # The creator's material goes last, so a long note cannot push the
         # audience and the draft out of the model's attention.
         brief_inputs.update(grounding_inputs)

@@ -22,6 +22,8 @@ import tempfile
 import shutil
 import pytest
 import uvicorn
+
+pytest.importorskip("playwright.sync_api")
 from playwright.sync_api import sync_playwright
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))

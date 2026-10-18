@@ -15,23 +15,26 @@ echo "  100% local. Zero cloud egress. Port 8000."
 echo "================================================================="
 echo ""
 
+# Determine python command
+if [ -x "$SCRIPT_DIR/.venv/bin/python" ]; then
+    PYTHON_CMD="$SCRIPT_DIR/.venv/bin/python"
+elif [ -x "$SCRIPT_DIR/.venv/bin/python3" ]; then
+    PYTHON_CMD="$SCRIPT_DIR/.venv/bin/python3"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_CMD="python3"
+elif command -v python >/dev/null 2>&1; then
+    PYTHON_CMD="python"
+else
+    echo "[!] Error: python3 is not installed or not in PATH."
+    exit 1
+fi
+
 # Check for tray argument
 if [ "$1" = "--tray" ] || [ "$1" = "-tray" ]; then
     echo "[*] Starting Inox Hydra in System Tray Daemon mode..."
-    nohup python3 "$SCRIPT_DIR/studio_tray.py" >/dev/null 2>&1 &
+    nohup "$PYTHON_CMD" "$SCRIPT_DIR/studio_tray.py" >/dev/null 2>&1 &
     echo "[*] System Tray daemon active in background."
     exit 0
-fi
-
-# Determine python command
-PYTHON_CMD="python3"
-if ! command -v "$PYTHON_CMD" >/dev/null 2>&1; then
-    if command -v python >/dev/null 2>&1; then
-        PYTHON_CMD="python"
-    else
-        echo "[!] Error: python3 is not installed or not in PATH."
-        exit 1
-    fi
 fi
 
 # Check if studio interface has been built

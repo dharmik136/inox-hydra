@@ -65,7 +65,7 @@ def get_app_home() -> str:
     return _platform_user_data_dir()
 
 
-def get_browser_profile_dir(browser_id: str) -> str:
+def get_browser_profile_dir(browser_id: str, exe_path: str = "") -> str:
     """
     The dedicated browser profile the bridge browser runs in.
 
@@ -83,7 +83,28 @@ def get_browser_profile_dir(browser_id: str) -> str:
     """
     safe_id = "".join(ch for ch in (browser_id or "browser") if ch.isalnum() or ch in "-_") or "browser"
     override = os.environ.get("INOX_HYDRA_HOME")
-    root = os.path.abspath(os.path.expanduser(override)) if override else _platform_user_data_dir()
+    if override:
+        return _ensure(os.path.join(os.path.abspath(os.path.expanduser(override)), "browser-profiles", safe_id))
+
+    if sys.platform.startswith("linux"):
+        # On Linux, snap-confined browsers (such as Brave or Chromium installed via snap)
+        # run under AppArmor profiles that strictly prohibit reading or writing to hidden
+        # dot-directories in $HOME (such as ~/.local/share/...).
+        # If the browser binary is in /snap/ or ~/snap/<safe_id> exists, store the profile
+        # in the snap's persistent common directory (~/snap/<safe_id>/common/inox-hydra-profile)
+        # where AppArmor grants full rwklx permissions.
+        snap_home = os.path.join(os.path.expanduser("~"), "snap", safe_id)
+        exe_snap_name = os.path.basename(exe_path) if exe_path else ""
+        alt_snap_home = os.path.join(os.path.expanduser("~"), "snap", exe_snap_name) if exe_snap_name else ""
+        if os.path.isdir(snap_home):
+            return _ensure(os.path.join(snap_home, "common", "inox-hydra-profile"))
+        if alt_snap_home and os.path.isdir(alt_snap_home):
+            return _ensure(os.path.join(alt_snap_home, "common", "inox-hydra-profile"))
+        if exe_path and "/snap/" in exe_path:
+            target_snap = snap_home if snap_home else alt_snap_home
+            return _ensure(os.path.join(target_snap, "common", "inox-hydra-profile"))
+
+    root = _platform_user_data_dir()
     return _ensure(os.path.join(root, "browser-profiles", safe_id))
 
 

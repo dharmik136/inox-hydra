@@ -66,7 +66,25 @@ def get_db() -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout = 5000;")
     conn.execute("PRAGMA foreign_keys = ON;")
     conn.execute("PRAGMA cache_size = -64000;")
+    conn.execute("PRAGMA temp_store = MEMORY;")
+    conn.execute("PRAGMA mmap_size = 268435456;")
     return conn
+
+
+def get_db_session():
+    """
+    FastAPI dependency and context manager for safe database connections.
+    Guarantees clean commit on success and close on exit.
+    """
+    conn = get_db()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 
@@ -1762,15 +1780,15 @@ def seed_initial_data():
         seed_sample_leads = False
     if seed_sample_leads:
         sample_leads = [
-            ("lead-1", "Aravind Subramanian", "VP of Engineering at CloudScale", "CloudScale", "https://linkedin.com/in/example-lead-aravind", "Commented", "post-enterprise-scheduled", "New Lead", "Interested in ERP observability architecture"),
-            ("lead-2", "Sarah Jenkins", "Director of Product Architecture", "Fintech Nexus", "https://linkedin.com/in/example-lead-sarah", "Liked", "urn:li:activity:7390000000000000102", "Connected", "Engaged with content strategy breakdown"),
-            ("lead-3", "Rohan Mehta", "Principal Enterprise Architect", "Global Tech Systems", "https://linkedin.com/in/example-lead-rohan", "Commented", "post-enterprise-scheduled", "Outreach Sent", "Exchanged notes on clean data boundaries"),
-            ("lead-4", "Elena Rostova", "Head of Content & DevRel", "SaaS Matrix", "https://linkedin.com/in/example-lead-elena", "Reposted", "urn:li:activity:7390000000000000101", "Meeting Booked", "Invited to discuss agentic AI workflows")
+            ("lead-1", "Aravind Subramanian", "VP of Engineering at CloudScale", "CloudScale", "https://linkedin.com/in/example-lead-aravind", "Commented", "post-enterprise-scheduled", "New Lead", "Interested in ERP observability architecture", "VP/Director", 85.0),
+            ("lead-2", "Sarah Jenkins", "Director of Product Architecture", "Fintech Nexus", "https://linkedin.com/in/example-lead-sarah", "Liked", "urn:li:activity:7390000000000000102", "Connected", "Engaged with content strategy breakdown", "VP/Director", 65.0),
+            ("lead-3", "Rohan Mehta", "Principal Enterprise Architect", "Global Tech Systems", "https://linkedin.com/in/example-lead-rohan", "Commented", "post-enterprise-scheduled", "Outreach Sent", "Exchanged notes on clean data boundaries", "Senior Practitioner", 55.0),
+            ("lead-4", "Elena Rostova", "Head of Content & DevRel", "SaaS Matrix", "https://linkedin.com/in/example-lead-elena", "Reposted", "urn:li:activity:7390000000000000101", "Meeting Booked", "Invited to discuss agentic AI workflows", "VP/Director", 82.0)
         ]
         for l in sample_leads:
             cursor.execute("""
-            INSERT OR REPLACE INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes, seniority_level, icp_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, l)
         conn.commit()
 
@@ -1966,15 +1984,15 @@ What is your team's biggest bottleneck when decoupling legacy services?""",
         needs_leads = False
     if needs_leads:
         sample_leads = [
-            ("lead-1", "Aravind Subramanian", "VP of Engineering at CloudScale", "CloudScale", "https://linkedin.com/in/example-lead-aravind", "Commented", "post-enterprise-scheduled", "New Lead", "Interested in ERP observability architecture"),
-            ("lead-2", "Sarah Jenkins", "Director of Product Architecture", "Fintech Nexus", "https://linkedin.com/in/example-lead-sarah", "Liked", "urn:li:activity:7390000000000000102", "Connected", "Engaged with content strategy breakdown"),
-            ("lead-3", "Rohan Mehta", "Principal Enterprise Architect", "Global Tech Systems", "https://linkedin.com/in/example-lead-rohan", "Commented", "post-enterprise-scheduled", "Outreach Sent", "Exchanged notes on clean data boundaries"),
-            ("lead-4", "Elena Rostova", "Head of Content & DevRel", "SaaS Matrix", "https://linkedin.com/in/example-lead-elena", "Reposted", "urn:li:activity:7390000000000000101", "Meeting Booked", "Invited to discuss agentic AI workflows")
+            ("lead-1", "Aravind Subramanian", "VP of Engineering at CloudScale", "CloudScale", "https://linkedin.com/in/example-lead-aravind", "Commented", "post-enterprise-scheduled", "New Lead", "Interested in ERP observability architecture", "VP/Director", 85.0),
+            ("lead-2", "Sarah Jenkins", "Director of Product Architecture", "Fintech Nexus", "https://linkedin.com/in/example-lead-sarah", "Liked", "urn:li:activity:7390000000000000102", "Connected", "Engaged with content strategy breakdown", "VP/Director", 65.0),
+            ("lead-3", "Rohan Mehta", "Principal Enterprise Architect", "Global Tech Systems", "https://linkedin.com/in/example-lead-rohan", "Commented", "post-enterprise-scheduled", "Outreach Sent", "Exchanged notes on clean data boundaries", "Senior Practitioner", 55.0),
+            ("lead-4", "Elena Rostova", "Head of Content & DevRel", "SaaS Matrix", "https://linkedin.com/in/example-lead-elena", "Reposted", "urn:li:activity:7390000000000000101", "Meeting Booked", "Invited to discuss agentic AI workflows", "VP/Director", 82.0)
         ]
         for l in sample_leads:
             cursor.execute("""
-            INSERT OR REPLACE INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes, seniority_level, icp_score)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, l)
 
     # Seed Sample Lead Enrichment if empty. Describes one of the invented
@@ -1985,10 +2003,12 @@ What is your team's biggest bottleneck when decoupling legacy services?""",
     else:
         seed_enrichment = False
     if seed_enrichment:
-        cursor.execute("""
-        INSERT OR REPLACE INTO lead_enrichments 
-        (lead_id, company_intelligence, estimated_tech_stack, key_topics, friction_points, icebreakers, enriched_by)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        cursor.execute("SELECT id FROM leads WHERE id = 'lead-1'")
+        if cursor.fetchone():
+            cursor.execute("""
+            INSERT OR REPLACE INTO lead_enrichments 
+            (lead_id, company_intelligence, estimated_tech_stack, key_topics, friction_points, icebreakers, enriched_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             "lead-1",
             "CloudScale is a high-growth cloud infrastructure and observability company. Scaled to 500+ enterprise clients requiring low-latency telemetry pipelines.",

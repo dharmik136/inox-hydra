@@ -3,14 +3,15 @@ import { AnimatePresence, motion } from "motion/react";
 import { PanelRightClose } from "lucide-react";
 import { PreviewStage } from "./PreviewStage";
 import { AuditPanel } from "./AuditPanel";
+import { EvidencePanel } from "./EvidencePanel";
 import { MediaPanel } from "./MediaPanel";
 import { BrandPanel } from "./BrandPanel";
 import { PromptPanel } from "./PromptPanel";
 import { cn } from "@/lib/utils";
 
-type InspectorMode = "Preview" | "Audit" | "Media" | "Brand" | "Prompt";
+type InspectorMode = "Preview" | "Audit" | "Evidence" | "Media" | "Brand" | "Prompt";
 
-const MODES: InspectorMode[] = ["Preview", "Audit", "Media", "Brand", "Prompt"];
+const MODES: InspectorMode[] = ["Preview", "Audit", "Evidence", "Media", "Brand", "Prompt"];
 
 interface InspectorProps {
   open: boolean;
@@ -72,6 +73,7 @@ export function Inspector({ open, onClose, draft }: InspectorProps) {
             <div className="flex-1 overflow-y-auto p-4">
               {mode === "Preview" && <PreviewStage draft={draft} />}
               {mode === "Audit" && <AuditPanel draft={draft} />}
+              {mode === "Evidence" && <EvidencePanel />}
               {mode === "Media" && <MediaPanel />}
               {mode === "Brand" && <BrandPanel />}
               {mode === "Prompt" && <PromptPanel />}

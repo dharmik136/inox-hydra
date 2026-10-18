@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ChevronDown, ExternalLink } from "lucide-react";
+import { Activity, ChevronDown, ExternalLink } from "lucide-react";
 import { fetchPostsInsights, launchBridge, type PostInsight, type PostsInsights } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +11,13 @@ import { cn } from "@/lib/utils";
  * post. The two settled posts furthest above your usual are marked as worth
  * repurposing, because their form already worked for your audience.
  */
-export function PostsSurface({ onOpenLead }: { onOpenLead: (leadId: string) => void }) {
+export function PostsSurface({
+  onOpenLead,
+  onOpenActivity,
+}: {
+  onOpenLead: (leadId: string) => void;
+  onOpenActivity?: () => void;
+}) {
   const [data, setData] = useState<PostsInsights | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
@@ -34,8 +40,22 @@ export function PostsSurface({ onOpenLead }: { onOpenLead: (leadId: string) => v
 
   return (
     <article className="mx-auto max-w-[80ch] px-8 py-8">
-      <p className="studio-label">Posts</p>
-      <h2 className="studio-title mt-2">What worked, and who it brought</h2>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="studio-label">Posts</p>
+          <h2 className="studio-title mt-2">What worked, and who it brought</h2>
+        </div>
+        {onOpenActivity && (
+          <button
+            type="button"
+            onClick={onOpenActivity}
+            className="flex items-center gap-1.5 rounded-md border border-edge bg-soft px-3 py-1.5 text-[12px] font-medium text-ink-primary transition-[filter] hover:brightness-110"
+          >
+            <Activity className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+            Live Ingestion Stream
+          </button>
+        )}
+      </div>
       <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
         {usualLine
           ? `Your usual, the median of your posts older than ${data.settled_after_days} days: ${usualLine}.`

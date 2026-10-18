@@ -338,6 +338,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--force", action="store_true", help="Ignore the ETag cache")
     p.set_defaults(func=cmd_update)
 
+    p = sub.add_parser("monitor", help="Live stream monitor for data ingestion and bridge activity")
+    p.add_argument("--host", default="127.0.0.1", help="Studio host (default: 127.0.0.1)")
+    p.add_argument("--port", type=int, default=8000, help="Studio port (default: 8000)")
+    p.add_argument("--interval", type=float, default=2.0, help="Poll interval in seconds (default: 2.0)")
+    p.add_argument("--limit", type=int, default=5, help="Items per category to display (default: 5)")
+    p.add_argument("--once", action="store_true", help="Print current status once and exit")
+    p.add_argument("--json", action="store_true", help="Output stream as JSON")
+    p.set_defaults(func=lambda args: __import__("studio.monitor", fromlist=["run_monitor"]).run_monitor(
+        host=args.host,
+        port=args.port,
+        interval=args.interval,
+        limit=args.limit,
+        once=args.once,
+        as_json=args.json,
+    ))
+
     return parser
 
 

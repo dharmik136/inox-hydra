@@ -68,7 +68,7 @@ const PANEL_PATHS = [
  * host permission the user granted at install, which is why this works and a
  * page script would not.
  */
-function getStudioToken() {
+function readTokenCookie() {
   return new Promise((resolve) => {
     let remaining = STUDIO_COOKIE_ORIGINS.length;
     let found = null;
@@ -89,6 +89,19 @@ function getStudioToken() {
       resolve(null);
     }
   });
+}
+
+async function getStudioToken() {
+  let token = await readTokenCookie();
+  if (token) return token;
+
+  try {
+    await fetch(STUDIO_ORIGIN + "/", { method: "GET", credentials: "include" });
+    token = await readTokenCookie();
+  } catch (err) {
+    // Studio server might not be running yet.
+  }
+  return token;
 }
 
 /**
@@ -361,6 +374,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.action === "INJECT_INTERCEPTOR") {
+    if (sender.tab && sender.tab.id) {
+      chrome.scripting.executeScript({
+        target: { tabId: sender.tab.id },
+        files: ["voyager_interceptor.js"],
+        world: "MAIN"
+      }).then(() => sendResponse({ status: "success" }))
+        .catch(err => sendResponse({ status: "error", error: err.message }));
+      return true;
+    }
+  }
+
   if (message.action === "INGEST_ANALYTICS") {
     const cleanPayload = sanitizeTelemetryPayload(message.payload);
     studioFetch("/api/analytics/ingest", {
@@ -371,5 +396,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(data => sendResponse({ status: "success", data }))
       .catch(err => sendResponse({ status: "error", error: err.message }));
     return true;
+  }
+});
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === "loading" && tab.url && tab.url.includes("linkedin.com")) {
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      files: ["voyager_interceptor.js"],
+      world: "MAIN"
+    }).catch(() => {});
   }
 });

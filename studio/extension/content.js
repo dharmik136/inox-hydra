@@ -54,6 +54,13 @@ function studioApi(path, body, method) {
 // Voyager response structures to our internal data model. When fields move,
 // updating the schema fixes extraction without touching this code.
 
+// Ensure MAIN world interceptor is injected
+try {
+  chrome.runtime.sendMessage({ action: "INJECT_INTERCEPTOR" }, () => {
+    if (chrome.runtime.lastError) {}
+  });
+} catch (e) {}
+
 const voyagerCaptureStats = {
   total: 0,
   successful: 0,
@@ -963,13 +970,13 @@ function observeAndCaptureEngagers() {
       }
       writes.push(
         studioApi("/api/v1/crm/interactions/ingest", {
-            full_name: lead.name,
+            full_name: lead.name || "Unknown",
             // Only a real profile URL identifies a person. This used to fall
             // back to a urn:li:person: minted from a hash of their display
             // name, which put a forged key into LinkedIn's own namespace.
             linkedin_urn: lead.profile_url,
-            headline: lead.headline,
-            company: lead.company,
+            headline: lead.headline || "",
+            company: lead.company || "",
             interaction_type: (lead.engagement_type || "COMMENT").toUpperCase(),
             // Only words the person wrote. A reaction sent lead.notes here,
             // "Reacted to post on LinkedIn", which was stored and shown as

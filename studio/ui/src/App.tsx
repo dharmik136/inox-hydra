@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { PanelRight, Search } from "lucide-react";
+import { Activity, PanelRight, Search } from "lucide-react";
 import { StudioRail } from "@/components/StudioRail";
 import { NavigationTray } from "@/components/NavigationTray";
 import { ContextBar, type SaveState } from "@/components/ContextBar";
@@ -10,6 +10,7 @@ import { Inspector } from "@/components/Inspector";
 import { LeadsSurface } from "@/components/LeadsSurface";
 import { OnboardingSurface } from "@/components/OnboardingSurface";
 import { TodaySurface } from "@/components/TodaySurface";
+import { ActivitySurface } from "@/components/ActivitySurface";
 import { PostsSurface } from "@/components/PostsSurface";
 import { OutboundSurface } from "@/components/OutboundSurface";
 import { PatternsSurface } from "@/components/PatternsSurface";
@@ -363,6 +364,20 @@ export default function App() {
             <span className="min-w-0 flex-1 truncate text-[13px] text-ink-muted">{section.blurb}</span>
             <button
               type="button"
+              onClick={() => setActive("activity")}
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors",
+                active === "activity"
+                  ? "border-signal-orange bg-soft text-ink-primary"
+                  : "border-edge bg-canvas text-ink-muted hover:border-edge-strong hover:text-ink-primary",
+              )}
+            >
+              <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true" />
+              <Activity className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              <span>Live Activity</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setPaletteOpen(true)}
               aria-keyshortcuts="Control+K Meta+K"
               className="flex shrink-0 items-center gap-2 rounded-md border border-edge bg-canvas py-1 pr-1.5 pl-2.5 text-[12px] text-ink-muted transition-colors duration-(--studio-motion-fast) hover:border-edge-strong hover:text-ink-primary"
@@ -399,6 +414,16 @@ export default function App() {
               {active === "today" && (
                 <TodaySurface
                   onOpenSetup={() => setActive("setup")}
+                  onOpenActivity={() => setActive("activity")}
+                  onOpenLead={(leadId) => {
+                    focusNonce.current += 1;
+                    setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
+                    setActive("leads");
+                  }}
+                />
+              )}
+              {active === "activity" && (
+                <ActivitySurface
                   onOpenLead={(leadId) => {
                     focusNonce.current += 1;
                     setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
@@ -409,6 +434,7 @@ export default function App() {
               {active === "leads" && <LeadsSurface focus={focusFor("leads")} />}
               {active === "posts" && (
                 <PostsSurface
+                  onOpenActivity={() => setActive("activity")}
                   onOpenLead={(leadId) => {
                     focusNonce.current += 1;
                     setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });

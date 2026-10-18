@@ -115,9 +115,9 @@
     const path = window.location.pathname;
     if (/^\/analytics\/post-summary\//.test(path)) return "post_analytics";
     if (!/^\/in\/[^/]+/.test(path)) return path.startsWith("/feed") ? "feed" : "other";
-    if (/\/recent-activity\/(all|shares)\/?/.test(path)) return "activity_posts";
-    if (/\/recent-activity\/comments\/?/.test(path)) return "activity_comments";
-    if (/\/recent-activity\/reactions\/?/.test(path)) return "activity_reactions";
+    if (/\/(?:detail\/)?recent-activity\/comments\/?/.test(path)) return "activity_comments";
+    if (/\/(?:detail\/)?recent-activity\/reactions\/?/.test(path)) return "activity_reactions";
+    if (/\/(?:detail\/)?recent-activity(?:\/(?:all|shares|posts))?\/?(?:$|\?)/.test(path)) return "activity_posts";
     if (/\/overlay\/contact-info\/?/.test(path)) return "contact";
     if (/\/details\/skills\/?/.test(path)) return "skills";
     if (/\/details\/experience\/?/.test(path)) return "details_experience";
@@ -324,7 +324,7 @@
   }
 
   const EMPLOYMENT = /^(full-time|part-time|internship|contract|freelance|self-employed|apprenticeship|seasonal|temporary)$/i;
-  const DATE_LINE = /\b(19|20)\d{2}\b.*(-|–|present)|\bpresent\b/i;
+  const DATE_LINE = /\b(19|20)\d{2}\b.*(-|\u2013|present)|\bpresent\b/i;
   const DURATION_ONLY = /^(\d+\s+yrs?)?\s*(\d+\s+mos?)?$/i;
 
   // The experience section as a stream: each top-level list item is one role,
@@ -531,20 +531,115 @@
   // Activity: posts, comments, reactions
   // ---------------------------------------------------------------
 
-  function cardUrn(card) {
-    const attr = card.getAttribute("data-urn") || card.getAttribute("data-id") || "";
-    const match = /urn:li:activity:\d+/.exec(attr);
-    return match ? match[0] : null;
+  function extractActivityUrn(text) {
+    if (!text) return null;
+    const direct = /urn:li:(?:activity|share|ugcPost):(\d+)/.exec(text);
+    if (direct) return `urn:li:activity:${direct[1]}`;
+    const slug = /-activity-(\d{6,})/.exec(text);
+    if (slug) return `urn:li:activity:${slug[1]}`;
+    const bareUrn = /urn:li:activity:\d+/.exec(text);
+    if (bareUrn) return bareUrn[0];
+    const digits = /^\d{10,25}$/.exec(text.trim());
+    if (digits) return `urn:li:activity:${digits[0]}`;
+    return null;
   }
 
+  function cardUrn(card) {
+    if (!card) return null;
+    for (const attr of ["data-urn", "data-id", "data-activity-urn", "data-chameleon-urn"]) {
+      const val = card.getAttribute && card.getAttribute(attr);
+      const urn = extractActivityUrn(val);
+      if (urn) return urn;
+    }
+    const inners = card.querySelectorAll("[data-urn], [data-id], [data-activity-urn], [data-chameleon-urn]");
+    for (const inner of inners) {
+      for (const attr of ["data-urn", "data-id", "data-activity-urn", "data-chameleon-urn"]) {
+        const val = inner.getAttribute(attr);
+        const urn = extractActivityUrn(val);
+        if (urn) return urn;
+      }
+    }
+    const links = card.querySelectorAll("a[href*='/feed/update/urn:li:'], a[href*='-activity-'], a[href*='urn:li:activity:'], a[href*='urn:li:share:'], a[href*='urn:li:ugcPost:']");
+    for (const link of links) {
+      const urn = extractActivityUrn(link.getAttribute("href"));
+      if (urn) return urn;
+    }
+    const els = [card, ...Array.from(card.querySelectorAll("*"))];
+    for (let i = 0; i < els.length; i++) {
+      const el = els[i];
+      for (const k in el) {
+        if (k.startsWith("__reactProps")) {
+          try {
+            const urn = extractActivityUrn(JSON.stringify(el[k]));
+            if (urn) return urn;
+          } catch (e) {}
+        }
+      }
+    }
+    return null;
+  }
+
+  const CARD_CONTAINERS = [
+    'div[id^="expanded"][id*="FeedType_"]',
+    "li.profile-creator-shared-feed-update__container",
+    ".profile-creator-shared-feed-update__container",
+    '[data-view-name="feed-full-update"]',
+    ".feed-shared-update-v2",
+    ".occludable-update",
+    '[data-urn*="activity:"]',
+    '[data-urn*="ugcPost"]',
+    '[data-urn*="share"]',
+    '[data-id*="activity:"]',
+    '[data-id*="ugcPost"]',
+    '[data-id*="share"]',
+    "div[data-activity-urn]",
+    "div[data-chameleon-urn]",
+    '[data-test-id="main-feed-activity-card"]',
+    ".main-feed-activity-card",
+  ];
+
   function activityCards() {
-    return Array.from(document.querySelectorAll('[data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"]'))
-      .filter((card) => !card.parentElement.closest('[data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"]'));
+    const selector = CARD_CONTAINERS.join(", ");
+    let list = Array.from(document.querySelectorAll(selector));
+
+    if (!list.length) {
+      const links = Array.from(document.querySelectorAll(
+        "a[href*='/feed/update/urn:li:'], a[href*='-activity-'], a[href*='urn:li:activity:']"
+      ));
+      const seenContainers = new Set();
+      for (const link of links) {
+        const c = link.closest("article, li, [data-view-name], div[class*='update'], div[class*='feed'], div[class*='activity'], div[class*='card']") || link.parentElement;
+        if (c && !seenContainers.has(c)) {
+          seenContainers.add(c);
+          list.push(c);
+        }
+      }
+    }
+
+    const topCards = list.filter((card) => {
+      let parent = card.parentElement;
+      while (parent && parent !== document.body) {
+        if (parent.matches && parent.matches(selector)) return false;
+        parent = parent.parentElement;
+      }
+      return true;
+    });
+
+    const seenUrns = new Set();
+    const result = [];
+    for (const card of topCards) {
+      const urn = cardUrn(card);
+      if (urn && !seenUrns.has(urn)) {
+        seenUrns.add(urn);
+        result.push(card);
+      }
+    }
+    return result;
   }
 
   function cardActor(card) {
     const link = card.querySelector(
-      ".update-components-actor__meta-link, a.update-components-actor__image, .update-components-actor a[href*='/in/']"
+      ".update-components-actor__meta-link, a.update-components-actor__image, .update-components-actor a[href*='/in/'], .feed-shared-actor a[href*='/in/'], a[data-field='actor_name'], a.app-aware-link[href*='/in/']"
     );
     return link ? vanityOf(link.getAttribute("href")) : "";
   }
@@ -554,11 +649,23 @@
   // aria-hidden span this used to read no longer exists, so every one of 302
   // imported reactions and comments came back with no author.
   function cardActorName(card) {
-    const title = card.querySelector(".update-components-actor__title, .update-components-actor__name");
-    if (!title) return null;
-    const firstLine = (title.innerText || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
-    const name = firstLine.replace(/\s*•\s*(1st|2nd|3rd\+?|following|you)\s*$/i, "").replace(/\s*(Verified|Premium)\s*$/i, "").trim();
-    return name || null;
+    const title = card.querySelector(
+      ".update-components-actor__title, .update-components-actor__name, .feed-shared-actor__title, .feed-shared-actor__name, a[data-field='actor_name'], [data-anonymize='person-name'], .update-components-actor__meta a, .feed-shared-actor a"
+    );
+    if (title) {
+      const firstLine = (title.innerText || "").split("\n").map((l) => l.trim()).find(Boolean) || "";
+      const name = firstLine.replace(/\s*•\s*(1st|2nd|3rd\+?|following|you)\s*$/i, "").replace(/\s*(Verified|Premium)\s*$/i, "").trim();
+      if (name) return name;
+    }
+    const lineList = lines(card);
+    const actionIdx = lineList.findIndex((l) => /(commented|likes\b|liked\b|supports\b|supported\b|celebrates\b|celebrated\b|loves\b|loved\b|finds\b|job update)/i.test(l));
+    if (actionIdx !== -1 && actionIdx + 1 < lineList.length) {
+      const candidate = lineList[actionIdx + 1];
+      if (candidate && candidate.length < 60 && !candidate.startsWith("http")) {
+        return candidate.replace(/\s*•.*$/, "").trim();
+      }
+    }
+    return null;
   }
 
   // The post's text with its line breaks kept. It went through clean(), which
@@ -568,7 +675,18 @@
   // line is what a reader sees before "see more", so it is the one line the
   // studio most needs to have as written.
   function cardText(card) {
-    const el = first(card, [".update-components-text", ".feed-shared-inline-show-more-text", ".feed-shared-update-v2__description"]);
+    const el = first(card, [
+      ".update-components-text",
+      ".feed-shared-inline-show-more-text",
+      ".feed-shared-update-v2__description",
+      '[data-view-name="feed-full-update-description"]',
+      ".feed-shared-text",
+      ".feed-shared-text-view",
+      '[data-test-id="main-feed-activity-card__commentary"]',
+      ".attributed-text-segment-list__container",
+      '[data-testid="expandable-text-box"]',
+      '[data-test-id="expandable-text-box"]',
+    ]);
     if (!el) return null;
     const text = (el.innerText || "")
       .split("\n")
@@ -581,7 +699,17 @@
   }
 
   function cardHeader(card) {
-    return textOf(card, [".update-components-header__text-view", ".update-components-header"]) || "";
+    const direct = textOf(card, [
+      ".update-components-header__text-view",
+      ".update-components-header",
+      ".feed-shared-header",
+      ".feed-shared-update-v2__header",
+      '[data-view-name="feed-full-update-header"]',
+    ]);
+    if (direct) return direct;
+    const lineList = lines(card);
+    const actionLine = lineList.find((l) => /(commented|likes\b|liked\b|supports\b|supported\b|celebrates\b|celebrated\b|loves\b|loved\b|finds\b)/i.test(l));
+    return actionLine || "";
   }
 
   function cardCounts(card) {
@@ -593,6 +721,10 @@
     counts.reactions = parseCount(textOf(card, [
       ".social-details-social-counts__reactions-count",
       ".social-details-social-counts__social-proof-fallback-number",
+      ".social-details-social-counts__count",
+      "[data-test-id='social-actions__reactions-count']",
+      "[data-testid='social-actions__reactions-count']",
+      "button[aria-label*='reaction']",
     ]));
     if (counts.reactions === null) {
       const named = card.querySelector("button[aria-label$=' others' i], button[aria-label$=' other' i]");
@@ -602,6 +734,7 @@
     card.querySelectorAll("button, span, a").forEach((el) => {
       const text = clean(el.getAttribute("aria-label") || el.innerText || "");
       if (text.length > 60) return;
+      if (counts.reactions === null && /\b(\d[\d,]*)\s+(?:reactions?|likes?)\b/i.test(text)) counts.reactions = parseCount(text);
       if (counts.comments === null && /\bcomments?\b/i.test(text)) counts.comments = parseCount(text);
       if (counts.reposts === null && /\breposts?\b/i.test(text)) counts.reposts = parseCount(text);
       if (counts.impressions === null && /\bimpressions?\b/i.test(text)) counts.impressions = parseCount(text);
@@ -610,28 +743,89 @@
   }
 
   const REACTION_WORDS = [
-    ["celebrates", "celebrate"], ["supports", "support"], ["loves", "love"],
-    ["finds this insightful", "insightful"], ["finds this funny", "funny"], ["likes", "like"],
+    ["celebrates", "celebrate"], ["celebrated", "celebrate"],
+    ["supports", "support"], ["supported", "support"],
+    ["loves", "love"], ["loved", "love"],
+    ["finds this insightful", "insightful"], ["insightful", "insightful"],
+    ["finds this funny", "funny"], ["funny", "funny"],
+    ["likes", "like"], ["liked", "like"],
   ];
+
+  const TIME_BADGE = /^(?:\(edited\)\s*)?\d+\s*(?:s|m|h|d|w|mo|yr|y)$/i;
+
+  function extractCommentText(commentEl) {
+    const direct = textOf(commentEl, [
+      ".comments-comment-item__main-content",
+      ".update-components-text",
+      ".comments-comment-item-content-body",
+      ".comments-comment-item__text",
+      ".feed-shared-inline-show-more-text",
+      ".comments-comment-item__highlighted-text",
+      ".comments-highlighted-comment",
+      ".comment-body",
+    ]);
+    if (direct) return direct;
+
+    const paragraphs = Array.from(commentEl.querySelectorAll("p"));
+    let seenTime = false;
+    const bodyPs = [];
+    for (const p of paragraphs) {
+      const text = clean(p.innerText || p.textContent);
+      if (!text) continue;
+      if (!seenTime) {
+        if (TIME_BADGE.test(text)) seenTime = true;
+        continue;
+      }
+      if (/^[\d\s]+$/.test(text) || /\bimpressions?\b/i.test(text) || /\breactions?\b/i.test(text) || text === "Like" || text === "Reply") break;
+      bodyPs.push(text);
+    }
+    if (bodyPs.length) return bodyPs.join("\n").replace(/\n?…\s*more$/i, "").trim();
+
+    const lineList = lines(commentEl);
+    let started = false;
+    const bodyLines = [];
+    for (const l of lineList) {
+      if (!started) {
+        if (TIME_BADGE.test(l)) started = true;
+        continue;
+      }
+      if (/^[\d\s]+$/.test(l) || /\bimpressions?\b/i.test(l) || /\breactions?\b/i.test(l) || l === "Author" || l === "Like" || l === "Reply") break;
+      bodyLines.push(l);
+    }
+    return bodyLines.join("\n").replace(/\n?…\s*more$/i, "").trim() || null;
+  }
 
   function readActivity(kind, me) {
     const items = [];
     for (const card of activityCards()) {
       const urn = cardUrn(card);
       if (!urn) continue;
-      const actor = cardActor(card);
+      let actor = cardActor(card);
+      const isRepostCard = cardHeader(card).toLowerCase().includes("repost");
 
       if (kind === "activity_posts") {
-        // A repost's header names you and its actor is the original author.
-        // The backend skips it by actor; it is sent with the true actor.
+        // If actor could not be read from classes, or is /in/me, but there is no repost header
+        // on the creator's own activity posts feed, it is the creator's post.
+        if ((!actor || actor === "me" || actor === me) && !isRepostCard) {
+          actor = me;
+        } else if (!actor && isRepostCard) {
+          actor = "repost";
+        }
         items.push({ activity_urn: urn, actor, text: cardText(card), ...cardCounts(card) });
       } else if (kind === "activity_comments") {
-        const mine = Array.from(card.querySelectorAll("article, .comments-comment-item")).filter((c) => {
-          const link = c.querySelector("a[href*='/in/']");
-          return link && vanityOf(link.getAttribute("href")) === me;
+        const commentEls = Array.from(card.querySelectorAll(
+          "article, .comments-comment-item, [data-view-name='feed-full-update-comment'], .feed-shared-main-content--comment, div[data-id^='urn:li:comment:'], .comments-comments-list__comment-item, div[id^='replaceableComment_urn:li:comment:']"
+        ));
+        let mine = commentEls.filter((c) => {
+          const firstLink = c.querySelector("a[href*='/in/']");
+          const v = firstLink ? vanityOf(firstLink.getAttribute("href")) : "";
+          if (v === me || v === "me") return true;
+          const t = c.innerText || "";
+          if (t.includes("• You")) return true;
+          return false;
         });
         for (const comment of mine) {
-          const text = textOf(comment, [".comments-comment-item__main-content", ".update-components-text", ".comments-comment-item-content-body"]);
+          const text = extractCommentText(comment);
           if (!text) continue;
           items.push({
             target_activity_urn: urn, kind: "comment", my_text: text,
@@ -642,7 +836,7 @@
         const header = cardHeader(card).toLowerCase();
         const match = REACTION_WORDS.find(([word]) => header.includes(word));
         items.push({
-          target_activity_urn: urn, kind: "reaction", reaction_kind: match ? match[1] : null,
+          target_activity_urn: urn, kind: "reaction", reaction_kind: match ? match[1] : "like",
           target_author: cardActorName(card), target_excerpt: (cardText(card) || "").slice(0, 300),
         });
       }
@@ -662,7 +856,13 @@
     reportCapture(kind, cards.length, items.length, drift);
 
     const fresh = items.filter((item) => {
-      const key = JSON.stringify([item.activity_urn || item.target_activity_urn, item.kind, item.my_text]);
+      const key = JSON.stringify([
+        item.activity_urn || item.target_activity_urn,
+        item.kind,
+        item.my_text,
+        item.text ? item.text.length : 0,
+        item.reactions
+      ]);
       if (sentKeys.has(key)) return false;
       sentKeys.add(key);
       return true;
@@ -746,7 +946,7 @@
 
   const IMPORT_KIND = { activity_posts: "posts", activity_comments: "comments", activity_reactions: "reactions" };
   const MAX_ROUNDS = 250;
-  const STALL_ROUNDS = 4;
+  const STALL_ROUNDS = 8;
 
   let importRunning = false;
   let stopRequested = false;
@@ -794,7 +994,8 @@
 
   function clickShowMore() {
     const button = Array.from(document.querySelectorAll("button")).find((b) =>
-      /^(show more results|see more|load more)/i.test(clean(b.innerText))
+      /^(show more results|see more|load more|show more)/i.test(clean(b.innerText || b.getAttribute("aria-label") || "")) ||
+      (b.classList && b.classList.contains("scaffold-finite-scroll__load-button"))
     );
     if (button && !button.disabled) {
       button.click();
@@ -807,6 +1008,7 @@
     if (importRunning) return;
     importRunning = true;
     stopRequested = false;
+    sentKeys.clear();
     await studio("/api/v1/self/imports/event", { id: request.id, event: "started" });
 
     const noun = { posts: "posts", comments: "comments", reactions: "reactions" }[IMPORT_KIND[kind]];
@@ -826,19 +1028,46 @@
       stalled = added === 0 ? stalled + 1 : 0;
       if (stalled >= STALL_ROUNDS) break; // the list stopped growing: the end
 
-      if (!clickShowMore()) window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
+      if (!clickShowMore()) {
+        const cards = activityCards();
+        if (cards.length > 0) {
+          try { cards[cards.length - 1].scrollIntoView({ behavior: "smooth", block: "end" }); } catch (err) {}
+        }
+        window.scrollTo({ top: Math.max(document.body.scrollHeight, document.documentElement.scrollHeight), behavior: "smooth" });
+      }
       await humanPause();
     }
 
-    await studio("/api/v1/self/imports/event", { id: request.id, event: "finished", items_seen: total, outcome });
+    const finishRes = await studio("/api/v1/self/imports/event", { id: request.id, event: "finished", items_seen: total, outcome });
+    importRunning = false;
+
+    if (outcome === "stopped") {
+      banner(`Stopped. ${total} ${noun} imported.`, false);
+      clearBanner(6000);
+      return;
+    }
+
+    if (finishRes && finishRes.next_url) {
+      banner(`Done importing ${noun} (${total} imported). Advancing to ${finishRes.next_kind}...`, false);
+      await pause(1800);
+      window.location.href = finishRes.next_url;
+      return;
+    }
+
+    if (finishRes && finishRes.all_completed) {
+      banner("All activity streams synced successfully!", false);
+      clearBanner(8000);
+      return;
+    }
+
     banner(outcome === "stopped" ? `Stopped. ${total} ${noun} imported.` : `Done. ${total} ${noun} imported.`, false);
     clearBanner(6000);
-    importRunning = false;
   }
 
   async function onActivityPage(kind) {
     const me = await getConfirmedVanity();
-    if (!me || vanityOf(window.location.href) !== me) return; // someone else's activity: not read
+    const currVanity = vanityOf(window.location.href);
+    if (!me || (currVanity !== me && currVanity !== "me")) return; // someone else's activity: not read
 
     // Whatever is on screen is read either way. Scrolling needs a request.
     await sendActivity(kind, me);
@@ -865,8 +1094,17 @@
   // Wiring
   // ---------------------------------------------------------------
 
+  function ensureInterceptor() {
+    try {
+      chrome.runtime.sendMessage({ action: "INJECT_INTERCEPTOR" }, () => {
+        if (chrome.runtime.lastError) {}
+      });
+    } catch (e) {}
+  }
+
   let settleTimer = null;
   function onRoute() {
+    ensureInterceptor();
     noteMeRedirect();
     if (settleTimer) clearTimeout(settleTimer);
     // LinkedIn renders sections after the route changes. Waiting lets them
@@ -894,9 +1132,26 @@
     onRoute();
   });
   window.addEventListener("popstate", onRoute);
+  ensureInterceptor();
   onRoute();
 
   heartbeat();
   setInterval(heartbeat, HEARTBEAT_MS);
-  document.addEventListener("visibilitychange", heartbeat);
+  document.addEventListener("visibilitychange", () => {
+    heartbeat();
+    if (document.visibilityState === "visible") onRoute();
+  });
+
+  let scrollDebounce = null;
+  window.addEventListener("scroll", () => {
+    const kind = pageKind();
+    if (!IMPORT_KIND[kind]) return;
+    if (scrollDebounce) clearTimeout(scrollDebounce);
+    scrollDebounce = setTimeout(async () => {
+      const me = await getConfirmedVanity();
+      const currentVanity = vanityOf(window.location.href);
+      if (!me || (currentVanity !== me && currentVanity !== "me")) return;
+      await sendActivity(kind, me);
+    }, 1200);
+  }, { passive: true });
 })();

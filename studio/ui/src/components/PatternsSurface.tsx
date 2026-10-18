@@ -2,9 +2,14 @@ import { useEffect, useState } from "react";
 import {
   fetchCadenceInsights,
   fetchPatternsInsights,
+  fetchContrastInsights,
+  fetchTopicAttribution,
   type CadenceInsights,
   type PatternFinding,
   type PatternsInsights,
+  type ContrastInsights,
+  type ContrastFinding,
+  type TopicAttributionInsights,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -22,13 +27,22 @@ import { cn } from "@/lib/utils";
 export function PatternsSurface() {
   const [patterns, setPatterns] = useState<PatternsInsights | null>(null);
   const [cadence, setCadence] = useState<CadenceInsights | null>(null);
+  const [contrasts, setContrasts] = useState<ContrastInsights | null>(null);
+  const [attribution, setAttribution] = useState<TopicAttributionInsights | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
-    Promise.all([fetchPatternsInsights(), fetchCadenceInsights()])
-      .then(([p, c]) => {
+    Promise.all([
+      fetchPatternsInsights(),
+      fetchCadenceInsights(),
+      fetchContrastInsights().catch(() => null),
+      fetchTopicAttribution().catch(() => null),
+    ])
+      .then(([p, c, co, a]) => {
         setPatterns(p);
         setCadence(c);
+        if (co) setContrasts(co);
+        if (a) setAttribution(a);
       })
       .catch(() => setFailed(true));
   }, []);
@@ -123,6 +137,24 @@ export function PatternsSurface() {
           </p>
         </div>
       </section>
+
+      {contrasts && contrasts.contrasts.length > 0 && (
+        <section className="mt-10">
+          <p className="studio-label">Feature Contrasts</p>
+          <h3 className="studio-title mt-2 text-[15px]">Binary feature comparisons</h3>
+          <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
+            Compares settled posts older than 7 days across structural forms.
+            Requires at least {contrasts.min_arm_size} posts per arm before concluding.
+          </p>
+          <ul className="mt-4 flex flex-col divide-y divide-edge border-y border-edge">
+            {contrasts.contrasts.map((c) => (
+              <ContrastRow key={c.key} contrast={c} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {attribution && <TopicAttributionSection attribution={attribution} />}
     </article>
   );
 }
@@ -150,6 +182,92 @@ function PatternRow({ pattern, muted = false }: { pattern: PatternFinding; muted
         {pattern.different_period && ` · MOSTLY ${pattern.typical_year_with} AGAINST MOSTLY ${pattern.typical_year_without}`}
       </p>
     </li>
+  );
+}
+
+function ContrastRow({ contrast }: { contrast: ContrastFinding }) {
+  const isConclusive = contrast.status === "conclusive";
+  const ratio = contrast.ratio ?? null;
+
+  return (
+    <li className="py-2.5">
+      <div className="flex items-baseline justify-between gap-4">
+        <p className={cn("text-[13px]", isConclusive ? "text-ink-primary" : "text-ink-secondary")}>
+          {contrast.label}
+        </p>
+        {isConclusive && ratio !== null ? (
+          <p
+            className={cn(
+              "studio-meta shrink-0 text-[11px] tabular-nums",
+              ratio >= 1.25 ? "text-signal-green-text" : ratio <= 0.8 ? "text-signal-orange-text" : "text-ink-secondary"
+            )}
+          >
+            {ratio.toFixed(2)}x
+          </p>
+        ) : (
+          <span className="studio-meta shrink-0 text-[10px] text-ink-muted">ABSTAIN (N &lt; 8)</span>
+        )}
+      </div>
+      <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
+        {isConclusive
+          ? `MEDIAN ${contrast.median_with} REACTIONS ON ${contrast.n_with} POSTS WITH IT, ${contrast.median_without} ON ${contrast.n_without} WITHOUT`
+          : `CURRENT: ${contrast.n_with} WITH, ${contrast.n_without} WITHOUT (NEEDS AT LEAST ${contrast.min_required} PER ARM)`}
+      </p>
+    </li>
+  );
+}
+
+function TopicAttributionSection({ attribution }: { attribution: TopicAttributionInsights }) {
+  if (attribution.status === "cold_start" || !attribution.topics.length) {
+    return (
+      <section className="mt-10">
+        <p className="studio-label">Topic to Qualified Lead Attribution</p>
+        <p className="mt-2 text-[13px] text-ink-secondary">{attribution.summary_sentence}</p>
+        <Note>PUBLISH OR INGEST POSTS TO VIEW QUALIFIED LEAD ATTRIBUTION BY TOPIC.</Note>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mt-10">
+      <p className="studio-label">Topic to Qualified Lead Attribution</p>
+      <h3 className="studio-title mt-2 text-[15px]">Which topics bring qualified pipeline</h3>
+      <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
+        {attribution.summary_sentence}
+      </p>
+      <div className="mt-4 overflow-x-auto border-y border-edge">
+        <table className="w-full text-left text-[12px]">
+          <thead>
+            <tr className="border-b border-edge text-[10px] text-ink-muted uppercase">
+              <th className="py-2 pr-4 font-normal">Topic</th>
+              <th className="py-2 px-3 text-right font-normal">Posts</th>
+              <th className="py-2 px-3 text-right font-normal">Reactions</th>
+              <th className="py-2 px-3 text-right font-normal">Qualified Leads</th>
+              <th className="py-2 pl-3 text-right font-normal">Conversion Rate</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-edge">
+            {attribution.topics.map((t) => {
+              const count = t.post_count ?? t.posts_count ?? 0;
+              const rate = t.lead_conversion_rate != null
+                ? (t.lead_conversion_rate * 100).toFixed(1)
+                : ((t.qualified_leads / Math.max(1, count)) * 100).toFixed(1);
+              return (
+                <tr key={t.topic} className="py-2">
+                  <td className="py-2.5 pr-4 text-ink-primary font-medium">{t.topic}</td>
+                  <td className="py-2.5 px-3 text-right tabular-nums text-ink-secondary">{count}</td>
+                  <td className="py-2.5 px-3 text-right tabular-nums text-ink-secondary">{t.total_reactions}</td>
+                  <td className="py-2.5 px-3 text-right tabular-nums text-ink-primary font-semibold">{t.qualified_leads}</td>
+                  <td className="py-2.5 pl-3 text-right tabular-nums text-signal-green-text font-medium">
+                    {rate}%
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

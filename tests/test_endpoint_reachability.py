@@ -107,15 +107,46 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 #
 # Then 163 -> 166, with Multi-Tenant Creator Profiles:
 # /api/v1/accounts, /api/v1/accounts/switch, and /api/v1/accounts/*, all three
+# Then 163 -> 166, with Multi-Tenant Creator Profiles:
+# /api/v1/accounts, /api/v1/accounts/switch, and /api/v1/accounts/*, all three
 # called by the AccountSwitcher in StudioRail and NavigationTray, so reached
 # moves with the total and unreachable count stays at 84.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 166
-REACHED_BY_INTERFACE = 82
+# Then 166 -> 167, with CP1 Contrast Engine:
+# /api/v1/insights/contrasts, computing binary feature contrasts with n>=8 per arm.
+#
+# Then 167 -> 168, with CP4 Topic-to-Lead Attribution and CP1 Contrast Surfacing:
+# /api/v1/insights/attribution added (+1 declared path).
+# Both /api/v1/insights/contrasts and /api/v1/insights/attribution are now surfaced
+# in PatternsSurface and api.ts (+2 reached, -1 unreachable).
+# Reached moves 82 -> 84, unreachable drops 85 -> 84, total moves 167 -> 168.
+# ---------------------------------------------------------------------------
+# Then 168 -> 169, with CP2 Evidence-Backed Composer Panel and CP3 Retrieval:
+# /api/v1/insights/evidence added (+1 declared path, surfaced in EvidencePanel and api.ts).
+# Reached moves 84 -> 85, unreachable stays at 84, total moves 168 -> 169.
+# ---------------------------------------------------------------------------
+# Then 169 -> 170, with Autonomous History Sync Orchestrator:
+# /api/v1/self/sync-all added (+1 declared path, surfaced in OnboardingSurface,
+# TodaySurface, and api.ts).
+# Reached moves 85 -> 86, unreachable stays at 84, total moves 169 -> 170.
+# ---------------------------------------------------------------------------
+# Then 170 -> 171, with Real-Time Activity Stream and Ingestion Dashboard:
+# /api/v1/self/activity-stream added (+1 declared path, surfaced in
+# ActivitySurface and api.ts).
+# Reached moves 86 -> 87, unreachable stays at 84, total moves 170 -> 171.
+# ---------------------------------------------------------------------------
+# Then 171 -> 172, with AI Async Streaming Completion:
+# /api/ai/stream added (+1 declared path, surfaced in api.ts streamAiCompletion).
+# Reached moves 87 -> 88, unreachable stays at 84, total moves 171 -> 172.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 172
+REACHED_BY_INTERFACE = 88
 UNREACHABLE = 84
 
+ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
+
 ROUTE_DECORATOR = re.compile(
-    r"^\s*@app\.(get|post|put|delete|patch)\(\s*[\"']([^\"']+)[\"']", re.MULTILINE
+    r"^\s*@(?:app|router)\.(get|post|put|delete|patch)\(\s*[\"']([^\"']+)[\"']", re.MULTILINE
 )
 
 
@@ -143,12 +174,19 @@ def _normalise(path):
 
 
 def _declared_routes():
-    with open(APP, encoding="utf-8") as handle:
-        source = handle.read()
+    files_to_scan = [APP]
+    if os.path.isdir(ROUTER_DIR):
+        for name in os.listdir(ROUTER_DIR):
+            if name.endswith(".py"):
+                files_to_scan.append(os.path.join(ROUTER_DIR, name))
+
     routes = set()
-    for _method, path in ROUTE_DECORATOR.findall(source):
-        if path.startswith("/api"):
-            routes.add(_normalise(path))
+    for target in files_to_scan:
+        with open(target, encoding="utf-8") as handle:
+            source = handle.read()
+        for _method, path in ROUTE_DECORATOR.findall(source):
+            if path.startswith("/api"):
+                routes.add(_normalise(path))
     return routes
 
 

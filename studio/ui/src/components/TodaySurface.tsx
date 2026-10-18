@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { Activity, Check, ExternalLink, Loader2 } from "lucide-react";
 import {
   fetchToday,
   launchBridge,
+  syncAllActivity,
   type MetricComparison,
   type TodayBrief,
   type TodayLatestPost,
@@ -23,9 +24,11 @@ import { cn } from "@/lib/utils";
 export function TodaySurface({
   onOpenLead,
   onOpenSetup,
+  onOpenActivity,
 }: {
   onOpenLead: (leadId: string) => void;
   onOpenSetup: () => void;
+  onOpenActivity?: () => void;
 }) {
   const [brief, setBrief] = useState<TodayBrief | null>(null);
   const [failed, setFailed] = useState(false);
@@ -60,6 +63,20 @@ export function TodaySurface({
     }
   }
 
+  async function syncAll() {
+    setOpening("sync-all");
+    setNote(null);
+    try {
+      const res = await syncAllActivity();
+      setNote(res.message);
+      load();
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "Sync could not be started.");
+    } finally {
+      setOpening(null);
+    }
+  }
+
   if (failed && !brief) return <Centered>TODAY IS UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!brief) return <Centered>LOADING TODAY</Centered>;
 
@@ -72,7 +89,7 @@ export function TodaySurface({
       <section className="mt-6 rounded-md border border-edge-strong p-4">
         <p className="studio-meta text-[10px] text-ink-muted">ONE THING TO OPEN</p>
         <p className="mt-1.5 text-[14px] leading-snug text-ink-primary">{brief.open_next.reason}</p>
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           {brief.open_next.action === "open" && brief.open_next.url ? (
             <button
               type="button"
@@ -94,6 +111,29 @@ export function TodaySurface({
               className="rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110"
             >
               Go to Setup
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={opening !== null}
+            onClick={() => void syncAll()}
+            className="flex items-center gap-1.5 rounded-md border border-edge bg-soft px-3 py-1.5 text-[12px] font-medium text-ink-primary transition-[filter] hover:brightness-110 disabled:opacity-40"
+          >
+            {opening === "sync-all" ? (
+              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+            ) : (
+              <Check className="size-3.5" strokeWidth={2} aria-hidden="true" />
+            )}
+            Sync Activity via Bridge
+          </button>
+          {onOpenActivity && (
+            <button
+              type="button"
+              onClick={onOpenActivity}
+              className="flex items-center gap-1.5 rounded-md border border-edge bg-soft px-3 py-1.5 text-[12px] font-medium text-ink-primary transition-[filter] hover:brightness-110"
+            >
+              <Activity className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              Live Activity Stream
             </button>
           )}
         </div>
