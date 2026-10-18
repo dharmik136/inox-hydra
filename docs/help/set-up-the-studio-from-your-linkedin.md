@@ -2,7 +2,7 @@
 
 Show the studio your own LinkedIn profile once, so it can fill in your details, import your posts and activity, and tell your posts apart from everyone else's.
 
-A new install opens on **Setup**, first in the rail. It has four steps, and each ticks itself when the studio has actually seen the thing it asks for.
+A new install opens on **Setup**, first in the rail. It has five steps, and each ticks itself when the studio has actually seen the thing it asks for.
 
 ## Before you start
 
@@ -38,9 +38,30 @@ Anything the page did not show is left as it was, so a section that had not load
 
 Confirming also fills your name, headline and company in **Brand Studio**, but only where those are empty. What you typed there is never replaced.
 
-## 4. Your history
+## 4. Your LinkedIn archive
 
-Three imports read your activity pages:
+LinkedIn gives every member a copy of what it holds about their account. It is the quickest and safest way to bring in your history: years of posts, comments and reactions, your roles and skills, and your connections, in one file, with nothing read from LinkedIn's pages. This step does not need the bridge, apart from opening LinkedIn's page for you.
+
+1. Click **Open LinkedIn's download page**. On it, choose **Download larger data archive**, then **Request archive**. LinkedIn asks for your password, then emails you a link: usually within minutes for the first part, and within a day for all of it. The link lasts 72 hours.
+2. Click **I have asked for it**. From then on, while Setup is open, the studio looks in your Downloads folder for a file named like LinkedIn's export, such as `Complete_LinkedInDataExport_10-19-2026.zip`. It looks only for those names, and only after you click this.
+3. When the file appears under **IN YOUR DOWNLOADS FOLDER**, click **See what is in it**. If you saved it somewhere else, click **Choose the file** instead.
+4. The studio lists each file in the archive it can read, with how many rows it holds, all ticked. Untick anything you do not want, then click **Import what is ticked**. Nothing is written before you do.
+
+| File in the archive | Where it goes |
+| --- | --- |
+| Posts you wrote (`Shares.csv`) | Your posts, with their dates. Reposts with nothing written are skipped. They arrive without reactions or impressions, because the archive does not have them; the bridge fills those in when it next reads your posts. |
+| Comments you wrote, posts you reacted to | Your own activity, as in step 5. They never become leads. |
+| Your name, headline and about | Fills only what is empty. What the bridge read is kept. |
+| Your roles, education and skills | Roles and education only if none were read yet; skills are added to the ones already there. |
+| Your connections | Name, company, position and the date you connected. Email addresses are never imported. |
+
+Your messages stay in the archive and are never imported, and the list under **other files stay in the archive** says which other files were not read. If a file reads **NOT UNDERSTOOD**, LinkedIn has changed its columns; the note lists the ones it found, and nothing from that file is imported.
+
+Importing the same archive again adds nothing twice. A file you chose by hand is kept by the studio only until it is imported, or for a day; a file in your Downloads folder is never moved or deleted.
+
+## 5. Your history
+
+If you imported your archive in step 4, this step only adds what has happened since and the counts LinkedIn shows on your posts. Three imports read your activity pages:
 
 | Import | What it reads |
 | --- | --- |

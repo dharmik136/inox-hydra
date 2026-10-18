@@ -78,7 +78,8 @@ CONFIG_TABLES = ("settings",)
 EXPORTABLE_TABLES = ("drafts", "posts", "leads", "lead_interactions",
                      "analytics_daily", "audience_demographics", "queue_items",
                      "creator_identity", "creator_positions", "creator_education", "creator_skills",
-                     "own_posts", "post_metric_observations", "outbound_engagements", "lead_stage_events")
+                     "own_posts", "post_metric_observations", "outbound_engagements", "lead_stage_events",
+                     "connections", "archive_imports")
 
 EXPORT_FORMATS = ("json", "csv", "obsidian")
 

@@ -625,6 +625,7 @@ HELP_SECTIONS = [
         "blurb": "What stays on this machine, what can leave it, your LinkedIn session, and backups.",
         "paths": [
             "help/what-leaves-this-machine.md",
+            "help/keep-each-creator-separate-and-enter-a-licence.md",
             "help/connect-your-linkedin-session.md",
             "help/back-up-restore-and-export.md",
             "help/check-your-version-and-update-the-studio.md",

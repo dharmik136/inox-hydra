@@ -1332,7 +1332,13 @@ def onboarding_state() -> Dict[str, Any]:
     session = {"stored": bool(held.get("li_at")), "saved_at": held.get("last_token_update")}
 
     bridge = bridge_status()
+    try:
+        from .archive_import import archive_state
+    except ImportError:
+        from archive_import import archive_state
+    archive = archive_state()
     return {
+        "archive": archive,
         "health": capture_health(),
         "session": session,
         "status": "success",
@@ -1350,5 +1356,6 @@ def onboarding_state() -> Dict[str, Any]:
             "identity": confirmed,
             "posts": post_count > 0,
             "activity": sum(outbound.values()) > 0,
+            "archive": archive["last_import"] is not None,
         },
     }

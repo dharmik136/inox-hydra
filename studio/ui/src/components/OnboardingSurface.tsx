@@ -19,11 +19,12 @@ import {
   type SelfImportKind,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { ArchiveImport, archiveStatus } from "./ArchiveImport";
 
 /**
  * Setup: the studio learns who you are from your own LinkedIn.
  *
- * Four steps, each showing its real state rather than a checkbox the creator
+ * Five steps, each showing its real state rather than a checkbox the creator
  * ticks: the bridge is connected when the extension has been heard from, you
  * are known when you have said "that's me", and history counts are rows in
  * the database, not intentions.
@@ -196,6 +197,21 @@ export function OnboardingSurface() {
 
         <Step
           n={4}
+          title="Your LinkedIn archive"
+          done={steps.archive}
+          current={!steps.archive}
+          status={archiveStatus(state.archive)}
+        >
+          <ArchiveImport
+            state={state.archive}
+            opening={busy === state.archive.download_page}
+            onOpenPage={(url) => void open(url)}
+            onChanged={() => void refresh()}
+          />
+        </Step>
+
+        <Step
+          n={5}
           title="Your history"
           done={steps.posts && steps.activity}
           current={steps.identity}
@@ -405,6 +421,7 @@ function Step({
               ? "border-edge-strong bg-ink text-ink-primary"
               : "border-edge bg-ink text-ink-muted",
         )}
+        role="img"
         aria-label={done ? `Step ${n}, done` : `Step ${n}`}
       >
         {done ? <Check className="size-3.5" strokeWidth={2.5} aria-hidden="true" /> : n}

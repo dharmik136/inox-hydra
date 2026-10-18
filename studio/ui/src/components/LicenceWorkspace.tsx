@@ -97,7 +97,7 @@ export function LicenceWorkspace() {
           )}
           <dt className="text-ink-muted">Creator profiles</dt>
           <dd className="text-ink-secondary">
-            {state.profile_limit === 1 ? "1" : `Up to ${state.profile_limit}`}, each with its own database
+            {state.profile_limit === 1 ? "1" : `Up to ${state.profile_limit}, each with its own database`}
           </dd>
         </dl>
         {state.reason && <p className="mt-2 text-[13px] text-signal-orange-text">{state.reason}</p>}
@@ -170,10 +170,7 @@ export function LicenceWorkspace() {
           </li>
           {state.prices.map((price) => (
             <li key={price.tier} className="text-[13px] text-ink-secondary">
-              <span className="text-ink-primary">{price.label}.</span> {price.price}, or {price.or}.
-              {price.tier === "creator" &&
-                " Analytics, leads, Today, patterns, AI with your own key, the Obsidian export and the LinkedIn archive import."}
-              {price.tier === "agency" && " Every Creator feature, for each profile."}
+              <span className="text-ink-primary">{price.label}.</span> {price.price}. {price.includes}
             </li>
           ))}
         </ul>

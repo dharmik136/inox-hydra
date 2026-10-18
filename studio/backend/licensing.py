@@ -72,9 +72,12 @@ PAID_TIERS = ("creator", "agency")
 _RANK = {"free": 0, "creator": 1, "agency": 2}
 
 PRICES: List[Dict[str, str]] = [
-    {"tier": "creator", "label": "Creator", "price": "$12 a month, billed yearly ($144)",
-     "or": "$249 once, with a year of updates"},
-    {"tier": "agency", "label": "Agency", "price": "$39 a month", "or": "up to 5 creator profiles"},
+    {"tier": "creator", "label": "Creator",
+     "price": "$12 a month, billed yearly ($144), or $249 once with a year of updates",
+     "includes": "Analytics, leads, Today, patterns, AI with your own key, the Obsidian export "
+                 "and the LinkedIn archive import."},
+    {"tier": "agency", "label": "Agency", "price": "$39 a month, for up to 5 creator profiles",
+     "includes": "Every Creator feature, for each profile, and each profile with its own database."},
 ]
 
 # What each feature needs. Read by allows(); enforced once BETA_OPEN is off.

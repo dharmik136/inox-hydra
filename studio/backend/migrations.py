@@ -732,6 +732,37 @@ def _migrate_lead_engagement_labels(cursor: sqlite3.Cursor) -> None:
     """)
 
 
+_MIGRATION_18_ARCHIVE = (
+    # grain: one row per first-degree connection, as LinkedIn's data archive
+    # lists them. Keyed by profile URL. No email column: the archive carries an
+    # address only for connections who chose to share it, and nothing in the
+    # product needs one.
+    """
+    CREATE TABLE IF NOT EXISTS connections (
+        profile_url TEXT PRIMARY KEY,
+        first_name TEXT,
+        last_name TEXT,
+        company TEXT,
+        position TEXT,
+        connected_on TEXT,
+        source TEXT NOT NULL DEFAULT 'archive',
+        imported_at TEXT NOT NULL
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS idx_connections_name ON connections(last_name, first_name)",
+    # grain: one row per archive the creator imported, with what was read.
+    """
+    CREATE TABLE IF NOT EXISTS archive_imports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        archive_name TEXT NOT NULL,
+        archive_bytes INTEGER,
+        imported_at TEXT NOT NULL,
+        summary TEXT NOT NULL
+    )
+    """,
+)
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -753,6 +784,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (15, "Record schema drift events from Voyager network interception", _migrate_schema_drift_events),
     (16, "Create creator_accounts table for enterprise multi-tenant profiles", _migrate_creator_accounts),
     (17, "A captured lead says how they engaged, and where their profile is", _migrate_lead_engagement_labels),
+    (18, "Connections and archive imports, from LinkedIn's own data archive", _MIGRATION_18_ARCHIVE),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

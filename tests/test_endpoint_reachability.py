@@ -143,8 +143,13 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # and DELETE on one declared path, surfaced in LicenceWorkspace and api.ts).
 # Reached moves 88 -> 89, unreachable stays at 84, total moves 172 -> 173.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 173
-REACHED_BY_INTERFACE = 89
+# Then 173 -> 178, with the LinkedIn archive import: /api/v1/archive,
+# /api/v1/archive/requested, /api/v1/archive/upload, /api/v1/archive/preview
+# and /api/v1/archive/import added, surfaced in ArchiveImport and api.ts.
+# Reached moves 89 -> 94, unreachable stays at 84, total moves 173 -> 178.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 178
+REACHED_BY_INTERFACE = 94
 UNREACHABLE = 84
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

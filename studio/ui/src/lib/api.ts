@@ -1577,7 +1577,87 @@ export interface CaptureHealth {
   state: "never_run" | "working" | "drifting";
 }
 
+// ---------------------------------------------------------------------------
+// LinkedIn's data archive: request, find, preview, import
+// ---------------------------------------------------------------------------
+
+export interface FoundArchive {
+  name: string;
+  path: string;
+  bytes: number;
+  modified: string;
+}
+
+export type ArchiveKindTally =
+  | { added: number; already_there: number; skipped: number }
+  | { filled: string[] }
+  | { left_out: true }
+  | { not_understood: true; columns: string[] };
+
+export interface ArchiveState {
+  download_page: string;
+  requested_at: string | null;
+  /** LinkedIn export files in Downloads; looked for only once the archive was requested. */
+  found: FoundArchive[];
+  last_import: { archive_name: string; imported_at: string; summary: Record<string, ArchiveKindTally> } | null;
+}
+
+export interface ArchiveFile {
+  kind: string;
+  label: string;
+  file: string;
+  /** null when the columns are not the ones the studio knows. */
+  rows: number | null;
+  importable: boolean;
+  default: boolean;
+  note: string;
+}
+
+export interface ArchivePreview {
+  status: string;
+  source: string;
+  archive: { name: string; bytes: number };
+  files: ArchiveFile[];
+  not_imported: { file: string; note: string }[];
+  recognised: boolean;
+}
+
+export async function markArchiveRequested(): Promise<ArchiveState> {
+  return call<ArchiveState>("/api/v1/archive/requested", { method: "POST" });
+}
+
+export async function previewArchive(source: string): Promise<ArchivePreview> {
+  return call<ArchivePreview>("/api/v1/archive/preview", { method: "POST", body: JSON.stringify({ source }) });
+}
+
+/** Sends a chosen archive to the studio on this machine, which keeps it until it is imported. */
+export async function uploadArchive(file: File): Promise<ArchivePreview> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch("/api/v1/archive/upload", { method: "POST", credentials: "same-origin", body: form });
+  if (!response.ok) {
+    let reason = `${response.status}`;
+    try {
+      const body = await response.json();
+      if (typeof body?.detail === "string") reason = body.detail;
+    } catch {
+      // No JSON body; the status is all there is.
+    }
+    throw new Error(reason);
+  }
+  return (await response.json()) as ArchivePreview;
+}
+
+export async function importArchive(
+  source: string,
+  include: string[],
+): Promise<{ status: string; archive: { name: string; bytes: number }; summary: Record<string, ArchiveKindTally> }> {
+  return call("/api/v1/archive/import", { method: "POST", body: JSON.stringify({ source, include }) });
+}
+
 export interface OnboardingState {
+  /** LinkedIn's own archive of the creator's record, and where its import stands. */
+  archive: ArchiveState;
   health: CaptureHealth[];
   /** Whether a LinkedIn session is stored for the live send. Never the value. */
   session: { stored: boolean; saved_at: string | null };
@@ -1586,7 +1666,7 @@ export interface OnboardingState {
   identity: CreatorIdentity | null;
   counts: { posts: number; comments: number; reactions: number };
   imports: SelfImport[];
-  steps: { bridge: boolean; identity: boolean; posts: boolean; activity: boolean };
+  steps: { bridge: boolean; identity: boolean; posts: boolean; activity: boolean; archive: boolean };
 }
 
 export async function fetchOnboardingState(): Promise<OnboardingState> {
@@ -2086,7 +2166,7 @@ export interface LicenceState {
   reason: string;
   beta_open: boolean;
   profile_limit: number;
-  prices: { tier: string; label: string; price: string; or: string }[];
+  prices: { tier: string; label: string; price: string; includes: string }[];
 }
 
 export async function fetchLicence(): Promise<LicenceState> {

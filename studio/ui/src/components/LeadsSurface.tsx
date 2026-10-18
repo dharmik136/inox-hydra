@@ -694,7 +694,7 @@ function EmptyStream() {
   return (
     <div className="grid h-full place-items-center px-8">
       <div className="max-w-[54ch]">
-        <p className="studio-label">No leads captured yet</p>
+        <h1 className="studio-label">No leads captured yet</h1>
         <p className="mt-3 text-[14px] leading-relaxed text-ink-secondary">
           Leads are captured passively, by an extension watching the LinkedIn pages you open
           yourself, and only from people engaging with your own posts. The studio needs to know

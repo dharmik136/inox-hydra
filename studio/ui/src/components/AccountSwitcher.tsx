@@ -318,7 +318,7 @@ export function AccountSwitcher({
                             </span>
                           )}
                           {isActive && (
-                            <span className="studio-meta rounded bg-signal-orange/15 px-1 py-0.2 text-[9px] text-signal-orange-text font-semibold">
+                            <span className="studio-meta rounded border border-signal-orange/50 px-1 py-0.2 text-[9px] font-semibold text-ink-primary">
                               ACTIVE
                             </span>
                           )}

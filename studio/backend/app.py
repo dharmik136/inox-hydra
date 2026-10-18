@@ -73,6 +73,7 @@ try:
     from . import onboarding
     from . import accounts
     from . import licensing
+    from . import archive_import
     from . import today as today_module
     from . import insights
     from . import devtools
@@ -143,6 +144,7 @@ except ImportError:
     import onboarding
     import accounts
     import licensing
+    import archive_import
     import today as today_module
     import insights
     import devtools
@@ -2666,6 +2668,56 @@ def delete_creator_account(account_id: str, payload: Optional[DeleteAccountPaylo
 
 class LicencePayload(BaseModel):
     key: str = Field(..., min_length=1, max_length=4000, description="The licence key, as issued")
+
+
+class ArchiveSourcePayload(BaseModel):
+    source: str = Field(..., min_length=1, max_length=2000, description="upload:<token> or downloads:<path>")
+
+
+class ArchiveImportPayload(ArchiveSourcePayload):
+    include: Optional[List[str]] = Field(None, description="Kinds to import; the defaults when omitted")
+
+
+def _archive_call(work):
+    try:
+        return work()
+    except archive_import.ArchiveError as error:
+        raise HTTPException(status_code=400, detail=str(error))
+
+
+@app.get("/api/v1/archive", tags=["Onboarding"])
+def get_archive_state():
+    """When the LinkedIn archive was asked for, what is waiting in Downloads, and the last import."""
+    return archive_import.archive_state()
+
+
+@app.post("/api/v1/archive/requested", tags=["Onboarding"])
+def post_archive_requested():
+    """The creator says they asked LinkedIn for their archive, so Downloads may be looked in."""
+    return archive_import.mark_requested()
+
+
+@app.post("/api/v1/archive/upload", tags=["Onboarding"])
+def post_archive_upload(file: UploadFile = File(...)):
+    """Keeps an archive the creator chose by hand, and previews it. Nothing is imported."""
+    def work():
+        source = archive_import.store_upload(file.file, file.filename or "archive.zip")
+        return archive_import.preview(source)
+    return _archive_call(work)
+
+
+@app.post("/api/v1/archive/preview", tags=["Onboarding"])
+def post_archive_preview(payload: ArchiveSourcePayload):
+    """What an archive holds and what would be imported from it. Writes nothing."""
+    return _archive_call(lambda: archive_import.preview(payload.source))
+
+
+@app.post("/api/v1/archive/import", tags=["Onboarding"])
+def post_archive_import(payload: ArchiveImportPayload):
+    """Imports what the creator kept ticked from their own LinkedIn archive."""
+    if not licensing.allows("archive_import"):
+        raise HTTPException(status_code=402, detail="Importing the LinkedIn archive is part of the Creator licence.")
+    return _archive_call(lambda: archive_import.import_archive(payload.source, payload.include))
 
 
 @app.get("/api/v1/licence", tags=["Multi-Tenancy & Profiles"])
