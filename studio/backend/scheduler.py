@@ -25,9 +25,11 @@ import os
 from apscheduler.schedulers.background import BackgroundScheduler
 
 try:
+    from . import paths
     from .database import get_db, SEEDED_DEMO_POST_IDS
     from .event_bus import event_bus
 except ImportError:
+    import paths
     from database import get_db, SEEDED_DEMO_POST_IDS
     from event_bus import event_bus
 
@@ -559,11 +561,32 @@ class NativeScheduler:
             "queue_paused": self.is_queue_paused()
         }
 
+    def check_every_profile(self) -> List[Dict[str, Any]]:
+        """
+        One pass over every creator profile's queue, each in its own database.
+
+        A post scheduled in a profile that is not the active one is still due
+        when it is due, so the background job cannot look at the active
+        profile alone.
+        """
+        actions: List[Dict[str, Any]] = []
+        for profile_id in paths.profile_ids():
+            try:
+                database = os.path.join(paths.get_profile_home(profile_id), "data", paths.DB_FILENAME)
+                if not os.path.exists(database):
+                    continue
+                with paths.using_profile(profile_id):
+                    for action in self.check_scheduled_queue() or []:
+                        actions.append({**action, "profile_id": profile_id})
+            except Exception:
+                logger.warning("Scheduler pass failed for profile %s.", profile_id, exc_info=True)
+        return actions
+
     def start(self):
         """Starts the APScheduler background thread."""
         if not self.scheduler.running:
             self.scheduler.add_job(
-                self.check_scheduled_queue,
+                self.check_every_profile,
                 "interval",
                 seconds=30,
                 id="queue_checker",

@@ -17,6 +17,15 @@ Resolution order, highest priority first:
        macOS    ~/Library/Application Support/InoxHydra
        Linux    $XDG_DATA_HOME/inox-hydra or ~/.local/share/inox-hydra
 
+Creator profiles. Each creator profile is its own folder with its own
+database, media, backups and exports, so one client's data cannot appear in
+another's screens, backups or exports. The first profile, "default", is the
+application home itself, so an install from before profiles existed keeps its
+data exactly where it was. Every other profile lives in profiles/<id>/, and
+profiles/profiles.json records which exist and which is active. The vault key,
+logs and browser profiles belong to the machine and stay at the application
+home.
+
 This module also resolves bundled read-only content (frontend, docs). That is
 deliberately kept separate from state below: content ships with the code and is
 replaced by an update, state never is. Both live here so there is exactly one
@@ -27,12 +36,28 @@ Strict Invariants:
 - No other module may resolve writable state or bundled content by any other means.
 """
 
+import json
 import os
+import re
 import sys
+import tempfile
+from contextlib import contextmanager
+from contextvars import ContextVar
+from typing import Any, Dict, Iterator, List, Optional
 
 APP_DIR_NAME_WINDOWS = "InoxHydra"
 APP_DIR_NAME_POSIX = "inox-hydra"
 DB_FILENAME = "linkedin_studio.db"
+
+DEFAULT_PROFILE_ID = "default"
+PROFILES_DIRNAME = "profiles"
+PROFILES_FILENAME = "profiles.json"
+_PROFILE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
+
+# The profile a request, or a loop over profiles, is pinned to. Unset means
+# whatever profiles.json names as active.
+_pinned_profile: ContextVar[Optional[str]] = ContextVar("inox_pinned_profile", default=None)
+_registry_cache: Dict[str, Any] = {"path": None, "mtime": None, "value": None}
 
 # studio/backend/paths.py -> studio/
 _STUDIO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -108,6 +133,110 @@ def get_browser_profile_dir(browser_id: str, exe_path: str = "") -> str:
     return _ensure(os.path.join(root, "browser-profiles", safe_id))
 
 
+# ---------------------------------------------------------------------------
+# Creator profiles
+# ---------------------------------------------------------------------------
+
+def is_valid_profile_id(profile_id: Any) -> bool:
+    return isinstance(profile_id, str) and bool(_PROFILE_ID.match(profile_id))
+
+
+def get_profiles_root() -> str:
+    """Where every profile other than the default one keeps its folder."""
+    return os.path.join(get_app_home(), PROFILES_DIRNAME)
+
+
+def get_profiles_file() -> str:
+    return os.path.join(get_profiles_root(), PROFILES_FILENAME)
+
+
+def _empty_registry() -> Dict[str, Any]:
+    return {"active": DEFAULT_PROFILE_ID, "profiles": []}
+
+
+def read_profiles() -> Dict[str, Any]:
+    """
+    The profile registry: {"active": id, "profiles": [{id, name, ...}]}.
+
+    Absent until a second profile is created, and an absent or unreadable file
+    means one profile, the default. Re-read only when the file changes, because
+    every database connection asks which profile is active.
+    """
+    path = get_profiles_file()
+    try:
+        mtime = os.stat(path).st_mtime_ns
+    except OSError:
+        return _empty_registry()
+    cache = _registry_cache
+    if cache["path"] == path and cache["mtime"] == mtime and cache["value"] is not None:
+        return json.loads(json.dumps(cache["value"]))
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            value = json.load(handle)
+    except (OSError, ValueError):
+        return _empty_registry()
+    if not isinstance(value, dict) or not isinstance(value.get("profiles"), list):
+        return _empty_registry()
+    value["profiles"] = [p for p in value["profiles"] if isinstance(p, dict) and is_valid_profile_id(p.get("id"))]
+    if not is_valid_profile_id(value.get("active")):
+        value["active"] = DEFAULT_PROFILE_ID
+    cache.update(path=path, mtime=mtime, value=value)
+    return json.loads(json.dumps(value))
+
+
+def write_profiles(registry: Dict[str, Any]) -> None:
+    """Replaces the registry atomically, so a crash never leaves half a file."""
+    root = _ensure(get_profiles_root())
+    fd, tmp = tempfile.mkstemp(prefix=".profiles-", suffix=".json", dir=root)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(registry, handle, indent=2, ensure_ascii=False)
+        os.replace(tmp, get_profiles_file())
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    _registry_cache.update(path=None, mtime=None, value=None)
+
+
+def profile_ids() -> List[str]:
+    """Every profile, the default first."""
+    ids = [DEFAULT_PROFILE_ID]
+    for entry in read_profiles()["profiles"]:
+        if entry["id"] not in ids:
+            ids.append(entry["id"])
+    return ids
+
+
+def get_active_profile_id() -> str:
+    pinned = _pinned_profile.get()
+    if pinned:
+        return pinned
+    active = read_profiles()["active"]
+    return active if active in profile_ids() else DEFAULT_PROFILE_ID
+
+
+def get_profile_home(profile_id: Optional[str] = None) -> str:
+    """The folder holding one profile's database, media, backups and exports."""
+    pid = profile_id or get_active_profile_id()
+    if pid == DEFAULT_PROFILE_ID:
+        return get_app_home()
+    if not is_valid_profile_id(pid):
+        raise ValueError(f"not a profile id: {pid!r}")
+    return os.path.join(get_profiles_root(), pid)
+
+
+@contextmanager
+def using_profile(profile_id: str) -> Iterator[str]:
+    """Pins every path resolved inside the block to one profile."""
+    if profile_id != DEFAULT_PROFILE_ID and not is_valid_profile_id(profile_id):
+        raise ValueError(f"not a profile id: {profile_id!r}")
+    token = _pinned_profile.set(profile_id)
+    try:
+        yield profile_id
+    finally:
+        _pinned_profile.reset(token)
+
+
 def is_portable() -> bool:
     """True when state lives beside the code rather than in the user profile."""
     return get_app_home() == _STUDIO_DIR
@@ -119,13 +248,13 @@ def _ensure(path: str) -> str:
 
 
 def get_data_dir() -> str:
-    """Database, ETag caches, and other small structured state."""
-    return _ensure(os.path.join(get_app_home(), "data"))
+    """Database, ETag caches, and other small structured state. Per profile."""
+    return _ensure(os.path.join(get_profile_home(), "data"))
 
 
 def get_assets_dir() -> str:
-    """Root of user media. Mounted at /assets by the web layer."""
-    return _ensure(os.path.join(get_app_home(), "assets"))
+    """Root of user media. Mounted at /assets by the web layer. Per profile."""
+    return _ensure(os.path.join(get_profile_home(), "assets"))
 
 
 def get_uploads_dir() -> str:
@@ -155,11 +284,16 @@ def get_backups_dir() -> str:
     This is the user's undo button. It is the only recovery path available when
     an upgrade goes wrong on a machine nobody can reach.
     """
-    return _ensure(os.path.join(get_app_home(), "backups"))
+    return _ensure(os.path.join(get_profile_home(), "backups"))
+
+
+def get_exports_dir() -> str:
+    """Where an export lands when the caller names no destination. Per profile."""
+    return _ensure(os.path.join(get_profile_home(), "exports"))
 
 
 def get_db_path() -> str:
-    """Absolute path to the SQLite database."""
+    """Absolute path to the active profile's SQLite database."""
     return os.path.join(get_data_dir(), DB_FILENAME)
 
 
@@ -224,6 +358,8 @@ def describe() -> dict:
     return {
         "app_home": home,
         "resolved_by": source,
+        "active_profile": get_active_profile_id(),
+        "profile_home": get_profile_home(),
         "portable": is_portable(),
         "data_dir": get_data_dir(),
         "assets_dir": get_assets_dir(),

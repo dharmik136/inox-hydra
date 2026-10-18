@@ -182,63 +182,97 @@ def test_e2e_composer_drafting_and_telemetry(page):
     assert "read" in telemetry_text
 
 
-def test_e2e_multi_tenant_account_switching(page):
+def test_e2e_multi_tenant_account_switching(page, monkeypatch):
     """
-    Validates opening the AccountSwitcher popover, adding a new creator profile,
-    and switching profiles seamlessly in the browser.
+    Each creator profile is its own database. The switcher says so, refuses a
+    second profile without the Agency licence, shows a new profile empty,
+    switches by reloading, and deletes only when the name is typed.
     """
-    # 1. Trigger the Account Switcher from the Studio Rail
+    import base64
+
+    import ed25519
+    import licensing
+
+    secret = bytes(range(32))
+    monkeypatch.setattr(licensing, "PUBLIC_KEYS", [base64.b64encode(ed25519.public_key(secret)).decode()])
+    agency = licensing.encode(
+        {"v": 1, "id": "e2e", "email": "buyer@example.com", "tier": "agency", "kind": "annual",
+         "profiles": 5, "issued_at": "2026-10-19", "expires_at": "2099-01-01", "updates_until": "2099-01-01"},
+        lambda message: ed25519.sign(secret, message),
+    )
     trigger = page.locator('button[aria-label^="Current profile:"]')
-    assert trigger.is_visible()
-    trigger.click()
-    page.wait_for_timeout(300)
-
-    # 2. Verify dialog opened
     dialog = page.locator('div[role="dialog"][aria-label="Manage creator profiles"]')
-    assert dialog.is_visible()
 
-    # 3. Verify Default Profile is present
-    default_text = dialog.inner_text()
-    assert "Default Profile" in default_text
-    assert "DEFAULT" in default_text
+    def open_switcher():
+        trigger.click()
+        dialog.wait_for(state="visible")
 
-    # 4. Open "Add Creator Profile" form
-    add_btn = dialog.locator('button:has-text("Add Creator Profile")')
-    assert add_btn.is_visible()
-    add_btn.click()
-    page.wait_for_timeout(200)
+    def add_profile(name):
+        opener = dialog.locator('button:has-text("Add Creator Profile")')
+        if opener.is_visible():
+            opener.click()
+        dialog.locator('input[placeholder*="Profile Name"]').fill(name)
+        dialog.locator('button:has-text("Add Profile")').click()
 
-    # 5. Fill new profile details
-    name_input = dialog.locator('input[placeholder*="Profile Name"]')
-    name_input.fill("Marcus Vance")
+    open_switcher()
+    text = dialog.inner_text()
+    assert "My studio" in text and "DEFAULT" in text
+    assert "its own database" in text
+    assert "Agency licence" in text, "the switcher does not say a second profile needs a licence"
 
-    headline_input = dialog.locator('input[placeholder*="Headline"]')
-    headline_input.fill("Principal Systems Architect")
+    # Without a licence the second profile is refused, and the reason is shown.
+    add_profile("Marcus Vance")
+    alert = dialog.locator('[role="alert"]')
+    alert.wait_for(state="visible")
+    assert "Agency" in alert.inner_text()
+    page.keyboard.press("Escape")
 
-    vanity_input = dialog.locator('input[placeholder*="LinkedIn Vanity"]')
-    vanity_input.fill("marcus-vance")
+    installed = page.evaluate(
+        "async (key) => (await fetch('/api/v1/licence', {method: 'POST', credentials: 'same-origin',"
+        " headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key})})).status",
+        agency,
+    )
+    assert installed == 200
+    try:
+        open_switcher()
+        with page.expect_navigation():
+            add_profile("Marcus Vance")
+        page.wait_for_load_state("networkidle")
+        assert trigger.locator("span").first.inner_text() == "MV"
 
-    # 6. Submit profile
-    submit_btn = dialog.locator('button:has-text("Add Profile")')
-    submit_btn.click()
-    page.wait_for_timeout(500)
+        # A post written now lands in Marcus's database and nowhere else.
+        written = page.evaluate(
+            "async () => (await fetch('/api/posts', {method: 'POST', credentials: 'same-origin',"
+            " headers: {'Content-Type': 'application/json'},"
+            " body: JSON.stringify({content: 'Only in Marcus', status: 'draft'})})).status"
+        )
+        assert written in (200, 201)
+        open_switcher()
+        counts = {
+            row["id"]: row["posts_count"]
+            for row in page.evaluate(
+                "async () => (await (await fetch('/api/v1/accounts', {credentials: 'same-origin'})).json()).accounts"
+            )
+        }
+        marcus_id = next(key for key in counts if key.startswith("marcus-vance"))
+        assert counts[marcus_id] == counts["default"] + 1, "a post written in one profile reached another"
+        with page.expect_navigation():
+            dialog.locator('div[role="button"]:has-text("My studio")').click()
+        page.wait_for_load_state("networkidle")
+        assert trigger.locator("span").first.inner_text() == "MS"
 
-    # 7. Verify new profile is now created and active
-    trigger_badge = trigger.locator("span").first
-    assert trigger_badge.inner_text() == "MV"
-
-    # 8. Re-open dialog and switch back to Default Profile
-    trigger.click()
-    page.wait_for_timeout(400)
-    dialog = page.locator('div[role="dialog"][aria-label="Manage creator profiles"]')
-    assert dialog.is_visible()
-
-    default_entry = dialog.locator('div[role="button"]:has-text("Default Profile")')
-    default_entry.click()
-    page.wait_for_timeout(600)
-
-    # Verify switched back
-    assert trigger.locator("span").first.inner_text() == "DP"
+        open_switcher()
+        marcus = dialog.locator('div[role="button"]:has-text("Marcus Vance")')
+        marcus.hover()
+        marcus.locator('button[aria-label="Delete Marcus Vance profile"]').click()
+        confirm = dialog.locator('form[aria-label="Delete Marcus Vance"]')
+        delete = confirm.locator('button:has-text("Delete profile")')
+        assert delete.is_disabled(), "a profile can be deleted without typing its name"
+        confirm.locator("input").fill("Marcus Vance")
+        delete.click()
+        marcus.wait_for(state="detached")
+    finally:
+        page.evaluate("async () => fetch('/api/v1/licence', {method: 'DELETE', credentials: 'same-origin'})")
 
 
 def test_e2e_universal_search_command_palette(page):

@@ -2025,6 +2025,8 @@ export interface AccountsResponse {
   status: string;
   accounts: CreatorAccount[];
   active_account_id: string;
+  /** How many profiles the licence in effect allows. Each has its own database. */
+  profile_limit: number;
 }
 
 export async function fetchAccounts(): Promise<AccountsResponse> {
@@ -2050,8 +2052,51 @@ export async function switchAccount(accountId: string): Promise<{ status: string
   });
 }
 
-export async function deleteAccount(accountId: string): Promise<{ status: string; message: string; active_account_id?: string }> {
+/** Deletes the profile's folder and everything in it. `confirm` repeats its name. */
+export async function deleteAccount(
+  accountId: string,
+  confirm: string,
+): Promise<{ status: string; message: string; active_account_id?: string }> {
   return call(`/api/v1/accounts/${encodeURIComponent(accountId)}`, {
     method: "DELETE",
+    body: JSON.stringify({ confirm }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Licence, checked on this machine against the vendor's public key
+// ---------------------------------------------------------------------------
+
+export interface LicenceDetails {
+  email: string;
+  name: string;
+  tier: "creator" | "agency";
+  kind: "annual" | "lifetime";
+  profiles: number;
+  issued_at: string | null;
+  expires_at: string | null;
+  updates_until: string | null;
+}
+
+export interface LicenceState {
+  status: "none" | "active" | "expired" | "invalid";
+  tier: "free" | "creator" | "agency";
+  tier_label: string;
+  licence: LicenceDetails | null;
+  reason: string;
+  beta_open: boolean;
+  profile_limit: number;
+  prices: { tier: string; label: string; price: string; or: string }[];
+}
+
+export async function fetchLicence(): Promise<LicenceState> {
+  return call<LicenceState>("/api/v1/licence");
+}
+
+export async function installLicence(key: string): Promise<{ status: string; licence: LicenceState }> {
+  return call("/api/v1/licence", { method: "POST", body: JSON.stringify({ key }) });
+}
+
+export async function removeLicence(): Promise<{ status: string; licence: LicenceState }> {
+  return call("/api/v1/licence", { method: "DELETE" });
 }

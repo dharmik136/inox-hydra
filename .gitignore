@@ -134,3 +134,10 @@ studio/frontend_next/
 planning/.obsidian/workspace*.json
 planning/.obsidian/cache
 planning/.trash/
+
+# Creator profiles beyond the first, each a full copy of user state (database,
+# media, backups), and exports. Both resolve under studio/ in a source
+# checkout, like studio/data.
+studio/profiles/
+studio/exports/
+studio/inox_export_*

@@ -72,6 +72,7 @@ try:
     from .internal_sheet import internal_sheet_manager
     from . import onboarding
     from . import accounts
+    from . import licensing
     from . import today as today_module
     from . import insights
     from . import devtools
@@ -83,6 +84,7 @@ try:
     from .paths import (get_assets_dir, get_uploads_dir, get_generated_dir, get_data_dir,
                         get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
                         describe as describe_paths)
+    from . import paths as paths_module
     from .docs_engine import (search_docs_fts, init_docs_search_index,
                               document_library, document_slug,
                               help_sections, section_meta, section_kind)
@@ -140,6 +142,7 @@ except ImportError:
     from internal_sheet import internal_sheet_manager
     import onboarding
     import accounts
+    import licensing
     import today as today_module
     import insights
     import devtools
@@ -151,6 +154,7 @@ except ImportError:
     from paths import (get_assets_dir, get_uploads_dir, get_generated_dir, get_data_dir,
                        get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
                         describe as describe_paths)
+    import paths as paths_module
     from docs_engine import (search_docs_fts, init_docs_search_index,
                             document_library, document_slug,
                             help_sections, section_meta, section_kind)
@@ -362,6 +366,19 @@ async def enforce_local_access(request: Request, call_next):
         )
 
     return response
+
+
+@app.middleware("http")
+async def pin_creator_profile(request: Request, call_next):
+    """
+    Resolves the active creator profile once, at the start of each request.
+
+    Every connection the request opens then goes to the same profile's
+    database, even if the creator switches profile while it is running. A
+    switch takes effect from the next request.
+    """
+    with paths_module.using_profile(paths_module.get_active_profile_id()):
+        return await call_next(request)
 
 
 # -------------------------------------------------------------
@@ -2613,7 +2630,10 @@ def post_create_account(payload: CreateAccountPayload):
     """
     res = accounts.create_account(payload.model_dump())
     if res.get("status") == "error":
-        raise HTTPException(status_code=400, detail=res.get("message", "Could not create account"))
+        # 402 when the licence is what stands in the way, so the interface can
+        # say so rather than show a generic failure.
+        status = 402 if res.get("code") == "licence" else 400
+        raise HTTPException(status_code=status, detail=res.get("message", "Could not create account"))
     return res
 
 
@@ -2628,24 +2648,71 @@ def post_switch_account(payload: SwitchAccountPayload):
     return res
 
 
+class DeleteAccountPayload(BaseModel):
+    confirm: str = Field("", max_length=160, description="The profile's name or ID, repeated")
+
+
 @app.delete("/api/v1/accounts/{account_id}", tags=["Multi-Tenancy & Profiles"])
-def delete_creator_account(account_id: str):
+def delete_creator_account(account_id: str, payload: Optional[DeleteAccountPayload] = None):
     """
-    Deletes a secondary creator profile. Default profile cannot be deleted.
+    Deletes a secondary creator profile and every file it holds. The default
+    profile cannot be deleted, and the caller must repeat the profile's name.
     """
-    res = accounts.delete_account(account_id)
+    res = accounts.delete_account(account_id, confirm=payload.confirm if payload else "")
     if res.get("status") == "error":
         raise HTTPException(status_code=400, detail=res.get("message", "Cannot delete account"))
     return res
+
+
+class LicencePayload(BaseModel):
+    key: str = Field(..., min_length=1, max_length=4000, description="The licence key, as issued")
+
+
+@app.get("/api/v1/licence", tags=["Multi-Tenancy & Profiles"])
+def get_licence():
+    """The licence in effect, checked on this machine against the vendor's public key."""
+    return licensing.current()
+
+
+@app.post("/api/v1/licence", tags=["Multi-Tenancy & Profiles"])
+def post_licence(payload: LicencePayload):
+    res = licensing.install(payload.key)
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res["message"])
+    return res
+
+
+@app.delete("/api/v1/licence", tags=["Multi-Tenancy & Profiles"])
+def delete_licence():
+    return licensing.remove()
 
 
 # -------------------------------------------------------------
 # Static Dashboard UI & Master Asset Mount
 # -------------------------------------------------------------
 FRONTEND_DIR = get_frontend_dir()
-STUDIO_ASSETS_DIR = get_assets_dir()
-os.makedirs(STUDIO_ASSETS_DIR, exist_ok=True)
-app.mount("/assets", StaticFiles(directory=STUDIO_ASSETS_DIR), name="assets")
+class _ProfileAssets:
+    """
+    Serves /assets from the active creator profile's media folder.
+
+    A StaticFiles mount fixes its directory when the app starts, so after a
+    profile switch it kept serving the first profile's uploads and generated
+    images. One StaticFiles per folder, chosen per request, keeps each
+    profile's media its own.
+    """
+
+    def __init__(self) -> None:
+        self._apps: Dict[str, StaticFiles] = {}
+
+    async def __call__(self, scope, receive, send):
+        directory = get_assets_dir()
+        served = self._apps.get(directory)
+        if served is None:
+            served = self._apps[directory] = StaticFiles(directory=directory)
+        await served(scope, receive, send)
+
+
+app.mount("/assets", _ProfileAssets(), name="assets")
 
 if os.path.exists(FRONTEND_DIR):
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

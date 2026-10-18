@@ -52,8 +52,9 @@ def get_db() -> sqlite3.Connection:
     # Safety guard: Tests must NEVER connect to the live production database
     if ("pytest" in sys.modules or "PYTEST_CURRENT_TEST" in os.environ) and os.environ.get("INOX_ALLOW_LIVE_DB_IN_TESTS") != "1":
         live_repo_db = os.path.normcase(os.path.abspath(os.path.join(_STUDIO_DIR, "data", DB_FILENAME)))
+        live_profiles = os.path.normcase(os.path.abspath(os.path.join(_STUDIO_DIR, "profiles"))) + os.sep
         current_resolved_db = os.path.normcase(os.path.abspath(db_path))
-        if current_resolved_db == live_repo_db:
+        if current_resolved_db == live_repo_db or current_resolved_db.startswith(live_profiles):
             raise RuntimeError(
                 f"CRITICAL SAFETY VIOLATION: Test run attempted to connect to live production database at {db_path}! "
                 "Tests must run against an isolated INOX_HYDRA_HOME sandbox."

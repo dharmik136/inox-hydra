@@ -11,6 +11,7 @@ import time
 import uuid
 import json
 import urllib.parse
+import contextvars
 import threading
 import requests
 
@@ -40,8 +41,6 @@ try:
     from .paths import get_generated_dir
 except ImportError:
     from paths import get_generated_dir
-
-GENERATED_DIR = get_generated_dir()
 
 # -- Validation & Concurrency Constants -------------------------------------
 MAX_CONCEPT_LENGTH = 2000
@@ -158,8 +157,12 @@ class ImageStudioManager:
                     except Exception:
                         pass
 
-        # Launch background thread
-        thread = threading.Thread(target=self._run_generation_worker, args=(task_id, options), daemon=True)
+        # Launch background thread. It runs in a copy of this request's
+        # context, so it writes to the creator profile the request was for.
+        context = contextvars.copy_context()
+        thread = threading.Thread(
+            target=context.run, args=(self._run_generation_worker, task_id, options), daemon=True
+        )
         thread.start()
 
         return task_id
@@ -471,9 +474,9 @@ class ImageStudioManager:
                 self._update_task(task_id, 90, "Preserving raw canvas format (provider watermark retained)...")
             time.sleep(delay)
 
-            os.makedirs(GENERATED_DIR, exist_ok=True)
+            generated_dir = get_generated_dir()
             filename = f"gen_{uuid.uuid4().hex[:10]}.jpg"
-            file_path = os.path.join(GENERATED_DIR, filename)
+            file_path = os.path.join(generated_dir, filename)
 
             with open(file_path, "wb") as f:
                 f.write(image_bytes)

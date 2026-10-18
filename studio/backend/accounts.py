@@ -1,25 +1,45 @@
 """
-Enterprise Multi-Tenant Creator Profile Management.
-===================================================
+Creator Profiles: One Database per Creator.
+===========================================
 
-Provides profile isolation and account switching for creators and agencies
-managing multiple LinkedIn profiles from a single local Inox Hydra instance.
+Each creator profile is its own folder with its own database, media, backups
+and exports (see paths.py). Switching profile switches which folder every
+connection opens, so one client's posts, leads and drafts cannot appear in
+another's screens, backups or exports, and no query has to remember a filter.
+
+The first profile, "default", is the application home itself, so an install
+from before profiles existed keeps its data where it was. The others are
+listed in profiles/profiles.json with their display details. More than one
+profile is the agency tier, so creating a second one asks the licence.
+
+Profiles used to be rows in a creator_accounts table inside the one shared
+database, with an account_id column that nothing filtered by: switching
+profile changed the avatar and nothing else. Those rows are adopted into the
+registry the first time it is read, and each gets a database of its own.
 
 Invariants:
 - Zero literal em-dashes across all code, docstrings, and comments.
-- 'default' account cannot be deleted.
-- Data across drafts, posts, leads, and lead_interactions are scoped by account_id.
+- The default profile cannot be deleted.
+- Deleting a profile deletes its folder, and only when the caller repeats the
+  profile's name. Nothing else ever removes a profile's data.
 """
 
+import os
 import re
+import shutil
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from .database import get_db
+    from . import paths
+    from .database import get_db, init_db, seed_initial_data
+    from . import licensing
 except ImportError:
-    from database import get_db
+    import paths
+    from database import get_db, init_db, seed_initial_data
+    import licensing
 
 
 MAX_ACCOUNT_NAME_LENGTH = 120
@@ -38,272 +58,275 @@ def _compute_initials(name: str) -> str:
     return (parts[0][0] + parts[-1][0]).upper()
 
 
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ---------------------------------------------------------------------------
+# The registry
+# ---------------------------------------------------------------------------
+
+def _adopt_legacy_accounts() -> None:
+    """
+    Moves profiles recorded in the old creator_accounts table into the registry.
+
+    Runs once, when there is no registry yet. Their data never was separated,
+    so it all stays with the default profile; each adopted profile starts with
+    an empty database of its own the first time it is opened.
+    """
+    if os.path.exists(paths.get_profiles_file()):
+        return
+    with paths.using_profile(paths.DEFAULT_PROFILE_ID):
+        db_path = paths.get_db_path()
+        if not os.path.exists(db_path):
+            return
+        try:
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute(
+                    "SELECT id, name, vanity, headline, avatar_initials, is_default, created_at "
+                    "FROM creator_accounts ORDER BY created_at"
+                ).fetchall()
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            return
+    entries = []
+    for row in rows:
+        pid = (row["id"] or "").strip().lower()
+        if row["is_default"] or pid == paths.DEFAULT_PROFILE_ID:
+            continue
+        if not paths.is_valid_profile_id(pid):
+            continue
+        entries.append({
+            "id": pid,
+            "name": row["name"] or pid,
+            "vanity": row["vanity"] or "",
+            "headline": row["headline"] or "",
+            "avatar_initials": row["avatar_initials"] or _compute_initials(row["name"] or pid),
+            "created_at": row["created_at"] or _now(),
+        })
+    if entries:
+        paths.write_profiles({"active": paths.DEFAULT_PROFILE_ID, "profiles": entries})
+
+
+def _registry() -> Dict[str, Any]:
+    _adopt_legacy_accounts()
+    return paths.read_profiles()
+
+
+def _default_details() -> Dict[str, str]:
+    """
+    How the default profile is named: what the creator set, then the profile
+    they confirmed in Setup, then a plain label. Never an invented person.
+    """
+    entry = next((p for p in _registry()["profiles"] if p["id"] == paths.DEFAULT_PROFILE_ID), None)
+    if entry and entry.get("name"):
+        return {"name": entry["name"], "vanity": entry.get("vanity", ""), "headline": entry.get("headline", "")}
+    with paths.using_profile(paths.DEFAULT_PROFILE_ID):
+        db_path = paths.get_db_path()
+        if os.path.exists(db_path):
+            try:
+                conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                conn.row_factory = sqlite3.Row
+                try:
+                    row = conn.execute(
+                        "SELECT display_name, vanity, headline FROM creator_identity "
+                        "WHERE id = 1 AND confirmed_at IS NOT NULL"
+                    ).fetchone()
+                finally:
+                    conn.close()
+                if row and row["display_name"]:
+                    return {"name": row["display_name"], "vanity": row["vanity"] or "", "headline": row["headline"] or ""}
+            except sqlite3.Error:
+                pass
+    return {"name": "My studio", "vanity": "", "headline": ""}
+
+
+def _counts(profile_id: str) -> Dict[str, int]:
+    """Posts, drafts and leads in one profile's own database, read only."""
+    with paths.using_profile(profile_id):
+        db_path = os.path.join(paths.get_profile_home(), "data", paths.DB_FILENAME)
+    counts = {"posts_count": 0, "drafts_count": 0, "leads_count": 0}
+    if not os.path.exists(db_path):
+        return counts
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            for table, key in (("posts", "posts_count"), ("drafts", "drafts_count"), ("leads", "leads_count")):
+                try:
+                    counts[key] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                except sqlite3.Error:
+                    pass
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        pass
+    return counts
+
+
+def _describe(entry: Dict[str, Any], active_id: str) -> Dict[str, Any]:
+    is_default = entry["id"] == paths.DEFAULT_PROFILE_ID
+    return {
+        "id": entry["id"],
+        "name": entry["name"],
+        "vanity": entry.get("vanity") or "",
+        "headline": entry.get("headline") or "",
+        "avatar_initials": entry.get("avatar_initials") or _compute_initials(entry["name"]),
+        "is_default": is_default,
+        "is_active": entry["id"] == active_id,
+        "created_at": entry.get("created_at"),
+        **_counts(entry["id"]),
+    }
+
+
+def _entries() -> List[Dict[str, Any]]:
+    registry = _registry()
+    default = _default_details()
+    entries = [{"id": paths.DEFAULT_PROFILE_ID, **default, "created_at": None}]
+    entries += [p for p in registry["profiles"] if p["id"] != paths.DEFAULT_PROFILE_ID]
+    return entries
+
+
+def _open_profile(profile_id: str) -> None:
+    """Creates or upgrades a profile's database, as a fresh install would."""
+    with paths.using_profile(profile_id):
+        init_db()
+        seed_initial_data()
+
+
+# ---------------------------------------------------------------------------
+# Public API, used by the /api/v1/accounts routes
+# ---------------------------------------------------------------------------
+
 def get_active_account_id(conn=None) -> str:
-    """
-    Returns the currently active account_id from local settings.
-    Falls back to 'default' if not configured or if the recorded account does not exist.
-    """
-    close_after = False
-    if conn is None:
-        conn = get_db()
-        close_after = True
-
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM settings WHERE key = 'active_account_id'")
-        row = cursor.fetchone()
-        if not row or not row["value"]:
-            return "default"
-
-        active_id = str(row["value"]).strip()
-        cursor.execute("SELECT id FROM creator_accounts WHERE id = ?", (active_id,))
-        if cursor.fetchone():
-            return active_id
-        return "default"
-    finally:
-        if close_after:
-            conn.close()
-
-
-def set_active_account_id(account_id: str, conn=None) -> str:
-    """Sets the active account_id in local settings."""
-    close_after = False
-    if conn is None:
-        conn = get_db()
-        close_after = True
-
-    try:
-        cursor = conn.cursor()
-        cursor.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES ('active_account_id', ?)",
-            (account_id,),
-        )
-        conn.commit()
-        return account_id
-    finally:
-        if close_after:
-            conn.close()
+    """The active profile. conn is accepted for older callers and ignored."""
+    return paths.get_active_profile_id()
 
 
 def list_accounts(conn=None) -> Dict[str, Any]:
-    """
-    Lists all creator profile accounts, their summary metrics, and the active profile.
-    """
-    close_after = False
-    if conn is None:
-        conn = get_db()
-        close_after = True
-
-    try:
-        cursor = conn.cursor()
-        active_id = get_active_account_id(conn=conn)
-
-        # Ensure default account exists
-        cursor.execute("SELECT COUNT(*) FROM creator_accounts WHERE id = 'default'")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute("""
-                INSERT OR IGNORE INTO creator_accounts (id, name, vanity, headline, avatar_initials, is_default)
-                VALUES ('default', 'Default Profile', '', 'Creator', 'DP', 1)
-            """)
-            conn.commit()
-
-        cursor.execute("""
-            SELECT id, name, vanity, headline, avatar_initials, is_default, created_at, updated_at
-            FROM creator_accounts
-            ORDER BY is_default DESC, created_at ASC
-        """)
-        rows = cursor.fetchall()
-        accounts: List[Dict[str, Any]] = []
-
-        for r in rows:
-            acc_id = r["id"]
-
-            # Quick metric aggregates per account
-            cursor.execute("SELECT COUNT(*) FROM posts WHERE account_id = ?", (acc_id,))
-            posts_count = cursor.fetchone()[0]
-
-            cursor.execute("SELECT COUNT(*) FROM drafts WHERE account_id = ?", (acc_id,))
-            drafts_count = cursor.fetchone()[0]
-
-            cursor.execute("SELECT COUNT(*) FROM leads WHERE account_id = ?", (acc_id,))
-            leads_count = cursor.fetchone()[0]
-
-            accounts.append({
-                "id": acc_id,
-                "name": r["name"],
-                "vanity": r["vanity"] or "",
-                "headline": r["headline"] or "",
-                "avatar_initials": r["avatar_initials"] or _compute_initials(r["name"]),
-                "is_default": bool(r["is_default"]),
-                "is_active": acc_id == active_id,
-                "created_at": r["created_at"],
-                "posts_count": posts_count,
-                "drafts_count": drafts_count,
-                "leads_count": leads_count,
-            })
-
-        return {
-            "status": "success",
-            "accounts": accounts,
-            "active_account_id": active_id,
-        }
-    finally:
-        if close_after:
-            conn.close()
+    """Every profile with its own counts, the active one, and the licence's allowance."""
+    active_id = paths.get_active_profile_id()
+    accounts = [_describe(entry, active_id) for entry in _entries()]
+    return {
+        "status": "success",
+        "accounts": accounts,
+        "active_account_id": active_id,
+        "profile_limit": licensing.profile_limit(),
+    }
 
 
 def get_account(account_id: str, conn=None) -> Optional[Dict[str, Any]]:
-    """Retrieves a single creator account record."""
-    close_after = False
-    if conn is None:
-        conn = get_db()
-        close_after = True
-
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, name, vanity, headline, avatar_initials, is_default, created_at, updated_at
-            FROM creator_accounts
-            WHERE id = ?
-        """, (account_id,))
-        row = cursor.fetchone()
-        if not row:
-            return None
-
-        active_id = get_active_account_id(conn=conn)
-        return {
-            "id": row["id"],
-            "name": row["name"],
-            "vanity": row["vanity"] or "",
-            "headline": row["headline"] or "",
-            "avatar_initials": row["avatar_initials"] or _compute_initials(row["name"]),
-            "is_default": bool(row["is_default"]),
-            "is_active": row["id"] == active_id,
-            "created_at": row["created_at"],
-        }
-    finally:
-        if close_after:
-            conn.close()
+    entry = next((e for e in _entries() if e["id"] == account_id), None)
+    return _describe(entry, paths.get_active_profile_id()) if entry else None
 
 
 def create_account(data: Dict[str, Any], conn=None) -> Dict[str, Any]:
     """
-    Creates a new creator account profile in the studio.
+    Creates a creator profile with an empty database of its own.
+
+    A second profile is the agency tier, so the licence is asked first.
     """
     name = (data.get("name") or "").strip()[:MAX_ACCOUNT_NAME_LENGTH]
     if not name:
         return {"status": "error", "message": "Account name is required"}
 
+    existing = _entries()
+    limit = licensing.profile_limit()
+    if len(existing) >= limit:
+        return {
+            "status": "error",
+            "code": "licence",
+            "message": (
+                f"Your licence covers {limit} creator profile{'s' if limit != 1 else ''}. "
+                "Separate profiles for several creators are part of the Agency licence."
+            ),
+        }
+
     headline = (data.get("headline") or "").strip()[:MAX_HEADLINE_LENGTH]
     vanity = (data.get("vanity") or "").strip()[:MAX_VANITY_LENGTH]
 
-    # Generate an account identifier
-    suggested_id = (data.get("id") or "").strip()
+    suggested_id = (data.get("id") or "").strip().lower()
     if suggested_id:
-        acc_id = re.sub(r"[^\w\-]", "", suggested_id).lower()
+        acc_id = re.sub(r"[^a-z0-9-]", "", suggested_id.replace("_", "-"))[:48]
     else:
-        slug = re.sub(r"[^\w]+", "-", name.lower()).strip("-")[:24]
+        slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:24]
         acc_id = f"{slug}-{uuid.uuid4().hex[:6]}" if slug else f"acc-{uuid.uuid4().hex[:8]}"
+    if not paths.is_valid_profile_id(acc_id) or acc_id == paths.DEFAULT_PROFILE_ID:
+        return {"status": "error", "message": f"'{acc_id}' cannot be used as a profile ID"}
+    if any(e["id"] == acc_id for e in existing):
+        return {"status": "error", "message": f"Account ID '{acc_id}' already exists"}
 
-    initials = _compute_initials(name)
-    now_iso = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "id": acc_id,
+        "name": name,
+        "vanity": vanity,
+        "headline": headline,
+        "avatar_initials": _compute_initials(name),
+        "created_at": _now(),
+    }
+    home = os.path.join(paths.get_profiles_root(), acc_id)
+    if os.path.exists(home):
+        return {"status": "error", "message": f"A folder for '{acc_id}' already exists at {home}"}
 
-    close_after = False
-    if conn is None:
-        conn = get_db()
-        close_after = True
-
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM creator_accounts WHERE id = ?", (acc_id,))
-        if cursor.fetchone():
-            return {"status": "error", "message": f"Account ID '{acc_id}' already exists"}
-
-        cursor.execute("""
-            INSERT INTO creator_accounts (id, name, vanity, headline, avatar_initials, is_default, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 0, ?, ?)
-        """, (acc_id, name, vanity, headline, initials, now_iso, now_iso))
-        conn.commit()
-
-        account = {
-            "id": acc_id,
-            "name": name,
-            "vanity": vanity,
-            "headline": headline,
-            "avatar_initials": initials,
-            "is_default": False,
-            "is_active": False,
-            "created_at": now_iso,
-            "posts_count": 0,
-            "drafts_count": 0,
-            "leads_count": 0,
-        }
-        return {"status": "success", "account": account}
-    finally:
-        if close_after:
-            conn.close()
+    _open_profile(acc_id)
+    registry = _registry()
+    registry["profiles"].append(entry)
+    paths.write_profiles(registry)
+    return {"status": "success", "account": _describe(entry, paths.get_active_profile_id())}
 
 
 def switch_account(account_id: str, conn=None) -> Dict[str, Any]:
+    """Makes a profile active from the next request on, upgrading its database first."""
+    entry = next((e for e in _entries() if e["id"] == account_id), None)
+    if not entry:
+        return {"status": "error", "message": f"Account '{account_id}' does not exist"}
+
+    _open_profile(account_id)
+    registry = _registry()
+    registry["active"] = account_id
+    paths.write_profiles(registry)
+    return {
+        "status": "success",
+        "active_account_id": account_id,
+        "account": _describe(entry, account_id),
+    }
+
+
+def delete_account(account_id: str, conn=None, confirm: Optional[str] = None) -> Dict[str, Any]:
     """
-    Switches active profile to the target account_id.
+    Deletes a profile and every file it holds: database, media, backups, exports.
+
+    Refuses the default profile, and refuses unless `confirm` repeats the
+    profile's name or ID. If it was active, the default profile becomes active.
     """
-    close_after = False
-    if conn is None:
-        conn = get_db()
-        close_after = True
-
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name FROM creator_accounts WHERE id = ?", (account_id,))
-        row = cursor.fetchone()
-        if not row:
-            return {"status": "error", "message": f"Account '{account_id}' does not exist"}
-
-        set_active_account_id(account_id, conn=conn)
-        account = get_account(account_id, conn=conn)
-
-        return {
-            "status": "success",
-            "active_account_id": account_id,
-            "account": account,
-        }
-    finally:
-        if close_after:
-            conn.close()
-
-
-def delete_account(account_id: str, conn=None) -> Dict[str, Any]:
-    """
-    Deletes a creator account profile. Refuses to delete 'default'.
-    If the active account is deleted, active account is switched back to 'default'.
-    """
-    if account_id == "default":
+    if account_id == paths.DEFAULT_PROFILE_ID:
         return {"status": "error", "message": "Cannot delete the default system profile"}
 
-    close_after = False
-    if conn is None:
-        conn = get_db()
-        close_after = True
-
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM creator_accounts WHERE id = ?", (account_id,))
-        if not cursor.fetchone():
-            return {"status": "error", "message": f"Account '{account_id}' not found"}
-
-        active_id = get_active_account_id(conn=conn)
-        if active_id == account_id:
-            set_active_account_id("default", conn=conn)
-
-        cursor.execute("DELETE FROM creator_accounts WHERE id = ?", (account_id,))
-        conn.commit()
-
+    entry = next((e for e in _entries() if e["id"] == account_id), None)
+    if not entry:
+        return {"status": "error", "message": f"Account '{account_id}' not found"}
+    if (confirm or "").strip() not in (entry["name"], entry["id"]):
         return {
-            "status": "success",
-            "message": f"Account '{account_id}' deleted successfully",
-            "active_account_id": get_active_account_id(conn=conn),
+            "status": "error",
+            "code": "confirm",
+            "message": f"Type the profile's name, {entry['name']}, to delete it and all of its data.",
         }
-    finally:
-        if close_after:
-            conn.close()
+
+    registry = _registry()
+    registry["profiles"] = [p for p in registry["profiles"] if p["id"] != account_id]
+    if registry.get("active") == account_id:
+        registry["active"] = paths.DEFAULT_PROFILE_ID
+    paths.write_profiles(registry)
+
+    root = os.path.realpath(paths.get_profiles_root())
+    home = os.path.realpath(os.path.join(root, account_id))
+    if os.path.commonpath([root, home]) == root and home != root and os.path.isdir(home):
+        shutil.rmtree(home)
+
+    return {
+        "status": "success",
+        "message": f"Profile '{entry['name']}' and all of its data were deleted",
+        "active_account_id": registry["active"],
+    }

@@ -105,7 +105,7 @@ EMBED_URL = (
 # the working tree.
 STUDIO_EXCLUDE = {
     "data", "assets", "tests", "__pycache__", ".pytest_cache",
-    "backups", "logs", "vault", "ui",
+    "backups", "logs", "vault", "ui", "profiles", "exports",
 }
 
 # Secrets that must never leave this machine inside an artifact.

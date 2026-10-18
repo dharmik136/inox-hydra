@@ -1,167 +1,214 @@
 """
-Multi-Tenant Creator Profile Verification Suite.
-================================================
-Validates:
-1. Migration 16: creator_accounts table schema, index, and default account seeding.
-2. GET /api/v1/accounts: listing accounts, active_account_id, and aggregate metrics.
-3. POST /api/v1/accounts: creating a new profile with initials generation.
-4. POST /api/v1/accounts/switch: switching active creator profiles.
-5. DELETE /api/v1/accounts/{id}: deletion constraints (protects default account).
-6. Strict zero em-dash compliance across multi-tenant files.
+One Database per Creator Profile.
+=================================
+
+Profiles used to be rows in one shared database, with an account_id column
+nothing filtered by: switching profile changed the avatar and nothing else.
+The owner chose real isolation, one database per creator (planning/7 Roadmap/
+Decisions Needed.md, decision 3). These hold it to that:
+
+- the first profile is the application home itself, so existing data stays put;
+- every other profile is its own folder, with its own database, media,
+  backups and exports, and the API reads and writes only the active one;
+- a second profile needs an Agency licence;
+- deleting a profile needs its name repeated, and removes its folder;
+- the background scheduler visits every profile's queue, not only the active one;
+- profiles recorded in the old table are adopted.
 """
 
+import base64
 import os
+import sqlite3
 import sys
+
 import pytest
 from fastapi.testclient import TestClient
 
-# Ensure studio/backend is on Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "backend")))
 
-from app import app
-from database import get_db, init_db
-import accounts
+import ed25519  # noqa: E402
+import licensing  # noqa: E402
+import paths  # noqa: E402
+from app import app  # noqa: E402
+from database import get_db, init_db  # noqa: E402
 
-client = TestClient(app)
+TEST_SECRET = bytes(range(32))
 
 
-@pytest.fixture(autouse=True)
-def setup_database():
-    """Ensure database schema and migrations are initialized."""
+def _licence(tier="agency", profiles=5, expires_at="2099-01-01"):
+    payload = {
+        "v": 1, "id": "test", "email": "buyer@example.com", "name": "", "tier": tier, "kind": "annual",
+        "profiles": profiles, "issued_at": "2026-10-19", "expires_at": expires_at, "updates_until": expires_at,
+    }
+    return licensing.encode(payload, lambda message: ed25519.sign(TEST_SECRET, message))
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    monkeypatch.setenv("INOX_HYDRA_HOME", str(tmp_path))
+    monkeypatch.delenv("INOX_DEMO_DATA", raising=False)
+    monkeypatch.setattr(licensing, "PUBLIC_KEYS", [base64.b64encode(ed25519.public_key(TEST_SECRET)).decode()])
     init_db()
+    return tmp_path
 
 
-def test_creator_accounts_table_and_default_seeding():
-    """Verify Migration 16 creates creator_accounts table and seeds the default profile."""
+@pytest.fixture
+def client(home):
+    return TestClient(app)
+
+
+@pytest.fixture
+def agency(client):
+    assert client.post("/api/v1/licence", json={"key": _licence()}).status_code == 200
+    return client
+
+
+def _add_post(content):
     conn = get_db()
-    cursor = conn.cursor()
-
-    cursor.execute("PRAGMA table_info(creator_accounts)")
-    cols = {row["name"]: row for row in cursor.fetchall()}
-    assert "id" in cols
-    assert "name" in cols
-    assert "vanity" in cols
-    assert "headline" in cols
-    assert "avatar_initials" in cols
-    assert "is_default" in cols
-
-    # Check default account exists
-    cursor.execute("SELECT id, name, is_default, avatar_initials FROM creator_accounts WHERE id = 'default'")
-    row = cursor.fetchone()
-    assert row is not None
-    assert row["id"] == "default"
-    assert row["is_default"] == 1
-    assert len(row["avatar_initials"]) >= 1
+    conn.execute("INSERT INTO posts (id, content, status) VALUES (?, ?, 'draft')", (content, content))
+    conn.commit()
     conn.close()
 
 
-def test_accounts_api_list_and_active_detection():
-    """Verify GET /api/v1/accounts returns accounts array and active_account_id."""
-    res = client.get("/api/v1/accounts")
-    assert res.status_code == 200
-    data = res.json()
-
-    assert data["status"] == "success"
-    assert "accounts" in data
-    assert "active_account_id" in data
-    assert len(data["accounts"]) >= 1
-
-    default_acc = next((a for a in data["accounts"] if a["id"] == "default"), None)
-    assert default_acc is not None
-    assert default_acc["is_default"] is True
+def _post_ids(client):
+    data = client.get("/api/posts").json()
+    rows = data.get("posts", data) if isinstance(data, dict) else data
+    return {row["id"] for row in rows}
 
 
-def test_accounts_api_create_and_initials():
-    """Verify POST /api/v1/accounts creates profile with initials and default values."""
-    payload = {
-        "name": "Aravind Subramanian",
-        "headline": "VP of Engineering at CloudScale",
-        "vanity": "aravind-sub",
-        "id": "aravind-cloudscale",
-    }
-    res = client.post("/api/v1/accounts", json=payload)
-    assert res.status_code == 200
-    data = res.json()
-
-    assert data["status"] == "success"
-    acc = data["account"]
-    assert acc["id"] == "aravind-cloudscale"
-    assert acc["name"] == "Aravind Subramanian"
-    assert acc["headline"] == "VP of Engineering at CloudScale"
-    assert acc["vanity"] == "aravind-sub"
-    assert acc["avatar_initials"] == "AS"
-    assert acc["is_default"] is False
+def test_a_fresh_install_has_one_profile_in_the_application_home(client, home):
+    data = client.get("/api/v1/accounts").json()
+    assert [a["id"] for a in data["accounts"]] == ["default"]
+    assert data["active_account_id"] == "default"
+    assert data["profile_limit"] == 1
+    assert paths.get_db_path() == os.path.join(str(home), "data", paths.DB_FILENAME)
+    assert not os.path.exists(paths.get_profiles_file()), "a single-profile install wrote a registry"
 
 
-def test_accounts_api_switch_lifecycle():
-    """Verify POST /api/v1/accounts/switch alters active account."""
-    # 1. Create a second account
-    create_res = client.post("/api/v1/accounts", json={
-        "name": "Sarah Jenkins",
-        "headline": "Director of Product Architecture",
-        "vanity": "sarah-jenkins-lead",
-        "id": "sarah-j",
-    })
-    assert create_res.status_code == 200
-
-    # 2. Switch to this account
-    switch_res = client.post("/api/v1/accounts/switch", json={"account_id": "sarah-j"})
-    assert switch_res.status_code == 200
-    switch_data = switch_res.json()
-    assert switch_data["status"] == "success"
-    assert switch_data["active_account_id"] == "sarah-j"
-
-    # 3. Verify listing reports sarah-j as active
-    list_res = client.get("/api/v1/accounts")
-    assert list_res.status_code == 200
-    list_data = list_res.json()
-    assert list_data["active_account_id"] == "sarah-j"
-
-    sarah = next((a for a in list_data["accounts"] if a["id"] == "sarah-j"), None)
-    assert sarah is not None
-    assert sarah["is_active"] is True
-
-    # 4. Switch back to default
-    switch_back = client.post("/api/v1/accounts/switch", json={"account_id": "default"})
-    assert switch_back.status_code == 200
-    assert switch_back.json()["active_account_id"] == "default"
+def test_a_second_profile_needs_the_agency_licence(client):
+    res = client.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"})
+    assert res.status_code == 402
+    assert "Agency" in res.json()["detail"]
 
 
-def test_accounts_api_delete_safeguards():
-    """Verify DELETE /api/v1/accounts/{id} protects default profile and removes custom profiles."""
-    # Refuse deleting default
-    res = client.delete("/api/v1/accounts/default")
+def test_a_creator_licence_is_still_one_profile(client):
+    assert client.post("/api/v1/licence", json={"key": _licence(tier="creator", profiles=1)}).status_code == 200
+    assert client.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"}).status_code == 402
+
+
+def test_an_expired_agency_licence_does_not_add_profiles(client):
+    client.post("/api/v1/licence", json={"key": _licence(expires_at="2020-01-01")})
+    state = client.get("/api/v1/licence").json()
+    assert state["status"] == "expired" and state["tier"] == "free"
+    assert client.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"}).status_code == 402
+
+
+def test_a_new_profile_is_its_own_folder_and_database(agency, home):
+    res = agency.post("/api/v1/accounts", json={"name": "Ada Lovelace", "id": "ada"})
+    assert res.status_code == 200, res.text
+    account = res.json()["account"]
+    assert account["avatar_initials"] == "AL" and account["is_default"] is False
+    db = os.path.join(str(home), "profiles", "ada", "data", paths.DB_FILENAME)
+    assert os.path.isfile(db), "the profile has no database of its own"
+    version = sqlite3.connect(db).execute("PRAGMA user_version").fetchone()[0]
+    assert version >= 17, "the new profile's database was not brought to the current schema"
+
+
+def test_the_api_reads_and_writes_only_the_active_profile(agency):
+    _add_post("default-post")
+    agency.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"})
+    assert agency.post("/api/v1/accounts/switch", json={"account_id": "client-a"}).status_code == 200
+
+    assert "default-post" not in _post_ids(agency), "a client sees the default profile's posts"
+    created = agency.post("/api/posts", json={"content": "Client A's own post", "status": "draft"})
+    assert created.status_code in (200, 201), created.text
+
+    agency.post("/api/v1/accounts/switch", json={"account_id": "default"})
+    ids = _post_ids(agency)
+    assert "default-post" in ids
+    assert not any("Client A" in str(i) for i in ids)
+    listing = {a["id"]: a for a in agency.get("/api/v1/accounts").json()["accounts"]}
+    assert listing["client-a"]["posts_count"] == 1 and listing["default"]["posts_count"] == 1
+
+
+def test_media_is_served_from_the_active_profile(agency):
+    with open(os.path.join(paths.get_uploads_dir(), "mine.txt"), "w") as handle:
+        handle.write("default media")
+    assert agency.get("/assets/uploads/mine.txt").status_code == 200
+    agency.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"})
+    agency.post("/api/v1/accounts/switch", json={"account_id": "client-a"})
+    assert agency.get("/assets/uploads/mine.txt").status_code == 404, "a client can open the default profile's media"
+
+
+def test_backups_and_exports_belong_to_the_profile(agency, home):
+    import migrations
+
+    agency.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"})
+    with paths.using_profile("client-a"):
+        backup = migrations.backup_database("test")
+        exports = paths.get_exports_dir()
+    profile_home = os.path.join(str(home), "profiles", "client-a")
+    assert backup and backup.startswith(profile_home)
+    assert exports.startswith(profile_home)
+
+
+def test_deleting_a_profile_needs_its_name_and_removes_its_folder(agency, home):
+    assert agency.delete("/api/v1/accounts/default").status_code == 400
+    agency.post("/api/v1/accounts", json={"name": "Temporary Client", "id": "temp-client"})
+    agency.post("/api/v1/accounts/switch", json={"account_id": "temp-client"})
+    folder = os.path.join(str(home), "profiles", "temp-client")
+    assert os.path.isdir(folder)
+
+    refused = agency.request("DELETE", "/api/v1/accounts/temp-client", json={"confirm": "temp"})
+    assert refused.status_code == 400 and "Temporary Client" in refused.json()["detail"]
+    assert os.path.isdir(folder)
+
+    gone = agency.request("DELETE", "/api/v1/accounts/temp-client", json={"confirm": "Temporary Client"})
+    assert gone.status_code == 200 and gone.json()["active_account_id"] == "default"
+    assert not os.path.exists(folder)
+    assert "temp-client" not in [a["id"] for a in agency.get("/api/v1/accounts").json()["accounts"]]
+
+
+def test_the_scheduler_visits_every_profile(agency):
+    from scheduler import native_scheduler
+
+    agency.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"})
+    with paths.using_profile("client-a"):
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO posts (id, content, status, scheduled_for) VALUES "
+            "('due-in-a', 'Due now', 'scheduled', '2020-01-01T09:00:00+00:00')"
+        )
+        conn.commit()
+        conn.close()
+    actions = native_scheduler.check_every_profile()
+    assert any(a.get("profile_id") == "client-a" for a in actions), "a due post in an inactive profile was never seen"
+
+
+def test_profiles_from_the_old_table_are_adopted(home, client):
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO creator_accounts (id, name, vanity, headline, avatar_initials, is_default) "
+        "VALUES ('old-client', 'Old Client', 'old', 'Founder', 'OC', 0)"
+    )
+    conn.commit()
+    conn.close()
+    ids = [a["id"] for a in client.get("/api/v1/accounts").json()["accounts"]]
+    assert ids == ["default", "old-client"]
+
+
+def test_a_tampered_licence_is_refused(client):
+    key = _licence()
+    head, body, signature = key.split(".")
+    forged = ".".join([head, body[:-2] + ("AA" if body[-2:] != "AA" else "BB"), signature])
+    res = client.post("/api/v1/licence", json={"key": forged})
     assert res.status_code == 400
-
-    # Create disposable account
-    create_res = client.post("/api/v1/accounts", json={
-        "name": "Temporary Client Profile",
-        "id": "temp-client",
-    })
-    assert create_res.status_code == 200
-
-    # Delete disposable account
-    del_res = client.delete("/api/v1/accounts/temp-client")
-    assert del_res.status_code == 200
-    assert del_res.json()["status"] == "success"
-
-    # Verify gone from listing
-    list_res = client.get("/api/v1/accounts")
-    acc_ids = [a["id"] for a in list_res.json()["accounts"]]
-    assert "temp-client" not in acc_ids
+    assert client.get("/api/v1/licence").json()["status"] == "none"
 
 
 def test_strict_zero_em_dashes_in_multitenancy():
-    """Strict verification: Zero literal em-dashes in Multi-Tenant files."""
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    targets = [
-        os.path.join(base_dir, "studio", "backend", "accounts.py"),
-        os.path.join(base_dir, "studio", "ui", "src", "components", "AccountSwitcher.tsx"),
-        os.path.join(base_dir, "tests", "test_multitenancy_accounts.py"),
-    ]
-
-    for fpath in targets:
-        assert os.path.exists(fpath), f"File {fpath} not found"
-        with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read()
-            assert "\u2014" not in content, f"Forbidden em-dash found in {fpath}"
+    for rel in ("studio/backend/accounts.py", "studio/backend/licensing.py", "studio/backend/ed25519.py",
+                "studio/ui/src/components/AccountSwitcher.tsx", "tests/test_multitenancy_accounts.py"):
+        with open(os.path.join(base_dir, rel), "r", encoding="utf-8") as handle:
+            assert chr(8212) not in handle.read(), f"Forbidden em-dash found in {rel}"

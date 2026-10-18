@@ -326,7 +326,7 @@ def export_data(destination: Optional[str] = None, fmt: str = "json") -> str:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if destination is None:
         suffix = "json" if fmt == "json" else "zip"
-        destination = os.path.join(paths.get_app_home(), f"inox_export_{stamp}.{suffix}")
+        destination = os.path.join(paths.get_profile_home(), f"inox_export_{stamp}.{suffix}")
 
     conn = _connect()
     try:

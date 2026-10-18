@@ -139,8 +139,12 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # /api/ai/stream added (+1 declared path, surfaced in api.ts streamAiCompletion).
 # Reached moves 87 -> 88, unreachable stays at 84, total moves 171 -> 172.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 172
-REACHED_BY_INTERFACE = 88
+# Then 172 -> 173, with the offline licence: /api/v1/licence added (GET, POST
+# and DELETE on one declared path, surfaced in LicenceWorkspace and api.ts).
+# Reached moves 88 -> 89, unreachable stays at 84, total moves 172 -> 173.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 173
+REACHED_BY_INTERFACE = 89
 UNREACHABLE = 84
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

@@ -32,6 +32,12 @@ export function AccountSwitcher({
   const [newHeadline, setNewHeadline] = useState("");
   const [newVanity, setNewVanity] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [limit, setLimit] = useState(1);
+
+  // Deleting removes the profile's folder, database and media, so it asks for
+  // the profile's name first. One row at a time.
+  const [deleting, setDeleting] = useState<CreatorAccount | null>(null);
+  const [confirmText, setConfirmText] = useState("");
 
   const panelRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -42,6 +48,7 @@ export function AccountSwitcher({
       const res = await fetchAccounts();
       setAccounts(res.accounts);
       setActiveId(res.active_account_id);
+      setLimit(res.profile_limit ?? 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load profiles");
     }
@@ -65,8 +72,9 @@ export function AccountSwitcher({
       if (onAccountSwitched) {
         onAccountSwitched(account);
       }
-      // Reload accounts to update active flags and metrics
-      await loadAccounts();
+      // Each profile is its own database, so every screen has to read again.
+      // A reload is the one way to be sure none keeps the last profile's data.
+      window.location.reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to switch profile");
     }
@@ -97,6 +105,8 @@ export function AccountSwitcher({
         if (onAccountSwitched) {
           onAccountSwitched(res.account);
         }
+        window.location.reload();
+        return;
       }
       await loadAccounts();
     } catch (err) {
@@ -106,12 +116,21 @@ export function AccountSwitcher({
     }
   };
 
-  const handleDelete = async (accountId: string, e: React.MouseEvent) => {
+  const askDelete = (account: CreatorAccount, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (accountId === "default" || accountId === activeId) return;
+    if (account.is_default || account.id === activeId) return;
+    setDeleting(account);
+    setConfirmText("");
+    setError(null);
+  };
 
+  const handleDelete = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deleting) return;
     try {
-      await deleteAccount(accountId);
+      await deleteAccount(deleting.id, confirmText.trim());
+      setDeleting(null);
+      setConfirmText("");
       await loadAccounts();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to remove profile");
@@ -139,8 +158,8 @@ export function AccountSwitcher({
         type="button"
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        aria-label={`Current profile: ${activeAccount?.name || "Default Profile"}`}
-        title={`Profile: ${activeAccount?.name || "Default Profile"} (Click to switch)`}
+        aria-label={`Current profile: ${activeAccount?.name || "loading"}`}
+        title={`Profile: ${activeAccount?.name || "loading"} (Click to switch)`}
         className={cn(
           "group relative flex items-center justify-center rounded-md transition-all",
           condensed
@@ -154,17 +173,17 @@ export function AccountSwitcher({
             "transition-transform group-hover:scale-105",
           )}
         >
-          {activeAccount?.avatar_initials || "DP"}
+          {activeAccount?.avatar_initials || ""}
         </span>
 
         {!condensed && (
           <span className="min-w-0 flex-1">
             <span className="block truncate text-xs font-medium text-ink-primary">
-              {activeAccount?.name || "Default Profile"}
+              {activeAccount?.name || ""}
             </span>
-            <span className="block truncate text-[11px] text-ink-muted">
-              {activeAccount?.headline || "LinkedIn Creator"}
-            </span>
+            {activeAccount?.headline && (
+              <span className="block truncate text-[11px] text-ink-muted">{activeAccount.headline}</span>
+            )}
           </span>
         )}
 
@@ -213,10 +232,52 @@ export function AccountSwitcher({
                 </button>
               </div>
 
+              <p className="mt-2 text-[11px] leading-snug text-ink-muted">
+                Each profile has its own database, media and backups. Nothing one profile holds
+                appears in another.
+              </p>
+
               {error && (
-                <div className="my-2 rounded-md bg-signal-orange/10 px-2.5 py-1.5 text-xs text-signal-orange-text">
+                <div role="alert" className="my-2 rounded-md bg-signal-orange/10 px-2.5 py-1.5 text-xs text-signal-orange-text">
                   {error}
                 </div>
+              )}
+
+              {deleting && (
+                <form
+                  onSubmit={handleDelete}
+                  className="my-2 rounded-lg border border-signal-orange/40 bg-soft/40 p-2.5"
+                  aria-label={`Delete ${deleting.name}`}
+                >
+                  <label htmlFor="confirm-delete-profile" className="block text-xs text-ink-primary">
+                    This deletes {deleting.name}'s database, media and backups from this machine.
+                    Type <span className="font-semibold">{deleting.name}</span> to confirm.
+                  </label>
+                  <input
+                    id="confirm-delete-profile"
+                    type="text"
+                    value={confirmText}
+                    onChange={(e) => setConfirmText(e.target.value)}
+                    autoComplete="off"
+                    className="mt-2 w-full rounded border border-edge bg-ink px-2 py-1 text-xs text-ink-primary focus:border-signal-orange focus:outline-none"
+                  />
+                  <div className="mt-2 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDeleting(null)}
+                      className="rounded px-2 py-1 text-xs text-ink-muted hover:text-ink-primary"
+                    >
+                      Keep it
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={confirmText.trim() !== deleting.name && confirmText.trim() !== deleting.id}
+                      className="rounded bg-signal-orange px-3 py-1 text-xs font-medium text-on-signal disabled:opacity-40"
+                    >
+                      Delete profile
+                    </button>
+                  </div>
+                </form>
               )}
 
               {/* Account list */}
@@ -282,10 +343,10 @@ export function AccountSwitcher({
                         ) : !acc.is_default ? (
                           <button
                             type="button"
-                            onClick={(e) => handleDelete(acc.id, e)}
-                            aria-label={`Remove ${acc.name} profile`}
-                            title="Remove profile"
-                            className="opacity-0 group-hover:opacity-100 rounded p-1 text-ink-muted hover:bg-soft hover:text-signal-orange-text transition-opacity"
+                            onClick={(e) => askDelete(acc, e)}
+                            aria-label={`Delete ${acc.name} profile`}
+                            title="Delete profile"
+                            className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 rounded p-1 text-ink-muted hover:bg-soft hover:text-signal-orange-text transition-opacity"
                           >
                             <Trash2 className="size-3.5" aria-hidden="true" />
                           </button>
@@ -297,6 +358,13 @@ export function AccountSwitcher({
               </div>
 
               {/* Add account section */}
+              {!creating && accounts.length >= limit && (
+                <p className="mt-1 text-[11px] leading-snug text-ink-muted">
+                  {limit === 1
+                    ? "More than one creator profile needs the Agency licence (Brand Studio, Licence)."
+                    : `Your licence covers ${limit} creator profiles.`}
+                </p>
+              )}
               {creating ? (
                 <form onSubmit={handleCreate} className="mt-2 rounded-lg border border-edge bg-soft/30 p-2.5">
                   <div className="mb-2 flex items-center justify-between">
@@ -352,7 +420,7 @@ export function AccountSwitcher({
                       <button
                         type="submit"
                         disabled={submitting || !newName.trim()}
-                        className="rounded bg-signal-orange px-3 py-1 text-xs font-medium text-white transition-opacity disabled:opacity-50"
+                        className="rounded bg-signal-orange px-3 py-1 text-xs font-medium text-on-signal transition-opacity disabled:opacity-50"
                       >
                         {submitting ? "Adding..." : "Add Profile"}
                       </button>

@@ -586,5 +586,5 @@ def export_obsidian_vault(destination: Optional[str] = None) -> Dict[str, Any]:
     """Reads the local record and writes it as an Obsidian vault. Returns where, and how much."""
     if destination is None:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        destination = os.path.join(paths.get_app_home(), "exports", f"obsidian_vault_{stamp}")
+        destination = os.path.join(paths.get_exports_dir(), f"obsidian_vault_{stamp}")
     return write_vault(build_notes(read_record()), destination)
