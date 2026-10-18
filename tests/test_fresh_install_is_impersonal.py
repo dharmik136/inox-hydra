@@ -34,7 +34,13 @@ import pytest
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 REAL_PEOPLE = ("Dan Koe", "Sahil Bloom", "Garry Tan", "Shreyas Doshi", "Alex Hormozi")
-AUTHOR_MARKERS = ("Dharmik", "dharmik136", "Enterprise Labs")
+# Case-sensitive, so the lowercase vanity and the author's own job title are
+# listed too: both slipped past the first three, as a sandbox profile's vanity
+# and as the default title on every carousel slide.
+AUTHOR_MARKERS = (
+    "Dharmik", "dharmik136", "dharmik-shingala", "Enterprise Labs",
+    "Enterprise Systems Practitioner", "Enterprise Systems Architect",
+)
 
 
 def _boot(demo_flag):
@@ -248,3 +254,28 @@ def test_the_profile_endpoint_admits_when_it_does_not_know():
             )
             conn.commit()
             conn.close()
+
+
+def test_a_slide_with_no_title_given_is_signed_by_the_creator_or_nobody(tmp_path, monkeypatch):
+    """
+    The deck endpoint defaulted author_title to the author's own job title, and
+    the interface never sends one, so every new user's slides carried it.
+    """
+    monkeypatch.setenv("INOX_HYDRA_HOME", str(tmp_path))
+    monkeypatch.delenv("INOX_DEMO_DATA", raising=False)
+    sys.path.insert(0, REPO_ROOT)
+    from studio.backend import app as app_module
+    from studio.backend.database import init_db, get_db
+
+    init_db()
+    name, title = app_module._creator_byline()
+    assert (name, title) == ("", ""), "a fresh install signed slides with somebody"
+
+    conn = get_db()
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('creator_profile', ?)",
+        ('{"name": "Ada Lovelace", "headline": "Analyst of engines"}',),
+    )
+    conn.commit()
+    conn.close()
+    assert app_module._creator_byline() == ("Ada Lovelace", "Analyst of engines")

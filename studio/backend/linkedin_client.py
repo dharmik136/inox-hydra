@@ -632,9 +632,11 @@ class LinkedInClient:
         if mock or li_at.startswith(("mock_", "sandbox_", "test_")):
             now_iso = datetime.now(timezone.utc).isoformat()
             mock_profile = {
+                # Plainly a sandbox. This carried the author's own headline and
+                # vanity, which then sat in a new user's settings as theirs.
                 "name": "Mock Creator",
-                "headline": "Enterprise Systems Architect & Content Strategist",
-                "vanity": "dharmik-shingala",
+                "headline": "Sandbox profile",
+                "vanity": "mock-creator",
                 "status": "authenticated"
             }
             conn = get_db()

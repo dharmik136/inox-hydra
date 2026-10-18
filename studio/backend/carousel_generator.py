@@ -128,7 +128,7 @@ def render_slide(
     title: str,
     body: str,
     author_name: str = "",
-    author_title: str = "Content Strategist & Enterprise Systems Practitioner",
+    author_title: str = "",
     theme_name: str = "dark_slate",
     is_cover: bool = False,
     is_cta: bool = False,
@@ -145,7 +145,7 @@ def render_slide(
     safe_title = str(title or "").replace(em_dash, " -- ").replace(en_dash, "-")[:MAX_SLIDE_TITLE_LEN]
     safe_body = str(body or "").replace(em_dash, " -- ").replace(en_dash, "-")[:MAX_SLIDE_BODY_LEN]
     safe_author = str(author_name or "")[:100]
-    safe_author_title = str(author_title or "Enterprise Systems Practitioner")[:150]
+    safe_author_title = str(author_title or "")[:150]
 
     # Outer border & subtle glow frame
     draw.rectangle([24, 24, WIDTH - 24, HEIGHT - 24], outline=theme["border"], width=2)
@@ -284,7 +284,7 @@ def render_slide(
 def generate_carousel_pdf(
     slides_data: List[Dict[str, Any]],
     author_name: str = "",
-    author_title: str = "Content Strategist & Enterprise Systems Practitioner",
+    author_title: str = "",
     theme_name: str = "dark_slate",
 ) -> bytes:
     """

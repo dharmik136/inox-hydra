@@ -126,6 +126,23 @@ def _openers(conn, limit: int) -> List[str]:
     return openers
 
 
+def prompt_block() -> str:
+    """
+    The pack as a paragraph to append to a plain prompt, or "" when there is none.
+
+    For the generators that build a prompt string rather than a Brief. The
+    instruction travels with the material, so a model is told what it is for.
+    """
+    pack = get_voice_pack()
+    if not pack["has_voice"]:
+        return ""
+    return (
+        "\n\nAbout the author, measured from their own profile and posts. Match their length, "
+        "rhythm and the way they open a post. Do not copy their openers, and do not mention "
+        "their title or employer unless the text does.\n" + pack["brief_section"]
+    )
+
+
 def get_voice_pack(max_openers: int = 3) -> Dict[str, Any]:
     """
     The voice pack as a brief section, and what went into it.

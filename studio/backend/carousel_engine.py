@@ -229,7 +229,7 @@ class CarouselDeckEngine:
         theme_name: str = "dark_obsidian",
         aspect_ratio: str = "4:5",
         author_name: str = "",
-        author_title: str = "Enterprise Systems Practitioner"
+        author_title: str = ""
     ) -> str:
         """
         Renders a standalone 1080x1350 (4:5) or 1080x1080 (1:1) SVG vector slide.
@@ -346,7 +346,7 @@ class CarouselDeckEngine:
         theme: str = "dark_obsidian",
         aspect_ratio: str = "4:5",
         author_name: str = "",
-        author_title: str = "Enterprise Systems Practitioner"
+        author_title: str = ""
     ) -> Dict[str, Any]:
         """
         Compiles all slides into individual SVGs and a combined HTML printable deck.

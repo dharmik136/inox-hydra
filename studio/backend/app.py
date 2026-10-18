@@ -15,6 +15,7 @@ import io
 import logging
 import csv
 import json
+import sqlite3
 import uuid
 import re
 from typing import Optional, List, Dict, Any
@@ -438,7 +439,7 @@ class CarouselRequest(BaseModel):
     slides: List[Dict[str, str]]
     theme: Optional[str] = "dark_slate"
     author_name: Optional[str] = None
-    author_title: Optional[str] = "Content Strategist & Enterprise Systems Practitioner"
+    author_title: Optional[str] = None
 
 
 class LeadCreate(BaseModel):
@@ -789,7 +790,9 @@ class CarouselDeckRequest(BaseModel):
     theme: Optional[str] = "dark_obsidian"
     aspect_ratio: Optional[str] = "4:5"
     author_name: Optional[str] = None
-    author_title: Optional[str] = "Enterprise Systems Practitioner"
+    # None means "the creator's own": see _creator_byline. This defaulted to one
+    # particular author's title, which every new user then saw on their slides.
+    author_title: Optional[str] = None
 
     @field_validator("slides")
     @classmethod
@@ -801,18 +804,49 @@ class CarouselDeckRequest(BaseModel):
         return v
 
 
+def _creator_byline() -> tuple:
+    """
+    The name and title a slide is signed with when the request names neither.
+
+    Brand Studio's saved profile first, then the confirmed LinkedIn profile,
+    then nothing. Nothing is a blank byline, which is honest; a stranger's
+    title is not.
+    """
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = 'creator_profile'").fetchone()
+        saved = json.loads(row["value"]) if row and row["value"] else {}
+        name, title = (saved.get("name") or "").strip(), (saved.get("headline") or "").strip()
+        if not (name and title):
+            try:
+                me = conn.execute(
+                    "SELECT display_name, headline FROM creator_identity WHERE id = 1 AND confirmed_at IS NOT NULL"
+                ).fetchone()
+            except sqlite3.OperationalError:
+                me = None
+            if me:
+                name = name or (me["display_name"] or "")
+                title = title or (me["headline"] or "")
+        return name, title
+    except (ValueError, TypeError):
+        return "", ""
+    finally:
+        conn.close()
+
+
 @app.post("/api/v1/carousel/deck/generate", tags=["Media Studio & Dropzone"])
 def generate_vector_carousel_deck(req: CarouselDeckRequest):
     """
     Day 13: Compiles structured slide cards into 4:5 vertical (1080x1350)
     or 1:1 square vector SVG slides with Swiss typography.
     """
+    own_name, own_title = _creator_byline()
     res = carousel_engine.compile_carousel_deck(
         slides=req.slides,
         theme=req.theme or "dark_obsidian",
         aspect_ratio=req.aspect_ratio or "4:5",
-        author_name=req.author_name or "",
-        author_title=req.author_title or "Enterprise Systems Practitioner"
+        author_name=req.author_name or own_name,
+        author_title=req.author_title if req.author_title is not None else own_title,
     )
     if res.get("status") == "error":
         raise HTTPException(status_code=400, detail=res.get("message", "Failed to compile carousel deck"))

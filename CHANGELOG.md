@@ -27,6 +27,12 @@ released. Version numbers follow `studio/__version__.py`.
   the response records which parts went.
 
 ### Fixed
+- Carousel slides are signed with your own name and headline from Brand Studio
+  (or your confirmed LinkedIn profile), or left unsigned. They used to fall back
+  to the original author's job title, which every new user's slides carried.
+- The command engine, the hook rail and the repurposer write for you, using the
+  same voice pack as the copilot, instead of a system prompt describing one
+  particular author.
 - A first-message draft no longer tells someone who only reacted to your post
   that they commented on it. Every lead the bridge captured was labelled
   "Commented"; the label now follows how they actually engaged, and leads

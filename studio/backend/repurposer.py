@@ -24,6 +24,18 @@ except ImportError:
         AIProviderConfig = None
 
 
+def _voice() -> str:
+    """The creator's voice pack for a plain prompt, or "" if it cannot be read."""
+    try:
+        try:
+            from .voice_pack import prompt_block
+        except ImportError:
+            from voice_pack import prompt_block
+        return prompt_block()
+    except Exception:
+        return ""
+
+
 # -- Validation & Boundary Constants ----------------------------------------
 MAX_COMMAND_LENGTH = 5000
 MAX_CONTEXT_LENGTH = 10000
@@ -172,8 +184,11 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
         if not context_clean:
             context_clean = None
 
+    # Written for whoever owns this studio. It used to describe one particular
+    # author, a content strategist in enterprise systems, for every user; the
+    # voice pack appended below now says who the author is when the studio knows.
     system_prompt = (
-        "You are the elite AI Copilot for a high-performing Content Strategist and Enterprise Systems Practitioner on LinkedIn.\n"
+        "You are a writing assistant for a practitioner who posts on LinkedIn.\n"
         "Your writing style is punchy, high-signal, authentic, and authoritative.\n"
         "CRITICAL FORMATTING RULES:\n"
         "1. NEVER use em-dashes (\u2014) or en-dashes (–). Use commas, periods, or clean line breaks instead.\n"
@@ -187,6 +202,7 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
     if context_clean:
         full_prompt += f"Context/Draft:\n{context_clean}\n\n"
     full_prompt += "Generate the optimized response. Remember: NEVER use em-dashes."
+    full_prompt += _voice()
 
     ai_out = None
     engine_name = "Antigravity Local Engine"
@@ -279,7 +295,7 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
                 "- NEVER use em-dashes (\u2014). Use clean punctuation.\n"
                 "- First line must be under 120 characters so it does not truncate before the 'see more' button on mobile.\n"
                 "- Return strictly a valid JSON array of objects with keys: 'archetype', 'hook'. Do not enclose in markdown code blocks."
-            )
+            ) + _voice()
             try:
                 resp = execute_llm_completion(cfg, prompt, system_prompt="You output ONLY raw JSON.", max_tokens=1000)
             except Exception as e:
@@ -501,7 +517,7 @@ def repurpose_content(raw_text: Optional[str]) -> List[Dict[str, str]]:
         "- NEVER use em-dashes (\u2014). Use clean commas, periods, or line breaks.\n"
         "- Short paragraphs (1-2 sentences), generous line breaks.\n"
         "- Return strictly a valid JSON array of objects with keys: 'framework', 'content'. No markdown code blocks."
-    )
+    ) + _voice()
 
     if get_current_ai_config and execute_llm_completion:
         cfg = get_current_ai_config()
