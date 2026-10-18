@@ -1915,7 +1915,7 @@ When you decouple domain state from operational execution, system resilience com
 Swipe through the companion 3-slide visual architecture guide below.
 
 What is your team's biggest bottleneck when decoupling legacy services?""",
-            json.dumps(["/assets/enterprise_decoupling_carousel.pdf"]),
+            json.dumps([]),
             "scheduled",
             "2026-09-16T12:00:00.000Z",
             None,

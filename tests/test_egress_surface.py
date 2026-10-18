@@ -45,7 +45,6 @@ KNOWN_HOSTS = {
     "api.telegram.org": "the ingress bridge, off unless TELEGRAM_BOT_TOKEN is set",
     "raw.githubusercontent.com": "update checks and the template bundle",
     "github.com": "update checks",
-    "example.com": "a seeded example asset URL, not fetched at runtime",
 }
 
 # Hosts that are not egress: documentation, XML namespaces, the machine itself.

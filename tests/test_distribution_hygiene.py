@@ -376,43 +376,34 @@ def test_no_tracked_file_contains_a_credential():
 
 def test_the_taplio_key_is_gone_from_the_working_tree():
     """
-    Specific, because this one actually happened. A general pattern can be
-    loosened later without anyone noticing this exact case regressed.
+    Specific, because this one actually happened: a live Taplio API key sat
+    in ten scripts under archive/. A general pattern can be loosened later
+    without anyone noticing this exact case regressed, so every key-shaped
+    token in the tree is compared against that key's SHA-256. The hash is
+    all this file holds; no part of the key itself is written here.
     """
-    # Assembled rather than written whole, so this file does not itself contain
-    # the string it exists to forbid.
-    leaked_prefix = "TAPLIO-KEY-PREFIX-REDACTED"
+    import hashlib
+    import re
+
+    leaked = "99a81981ea21ef184742e146c67193fb86ad71a0bdabde71bea7000fd3f1b1df"
+    shaped = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
     offenders = []
     for f in _tracked_files():
-        if not f.lower().endswith((".py", ".md", ".txt", ".json")):
+        try:
+            with open(os.path.join(REPO_ROOT, f), encoding="utf-8", errors="ignore") as handle:
+                text = handle.read()
+        except (OSError, IsADirectoryError):
             continue
-        if f.endswith("test_distribution_hygiene.py"):
-            continue
-        with open(os.path.join(REPO_ROOT, f), encoding="utf-8", errors="ignore") as handle:
-            if leaked_prefix in handle.read():
-                offenders.append(f)
+        if any(hashlib.sha256(token.encode()).hexdigest() == leaked for token in shaped.findall(text)):
+            offenders.append(f)
     assert not offenders, "the leaked Taplio key is back in: " + str(offenders)
 
 
-def test_the_archive_scripts_read_their_key_from_the_environment():
-    """They held the credential as a literal. They now ask the environment."""
-    import glob
+def test_the_personal_archive_folder_is_gone():
+    """
+    archive/ held the owner's own Taplio scripts, post drafts and post
+    graphics. None of it was product, and the repository is public.
+    """
+    assert not any(f.replace(os.sep, "/").startswith("archive/") for f in _tracked_files())
 
-    scripts = []
-    for path in glob.glob(os.path.join(REPO_ROOT, "archive", "utility_scripts", "*.py")):
-        with open(path, encoding="utf-8", errors="ignore") as handle:
-            if "TAPLIO_API_KEY" in handle.read():
-                scripts.append(path)
 
-    assert len(scripts) >= 10, (
-        "expected the ten Taplio scripts to read TAPLIO_API_KEY, found " + str(len(scripts))
-    )
-
-    for path in scripts:
-        with open(path, encoding="utf-8", errors="ignore") as handle:
-            content = handle.read()
-        name = os.path.basename(path)
-        assert "os.environ" in content, name + " does not read the environment"
-        assert "raise SystemExit" in content, (
-            name + " would run with an empty key and fail confusingly"
-        )

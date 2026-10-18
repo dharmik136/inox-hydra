@@ -251,9 +251,9 @@ def test_static_assets_and_docs():
         assert os.path.exists(doc_path), f"Required doc missing: {d}"
         assert os.path.getsize(doc_path) > 500, f"Doc unexpectedly small: {d}"
 
-    # Verify master 4K asset in assets/
-    master_asset = os.path.join(assets_dir, "sample_creative.jpg")
-    assert os.path.exists(master_asset), "Master creative missing from assets/"
+    # The product icon is the one thing assets/ ships. The creator's own post
+    # graphics were removed from the repository: they were personal, not product.
+    assert os.path.exists(os.path.join(assets_dir, "inox_hydra.ico")), "Product icon missing from assets/"
 
     # Verify all 6 section-wise modular docs
     modules_dir = os.path.join(docs_dir, "modules")
