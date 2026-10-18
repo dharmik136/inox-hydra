@@ -255,7 +255,7 @@ _DEV_DOCS = devtools.env_allows_dev_mode()
 
 app = FastAPI(
     title="LinkedIn Studio Enterprise",
-    description="A 100% self-hosted, air-gapped, privacy-first alternative to $199/month SaaS creator tools running on localhost.",
+    description="A self-hosted, local-first LinkedIn creator studio on localhost. Nothing leaves this machine unless a feature you switch on needs to.",
     version=__version__,
     openapi_url="/openapi.json" if _DEV_DOCS else None,
     docs_url="/docs" if _DEV_DOCS else None,

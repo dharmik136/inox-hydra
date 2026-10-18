@@ -1,12 +1,8 @@
 name: Inox Hydra CI/CD Pipeline
 
-# Runs on windows-latest, deliberately.
-#
-# This is a Windows product: the credential vault uses DPAPI, the launchers are
-# .bat files, the tray controller calls the Win32 shell API through ctypes, and
-# the distributable embeds an ABI-specific CPython for win64. Testing on Linux
-# would validate a configuration no user will ever run, while producing failures
-# that say nothing about whether the product works.
+# Tests run on Windows, macOS and Linux; the distributable is built and
+# verified on Windows only, because it embeds an ABI-specific CPython for win64.
+# See the comments on each job for why each half is where it is.
 
 on:
   push:
@@ -86,6 +82,20 @@ jobs:
             exit 1
           }
 
+      # tests/test_e2e_browser_flows.py importorskips playwright, and nothing
+      # here installed it, so every browser test skipped on every platform and
+      # the run read as green. Driving the interface caught more defects than
+      # the rest of the suite combined (docs/UI_AGENT_WORKFLOW.md section 5).
+      - name: Install Playwright And Chromium
+        shell: bash
+        run: |
+          pip install playwright==1.63.0
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            python -m playwright install --with-deps chromium
+          else
+            python -m playwright install chromium
+          fi
+
       - name: Static Code Analysis & Syntax Validation
         run: |
           flake8 studio tests tools --count --select=E9,F63,F7,F82 --show-source --statistics
@@ -104,6 +114,23 @@ jobs:
       # hygiene suite went a week checking filenames instead of file contents.
       - name: Run Full Automated Test Suite (pytest)
         run: pytest tests studio/tests -q -rs
+
+      # Every rail section, both themes, desktop and phone width: console
+      # errors, any request that leaves loopback, failed API calls, axe
+      # violations of serious or critical impact. One platform is enough for a
+      # layout check, and the report is kept either way so a failure can be
+      # seen rather than re-run.
+      - name: Audit Every Screen In Both Themes
+        if: runner.os == 'Linux'
+        run: python tools/ui_audit.py --out scratch/ui_audit/ci
+
+      - name: Keep The Audit Report
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-audit
+          path: scratch/ui_audit/ci
+          if-no-files-found: ignore
 
   package-verify:
     name: Distributable Build & Clean-Install Verification

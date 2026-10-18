@@ -1,6 +1,6 @@
 # Inox Hydra  -  LinkedIn Studio Enterprise (Local Creator Engine)
 
-> **A 100% self-hosted, air-gapped, privacy-first alternative to $199/month SaaS creator tools (like Taplio Pro), running entirely on your local machine with zero cloud data egress.**
+> **A self-hosted, local-first alternative to cloud LinkedIn creator suites (Taplio's plans run from $39 to $199 a month). It runs on your own machine, and nothing leaves it unless you switch on a feature that needs to: your own AI provider, an update check, or the Telegram inbox.**
 
 [![Localhost](https://img.shields.io/badge/Localhost-127.0.0.1%3A8000-0ea5e9.svg)](http://127.0.0.1:8000)
 [![Database](https://img.shields.io/badge/Database-SQLite%20(WAL%20Mode)-22c55e.svg)](#architecture)
@@ -15,7 +15,7 @@
 
 **LinkedIn Studio Enterprise** is a high-performance content strategy, analytics intelligence, and lead pipeline operating system engineered for enterprise architects, founders, and content practitioners.
 
-Most commercial creator platforms charge upwards of **$199/month**, store your personal drafts on external cloud databases, lock you into proprietary vendor models, and risk account flags through aggressive automated scraping. LinkedIn Studio eliminates third-party SaaS dependencies by running a **strictly local stack** with passive session observation, zero bot footprint, and a pluggable **Bring-Your-Own-AI (BYO-AI)** architecture.
+Cloud creator platforms keep your drafts, your audience and your analytics on their servers, and tie you to the model they resell. LinkedIn Studio runs a **strictly local stack** instead: a browser extension reads the LinkedIn pages you open, the studio keeps what it reads in one database on your machine, and a pluggable **Bring-Your-Own-AI (BYO-AI)** gateway uses your key or a local model. It never posts, likes, comments, messages or connects on your behalf.
 
 ---
 
@@ -28,12 +28,12 @@ Most commercial creator platforms charge upwards of **$199/month**, store your p
 | **10× Viral Re-Hooker** | Hook Generator | 10 high-retention hook archetypes with real-time fold safety analysis | Deterministic scoring + BYO-AI (OpenAI / Gemini / Claude / Ollama) |
 | **5-Style Repurposer** | Content Repurposer | Converts raw notes into 5 distinct viral LinkedIn frameworks | Zero cloud LLM token egress required |
 | **Algorithm Safety Auditor** | Virality Score | Real-time audit detecting outbound URL reach penalties (-40%), hashtag spam, and dwell time | Local linguistic regex engine |
-| **Leads & Engagers CRM** | Lead Database | Pipeline management (*New*, *Outreach Sent*, *Connected*, *Meeting Booked*) with 1-click tailored DMs | Encrypted local SQLite (`linkedin_studio.db`) |
+| **Leads & Engagers CRM** | Lead Database | Pipeline management (*New*, *Outreach Sent*, *Connected*, *Meeting Booked*) with 1-click tailored DMs | Local SQLite (`linkedin_studio.db`); not encrypted, so keep the machine's disk encryption on |
 | **Smart Queue & Scheduler** | Auto-Scheduler | Local background thread managing peak engagement time slots (e.g. 5:30 PM IST) | Zero external cron dependencies |
-| **Bring-Your-Own-AI Hub** | AI Copilot | Multi-model gateway (OpenAI, Gemini, Claude, Groq, Ollama) + Antigravity Local Engine | Verified live connection via CLI or UI; local SQLite encrypted vault |
+| **Bring-Your-Own-AI Hub** | AI Copilot | Multi-model gateway (OpenAI, Gemini, Claude, Groq, Ollama) + Antigravity Local Engine | Verified live connection via CLI or UI; the key is sealed at rest |
 | **Vector Carousel Engine** | Content Design Studio | 4:5 & 1:1 Swiss vector SVG slides ('Plus Jakarta Sans', 'Inter', 'JetBrains Mono') | Pure vector SVG, zero cloud rendering |
 | **FTS5 Playbook Search** | Knowledge Base | SQLite FTS5 BM25 search across 401 strategy & technical sections (<15ms) | Local SQLite virtual table, zero latency |
-| **Gaussian Rate Limiter** | Anti-Detection Shield | Human-like Gaussian token bucket pacing with single-writer serialization | Mathematically clamped, passive observer |
+| **Request Pacing** | n/a | Gaussian-jittered token bucket with single-writer serialization | Paces the studio's own background work; nothing is automated on LinkedIn |
 
 ---
 
@@ -51,7 +51,7 @@ inox-hydra/
 │   │   ├── database.py         # Frozen schema baseline & WAL configuration
 │   │   ├── support.py          # Redacted diagnostics, backup, restore, export
 │   │   ├── updates.py          # Opt-in update check, off by default
-│   │   ├── vault.py            # DPAPI encryption at rest for session tokens
+│   │   ├── vault.py            # Seals session cookies and the AI key at rest (DPAPI, Keychain, Secret Service)
 │   │   ├── ingress.py          # Telegram capture, outbound long-polling only
 │   │   ├── crm.py              # Reverse CRM & deterministic ICP scoring
 │   │   ├── event_bus.py        # SSE hub with replay buffer
@@ -225,9 +225,9 @@ Inox Hydra is designed as an open, model-agnostic creator studio. You can seamle
 ## 🔒 Zero-Egress Security Guarantee
 
 * **Strict Localhost Binding**: The FastAPI backend binds exclusively to `127.0.0.1`.
-* **Zero Telemetry**: No third-party analytics trackers, no tracking pixels, no external SaaS calls.
-* **Encrypted Local Storage**: Drafts, prospect leads, analytics, and settings remain on your local NVMe drive.
-* **Anti-Bot Passive Extraction**: Avoids monkey-patching `window.fetch` or modifying browser prototypes, making sync completely undetectable.
+* **Zero Telemetry**: No analytics trackers, no tracking pixels, no usage reporting. Every outbound request the studio can make passes one chokepoint and is counted in a ledger you can read in Brand Studio.
+* **Local Storage**: Drafts, leads, analytics and settings stay in one SQLite database on your machine. The database itself is not encrypted; your LinkedIn session and AI key inside it are sealed to your user account.
+* **Reads, Never Acts**: The extension reads the pages you open, including copies of the data LinkedIn's own page fetched for them, which it observes by wrapping `window.fetch` in that page. It never posts, reacts, comments, messages or connects. The studio contacts LinkedIn itself only for features that are off by default (profile sync, staging a post into LinkedIn's scheduler), and history import scrolls your activity pages only when you ask it to.
 
 ---
 
