@@ -45,7 +45,14 @@ def get_data_dir() -> str:
 
 
 def _active_profile() -> Optional[str]:
-    return _paths.get_active_profile_id() if _paths is not None else None
+    """
+    The profile a request pinned, or None for "whichever is active when written".
+
+    Only the pin is read: it is a context variable, so staging stays the
+    sub-microsecond RAM write it is meant to be. Resolving the active profile
+    from profiles.json would stat a file on every event.
+    """
+    return _paths._pinned_profile.get() if _paths is not None else None
 
 
 def _in_profile(profile_id: Optional[str]):

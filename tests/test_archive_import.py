@@ -88,6 +88,7 @@ FULL = {
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("INOX_HYDRA_HOME", str(tmp_path / "studio"))
     monkeypatch.setenv("HOME", str(tmp_path / "user"))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "user"))  # what Windows reads for "~"
     monkeypatch.delenv("INOX_DEMO_DATA", raising=False)
     os.makedirs(tmp_path / "user" / "Downloads")
     init_db()
