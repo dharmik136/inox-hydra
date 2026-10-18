@@ -66,6 +66,9 @@ def _with_grounding(record: dict, grounded: dict) -> dict:
     """
     merged = dict(record or {})
     merged["grounding"] = (grounded or {}).get("provenance") or {"grounded": False}
+    # Which parts of the creator's voice pack the brief carried, if any. Their
+    # own profile and posts, but still material that went wherever the brief went.
+    merged["voice_pack"] = list((grounded or {}).get("voice_parts") or [])
     return merged
 
 
@@ -241,6 +244,21 @@ class LinkedInContentCopilotAgent:
             "post_format": post_format,
             "draft_excerpt": content[:600],
         }
+        # Who the author is and how they write, measured from their own profile
+        # and posts. Without it every hook was written for nobody in particular.
+        voice_parts: List[str] = []
+        try:
+            try:
+                from ...voice_pack import get_voice_pack
+            except ImportError:
+                from voice_pack import get_voice_pack
+            voice = get_voice_pack()
+            if voice.get("has_voice") and voice.get("brief_section"):
+                brief_inputs["author_voice"] = voice["brief_section"]
+                voice_parts = list(voice.get("parts") or [])
+        except Exception:
+            pass
+        grounded = dict(grounded, voice_parts=voice_parts)
         # Inject CP3 evidence brief if local post history exists
         try:
             from ...evidence_briefing import get_retrieval_evidence_brief
@@ -263,6 +281,13 @@ class LinkedInContentCopilotAgent:
             "Vary the angle across the six: contrarian, concrete number, hard lesson, "
             "direct question, blunt statement, specific scene.",
         ]
+
+        if voice_parts:
+            constraints.append(
+                "author_voice describes the author and how they write. Match their length, "
+                "rhythm and the way they open a post. Do not copy their openers, and do not "
+                "mention their title or employer unless the draft does."
+            )
 
         if grounding_inputs:
             # Said explicitly, because a model handed extra sections without

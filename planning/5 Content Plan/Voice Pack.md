@@ -1,6 +1,6 @@
 ---
 type: plan
-status: proposed
+status: partial
 tags:
   - plan
   - ai-context
@@ -18,5 +18,9 @@ Context so drafts sound like the creator, not like a model.
 **Consumers:** [[Content Copilot]], [[Hook Generator]], [[Repurposer]], [[DM Drafter]].
 
 **Egress:** it is the creator's own public profile and posts. Sent to a cloud model only when one is configured, and the provenance line says so.
+
+**Built 2026-10-18, first consumer:** `studio/backend/voice_pack.py` builds the who, habits and openers parts, each only when there is data for it (habits need 3 posts; who needs a confirmed profile). The [[Content Copilot]] carries it as `author_voice` and records which parts it sent in the provenance as `voice_pack`. Tests: `tests/test_voice_pack.py`.
+
+**Still to wire:** [[Hook Generator]], [[Repurposer]], [[DM Drafter]].
 
 Closes [[Gap - Profile never reaches AI]].

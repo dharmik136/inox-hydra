@@ -11,7 +11,8 @@ tags:
 - [x] Export includes every table the creator's record lives in ([[Gap - Export omits your own data]]).
 - [x] [[Obsidian Vault Export]] from the CLI, the API and Brand Studio.
 - [ ] [[LinkedIn Data Archive Import]] with [[Connection]] as a new entity.
-- [ ] [[Voice Pack]] into every writing prompt ([[Gap - Profile never reaches AI]]).
+- [x] [[Voice Pack]] into the copilot's hooks ([[Gap - Profile never reaches AI]]).
+- [ ] [[Voice Pack]] into the hook rail, repurposer and DM drafter.
 - [ ] Real account scoping ([[Gap - Account scoping is cosmetic]]).
 - [ ] Decide on the discarded Voyager schemas ([[Gap - Voyager data discarded]]).
 - [ ] [[Gap - Lead fields mislabelled]], [[Gap - Outbound has no identity]].

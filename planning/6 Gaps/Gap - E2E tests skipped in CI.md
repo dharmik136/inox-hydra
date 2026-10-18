@@ -1,6 +1,6 @@
 ---
 type: gap
-status: open
+status: fixed
 tags:
   - gap
   - quality
@@ -10,4 +10,4 @@ tags:
 
 The Playwright suite `importorskip`s, and CI never installs Playwright, so every browser test is skipped on every platform. Locally all five pass.
 
-**Fix:** install Playwright and Chromium in CI on Ubuntu at least; run `tools/ui_audit.py` as a non-blocking job that uploads its report. See [[UI Program]].
+**Fixed 2026-10-18:** CI installs Playwright and Chromium on all three platforms, and runs `tools/ui_audit.py` on Linux with its report kept as an artifact. See [[UI Program]].

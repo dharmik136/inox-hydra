@@ -18,6 +18,14 @@ released. Version numbers follow `studio/__version__.py`.
   your comments and reactions elsewhere, and each lead's stage history. Before,
   none of it could be exported. Credentials are still never included.
 
+### Writing
+- **Drafts in your own voice.** When a model is configured, the copilot's hooks
+  are now written from who you are and how you write: your headline, roles,
+  skills and about, measured habits from your own posts (length, paragraphs,
+  how often you open with a question), and the openers of yours that drew the
+  most reactions. Each part is sent only when there is real data for it, and
+  the response records which parts went.
+
 ### Fixed
 - Follower counts read from LinkedIn's network responses were never saved: the
   write named a column that does not exist, and failed every time without a
