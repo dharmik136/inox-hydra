@@ -31,3 +31,9 @@ createRoot(container).render(
     <App />
   </StrictMode>,
 );
+
+// The review toolbar for interface work. Both conditions are constants after
+// a build, so a normal build removes this branch and the module behind it.
+if (import.meta.env.DEV || import.meta.env.VITE_AGENTATION === "1") {
+  void import("./dev/agentation").then(({ mountAgentation }) => mountAgentation());
+}

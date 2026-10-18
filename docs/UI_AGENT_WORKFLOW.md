@@ -233,3 +233,58 @@ branch that deleted that page; merging as-is would have removed a feature that
 was a day old. It was ported instead, along with its test file. The endpoint
 parity diff in section 3 is what makes that checkable rather than a matter of
 noticing.
+
+## 9. The review loop: Playwright audit and Agentation
+
+Section 5 says to look at the interface. Two tools make that repeatable.
+
+### Audit every screen
+
+```bash
+python tools/ui_audit.py            # boots a throwaway, empty install
+python tools/ui_audit.py --demo     # seeded demo data, for layout only
+python tools/ui_audit.py --url http://127.0.0.1:8123 --sections composer,leads
+```
+
+Playwright walks every rail section in both themes, at 1440 and 390 pixels
+wide, and writes `scratch/ui_audit/<stamp>/` with a screenshot per screen and a
+report of console errors, any request that left loopback, failed API calls,
+axe-core violations, and horizontal overflow. It exits non-zero on a console
+error, an egress request, or a serious or critical axe finding. It always boots
+its own `INOX_HYDRA_HOME`, so it never writes into a real database.
+
+### Annotate the running interface
+
+Agentation is a dev-only toolbar. Click any element, write what is wrong, and
+the note goes to the agent with the element's selector, nearby text and, in dev
+mode, its source file and line.
+
+```bash
+# 1. A studio on a throwaway home, never 8000 (that is the creator's own).
+INOX_HYDRA_HOME="$PWD/scratch/_review_home" \
+  python -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8123
+
+# 2. The interface in dev mode, pointed at it.
+INOX_API_TARGET=http://127.0.0.1:8123 npm --prefix studio/ui run dev
+```
+
+Open `http://localhost:5173`, press Ctrl+Shift+F (or the toolbar's button,
+bottom right), click an element, type the note, press Enter. Each note syncs to
+`agentation-mcp` on `localhost:4747`, which `.mcp.json` registers for Claude
+Code in this repository; the agent reads them with `agentation_get_all_pending`
+and resolves each one as it lands the fix.
+
+Two details that make dev mode work at all, both in `vite.config.ts`:
+
+- The backend hands out its token on any non-API page, as a cookie scoped to
+  the host and not the port. A serve-only plugin copies that cookie onto the
+  page Vite serves, before any script runs. Without it, the first round of API
+  calls at mount was refused.
+- `changeOrigin` stays false. The backend derives the origins it accepts from
+  the Host header's port, so it has to see `localhost:5173`.
+
+The toolbar never ships. `main.tsx` imports it only when `import.meta.env.DEV`
+is true or the build was run with `VITE_AGENTATION=1`; both fold to constants,
+so a normal build drops it. `tests/test_agentation_is_dev_only.py` checks the
+built bundle, and fails on a flagged build: rebuild without the flag before
+that build goes anywhere.
