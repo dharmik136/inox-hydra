@@ -125,22 +125,72 @@ def _public_keys() -> List[bytes]:
     return keys
 
 
+KINDS = ("annual", "monthly", "lifetime")
+MAX_PROFILES = 50
+MAX_KEY_CHARS = 4000
+
+
+def _date_or_none(value: Any) -> Optional[str]:
+    """An ISO date (YYYY-MM-DD), or None. Raises ValueError for anything else."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError("not a date")
+    return date.fromisoformat(value[:10]).isoformat()
+
+
+def _normalise(payload: Any) -> Dict[str, Any]:
+    """
+    The payload with every field checked and typed, or ValueError.
+
+    Checked even though the signature already vouches for it: a key the vendor
+    issued with a bad field must be refused here, not break every screen that
+    asks which tier is in effect.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("not an object")
+    tier = payload.get("tier")
+    if tier not in PAID_TIERS:
+        raise ValueError("unknown tier")
+    kind = payload.get("kind", "annual")
+    if kind not in KINDS:
+        raise ValueError("unknown kind")
+    profiles = payload.get("profiles", TIERS[tier]["profiles"])
+    if isinstance(profiles, bool) or not isinstance(profiles, int) or not 1 <= profiles <= MAX_PROFILES:
+        raise ValueError("bad profile count")
+    expires_at = _date_or_none(payload.get("expires_at"))
+    if kind != "lifetime" and expires_at is None:
+        raise ValueError("a licence that is not lifetime needs an end date")
+    return {
+        "email": str(payload.get("email") or "")[:200],
+        "name": str(payload.get("name") or "")[:200],
+        "tier": tier,
+        "kind": kind,
+        "profiles": profiles,
+        "issued_at": _date_or_none(payload.get("issued_at")),
+        "expires_at": expires_at,
+        "updates_until": _date_or_none(payload.get("updates_until")),
+    }
+
+
 def read_licence_text(text: str) -> Dict[str, Any]:
     """{"valid": bool, "reason": str, "payload": dict or None}. Never raises."""
     text = "".join((text or "").split())
     parts = text.split(".")
-    if len(parts) != 3 or parts[0] != PREFIX:
+    if len(text) > MAX_KEY_CHARS or len(parts) != 3 or parts[0] != PREFIX:
         return {"valid": False, "reason": "This is not an Inox Hydra licence key.", "payload": None}
     try:
         signature = _unb64url(parts[2])
-        payload = json.loads(_unb64url(parts[1]).decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
+        message = f"{PREFIX}.{parts[1]}".encode("ascii")
+    except (ValueError, UnicodeError):
         return {"valid": False, "reason": "The licence key is damaged. Paste it again in full.", "payload": None}
-    message = f"{PREFIX}.{parts[1]}".encode("ascii")
+    # The signature first, so nothing an unsigned key carries is ever parsed.
     if not any(ed25519.verify(key, message, signature) for key in _public_keys()):
         return {"valid": False, "reason": "The licence key's signature does not check out.", "payload": None}
-    if not isinstance(payload, dict) or payload.get("tier") not in PAID_TIERS:
-        return {"valid": False, "reason": "The licence names a tier this version does not know.", "payload": None}
+    try:
+        payload = _normalise(json.loads(_unb64url(parts[1]).decode("utf-8")))
+    except (ValueError, UnicodeError, RecursionError, TypeError):
+        return {"valid": False, "reason": "The licence key carries details this version cannot read.", "payload": None}
     return {"valid": True, "reason": "", "payload": payload}
 
 
@@ -149,26 +199,24 @@ def _licence_path() -> str:
 
 
 def _stored_text() -> Optional[str]:
+    """The stored key, None when there is none, or "" when it cannot be read."""
     try:
         with open(_licence_path(), "r", encoding="ascii") as handle:
             return handle.read()
-    except (OSError, UnicodeDecodeError):
+    except FileNotFoundError:
         return None
+    except (OSError, UnicodeError):
+        return ""
 
 
 def _expired(payload: Dict[str, Any], today: date) -> bool:
     expires = payload.get("expires_at")
-    if not expires:
-        return False
-    try:
-        return date.fromisoformat(str(expires)[:10]) < today
-    except ValueError:
-        return True
+    return bool(expires) and date.fromisoformat(expires) < today
 
 
 def current(today: Optional[date] = None) -> Dict[str, Any]:
     """
-    The licence as the studio sees it now.
+    The licence as the studio sees it now. Never raises.
 
     status is "none", "active", "expired" or "invalid"; tier is the tier in
     effect, which is "free" unless the licence is active.
@@ -183,24 +231,17 @@ def current(today: Optional[date] = None) -> Dict[str, Any]:
         "beta_open": BETA_OPEN,
         "prices": PRICES,
     }
-    if text:
+    if text == "":
+        state.update(status="invalid", reason="The stored licence file could not be read. Remove it and paste the key again.")
+    elif text:
         read = read_licence_text(text)
         if not read["valid"]:
             state.update(status="invalid", reason=read["reason"])
         else:
             payload = read["payload"]
-            state["licence"] = {
-                "email": payload.get("email") or "",
-                "name": payload.get("name") or "",
-                "tier": payload["tier"],
-                "kind": payload.get("kind") or "annual",
-                "profiles": int(payload.get("profiles") or TIERS[payload["tier"]]["profiles"]),
-                "issued_at": payload.get("issued_at"),
-                "expires_at": payload.get("expires_at"),
-                "updates_until": payload.get("updates_until"),
-            }
+            state["licence"] = payload
             if _expired(payload, today):
-                state.update(status="expired", reason="This licence has expired. Your data is all still here.")
+                state.update(status="expired", reason="This licence has ended. Your data is all still here.")
             else:
                 state.update(status="active", tier=payload["tier"])
     state["tier_label"] = TIERS[state["tier"]]["label"]
@@ -210,7 +251,7 @@ def current(today: Optional[date] = None) -> Dict[str, Any]:
 
 def _profile_limit(state: Dict[str, Any]) -> int:
     if state["status"] == "active" and state["tier"] == "agency":
-        return max(1, int(state["licence"]["profiles"]))
+        return state["licence"]["profiles"]
     return TIERS["free"]["profiles"]
 
 
@@ -227,11 +268,18 @@ def allows(feature: str) -> bool:
     return _RANK[current()["tier"]] >= _RANK[needed]
 
 
-def install(text: str) -> Dict[str, Any]:
-    """Checks a licence key and keeps it. A bad key is refused and nothing changes."""
+def install(text: str, today: Optional[date] = None) -> Dict[str, Any]:
+    """
+    Checks a licence key and keeps it. A bad key is refused and nothing changes.
+
+    A key that has already ended is refused too: accepting it would replace a
+    working licence with one that unlocks nothing.
+    """
     read = read_licence_text(text)
     if not read["valid"]:
         return {"status": "error", "message": read["reason"]}
+    if _expired(read["payload"], today or date.today()):
+        return {"status": "error", "message": f"This licence ended on {read['payload']['expires_at']}. Nothing was changed."}
     clean = "".join(text.split())
     vault = paths.get_vault_dir()
     fd, tmp = tempfile.mkstemp(prefix=".licence-", dir=vault)
@@ -242,7 +290,7 @@ def install(text: str) -> Dict[str, Any]:
     finally:
         if os.path.exists(tmp):
             os.remove(tmp)
-    return {"status": "success", "licence": current()}
+    return {"status": "success", "licence": current(today)}
 
 
 def remove() -> Dict[str, Any]:

@@ -56,7 +56,15 @@ _PROFILE_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 
 # The profile a request, or a loop over profiles, is pinned to. Unset means
 # whatever profiles.json names as active.
-_pinned_profile: ContextVar[Optional[str]] = ContextVar("inox_pinned_profile", default=None)
+#
+# One variable for the whole process, even when this module is imported twice
+# under different names (the package imports it as studio.backend.paths, the
+# tests and some tools as plain `paths`). Two variables would let a pin set
+# through one name go unseen through the other.
+_pinned_profile: ContextVar[Optional[str]] = getattr(sys, "_inox_pinned_profile", None) or ContextVar(
+    "inox_pinned_profile", default=None
+)
+sys._inox_pinned_profile = _pinned_profile
 _registry_cache: Dict[str, Any] = {"path": None, "mtime": None, "value": None}
 
 # studio/backend/paths.py -> studio/

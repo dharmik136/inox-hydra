@@ -2151,7 +2151,7 @@ export interface LicenceDetails {
   email: string;
   name: string;
   tier: "creator" | "agency";
-  kind: "annual" | "lifetime";
+  kind: "annual" | "monthly" | "lifetime";
   profiles: number;
   issued_at: string | null;
   expires_at: string | null;

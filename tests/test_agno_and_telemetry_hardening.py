@@ -132,7 +132,7 @@ def test_telemetry_buffer_dwell_clamping():
         # Negative dwell seconds clamped to 0.0
         buffer.ingest_dwell("post_1", dwell_seconds=-10.0, scroll_depth=2.5, reading_velocity_wpm=-50.0)
         assert len(buffer._dwell_buffer) == 1
-        _, dwell_s, scroll, vel = buffer._dwell_buffer[0]
+        _profile, (_, dwell_s, scroll, vel) = buffer._dwell_buffer[0]
         assert dwell_s == 0.0
         assert scroll == 1.0
         assert vel == 1.0

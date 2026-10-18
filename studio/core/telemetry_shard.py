@@ -24,17 +24,35 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("studio.telemetry_shard")
 
+from contextlib import nullcontext
+
 try:
-    from studio.backend.paths import get_data_dir
+    from studio.backend import paths as _paths
 except ImportError:
     try:
-        from backend.paths import get_data_dir
+        from backend import paths as _paths
     except ImportError:
         try:
-            from paths import get_data_dir
+            import paths as _paths
         except ImportError:
-            def get_data_dir() -> str:
-                return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
+            _paths = None
+
+
+def get_data_dir() -> str:
+    if _paths is not None:
+        return _paths.get_data_dir()
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
+
+
+def _active_profile() -> Optional[str]:
+    return _paths.get_active_profile_id() if _paths is not None else None
+
+
+def _in_profile(profile_id: Optional[str]):
+    """Pins paths to one creator profile while a batch is written."""
+    if _paths is None or profile_id is None:
+        return nullcontext()
+    return _paths.using_profile(profile_id)
 
 TELEMETRY_DB_FILENAME = "analytics_telemetry.db"
 
@@ -51,24 +69,40 @@ class TelemetryEngine:
     """
 
     def __init__(self, db_path: Optional[str] = None):
-        self.db_path = db_path or get_telemetry_db_path()
-        self._lock = threading.Lock()
+        # Without an explicit path, the shard is the active creator profile's,
+        # resolved on every use: one fixed at import time sent every profile's
+        # telemetry into whichever profile was active when the studio started.
+        self._fixed_path = db_path
+        self._ready: set = set()
+        self._lock = threading.RLock()
         self._init_db()
+
+    @property
+    def db_path(self) -> str:
+        return self._fixed_path or get_telemetry_db_path()
 
     def get_connection(self) -> sqlite3.Connection:
         """Returns a configured SQLite connection with row factories and WAL mode."""
-        os.makedirs(os.path.dirname(os.path.abspath(self.db_path)), exist_ok=True)
-        conn = sqlite3.connect(self.db_path, timeout=10.0)
+        path = self.db_path
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        conn = sqlite3.connect(path, timeout=10.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA synchronous = NORMAL")
         conn.execute("PRAGMA busy_timeout = 5000")
+        if path not in self._ready:
+            self._ready.add(path)
+            self._create_tables(conn)
         return conn
 
     def _init_db(self) -> None:
-        """Initializes the telemetry tables and indexes."""
+        """Initializes the telemetry tables and indexes for the current shard."""
+        conn = self.get_connection()
+        conn.close()
+
+    def _create_tables(self, conn: sqlite3.Connection) -> None:
+        """Creates the telemetry tables and indexes."""
         with self._lock:
-            conn = self.get_connection()
             try:
                 cursor = conn.cursor()
                 cursor.execute("""
@@ -94,8 +128,9 @@ class TelemetryEngine:
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_telemetry_events_created ON telemetry_events(created_at DESC)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_dwell_metrics_post ON post_dwell_metrics(post_id)")
                 conn.commit()
-            finally:
-                conn.close()
+            except Exception:
+                conn.rollback()
+                raise
 
     def record_events_batch(self, events: List[Tuple[str, str, str]]) -> int:
         """
@@ -237,8 +272,9 @@ class TelemetryBuffer:
         self.engine = engine or TelemetryEngine()
         self.max_buffer_size = max(10, int(max_buffer_size))
         self.batch_size = max(1, min(int(batch_size), self.max_buffer_size))
-        self._events_buffer: List[Tuple[str, str, str]] = []
-        self._dwell_buffer: List[Tuple[str, float, float, float]] = []
+        # (profile id, entry): the profile the entry was staged in.
+        self._events_buffer: List[Tuple[Optional[str], Tuple[str, str, str]]] = []
+        self._dwell_buffer: List[Tuple[Optional[str], Tuple[str, float, float, float]]] = []
         self._lock = threading.Lock()
         # Serializes flushes so two overlapping failures cannot splice their
         # restored batches back in out of chronological order.
@@ -259,7 +295,7 @@ class TelemetryBuffer:
 
         safe_event_type = str(event_type or "unknown")[:100]
         safe_source = str(source or "extension")[:50]
-        entry = (safe_event_type, safe_source, payload_str)
+        entry = (_active_profile(), (safe_event_type, safe_source, payload_str))
 
         flush_needed = False
         with self._lock:
@@ -298,7 +334,7 @@ class TelemetryBuffer:
         except (TypeError, ValueError):
             safe_velocity = 220.0
 
-        entry = (safe_post_id, safe_dwell, safe_scroll, safe_velocity)
+        entry = (_active_profile(), (safe_post_id, safe_dwell, safe_scroll, safe_velocity))
         flush_needed = False
         with self._lock:
             if len(self._dwell_buffer) >= self.max_buffer_size:
@@ -346,21 +382,29 @@ class TelemetryBuffer:
             flushed_dwells = 0
             errors = []
 
-            if events_to_flush:
+            # Each entry carries the creator profile it was staged in, and is
+            # written to that profile's shard, whichever profile is active now.
+            failed_events, failed_dwells = [], []
+            for profile in dict.fromkeys(p for p, _ in events_to_flush):
+                batch = [e for p, e in events_to_flush if p == profile]
                 try:
-                    flushed_events = self.engine.record_events_batch(events_to_flush)
+                    with _in_profile(profile):
+                        flushed_events += self.engine.record_events_batch(batch)
                 except Exception as err:
                     errors.append(str(err))
-                    with self._lock:
-                        self._events_buffer = (events_to_flush + self._events_buffer)[-self.max_buffer_size:]
-
-            if dwells_to_flush:
+                    failed_events += [(p, e) for p, e in events_to_flush if p == profile]
+            for profile in dict.fromkeys(p for p, _ in dwells_to_flush):
+                batch = [d for p, d in dwells_to_flush if p == profile]
                 try:
-                    flushed_dwells = self.engine.record_dwell_batch(dwells_to_flush)
+                    with _in_profile(profile):
+                        flushed_dwells += self.engine.record_dwell_batch(batch)
                 except Exception as err:
                     errors.append(str(err))
-                    with self._lock:
-                        self._dwell_buffer = (dwells_to_flush + self._dwell_buffer)[-self.max_buffer_size:]
+                    failed_dwells += [(p, d) for p, d in dwells_to_flush if p == profile]
+            if failed_events or failed_dwells:
+                with self._lock:
+                    self._events_buffer = (failed_events + self._events_buffer)[-self.max_buffer_size:]
+                    self._dwell_buffer = (failed_dwells + self._dwell_buffer)[-self.max_buffer_size:]
 
             with self._lock:
                 self._last_failure_time = time.time() if errors else 0.0

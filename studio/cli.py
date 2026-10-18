@@ -128,6 +128,8 @@ def cmd_restore(args) -> int:
     print(f"  app version  {manifest.get('app_version', 'unknown')}")
     print(f"  database     {'yes' if info['has_database'] else 'NO'}")
     print(f"  media files  {info['asset_count']}")
+    print(f"  profile      {manifest.get('profile', 'not recorded (made before profiles were separate)')}")
+    print(f"  restoring into the active profile: {support.paths.get_active_profile_id()}")
     print()
 
     if not args.yes:
@@ -136,7 +138,12 @@ def cmd_restore(args) -> int:
         print("Re-run with --yes to proceed.")
         return 1
 
-    result = support.restore_backup(args.archive)
+    try:
+        result = support.restore_backup(args.archive, into_active_profile=args.into_active_profile)
+    except ValueError as error:
+        print(str(error))
+        print("Pass --into-active-profile to restore it into the active profile anyway.")
+        return 1
     print(f"Restored from {result['restored_from']}")
     print(f"  media files restored  {result['assets_restored']}")
     print(f"  safety snapshot       {result['safety_backup']}")
@@ -324,6 +331,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("restore", help="Replace current state with a backup")
     p.add_argument("archive", help="Path to a backup ZIP")
     p.add_argument("--yes", action="store_true", help="Confirm this destructive action")
+    p.add_argument("--into-active-profile", action="store_true",
+                   help="Restore a backup of another creator profile into the active one")
     p.set_defaults(func=cmd_restore)
 
     p = sub.add_parser("export", help="Write your content to JSON, CSV, or an Obsidian vault")

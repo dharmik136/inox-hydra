@@ -45,7 +45,7 @@ The studio publishes a web app manifest named **Inox Hydra** (short name **Studi
 
 ## Start with Windows instead
 
-The studio can add a `Inox Hydra.lnk` entry to your Windows Startup folder that runs `InoxHydra.bat` or `launch_studio.bat` minimised at sign-in. It is off until you turn it on, and there is no control for it in the interface; see the maintainers note below. Because it runs the full launcher, it also opens the studio window at sign-in. To remove it, delete `Inox Hydra.lnk` from `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`.
+The studio can add an `Inox Hydra.lnk` entry (`LinkedIn Studio.lnk` if you turned it on before version 2.6) to your Windows Startup folder that runs `InoxHydra.bat` or `launch_studio.bat` minimised at sign-in. It is off until you turn it on, and there is no control for it in the interface; see the maintainers note below. Because it runs the full launcher, it also opens the studio window at sign-in. To remove it, delete `Inox Hydra.lnk` from `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`.
 
 > [!NOTE]
 > For maintainers: these routes need the studio token and have no interface control.

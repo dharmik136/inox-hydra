@@ -32,7 +32,7 @@ import sys
 import uuid
 from datetime import date, timedelta
 
-REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+REPO = os.path.realpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
 sys.path.insert(0, os.path.join(REPO, "studio", "backend"))
 
 import ed25519  # noqa: E402
@@ -43,7 +43,11 @@ SECRET_NAME = "ed25519.secret"
 
 def _inside_repo(path: str) -> bool:
     path = os.path.realpath(path)
-    return os.path.commonpath([path, REPO]) == REPO
+    try:
+        return os.path.commonpath([path, REPO]) == REPO
+    except ValueError:
+        # Different drives on Windows: certainly not inside.
+        return False
 
 
 def new_keypair(out: str) -> int:
@@ -68,30 +72,63 @@ def new_keypair(out: str) -> int:
     return 0
 
 
-def issue(key: str, email: str, tier: str, kind: str, profiles: int, days: int, name: str) -> int:
-    with open(os.path.expanduser(key), "r", encoding="ascii") as handle:
-        secret = bytes.fromhex(handle.read().strip())
+DEFAULT_DAYS = {"annual": 365, "monthly": 31, "lifetime": 365}
+
+
+def build_payload(email: str, tier: str, kind: str, profiles: int = 0, days: int = 0, name: str = "",
+                  today: date = None) -> dict:
+    """
+    The payload for one licence, or ValueError for one the price list does not sell.
+
+    Creator is one profile, annual or lifetime. Agency is up to five profiles,
+    monthly or annual, never lifetime. An annual or monthly licence lapses
+    into the free tier on its end date; a lifetime one keeps its tier and is
+    owed updates for `days` (a year by default).
+    """
     if tier not in licensing.PAID_TIERS:
-        print(f"--tier must be one of {', '.join(licensing.PAID_TIERS)}", file=sys.stderr)
-        return 2
-    today = date.today()
-    year_later = (today + timedelta(days=days)).isoformat()
-    payload = {
+        raise ValueError(f"tier must be one of {', '.join(licensing.PAID_TIERS)}")
+    if kind not in licensing.KINDS:
+        raise ValueError(f"kind must be one of {', '.join(licensing.KINDS)}")
+    if tier == "agency" and kind == "lifetime":
+        raise ValueError("Agency is sold by the month or the year, not for life")
+    if tier == "creator" and kind == "monthly":
+        raise ValueError("Creator is sold by the year, or for life")
+    limit = licensing.TIERS[tier]["profiles"]
+    profiles = profiles or limit
+    if not 1 <= profiles <= limit:
+        raise ValueError(f"{licensing.TIERS[tier]['label']} covers 1 to {limit} profiles")
+    days = days or DEFAULT_DAYS[kind]
+    if days <= 0:
+        raise ValueError("--days must be positive")
+    if not email or "@" not in email:
+        raise ValueError("--email must be the buyer's address")
+    today = today or date.today()
+    until = (today + timedelta(days=days)).isoformat()
+    return {
         "v": 1,
         "id": str(uuid.uuid4()),
         "email": email,
         "name": name or "",
         "tier": tier,
         "kind": kind,
-        "profiles": profiles or licensing.TIERS[tier]["profiles"],
+        "profiles": profiles,
         "issued_at": today.isoformat(),
-        # An annual licence lapses into the free tier; a lifetime one keeps
-        # its tier and is owed updates for a year.
-        "expires_at": year_later if kind == "annual" else None,
-        "updates_until": year_later,
+        "expires_at": None if kind == "lifetime" else until,
+        "updates_until": until,
     }
+
+
+def issue(key: str, email: str, tier: str, kind: str, profiles: int, days: int, name: str) -> int:
+    try:
+        payload = build_payload(email, tier, kind, profiles, days, name)
+    except ValueError as error:
+        print(str(error), file=sys.stderr)
+        return 2
+    with open(os.path.expanduser(key), "r", encoding="ascii") as handle:
+        secret = bytes.fromhex(handle.read().strip())
     licence = licensing.encode(payload, lambda message: ed25519.sign(secret, message))
-    if not licensing.read_licence_text(licence)["valid"]:
+    read = licensing.read_licence_text(licence)
+    if not read["valid"]:
         print("The licence does not verify against PUBLIC_KEYS. Is that key's public half listed there?", file=sys.stderr)
         return 1
     print(licence)
@@ -108,7 +145,7 @@ def main(argv=None) -> int:
     cut.add_argument("--email", required=True)
     cut.add_argument("--name", default="")
     cut.add_argument("--tier", required=True, choices=list(licensing.PAID_TIERS))
-    cut.add_argument("--kind", default="annual", choices=["annual", "lifetime"])
+    cut.add_argument("--kind", default="annual", choices=list(licensing.KINDS))
     cut.add_argument("--profiles", type=int, default=0)
     cut.add_argument("--days", type=int, default=365)
     args = parser.parse_args(argv)

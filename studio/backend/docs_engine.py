@@ -56,7 +56,19 @@ DOCS_TOKENIZER = "porter unicode61"
 # It matters more now that every hit is a destination. A stale index can return
 # a section of a file that has since been renamed, and the reader follows it to
 # a 404 rather than to a slightly old snippet.
+#
+# The index lives in each creator profile's own database, so the signature
+# names the database too. Without it, the profile active at start-up was
+# indexed and every other profile kept whatever index it had last been given.
 _index_signature = None
+
+
+def _database_of(conn: sqlite3.Connection) -> str:
+    try:
+        row = conn.execute("PRAGMA database_list").fetchone()
+        return os.path.abspath(row[2]) if row and row[2] else ""
+    except sqlite3.Error:
+        return ""
 
 
 # The stat of the corpus the last content hash was taken from, so an unchanged
@@ -266,7 +278,7 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
         # leaves the previous signature in place and the next search tries
         # again rather than trusting an index that was never written.
         global _index_signature
-        _index_signature = (os.path.abspath(target_dir), corpus_signature(target_dir))
+        _index_signature = (_database_of(conn), os.path.abspath(target_dir), corpus_signature(target_dir))
         return indexed_count
     except Exception:
         if conn:
@@ -330,7 +342,7 @@ def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connecti
         cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='docs_index'")
         if not cur.fetchone():
             init_docs_search_index(conn)
-        elif _index_signature != (os.path.abspath(DOCS_DIR), corpus_signature()):
+        elif _index_signature != (_database_of(conn), os.path.abspath(DOCS_DIR), corpus_signature()):
             init_docs_search_index(conn)
 
         def run(match_query, how, exclude):

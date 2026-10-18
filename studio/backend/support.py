@@ -222,6 +222,8 @@ def create_backup(label: str = "manual") -> str:
             "app_version": __version__,
             "schema": describe_schema(),
             "label": clean_label,
+            # Which creator profile this is. A backup holds one profile only.
+            "profile": paths.get_active_profile_id(),
         }, indent=2, default=str))
 
     # The intermediate consistent copy is now inside the archive.
@@ -252,7 +254,7 @@ def inspect_backup(archive: str) -> Dict[str, Any]:
     }
 
 
-def restore_backup(archive: str, take_safety_backup: bool = True) -> Dict[str, Any]:
+def restore_backup(archive: str, take_safety_backup: bool = True, into_active_profile: bool = False) -> Dict[str, Any]:
     """
     Replaces current state with a backup's contents.
 
@@ -266,6 +268,15 @@ def restore_backup(archive: str, take_safety_backup: bool = True) -> Dict[str, A
     info = inspect_backup(archive)
     if not info["has_database"]:
         raise ValueError(f"{archive} contains no database and cannot be restored")
+    # A backup is one creator profile's. Restoring it into another would put
+    # one client's data in another's place, so that takes asking for.
+    origin = (info.get("manifest") or {}).get("profile")
+    active = paths.get_active_profile_id()
+    if origin and origin != active and not into_active_profile:
+        raise ValueError(
+            f"This backup is of creator profile '{origin}', and the active profile is '{active}'. "
+            f"Switch to '{origin}' first, or restore it into '{active}' on purpose."
+        )
 
     safety = create_backup("pre_restore") if take_safety_backup else None
 
@@ -327,7 +338,7 @@ def export_data(destination: Optional[str] = None, fmt: str = "json") -> str:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if destination is None:
         suffix = "json" if fmt == "json" else "zip"
-        destination = os.path.join(paths.get_profile_home(), f"inox_export_{stamp}.{suffix}")
+        destination = os.path.join(paths.get_exports_dir(), f"inox_export_{stamp}.{suffix}")
 
     conn = _connect()
     try:

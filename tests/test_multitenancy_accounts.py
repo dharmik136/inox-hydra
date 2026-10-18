@@ -97,7 +97,10 @@ def test_a_creator_licence_is_still_one_profile(client):
 
 
 def test_an_expired_agency_licence_does_not_add_profiles(client):
-    client.post("/api/v1/licence", json={"key": _licence(expires_at="2020-01-01")})
+    from datetime import date
+
+    # Installed while it was still current; it has ended since.
+    assert licensing.install(_licence(expires_at="2020-01-01"), today=date(2019, 12, 1))["status"] == "success"
     state = client.get("/api/v1/licence").json()
     assert state["status"] == "expired" and state["tier"] == "free"
     assert client.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"}).status_code == 402
@@ -212,3 +215,91 @@ def test_strict_zero_em_dashes_in_multitenancy():
                 "studio/ui/src/components/AccountSwitcher.tsx", "tests/test_multitenancy_accounts.py"):
         with open(os.path.join(base_dir, rel), "r", encoding="utf-8") as handle:
             assert chr(8212) not in handle.read(), f"Forbidden em-dash found in {rel}"
+
+
+# ---------------------------------------------------------------------------
+# Found in review: state that followed the profile active at start-up
+# ---------------------------------------------------------------------------
+
+def test_telemetry_is_written_to_the_profile_it_came_from(agency, home):
+    from studio.core.telemetry_shard import TelemetryBuffer, TelemetryEngine
+
+    agency.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"})
+    buffer = TelemetryBuffer(engine=TelemetryEngine(), batch_size=100)
+    with paths.using_profile("client-a"):
+        buffer.ingest("feed", {"n": 1})
+    buffer.ingest("feed", {"n": 2})  # staged in the default profile
+    assert buffer.flush()["flushed_events"] == 2
+
+    def events(profile_home):
+        db = os.path.join(profile_home, "data", "analytics_telemetry.db")
+        return sqlite3.connect(db).execute("SELECT payload FROM telemetry_events").fetchall()
+
+    assert events(os.path.join(str(home), "profiles", "client-a")) == [('{"n": 1}',)]
+    assert events(str(home)) == [('{"n": 2}',)]
+
+
+def test_each_profile_has_its_own_template_cache_tag(agency, home):
+    from intelligence_sync import IntelligenceSyncEngine
+
+    agency.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"})
+    engine = IntelligenceSyncEngine()
+    default_tag = engine.etag_file
+    with paths.using_profile("client-a"):
+        assert engine.etag_file != default_tag
+        assert engine.etag_file.startswith(os.path.join(str(home), "profiles", "client-a"))
+
+
+def test_the_scheduler_leaves_a_profile_from_a_newer_build_alone(agency, home):
+    from scheduler import NativeScheduler
+
+    agency.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"})
+    db = os.path.join(str(home), "profiles", "client-a", "data", paths.DB_FILENAME)
+    conn = sqlite3.connect(db)
+    conn.execute("INSERT INTO posts (id, content, status, scheduled_for) VALUES "
+                 "('due', 'Due', 'scheduled', '2020-01-01T09:00:00+00:00')")
+    conn.execute("PRAGMA user_version = 99")
+    conn.commit()
+    conn.close()
+    NativeScheduler().check_every_profile()
+    status = sqlite3.connect(db).execute("SELECT status FROM posts WHERE id = 'due'").fetchone()[0]
+    assert status == "scheduled", "the scheduler wrote to a database a newer build owns"
+
+
+def test_a_backup_is_not_restored_into_another_profile_by_accident(agency, home):
+    import support
+
+    _add_post("only-in-default")
+    archive = support.create_backup("test")
+    agency.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"})
+    agency.post("/api/v1/accounts/switch", json={"account_id": "client-a"})
+    with paths.using_profile("client-a"):
+        with pytest.raises(ValueError, match="creator profile 'default'"):
+            support.restore_backup(archive, take_safety_backup=False)
+    with paths.using_profile("default"):
+        assert support.restore_backup(archive, take_safety_backup=False)["restored_from"]
+
+
+def test_old_profile_ids_with_underscores_are_adopted(home, client):
+    conn = get_db()
+    conn.execute("INSERT INTO creator_accounts (id, name, is_default) VALUES ('acme_labs-1a2b3c', 'Acme Labs', 0)")
+    conn.commit()
+    conn.close()
+    names = {a["name"]: a["id"] for a in client.get("/api/v1/accounts").json()["accounts"]}
+    assert names["Acme Labs"] == "acme-labs-1a2b3c"
+
+
+def test_deleting_the_open_profile_opens_the_default_one(agency, home):
+    import migrations
+
+    agency.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"})
+    agency.post("/api/v1/accounts/switch", json={"account_id": "client-a"})
+    conn = sqlite3.connect(os.path.join(str(home), "data", paths.DB_FILENAME))
+    conn.execute(f"PRAGMA user_version = {migrations.SCHEMA_VERSION - 1}")
+    conn.commit()
+    conn.close()
+    gone = agency.request("DELETE", "/api/v1/accounts/client-a", json={"confirm": "Client A"})
+    assert gone.status_code == 200
+    version = sqlite3.connect(os.path.join(str(home), "data", paths.DB_FILENAME)).execute(
+        "PRAGMA user_version").fetchone()[0]
+    assert version == migrations.SCHEMA_VERSION

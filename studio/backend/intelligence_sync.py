@@ -39,7 +39,12 @@ try:
 except ImportError:
     from paths import get_data_dir
 
-CACHE_ETAG_FILE = os.path.join(get_data_dir(), ".intelligence_etag")
+CACHE_ETAG_NAME = ".intelligence_etag"
+
+
+def cache_etag_file() -> str:
+    """The ETag of the active creator profile's template cache. Each profile has its own."""
+    return os.path.join(get_data_dir(), CACHE_ETAG_NAME)
 
 # -- Validation & Boundary Constants ----------------------------------------
 MAX_HOOK_TEXT_LENGTH = 1000
@@ -402,8 +407,19 @@ class IntelligenceSyncEngine:
 
     def __init__(self, cdn_url: Optional[str] = None, etag_file: Optional[str] = None):
         self.cdn_url = cdn_url or DEFAULT_CDN_URL
-        self.etag_file = etag_file or CACHE_ETAG_FILE
+        self._fixed_etag_file = etag_file
         self._ensure_offline_seeded()
+
+    @property
+    def etag_file(self) -> str:
+        # Resolved per use: the template cache lives in each profile's own
+        # database, so its ETag must too, or one profile's "fresh" answer
+        # stops another from ever filling its cache.
+        return self._fixed_etag_file or cache_etag_file()
+
+    @etag_file.setter
+    def etag_file(self, value: Optional[str]) -> None:
+        self._fixed_etag_file = value
 
     def _ensure_offline_seeded(self) -> None:
         """Seeds offline fallback templates if viral_templates table is empty."""

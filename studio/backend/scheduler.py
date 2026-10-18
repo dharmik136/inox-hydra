@@ -21,17 +21,20 @@ from typing import Any, Dict, List, Optional, Tuple
 import json
 import logging
 import os
+import sqlite3
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
 try:
     from . import paths
-    from .database import get_db, SEEDED_DEMO_POST_IDS
+    from .database import get_db, init_db, SEEDED_DEMO_POST_IDS
     from .event_bus import event_bus
+    from .migrations import SCHEMA_VERSION
 except ImportError:
     import paths
-    from database import get_db, SEEDED_DEMO_POST_IDS
+    from database import get_db, init_db, SEEDED_DEMO_POST_IDS
     from event_bus import event_bus
+    from migrations import SCHEMA_VERSION
 
 logger = logging.getLogger("studio.scheduler")
 
@@ -80,6 +83,7 @@ class NativeScheduler:
 
     def __init__(self):
         self.scheduler = BackgroundScheduler()
+        self._checked_profiles: set = set()
         self.min_cooldown_hours = MIN_COOLDOWN_HOURS
         self.grace_window_minutes = GRACE_WINDOW_MINUTES
 
@@ -573,7 +577,7 @@ class NativeScheduler:
         for profile_id in paths.profile_ids():
             try:
                 database = os.path.join(paths.get_profile_home(profile_id), "data", paths.DB_FILENAME)
-                if not os.path.exists(database):
+                if not os.path.exists(database) or not self._schema_ready(profile_id, database):
                     continue
                 with paths.using_profile(profile_id):
                     for action in self.check_scheduled_queue() or []:
@@ -581,6 +585,32 @@ class NativeScheduler:
             except Exception:
                 logger.warning("Scheduler pass failed for profile %s.", profile_id, exc_info=True)
         return actions
+
+    def _schema_ready(self, profile_id: str, database: str) -> bool:
+        """
+        Whether a profile's database is at this build's schema, upgrading it if older.
+
+        A profile that is not active was never opened at start-up, so its
+        database may be older than this build, or newer if a later version
+        ran and was rolled back. Writing to it unchecked could hit a column
+        that is not there, or change data a newer schema means differently.
+        """
+        if profile_id in self._checked_profiles:
+            return True
+        reader = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+        try:
+            version = reader.execute("PRAGMA user_version").fetchone()[0]
+        finally:
+            reader.close()
+        if version > SCHEMA_VERSION:
+            logger.warning("Profile %s was written by a newer build (schema %s); its queue is left alone.",
+                           profile_id, version)
+            return False
+        if version < SCHEMA_VERSION:
+            with paths.using_profile(profile_id):
+                init_db()
+        self._checked_profiles.add(profile_id)
+        return True
 
     def start(self):
         """Starts the APScheduler background thread."""

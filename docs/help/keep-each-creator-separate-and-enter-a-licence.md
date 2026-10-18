@@ -8,7 +8,7 @@ The profile switcher sits at the bottom of the rail. Each profile is a separate 
 
 Your first profile is the studio as it was before profiles existed, so its data stays where it always was. Every other profile lives in the `profiles` folder inside the studio's data home.
 
-The licence, your AI key, the logs and the bridge browser belong to the machine, so they are the same for every profile. Scheduled posts in every profile still fall due when they should, whichever profile is open.
+The licence, the logs and the bridge browser belong to the machine, so they are the same for every profile. Settings belong to the profile, including the AI provider and key: set them once in each profile, so each client can use their own. Scheduled posts in every profile still fall due when they should, whichever profile is open.
 
 ## Add a profile
 
@@ -33,7 +33,7 @@ Deleting a profile removes its folder: its database, media, backups and exports.
 2. Paste the key from your purchase email into **Enter a licence**. It begins `IHL1.`
 3. Click **Use this licence**.
 
-The key is checked on this machine, against the key the studio ships with. Nothing is sent anywhere to check it, and it works offline. **This machine** then shows the tier, who the licence is for, and when it renews.
+The key is checked on this machine, against the key the studio ships with. Nothing is sent anywhere to check it, and it works offline. **This machine** then shows the tier, who the licence is for, and when it ends. A key that has already ended is refused, so it cannot replace one that works.
 
 | Tier | Price | What it adds |
 | --- | --- | --- |
@@ -43,4 +43,4 @@ The key is checked on this machine, against the key the studio ships with. Nothi
 
 During the beta every Creator feature is open on every install, licensed or not. A licence changes one thing today: the number of profiles.
 
-When an annual licence ends, the studio returns to the free tier. Nothing is deleted, and everything stays readable and exportable. **Remove licence** takes the key off this machine, for example before you hand the computer on.
+A licence has an end date, apart from a lifetime one. Each renewal sends a new key with a new end date; paste it the same way. When a licence ends, the studio returns to the free tier. Nothing is deleted, and everything stays readable and exportable. **Remove licence** takes the key off this machine, for example before you hand the computer on.

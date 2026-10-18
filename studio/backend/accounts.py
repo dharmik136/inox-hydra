@@ -28,6 +28,7 @@ import os
 import re
 import shutil
 import sqlite3
+import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -45,6 +46,11 @@ except ImportError:
 MAX_ACCOUNT_NAME_LENGTH = 120
 MAX_HEADLINE_LENGTH = 300
 MAX_VANITY_LENGTH = 100
+
+# Creating, switching and deleting read the registry, act, and write it back.
+# Two at once could both pass the licence's limit, or one could drop the
+# other's entry, so they take turns.
+_REGISTRY_LOCK = threading.RLock()
 
 
 def _compute_initials(name: str) -> str:
@@ -93,12 +99,17 @@ def _adopt_legacy_accounts() -> None:
         except sqlite3.Error:
             return
     entries = []
+    taken = {paths.DEFAULT_PROFILE_ID}
     for row in rows:
-        pid = (row["id"] or "").strip().lower()
-        if row["is_default"] or pid == paths.DEFAULT_PROFILE_ID:
+        raw = (row["id"] or "").strip().lower()
+        if row["is_default"] or raw == paths.DEFAULT_PROFILE_ID:
             continue
-        if not paths.is_valid_profile_id(pid):
-            continue
+        # The old code made ids with \w, so underscores and accented letters
+        # are possible. Their data never was separate, so the id can change.
+        pid = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-")[:48] or f"acc-{uuid.uuid4().hex[:8]}"
+        while pid in taken or not paths.is_valid_profile_id(pid):
+            pid = f"acc-{uuid.uuid4().hex[:8]}"
+        taken.add(pid)
         entries.append({
             "id": pid,
             "name": row["name"] or pid,
@@ -223,6 +234,11 @@ def get_account(account_id: str, conn=None) -> Optional[Dict[str, Any]]:
 
 
 def create_account(data: Dict[str, Any], conn=None) -> Dict[str, Any]:
+    with _REGISTRY_LOCK:
+        return _create_account(data, conn)
+
+
+def _create_account(data: Dict[str, Any], conn=None) -> Dict[str, Any]:
     """
     Creates a creator profile with an empty database of its own.
 
@@ -239,8 +255,8 @@ def create_account(data: Dict[str, Any], conn=None) -> Dict[str, Any]:
             "status": "error",
             "code": "licence",
             "message": (
-                f"Your licence covers {limit} creator profile{'s' if limit != 1 else ''}. "
-                "Separate profiles for several creators are part of the Agency licence."
+                f"Your licence covers {limit} creator profile{'s' if limit != 1 else ''}."
+                + ("" if limit > 1 else " Separate profiles for several creators are part of the Agency licence.")
             ),
         }
 
@@ -278,6 +294,11 @@ def create_account(data: Dict[str, Any], conn=None) -> Dict[str, Any]:
 
 
 def switch_account(account_id: str, conn=None) -> Dict[str, Any]:
+    with _REGISTRY_LOCK:
+        return _switch_account(account_id, conn)
+
+
+def _switch_account(account_id: str, conn=None) -> Dict[str, Any]:
     """Makes a profile active from the next request on, upgrading its database first."""
     entry = next((e for e in _entries() if e["id"] == account_id), None)
     if not entry:
@@ -295,6 +316,11 @@ def switch_account(account_id: str, conn=None) -> Dict[str, Any]:
 
 
 def delete_account(account_id: str, conn=None, confirm: Optional[str] = None) -> Dict[str, Any]:
+    with _REGISTRY_LOCK:
+        return _delete_account(account_id, conn, confirm)
+
+
+def _delete_account(account_id: str, conn=None, confirm: Optional[str] = None) -> Dict[str, Any]:
     """
     Deletes a profile and every file it holds: database, media, backups, exports.
 
@@ -318,6 +344,7 @@ def delete_account(account_id: str, conn=None, confirm: Optional[str] = None) ->
     registry["profiles"] = [p for p in registry["profiles"] if p["id"] != account_id]
     if registry.get("active") == account_id:
         registry["active"] = paths.DEFAULT_PROFILE_ID
+        _open_profile(paths.DEFAULT_PROFILE_ID)
     paths.write_profiles(registry)
 
     root = os.path.realpath(paths.get_profiles_root())

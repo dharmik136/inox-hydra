@@ -12,6 +12,8 @@ import { fetchLicence, installLicence, removeLicence, type LicenceState } from "
  * changes today: the number of creator profiles, while every Creator feature
  * is open during the beta.
  */
+const KIND_LABEL: Record<string, string> = { annual: "Annual", monthly: "Monthly", lifetime: "Lifetime" };
+
 export function LicenceWorkspace() {
   const [state, setState] = useState<LicenceState | null>(null);
   const [failed, setFailed] = useState(false);
@@ -79,13 +81,13 @@ export function LicenceWorkspace() {
           <dt className="text-ink-muted">Licence</dt>
           <dd className="text-ink-secondary">
             {state.status === "none" && "None entered"}
-            {state.status === "active" && held && `${held.kind === "lifetime" ? "Lifetime" : "Annual"}, for ${held.email}`}
-            {state.status === "expired" && held && `Expired ${held.expires_at}, for ${held.email}`}
+            {state.status === "active" && held && `${KIND_LABEL[held.kind]}, for ${held.email}`}
+            {state.status === "expired" && held && `Ended ${held.expires_at}, for ${held.email}`}
             {state.status === "invalid" && "Not accepted"}
           </dd>
           {held?.expires_at && state.status === "active" && (
             <>
-              <dt className="text-ink-muted">Renews</dt>
+              <dt className="text-ink-muted">Ends</dt>
               <dd className="text-ink-secondary">{held.expires_at}</dd>
             </>
           )}
@@ -175,8 +177,9 @@ export function LicenceWorkspace() {
           ))}
         </ul>
         <p className="mt-2 text-[12px] leading-relaxed text-ink-muted">
-          An annual licence that ends returns this machine to the free tier. Nothing is deleted,
-          and everything stays readable and exportable.
+          Each purchase or renewal sends a new key with a new end date; paste it here. When a
+          licence ends, this machine returns to the free tier. Nothing is deleted, and everything
+          stays readable and exportable.
         </p>
       </section>
     </div>

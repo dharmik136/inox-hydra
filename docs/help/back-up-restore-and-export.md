@@ -37,9 +37,9 @@ In the same **Your data** section:
 - **Export JSON** writes `inox_export_<stamp>.json`.
 - **Export CSV** writes `inox_export_<stamp>.zip`, a ZIP holding one CSV file per table. It is not a single CSV.
 
-Both go in the data home folder, not the backups folder, and the interface does not list them. The note shows the path followed by "Content only. Credentials are deliberately excluded."
+Both go in the `exports` folder of the open creator profile (in the data home for your first profile), not the backups folder, and the interface does not list them. The note shows the path followed by "Content only. Credentials are deliberately excluded."
 
-An export holds the drafts, posts, leads, lead interactions, daily analytics, audience demographics and queue items tables, and your own LinkedIn record: your profile, roles, education and skills, your posts with every reading of their figures, what you commented on and reacted to elsewhere, and each lead's stage history. The settings table, which holds your LinkedIn session and AI key, is left out on purpose. Media files are not included.
+An export holds the drafts, posts, leads, lead interactions, daily analytics, audience demographics and queue items tables, and your own LinkedIn record: your profile, roles, education and skills, your posts with every reading of their figures, what you commented on and reacted to elsewhere, each lead's stage history, your connections from LinkedIn's archive, and a record of each archive import. A backup or an export holds the open creator profile only. The settings table, which holds your LinkedIn session and AI key, is left out on purpose. Media files are not included.
 
 ## Export to Obsidian
 

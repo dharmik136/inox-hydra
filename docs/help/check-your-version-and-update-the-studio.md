@@ -41,9 +41,9 @@ A portable copy keeps your data in `%LOCALAPPDATA%\InoxHydra`, outside the folde
 
 Do not delete the checkout. When `studio\data` exists, your database and media live inside the `studio` folder.
 
-1. Take a backup.
+1. Take a backup. A backup holds the open creator profile only, so take one in each profile.
 2. Stop the studio.
-3. Replace the checkout's source files with the newer version, keeping `studio\data`, `studio\assets`, `studio\backups`, `studio\vault` and `studio\logs`.
+3. Replace the checkout's source files with the newer version, keeping `studio\data`, `studio\assets`, `studio\backups`, `studio\vault`, `studio\logs`, and, if you have them, `studio\profiles` (every creator profile after your first) and `studio\exports`.
 4. Run `pip install -r requirements.txt`.
 5. Rebuild the interface: `npm --prefix studio/ui ci`, then `npm --prefix studio/ui run build`. The launcher only builds it when `studio\frontend_next\index.html` is missing, so after an update it would keep serving the old one.
 6. Start the studio.

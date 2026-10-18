@@ -207,6 +207,17 @@ OPENAPI_TAGS = [
 async def lifespan(app: FastAPI):
     init_db()
     seed_initial_data()
+    # Every other creator profile's database too, so switching to one, or the
+    # scheduler visiting it, never meets a schema older than this build.
+    for _profile in paths_module.profile_ids():
+        if _profile == paths_module.get_active_profile_id():
+            continue
+        try:
+            with paths_module.using_profile(_profile):
+                init_db()
+        except Exception:
+            logging.getLogger("studio.profiles").warning(
+                "Could not bring profile %s up to this build's schema.", _profile, exc_info=True)
     # An AI key saved before keys were sealed is still readable in the file
     # until something saves it again. Sealed here instead, once; a sealed
     # value is left alone, so this does nothing on every later start.
