@@ -65,10 +65,10 @@ def test_phase4_deterministic_icp_latency_benchmark():
     elapsed_total_ms = (time.perf_counter() - start) * 1000.0
     avg_ms_per_lead = elapsed_total_ms / iterations
 
-    # Sub-millisecond requirement (< 1.0 ms)
+    # Sub-millisecond requirement (< 1.0 ms). In practice it is ~0.003 ms on a
+    # developer machine, but a shared CI runner has measured 0.18 ms, so a
+    # tighter bound only measures the runner.
     assert avg_ms_per_lead < 1.0, f"Average ICP scoring latency {avg_ms_per_lead:.4f} ms exceeds 1ms limit"
-    # In practice it is ~0.003 ms (3 microseconds)
-    assert avg_ms_per_lead < 0.1, f"Expected < 0.1ms on local hardware, got {avg_ms_per_lead:.4f} ms"
 
 
 def test_phase4_gaussian_rate_limiter_bounds():
