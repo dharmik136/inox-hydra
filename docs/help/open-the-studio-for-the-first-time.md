@@ -16,7 +16,7 @@ The portable folder also has `InoxHydra-CLI.bat`, which runs the support command
 
 1. Double-click the launcher (`InoxHydra.bat` or `launch_studio.bat`).
 2. From a source checkout, on the very first run only, the launcher builds the interface. It prints "The studio interface has not been built yet. Building it now." and runs `npm --prefix studio/ui ci` and `npm --prefix studio/ui run build`. This can take a few minutes.
-3. The launcher starts the server in a minimized window. From a source checkout it is titled **LinkedIn Studio Backend**; from the portable folder it is titled **Inox Hydra Engine**. Leave that window open. Closing it stops the studio.
+3. The launcher starts the server in a minimized window. From a source checkout it is titled **Inox Hydra Backend**; from the portable folder it is titled **Inox Hydra Engine**. Leave that window open. Closing it stops the studio.
 4. After a few seconds (3 from a source checkout, 4 from the portable folder) the studio opens. If Google Chrome is installed in its standard location (Program Files or Program Files (x86)), it opens as a 1440 by 920 Chrome app window. Otherwise it opens in your default browser.
 5. You can also type `http://127.0.0.1:8000` into any browser on this PC.
 

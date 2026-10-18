@@ -196,26 +196,20 @@ def test_the_studio_ships_no_creator_identity():
 
 def test_an_unset_name_renders_nothing_rather_than_somebody_else():
     """
-    carousel_generator drew 'Dharmik Shingala - Personal LinkedIn Studio' into
-    every exported slide from a string literal, so a correct settings form still
-    produced a wrong file.
+    carousel_generator drew the original author's name, then a product name,
+    into every exported slide from a string literal, so a correct settings form
+    still produced a wrong file. The footer is now the caller's name alone: a
+    slide carries no product branding.
     """
-    from studio.backend import carousel_generator as cg
-
     path = os.path.join(REPO_ROOT, "studio", "backend", "carousel_generator.py")
     with open(path, "r", encoding="utf-8") as f:
         source = f.read()
 
-    assert "Personal LinkedIn Studio" in source, "the footer was removed entirely rather than parameterised"
-    footer_lines = [
-        l for l in source.splitlines()
-        if "Personal LinkedIn Studio" in l and not l.lstrip().startswith("#")
-    ]
-    assert footer_lines, "no footer draw call found"
-    for line in footer_lines:
-        assert "safe_author" in line or "author" in line, (
-            f"the footer still draws from a literal: {line.strip()[:100]}"
-        )
+    footer = source.split("# Bottom slide footer", 1)[1].split("# Progress bar", 1)[0]
+    assert "if safe_author:" in footer, "the footer is no longer skipped when there is no name"
+    assert "draw.text((64, HEIGHT - 100), safe_author," in footer, "the footer does not draw the caller's name"
+    for literal in ('f"', "Studio", "Inox", "LinkedIn"):
+        assert literal not in footer, f"the footer draws a literal ({literal}): " + footer.strip()[:160]
 
 
 def test_the_profile_endpoint_admits_when_it_does_not_know():

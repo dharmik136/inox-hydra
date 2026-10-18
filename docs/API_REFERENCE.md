@@ -1,6 +1,6 @@
 # REST API Reference Manual
 
-LinkedIn Studio Enterprise exposes a comprehensive RESTful API on `http://127.0.0.1:8000/api`. Interactive Swagger documentation is accessible at `http://127.0.0.1:8000/docs`.
+Inox Hydra exposes a comprehensive RESTful API on `http://127.0.0.1:8000/api`. Interactive Swagger documentation is accessible at `http://127.0.0.1:8000/docs`.
 
 ---
 

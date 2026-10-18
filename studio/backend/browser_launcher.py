@@ -1,9 +1,9 @@
 """
-LinkedIn Studio Browser Bridge & Extension Auto-Loader
+Inox Hydra Browser Bridge & Extension Auto-Loader
 ======================================================
 Automates the detection, shortcut creation, and 1-click launching
 of Chromium browsers (Google Chrome, Microsoft Edge, Brave, Opera, Vivaldi)
-with the LinkedIn Studio Bridge extension pre-loaded.
+with the Inox Hydra Bridge extension pre-loaded.
 
 Strict Invariants:
 - Zero em-dashes across all code, docstrings, and user-facing messages.
@@ -350,7 +350,7 @@ def _posix_launcher(b_id, b_info, desktop_dir, ext_path, safe_url):
     profile = "--user-data-dir=" + get_browser_profile_dir(b_id, exe_path=exe)
 
     if sys.platform == "darwin":
-        path = os.path.join(desktop_dir, f"LinkedIn Studio ({name}).command")
+        path = os.path.join(desktop_dir, f"Inox Hydra ({name}).command")
         body = (
             "#!/bin/sh\n"
             "# Opens " + name + " with the Inox Hydra bridge extension loaded.\n"
@@ -363,7 +363,7 @@ def _posix_launcher(b_id, b_info, desktop_dir, ext_path, safe_url):
             "[Desktop Entry]\n"
             "Type=Application\n"
             "Version=1.0\n"
-            f"Name=LinkedIn Studio ({name})\n"
+            f"Name=Inox Hydra ({name})\n"
             "Comment=Launch with the Inox Hydra bridge extension loaded\n"
             # Exec is not a shell, so shlex.quote is the wrong tool: the spec
             # wants double quotes around a field containing spaces.
@@ -432,7 +432,7 @@ def create_desktop_shortcuts(
     for b_id, b_info in browsers.items():
         b_name = b_info["name"]
         b_path = b_info["path"]
-        shortcut_name = f"LinkedIn Studio ({b_name}).lnk"
+        shortcut_name = f"Inox Hydra ({b_name}).lnk"
         shortcut_dest = os.path.join(desktop_dir, shortcut_name)
 
         # PowerShell escapes a single quote by doubling it, not with "".
@@ -458,7 +458,7 @@ def create_desktop_shortcuts(
             f"$s.Arguments = '--user-data-dir=\"{ps_quote(get_browser_profile_dir(b_id))}\" "
             f"--load-extension=\"{ps_quote(ext_path)}\" {ps_quote(safe_url)}'; "
             f"$s.IconLocation = '{ps_quote(b_path)},0'; "
-            f"$s.Description = 'Launch {ps_quote(b_name)} with LinkedIn Studio Bridge'; "
+            f"$s.Description = 'Launch {ps_quote(b_name)} with Inox Hydra Bridge'; "
             f"$s.WorkingDirectory = '{ps_quote(os.path.dirname(b_path))}'; "
             f"$s.Save()"
         )

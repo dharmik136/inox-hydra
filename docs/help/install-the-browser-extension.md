@@ -2,7 +2,7 @@
 
 Load the studio's browser extension in Edge or Brave so it can record the people and figures on LinkedIn pages you open yourself.
 
-By default the studio makes no requests to LinkedIn itself. Apart from optional demo data, leads and daily figures arrive only through this extension, which reads LinkedIn pages while you browse them and passes what it reads to the studio on this machine. On your browser's extensions page it is listed as **LinkedIn Studio Bridge (LocalTaplio)**.
+By default the studio makes no requests to LinkedIn itself. Apart from optional demo data, leads and daily figures arrive only through this extension, which reads LinkedIn pages while you browse them and passes what it reads to the studio on this machine. On your browser's extensions page it is listed as **Inox Hydra Bridge**.
 
 ## Which browser to use
 
@@ -65,9 +65,9 @@ The part of the extension that runs inside LinkedIn pages relays to just three s
 
 Open one of your posts with comments. A small notice appears on the LinkedIn page for people it has not already seen on that post since the page loaded:
 
-- "LinkedIn Studio: N engager(s) on your post captured." The people are now in **Leads**. Reopen **Leads** to see them.
-- "LinkedIn Studio: N engager(s) had no profile link and were not saved."
-- "LinkedIn Studio: could not reach your studio, so nothing was saved." The studio is not running, or this browser was never paired.
+- "Inox Hydra: N engager(s) on your post captured." The people are now in **Leads**. Reopen **Leads** to see them.
+- "Inox Hydra: N engager(s) had no profile link and were not saved."
+- "Inox Hydra: could not reach your studio, so nothing was saved." The studio is not running, or this browser was never paired.
 
 ## If it does not work
 

@@ -1,5 +1,5 @@
 """
-LinkedIn Studio Enterprise - Core API Gateway & Lifespan Controller
+Inox Hydra - Core API Gateway & Lifespan Controller
 ====================================================================
 FastAPI application orchestrating local creator analytics, post scheduling,
 AI hook generation, 1080x1080 PDF carousel builds, and CRM lead pipelines.
@@ -255,7 +255,7 @@ async def lifespan(app: FastAPI):
 _DEV_DOCS = devtools.env_allows_dev_mode()
 
 app = FastAPI(
-    title="LinkedIn Studio Enterprise",
+    title="Inox Hydra",
     description="A self-hosted, local-first LinkedIn creator studio on localhost. Nothing leaves this machine unless a feature you switch on needs to.",
     version=__version__,
     openapi_url="/openapi.json" if _DEV_DOCS else None,

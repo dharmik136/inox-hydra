@@ -1,4 +1,4 @@
-# Inox Hydra  -  LinkedIn Studio Enterprise (Local Creator Engine)
+# Inox Hydra
 
 > **A self-hosted, local-first alternative to cloud LinkedIn creator suites (Taplio's plans run from $39 to $199 a month). It runs on your own machine, and nothing leaves it unless you switch on a feature that needs to: your own AI provider, an update check, or the Telegram inbox.**
 
@@ -13,9 +13,9 @@
 
 ## 🌟 Executive Product Overview
 
-**LinkedIn Studio Enterprise** is a high-performance content strategy, analytics intelligence, and lead pipeline operating system engineered for enterprise architects, founders, and content practitioners.
+**Inox Hydra** is a high-performance content strategy, analytics intelligence, and lead pipeline operating system engineered for enterprise architects, founders, and content practitioners.
 
-Cloud creator platforms keep your drafts, your audience and your analytics on their servers, and tie you to the model they resell. LinkedIn Studio runs a **strictly local stack** instead: a browser extension reads the LinkedIn pages you open, the studio keeps what it reads in one database on your machine, and a pluggable **Bring-Your-Own-AI (BYO-AI)** gateway uses your key or a local model. It never posts, likes, comments, messages or connects on your behalf.
+Cloud creator platforms keep your drafts, your audience and your analytics on their servers, and tie you to the model they resell. Inox Hydra runs a **strictly local stack** instead: a browser extension reads the LinkedIn pages you open, the studio keeps what it reads in one database on your machine, and a pluggable **Bring-Your-Own-AI (BYO-AI)** gateway uses your key or a local model. It never posts, likes, comments, messages or connects on your behalf.
 
 ---
 

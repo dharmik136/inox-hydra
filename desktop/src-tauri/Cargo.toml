@@ -1,7 +1,7 @@
 [package]
 name = "linkedin-studio-desktop"
 version = "2.5.2"
-description = "Native shell for the Inox Hydra LinkedIn Studio"
+description = "Native shell for Inox Hydra"
 authors = ["Inox Hydra"]
 edition = "2021"
 rust-version = "1.77"

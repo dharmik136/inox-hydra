@@ -1,5 +1,5 @@
 """
-Inox Hydra (LinkedIn Studio Enterprise) Unified CLI
+Inox Hydra Unified CLI
 ===================================================
 Provides command-line management for Bring-Your-Own-AI (BYO-AI) configuration,
 system health diagnostics, and background daemon operations.

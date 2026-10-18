@@ -1,6 +1,6 @@
 # Module 01: Studio & Editor Enterprise Manual
 
-The **Studio & Editor** is the core creation environment of LinkedIn Studio Enterprise. It pairs a distraction-free, author-first drafting canvas with a real-time pixel-perfect mobile device simulator and a 6-dimension algorithmic safety evaluation engine.
+The **Studio & Editor** is the core creation environment of Inox Hydra. It pairs a distraction-free, author-first drafting canvas with a real-time pixel-perfect mobile device simulator and a 6-dimension algorithmic safety evaluation engine.
 
 ---
 

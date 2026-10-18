@@ -4,7 +4,7 @@ Learn what Mark as published, Queue it and Send to LinkedIn each do, and which o
 ## Before you start
 
 - **Save the draft.** Publishing acts on the saved post. If the draft has never been saved, **Publish** saves it first. If it was saved earlier and the strip now reads UNSAVED, your latest edits are not included, so press **Save** before **Publish**.
-- **For Send to LinkedIn only:** you need a stored LinkedIn session (see [Connect your LinkedIn session](connect-your-linkedin-session.md)), and `INOX_ALLOW_LINKEDIN_EGRESS=1` must be set before the studio server starts. `launch_studio.bat` does not set it. First stop the server: when `launch_studio.bat` started it, it runs in a minimised window titled **LinkedIn Studio Backend**, so close that window. Then open Command Prompt, run `set INOX_ALLOW_LINKEDIN_EGRESS=1`, and start `launch_studio.bat` from that same window. If a server is still running on port 8000, the launcher reuses it and the setting does not reach it.
+- **For Send to LinkedIn only:** you need a stored LinkedIn session (see [Connect your LinkedIn session](connect-your-linkedin-session.md)), and `INOX_ALLOW_LINKEDIN_EGRESS=1` must be set before the studio server starts. `launch_studio.bat` does not set it. First stop the server: when `launch_studio.bat` started it, it runs in a minimised window titled **Inox Hydra Backend**, so close that window. Then open Command Prompt, run `set INOX_ALLOW_LINKEDIN_EGRESS=1`, and start `launch_studio.bat` from that same window. If a server is still running on port 8000, the launcher reuses it and the setting does not reach it.
 
 ## Open the dialog
 

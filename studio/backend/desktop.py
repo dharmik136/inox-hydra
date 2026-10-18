@@ -54,8 +54,12 @@ from typing import Any, Dict, Optional
 # it is treated as fixed.
 APP_USER_MODEL_ID = "InoxHydra.LinkedInStudio"
 
-APP_DISPLAY_NAME = "LinkedIn Studio"
-STARTUP_SHORTCUT_NAME = "LinkedIn Studio.lnk"
+APP_DISPLAY_NAME = "Inox Hydra"
+STARTUP_SHORTCUT_NAME = "Inox Hydra.lnk"
+# What the Startup shortcut was called before the product had one name. Still
+# recognised, so an autostart switched on by an older version reads as on and
+# can be switched off, and is replaced when switched on again.
+LEGACY_STARTUP_SHORTCUT_NAMES = ("LinkedIn Studio.lnk",)
 
 # The mutex name. The Local prefix scopes it to the logon session, which is
 # what we want: two different users on one machine each get their own studio.
@@ -188,12 +192,20 @@ def get_startup_shortcut_path() -> str:
     return os.path.join(get_startup_dir(), LINUX_AUTOSTART_FILE)
 
 
+def _legacy_startup_shortcuts():
+    if not is_windows():
+        return []
+    return [os.path.join(get_startup_dir(), name) for name in LEGACY_STARTUP_SHORTCUT_NAMES]
+
+
 def is_autostart_enabled() -> bool:
-    path = get_startup_shortcut_path()
-    try:
-        return os.path.isfile(path) and os.path.getsize(path) > 0
-    except OSError:
-        return False
+    for path in [get_startup_shortcut_path(), *_legacy_startup_shortcuts()]:
+        try:
+            if os.path.isfile(path) and os.path.getsize(path) > 0:
+                return True
+        except OSError:
+            continue
+    return False
 
 
 def _launcher_target() -> Optional[str]:
@@ -209,7 +221,8 @@ def _launcher_target() -> Optional[str]:
         candidates = ["InoxHydra.bat", "launch_studio.bat"]
     else:
         candidates = [
-            "LinkedIn Studio",
+            "Inox Hydra",
+            "LinkedIn Studio",  # the desktop shell's name before 2.6
             "InoxHydra",
             "InoxHydra.sh",
             "launch_studio.sh",
@@ -283,6 +296,11 @@ def enable_autostart() -> Dict[str, Any]:
             }
 
         if os.path.isfile(shortcut):
+            for legacy in _legacy_startup_shortcuts():
+                try:
+                    os.remove(legacy)
+                except OSError:
+                    pass
             return {"enabled": True, "shortcut_path": shortcut, "target": target}
         return {"enabled": False, "reason": "the shortcut was not created"}
 
@@ -350,12 +368,13 @@ def disable_autostart() -> Dict[str, Any]:
     Removes the autostart entry (shortcut, plist, or desktop file).
     Succeeds when there was nothing to remove, and reports achieved state.
     """
-    shortcut = get_startup_shortcut_path()
-    if not os.path.isfile(shortcut):
+    present = [p for p in [get_startup_shortcut_path(), *_legacy_startup_shortcuts()] if os.path.isfile(p)]
+    if not present:
         return {"enabled": False, "removed": False}
     try:
-        os.remove(shortcut)
-        still_present = os.path.isfile(shortcut)
+        for shortcut in present:
+            os.remove(shortcut)
+        still_present = any(os.path.isfile(p) for p in present)
         return {"enabled": still_present, "removed": not still_present}
     except OSError as err:
         return {"enabled": True, "removed": False, "reason": str(err)}

@@ -319,7 +319,7 @@ def test_docs_api_and_modules():
 if __name__ == "__main__":
     import tempfile
     import shutil
-    print("Running LinkedIn Studio Enterprise Tests...")
+    print("Running Inox Hydra Tests...")
     temp_dir = tempfile.mkdtemp(prefix="inox_standalone_backend_")
     old_home = os.environ.get("INOX_HYDRA_HOME")
     os.environ["INOX_HYDRA_HOME"] = temp_dir

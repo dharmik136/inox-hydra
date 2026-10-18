@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =================================================================
-#   LinkedIn Studio Enterprise - Desktop Launcher (Linux / macOS)
+#   Inox Hydra - Desktop Launcher (Linux / macOS)
 #   Your work stays on this machine - Port 8000
 # =================================================================
 
@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 echo "================================================================="
-echo "  LinkedIn Studio Enterprise - Desktop Launcher"
+echo "  Inox Hydra - Desktop Launcher"
 echo "  100% local. Zero cloud egress. Port 8000."
 echo "================================================================="
 echo ""
@@ -67,9 +67,9 @@ elif command -v curl >/dev/null 2>&1; then
 fi
 
 if [ "$SERVER_RUNNING" -eq 1 ]; then
-    echo "[*] LinkedIn Studio backend is already running on http://127.0.0.1:8000."
+    echo "[*] Inox Hydra backend is already running on http://127.0.0.1:8000."
 else
-    echo "[*] Starting LinkedIn Studio backend daemon..."
+    echo "[*] Starting Inox Hydra backend daemon..."
     nohup "$PYTHON_CMD" -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000 >/tmp/inox_studio_backend.log 2>&1 &
     sleep 2
 fi
@@ -95,7 +95,7 @@ for cand in "${CANDIDATES[@]}"; do
 done
 
 if [ -n "$BROWSER_BIN" ]; then
-    echo "[*] Launching LinkedIn Studio in Native Desktop Window ($BROWSER_BIN)..."
+    echo "[*] Launching Inox Hydra in Native Desktop Window ($BROWSER_BIN)..."
     nohup "$BROWSER_BIN" --app="http://127.0.0.1:8000" --window-size=1440,920 >/dev/null 2>&1 &
 elif command -v xdg-open >/dev/null 2>&1; then
     echo "[*] Chrome not found. Opening via xdg-open..."

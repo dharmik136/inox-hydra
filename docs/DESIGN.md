@@ -1,5 +1,5 @@
-# LinkedIn Studio Enterprise - Complete UI/UX Design System & Architectural Blueprint
-**Project Name**: `Linkedin strategy` (Inox Hydra / LinkedIn Studio Enterprise)  
+# Inox Hydra - Complete UI/UX Design System & Architectural Blueprint
+**Project Name**: `Linkedin strategy` (Inox Hydra / Inox Hydra)  
 **Document**: `DESIGN.md` / `linkedin_strategy_design.md`  
 **Target Audience**: AI Agents, UI/UX Engineers, Product Designers  
 **Version**: 2.5 (High-Contrast Editorial & Minimalist Authority Design System)  
@@ -9,7 +9,7 @@
 
 ## 1. Executive Summary & Design Philosophy
 
-LinkedIn Studio Enterprise is an air-gapped, high-performance desktop workstation designed for elite tech executives, enterprise software architects, and engineering leaders. The UI is built entirely using **Vanilla HTML5, CSS3, and JavaScript** without external CSS frameworks (no Tailwind runtime bloat), ensuring instantaneous DOM updates, sub-16ms rendering, and complete sovereign data privacy.
+Inox Hydra is an air-gapped, high-performance desktop workstation designed for elite tech executives, enterprise software architects, and engineering leaders. The UI is built entirely using **Vanilla HTML5, CSS3, and JavaScript** without external CSS frameworks (no Tailwind runtime bloat), ensuring instantaneous DOM updates, sub-16ms rendering, and complete sovereign data privacy.
 
 ### Core Aesthetic Pillars
 1. **Minimalist Authority Editorialism**: Clean, distraction-free surfaces inspired by Swiss typographic design, Bloomberg Terminal precision, and Linear/Vercel modern dark-mode luxury.
@@ -394,4 +394,4 @@ For another agent or engineer improving this system, here are high-impact archit
 
 ---
 
-*This specification represents the complete, unambiguous design manual for the LinkedIn Studio Enterprise frontend.*
+*This specification represents the complete, unambiguous design manual for the Inox Hydra frontend.*

@@ -1,5 +1,5 @@
 """
-Inox Hydra (LinkedIn Studio Enterprise)
+Inox Hydra
 Bring-Your-Own-AI (BYO-AI) & Multi-Model Gateway Test Suite
 ============================================================
 Verifies:

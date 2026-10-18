@@ -11,7 +11,7 @@ Wiring it up surfaced a defect in the launcher underneath.
 
 Not every Chromium browser loads an unpacked extension from --load-extension,
 and the ones that do not fail silently: the browser opens, the launcher reports
-"Successfully launched ... with LinkedIn Studio Bridge loaded", and the bridge
+"Successfully launched ... with Inox Hydra Bridge loaded", and the bridge
 is simply not there. Worse, the automatic choice preferred Chrome by name, so
 the default path picked the one option that cannot work.
 
@@ -115,7 +115,7 @@ def test_the_launcher_does_not_claim_a_bridge_it_did_not_load():
     how someone waits for leads that cannot arrive.
     """
     source = _read(os.path.join(REPO_ROOT, "studio", "backend", "browser_launcher.py"))
-    assert "Successfully launched {selected['name']} with LinkedIn Studio Bridge loaded." not in source
+    assert "Successfully launched {selected['name']} with Inox Hydra Bridge loaded." not in source
     assert "ignores --load-extension" in source, (
         "the launcher no longer explains why a browser it opened will capture nothing"
     )

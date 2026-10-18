@@ -28,7 +28,7 @@ function studioApiFromPanel(path, options) {
 }
 
 // -------------------------------------------------------------
-// LinkedIn Studio - Side Panel Controller
+// Inox Hydra - Side Panel Controller
 // -------------------------------------------------------------
 /**
  * A GET against the studio, made by the service worker so it carries the

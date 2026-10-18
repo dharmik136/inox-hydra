@@ -271,7 +271,7 @@ def render_slide(
     # Drawn from the caller's name, and skipped entirely when there is none.
     # An unset footer is no footer, not somebody else's.
     if safe_author:
-        draw.text((64, HEIGHT - 100), f"{safe_author} - Personal LinkedIn Studio",
+        draw.text((64, HEIGHT - 100), safe_author,
                   fill=theme["text_muted"], font=font_footer)
 
     # Progress bar line at the very bottom

@@ -1,8 +1,8 @@
-# LinkedIn Studio Enterprise - Reimagined UI/UX Blueprint
+# Inox Hydra - Reimagined UI/UX Blueprint
 
 ## Design Direction
 
-**Working concept:** `Editorial Motion OS`
+**Working concept:** `Inox Hydra`
 
 This redesign keeps the product capabilities and local-first architecture from the original specification, but replaces the generic AI-dashboard visual language with a spatial editorial workspace influenced by the interaction quality of Skiper UI and the modular product primitives of ReUI.
 

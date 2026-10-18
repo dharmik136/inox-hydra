@@ -42,7 +42,7 @@ in the route rather than the model, so that function is unsafe for any second ca
 
 ---
 
-# THE LINKEDIN STUDIO: A HOLISTIC ASSESSMENT
+# INOX HYDRA: A HOLISTIC ASSESSMENT
 
 ---
 

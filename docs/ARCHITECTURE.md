@@ -1,6 +1,6 @@
 # Technical Architecture & Security Blueprint
 
-This document details the software architecture, storage model, concurrency management, and zero-egress security design of **LinkedIn Studio Enterprise**.
+This document details the software architecture, storage model, concurrency management, and zero-egress security design of **Inox Hydra**.
 
 ---
 

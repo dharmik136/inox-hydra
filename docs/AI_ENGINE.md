@@ -1,6 +1,6 @@
 # Bring-Your-Own-AI (BYO-AI) & Multi-Model Engine Specification
 
-LinkedIn Studio Enterprise features a pluggable **Bring-Your-Own-AI (BYO-AI)** multi-model architecture. The platform does not mandate or restrict creators to any single proprietary vendor (such as Google Gemini). Creators have complete autonomy to configure and hot-swap between industry-leading cloud LLMs, local offline models, or the zero-egress local deterministic engine.
+Inox Hydra features a pluggable **Bring-Your-Own-AI (BYO-AI)** multi-model architecture. The platform does not mandate or restrict creators to any single proprietary vendor (such as Google Gemini). Creators have complete autonomy to configure and hot-swap between industry-leading cloud LLMs, local offline models, or the zero-egress local deterministic engine.
 
 ---
 

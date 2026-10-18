@@ -1,6 +1,6 @@
 # Chrome Extension & Zero-Detection Sync Bridge
 
-The **LinkedIn Studio Chrome Extension** serves as a private, undetectable bridge between your authenticated LinkedIn session and the local studio running on `127.0.0.1:8000`.
+The **Inox Hydra Chrome Extension** serves as a private, undetectable bridge between your authenticated LinkedIn session and the local studio running on `127.0.0.1:8000`.
 
 ---
 
@@ -42,9 +42,9 @@ Most commercial scrapers get banned because they inject invasive code or send hi
 2. Inconsistent browser fingerprinting and non-human mouse/scroll velocity.
 3. Automated API requests originating from datacenter IP addresses.
 
-### How LinkedIn Studio Achieves Zero-Detection:
+### How Inox Hydra Achieves Zero-Detection:
 
-| Vulnerability Vector | Commercial Extensions | LinkedIn Studio Architecture |
+| Vulnerability Vector | Commercial Extensions | Inox Hydra Architecture |
 | :--- | :--- | :--- |
 | **Fetch Monkey-Patching** | Wraps `window.fetch` to intercept headers, tripping bot traps | **Zero prototype modification**. Never alters global browser objects |
 | **Request Origin** | Cloud servers query LinkedIn Voyager API with fake user-agents | **0 cloud requests**. Only your real browser session communicates with LinkedIn |
@@ -60,7 +60,7 @@ When you browse LinkedIn and view comments or open the reaction modal (Likes/Cel
 * **Comment Extraction**: Observes comments in feed updates and permalink post views, parsing person names, headlines, profile URLs, and exact comment text.
 * **Reaction Modal Extraction**: When you click the reaction count on any post to see who liked/celebrated it, the extension captures all listed reactors into your CRM pipeline as warm engagers.
 * **Smart Deduplication**: Re-engaging prospects have their latest context notes updated in SQLite rather than creating duplicate entries.
-* **In-Page Feedback**: Displays a subtle toast on LinkedIn when new engagers are ingested (`⚡ LinkedIn Studio CRM: Ingested X warm engagers!`).
+* **In-Page Feedback**: Displays a subtle toast on LinkedIn when new engagers are ingested (`⚡ Inox Hydra CRM: Ingested X warm engagers!`).
 
 ### Lead Extraction Fields:
 * **Name**: Sanitized author name.

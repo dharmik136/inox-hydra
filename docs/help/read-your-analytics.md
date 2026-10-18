@@ -14,7 +14,7 @@ One visit records one day. A second visit the same day updates that day. Days yo
 
 | Notice on LinkedIn | Meaning |
 | --- | --- |
-| "LinkedIn Studio: creator analytics synced to your local studio." | The extension sent the figures. It also shows this when the studio could not be reached, so confirm on **Analytics**. |
+| "Inox Hydra: creator analytics synced to your local studio." | The extension sent the figures. It also shows this when the studio could not be reached, so confirm on **Analytics**. |
 | "...so they were not saved as today's numbers. Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses. Change the range; the extension reads again. |
 
 If the extension cannot tell which range is selected, it still saves the figures, labelled as an unknown period. The chart still plots that day, but the totals under **What changed** leave it out and say how many days they left out. Check the selector before you visit. Abbreviated figures such as 1.2K are stored as the rounded number, 1200, and marked as rounded.

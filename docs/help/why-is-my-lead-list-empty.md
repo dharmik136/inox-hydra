@@ -12,7 +12,7 @@ Every link in this chain has to hold:
 2. **You opened the studio once in that same browser.** Go to `http://127.0.0.1:8000` in that browser. When the studio page loads, it gives that browser a local access token, and the extension reads the token from there. Each browser keeps its own copy of the token, so opening the studio in a different browser does not help this one.
 3. **You confirmed your profile in Setup.** A lead is someone who engaged with your post, and the studio can only tell your posts from other people's once it knows who you are. Until then nothing is kept. See [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).
 4. **You open a LinkedIn page that shows engagement on your post.** That means a page under `/feed/` (your feed, or a single post opened from it) or a post page under `/posts/`. Commenters are read from the comments that are open on the page. People who reacted are read only when the reactions list itself is open.
-5. **A small "LinkedIn Studio" notice appears on the LinkedIn page.** It says how many engagers on your post were captured.
+5. **A small "Inox Hydra" notice appears on the LinkedIn page.** It says how many engagers on your post were captured.
 6. **You reopen Leads.** The list is read when you open the surface and after you change a lead's status. It does not refresh while you are looking at it.
 
 ## What you see, and what to do
@@ -20,9 +20,9 @@ Every link in this chain has to hold:
 | What you see | Why | What to do |
 |---|---|---|
 | No notice at all on LinkedIn | The post is not yours, the extension is not running in this browser, the page is not one it reads, or no comments or reactions list is open. It stays quiet about other people's posts on purpose, and about people it has already sent from this tab. | Check that you are in Edge or Brave with the extension loaded, open the comments or the reactions list on a post, and wait a few seconds. The extension checks at most once every 4 seconds as the page changes. |
-| "LinkedIn Studio: could not reach your studio, so nothing was saved." | The studio is not running, or this browser has no studio token, so the studio refused the request. | Start the studio, open `http://127.0.0.1:8000` once in this browser, then **reload the LinkedIn tab**. Without a reload, the tab does not resend people it already tried. |
-| "LinkedIn Studio: confirm your profile in the studio's Setup screen to start capturing leads from your posts." | The studio does not yet know which posts are yours, so it kept nobody. Shown once per page. | Open **Setup** in the studio and confirm your profile. |
-| "LinkedIn Studio: N engager(s) had no profile link and were not saved." | A person with no profile link cannot be told apart from anyone else with the same name, so they are skipped on purpose. | Nothing to fix. Other people on the same post are still saved. |
+| "Inox Hydra: could not reach your studio, so nothing was saved." | The studio is not running, or this browser has no studio token, so the studio refused the request. | Start the studio, open `http://127.0.0.1:8000` once in this browser, then **reload the LinkedIn tab**. Without a reload, the tab does not resend people it already tried. |
+| "Inox Hydra: confirm your profile in the studio's Setup screen to start capturing leads from your posts." | The studio does not yet know which posts are yours, so it kept nobody. Shown once per page. | Open **Setup** in the studio and confirm your profile. |
+| "Inox Hydra: N engager(s) had no profile link and were not saved." | A person with no profile link cannot be told apart from anyone else with the same name, so they are skipped on purpose. | Nothing to fix. Other people on the same post are still saved. |
 | A "captured" notice appeared, but Leads is still empty | Leads was already open and has not reread the list. | Switch to another surface and back to Leads. |
 | LEAD PIPELINE UNAVAILABLE | The interface could not read the lead list from the studio. | See [The studio will not open or shows an error](the-studio-will-not-open.md). |
 

@@ -34,7 +34,7 @@ if [ "$OS_NAME" = "Linux" ]; then
     mkdir -p "$APPS_DIR"
 
     SHORTCUT_CONTENT="[Desktop Entry]
-Name=Inox Hydra (LinkedIn Studio)
+Name=Inox Hydra
 Comment=Local privacy-first creator engine and analytics studio
 Exec=$LAUNCHER
 Icon=$ICON

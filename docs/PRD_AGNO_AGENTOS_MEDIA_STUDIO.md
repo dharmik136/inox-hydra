@@ -5,7 +5,7 @@
 **Status:** In Review (Awaiting User Sign-off)  
 **Author:** Antigravity AI Engine  
 **Governing Standard:** `~/agno-agentos-rulebook-kit` DNA (P1 One-Home / P6 Anti-Pattern Memory / P7 Structure-as-Law)  
-**Target Repository:** `dharmik136/inox-hydra` (LinkedIn Studio Enterprise)
+**Target Repository:** `dharmik136/inox-hydra` (Inox Hydra)
 
 ---
 

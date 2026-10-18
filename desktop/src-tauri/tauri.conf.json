@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "LinkedIn Studio",
+  "productName": "Inox Hydra",
   "version": "2.5.2",
   "identifier": "com.inoxhydra.linkedinstudio",
   "build": {
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "studio",
-        "title": "LinkedIn Studio",
+        "title": "Inox Hydra",
         "width": 1440,
         "height": 920,
         "minWidth": 1024,

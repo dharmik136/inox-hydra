@@ -7,13 +7,13 @@ The **Analytics** module provides an executive-grade telemetry dashboard for tra
 ## 1. Direct LinkedIn Account Connection Architecture
 
 ### Zero-Cloud, Direct Local Ingestion
-Unlike commercial SaaS creator suites that require you to enter your LinkedIn password or route requests through remote third-party cloud servers (introducing account ban risks and data security leaks), **LinkedIn Studio Enterprise pulls analytics directly from your local browser's authenticated LinkedIn session**:
+Unlike commercial SaaS creator suites that require you to enter your LinkedIn password or route requests through remote third-party cloud servers (introducing account ban risks and data security leaks), **Inox Hydra pulls analytics directly from your local browser's authenticated LinkedIn session**:
 
 ```mermaid
 graph LR
     subgraph BrowserEnvironment [Local Chrome Browser]
         LinkedInSession[Authenticated LinkedIn Session: linkedin.com]
-        ExtensionBridge[LinkedIn Studio Extension: background.js]
+        ExtensionBridge[Inox Hydra Extension: background.js]
     end
 
     subgraph LocalhostEngine [Localhost Server: 127.0.0.1:8000]

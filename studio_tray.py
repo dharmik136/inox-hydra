@@ -103,7 +103,7 @@ class NOTIFYICONDATAW(ctypes.Structure):
 
 class InoxHydraTray:
     """
-    Native Win32 System Tray implementation for LinkedIn Studio Enterprise.
+    Native Win32 System Tray implementation for Inox Hydra.
     """
 
     def __init__(self):
@@ -317,9 +317,9 @@ class InoxHydraTray:
         self.nid.uFlags = NIF_ICON | NIF_MESSAGE | NIF_TIP | NIF_INFO
         self.nid.uCallbackMessage = WM_TRAYICON
         self.nid.hIcon = hicon
-        self.nid.szTip = "Inox Hydra: LinkedIn Studio Enterprise (127.0.0.1:8000)"
+        self.nid.szTip = "Inox Hydra (127.0.0.1:8000)"
         self.nid.szInfo = "Inox Hydra Studio daemon active on localhost:8000."
-        self.nid.szInfoTitle = "LinkedIn Studio Enterprise"
+        self.nid.szInfoTitle = "Inox Hydra"
         self.nid.dwInfoFlags = 1  # NIIF_INFO
 
         self.shell32.Shell_NotifyIconW(NIM_ADD, ctypes.byref(self.nid))

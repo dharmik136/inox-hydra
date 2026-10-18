@@ -3,7 +3,7 @@ Database Access Layer & SQLite WAL Manager
 ==========================================
 Provides thread-safe connection pooling, baseline schema creation, seed data
 provisioning,
-and Write-Ahead Logging (WAL) configuration for LinkedIn Studio Enterprise.
+and Write-Ahead Logging (WAL) configuration for Inox Hydra.
 
 Database: resolved by studio/backend/paths.py (never inside the install directory)
 Journal Mode: WAL (Write-Ahead Logging)

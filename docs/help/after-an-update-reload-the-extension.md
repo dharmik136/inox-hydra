@@ -3,7 +3,7 @@ You do not re-install or re-pair the extension after an update, but if you loade
 
 ## Why this is needed
 
-The extension, listed on your browser's extensions page as **LinkedIn Studio Bridge (LocalTaplio)**, is an unpacked folder that ships inside the studio, in `studio/extension`. Its version number is kept equal to the studio's (2.5.2 in this build). The studio never updates the copy your browser has loaded, and it does not warn you when the two versions differ.
+The extension, listed on your browser's extensions page as **Inox Hydra Bridge** (versions before 2.6 called it **LinkedIn Studio Bridge (LocalTaplio)**, and it takes the new name when you reload it), is an unpacked folder that ships inside the studio, in `studio/extension`. Its version number is kept equal to the studio's (2.5.2 in this build). The studio never updates the copy your browser has loaded, and it does not warn you when the two versions differ.
 
 ## Which case are you
 
@@ -26,7 +26,7 @@ What happens: the launcher starts the browser with the extension loaded from the
 ## If you loaded it by hand
 
 1. Open your browser's extensions page (`edge://extensions` in Edge, `brave://extensions` in Brave).
-2. Find **LinkedIn Studio Bridge (LocalTaplio)** and click **Reload**. Do this even if the files changed in place, to be sure the browser uses the new ones.
+2. Find **Inox Hydra Bridge** and click **Reload**. Do this even if the files changed in place, to be sure the browser uses the new ones.
 3. If the folder it was loaded from no longer exists, **Remove** the extension, choose **Load unpacked** and select the new folder.
 4. Reload any LinkedIn tabs that were open. A LinkedIn page opened before the reload cannot reach the studio until it is reloaded too.
 
@@ -60,7 +60,7 @@ You need to pair again only if the token changed or the browser lost the cookie:
 | Step 1 shows the old version | A browser is still running the old files. Reload the extension, or remove it and load the new folder, then reload the LinkedIn tab. Step 1 shows the version from the most recent heartbeat, so check any other browser that still has the old copy loaded. |
 | "Last heard from ... Open a LinkedIn tab in the bridge browser." | No visible LinkedIn tab, the extension failed to load, or this browser is no longer paired. Check the extensions page for an error, and open `http://127.0.0.1:8000` in that browser. |
 | The extensions page cannot find the folder | It moved. Remove the extension and load it again from the new path. |
-| "LinkedIn Studio: could not reach your studio, so nothing was saved." | The studio is not running, this browser is not paired, or the tab was open before you reloaded the extension. Reload the tab, and open `http://127.0.0.1:8000` in that browser. |
+| "Inox Hydra: could not reach your studio, so nothing was saved." | The studio is not running, this browser is not paired, or the tab was open before you reloaded the extension. Reload the tab, and open `http://127.0.0.1:8000` in that browser. |
 | Leads stay empty | See [Why is my lead list empty?](why-is-my-lead-list-empty.md). |
 
 For the rest of Setup, see [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).

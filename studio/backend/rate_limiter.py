@@ -1,5 +1,5 @@
 """
-LinkedIn Studio Backend - Rate Limiter & Concurrency Proxy.
+Inox Hydra Backend - Rate Limiter & Concurrency Proxy.
 ===========================================================
 Exports GaussianRateLimiter, SingleWriterActor, and globals from studio.core.
 Prefers a normal package import; falls back to explicit file loading only in

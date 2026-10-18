@@ -24,9 +24,9 @@ Open `http://127.0.0.1:8000/api/v1/health` in your browser. This address needs n
 
 ## Read the server's own error
 
-`launch_studio.bat` starts the server in a minimized window titled **LinkedIn Studio Backend**, then opens the browser three seconds later without checking that it worked. The portable `InoxHydra.bat` does the same with a window titled **Inox Hydra Engine**.
+`launch_studio.bat` starts the server in a minimized window titled **Inox Hydra Backend**, then opens the browser three seconds later without checking that it worked. The portable `InoxHydra.bat` does the same with a window titled **Inox Hydra Engine**.
 
-1. Restore the **LinkedIn Studio Backend** window from the taskbar. If the window is gone, the server exited straight away.
+1. Restore the **Inox Hydra Backend** window from the taskbar. If the window is gone, the server exited straight away.
 2. If you cannot see an error, start the server by hand in a terminal opened in the checkout folder, the one that holds `launch_studio.bat`:
    1. `pip install -r requirements.txt`
    2. `python -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000`
@@ -35,7 +35,7 @@ Open `http://127.0.0.1:8000/api/v1/health` in your browser. This address needs n
 The studio needs Python 3.10 or newer.
 
 > [!TIP]
-> To stop the studio, close the **LinkedIn Studio Backend** window. Avoid commands that stop every Python process, since they also end any other Python program you are running.
+> To stop the studio, close the **Inox Hydra Backend** window. Avoid commands that stop every Python process, since they also end any other Python program you are running.
 
 ## Reset the token
 
@@ -61,7 +61,7 @@ In the portable build, use `InoxHydra-CLI.bat doctor --bundle` and `InoxHydra-CL
 When you ask for help, include:
 
 - What `http://127.0.0.1:8000/api/v1/health` shows.
-- The last lines of the **LinkedIn Studio Backend** window or the manual start.
+- The last lines of the **Inox Hydra Backend** window or the manual start.
 - Whether you used `launch_studio.bat` or the portable `InoxHydra.bat`.
 - The `doctor --bundle` file.
 

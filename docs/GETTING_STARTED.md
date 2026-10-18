@@ -1,12 +1,12 @@
-# Getting Started with LinkedIn Studio Enterprise
+# Getting Started with Inox Hydra
 
-This guide will walk you through launching, configuring, and operating **LinkedIn Studio Enterprise** on your Windows workstation.
+This guide will walk you through launching, configuring, and operating **Inox Hydra** on your Windows workstation.
 
 ---
 
 ## 📋 Prerequisites
 
-Before running LinkedIn Studio, ensure your environment meets the following requirements:
+Before running Inox Hydra, ensure your environment meets the following requirements:
 * **Operating System**: Windows 10/11 (64-bit)
 * **Python Runtime**: Python 3.10+ (Python 3.13 recommended)
 * **Web Browser**: Google Chrome (for the Extension and borderless App Mode)
@@ -17,7 +17,7 @@ Before running LinkedIn Studio, ensure your environment meets the following requ
 ## 🚀 Step 1: Launching the Studio
 
 ### Option A: 1-Click Native Desktop Mode (Recommended)
-Double-click [`launch_studio.bat`](../launch_studio.bat) in the project root or the **LinkedIn Studio** desktop shortcut.
+Double-click [`launch_studio.bat`](../launch_studio.bat) in the project root or the **Inox Hydra** desktop shortcut.
 
 **What Happens Under the Hood:**
 1. A PowerShell check verifies if port 8000 is accepting connections.
@@ -47,7 +47,7 @@ The Chrome Extension connects your logged-in LinkedIn session to the local studi
 2. Enable **Developer mode** using the toggle in the top-right corner.
 3. Click **Load unpacked**.
 4. Select the `studio\extension` folder inside your Inox Hydra install directory.
-5. You will see **LinkedIn Studio Bridge** loaded, showing the current version.
+5. You will see **Inox Hydra Bridge** loaded, showing the current version.
 
 ### What the Extension Does:
 * **Background Token Sync**: Reads your `li_at` and `JSESSIONID` session cookies from `linkedin.com` and synchronizes them to `http://127.0.0.1:8000/api/auth/cookies`.
@@ -78,7 +78,7 @@ python studio/backend/test_studio_backend.py
 
 Expected Output:
 ```text
-Running LinkedIn Studio Enterprise Tests...
+Running Inox Hydra Tests...
 Database initialized at: studio/data/linkedin_studio.db
 ✅ test_database_and_seed passed!
 ✅ test_formatters_and_rehooker passed!

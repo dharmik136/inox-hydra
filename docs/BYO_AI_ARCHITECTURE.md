@@ -2,7 +2,7 @@
 
 ## Overview
 
-Inox Hydra (LinkedIn Studio Enterprise) is built on an open, provider-agnostic artificial intelligence architecture. While commercial tools lock creators into proprietary black-box models or a single vendor API, Inox Hydra empowers authors to **Bring Your Own AI (BYO-AI)**.
+Inox Hydra is built on an open, provider-agnostic artificial intelligence architecture. While commercial tools lock creators into proprietary black-box models or a single vendor API, Inox Hydra empowers authors to **Bring Your Own AI (BYO-AI)**.
 
 Whether you run cutting-edge frontier models from OpenAI, Google, or Anthropic, high-throughput LPUs from Groq, or 100% offline local inference via Ollama or vLLM, Inox Hydra seamlessly orchestrates your chosen model across all content workflows.
 

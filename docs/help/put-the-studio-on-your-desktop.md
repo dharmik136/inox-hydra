@@ -14,7 +14,7 @@ Which shortcut you can make depends on how you run the studio, and only a source
 
 1. In the checkout's top folder, double-click `create_desktop_shortcut.vbs`.
 2. A message reads "Shortcut created on Desktop, pointing at:" followed by the path to `launch_studio.bat`.
-3. Double-click **LinkedIn Studio** on your desktop to start the studio.
+3. Double-click **Inox Hydra** on your desktop to start the studio.
 
 What happens: the shortcut runs `launch_studio.bat`. If the interface has not been built yet, it builds it first, which needs Node 22 or newer. If nothing answers on port 8000, it starts the server in a minimised window and waits three seconds, then opens `http://127.0.0.1:8000` in a Chrome app window when Chrome is installed in its standard Program Files or Program Files (x86) folder, or in your default browser otherwise. It does not check that the server really started. See [Open the studio for the first time](open-the-studio-for-the-first-time.md).
 
@@ -38,20 +38,20 @@ Use the app's own entry. This guide does not say whether its installer adds a de
 
 ## Install it as an app from the browser
 
-The studio publishes a web app manifest named **LinkedIn Studio** (short name **Studio**), so Edge or Chrome may offer to install it. That offer is a browser feature; the studio's tests check the manifest's shape, not an actual install.
+The studio publishes a web app manifest named **Inox Hydra** (short name **Studio**), so Edge or Chrome may offer to install it. That offer is a browser feature; the studio's tests check the manifest's shape, not an actual install.
 
 > [!IMPORTANT]
 > The installed window only shows the studio's local address. It does not start the server. If the server is not running, the window shows a connection error.
 
 ## Start with Windows instead
 
-The studio can add a `LinkedIn Studio.lnk` entry to your Windows Startup folder that runs `InoxHydra.bat` or `launch_studio.bat` minimised at sign-in. It is off until you turn it on, and there is no control for it in the interface; see the maintainers note below. Because it runs the full launcher, it also opens the studio window at sign-in. To remove it, delete `LinkedIn Studio.lnk` from `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`.
+The studio can add a `Inox Hydra.lnk` entry to your Windows Startup folder that runs `InoxHydra.bat` or `launch_studio.bat` minimised at sign-in. It is off until you turn it on, and there is no control for it in the interface; see the maintainers note below. Because it runs the full launcher, it also opens the studio window at sign-in. To remove it, delete `Inox Hydra.lnk` from `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`.
 
 > [!NOTE]
 > For maintainers: these routes need the studio token and have no interface control.
 >
 > - `POST /api/v1/desktop/autostart` with `{"enabled": true}` creates the Startup entry, and `{"enabled": false}` removes it. On macOS it writes a LaunchAgent, `com.inoxhydra.linkedinstudio.plist`, in `~/Library/LaunchAgents`; on Linux, `~/.config/autostart/inox-hydra.desktop`. It reports the state it achieved. `GET /api/v1/desktop/integration` reports the current state.
-> - `POST /api/v1/browser/create-shortcuts` writes one launcher per detected browser: `LinkedIn Studio (<browser>).lnk` on Windows, `LinkedIn Studio (<browser>).command` on macOS, `inox-hydra-<id>.desktop` on Linux. Each opens LinkedIn in the bridge browser profile with the extension loaded; it does not open the studio, so it does not pair the browser by itself. It also makes one for Chrome, which ignores the extension flag. The macOS and Linux launchers are tested with fake browsers only.
+> - `POST /api/v1/browser/create-shortcuts` writes one launcher per detected browser: `Inox Hydra (<browser>).lnk` on Windows, `Inox Hydra (<browser>).command` on macOS, `inox-hydra-<id>.desktop` on Linux. Each opens LinkedIn in the bridge browser profile with the extension loaded; it does not open the studio, so it does not pair the browser by itself. It also makes one for Chrome, which ignores the extension flag. The macOS and Linux launchers are tested with fake browsers only.
 
 ## If it does not work
 

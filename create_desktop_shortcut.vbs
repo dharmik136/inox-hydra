@@ -19,10 +19,10 @@ End If
 
 Set WshShell = CreateObject("WScript.Shell")
 strDesktop = WshShell.SpecialFolders("Desktop")
-Set oShortcut = WshShell.CreateShortcut(fso.BuildPath(strDesktop, "LinkedIn Studio.lnk"))
+Set oShortcut = WshShell.CreateShortcut(fso.BuildPath(strDesktop, "Inox Hydra.lnk"))
 oShortcut.TargetPath = strLauncher
 oShortcut.WorkingDirectory = strInstallDir
-oShortcut.Description = "Inox Hydra (LinkedIn Studio) - Local Creator & Analytics Engine"
+oShortcut.Description = "Inox Hydra - Local Creator & Analytics Engine"
 oShortcut.WindowStyle = 1
 oShortcut.Save
 

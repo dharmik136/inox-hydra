@@ -171,7 +171,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("failed to start the LinkedIn Studio shell")
+        .expect("failed to start the Inox Hydra shell")
         .run(|app, event| {
             if let RunEvent::ExitRequested { .. } | RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<BackendState>() {
@@ -260,7 +260,7 @@ fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                 .ok_or("the bundle carries no window icon for the tray to use")?
                 .clone(),
         )
-        .tooltip("LinkedIn Studio")
+        .tooltip("Inox Hydra")
         .menu(&menu)
         // Left click opens, right click gets the menu. Showing the menu on
         // both makes the common action take two clicks.

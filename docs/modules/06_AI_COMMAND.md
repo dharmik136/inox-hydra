@@ -1,6 +1,6 @@
 # Module 06: Bring-Your-Own-AI (BYO-AI) Command Hub & Multi-Model Architecture
 
-The **AI Command Hub** is the centralized intelligence console for LinkedIn Studio Enterprise. Unlike rigid legacy tools locked to a single vendor, Inox Hydra features a production-grade **Bring-Your-Own-AI (BYO-AI)** multi-model gateway. Creators, executives, and enterprise teams can route intelligence through Google Gemini, OpenAI (GPT-4o, DALL-E 3), Anthropic Claude, Groq LPU, self-hosted Ollama/vLLM, custom OpenAI-compatible proxies, or run 100% air-gapped on the local deterministic engine.
+The **AI Command Hub** is the centralized intelligence console for Inox Hydra. Unlike rigid legacy tools locked to a single vendor, Inox Hydra features a production-grade **Bring-Your-Own-AI (BYO-AI)** multi-model gateway. Creators, executives, and enterprise teams can route intelligence through Google Gemini, OpenAI (GPT-4o, DALL-E 3), Anthropic Claude, Groq LPU, self-hosted Ollama/vLLM, custom OpenAI-compatible proxies, or run 100% air-gapped on the local deterministic engine.
 
 ---
 
@@ -119,7 +119,7 @@ python studio_cli.py ai reset
 
 ## 4. Orchestration Workflows Powered by BYO-AI
 
-Every generative and autonomous component in LinkedIn Studio dynamically queries `get_current_ai_config()`:
+Every generative and autonomous component in Inox Hydra dynamically queries `get_current_ai_config()`:
 
 1. **Content Copilot (`ContentCopilotAgent`)**:
    * Generates viral, scroll-stopping hooks and post outlines using the active LLM.

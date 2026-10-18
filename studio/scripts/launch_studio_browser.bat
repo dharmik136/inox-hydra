@@ -1,7 +1,7 @@
 @echo off
 setlocal
 echo =========================================================
-echo  LinkedIn Studio: 1-Click Browser Launcher with Extension
+echo  Inox Hydra: 1-Click Browser Launcher with Extension
 echo =========================================================
 echo.
 
@@ -14,12 +14,12 @@ if %ERRORLEVEL% NEQ 0 (
     set "EXT_DIR=%~dp0..\extension"
     if exist "C:\Program Files\Google\Chrome\Application\chrome.exe" (
         start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" "--load-extension=%EXT_DIR%" "https://www.linkedin.com/feed/"
-        echo Launched Google Chrome with LinkedIn Studio Bridge.
+        echo Launched Google Chrome with Inox Hydra Bridge.
         goto :done
     )
     if exist "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" (
         start "" "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" "--load-extension=%EXT_DIR%" "https://www.linkedin.com/feed/"
-        echo Launched Microsoft Edge with LinkedIn Studio Bridge.
+        echo Launched Microsoft Edge with Inox Hydra Bridge.
         goto :done
     )
     echo Could not locate Chrome or Edge executable.

@@ -194,7 +194,7 @@ def assert_no_secrets(staged_root):
         )
 
 LAUNCHER = r"""@echo off
-title Inox Hydra - LinkedIn Studio
+title Inox Hydra
 cd /d "%~dp0"
 
 echo ==========================================================
@@ -333,7 +333,7 @@ else
 fi
 """
 
-README = """Inox Hydra - LinkedIn Studio (Portable)
+README = """Inox Hydra (Portable)
 =======================================
 
 QUICK START

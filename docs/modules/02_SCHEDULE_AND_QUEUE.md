@@ -1,6 +1,6 @@
 # Module 02: Schedule & Queue Enterprise Manual
 
-The **Schedule & Queue** module manages publishing cadence, optimal time windows, and local background post dispatching for LinkedIn Studio Enterprise.
+The **Schedule & Queue** module manages publishing cadence, optimal time windows, and local background post dispatching for Inox Hydra.
 
 ---
 
@@ -76,7 +76,7 @@ Accessed via the sidebar (**Schedule & Queue**, `#tab-queue`), the view consists
 
 ## 4. Local Background Scheduler Daemon (`scheduler.py`)
 
-LinkedIn Studio does not rely on third-party cloud webhooks or external servers to manage the publishing queue. Scheduling is managed by an in-process daemon initialized on FastAPI startup:
+Inox Hydra does not rely on third-party cloud webhooks or external servers to manage the publishing queue. Scheduling is managed by an in-process daemon initialized on FastAPI startup:
 
 ```mermaid
 sequenceDiagram

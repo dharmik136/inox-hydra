@@ -124,7 +124,7 @@ def test_e2e_app_shell_and_rail_navigation(page):
     workspaces works as expected.
     """
     # 1. Page title and shell
-    assert "LinkedIn Studio" in page.title()
+    assert "Inox Hydra" in page.title()
     rail = page.locator('nav[aria-label="Studio sections"]')
     assert rail.is_visible()
 

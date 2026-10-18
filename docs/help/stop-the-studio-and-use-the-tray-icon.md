@@ -9,10 +9,10 @@ The window you work in is only a view. The server behind it keeps running, and k
 
 | How you started it | How to stop it |
 | --- | --- |
-| `launch_studio.bat` (source checkout) | Close the minimized window titled **LinkedIn Studio Backend** in the taskbar |
+| `launch_studio.bat` (source checkout) | Close the minimized window titled **Inox Hydra Backend** in the taskbar |
 | `InoxHydra.bat` (portable folder) | Close the minimized window titled **Inox Hydra Engine** |
 | `launch_studio.bat --tray` | See "The tray icon" below. **Exit Inox Hydra** does not stop the server |
-| The LinkedIn Studio desktop app | Right-click its tray icon and choose **Quit** |
+| The Inox Hydra desktop app | Right-click its tray icon and choose **Quit** |
 
 To confirm it has stopped, open `http://127.0.0.1:8000/api/v1/health` in your browser. If the studio is still running you see a short JSON reply whose `status` is `ok`. If it has stopped, the browser cannot connect.
 
@@ -37,7 +37,7 @@ Double-click the icon to open the studio. Right-click it for the menu.
 
 ## The desktop app's tray
 
-This applies only if you installed the LinkedIn Studio desktop app.
+This applies only if you installed the Inox Hydra desktop app.
 
 - Left-click the icon to show the studio window. Right-click for the menu.
 - Closing the window hides it while the tray icon is there; the studio keeps running in the tray. If the app could not create its tray icon, closing the window quits the app instead.

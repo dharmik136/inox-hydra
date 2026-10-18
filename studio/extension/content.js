@@ -1,5 +1,5 @@
 // -------------------------------------------------------------
-// LinkedIn Studio Bridge - Content Script
+// Inox Hydra Bridge - Content Script
 // Interacts with LinkedIn DOM to auto-inject formatted posts
 // -------------------------------------------------------------
 
@@ -181,7 +181,7 @@ function reportCapture(extractor, itemsSeen, itemsKept, drift) {
   });
 }
 
-console.log("[LinkedIn Studio Bridge] Content script active on linkedin.com");
+console.log("[Inox Hydra Bridge] Content script active on linkedin.com");
 
 // Listen for messages from Side Panel or Background
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -240,7 +240,7 @@ async function injectIntoLinkedInComposer(text) {
   editor.dispatchEvent(new Event('input', { bubbles: true }));
   editor.dispatchEvent(new Event('change', { bubbles: true }));
 
-  showInPageToast("✅ LinkedIn Studio: Formatted post injected into composer!", "success");
+  showInPageToast("✅ Inox Hydra: Formatted post injected into composer!", "success");
   return true;
 }
 
@@ -460,13 +460,13 @@ function extractAndSyncAnalytics() {
       .then(result => {
         if (result && result.status === "window_mismatch") {
           showInPageToast(
-            "LinkedIn Studio: these figures cover " + (period || "an unknown period") +
+            "Inox Hydra: these figures cover " + (period || "an unknown period") +
             ", so they were not saved as today's numbers. Set the range to 24 hours to sync a daily figure.",
             "warning"
           );
           return;
         }
-        showInPageToast("LinkedIn Studio: creator analytics synced to your local studio.", "success");
+        showInPageToast("Inox Hydra: creator analytics synced to your local studio.", "success");
       })
       .catch(() => {});
   } catch (e) {
@@ -581,7 +581,7 @@ function maybeBindPostUrn() {
     .then(result => {
       if (result && result.status === "bound") {
         showInPageToast(
-          "LinkedIn Studio: this post is now linked to your draft. Engagement on it will be attributed.",
+          "Inox Hydra: this post is now linked to your draft. Engagement on it will be attributed.",
           "success"
         );
       }
@@ -946,7 +946,7 @@ function observeAndCaptureEngagers() {
     if (!identified.length) {
       if (skipped > 0) {
         showInPageToast(
-          `LinkedIn Studio: ${skipped} engager(s) had no profile link and were not saved.`,
+          `Inox Hydra: ${skipped} engager(s) had no profile link and were not saved.`,
           "warning"
         );
       }
@@ -1012,13 +1012,13 @@ function observeAndCaptureEngagers() {
 
       if (stored > 0) {
         const note = skipped > 0 ? ` (${skipped} had no profile link)` : "";
-        showInPageToast(`LinkedIn Studio: ${stored} engager(s) on your post captured${note}.`, "success");
+        showInPageToast(`Inox Hydra: ${stored} engager(s) on your post captured${note}.`, "success");
       } else if (unreachable === answers.length) {
-        showInPageToast("LinkedIn Studio: could not reach your studio, so nothing was saved.", "warning");
+        showInPageToast("Inox Hydra: could not reach your studio, so nothing was saved.", "warning");
       } else if (needsSetup && !setupHintShown) {
         setupHintShown = true;
         showInPageToast(
-          "LinkedIn Studio: confirm your profile in the studio's Setup screen to start capturing leads from your posts.",
+          "Inox Hydra: confirm your profile in the studio's Setup screen to start capturing leads from your posts.",
           "warning"
         );
       }

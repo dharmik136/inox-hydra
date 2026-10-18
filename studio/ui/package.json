@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Editorial Motion OS - the React studio interface for Inox Hydra.",
+  "description": "The React studio interface for Inox Hydra.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

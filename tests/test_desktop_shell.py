@@ -201,7 +201,7 @@ def test_no_console_window_flashes_on_launch(backend_rs):
 # ---------------------------------------------------------------------------
 
 def test_the_config_parses_and_names_the_product(tauri_config):
-    assert tauri_config["productName"] == "LinkedIn Studio"
+    assert tauri_config["productName"] == "Inox Hydra"
     assert tauri_config["identifier"] == "com.inoxhydra.linkedinstudio"
 
 

@@ -74,7 +74,7 @@ A figure the studio never read says "not measured", not 0.
 
 The interface has no restore button. Use a terminal opened in the checkout folder:
 
-1. Close the studio server (the minimized **LinkedIn Studio Backend** window, or **Inox Hydra Engine** in the portable build).
+1. Close the studio server (the minimized **Inox Hydra Backend** window, or **Inox Hydra Engine** in the portable build).
 2. Check the archive first: `python -m studio.cli restore "<path to zip>"`. Without `--yes` it prints the backup's creation date, app version, whether it contains a database, and its media file count, then stops.
 3. Restore it: `python -m studio.cli restore "<path to zip>" --yes`.
 4. Start the studio again. The command ends with "Restart Inox Hydra for the restored data to take effect."

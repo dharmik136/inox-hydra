@@ -1,5 +1,5 @@
 // -------------------------------------------------------------
-// LinkedIn Studio Bridge: Background Service Worker (Manifest V3)
+// Inox Hydra Bridge: Background Service Worker (Manifest V3)
 // -------------------------------------------------------------
 const STUDIO_ORIGIN = "http://127.0.0.1:8000";
 

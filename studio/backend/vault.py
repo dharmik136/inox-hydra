@@ -195,7 +195,7 @@ def _secret_tool_write(key: bytes) -> bool:
         proc = subprocess.run(
             [
                 "secret-tool", "store",
-                "--label=LinkedIn Studio Vault",
+                "--label=Inox Hydra Vault",
                 "service", _KEYCHAIN_SERVICE,
                 "account", _KEYCHAIN_ACCOUNT,
             ],

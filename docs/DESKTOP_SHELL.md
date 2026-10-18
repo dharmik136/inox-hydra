@@ -55,7 +55,7 @@ they are two products and only one of them gets tested.
 
 ```
 <install>/
-  LinkedIn Studio.exe      the Rust shell
+  Inox Hydra.exe      the Rust shell
   runtime/                 embeddable CPython
     python.exe
     python313._pth         puts ..\lib and ..\app on sys.path
@@ -314,8 +314,8 @@ time, the same way it writes `signing.json`, and the bundle gains
 `createUpdaterArtifacts`. Tagging `v*.*.*` then attaches three files:
 
 ```
-LinkedIn Studio_x.y.z_x64-setup.exe        the installer
-LinkedIn Studio_x.y.z_x64-setup.exe.sig    its updater signature
+Inox Hydra_x.y.z_x64-setup.exe        the installer
+Inox Hydra_x.y.z_x64-setup.exe.sig    its updater signature
 latest-desktop.json                        the manifest clients read
 ```
 

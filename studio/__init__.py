@@ -1,5 +1,5 @@
 """
-Inox Hydra (LinkedIn Studio Enterprise) application package.
+Inox Hydra application package.
 
 Making this a real package is what allows the product to be installed and
 imported as `studio.backend.app` from any working directory, which is a

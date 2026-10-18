@@ -1,5 +1,5 @@
 // -------------------------------------------------------------
-// LinkedIn Studio Bridge: the creator's own pages
+// Inox Hydra Bridge: the creator's own pages
 // -------------------------------------------------------------
 //
 // content.js reads other people: engagers, analytics cards, the composer. This

@@ -35,19 +35,19 @@ The last row is called the platform folder below. `paths` does not list `backups
 
 - **Source checkout.** Delete the checkout folder; your state is in its `studio` folder. Then check the platform folder (`%LOCALAPPDATA%\InoxHydra` on Windows), which holds the bridge browser profile even for a checkout.
 - **Portable folder.** Delete the folder, then `%LOCALAPPDATA%\InoxHydra`. In true portable mode (you created `app\studio\data`), your data was inside the folder, but the browser profile is still in `%LOCALAPPDATA%\InoxHydra`.
-- **Desktop app.** Remove LinkedIn Studio the way your system removes apps (on Windows it installs for the current user only), then delete the platform folder, `%LOCALAPPDATA%\InoxHydra` on Windows. Nothing in the studio deletes that folder, and this project does not define what the uninstaller removes.
+- **Desktop app.** Remove Inox Hydra the way your system removes apps (on Windows it installs for the current user only), then delete the platform folder, `%LOCALAPPDATA%\InoxHydra` on Windows. Nothing in the studio deletes that folder, and this project does not define what the uninstaller removes.
 
 ## Things outside the data home
 
 - **Browser profiles.** `browser-profiles` in the platform folder (or in `INOX_HYDRA_HOME`), one folder per bridge browser. It holds that profile's LinkedIn sign-in.
-- **Autostart**, if it was ever turned on. Windows: `LinkedIn Studio.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`. macOS: `~/Library/LaunchAgents/com.inoxhydra.linkedinstudio.plist`. Linux: `inox-hydra.desktop` in `~/.config/autostart` (or `$XDG_CONFIG_HOME/autostart`). The interface has no control for it; delete the file.
-- **Desktop shortcuts**, if you ran a shortcut script. They are on your Desktop. Windows: `LinkedIn Studio.lnk`, and `LinkedIn Studio (<browser name>).lnk` per browser. macOS: `LinkedIn Studio (<browser name>).command` per browser. Linux: `inox-hydra-<browser id>.desktop` per browser.
+- **Autostart**, if it was ever turned on. Windows: `Inox Hydra.lnk` in `%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup`. macOS: `~/Library/LaunchAgents/com.inoxhydra.linkedinstudio.plist`. Linux: `inox-hydra.desktop` in `~/.config/autostart` (or `$XDG_CONFIG_HOME/autostart`). The interface has no control for it; delete the file.
+- **Desktop shortcuts**, if you ran a shortcut script. They are on your Desktop. Windows: `Inox Hydra.lnk`, and `Inox Hydra (<browser name>).lnk` per browser. macOS: `Inox Hydra (<browser name>).command` per browser. Linux: `inox-hydra-<browser id>.desktop` per browser. Shortcuts made before version 2.6 begin with `LinkedIn Studio` instead of `Inox Hydra`.
 - **Keystore entry**, macOS and Linux only: service `InoxHydra.LinkedInStudio`, account `vault_master_key`, in the Keychain or Secret Service. Remove it with the system's own tool, such as Keychain Access or `secret-tool clear service InoxHydra.LinkedInStudio account vault_master_key`. Windows needs nothing here; the encrypted session is inside the database.
 - **The token cookie** `inox_studio_token`, in any browser that opened the studio, lasts a year unless you clear site data for `127.0.0.1` (and `localhost`, if you opened it that way). It is harmless once the server is gone.
 
 ## Remove the extension
 
-- **Loaded by hand:** open `edge://extensions` or `brave://extensions` and click **Remove** on **LinkedIn Studio Bridge (LocalTaplio)**.
+- **Loaded by hand:** open `edge://extensions` or `brave://extensions` and click **Remove** on **Inox Hydra Bridge** (called **LinkedIn Studio Bridge (LocalTaplio)** before version 2.6).
 - **Loaded by the launcher:** it lives only in the dedicated bridge profile, so it goes when you delete `browser-profiles`.
 
 ## What deleting does not do

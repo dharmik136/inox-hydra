@@ -249,7 +249,7 @@ def test_vault_linux_secret_service_get_and_set_invocations(monkeypatch):
     store_cmd = commands_executed[-1]
     assert store_cmd[0] == "secret-tool"
     assert "store" in store_cmd
-    assert "--label=LinkedIn Studio Vault" in store_cmd
+    assert "--label=Inox Hydra Vault" in store_cmd
     assert "service" in store_cmd and vault._KEYCHAIN_SERVICE in store_cmd
     assert "account" in store_cmd and vault._KEYCHAIN_ACCOUNT in store_cmd
 
@@ -365,7 +365,7 @@ def test_linux_xdg_autostart_desktop_generation(monkeypatch):
         content = _read(desktop_path)
         assert "[Desktop Entry]" in content
         assert "Type=Application" in content
-        assert "Name=LinkedIn Studio" in content
+        assert "Name=Inox Hydra" in content
         assert "Exec=" in content
         assert "Terminal=false" in content
 

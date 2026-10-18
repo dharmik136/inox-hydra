@@ -1,6 +1,6 @@
-# LinkedIn Studio Enterprise: Master Operational Manual
+# Inox Hydra: Master Operational Manual
 
-A comprehensive, publication-grade operational guide covering all 6 core functional modules of **LinkedIn Studio Enterprise**.
+A comprehensive, publication-grade operational guide covering all 6 core functional modules of **Inox Hydra**.
 
 ---
 
