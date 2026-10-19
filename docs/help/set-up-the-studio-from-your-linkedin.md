@@ -34,7 +34,7 @@ The profile page does not show everything, so three buttons open the pages that 
 - **Read all skills** opens your full skills list. The profile itself shows only a few.
 - **Read profile again** reads it afresh, for example after you change your headline.
 
-Anything the page did not show is left as it was, so a section that had not loaded yet does not erase what was read before. A field reading "Not read" is one the studio has not found yet.
+Anything the page did not show is left as it was, so a section that had not loaded yet does not erase what was read before. Your profile page shows only your first few roles, schools and skills, so what it shows is added to the lists already read, from your archive or the full lists, and never shortens them. A full list replaces the stored one only when it is read from its own page, such as **Read all skills**. A field reading "Not read" is one the studio has not found yet.
 
 Confirming also fills your name, headline and company in **Brand Studio**, but only where those are empty. What you typed there is never replaced. If you later delete what the studio holds about you, the fields it filled are cleared again, unless you have changed them since.
 

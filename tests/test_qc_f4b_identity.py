@@ -183,3 +183,66 @@ def test_what_you_typed_in_brand_studio_survives_forgetting():
     assert brand["headline"] == "The headline I wrote"
     assert brand["company"] == "My own company"
     assert brand["name"] == "", "the name came from the forgotten account and was not changed since"
+
+
+# ---------------------------------------------------------------------------
+# SETUP-09 [BRIDGE-08]. The profile page shows the first few roles and two or
+# three skills, with "Show all". Reading it replaced the full lists the
+# details pages or the archive had brought, so 40 skills became 2 every time
+# the creator opened their own profile.
+# ---------------------------------------------------------------------------
+
+SKILLS = [f"Sample Skill {i:02d}" for i in range(40)]
+ROLES = [{"title": f"Role {i}", "company": f"Company {i}", "date_range": f"{2010 + i} - {2011 + i}"} for i in range(6)]
+
+
+def _profile_page(**extra):
+    """What captureProfile sends from /in/<you>/: the top card, and the sections it could see."""
+    body = {"vanity": "sample-dana", "self_evidence": [], "display_name": "Sample Dana", "headline": "Builder",
+            "location": None, "follower_count": None, "connection_count": None, "about": None}
+    body.update(extra)
+    return client.post("/api/v1/identity/observe", json=body)
+
+
+def _lists():
+    identity = client.get("/api/v1/onboarding/state").json()["identity"]
+    return identity["skills"], [(p["title"], p["company"]) for p in identity["positions"]]
+
+
+def _known_dana():
+    assert _observe("sample-dana", display_name="Sample Dana").json()["status"] == "candidate"
+    assert client.post("/api/v1/identity/confirm", json={"vanity": "sample-dana"}).status_code == 200
+    # The details pages: whole lists.
+    assert client.post("/api/v1/identity/observe", json={"vanity": "sample-dana", "skills": SKILLS}).status_code == 200
+    assert client.post("/api/v1/identity/observe", json={"vanity": "sample-dana", "positions": ROLES}).status_code == 200
+
+
+def test_opening_your_profile_keeps_the_full_lists():
+    _known_dana()
+    result = _profile_page(skills=["Sample Skill 00", "A Brand New Skill"],
+                           positions=[{"title": "Role 5", "company": "Company 5", "date_range": "2015 - Present"},
+                                      {"title": "New Role", "company": "New Company", "date_range": "2026 - Present"}])
+    assert result.json()["status"] == "updated"
+    skills, roles = _lists()
+    assert len(skills) == 41 and "A Brand New Skill" in skills
+    assert len(roles) == 7 and roles[0] == ("New Role", "New Company"), "a new role from the profile goes first"
+    assert ("Role 0", "Company 0") in roles
+
+
+def test_a_details_page_still_replaces_its_list():
+    _known_dana()
+    client.post("/api/v1/identity/observe", json={"vanity": "sample-dana", "skills": SKILLS[:35]})
+    skills, _ = _lists()
+    assert len(skills) == 35
+
+
+def test_the_profile_read_before_you_confirm_does_not_shrink_the_archive_lists():
+    conn = get_db()
+    with conn:
+        conn.executemany("INSERT INTO creator_skills (skill, observed_at) VALUES (?, '2026-10-01')",
+                         [(s,) for s in SKILLS])
+    conn.close()
+    assert _profile_page(self_evidence=["owner_edit_controls"], skills=["Sample Skill 01"]).json()["status"] == "candidate"
+    assert client.post("/api/v1/identity/confirm", json={"vanity": "sample-dana"}).status_code == 200
+    skills, _ = _lists()
+    assert len(skills) == 40

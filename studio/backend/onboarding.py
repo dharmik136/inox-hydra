@@ -502,6 +502,10 @@ def confirmed_vanity() -> str:
     return ""
 
 
+# Fields the extension sends only from /in/<you>/, never from a details page.
+PROFILE_PAGE_FIELDS = ("display_name", "headline", "location", "about", "follower_count", "connection_count")
+
+
 def _clean_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
     """The fields of a profile capture this module keeps, cleaned and bounded."""
     contact = payload.get("contact") if isinstance(payload.get("contact"), dict) else None
@@ -528,6 +532,10 @@ def _clean_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
         skills = None
 
     return {
+        # A read of the profile page itself, which always carries the top
+        # card. Its roles, schools and skills are the first few of each, so
+        # they add to the stored lists; only a details page replaces one.
+        "lists_partial": any(key in payload for key in PROFILE_PAGE_FIELDS),
         "display_name": _text(payload.get("display_name"), 200),
         "headline": _text(payload.get("headline"), 400),
         "location": _text(payload.get("location"), 200),
@@ -574,27 +582,51 @@ def _write_profile(conn, vanity: str, profile_url: Optional[str], clean: Dict[st
     assignments = ", ".join(f"{k} = ?" for k in updates)
     conn.execute(f"UPDATE creator_identity SET {assignments} WHERE id = 1", tuple(updates.values()))
 
+    # A details page holds the whole list and replaces it. The profile page
+    # shows the first few with "Show all", and replacing from it turned 40
+    # skills into 2 and 6 roles into 2 each time the creator opened their own
+    # profile, so its entries are merged in: matched ones refreshed, new ones
+    # added ahead of the rest, nothing removed.
+    partial = bool(clean.get("lists_partial"))
     if clean.get("positions") is not None:
-        conn.execute("DELETE FROM creator_positions")
-        for i, p in enumerate(clean["positions"]):
-            conn.execute(
-                "INSERT INTO creator_positions (ordinal, title, company, date_range, location, description, observed_at) "
-                "VALUES (?,?,?,?,?,?,?)",
-                (i, p["title"], p["company"], p["date_range"], p["location"], p["description"], now),
-            )
+        _write_entries(conn, "creator_positions", ("title", "company"), ("date_range", "location", "description"),
+                       clean["positions"], partial, now)
     if clean.get("education") is not None:
-        conn.execute("DELETE FROM creator_education")
-        for i, e in enumerate(clean["education"]):
-            conn.execute(
-                "INSERT INTO creator_education (ordinal, school, degree, date_range, observed_at) VALUES (?,?,?,?,?)",
-                (i, e["school"], e["degree"], e["date_range"], now),
-            )
+        _write_entries(conn, "creator_education", ("school", "degree"), ("date_range",),
+                       clean["education"], partial, now)
     if clean.get("skills") is not None:
-        conn.execute("DELETE FROM creator_skills")
+        if not partial:
+            conn.execute("DELETE FROM creator_skills")
         conn.executemany(
-            "INSERT INTO creator_skills (skill, observed_at) VALUES (?,?)",
+            "INSERT OR REPLACE INTO creator_skills (skill, observed_at) VALUES (?,?)",
             [(s, now) for s in clean["skills"]],
         )
+
+
+def _write_entries(conn, table: str, key: tuple, rest: tuple, entries: List[Dict[str, Any]],
+                   partial: bool, now: str) -> None:
+    """Writes roles or schools: replacing the list from a full read, merging into it from a partial one."""
+    columns = key + rest
+    insert = (f"INSERT INTO {table} (ordinal, {', '.join(columns)}, observed_at) "
+              f"VALUES (?, {', '.join('?' for _ in columns)}, ?)")
+    if not partial:
+        conn.execute(f"DELETE FROM {table}")
+        for i, entry in enumerate(entries):
+            conn.execute(insert, (i, *[entry[c] for c in columns], now))
+        return
+    match = " AND ".join(f"COALESCE({c}, '') = ?" for c in key)
+    first = conn.execute(f"SELECT COALESCE(MIN(ordinal), 0) FROM {table}").fetchone()[0]
+    new = [e for e in entries
+           if not conn.execute(f"SELECT 1 FROM {table} WHERE {match}", [e[c] or "" for c in key]).fetchone()]
+    for entry in entries:
+        if entry in new:
+            continue
+        conn.execute(
+            f"UPDATE {table} SET {', '.join(f'{c} = COALESCE(?, {c})' for c in rest)}, observed_at = ? WHERE {match}",
+            (*[entry[c] for c in rest], now, *[entry[c] or "" for c in key]),
+        )
+    for i, entry in enumerate(new):
+        conn.execute(insert, (first - len(new) + i, *[entry[c] for c in columns], now))
 
 
 def observe_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
