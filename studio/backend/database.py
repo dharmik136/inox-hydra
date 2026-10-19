@@ -19,16 +19,17 @@ import sys
 import sqlite3
 import os
 import json
+import logging
 import threading
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
 
 try:
     from .paths import get_db_path, _STUDIO_DIR, DB_FILENAME
-    from .migrations import ensure_schema, check_compatibility
+    from .migrations import ensure_schema, check_compatibility, backup_database
 except ImportError:
     from paths import get_db_path, _STUDIO_DIR, DB_FILENAME
-    from migrations import ensure_schema, check_compatibility
+    from migrations import ensure_schema, check_compatibility, backup_database
 
 # Retained as a module constant for backwards compatibility. Live resolution
 # happens in get_db() so that INOX_HYDRA_HOME can be redirected at runtime.
@@ -2054,6 +2055,68 @@ def purge_all_seeded_data(
             conn.close()
 
 
+DEMO_CLEANUP_NOTICE_KEY = "demo_cleanup_notice"
+
+
+def _demo_rows_found(report: Dict[str, Any]) -> Dict[str, int]:
+    """How many rows of each kind a purge report names."""
+    def n(value: Any) -> int:
+        return len(value) if isinstance(value, list) else int(value or 0)
+
+    return {
+        "leads": n(report["leads"]["seeded"]),
+        "drafts": n(report["drafts"]["seeded"]),
+        "posts": n(report["posts"]["seeded"]) + n(report["drafts"]["posts"]),
+        "analytics_days": n(report["analytics"]["seeded"]),
+        "audience_rows": n(report["demographics"]["seeded"]),
+    }
+
+
+def clean_up_demo_data(conn: sqlite3.Connection) -> Optional[Dict[str, Any]]:
+    """
+    Removes untouched demo data on a start without INOX_DEMO_DATA, safely.
+
+    The rows are ones a creator can see (2.5.1 seeded the Launch Kit drafts
+    into every install), so nothing goes silently or without a way back: when
+    the dry run finds anything, the database is copied aside first with the
+    same helper the migration runner uses before an upgrade, and if that copy
+    fails nothing is deleted. What was removed, and where the copy is, is kept
+    under DEMO_CLEANUP_NOTICE_KEY in settings for a screen to show once, and
+    logged. Returns that notice, or None when there was nothing to remove.
+    """
+    log = logging.getLogger("studio.demo")
+    found = _demo_rows_found(purge_all_seeded_data(conn, dry_run=True))
+    if not any(found.values()):
+        return None
+    try:
+        backup = backup_database("pre_demo_cleanup")
+    except Exception:
+        log.warning("Demo data was found but not removed: the safety copy could not be written.", exc_info=True)
+        return None
+    if not backup:
+        log.warning("Demo data was found but not removed: there was no database to copy aside.")
+        return None
+
+    purge_all_seeded_data(conn, dry_run=False)
+    notice = {
+        "removed": found,
+        "backup": backup,
+        "removed_at": datetime.now().isoformat(timespec="seconds"),
+        "shown": False,
+    }
+    with conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (DEMO_CLEANUP_NOTICE_KEY, json.dumps(notice)),
+        )
+    log.warning(
+        "Removed demo data the studio had seeded (%s). A copy of the database from before is at %s.",
+        ", ".join(f"{count} {kind.replace('_', ' ')}" for kind, count in found.items() if count),
+        backup,
+    )
+    return notice
+
+
 def seed_initial_data():
     conn = get_db()
     cursor = conn.cursor()
@@ -2063,7 +2126,7 @@ def seed_initial_data():
     # for good, shown beside real ones as if they were. Every start without the
     # flag removes what the seeder provably wrote, and nothing else.
     if not demo_data_enabled():
-        purge_all_seeded_data(conn, dry_run=False)
+        clean_up_demo_data(conn)
 
     # Seed Days 02 through 17 Launch Kit drafts. Demo content, same reason as
     # the Days 02 to 08 block in init_db. Both call sites are gated: gating one
