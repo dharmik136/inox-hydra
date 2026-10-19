@@ -213,6 +213,8 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
           onScroll={syncToolbar}
           spellCheck
           aria-label="Post body"
+          // The one text field where Alt and a digit applies a hook.
+          data-hook-shortcuts
           placeholder="Start writing. The fold mark appears once the post runs past it."
           style={height ? { height } : undefined}
           className="relative block min-h-[60vh] w-full resize-none overflow-hidden border-0 bg-transparent font-editorial text-[18px] leading-[1.75] text-ink-primary outline-none placeholder:text-ink-muted"

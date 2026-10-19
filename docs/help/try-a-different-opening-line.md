@@ -6,7 +6,7 @@ Replace your opening paragraph with a saved hook form, or generate ten alternati
 The hook rail is the strip above the editor in the **Composer**. It shows the 12 highest-rated forms from the studio's local hook library, numbered 01 to 12.
 
 1. Scroll the rail sideways to read the specimens.
-2. Click a specimen, or press **Alt** plus its number (1 to 9). The first nine carry an ALT label, and the rail reads ALT + NUMBER TO APPLY.
+2. Click a specimen, or press **Alt** plus its number (1 to 9) on the row of number keys above the letters. The first nine carry an ALT label, and the rail reads ALT + NUMBER TO APPLY. The shortcut works while you are writing in the editor or when nothing else has focus, never while you type in another field. The number pad is left alone, so Windows Alt codes such as Alt+0149 for a bullet still type their character. On a Mac, Option and a number types a symbol, so there is no shortcut and the labels are not shown; click the specimen instead.
 3. The specimen replaces your opening paragraph.
 
 Your opening paragraph is everything up to the first blank line. A line that holds only spaces, or the blank spacer character people paste from LinkedIn, counts as blank. If your draft has no blank line, the specimen replaces the whole draft. If the editor is empty, the specimen becomes the draft.

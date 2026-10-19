@@ -158,6 +158,50 @@ def test_a_hook_replaces_only_the_opening_when_the_blank_line_holds_a_space(new_
         assert editor.input_value() == draft, "Undo did not restore the opening"
 
 
+def test_windows_alt_codes_and_other_fields_never_apply_a_hook(new_page, studio_url, api):
+    """
+    Alt+0149 on a Windows numpad types a bullet. Each numpad digit arrives as
+    keydown with altKey, which applied hooks 1, 4 and 9 in turn. The shortcut
+    also fired while typing in the inspector's own fields.
+    """
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    draft = "My opening paragraph, written carefully.\n\nThree lessons:\n"
+    editor.fill(draft)
+    for digit in "0149":
+        editor.evaluate(
+            """(el, d) => el.dispatchEvent(new KeyboardEvent('keydown', {key: d, code: 'Numpad' + d,
+                 altKey: true, location: 3, bubbles: true, cancelable: true}))""",
+            digit,
+        )
+    page.wait_for_timeout(300)
+    assert editor.input_value() == draft, "a numpad Alt code applied a hook"
+
+    # macOS Option+digit types a symbol (Option+8 is the bullet); that is the
+    # author's character, not a shortcut.
+    editor.evaluate(
+        """el => el.dispatchEvent(new KeyboardEvent('keydown', {key: '•', code: 'Digit8',
+             altKey: true, bubbles: true, cancelable: true}))"""
+    )
+    page.wait_for_timeout(200)
+    assert editor.input_value() == draft, "Option+8 on a Mac applied a hook"
+
+    page.get_by_role("button", name="Media", exact=True).click()
+    concept = page.get_by_label("Image concept")
+    concept.click()
+    page.keyboard.press("Alt+Digit2")
+    page.wait_for_timeout(300)
+    assert editor.input_value() == draft, "Alt+2 typed in the image concept box changed the post"
+
+    # The shortcut itself still works from the editor, and can be undone.
+    editor.click()
+    page.keyboard.press("Alt+Digit1")
+    expect(editor).not_to_have_value(draft)
+    page.get_by_role("button", name=re.compile(r"^Undo ")).click()
+    expect(editor).to_have_value(draft)
+
+
 def test_the_strip_shows_the_count_against_linkedins_limit(new_page, studio_url, api):
     _clear_posts(api)
     page = new_page()

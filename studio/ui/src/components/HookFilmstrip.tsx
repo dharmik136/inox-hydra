@@ -17,6 +17,38 @@ interface HookFilmstripProps {
 /** How many specimens carry a keyboard shortcut. Alt and a digit, so 1 to 9. */
 const SHORTCUT_LIMIT = 9;
 
+/**
+ * On a Mac, Option and a digit types a character (Option+8 is the bullet), so
+ * the shortcut never fires there and is not advertised.
+ */
+const ALT_TYPES_CHARACTERS = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
+/**
+ * Which specimen, if any, a keystroke asks for.
+ *
+ * Only Alt and a digit on the top row, and only when that keystroke is not
+ * typing something. Reading event.key alone took Windows Alt codes for
+ * shortcuts: Alt+0149, the bullet, arrives as four numpad keydowns whose key
+ * is a digit, and applied hooks 1, 4 and 9 in turn over the author's opening.
+ * event.code names the physical key, so the numpad is left to Alt codes, and
+ * requiring the key to read as that digit leaves a Mac's Option+digit symbols
+ * to the author. Focus in any other field (the image concept, a key, a
+ * search) is never a shortcut either: only the editor, or nothing focused.
+ */
+function shortcutPosition(event: KeyboardEvent): number | null {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return null;
+  const digit = /^Digit([1-9])$/.exec(event.code)?.[1];
+  if (!digit || event.key !== digit) return null;
+  const target = event.target;
+  if (target instanceof HTMLElement && !target.hasAttribute("data-hook-shortcuts")) {
+    const editable =
+      target.isContentEditable || target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+    if (editable) return null;
+  }
+  return Number(digit);
+}
+
 /** One strip entry, whichever source it came from. */
 interface Specimen {
   key: string;
@@ -81,11 +113,10 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
   // Alt and a digit applies that specimen. Alt rather than a bare digit
   // because the composer is a text field and bare digits belong to the author.
   useEffect(() => {
-    if (!specimens?.length) return;
+    if (!specimens?.length || ALT_TYPES_CHARACTERS) return;
     const onKey = (event: KeyboardEvent) => {
-      if (!event.altKey || event.ctrlKey || event.metaKey) return;
-      const position = Number(event.key);
-      if (!Number.isInteger(position) || position < 1 || position > SHORTCUT_LIMIT) return;
+      const position = shortcutPosition(event);
+      if (position === null) return;
       const chosen = specimens[position - 1];
       if (!chosen) return;
       event.preventDefault();
@@ -123,7 +154,9 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
           </p>
           {/* A keyboard hint, so not on a window narrow enough to be a phone,
               where it also sat under the inspector's open control. */}
-          <p className="studio-meta hidden text-[10px] text-ink-muted sm:block">ALT + NUMBER TO APPLY</p>
+          {!ALT_TYPES_CHARACTERS && (
+            <p className="studio-meta hidden text-[10px] text-ink-muted sm:block">ALT + NUMBER TO APPLY</p>
+          )}
           {generated && (
             <button
               type="button"
@@ -163,7 +196,7 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
                   <span className="mx-1.5">·</span>
                   {specimen.category.toUpperCase()}
                 </span>
-                {index < SHORTCUT_LIMIT && (
+                {index < SHORTCUT_LIMIT && !ALT_TYPES_CHARACTERS && (
                   <kbd className="studio-meta shrink-0 rounded border border-edge px-1 text-[9px] text-ink-muted">
                     ALT {index + 1}
                   </kbd>
