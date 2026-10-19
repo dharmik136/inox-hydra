@@ -779,6 +779,9 @@ function ForgetPanel({
  * many Windows machines have only Chrome, which ignores --load-extension. The
  * launch message pointed at a folder this screen never showed.
  */
+const names = (browsers: { name: string }[], says: string) =>
+  browsers.length ? `${browsers.map((b) => b.name).join(", ")} ${says}` : "";
+
 function LoadByHand({ bridge }: { bridge: BrowserBridge }) {
   const [copied, setCopied] = useState<string | null>(null);
   const none = bridge.browsers.length === 0;
@@ -787,7 +790,13 @@ function LoadByHand({ bridge }: { bridge: BrowserBridge }) {
       <p className="text-[13px] leading-relaxed text-ink-secondary">
         {none
           ? "No Chromium browser was found on this computer. Install Microsoft Edge or Brave, which load the bridge by themselves, then click the button above."
-          : `${bridge.browsers.map((b) => b.name).join(", ")} cannot load the bridge by itself. Install Microsoft Edge or Brave and click the button above, or load it by hand.`}
+          : `${[
+              names(bridge.browsers.filter((b) => b.carries_extension === false), "cannot load the bridge by itself"),
+              // Not probed is not the same as cannot.
+              names(bridge.browsers.filter((b) => b.carries_extension !== false), "has not been checked for loading the bridge on this computer"),
+            ]
+              .filter(Boolean)
+              .join(". ")}. Install Microsoft Edge or Brave and click the button above, or load it by hand.`}
       </p>
       {!none && (
         <>
