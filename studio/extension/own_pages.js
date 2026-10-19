@@ -1212,8 +1212,11 @@
   // Heartbeat, so the studio can say the bridge is running
   // ---------------------------------------------------------------
 
+  // From a hidden tab too. The launcher opens LinkedIn with the studio in a
+  // second tab, so while the creator reads Setup the LinkedIn tab is hidden,
+  // and a heartbeat sent only from a visible tab made Setup say the bridge was
+  // gone while its tab sat open.
   function heartbeat() {
-    if (document.visibilityState !== "visible") return;
     studio("/api/v1/bridge/heartbeat", { extension_version: EXTENSION_VERSION, page_kind: pageKind() });
   }
 
