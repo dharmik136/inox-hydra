@@ -254,13 +254,121 @@ def inspect_backup(archive: str) -> Dict[str, Any]:
     }
 
 
+class RestoreFailed(RuntimeError):
+    """
+    A restore that stopped part way. Everything it had changed was put back.
+
+    Carries the safety backup's path, because a user told only "Error" believes
+    nothing happened and never learns that a copy of their state exists.
+    """
+
+    def __init__(self, message: str, safety_backup: Optional[str] = None, safety_note: str = ""):
+        super().__init__(message)
+        self.safety_backup = safety_backup
+        self.safety_note = safety_note
+
+
+def _stage_archive(archive: str, staging: str, assets_root: str) -> List[tuple]:
+    """
+    Extracts a backup into `staging` and returns the swap plan.
+
+    The plan is (staged file or None, live file) pairs: the database first,
+    then its WAL sidecars (None, so stale pages are moved aside rather than
+    merged into the restored file), then each media file.
+    """
+    target_db = paths.get_db_path()
+    staged_db = os.path.join(staging, "new", "data", paths.DB_FILENAME)
+    os.makedirs(os.path.dirname(staged_db), exist_ok=True)
+    plan: List[tuple] = [(staged_db, target_db), (None, target_db + "-wal"), (None, target_db + "-shm")]
+
+    abs_assets_root = os.path.abspath(assets_root)
+    with zipfile.ZipFile(archive) as z:
+        with z.open("data/linkedin_studio.db") as source, open(staged_db, "wb") as out:
+            shutil.copyfileobj(source, out, 1024 * 1024)
+        for name in z.namelist():
+            if not name.startswith("assets/") or name.endswith("/"):
+                continue
+            relative = name[len("assets/"):]
+            destination = os.path.abspath(os.path.join(assets_root, relative.replace("/", os.sep)))
+            if not destination.startswith(abs_assets_root + os.sep) and destination != abs_assets_root:
+                continue  # Skip Zip Slip directory traversal
+            staged = os.path.join(staging, "new", "assets", os.path.relpath(destination, abs_assets_root))
+            os.makedirs(os.path.dirname(staged), exist_ok=True)
+            with z.open(name) as source, open(staged, "wb") as out:
+                shutil.copyfileobj(source, out, 1024 * 1024)
+            plan.append((staged, destination))
+    return plan
+
+
+def _verify_staged_database(staged_db: str, archive: str) -> None:
+    """The extracted database opens and passes SQLite's own check, or ValueError."""
+    try:
+        conn = sqlite3.connect(staged_db)
+        try:
+            verdict = conn.execute("PRAGMA quick_check").fetchone()[0]
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as error:
+        verdict = str(error)
+    if verdict != "ok":
+        raise ValueError(f"The database in {archive} is damaged ({verdict}), so it was not restored. "
+                         f"Nothing was changed.")
+
+
+def _swap(plan: List[tuple], staging: str) -> None:
+    """
+    Moves each live file aside and the staged one into its place.
+
+    os.replace within one drive is atomic per file. If any step fails, every
+    step already taken is undone in reverse, so the live state is either the
+    backup's or exactly what it was.
+    """
+    done: List[list] = []
+    try:
+        for index, (staged, target) in enumerate(plan):
+            aside = None
+            if os.path.lexists(target):
+                aside = os.path.join(staging, "old", str(index))
+                os.makedirs(os.path.dirname(aside), exist_ok=True)
+                os.replace(target, aside)
+            step = [target, aside, False]
+            done.append(step)
+            if staged is not None:
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                os.replace(staged, target)
+                step[2] = True
+    except Exception as error:
+        stuck = []
+        for target, aside, placed in reversed(done):
+            try:
+                if placed and os.path.lexists(target):
+                    os.remove(target)
+                if aside is not None:
+                    os.replace(aside, target)
+            except OSError:
+                stuck.append(target)
+        if stuck:
+            raise RestoreFailed(
+                f"The restore stopped part way ({error}), and {len(stuck)} file(s) could not be put back. "
+                f"The originals are in {os.path.join(staging, 'old')}."
+            ) from error
+        raise RestoreFailed(f"The restore stopped part way ({error}). Everything it had changed was put back.") from error
+
+
 def restore_backup(archive: str, take_safety_backup: bool = True, into_active_profile: bool = False) -> Dict[str, Any]:
     """
-    Replaces current state with a backup's contents.
+    Replaces current state with a backup's contents, all or nothing.
 
     Takes a safety backup of the CURRENT state first, because a user restoring
     the wrong archive would otherwise have destroyed their present data with no
     way back. That is the exact situation nobody can rescue them from.
+
+    The backup is extracted beside the live files and checked before anything
+    live is touched, then swapped in file by file. A failure at any point puts
+    back what was swapped and raises RestoreFailed naming the safety backup.
+    It used to write the database in place and then the media, so a failure
+    while writing media left the database already replaced and the user told
+    only "Error".
     """
     if not os.path.exists(archive) or not zipfile.is_zipfile(archive):
         raise ValueError(f"{archive} does not exist or is not a valid zip archive")
@@ -278,40 +386,36 @@ def restore_backup(archive: str, take_safety_backup: bool = True, into_active_pr
             f"Switch to '{origin}' first, or restore it into '{active}' on purpose."
         )
 
-    safety = create_backup("pre_restore") if take_safety_backup else None
+    assets_root = paths.get_assets_dir()
+    staging = os.path.join(paths.get_profile_home(), f".restore-{datetime.now().strftime('%Y%m%d_%H%M%S')}-{os.getpid()}")
+    keep_staging = False
+    safety = None
+    try:
+        os.makedirs(staging)
+        plan = _stage_archive(archive, staging, assets_root)
+        _verify_staged_database(plan[0][0], archive)
+        for staged, target in plan:
+            if staged is not None and os.path.isdir(target):
+                raise RestoreFailed(
+                    f"{target} is a folder, so the backup's file of that name cannot be put there. "
+                    f"Move or rename that folder, then restore again. Nothing was changed."
+                )
 
-    with zipfile.ZipFile(archive) as z:
-        db_bytes = z.read("data/linkedin_studio.db")
-        target_db = paths.get_db_path()
-        # Remove WAL sidecars so the restored file is not merged with stale pages.
-        for sidecar in (target_db + "-wal", target_db + "-shm"):
-            if os.path.exists(sidecar):
-                try:
-                    os.remove(sidecar)
-                except OSError:
-                    pass
-        with open(target_db, "wb") as f:
-            f.write(db_bytes)
+        safety = create_backup("pre_restore") if take_safety_backup else None
 
-        assets_root = paths.get_assets_dir()
-        abs_assets_root = os.path.abspath(assets_root)
-        restored_assets = 0
-        for name in z.namelist():
-            if not name.startswith("assets/") or name.endswith("/"):
-                continue
-            relative = name[len("assets/"):]
-            destination = os.path.abspath(os.path.join(assets_root, relative.replace("/", os.sep)))
-            if not destination.startswith(abs_assets_root + os.sep) and destination != abs_assets_root:
-                continue  # Skip Zip Slip directory traversal
-            os.makedirs(os.path.dirname(destination), exist_ok=True)
-            with open(destination, "wb") as f:
-                f.write(z.read(name))
-            restored_assets += 1
+        try:
+            _swap(plan, staging)
+        except RestoreFailed as failed:
+            keep_staging = "could not be put back" in str(failed)
+            raise RestoreFailed(str(failed), safety_backup=safety) from failed.__cause__
+    finally:
+        if not keep_staging:
+            shutil.rmtree(staging, ignore_errors=True)
 
     return {
         "restored_from": archive,
         "safety_backup": safety,
-        "assets_restored": restored_assets,
+        "assets_restored": len([1 for staged, _ in plan[3:] if staged is not None]),
         "manifest": info["manifest"],
     }
 

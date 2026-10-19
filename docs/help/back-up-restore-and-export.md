@@ -79,7 +79,7 @@ The interface has no restore button. Use a terminal opened in the checkout folde
 3. Restore it: `python -m studio.cli restore "<path to zip>" --yes`.
 4. Start the studio again. The command ends with "Restart Inox Hydra for the restored data to take effect."
 
-**What happens:** the studio first takes a `pre_restore` safety backup of your current state, then replaces the database and writes the media files back, and prints the safety backup's path. If you restored the wrong archive, restore the safety backup the same way.
+**What happens:** the studio unpacks the backup beside your data and checks its database first. Then it takes a `pre_restore` safety backup of your current state, swaps the database and the media files in, and prints the safety backup's path. If anything fails part way, everything it had changed is put back, the message starts "Not restored", and it names the safety backup. If you restored the wrong archive, restore the safety backup the same way.
 
 In the portable build, use `InoxHydra-CLI.bat backup`, `InoxHydra-CLI.bat restore <zip>` and `InoxHydra-CLI.bat export`.
 

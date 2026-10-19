@@ -140,6 +140,12 @@ def cmd_restore(args) -> int:
 
     try:
         result = support.restore_backup(args.archive, into_active_profile=args.into_active_profile)
+    except support.RestoreFailed as failed:
+        print(f"Not restored: {failed}")
+        if failed.safety_backup:
+            print(f"  safety snapshot       {failed.safety_backup}")
+            print("  It holds your state from just before this restore.")
+        return 1
     except ValueError as error:
         print(str(error))
         print("Pass --into-active-profile to restore it into the active profile anyway.")
