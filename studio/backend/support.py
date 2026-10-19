@@ -147,6 +147,41 @@ def redact_settings(rows) -> Dict[str, Any]:
     return out
 
 
+DIAGNOSTICS_PREFIX = "inox_diagnostics_"
+
+
+def _account_folders() -> List[tuple]:
+    """
+    (path, placeholder) pairs for the OS account folder, longest first.
+
+    On most machines the account folder is the person's name
+    (C:\\Users\\Firstname Lastname), and every path in the bundle starts with
+    it. The placeholder still tells us where the state is, relative to it.
+    """
+    pairs = []
+    if sys.platform == "win32" and os.environ.get("LOCALAPPDATA"):
+        pairs.append((os.environ["LOCALAPPDATA"], "%LOCALAPPDATA%"))
+    home = os.path.expanduser("~")
+    if home and len(home.strip("/\\")) > 0 and home != "~":
+        pairs.append((home, "~"))
+    for path, placeholder in list(pairs):
+        if "\\" in path:
+            pairs.append((path.replace("\\", "/"), placeholder))
+    return sorted(pairs, key=lambda pair: len(pair[0]), reverse=True)
+
+
+def _without_account_folder(value: Any, pairs: List[tuple]) -> Any:
+    if isinstance(value, str):
+        for path, placeholder in pairs:
+            value = value.replace(path, placeholder)
+        return value
+    if isinstance(value, dict):
+        return {key: _without_account_folder(item, pairs) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_without_account_folder(item, pairs) for item in value]
+    return value
+
+
 def collect_diagnostics() -> Dict[str, Any]:
     """
     Everything needed to diagnose a problem on a machine we cannot reach.
@@ -206,9 +241,13 @@ def collect_diagnostics() -> Dict[str, Any]:
 
     # Log tail. Absence is normal, not an error: the application logs to the
     # console today, and the directory only fills once file logging is enabled.
+    #
+    # Earlier bundles are written to the same folder and are not logs: tailing
+    # them put 200 lines of the previous bundle inside every new one.
     try:
         logs_dir = paths.get_logs_dir()
-        for name in sorted(os.listdir(logs_dir))[-3:]:
+        names = [n for n in sorted(os.listdir(logs_dir)) if not n.startswith(DIAGNOSTICS_PREFIX)]
+        for name in names[-3:]:
             full = os.path.join(logs_dir, name)
             with open(full, encoding="utf-8", errors="replace") as f:
                 tail = f.readlines()[-200:]
@@ -216,15 +255,21 @@ def collect_diagnostics() -> Dict[str, Any]:
     except Exception as exc:
         report["errors"].append(f"logs unreadable: {exc}")
 
-    return report
+    return _without_account_folder(report, _account_folders())
 
 
 def write_diagnostics_bundle(destination: Optional[str] = None) -> str:
     """Writes the diagnostics report to a file the user can attach to an issue."""
     report = collect_diagnostics()
     if destination is None:
+        # A counter after the stamp, so two bundles in one second do not
+        # overwrite each other.
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        destination = os.path.join(paths.get_logs_dir(), f"inox_diagnostics_{stamp}.json")
+        base = os.path.join(paths.get_logs_dir(), f"{DIAGNOSTICS_PREFIX}{stamp}")
+        destination, counter = base + ".json", 1
+        while os.path.exists(destination):
+            counter += 1
+            destination = f"{base}_{counter}.json"
     with open(destination, "w", encoding="utf-8", newline="\n") as f:
         json.dump(report, f, indent=2, default=str)
     return destination
