@@ -256,12 +256,17 @@ def get_activity_stream(limit: int = 25):
             for r in cursor.fetchall()
         ]
 
-        # Recent leads
+        # Recent leads, by when the bridge last captured a new engagement from
+        # them. This was ORDER BY id, and a captured lead's id is a hash, so
+        # the list was in no order and the people just captured could be
+        # missing from it. Re-reading a comment does not move anyone up.
         cursor.execute(
             """
-            SELECT id, name, headline, company, engagement_type, icp_score, status, created_at
-            FROM leads
-            ORDER BY id DESC
+            SELECT l.id, l.name, l.headline, l.company, l.engagement_type, l.icp_score, l.status, l.created_at
+            FROM leads l
+            ORDER BY COALESCE(
+                (SELECT MAX(COALESCE(i.first_seen_at, i.interacted_at)) FROM lead_interactions i WHERE i.lead_id = l.id),
+                l.created_at) DESC, l.created_at DESC
             LIMIT ?
             """,
             (limit,),
@@ -272,7 +277,8 @@ def get_activity_stream(limit: int = 25):
                 "name": r[1] or "Unknown",
                 "headline": r[2] or "",
                 "company": r[3] or "",
-                "engagement_type": r[4] or "Commented",
+                # As stored; not read is not "Commented".
+                "engagement_type": r[4],
                 "icp_score": r[5] or 0.0,
                 "status": r[6] or "NEW",
                 "created_at": r[7],
