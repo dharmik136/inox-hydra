@@ -43,4 +43,4 @@ The key is checked on this machine, against the key the studio ships with. Nothi
 
 During the beta every Creator feature is open on every install, licensed or not. A licence changes one thing today: the number of profiles.
 
-A licence has an end date, apart from a lifetime one. Each renewal sends a new key with a new end date; paste it the same way. When a licence ends, the studio returns to the free tier. Nothing is deleted, and everything stays readable and exportable. **Remove licence** takes the key off this machine, for example before you hand the computer on.
+A licence has an end date, apart from a lifetime one. Each renewal sends a new key with a new end date; paste it the same way. The studio remembers the latest date it has seen, so setting the computer's clock back does not bring an ended licence back. When the clock reads earlier than that date, **This machine** names the date the licence is checked against. When a licence ends, the studio returns to the free tier. Nothing is deleted, and everything stays readable and exportable. **Remove licence** takes the key off this machine, for example before you hand the computer on.

@@ -214,14 +214,73 @@ def _expired(payload: Dict[str, Any], today: date) -> bool:
     return bool(expires) and date.fromisoformat(expires) < today
 
 
+SEEN_FILENAME = "licence.seen"
+
+
+def _seen_path() -> str:
+    return os.path.join(paths.get_vault_dir(), SEEN_FILENAME)
+
+
+def _latest_date_seen(today: date) -> date:
+    """
+    The later of today and the latest date this studio has recorded.
+
+    Licence state used to depend on the local date alone, so setting the clock
+    back made an ended licence active again. The latest date seen is kept
+    beside the licence and only ever moves forward; expiry is judged against
+    it. A file that cannot be read or written is ignored, because a licence
+    detail must never stop the studio.
+    """
+    seen = None
+    try:
+        with open(_seen_path(), "r", encoding="ascii") as handle:
+            seen = date.fromisoformat(handle.read().strip()[:10])
+    except (OSError, ValueError, UnicodeError):
+        seen = None
+    if seen is not None and seen >= today:
+        return seen
+    try:
+        fd, tmp = tempfile.mkstemp(prefix=".seen-", dir=paths.get_vault_dir())
+        try:
+            with os.fdopen(fd, "w", encoding="ascii") as handle:
+                handle.write(today.isoformat() + "\n")
+            os.replace(tmp, _seen_path())
+        finally:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+    except OSError:
+        pass
+    return today
+
+
+def _licence_stamp() -> Optional[tuple]:
+    try:
+        stat = os.stat(_licence_path())
+    except OSError:
+        return None
+    return (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+
+
+# The last answer, keyed by everything it depends on. Checking the signature
+# costs a few milliseconds, and the profile resolver asks on every request.
+_current_cache: Dict[str, Any] = {"key": None, "value": None}
+
+
 def current(today: Optional[date] = None) -> Dict[str, Any]:
     """
     The licence as the studio sees it now. Never raises.
 
     status is "none", "active", "expired" or "invalid"; tier is the tier in
-    effect, which is "free" unless the licence is active.
+    effect, which is "free" unless the licence is active. Expiry is judged
+    against the latest date the studio has seen, so clock_behind says when the
+    computer's clock reads earlier than that.
     """
     today = today or date.today()
+    effective = _latest_date_seen(today)
+    key = (_licence_path(), _licence_stamp(), today, effective, tuple(PUBLIC_KEYS), BETA_OPEN)
+    if _current_cache["key"] == key:
+        return json.loads(json.dumps(_current_cache["value"]))
+
     text = _stored_text()
     state: Dict[str, Any] = {
         "status": "none",
@@ -230,6 +289,7 @@ def current(today: Optional[date] = None) -> Dict[str, Any]:
         "reason": "",
         "beta_open": BETA_OPEN,
         "prices": PRICES,
+        "clock_behind": effective > today,
     }
     if text == "":
         state.update(status="invalid", reason="The stored licence file could not be read. Remove it and paste the key again.")
@@ -240,12 +300,18 @@ def current(today: Optional[date] = None) -> Dict[str, Any]:
         else:
             payload = read["payload"]
             state["licence"] = payload
-            if _expired(payload, today):
-                state.update(status="expired", reason="This licence has ended. Your data is all still here.")
+            if _expired(payload, effective):
+                reason = "This licence has ended. Your data is all still here."
+                if effective > today:
+                    reason += (f" This computer's clock reads {today.isoformat()}, earlier than "
+                               f"{effective.isoformat()}, the latest date this studio has seen, so the "
+                               f"licence is checked against {effective.isoformat()}.")
+                state.update(status="expired", reason=reason)
             else:
                 state.update(status="active", tier=payload["tier"])
     state["tier_label"] = TIERS[state["tier"]]["label"]
     state["profile_limit"] = _profile_limit(state)
+    _current_cache.update(key=key, value=json.loads(json.dumps(state)))
     return state
 
 
@@ -278,7 +344,7 @@ def install(text: str, today: Optional[date] = None) -> Dict[str, Any]:
     read = read_licence_text(text)
     if not read["valid"]:
         return {"status": "error", "message": read["reason"]}
-    if _expired(read["payload"], today or date.today()):
+    if _expired(read["payload"], _latest_date_seen(today or date.today())):
         return {"status": "error", "message": f"This licence ended on {read['payload']['expires_at']}. Nothing was changed."}
     clean = "".join(text.split())
     vault = paths.get_vault_dir()
