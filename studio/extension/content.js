@@ -223,11 +223,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+/**
+ * The editor of LinkedIn's post composer, or null.
+ *
+ * The first matching editor in the page used to be taken. LinkedIn's comment
+ * boxes and message boxes are the same kind of editor, and the composer
+ * renders last, in a modal, so a draft went into an open comment box behind
+ * the composer, or into a message to a contact, and the page said it was in
+ * the composer. The composer always opens as a dialog; an editor inside a
+ * comment or messaging block, or labelled for a comment, message or reply,
+ * is never it.
+ */
+function composerEditor() {
+  const editors = document.querySelectorAll(
+    '.share-creation-state__text-editor div[contenteditable="true"], div.ql-editor[contenteditable="true"], div[role="textbox"][contenteditable="true"]'
+  );
+  for (const editor of editors) {
+    if (!editor.closest('[role="dialog"], .artdeco-modal, dialog')) continue;
+    if (editor.closest('.comments-comment-box, .comments-comment-texteditor, [class*="comments-comment"], [class*="msg-"], [data-view-name*="comment"], [data-testid*="comment" i]')) continue;
+    const label = ["aria-label", "aria-placeholder", "data-placeholder"].map((a) => editor.getAttribute(a) || "").join(" ");
+    const dialog = editor.closest('[role="dialog"], .artdeco-modal, dialog');
+    if (/comment|message|reply/i.test(label + " " + (dialog.getAttribute("aria-label") || ""))) continue;
+    return editor;
+  }
+  return null;
+}
+
 async function injectIntoLinkedInComposer(text) {
   // 1. Check if composer modal is already open
-  let editor = document.querySelector('div.ql-editor[contenteditable="true"]') ||
-               document.querySelector('div[role="textbox"][contenteditable="true"]') ||
-               document.querySelector('.share-creation-state__text-editor div[contenteditable="true"]');
+  let editor = composerEditor();
 
   // 2. If not open, try to click the "Start a post" button on feed
   if (!editor) {
@@ -239,8 +263,7 @@ async function injectIntoLinkedInComposer(text) {
       // Wait up to 1.5s for modal to render
       for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 100));
-        editor = document.querySelector('div.ql-editor[contenteditable="true"]') ||
-                 document.querySelector('div[role="textbox"][contenteditable="true"]');
+        editor = composerEditor();
         if (editor) break;
       }
     }
