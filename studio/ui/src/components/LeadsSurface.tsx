@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
-import { Copy, Download, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowLeft, Copy, Download, ExternalLink, Loader2 } from "lucide-react";
 import {
   DM_STYLES,
   LEADS_CSV_URL,
@@ -8,12 +8,15 @@ import {
   copyExtensionPath,
   fetchBrowserBridge,
   fetchLeadDmScript,
+  fetchLeadOfferDraft,
   fetchLeadReview,
   fetchLeadTimeline,
   fetchLeads,
+  forgetLead,
   launchBridge,
   generateLeadDm,
   removeLeadsNotOnYourPosts,
+  updateLeadNotes,
   updateLeadStatus,
   type BrowserBridge,
   type Lead,
@@ -23,6 +26,24 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { SearchFocus } from "@/lib/search";
+
+/** The timeline's lead: whether it was scored at all, and its tier under the one rule. */
+type DossierLead = Lead & { scored?: boolean; qualification_tier?: string };
+
+const TIER_LABELS: Record<string, string> = {
+  TIER_1_VIP: "VIP",
+  QUALIFIED: "Qualified",
+  NURTURE: "Nurture",
+  DISQUALIFIED: "Disqualified",
+};
+
+/** How many rows the stream draws before asking. Five thousand drawn at once was 30,000 nodes. */
+const STREAM_PAGE = 200;
+
+/** Lower case without accents, so "zoe" finds Zoë and "angstrom" finds Ångström. */
+function folded(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
 
 /**
  * The CRM (blueprint section 11).
@@ -34,6 +55,28 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
   const [leads, setLeads] = useState<Lead[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [selected, setSelected] = useState<string | null>(focus?.id ?? null);
+  // Below the md breakpoint there is room for one pane. A fixed 340 pixel
+  // stream beside the rail left the dossier 0 pixels wide on a phone, so
+  // choosing a lead changed nothing visible. There the stream and the dossier
+  // take turns; from md up both are always shown and this has no effect.
+  const [pane, setPane] = useState<"stream" | "dossier">(focus ? "dossier" : "stream");
+  // The stream had no way to narrow it, so five thousand leads were one list
+  // drawn in full. The box and the stage filter work on the loaded list, and
+  // only the first STREAM_PAGE matches are drawn until the creator asks for more.
+  const [query, setQuery] = useState("");
+  const [stage, setStage] = useState("All");
+  const [limit, setLimit] = useState(STREAM_PAGE);
+  const [notice, setNotice] = useState<string | null>(null);
+  const shown = useMemo(() => {
+    const words = folded(query).split(/\s+/).filter(Boolean);
+    return (leads ?? []).filter(
+      (lead) =>
+        (stage === "All" || lead.status === stage) &&
+        words.every((word) =>
+          folded([lead.name, lead.company, lead.headline, lead.notes].filter(Boolean).join(" ")).includes(word),
+        ),
+    );
+  }, [leads, query, stage]);
 
   // Re-read after an action so the row and the dossier cannot disagree about
   // a lead's status. The stream shows the status on every row, so a change
@@ -59,8 +102,14 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
   // person twice still scrolls back to them.
   useEffect(() => {
     if (!focus || !leads) return;
-    if (!leads.some((lead) => lead.id === focus.id)) return;
+    const index = leads.findIndex((lead) => lead.id === focus.id);
+    if (index < 0) return;
     setSelected(focus.id);
+    setPane("dossier");
+    // The row must be drawn to be scrolled to.
+    setQuery("");
+    setStage("All");
+    setLimit((current) => Math.max(current, index + 1));
     window.requestAnimationFrame(() => {
       document.querySelector(`[data-lead-id="${CSS.escape(focus.id)}"]`)?.scrollIntoView({ block: "nearest" });
     });
@@ -74,11 +123,19 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
 
   return (
     <div className="flex h-full min-h-0">
-      <section aria-label="Lead stream" className="flex w-[340px] shrink-0 flex-col border-r border-edge">
+      <section
+        aria-label="Lead stream"
+        className={cn(
+          "w-full shrink-0 flex-col border-edge md:flex md:w-[340px] md:border-r",
+          pane === "stream" ? "flex" : "hidden",
+        )}
+      >
         <div className="flex items-baseline justify-between gap-2 px-4 pt-4 pb-2">
           <h1 className="studio-label">Lead stream</h1>
           <div className="flex items-baseline gap-2">
-            <p className="studio-meta text-[10px]">{leads.length}</p>
+            <p className="studio-meta text-[10px]">
+              {shown.length === leads.length ? leads.length : `${shown.length} OF ${leads.length}`}
+            </p>
             {/* A download, not a fetch: the route streams a file, so the
                 browser is the right thing to hand it to. */}
             <a
@@ -90,14 +147,54 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
             </a>
           </div>
         </div>
+        <div className="flex gap-2 px-4 pb-2">
+          <input
+            type="search"
+            aria-label="Find a lead"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setLimit(STREAM_PAGE);
+            }}
+            placeholder="Name, company, headline or notes"
+            className="min-w-0 flex-1 rounded-md border border-edge bg-ink px-2.5 py-1 text-[12px] text-ink-primary placeholder:text-ink-muted focus:border-edge-strong focus:outline-none"
+          />
+          <select
+            aria-label="Stage"
+            value={stage}
+            onChange={(event) => {
+              setStage(event.target.value);
+              setLimit(STREAM_PAGE);
+            }}
+            className="rounded-md border border-edge bg-ink px-1.5 py-1 text-[12px] text-ink-secondary focus:border-edge-strong focus:outline-none"
+          >
+            <option value="All">Every stage</option>
+            {LEAD_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        </div>
+        {notice && (
+          <p role="status" className="studio-meta border-b border-edge px-4 py-2 text-[10px] leading-snug text-ink-secondary">
+            {notice}
+          </p>
+        )}
         <LeadReviewPanel onChanged={reload} />
         <ul className="min-h-0 flex-1 overflow-y-auto">
-          {leads.map((lead) => (
+          {shown.length === 0 && (
+            <li className="studio-meta px-4 py-3 text-[10px] text-ink-muted">NO LEAD MATCHES</li>
+          )}
+          {shown.slice(0, limit).map((lead) => (
             <li key={lead.id}>
               <button
                 type="button"
                 data-lead-id={lead.id}
-                onClick={() => setSelected(lead.id)}
+                onClick={() => {
+                  setSelected(lead.id);
+                  setPane("dossier");
+                }}
                 aria-current={selected === lead.id ? "true" : undefined}
                 className={cn(
                   "relative w-full border-b border-edge px-4 py-3 text-left",
@@ -124,11 +221,44 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
               </button>
             </li>
           ))}
+          {shown.length > limit && (
+            <li className="px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setLimit((current) => current + STREAM_PAGE)}
+                className="studio-meta text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+              >
+                Show more
+              </button>
+              <span className="studio-meta ml-2 text-[10px] text-ink-muted">
+                {shown.length - limit} NOT SHOWN YET
+              </span>
+            </li>
+          )}
         </ul>
       </section>
 
-      <div className="min-w-0 flex-1 overflow-y-auto">
-        {selected ? <Dossier leadId={selected} onChanged={reload} /> : null}
+      <div className={cn("min-w-0 flex-1 overflow-y-auto md:block", pane === "dossier" ? "block" : "hidden")}>
+        <button
+          type="button"
+          onClick={() => setPane("stream")}
+          className="studio-meta flex items-center gap-1 px-4 pt-4 text-[10px] text-ink-muted transition-colors hover:text-ink-primary md:hidden"
+        >
+          <ArrowLeft className="size-3" strokeWidth={2} aria-hidden="true" />
+          Back to the lead stream
+        </button>
+        {selected ? (
+          <Dossier
+            leadId={selected}
+            onChanged={reload}
+            onForgotten={(name) => {
+              setNotice(`FORGOT ${name.toUpperCase()}, WITH EVERYTHING THE STUDIO HAD RECORDED ABOUT THEM.`);
+              setSelected(null);
+              setPane("stream");
+              reload();
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -137,8 +267,16 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
 /**
  * The person dossier. A research sheet, not a modal.
  */
-function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void }) {
-  const [data, setData] = useState<{ lead: Lead; interactions: LeadInteraction[]; stage_history?: LeadStageEvent[] } | null>(null);
+function Dossier({
+  leadId,
+  onChanged,
+  onForgotten,
+}: {
+  leadId: string;
+  onChanged: () => void;
+  onForgotten: (name: string) => void;
+}) {
+  const [data, setData] = useState<{ lead: DossierLead; interactions: LeadInteraction[]; stage_history?: LeadStageEvent[] } | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   // The label travels with the text, so the panel can say which of the four
@@ -147,6 +285,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
   const [draft, setDraft] = useState<{ label: string; text: string } | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [topic, setTopic] = useState("");
+  const [offer, setOffer] = useState("");
   const [copied, setCopied] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -211,7 +350,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
   // which on a wide window opens a gap between the two halves and makes the
   // split read as two unrelated panels.
   return (
-    <article className="max-w-[70ch] px-8 py-8">
+    <article className="max-w-[70ch] px-4 py-6 md:px-8 md:py-8">
       <p className="studio-label">{lead.status}</p>
       {/* A section of the Leads page, whose heading is the stream's label. */}
       <h2 className="studio-title mt-2">{lead.name}</h2>
@@ -234,11 +373,19 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
       <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-2 border-y border-edge py-4">
         <Field label="Company" value={lead.company} />
         <Field label="Seniority" value={lead.seniority_level} />
-        {/* Zero means never scored, which is a different statement from a
-            lead scored zero, so it is reported as unscored rather than as a
-            number the reader would compare against other leads. */}
-        <Field label="ICP score" value={lead.icp_score > 0 ? lead.icp_score.toFixed(0) : "Not scored"} />
-        <Field label="First seen" value={lead.created_at?.slice(0, 10) ?? null} />
+        {/* A captured lead is scored at capture, and a student's 0 is a low
+            fit, not a missing score. Only a lead added by hand has none; the
+            server says which, with the tier under the one rule. Reading every
+            0 as unscored made a low fit look like a capture problem. */}
+        <Field
+          label="ICP score"
+          value={
+            lead.scored === false
+              ? "Not scored"
+              : `${lead.icp_score.toFixed(0)}${lead.qualification_tier ? ` · ${TIER_LABELS[lead.qualification_tier] ?? lead.qualification_tier}` : ""}`
+          }
+        />
+        <Field label="First seen" value={lead.created_at ? localDate(lead.created_at) : null} />
       </dl>
 
       <section className="mt-6">
@@ -260,7 +407,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
               <p className="studio-meta text-[10px]">
                 {lead.engagement_type.toUpperCase()}
                 <span className="mx-1.5 text-ink-muted">·</span>
-                CAPTURED {lead.created_at?.slice(0, 10)}
+                CAPTURED {lead.created_at ? localDate(lead.created_at).toUpperCase() : ""}
               </p>
               <p className="studio-meta mt-1 text-[10px] text-ink-muted">
                 THE ENGAGEMENT THAT CAPTURED THIS LEAD. NO TIMELINE ENTRIES BEYOND IT.
@@ -276,7 +423,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
                 <p className="studio-meta text-[10px]">
                   {(entry.interaction_type ?? "INTERACTION").toUpperCase()}
                   <span className="mx-1.5 text-ink-muted">·</span>
-                  {entry.interacted_at?.slice(0, 16)}
+                  {entry.interacted_at ? localDateTime(entry.interacted_at).toUpperCase() : ""}
                 </p>
                 {entry.comment_text && (
                   <p className="mt-1 text-[13px] leading-snug text-ink-secondary">{entry.comment_text}</p>
@@ -300,12 +447,14 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
         )}
       </section>
 
-      {lead.notes && (
-        <section className="mt-6">
-          <p className="studio-label mb-2">Notes</p>
-          <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink-secondary">{lead.notes}</p>
-        </section>
-      )}
+      <LeadNotes
+        leadId={lead.id}
+        notes={lead.notes}
+        onSaved={async () => {
+          await refresh();
+          onChanged();
+        }}
+      />
 
       <section className="mt-6">
         <p className="studio-label mb-2">Pipeline</p>
@@ -354,7 +503,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
           <ol className="mt-2 flex flex-col gap-0.5">
             {(data.stage_history ?? []).map((event) => (
               <li key={event.changed_at} className="studio-meta text-[10px] text-ink-muted">
-                {event.changed_at.slice(0, 10)}: {event.from_status ?? "NEW"} TO {event.to_status.toUpperCase()}
+                {localDate(event.changed_at).toUpperCase()}: {event.from_status ?? "NEW"} TO {event.to_status.toUpperCase()}
               </li>
             ))}
           </ol>
@@ -372,13 +521,13 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
        *
        * So the four sit together, and which ones are available depends on what
        * is actually known about the person rather than on which route existed
-       * first. The reply is listed last because it needs a comment; the three
-       * openers never do. */}
+       * first. The reply is listed last because it needs a comment; the two
+       * openers never do, and the offer needs only what you would share. */}
       <section className="mt-6">
         <p className="studio-label mb-1">Draft a message</p>
         <p className="mb-3 text-[12px] leading-snug text-ink-muted">
-          Written from this lead&rsquo;s own record, then yours to edit. Nothing is sent from here;
-          LinkedIn DMs are not something this studio can do on your behalf.
+          Written only from this lead&rsquo;s record and what you type below, then yours to edit.
+          Nothing is sent from here; LinkedIn DMs are not something this studio can do on your behalf.
         </p>
 
         {/* The template writes "my recent post on ...", and the studio does not
@@ -396,6 +545,20 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
           />
         </label>
 
+        {/* An offer is only true when you say what it is. The control used to
+            offer the original author's "architecture blueprint" and a diagram
+            under every creator's name. */}
+        <label className="mb-3 block">
+          <span className="studio-meta text-[10px] text-ink-muted">WHAT YOU WOULD SHARE WITH THEM</span>
+          <input
+            type="text"
+            value={offer}
+            onChange={(event) => setOffer(event.target.value)}
+            placeholder="Needed for Offer something, for example “the checklist I use for orders”"
+            className="mt-1 w-full rounded-md border border-edge bg-ink px-2.5 py-1.5 text-[13px] text-ink-primary placeholder:text-ink-muted focus:border-edge-strong focus:outline-none"
+          />
+        </label>
+
         <div className="flex flex-wrap gap-1">
           {DM_STYLES.map((style) => (
             <DraftButton
@@ -408,6 +571,15 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
               }
             />
           ))}
+          <DraftButton
+            label="Offer something"
+            pending={drafting === "offer"}
+            disabled={drafting !== null || !offer.trim()}
+            hint={offer.trim() ? undefined : "Say what you would share with them, above"}
+            onPress={() =>
+              void draftWith("offer", "Offer something", () => fetchLeadOfferDraft(lead.id, offer, topic))
+            }
+          />
           <DraftButton
             label="Reply to their comment"
             pending={drafting === "reply"}
@@ -461,7 +633,174 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
           </p>
         )}
       </section>
+
+      <ForgetLead lead={lead} onForgotten={() => onForgotten(lead.name)} />
     </article>
+  );
+}
+
+/**
+ * The creator's own notes on a lead.
+ *
+ * They were shown and could not be changed here, so a note was only ever what
+ * a capture or an import had written. Saving writes the notes and nothing
+ * else; the stage is the pipeline control's.
+ */
+function LeadNotes({ leadId, notes, onSaved }: { leadId: string; notes: string | null; onSaved: () => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(notes ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setText(notes ?? "");
+    setEditing(false);
+    setError(null);
+  }, [leadId, notes]);
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateLeadNotes(leadId, text);
+      await onSaved();
+      setEditing(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The notes were not saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-6">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <p className="studio-label">Notes</p>
+        {!editing && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="studio-meta text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+          >
+            Edit notes
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <>
+          <textarea
+            aria-label="Notes about this lead"
+            value={text}
+            maxLength={2000}
+            rows={4}
+            onChange={(event) => setText(event.target.value)}
+            className="w-full rounded-md border border-edge bg-ink px-2.5 py-1.5 text-[13px] leading-relaxed text-ink-primary focus:border-edge-strong focus:outline-none"
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void save()}
+              className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft disabled:opacity-40"
+            >
+              {busy && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
+              Save notes
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setText(notes ?? "");
+                setEditing(false);
+              }}
+              className="studio-meta text-[10px] text-ink-muted hover:text-ink-primary"
+            >
+              CANCEL
+            </button>
+          </div>
+        </>
+      ) : notes ? (
+        <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink-secondary">{notes}</p>
+      ) : (
+        <p className="studio-meta text-ink-muted">NO NOTES YET</p>
+      )}
+      {error && (
+        <p role="status" className="studio-meta mt-2 text-signal-orange-text">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Forgetting a person, from their own dossier.
+ *
+ * The only removal on this screen was the bulk review of other people's
+ * posts, so a creator asked to delete someone's data, or who captured the
+ * wrong person, had to call the API. One press arms it and names the person;
+ * the second removes them, with everything recorded about them, on the server
+ * in one step.
+ */
+function ForgetLead({ lead, onForgotten }: { lead: Lead; onForgotten: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setConfirming(false);
+    setError(null);
+  }, [lead.id]);
+
+  async function forget() {
+    setBusy(true);
+    setError(null);
+    try {
+      await forgetLead(lead.id);
+      onForgotten();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The person was not forgotten.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-8 border-t border-edge pt-4">
+      <p className="mb-2 text-[12px] leading-snug text-ink-muted">
+        Forgetting removes this person, everything they said, their stage history and your notes
+        from this studio. Backups and exports you made earlier still hold them.
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => (confirming ? void forget() : setConfirming(true))}
+          className={cn(
+            "rounded-md border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-40",
+            confirming
+              ? "border-signal-orange bg-signal-orange text-on-signal"
+              : "border-edge text-ink-secondary hover:bg-soft",
+          )}
+        >
+          {confirming ? `Forget ${lead.name}, it cannot be undone` : "Forget this person"}
+        </button>
+        {confirming && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setConfirming(false)}
+            className="studio-meta text-[10px] text-ink-muted hover:text-ink-primary"
+          >
+            CANCEL
+          </button>
+        )}
+      </div>
+      {error && (
+        <p role="status" className="studio-meta mt-2 text-signal-orange-text">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -501,6 +840,40 @@ function DraftButton({
       {label}
     </button>
   );
+}
+
+/**
+ * A stored time, read as the moment it was.
+ *
+ * SQLite writes UTC with no zone ("2026-10-19 04:43:00"). Sliced and printed
+ * as it was, a comment made at 10:13 in India read 04:43, and a stage change
+ * after 18:30 was dated the next day, while Today showed the same event in
+ * local time. A stamp without a zone is UTC; the reader sees their own clock.
+ */
+function storedTime(stamp: string): Date {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(stamp)) return new Date(`${stamp}T00:00:00`);
+  const iso = stamp.includes("T") ? stamp : stamp.replace(" ", "T");
+  return new Date(/(Z|[+-]\d{2}:?\d{2})$/i.test(iso) ? iso : `${iso}Z`);
+}
+
+function localDate(stamp: string): string {
+  const when = storedTime(stamp);
+  return Number.isNaN(when.getTime())
+    ? stamp.slice(0, 10)
+    : when.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function localDateTime(stamp: string): string {
+  const when = storedTime(stamp);
+  return Number.isNaN(when.getTime())
+    ? stamp.slice(0, 16)
+    : when.toLocaleString(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
 }
 
 /** A link to the person's LinkedIn profile, from whichever column holds it. */

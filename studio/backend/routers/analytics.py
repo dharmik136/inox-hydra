@@ -16,11 +16,11 @@ from fastapi import APIRouter, HTTPException, Response
 
 try:
     from ..database import get_db
-    from ..crm import reverse_crm
+    from ..crm import reverse_crm, VIP_THRESHOLD
     from ..linkedin_client import linkedin_client
 except (ImportError, ValueError):
     from database import get_db
-    from crm import reverse_crm
+    from crm import reverse_crm, VIP_THRESHOLD
     from linkedin_client import linkedin_client
 
 try:
@@ -407,7 +407,7 @@ def get_posts_leaderboard():
             known = [scores[lead] for lead in brought if scores[lead] is not None]
             d["attribution"] = {
                 "total_leads": len(brought),
-                "vip_leads": sum(1 for score in known if score >= 75.0),
+                "vip_leads": sum(1 for score in known if score >= VIP_THRESHOLD),
                 "avg_icp": round(sum(known) / len(known), 1) if known else 0.0,
             }
             rows.append(d)

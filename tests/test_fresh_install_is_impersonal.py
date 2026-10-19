@@ -133,9 +133,11 @@ def test_both_seed_call_sites_are_gated():
     # Both sample_leads blocks must sit behind the flag. Checked by counting
     # rather than by indent, because each is guarded through a local boolean
     # rather than by being nested directly under the call.
-    lead_blocks = source.count("sample_leads = [")
+    # The people themselves are defined once, in DEMO_LEADS, which the purge
+    # shares; each block writes them from there.
+    lead_blocks = source.count("for l in DEMO_LEADS:")
     guarded = source.count("if demo_data_enabled():")
-    assert lead_blocks == 2, f"expected 2 sample_leads blocks, found {lead_blocks}"
+    assert lead_blocks == 2, f"expected 2 sample lead blocks, found {lead_blocks}"
     assert guarded >= 4, (
         f"only {guarded} demo_data_enabled guards found. Both leads blocks, the "
         f"enrichment and the drafts each need one."

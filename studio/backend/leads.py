@@ -17,14 +17,16 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
 
 try:
-    from .crm import qualification_tier
+    from .crm import qualification_tier, reverse_crm
 except ImportError:
-    from crm import qualification_tier
+    from crm import qualification_tier, reverse_crm
 
 try:
     from .database import get_db
+    from .support import _cell as csv_cell
 except ImportError:
     from database import get_db
+    from support import _cell as csv_cell
 
 
 # -- Validation constants --------------------------------------------------
@@ -266,30 +268,51 @@ def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = Non
         conn.close()
 
 
-def delete_lead(lead_id: str) -> Dict:
+def update_lead_notes(lead_id: str, notes: str) -> Dict:
+    """The creator's own notes on a lead, written from the dossier. The stage is left alone."""
+    sanitized = (notes or "").strip()[:MAX_NOTES_LENGTH]
     conn = get_db()
     try:
-        c = conn.cursor()
-        c.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
-        deleted = c.rowcount
+        updated = conn.execute(
+            "UPDATE leads SET notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (sanitized, lead_id)
+        ).rowcount
         conn.commit()
-        conn.close()
-        if deleted == 0:
-            return {"status": "not_found", "id": lead_id}
-        return {"status": "success", "id": lead_id}
     finally:
         conn.close()
+    if updated == 0:
+        return {"status": "not_found", "id": lead_id}
+    return {"status": "success", "id": lead_id, "notes": sanitized}
 
 
-def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optional[str] = None) -> Dict:
+def delete_lead(lead_id: str) -> Dict:
+    # The same removal as the purge route, so deleting someone here forgets
+    # their stage history and engagements too, not only the lead row.
+    if not reverse_crm.purge_lead(lead_id)["lead_deleted"]:
+        return {"status": "not_found", "id": lead_id}
+    return {"status": "success", "id": lead_id}
+
+
+def generate_dm_script(
+    lead_id: str,
+    style: str = "value_add",
+    post_topic: Optional[str] = None,
+    offer: Optional[str] = None,
+) -> Dict:
     """
-    Generates a personalized, high-converting 1-on-1 direct message script
-    tailored to the prospect's real company, headline, and engagement context.
-    
+    A first message to a lead, built only from what is known to be true.
+
+    That is the lead's record (first name, company, how they engaged, their
+    comment) and what the creator typed: the post's subject and, for an offer,
+    what they would share. These templates used to carry the original author's
+    background, "a practical architecture blueprint and checklist", "the
+    diagram", "foundational observability and decoupling logic", "engineering
+    architecture", which every creator then sent under their own name.
+
     Styles:
-    - value_add: Thoughtful technical / peer question based on their perspective.
-    - resource_share: Offer a concrete architectural breakdown or PDF blueprint.
-    - quick_chat: Casual 15-minute sync / virtual coffee to exchange engineering notes.
+    - value_add: thanks them and asks how it looks from where they sit.
+    - resource_share: offers what the creator names in `offer`, and is refused
+      without it, because there is nothing true to offer otherwise.
+    - quick_chat: suggests a short call.
     """
     conn = get_db()
     try:
@@ -302,8 +325,9 @@ def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optio
             return {"error": "Lead not found"}
 
         first_name = lead["name"].split()[0] if lead["name"] else "there"
-        company = lead["company"] or "your team"
-        headline = lead["headline"] or ""
+        # No stand-in. "your team" put a team the studio knows nothing about
+        # into the sentence.
+        company = (lead["company"] or "").strip()
         action_saw = "commented on" if lead["engagement_type"] == "Commented" else "reacted to"
         action_thanks = "commenting on" if lead["engagement_type"] == "Commented" else "reacting to"
         # No invented subject. This used to fall back to "enterprise systems and
@@ -314,6 +338,7 @@ def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optio
         topic = (post_topic or "").strip()
         about = f" on {topic}" if topic else ""
         regarding = f" regarding {topic}" if topic else ""
+        what = (offer or "").strip()
     
         # Check if we have specific comment notes to reference
         notes = lead["notes"] or ""
@@ -327,19 +352,28 @@ def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optio
                     comment_ref = f' Your point about "{extracted[:60]}..." really stood out.'
 
         if style == "resource_share":
+            if not what:
+                return {
+                    "status": "needs_input",
+                    "error": (
+                        "Say what you would share with them, in the box above, and this draft "
+                        "can be written. The studio does not offer anything you have not named."
+                    ),
+                    "lead_name": lead["name"],
+                    "style": style,
+                    "dm_script": "",
+                }
             script = (
                 f"Hi {first_name},\n\n"
                 f"Thanks for {action_thanks} my recent post{about}!{comment_ref}\n\n"
-                f"I recently put together a practical architecture blueprint and checklist detailing how engineering teams at organizations like {company} decouple critical systems without downtime.\n\n"
-                f"Would you find it helpful if I sent the diagram over? Happy to drop the link right here."
+                f"Happy to share {what} if it would be useful. Would you like me to send it over?"
             )
         elif style == "quick_chat":
             action_eng = "in the comments on" if lead["engagement_type"] == "Commented" else "engaging with"
             script = (
                 f"Hi {first_name},\n\n"
                 f"Great seeing you {action_eng} my post{regarding}!{comment_ref}\n\n"
-                f"I have been following {company}'s trajectory and love connecting with fellow leaders navigating technical scale.\n\n"
-                f"If you are ever open to a low-key 15-minute virtual coffee to swap notes on engineering architecture, I would love to connect."
+                f"If you are ever open to a short call to swap notes{about}, I would be glad to set one up."
             )
         else:  # value_add (default)
             # Only a comment carries a perspective. Thanking someone for theirs
@@ -351,11 +385,12 @@ def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optio
                 if lead["engagement_type"] == "Commented"
                 else ""
             )
+            where = f" at {company}" if company else ""
             script = (
                 f"Hi {first_name},\n\n"
                 f"Saw that you {action_saw} my recent post{about}."
                 f"{appreciation}{comment_ref}\n\n"
-                f"Curious how you and {company} are currently navigating foundational observability and decoupling logic as you scale?\n\n"
+                f"How does it look from where you sit{where}?\n\n"
                 f"Would love to exchange notes if you're open to connecting."
             )
 
@@ -392,7 +427,11 @@ def export_leads_csv(status: Optional[str] = None, search: Optional[str] = None)
         score = float(l.get("icp_score") or 0.0)
         tier = qualification_tier(score)
 
-        writer.writerow([
+        # Every cell through the support export's sanitiser. Names, headlines
+        # and notes are written by other people, and one starting with = or @
+        # ran as a formula in the creator's spreadsheet. The status is the one
+        # the Leads screen shows, not the machine vocabulary behind it.
+        writer.writerow([csv_cell(value) for value in (
             l.get("id", ""),
             l.get("full_name") or l.get("name", ""),
             l.get("headline", ""),
@@ -400,10 +439,10 @@ def export_leads_csv(status: Optional[str] = None, search: Optional[str] = None)
             l.get("seniority_level", "Unknown"),
             f"{score:.1f}",
             tier,
-            l.get("lead_status") or l.get("status", "NEW"),
+            l.get("status") or l.get("lead_status") or "New Lead",
             l.get("profile_url", ""),
             l.get("engagement_type", ""),
             l.get("notes", ""),
             l.get("created_at", "")
-        ])
+        )])
     return output.getvalue()

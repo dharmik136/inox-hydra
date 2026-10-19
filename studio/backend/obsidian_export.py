@@ -15,13 +15,19 @@ between them, so the graph view is the creator's audience drawn to scale.
     Drafts/        the studio's drafts
 
 A vault is a place people think in, so an export must be safe to repeat into
-the same folder. Three rules make it so:
+the same folder. These rules make it so:
 
   - It refuses a folder that has files in it and is not a previous export.
   - It rewrites only the notes it wrote last time, listed in a manifest, and
-    removes those it no longer writes. Notes the creator added are untouched.
+    removes those it no longer writes. Notes the creator added are untouched,
+    and their names are never handed to a generated note.
+  - Each note is keyed in the manifest to a stable id (the lead, the post, the
+    draft), so it keeps its path from one export to the next. Names used to be
+    handed out in database order, so deleting one of two namesakes moved the
+    other's note, and the creator's notes in it, onto someone else.
   - Anything written under a "## Your notes" heading inside a generated note
-    survives the next export.
+    survives the next export. A generated note the creator edited above that
+    heading is left exactly as it is, and the fresh copy goes beside it.
 
 Nothing invented: a figure nobody read says "not measured", never 0, and
 seeded demo analytics are not exported as measurements.
@@ -35,6 +41,7 @@ Strict Invariants:
 - Credentials are never read. `settings` is not queried.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -51,6 +58,7 @@ except ImportError:
     from evidence_briefing import classify_post_topic
 
 MANIFEST = ".inox-hydra-export.json"
+VAULT_FOLDER = "obsidian_vault"
 YOUR_NOTES = "## Your notes"
 FOLDERS = ("Posts", "People", "Topics", "Outbound", "Drafts")
 
@@ -158,19 +166,73 @@ def safe_name(text: Any, limit: int = 80) -> str:
     return name
 
 
+def _fold(name: str) -> str:
+    """
+    A note name as a filesystem compares it: composed Unicode, case folded.
+
+    macOS treats "Zoe\u0308" and "Zo\u00eb" as one file and Linux as two, so a
+    creator's note saved in decomposed form was either refused on (macOS) or
+    shadowed by a look-alike (Linux). Comparing folded names makes both rename.
+    """
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def _same_base(name: str, base: str) -> bool:
+    """Whether `name` is `base`, or `base` with the " (2)" a namesake or a note of yours gave it."""
+    name, base = _fold(name), _fold(base)
+    return name == base or re.fullmatch(re.escape(base) + r" \(\d+\)", name) is not None
+
+
+def _name_in(folder: str, path: str) -> Optional[str]:
+    """The note name when `path` is a note directly inside `folder`, else None."""
+    prefix = f"{folder.lower()}/" if folder else ""
+    rest = path[len(prefix):]
+    if path.lower().startswith(prefix) and path.lower().endswith(".md") and "/" not in rest:
+        return rest[:-3]
+    return None
+
+
 class _Names:
-    """Hands out unique note names inside one folder, case-insensitively."""
+    """
+    Hands out unique note names inside one folder, case-insensitively.
 
-    def __init__(self) -> None:
-        self.taken: set = set()
+    A note keeps the name it had in the last export, found by its stable id in
+    `previous`, so deleting one namesake or capturing another never moves a
+    person's note onto someone else. It keeps it only while the record's own
+    name is unchanged: a lead resolved from "LinkedIn Member" to "Mei Lin", or
+    a retitled draft, gets the new name, and `moved` records the old one so the
+    creator's notes go with it. A name a note in `reserved` already uses, one
+    the creator owns, is never handed out; each time that forced another name
+    is recorded in `collisions`, so the export can say so.
+    """
 
-    def claim(self, wanted: str, fallback: str) -> str:
+    def __init__(self, folder: str = "", previous: Optional[Dict[str, str]] = None,
+                 reserved: Iterable[str] = ()) -> None:
+        self.folder = folder
+        self.kept: Dict[str, str] = {}
+        for key, path in (previous or {}).items():
+            name = _name_in(folder, path)
+            if name:
+                self.kept[key] = name
+        self.reserved = {_fold(n) for n in (_name_in(folder, p) for p in reserved) if n}
+        self.taken: set = self.reserved | {_fold(n) for n in self.kept.values()}
+        self.collisions: List[Dict[str, str]] = []
+        self.moved: Dict[str, str] = {}
+
+    def claim(self, wanted: str, fallback: str, key: Optional[str] = None) -> str:
         base = safe_name(wanted) or safe_name(fallback) or "Untitled"
+        if key in self.kept:
+            if _same_base(self.kept[key], base):
+                return self.kept[key]
+            self.moved[key] = self.kept[key]
         name, n = base, 2
-        while name.lower() in self.taken:
+        while _fold(name) in self.taken:
             name = f"{base} ({n})"
             n += 1
-        self.taken.add(name.lower())
+        self.taken.add(_fold(name))
+        if _fold(base) in self.reserved:
+            where = f"{self.folder}/" if self.folder else ""
+            self.collisions.append({"wanted": f"{where}{base}.md", "written": f"{where}{name}.md"})
         return name
 
 
@@ -242,32 +304,55 @@ def _date(value: Any) -> str:
 # Building notes
 # ---------------------------------------------------------------------------
 
-def build_notes(record: Dict[str, Any]) -> Dict[str, str]:
-    """Maps a vault-relative path to note text. Pure, so it can be tested without a disk."""
+def build_notes(record: Dict[str, Any], previous: Optional[Dict[str, str]] = None,
+                reserved: Iterable[str] = ()) -> Dict[str, str]:
+    """
+    Maps a vault-relative path to note text. Pure, so it can be tested without a disk.
+
+    `previous` maps each note's stable id to the path it had in the last
+    export, which it keeps; `reserved` lists the creator's own notes, whose
+    names are never used.
+    """
+    return _build(record, previous, reserved)[0]
+
+
+def _build(record: Dict[str, Any], previous: Optional[Dict[str, str]] = None,
+           reserved: Iterable[str] = ()) -> Tuple[Dict[str, str], Dict[str, str], List[Dict[str, str]], Dict[str, str]]:
+    """
+    The notes, the stable id of each path, every name a creator's note forced
+    to change, and each note that moved to a new name (new path to old path).
+    """
     notes: Dict[str, str] = {}
+    ids: Dict[str, str] = {}
+    reserved = list(reserved)
 
     posts = record["posts"]
     leads = {lead["id"]: lead for lead in record["leads"]}
     post_by_id = {_activity_id(p["activity_urn"]): p for p in posts if _activity_id(p["activity_urn"])}
 
     # Names first, so every note can link to every other one.
-    post_names, people_names, topic_names, outbound_names, draft_names = _Names(), _Names(), _Names(), _Names(), _Names()
+    namers = {folder: _Names(folder, previous, reserved) for folder in ("",) + FOLDERS}
+    post_names, people_names, topic_names, outbound_names, draft_names = (
+        namers["Posts"], namers["People"], namers["Topics"], namers["Outbound"], namers["Drafts"])
     post_note: Dict[str, str] = {}
     for post in posts:
         first_line = next((ln for ln in (post.get("text") or "").splitlines() if ln.strip()), "")
         day = _date(post.get("published_at"))
         wanted = f"{day} {first_line}" if day else first_line
         post_note[post["activity_urn"]] = post_names.claim(
-            safe_name(wanted, 70), f"Post {_activity_id(post['activity_urn']) or len(post_note) + 1}"
+            safe_name(wanted, 70), f"Post {_activity_id(post['activity_urn']) or len(post_note) + 1}",
+            key=f"post:{post['activity_urn']}",
         )
 
     person_note: Dict[str, str] = {}
     for lead in record["leads"]:
         name = lead.get("full_name") or lead.get("name") or ""
-        person_note[lead["id"]] = people_names.claim(name, f"Person {lead['id']}")
+        person_note[lead["id"]] = people_names.claim(name, f"Person {lead['id']}", key=f"lead:{lead['id']}")
 
     topic_of = {p["activity_urn"]: classify_post_topic(p.get("text")) for p in posts}
-    topic_note = {t: topic_names.claim(t, "General") for t in sorted(set(topic_of.values()))}
+    topic_note = {t: topic_names.claim(t, "General", key=f"topic:{t}") for t in sorted(set(topic_of.values()))}
+    me_note = namers[""].claim("Me", "Me", key="me")
+    home_note = namers[""].claim("Home", "Home", key="home")
 
     # Interactions joined to posts by the numeric activity id, which is how the
     # rest of the studio joins them: a lead's row may carry a share or ugcPost
@@ -302,7 +387,7 @@ def build_notes(record: Dict[str, Any]) -> Dict[str, str]:
         author = (item.get("target_author") or "").strip()
         if author:
             outbound.setdefault(author, []).append(item)
-    outbound_note = {a: outbound_names.claim(a, "Someone") for a in sorted(outbound)}
+    outbound_note = {a: outbound_names.claim(a, "Someone", key=f"outbound:{a}") for a in sorted(outbound)}
 
     # ---- Posts
     for post in posts:
@@ -348,6 +433,7 @@ def build_notes(record: Dict[str, Any]) -> Dict[str, str]:
         else:
             lines.append("Nobody the studio has seen yet.")
         notes[f"Posts/{name}.md"] = fm + "\n".join(lines) + "\n"
+        ids[f"Posts/{name}.md"] = f"post:{urn}"
 
     # ---- People
     for lead_id, lead in leads.items():
@@ -387,6 +473,7 @@ def build_notes(record: Dict[str, Any]) -> Dict[str, str]:
         if lead.get("notes"):
             lines += ["", "## Notes in the studio", "", str(lead["notes"])]
         notes[f"People/{name}.md"] = fm + "\n".join(lines) + "\n"
+        ids[f"People/{name}.md"] = f"lead:{lead_id}"
 
     # ---- Topics
     for topic, name in topic_note.items():
@@ -398,6 +485,7 @@ def build_notes(record: Dict[str, Any]) -> Dict[str, str]:
                  "## Posts", ""]
         lines += [f"- {_link('Posts', post_note[p['activity_urn']])}" for p in members]
         notes[f"Topics/{name}.md"] = fm + "\n".join(lines) + "\n"
+        ids[f"Topics/{name}.md"] = f"topic:{topic}"
 
     # ---- Outbound
     for author, items in outbound.items():
@@ -420,15 +508,17 @@ def build_notes(record: Dict[str, Any]) -> Dict[str, str]:
             if item.get("target_excerpt"):
                 lines.append(_indented(_quote(item["target_excerpt"], 240)))
         notes[f"Outbound/{name}.md"] = fm + "\n".join(lines) + "\n"
+        ids[f"Outbound/{name}.md"] = f"outbound:{author}"
 
     # ---- Drafts
     for draft in record["drafts"]:
         content = draft.get("raw_content") or draft.get("formatted_content") or ""
         title = draft.get("title") or next((ln for ln in content.splitlines() if ln.strip()), "")
-        name = draft_names.claim(safe_name(title, 70), f"Draft {draft.get('id')}")
+        name = draft_names.claim(safe_name(title, 70), f"Draft {draft.get('id')}", key=f"draft:{draft.get('id')}")
         fm = _frontmatter({"status": draft.get("status"), "archetype": draft.get("archetype"),
                            "created": _date(draft.get("created_at"))}, ["studio/draft"])
         notes[f"Drafts/{name}.md"] = fm + f"# {name}\n\n" + (content.strip() or "(empty)") + "\n"
+        ids[f"Drafts/{name}.md"] = f"draft:{draft.get('id')}"
 
     topic_links = [f"- {_link('Topics', n, t)}" for t, n in topic_note.items()]
 
@@ -464,7 +554,8 @@ def build_notes(record: Dict[str, Any]) -> Dict[str, str]:
         me_lines = ["# Me", "", "The studio has not confirmed which LinkedIn profile is yours yet. "
                     "Confirm it in Setup and export again."]
     me_lines += ["", "## Topics", ""] + (topic_links or [NO_POSTS])
-    notes["Me.md"] = me_fm + "\n".join(me_lines) + "\n"
+    notes[f"{me_note}.md"] = me_fm + "\n".join(me_lines) + "\n"
+    ids[f"{me_note}.md"] = "me"
 
     # ---- Home
     repeat = sorted(
@@ -475,7 +566,7 @@ def build_notes(record: Dict[str, Any]) -> Dict[str, str]:
         "# LinkedIn, from Inox Hydra", "",
         f"Exported {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC. "
         "Open the graph view to see posts as hubs and the people around them.", "",
-        "- [[Me]]",
+        f"- [[{me_note}]]",
         "- " + ", ".join([
             _plural(len(posts), "post", "posts"),
             _plural(len(leads), "person", "people"),
@@ -492,11 +583,18 @@ def build_notes(record: Dict[str, Any]) -> Dict[str, str]:
     home += ["## Topics", ""] + (topic_links or [NO_POSTS])
     home += ["", "Notes this export writes are rewritten each time you export. Write your own below a "
              f"\"{YOUR_NOTES}\" heading in any of them, or in notes of your own, and they are kept."]
-    notes["Home.md"] = "\n".join(home) + "\n"
+    notes[f"{home_note}.md"] = "\n".join(home) + "\n"
+    ids[f"{home_note}.md"] = "home"
 
     for path in list(notes):
         notes[path] = notes[path].rstrip("\n") + f"\n\n{YOUR_NOTES}\n\n"
-    return notes
+    collisions = [c for namer in namers.values() for c in namer.collisions]
+    path_of = {key: path for path, key in ids.items()}
+    moves = {
+        path_of[key]: (f"{folder}/{old}.md" if folder else f"{old}.md")
+        for folder, namer in namers.items() for key, old in namer.moved.items() if key in path_of
+    }
+    return notes, ids, collisions, moves
 
 
 # ---------------------------------------------------------------------------
@@ -530,8 +628,37 @@ def _inside(root: str, relative: str) -> str:
     return target
 
 
-def write_vault(notes: Dict[str, str], destination: str) -> Dict[str, Any]:
-    root = os.path.abspath(destination)
+def _head(text: str) -> str:
+    """A note up to and including its "## Your notes" heading: the part an export writes."""
+    index = text.find("\n" + YOUR_NOTES + "\n")
+    return text if index < 0 else text[:index + 1 + len(YOUR_NOTES)]
+
+
+def _digest(text: str) -> str:
+    return hashlib.sha256(_head(text).encode("utf-8")).hexdigest()
+
+
+def _existing_notes(root: str) -> List[str]:
+    """Every note in the folder, as a vault-relative path, outside hidden folders such as .obsidian."""
+    found = []
+    for folder, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        for name in files:
+            if name.lower().endswith(".md"):
+                found.append(os.path.relpath(os.path.join(folder, name), root).replace(os.sep, "/"))
+    return found
+
+
+def _plan(root: str) -> Dict[str, Any]:
+    """
+    What this export may touch, decided before anything is written.
+
+    Its own notes are the ones the last manifest lists and the creator has not
+    edited since, judged by the digest the manifest kept of what was written.
+    Every other note in the folder is the creator's, and its name is reserved.
+    A manifest from before digests and ids were kept counts every listed note
+    as unedited, as that version did.
+    """
     previous = None
     if os.path.isdir(root) and os.listdir(root):
         previous = _read_manifest(root)
@@ -540,13 +667,53 @@ def write_vault(notes: Dict[str, str], destination: str) -> Dict[str, Any]:
                 f"{root} already has files in it and is not an earlier Inox Hydra export. "
                 "Choose an empty folder, or the folder a previous export created."
             )
+    listed = {str(p) for p in previous["files"]} if previous else set()
+    hashes = previous.get("hashes") if previous and isinstance(previous.get("hashes"), dict) else {}
+    ids = previous.get("ids") if previous and isinstance(previous.get("ids"), dict) else {}
+
+    edited = []
+    for relative in sorted(listed):
+        target = _inside(root, relative)
+        if hashes.get(relative) and os.path.isfile(target):
+            with open(target, encoding="utf-8", errors="replace") as handle:
+                if _digest(handle.read()) != hashes[relative]:
+                    edited.append(relative)
+    owned = listed - set(edited)
+    return {
+        "owned": owned,
+        "edited": edited,
+        "reserved": [p for p in _existing_notes(root) if p not in owned] if previous else [],
+        "keep": {str(key): path for path, key in ids.items() if path in owned},
+    }
+
+
+def write_vault(notes: Dict[str, str], destination: str, ids: Optional[Dict[str, str]] = None,
+                plan: Optional[Dict[str, Any]] = None,
+                renamed: Iterable[Dict[str, str]] = (),
+                moves: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    root = os.path.abspath(destination)
+    plan = plan if plan is not None else _plan(root)
+    owned = plan["owned"]
+    # A note whose record was renamed: new path to the old one it replaces.
+    moves = {new: old for new, old in (moves or {}).items() if old in owned and old not in notes}
+    targets = {relative: _inside(root, relative) for relative in notes}
+    # Never open a note this export did not write. export_obsidian_vault names
+    # around them, so this is the last line of defence rather than the rule.
+    clashes = sorted(r for r, target in targets.items() if r not in owned and os.path.exists(target))
+    if clashes:
+        raise ExportRefused("refusing to overwrite notes this export did not write: " + ", ".join(clashes))
     os.makedirs(root, exist_ok=True)
 
     kept = 0
+    hashes: Dict[str, str] = {}
     for relative, text in notes.items():
-        target = _inside(root, relative)
+        target = targets[relative]
         os.makedirs(os.path.dirname(target), exist_ok=True)
-        own = _kept_notes(target) if previous else ""
+        hashes[relative] = _digest(text)
+        if relative in moves:
+            own = _kept_notes(_inside(root, moves[relative]))
+        else:
+            own = _kept_notes(target) if relative in owned else ""
         if own:
             kept += 1
             text = text.rstrip("\n") + "\n\n" + own + "\n"
@@ -554,14 +721,28 @@ def write_vault(notes: Dict[str, str], destination: str) -> Dict[str, Any]:
             handle.write(text)
 
     removed = 0
-    if previous:
-        for relative in previous["files"]:
-            if relative in notes:
-                continue
-            target = _inside(root, relative)
-            if os.path.isfile(target) and not _kept_notes(target):
-                os.remove(target)
-                removed += 1
+    released = []
+    moved_from = set(moves.values())
+    for relative in sorted(owned - set(notes)):
+        target = _inside(root, relative)
+        if not os.path.isfile(target):
+            continue
+        if relative in moved_from:
+            os.remove(target)  # its notes now live at the new name
+            continue
+        own = _kept_notes(target)
+        if not own:
+            os.remove(target)
+            removed += 1
+            continue
+        # What the note was about is gone from the studio: a forgotten person,
+        # a deleted draft. The captured record goes with it; what the creator
+        # wrote stays, as a note of theirs that no export touches again.
+        title = os.path.splitext(os.path.basename(relative))[0]
+        with open(target, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(f"# {title}\n\nNo longer in the studio. What you wrote is kept below, and exports "
+                         f"leave this note alone from now on.\n\n{YOUR_NOTES}\n\n{own}\n")
+        released.append(relative)
 
     obsidian = os.path.join(root, ".obsidian")
     if not os.path.exists(obsidian):
@@ -572,19 +753,31 @@ def write_vault(notes: Dict[str, str], destination: str) -> Dict[str, Any]:
                 "showArrow": False, "linkDistance": 180, "repelStrength": 10,
             }, handle, indent=2)
 
+    # Each note's stable id, so it keeps its path next time, and a digest of
+    # what was written, so a note the creator edits since is recognised as
+    # theirs and left alone.
     with open(os.path.join(root, MANIFEST), "w", encoding="utf-8") as handle:
         json.dump({
             "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "files": sorted(notes),
+            "ids": {p: (ids or {})[p] for p in sorted(notes) if p in (ids or {})},
+            "hashes": {p: hashes[p] for p in sorted(hashes)},
         }, handle, indent=2)
 
     counts = {folder: sum(1 for p in notes if p.startswith(folder + "/")) for folder in FOLDERS}
-    return {"path": root, "notes": len(notes), "counts": counts, "kept_your_notes": kept, "removed": removed}
+    return {"path": root, "notes": len(notes), "counts": counts, "kept_your_notes": kept, "removed": removed,
+            "renamed": list(renamed), "kept_edited": list(plan["edited"]), "released": released,
+            "moved": [{"from": old, "to": new} for new, old in sorted(moves.items())]}
 
 
 def export_obsidian_vault(destination: Optional[str] = None) -> Dict[str, Any]:
     """Reads the local record and writes it as an Obsidian vault. Returns where, and how much."""
     if destination is None:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        destination = os.path.join(paths.get_exports_dir(), f"obsidian_vault_{stamp}")
-    return write_vault(build_notes(read_record()), destination)
+        # One vault per profile, in the same place every time, so exporting
+        # again refreshes the vault the creator opened in Obsidian. A new
+        # timestamped folder per export meant that vault never changed.
+        destination = os.path.join(paths.get_exports_dir(), VAULT_FOLDER)
+    root = os.path.abspath(destination)
+    plan = _plan(root)
+    notes, ids, renamed, moves = _build(read_record(), plan["keep"], plan["reserved"])
+    return write_vault(notes, root, ids=ids, plan=plan, renamed=renamed, moves=moves)

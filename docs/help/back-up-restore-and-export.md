@@ -55,11 +55,11 @@ An export holds the drafts, posts, leads, lead interactions, daily analytics, au
 | `Outbound/` | One note per person whose posts you engaged with, linked to their People note if they engaged back |
 | `Drafts/` | Your drafts |
 
-The folder is `exports/obsidian_vault_<stamp>` inside the data home, and the note shows its path. In Obsidian choose **Open folder as vault** and pick it, then open the graph view: your posts are the hubs and the people around them are your audience.
+The folder is `exports/obsidian_vault` inside the data home, one per creator profile, and the note shows its path. Press **Export to Obsidian** again to refresh that same vault; the note says how many notes it wrote and whose words it kept. In Obsidian choose **Open folder as vault** and pick it, then open the graph view: your posts are the hubs and the people around them are your audience.
 
 A figure the studio never read says "not measured", not 0.
 
-**Keep your own notes in it.** Every note ends with a **Your notes** heading. Anything you write below it, and any note you add yourself, survives the next export into the same folder. To refresh a vault, export from the command line into it: `python -m studio.cli export --format obsidian --output "<vault folder>"`. The studio refuses a folder that has files in it and is not one of its own exports, so it cannot overwrite a vault you already keep.
+**Keep your own notes in it.** Every note ends with a **Your notes** heading. Anything you write below it, and any note you add yourself, survives the next export into the same folder, and stays with the same person or post: each note keeps its name from one export to the next, even when someone with the same name is added or removed. When a person's name or a draft's title changes, the note moves to the new name and takes what you wrote with it. The export never writes over a note of yours. If a new person would take the name of a note you made, theirs gets another name, such as `People/Mei Lin (2).md`. If you edit a note above its **Your notes** heading, the export leaves your version as it is and writes the refreshed one beside it. When someone is removed from the studio, their note goes too, unless you wrote something in it: then only what you wrote is kept. To keep a vault somewhere else, export from the command line into it, and again to refresh it: `python -m studio.cli export --format obsidian --output "<vault folder>"`. The studio refuses a folder that has files in it and is not one of its own exports, so it cannot overwrite a vault you already keep.
 
 ## Backup or export?
 

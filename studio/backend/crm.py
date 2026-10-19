@@ -353,20 +353,24 @@ class ICPScoringEngine:
         # The creator's own words, only when they supplied some. This used to
         # fall back to a canned sentence, "We found decoupling background
         # ingestion eliminates write lock contention entirely.", sent under
-        # the creator's name as a finding they never made.
+        # the creator's name as a finding they never made. The closing
+        # question, "Are you testing similar workflows in your stack?", and
+        # "the ... breakdown" were the original author's world as well, and a
+        # question reply promised "a quick perspective" it never gave.
         insight = f"{custom_insight.strip()} " if custom_insight and custom_insight.strip() else ""
         if "?" in text:
             return (
-                f"Hi {first_name}, saw your question on my recent post about {post_topic}. "
-                f"Specifically regarding \"{excerpt}...\", wanted to share a quick perspective directly. "
+                f"Hi {first_name}, saw your question on my recent post about {post_topic}: "
+                f"\"{excerpt}...\" "
                 f"{insight}"
-                f"Are you testing similar workflows in your stack?"
+                f"Happy to go into it here if that would help."
             )
         else:
             return (
-                f"Hi {first_name}, thanks for the comment on the {post_topic} breakdown. "
+                f"Hi {first_name}, thanks for the comment on my post about {post_topic}. "
                 f"Your point about \"{excerpt}...\" was spot on. "
-                f"Are you testing similar workflows in your stack?"
+                f"{insight}"
+                f"Would you be open to connecting here?"
             )
 
     @classmethod
@@ -403,15 +407,15 @@ class ICPScoringEngine:
             {
                 "angle": "Direct Technical Perspective",
                 "dm_text": (
-                    f"Hi {first_name}, saw your question on my recent post{about}. "
-                    f"Specifically regarding \"{excerpt}...\", wanted to share a quick perspective directly. "
+                    f"Hi {first_name}, saw your question on my recent post{about}: "
+                    f"\"{excerpt}...\" "
                     f"{insight}"
-                    f"Are you testing similar workflows in your stack?"
+                    f"Happy to go into it here if that would help."
                 ) if has_question else (
                     f"Hi {first_name}, thanks for the comment on my recent post{about}. "
                     f"Your point about \"{excerpt}...\" was spot on. "
                     f"{insight}"
-                    f"Are you testing similar workflows in your stack?"
+                    f"Would you be open to connecting here?"
                 )
             },
             {
@@ -598,16 +602,23 @@ class ReverseCRMManager:
     def purge_lead(self, lead_id: str) -> Dict[str, Any]:
         """
         GDPR Right-to-be-Forgotten and Privacy Hard Purge.
-        Permanently cascades deletion across lead_interactions and leads.
+
+        Every row about the person, in one transaction: their engagements,
+        their stage history, any enrichment, and the lead itself. The stage
+        history used to be left behind, and since a lead's id is a hash of
+        their profile it reattached to them if they engaged again. Every
+        removal path calls this; the trigger from migration 19 covers any that
+        deletes from leads directly.
         """
         conn = get_db()
-        interactions_deleted = 0
+        deleted = {"lead_interactions": 0, "lead_stage_events": 0, "lead_enrichments": 0}
         lead_deleted = False
         try:
             with conn:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM lead_interactions WHERE lead_id = ?", (lead_id,))
-                interactions_deleted = cursor.rowcount
+                for table in deleted:
+                    cursor.execute(f"DELETE FROM {table} WHERE lead_id = ?", (lead_id,))
+                    deleted[table] = cursor.rowcount
 
                 cursor.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
                 lead_deleted = cursor.rowcount > 0
@@ -618,7 +629,8 @@ class ReverseCRMManager:
             "status": "purged" if lead_deleted else "not_found",
             "lead_id": lead_id,
             "lead_deleted": lead_deleted,
-            "interactions_deleted": interactions_deleted,
+            "interactions_deleted": deleted["lead_interactions"],
+            "stage_events_deleted": deleted["lead_stage_events"],
         }
 
     def archive_inactive_leads(self, inactive_days: int = 90) -> Dict[str, Any]:
@@ -921,7 +933,9 @@ class ReverseCRMManager:
 
             leads_list = list(deduped_leads.values())
             total_leads = len(leads_list)
-            vip_leads_count = sum(1 for l in leads_list if l["icp_score"] >= 75.0 or l["seniority_level"] in ("C-Suite", "VP / SVP / EVP", "Founder / Owner"))
+            # The one tier rule, as in the CRM and the CSV. This counted from 75,
+            # and from seniority labels classify_seniority never produces.
+            vip_leads_count = sum(1 for l in leads_list if l["qualification_tier"] == "TIER_1_VIP")
             avg_icp = round(sum(l["icp_score"] for l in leads_list) / total_leads, 1) if total_leads > 0 else 0.0
 
             return {

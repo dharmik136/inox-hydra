@@ -12,7 +12,11 @@ Open **Leads** in the rail. The left column, **Lead stream**, shows how many peo
 - how they engaged, such as COMMENTED or LIKED (ENGAGED when unknown)
 - their pipeline stage
 
-The first lead opens automatically. Click any row to open that person. The list loads when you open **Leads**, so leave and reopen it to see people captured since. The stream has no filter of its own. To find one person, press **Ctrl+K** and type their name, their company or something they said; see [Search everything with Ctrl+K](use-the-command-palette.md).
+The first lead opens automatically. Click any row to open that person. The list loads when you open **Leads**, so leave and reopen it to see people captured since.
+
+To narrow the stream, type in **Find a lead** (a name, company, headline or words from your notes; accents do not matter, so "zoe" finds Zoë), or choose a stage in the **Stage** list. The count then reads, for example, "3 OF 120". The stream shows 200 people at a time; click **Show more** at the bottom for the next 200. To search what people said in their comments too, press **Ctrl+K**; see [Search everything with Ctrl+K](use-the-command-palette.md).
+
+On a phone-sized window the stream and the dossier take turns: click a person to open their dossier, and **Back to the lead stream** to return.
 
 ## The dossier
 
@@ -22,16 +26,18 @@ The right side is a sheet on one person. Under their name, **OPEN THEIR PROFILE 
 | --- | --- |
 | Company | Taken from the headline, for example the part after "at". Left blank if the headline names none. |
 | Seniority | A level worked out from the headline, or Unknown |
-| ICP score | 0 to 100, or "Not scored" |
+| ICP score | 0 to 100 and its tier: VIP from 80, Qualified from 60, Nurture from 30, otherwise Disqualified. A student or intern often scores 0, which is a score. "Not scored" appears only for someone added by hand, with nothing captured. |
 | First seen | The date the studio recorded them |
 
 The ICP score is calculated on this machine by fixed rules: seniority words in the headline, how they engaged and how long their comment was, whether a company is known and what it is called, and whether the comment contains a question mark. It is worked out again at every capture, from their current headline and their best recorded engagement, so it can fall as well as rise.
 
-**Recent interactions** lists up to 8 engagements with any comment text. Each comment appears once, however often you reopened the post, with the time it was first recorded. A reaction carries no text. Under each one, the studio says where it happened:
+**Recent interactions** lists up to 8 engagements with any comment text. Each comment appears once, however often you reopened the post, with the time it was first recorded. Times and dates on the dossier are in this computer's time zone, as on **Today**. A reaction carries no text. Under each one, the studio says where it happened:
 
 - **ON YOUR POST**, followed by the opening of that post when the studio has it.
 - **ON SOMEONE ELSE'S POST, CAPTURED BEFORE THE STUDIO KNEW WHICH POSTS WERE YOURS**, in orange, for an engagement recorded before you set up the studio. See the next section.
-- Nothing, when the studio cannot tell. **Notes** appears when the record has notes. Notes cannot be edited here.
+- Nothing, when the studio cannot tell.
+
+**Notes** holds your own notes on the person, or NO NOTES YET. Click **EDIT NOTES**, write up to 2,000 characters, and click **Save notes**; **CANCEL** leaves them as they were. Saving notes does not change the person's stage.
 
 ## Remove leads from other people's posts
 
@@ -50,32 +56,36 @@ A lead counts as someone else's only when every engagement the studio recorded n
 
 Under **Pipeline**, click one of the four stages: **New Lead**, **Outreach Sent**, **Connected** or **Meeting Booked**. The stage updates in the dossier and in the stream. No other stages can be chosen.
 
+## Forget a person
+
+If someone asks you to delete what you hold about them, or the studio captured the wrong person, open their dossier and click **Forget this person** at the bottom. The button turns orange and names them, for example **Forget Asha Rao, it cannot be undone**. Click it again to forget them, or **CANCEL**. The studio removes the person, everything they said, their stage history and your notes on them, and the top of the stream says so. Backups and exports you made earlier still hold them; export to Obsidian again to remove their note from the vault.
+
 ## Draft a message
 
 1. In **THE POST THEY ENGAGED WITH**, you can type the subject of the post. The box is optional. Left blank, the draft says only "my recent post". The studio does not know which post it was.
-2. Click a style: **Peer question**, **Offer a blueprint**, **Suggest a call** or **Reply to their comment**.
-3. Read the draft. Its label says which control wrote it.
-4. Click **COPY**, then edit and send it yourself in LinkedIn.
+2. To offer them something, type what it is in **WHAT YOU WOULD SHARE WITH THEM**, for example "the checklist I use for orders".
+3. Click a style: **Peer question**, **Suggest a call**, **Offer something** or **Reply to their comment**.
+4. Read the draft. Its label says which control wrote it.
+5. Click **COPY**, then edit and send it yourself in LinkedIn.
 
 | Control | What it writes |
 | --- | --- |
-| Peer question | Names their engagement, then asks how they and their company handle "foundational observability and decoupling logic" |
-| Offer a blueprint | Offers "a practical architecture blueprint and checklist" |
-| Suggest a call | Suggests a 15-minute virtual coffee |
+| Peer question | Names their engagement, then asks how it looks from where they sit, naming their company when the studio knows it |
+| Suggest a call | Suggests a short call to swap notes |
+| Offer something | Offers exactly what you typed in the share box, and nothing else. Greyed out until you type something. |
 | Reply to their comment | Quotes up to the first 60 characters of their latest comment |
 
-> [!IMPORTANT]
-> The drafts contain fixed wording about architecture and engineering. If a comment contains a question, **Reply to their comment** says it saw their question instead of thanking them for the comment. Rewrite anything that is not true of you before sending.
+The drafts use only the person's record (first name, company, how they engaged, their comment) and what you type in the two boxes. They say nothing about your work, your company or your background, because the studio does not know it. If a comment contains a question, **Reply to their comment** says it saw their question instead of thanking them for the comment. Read every draft before sending it.
 
-If the topic box is empty, the first three name no subject: **Peer question** and **Offer a blueprint** say only "my recent post", and **Suggest a call** says only "my post". **Reply to their comment** writes nothing until you fill in the box.
+If the topic box is empty, the openers name no subject: **Peer question** and **Offer something** say only "my recent post", and **Suggest a call** says only "my post". **Reply to their comment** writes nothing until you fill in the box.
 
 ## What happens
 
-Each draft is a fill-in template built from the stored record: first name, company, how they engaged, their comment and your topic. No AI provider is used, even with a key configured, and nothing leaves this machine. Nothing is sent from the studio. As the panel says, LinkedIn messages are not something the studio can send for you.
+Each draft is a fill-in template built from the stored record: first name, company, how they engaged, their comment, your topic and what you would share. No AI provider is used, even with a key configured, and nothing leaves this machine. Nothing is sent from the studio. As the panel says, LinkedIn messages are not something the studio can send for you.
 
 ## Export your leads
 
-Click **CSV** above the stream to download every lead as `linkedin_studio_crm_leads.csv`. Its Qualification Tier column uses the studio's one tier rule: TIER_1_VIP from an ICP score of 80, QUALIFIED from 60, NURTURE from 30, otherwise DISQUALIFIED.
+Click **CSV** above the stream to download every lead as `linkedin_studio_crm_leads.csv`. Its Qualification Tier column uses the studio's one tier rule: TIER_1_VIP from an ICP score of 80, QUALIFIED from 60, NURTURE from 30, otherwise DISQUALIFIED. Its Status column shows the stage as the dossier does, such as Outreach Sent. Names, headlines and notes are written by other people, so any cell that starts with =, +, -, @ or a tab begins with an apostrophe: a spreadsheet then shows it as text instead of running it as a formula.
 
 ## If it does not work
 
@@ -84,6 +94,7 @@ Click **CSV** above the stream to download every lead as `linkedin_studio_crm_le
 | LEAD PIPELINE UNAVAILABLE | The lead list could not be loaded. Check the studio is running and reload. |
 | DOSSIER UNAVAILABLE | That person's record could not be loaded. |
 | **Reply to their comment** is greyed out | Hover it: "This lead has left no comment to reply to". Use one of the other three. |
+| **Offer something** is greyed out | Hover it: "Say what you would share with them, above". Type it in the share box. |
 | "Say which post they commented on, above, and a reply can be drafted." | **Reply to their comment** needs the topic box. Type the subject of the post and press it again. |
 | "Lead not found" | The lead no longer exists. Reopen **Leads**. |
 | "The removal was refused." or another message under **Remove these** | The deletion did not run. Nothing was removed. Reopen **Leads** and try again. |

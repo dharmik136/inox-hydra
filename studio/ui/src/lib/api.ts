@@ -906,10 +906,13 @@ export async function generateLeadDm(
  * reacted rather than commented had no draft available at all. This one builds
  * from the stored row, their name, company and how they engaged, which is
  * present for every lead in the stream.
+ *
+ * The offer is not among them: it used to offer the original author's
+ * "architecture blueprint" under every creator's name, and now needs the
+ * creator to say what they would share. See fetchLeadOfferDraft.
  */
 export const DM_STYLES = [
   { id: "value_add", label: "Peer question" },
-  { id: "resource_share", label: "Offer a blueprint" },
   { id: "quick_chat", label: "Suggest a call" },
 ] as const;
 
@@ -2461,5 +2464,43 @@ const DRAFT_CHANGED_ELSEWHERE = "This draft was changed in another window";
 /** Whether a failed updateDraft was refused because the draft changed elsewhere. */
 export function isDraftChangedElsewhere(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  return (error as Error & { status?: number }).status === 409 || error.message.includes(DRAFT_CHANGED_ELSEWHERE);
+  // Other refusals also answer 409 (a write from a window showing another
+  // profile), so the server's own words decide, not the status.
+  return error.message.includes(DRAFT_CHANGED_ELSEWHERE);
+}
+
+// ---------------------------------------------------------------------------
+// Leads: the offer draft, notes and forgetting a person
+// ---------------------------------------------------------------------------
+
+/**
+ * The "Offer something" opener. The creator says what they would share; the
+ * server refuses without it rather than offer something they never made.
+ */
+export async function fetchLeadOfferDraft(leadId: string, offer: string, topic?: string): Promise<string> {
+  const params = new URLSearchParams({ style: "resource_share", offer: offer.trim() });
+  if (topic?.trim()) params.set("topic", topic.trim());
+  const data = await call<{ dm_script?: string; error?: string }>(
+    `/api/leads/${encodeURIComponent(leadId)}/dm-script?${params}`,
+  );
+  if (data.error) throw new Error(data.error);
+  if (!data.dm_script) throw new Error("the server returned no draft");
+  return data.dm_script;
+}
+
+/** Writes the creator's own notes on a lead. The pipeline stage is left alone. */
+export async function updateLeadNotes(leadId: string, notes: string): Promise<string> {
+  const data = await call<{ notes?: string }>(`/api/leads/${encodeURIComponent(leadId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ notes }),
+  });
+  return data.notes ?? "";
+}
+
+/**
+ * Forgets a person: the lead, their engagements, their stage history and any
+ * enrichment, in one step on the server. It cannot be undone.
+ */
+export async function forgetLead(leadId: string): Promise<void> {
+  await call(`/api/leads/${encodeURIComponent(leadId)}`, { method: "DELETE" });
 }

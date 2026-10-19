@@ -146,7 +146,9 @@ def test_leads_crm():
     # Test multi-style DM generation & strict zero em-dash check
     styles = ["value_add", "resource_share", "quick_chat"]
     for s in styles:
-        dm_res = generate_dm_script(leads[0]["id"], style=s)
+        # An offer names what the creator would share; without it there is none.
+        dm_res = generate_dm_script(leads[0]["id"], style=s,
+                                    offer="the order checklist I use" if s == "resource_share" else None)
         assert dm_res["status"] == "success"
         script = dm_res["dm_script"]
         assert "\u2014" not in script, f"DM script in style '{s}' contains forbidden em-dash!"

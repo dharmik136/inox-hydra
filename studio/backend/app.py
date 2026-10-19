@@ -2460,12 +2460,32 @@ def export_user_data(payload: Optional[Dict[str, Any]] = None):
     fmt = (payload or {}).get("format", "json")
     if fmt not in support_tools.EXPORT_FORMATS:
         raise HTTPException(status_code=400, detail="format must be json, csv or obsidian")
-    # No destination from the request: the folder is always a new one under the
-    # app home, so a request can never point the export at an existing vault.
-    path = support_tools.export_data(fmt=fmt)
+    # No destination from the request: the folder is always under the app
+    # home, so a request can never point the export at a vault of the user's.
     note = "Content only. Credentials are deliberately excluded."
     if fmt == "obsidian":
-        note = "A folder of linked notes. Open it in Obsidian with \"Open folder as vault\". " + note
+        # The profile's one vault, refreshed in place, so the vault the creator
+        # opened in Obsidian sees fresh data. Every press used to write a new
+        # timestamped folder, and the refresh existed only in the CLI.
+        try:
+            from .obsidian_export import export_obsidian_vault
+        except ImportError:
+            from obsidian_export import export_obsidian_vault
+        try:
+            vault = export_obsidian_vault()
+        except ValueError as refused:
+            raise HTTPException(status_code=409, detail=str(refused))
+        said = [f"{vault['notes']} notes. Open it in Obsidian with \"Open folder as vault\"; "
+                "export again to refresh this same vault."]
+        if vault["kept_your_notes"]:
+            said.append(f"Kept what you wrote in {vault['kept_your_notes']} of them.")
+        if vault["kept_edited"]:
+            said.append(f"Left {len(vault['kept_edited'])} you edited as they are, with fresh copies beside them.")
+        moved = [m for m in vault["renamed"] if m["wanted"] not in vault["kept_edited"]]
+        if moved:
+            said.append(f"Wrote {len(moved)} under another name, because a note of yours has the name.")
+        return {"status": "success", "path": vault["path"], "format": fmt, "note": " ".join(said + [note])}
+    path = support_tools.export_data(fmt=fmt)
     return {"status": "success", "path": path, "format": fmt, "note": note}
 
 

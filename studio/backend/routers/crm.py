@@ -17,11 +17,12 @@ try:
         add_lead,
         batch_add_leads,
         update_lead_status,
+        update_lead_notes,
         delete_lead,
         generate_dm_script,
         export_leads_csv,
     )
-    from ..crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
+    from ..crm import ICPScoringEngine, ReverseCRMManager, reverse_crm, qualification_tier
     from .. import onboarding
 except (ImportError, ValueError):
     from database import get_db
@@ -30,11 +31,12 @@ except (ImportError, ValueError):
         add_lead,
         batch_add_leads,
         update_lead_status,
+        update_lead_notes,
         delete_lead,
         generate_dm_script,
         export_leads_csv,
     )
-    from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
+    from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm, qualification_tier
     import onboarding
 
 router = APIRouter()
@@ -54,6 +56,10 @@ class LeadCreate(BaseModel):
 class LeadStatusUpdate(BaseModel):
     status: str
     notes: Optional[str] = None
+
+
+class LeadNotesUpdate(BaseModel):
+    notes: str
 
 
 class IngestInteractionRequest(BaseModel):
@@ -141,6 +147,15 @@ def update_lead(lead_id: str, payload: LeadStatusUpdate):
     return result
 
 
+@router.patch("/api/leads/{lead_id}")
+def edit_lead_notes(lead_id: str, payload: LeadNotesUpdate):
+    """The creator's notes on a lead, from the dossier, without touching the stage."""
+    result = update_lead_notes(lead_id, payload.notes)
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=f"Lead '{lead_id}' not found")
+    return result
+
+
 @router.delete("/api/leads/{lead_id}")
 def remove_lead(lead_id: str):
     result = delete_lead(lead_id)
@@ -150,8 +165,9 @@ def remove_lead(lead_id: str):
 
 
 @router.get("/api/leads/{lead_id}/dm-script")
-def get_lead_dm(lead_id: str, style: Optional[str] = "value_add", topic: Optional[str] = None):
-    return generate_dm_script(lead_id, style=style, post_topic=topic)
+def get_lead_dm(lead_id: str, style: Optional[str] = "value_add", topic: Optional[str] = None,
+                offer: Optional[str] = None):
+    return generate_dm_script(lead_id, style=style, post_topic=topic, offer=offer)
 
 
 @router.post("/api/leads/{lead_id}/enrich", tags=["Leads & CRM"])
@@ -267,6 +283,12 @@ def get_lead_interaction_timeline(lead_id: str):
     if res["status"] == "not_found":
         raise HTTPException(status_code=404, detail="Lead not found")
     res["interactions"] = onboarding.annotate_interactions(res["interactions"])
+    # Whether the lead was scored at all, and its tier under the one rule. A
+    # captured lead is scored at capture, and a student's 0 is a score; only a
+    # lead added by hand, with nothing captured, has none. The dossier read
+    # every 0 as "Not scored".
+    res["lead"]["scored"] = bool(res["interactions"]) or float(res["lead"].get("icp_score") or 0) > 0
+    res["lead"]["qualification_tier"] = qualification_tier(res["lead"].get("icp_score"))
     conn = get_db()
     try:
         res["stage_history"] = [dict(r) for r in conn.execute(
