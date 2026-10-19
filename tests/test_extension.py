@@ -8,16 +8,24 @@ Verifies:
 """
 
 import os
-import sys
 import json
 import zipfile
+import importlib.util
 import pytest
 
 # Paths
 EXT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "extension"))
-sys.path.insert(0, EXT_DIR)
+PACKAGER = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "tools", "package_extension.py"))
 
-from package_extension import validate_manifest, package_extension, REQUIRED_FILES, OUTPUT_ZIP
+# Loaded by path so tools/ never goes on sys.path, where its scripts would
+# shadow modules of the same name for the rest of the suite.
+_spec = importlib.util.spec_from_file_location("package_extension", PACKAGER)
+_packager = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(_packager)
+validate_manifest = _packager.validate_manifest
+package_extension = _packager.package_extension
+REQUIRED_FILES = _packager.REQUIRED_FILES
+OUTPUT_ZIP = _packager.OUTPUT_ZIP
 
 
 def test_manifest_v3_compliance():
@@ -32,6 +40,25 @@ def test_manifest_v3_compliance():
     assert manifest["background"]["service_worker"] == "background.js"
     assert manifest["side_panel"]["default_path"] == "sidepanel.html"
     assert manifest["action"]["default_popup"] == "popup.html"
+
+
+def test_the_folder_chrome_loads_holds_nothing_it_refuses():
+    """
+    Chrome will not load an unpacked extension whose folder holds any file or
+    directory name that starts with "_". The packaging script used to live in
+    this folder, so running the suite left a __pycache__ beside the manifest,
+    and Reload on brave://extensions failed with "Could not load manifest".
+    """
+    refused = []
+    for root, dirs, files in os.walk(EXT_DIR):
+        for name in dirs + files:
+            rel = os.path.relpath(os.path.join(root, name), EXT_DIR)
+            if name.startswith("_") or name.endswith((".py", ".pyc")):
+                refused.append(rel)
+    assert not refused, (
+        f"Chrome refuses to load studio/extension while it holds {refused}. "
+        "Delete them; build scripts belong in tools/."
+    )
 
 
 def test_required_files_exist():

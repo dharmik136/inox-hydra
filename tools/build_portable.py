@@ -792,7 +792,7 @@ def main():
     shutil.copytree(os.path.join(REPO_ROOT, "studio", "extension"),
                     os.path.join(staging, "extension"),
                     ignore=shutil.ignore_patterns(
-                        "__pycache__", "*.pyc", "package_extension.py",
+                        "__pycache__", "*.pyc",
                         *SECRET_PATTERNS, *ALWAYS_SECRET))
     log("app", "copied unpacked extension for store submission and fallback")
 

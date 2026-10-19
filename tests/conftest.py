@@ -11,10 +11,13 @@ Strict Invariants:
 - Zero em-dashes across all code, docstrings, and comments.
 """
 
+import importlib
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
+import types
 import pytest
 
 # Ensure studio/backend and studio are importable
@@ -84,6 +87,47 @@ def _install_authenticated_test_client():
 
 
 _install_authenticated_test_client()
+
+
+# ---------------------------------------------------------------------------
+# No test opens a real browser
+#
+# Routes such as /api/v1/self/sync-all launch the bridge browser, and a test
+# that calls them on a workstation with Brave installed started a real Brave
+# window, pointed at the creator's live studio, on every run, and left it open.
+# Its unpacked extension came from this checkout, so it was also the window in
+# which Reload failed on a stray __pycache__.
+#
+# The launcher reaches the operating system only through its own `subprocess`
+# name, so every loaded copy of it gets a stand-in whose Popen records the
+# command line and starts nothing. Everything else is the real module. A test
+# that inspects the command line still patches Popen itself, and that patch
+# lands on the stand-in for the length of the test.
+# ---------------------------------------------------------------------------
+class _NoRealBrowser(types.ModuleType):
+    def __init__(self):
+        super().__init__("subprocess")
+        self.launched = []
+
+        def Popen(args, *_args, **_kwargs):
+            self.launched.append(list(args))
+            return types.SimpleNamespace(pid=0, returncode=None, poll=lambda: None)
+
+        self.Popen = Popen
+
+    def __getattr__(self, name):
+        return getattr(subprocess, name)
+
+
+@pytest.fixture(autouse=True)
+def no_real_browser(monkeypatch):
+    for name in ("browser_launcher", "studio.backend.browser_launcher"):
+        importlib.import_module(name)
+    stand_in = _NoRealBrowser()
+    for name, module in list(sys.modules.items()):
+        if name.rsplit(".", 1)[-1] == "browser_launcher" and module is not None:
+            monkeypatch.setattr(module, "subprocess", stand_in)
+    return stand_in
 
 
 def pytest_unconfigure(config):

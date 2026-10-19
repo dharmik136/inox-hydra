@@ -244,7 +244,7 @@ The guarantees, each covered by a test:
 ### Loose ends from earlier phases, resolved or consciously left
 
 - **Fixed**: the P0 update-survival test leaked an empty temporary directory on every run.
-- **Not needed**: `studio/extension/package_extension.py` was flagged as a build tool living in shipped source. P2's explicit package list already excludes it from the wheel (verified against a real build), so moving it would be churn against a live test import for no gain.
+- **Done (2.6.0)**: `studio/extension/package_extension.py` was a build tool living in shipped source. The wheel already excluded it, so this was left alone until it broke loading: importing it from the suite left a `__pycache__` in the extension folder, and Chrome refuses to load a folder holding any name that starts with `_`. It now lives at `tools/package_extension.py`.
 - **Still deferred**: collapsing the 14 dual-import blocks, for the reasons given under P1. The concurrent addition of `docs_engine.py`, seed days 05 through 11 and several test files during this work is exactly the churn that makes a 32-file import rewrite a bad trade right now.
 - **Still open, your call**: `studio/data/linkedin_studio.db` remains tracked in git. A live database carrying leads does not belong in version control, but removing it changes what a fresh clone does, so it is a decision rather than a cleanup.
 

@@ -57,6 +57,20 @@ def test_the_studio_opens_beside_linkedin(captured):
     assert browser_launcher.STUDIO_TAB_URL in args
 
 
+def test_the_suite_never_starts_a_real_browser(monkeypatch, no_real_browser):
+    """
+    Starting sync from Setup launches the bridge browser. Run from the suite on
+    a machine with Brave installed, it opened a real window on every run.
+    """
+    monkeypatch.setattr(browser_launcher, "detect_installed_browsers", lambda: {
+        "brave": {"id": "brave", "name": "Brave", "path": "/opt/brave.com/brave/brave"},
+    })
+    result = browser_launcher.launch_browser_with_extension("brave", "https://www.linkedin.com/in/me/")
+    assert result["status"] == "success"
+    assert no_real_browser.launched and no_real_browser.launched[0][0] == "/opt/brave.com/brave/brave"
+    assert browser_launcher.subprocess is no_real_browser
+
+
 def test_the_profile_never_lives_in_the_tree(monkeypatch):
     """Even in a source or portable install, where every other kind of state does."""
     monkeypatch.delenv("INOX_HYDRA_HOME", raising=False)

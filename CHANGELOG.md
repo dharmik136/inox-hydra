@@ -97,6 +97,10 @@ released. Version numbers follow `studio/__version__.py`.
 - Posts, Patterns and Outbound keep their heading before anything is imported,
   and every screen has one level-one heading for screen readers.
 - Rail labels no longer stay over the page after you click a section.
+- Reload on brave://extensions no longer fails with "Cannot load extension
+  with file or directory name __pycache__". The packaging script lived in the
+  extension folder, and running the tests left a Python cache beside the
+  manifest; it now lives in `tools/`.
 
 ### For developers
 - The repository no longer holds the owner's own posts, figures, post
@@ -115,6 +119,9 @@ released. Version numbers follow `studio/__version__.py`.
   width and reports console errors, egress, failed API calls, accessibility
   violations and overflow, with screenshots. CI runs it on Linux.
 - Playwright is installed in CI, so the browser suite runs instead of skipping.
+- No test starts a real browser. Setup's sync test launched Brave on every
+  run on a machine that had it, pointed at the live studio, and left the
+  window open; the launcher's process calls are now recorded instead.
 - Agentation, a dev-only review toolbar, sends element-anchored notes to an
   agent through `agentation-mcp` (`.mcp.json`). It never enters a build.
 - `npm run dev` works against any backend (`INOX_API_TARGET`) and receives the

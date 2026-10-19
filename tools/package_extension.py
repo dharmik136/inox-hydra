@@ -18,8 +18,11 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-EXT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(EXT_DIR, "..", ".."))
+# This script lives in tools/, not beside the extension. Chrome refuses to
+# load an unpacked extension whose folder holds any name starting with "_", and
+# importing a script from inside the folder leaves a __pycache__ there.
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+EXT_DIR = os.path.join(PROJECT_ROOT, "studio", "extension")
 BUILD_DIR = os.path.join(PROJECT_ROOT, "build_artifacts")
 OUTPUT_ZIP = os.path.join(BUILD_DIR, "inox_hydra_extension.zip")
 
@@ -71,8 +74,7 @@ def _assert_extension_carries_no_secrets():
     """
     import importlib.util
 
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    builder_path = os.path.join(repo_root, "tools", "build_portable.py")
+    builder_path = os.path.join(PROJECT_ROOT, "tools", "build_portable.py")
     if not os.path.isfile(builder_path):
         return
 
