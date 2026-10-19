@@ -12,13 +12,13 @@ To close it, press **Escape**, press **Ctrl+K** again, or click the dimmed area 
 
 ## Find something
 
-1. Type in the box. Every word you type has to appear somewhere in an item for it to match, so `northwind platform` finds the platform lead at Northwind rather than everyone at Northwind and every platform engineer.
+1. Type in the box. Every word you type has to appear somewhere in an item for it to match, so `northwind platform` finds the platform lead at Northwind rather than everyone at Northwind and every platform engineer. Case and accents do not matter, so `emile`, `Émile` and `ÉMILE` all find Émile, and quotes around a word are ignored.
 2. Results arrive grouped, up to six in each group:
 
 | Group | What is searched | Choosing a result |
 | --- | --- | --- |
 | **Actions** | The names of the actions listed below | Runs it |
-| **Posts** | The saved text and tags of every post, whatever its status | A draft opens in the **Composer**. A queued or scheduled post opens **Queue**. A published post opens **Analytics** |
+| **Posts** | The saved text and tags of every post, whatever its status, and the text of your posts imported from LinkedIn, marked PUBLISHED ON LINKEDIN | A draft opens in the **Composer**. A queued or scheduled post opens **Queue**. A published post, and a post imported from LinkedIn, opens **Analytics** |
 | **Leads** | Name, company, headline and notes, and every comment the person left | Opens **Leads** with that person selected. A lead found by a comment shows the comment, starting "Commented:" |
 | **Swipe File** | The hook, archetype and pacing pattern of each specimen | Opens **Swipe File** with that card outlined in orange. Any search or archetype filter you had set there is cleared first, so the card is not hidden |
 | **Help** | Every document in **Docs** | Opens the article at the section that matched. Help articles come first and reference after. Retired manuals come last and are marked **RETIRED** |

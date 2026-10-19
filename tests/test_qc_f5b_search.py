@@ -10,6 +10,9 @@ against a query Python had lowercased, so "Émile" never found Émile Durand and
 away every letter outside ASCII, so "Émile" became "mile" and the palette
 offered unrelated planning documents. A name typed in quotes found nothing.
 
+AUDIENCE-08. Posts were searched only in the studio's own posts table, so a
+word from any post imported from LinkedIn found nothing at all.
+
 Each test runs in a throwaway home of its own.
 """
 
@@ -104,3 +107,41 @@ def test_sql_shaped_input_is_only_text(studio):
         assert body["groups"]["leads"] == [], (query, body["groups"]["leads"])
     assert _lead_names(studio, "Asha") == ["Asha Rao"], "the leads table did not survive the queries above"
 
+
+# ---------------------------------------------------------------------------
+# AUDIENCE-08
+# ---------------------------------------------------------------------------
+
+def _urn(n):
+    return f"urn:li:activity:{(1780000000000 + n * 86400000) << 22}"
+
+
+def _import(client, *texts):
+    items = [{"activity_urn": _urn(i), "actor": ME, "text": text, "reactions": 10} for i, text in enumerate(texts)]
+    res = client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": items})
+    assert res.status_code == 200, res.text
+    return [item["activity_urn"] for item in items]
+
+
+def test_a_post_imported_from_linkedin_is_found(studio):
+    urns = _import(studio, "Why sourdough needs patience\nHere is what I learned.",
+                   "Our café in Zürich: first month numbers")
+    posts = _search(studio, "sourdough")["groups"]["posts"]
+    assert [p["id"] for p in posts] == [urns[0]], posts
+    assert posts[0]["title"] == "Why sourdough needs patience"
+    assert posts[0]["opens"] == "analytics", "a published post was offered somewhere it can be edited"
+    assert posts[0]["meta"].startswith("PUBLISHED ON LINKEDIN")
+    assert [p["id"] for p in _search(studio, "zurich cafe")["groups"]["posts"]] == [urns[1]]
+
+
+def test_a_studio_post_and_its_linkedin_post_are_one_result(studio):
+    text = "Flour waste fell by a third once we weighed every batch"
+    post_id = studio.post("/api/posts", json={"content": text, "status": "published"}).json()["id"]
+    from database import get_db
+    conn = get_db()
+    with conn:
+        conn.execute("UPDATE posts SET activity_urn = ? WHERE id = ?", (_urn(0), post_id))
+    conn.close()
+    _import(studio, text)
+    posts = _search(studio, "flour waste")["groups"]["posts"]
+    assert [p["id"] for p in posts] == [post_id], posts

@@ -147,7 +147,28 @@ def destination_for_post(status: Optional[str], scheduled_for: Optional[str]) ->
     return "analytics"
 
 
+def _post_result(content, terms, **fields) -> Dict[str, Any]:
+    # The first line is the title, so the snippet reads from the rest of the
+    # post. Otherwise every result printed its title twice.
+    lines = str(content or "").strip().splitlines()
+    body = "\n".join(lines[1:]).strip()
+    return {
+        "kind": "post",
+        "title": _first_line(content) or "Untitled post",
+        "snippet": snippet_around(body or content, terms),
+        **fields,
+    }
+
+
 def search_posts(terms: List[str], limit: int = 6, conn=None) -> List[Dict[str, Any]]:
+    """
+    The studio's posts, and the creator's posts on LinkedIn.
+
+    Only the studio's own table was searched, so the creator's whole imported
+    history, what Posts, Patterns and Today are built from, could not be found
+    by a single word of it. A LinkedIn post the studio already holds as one of
+    its own posts is listed once, as the studio's.
+    """
     if not terms:
         return []
     own = conn is None
@@ -157,7 +178,7 @@ def search_posts(terms: List[str], limit: int = 6, conn=None) -> List[Dict[str, 
         where, params = _all_terms_in(["content", "tags"], terms)
         rows = conn.execute(
             f"""
-            SELECT id, content, status, scheduled_for, published_at, created_at
+            SELECT id, content, status, scheduled_for, published_at, created_at, activity_urn
             FROM posts
             WHERE {where}
             ORDER BY COALESCE(published_at, scheduled_for, created_at) DESC
@@ -165,24 +186,42 @@ def search_posts(terms: List[str], limit: int = 6, conn=None) -> List[Dict[str, 
             """,
             (*params, limit),
         ).fetchall()
-        results = []
+        found = []
         for row in rows:
             status = row["status"] or "draft"
             when = row["published_at"] or row["scheduled_for"] or row["created_at"] or ""
-            # The first line is the title, so the snippet reads from the rest
-            # of the post. Otherwise every result printed its title twice.
-            lines = str(row["content"] or "").strip().splitlines()
-            body = "\n".join(lines[1:]).strip()
-            results.append({
-                "kind": "post",
-                "id": str(row["id"]),
-                "title": _first_line(row["content"]) or "Untitled post",
-                "snippet": snippet_around(body or row["content"], terms),
-                "meta": f"{status.upper()}" + (f"  {str(when)[:10]}" if when else ""),
-                "status": status,
-                "opens": destination_for_post(status, row["scheduled_for"]),
-            })
-        return results
+            found.append((str(when), _post_result(
+                row["content"], terms,
+                id=str(row["id"]),
+                meta=f"{status.upper()}" + (f"  {str(when)[:10]}" if when else ""),
+                status=status,
+                opens=destination_for_post(status, row["scheduled_for"]),
+            )))
+
+        studio_urns = {row["activity_urn"] for row in rows if row["activity_urn"]}
+        where, params = _all_terms_in(["text"], terms)
+        for row in conn.execute(
+            f"""
+            SELECT activity_urn, text, published_at FROM own_posts
+            WHERE {where}
+            ORDER BY published_at DESC
+            LIMIT ?
+            """,
+            (*params, limit),
+        ).fetchall():
+            if row["activity_urn"] in studio_urns:
+                continue
+            when = row["published_at"] or ""
+            found.append((str(when), _post_result(
+                row["text"], terms,
+                id=row["activity_urn"],
+                meta="PUBLISHED ON LINKEDIN" + (f"  {str(when)[:10]}" if when else ""),
+                status="published",
+                opens="analytics",
+            )))
+
+        found.sort(key=lambda pair: pair[0], reverse=True)
+        return [result for _when, result in found[:limit]]
     finally:
         if own:
             conn.close()
