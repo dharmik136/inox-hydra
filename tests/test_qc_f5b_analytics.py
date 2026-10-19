@@ -44,6 +44,7 @@ def studio(monkeypatch):
     monkeypatch.delenv("INOX_DEMO_DATA", raising=False)
     from database import init_db
     init_db()
+    _confirm()  # analytics must name a confirmed account (PLATFORM-04)
     import app as app_module
     yield TestClient(app_module.app)
     shutil.rmtree(home, ignore_errors=True)
@@ -57,7 +58,7 @@ def _days(client, count, precision="exact", **metrics):
         row = {"date": day.isoformat(), "period_label": "1d", "precision": precision}
         row.update({k: (v(back) if callable(v) else v) for k, v in metrics.items()})
         series.append(row)
-    res = client.post("/api/analytics/ingest", json={"series": series})
+    res = client.post("/api/analytics/ingest", json={"series": series, "author": ME})
     assert res.status_code == 200, res.text
 
 
@@ -96,7 +97,7 @@ def test_a_few_missing_days_compare_the_daily_level_not_the_sum(studio):
     for back in range(30, 55):
         series.append({"date": (END - dt.timedelta(days=back)).isoformat(), "period_label": "1d",
                        "precision": "exact", "impressions": 1000})
-    assert studio.post("/api/analytics/ingest", json={"series": series}).status_code == 200
+    assert studio.post("/api/analytics/ingest", json={"series": series, "author": ME}).status_code == 200
     kpis = _kpis(studio, "30d")
     assert kpis["previous_days_counted"] == 25
     assert kpis["impressions_delta_pct"] == 20.0
@@ -109,7 +110,7 @@ def test_a_few_missing_days_compare_the_daily_level_not_the_sum(studio):
 
 def _rounded_today(client, **metrics):
     row = {"date": END.isoformat(), "period_label": "1d", "precision": "rounded", **metrics}
-    assert client.post("/api/analytics/ingest", json={"series": [row]}).status_code == 200
+    assert client.post("/api/analytics/ingest", json={"series": [row], "author": ME}).status_code == 200
 
 
 def test_growth_to_a_rounded_follower_count_is_marked_approximate(studio):

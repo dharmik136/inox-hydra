@@ -53,6 +53,7 @@ def server():
     os.environ.pop("INOX_DEMO_DATA", None)
     from database import init_db
     init_db()
+    _confirm()  # analytics must name a confirmed account (PLATFORM-04)
     import app as app_module
 
     port = _free_port()
@@ -88,6 +89,7 @@ def studio(server):
     os.environ["INOX_HYDRA_HOME"] = home
     from database import init_db
     init_db()
+    _confirm()  # analytics must name a confirmed account (PLATFORM-04)
     client = TestClient(server["app"])
     context = server["browser"].new_context(viewport={"width": 1440, "height": 900}, service_workers="block")
     page = context.new_page()
@@ -113,7 +115,7 @@ def _days(client, count, **metrics):
         row = {"date": (END - dt.timedelta(days=back)).isoformat(), "period_label": "1d", "precision": "exact"}
         row.update({k: (v(back) if callable(v) else v) for k, v in metrics.items()})
         series.append(row)
-    assert client.post("/api/analytics/ingest", json={"series": series}).status_code == 200
+    assert client.post("/api/analytics/ingest", json={"series": series, "author": ME}).status_code == 200
 
 
 def _what_changed(page, label):
@@ -145,7 +147,7 @@ def test_a_rounded_follower_count_is_shown_as_approximate(studio):
     _days(client, 34, impressions=1000, followers=lambda back: 2033 - back)
     row = {"date": END.isoformat(), "period_label": "1d", "precision": "rounded", "followers": 2400,
            "impressions": 1037}
-    assert client.post("/api/analytics/ingest", json={"series": [row]}).status_code == 200
+    assert client.post("/api/analytics/ingest", json={"series": [row], "author": ME}).status_code == 200
     page = _open(studio, "Analytics")
     page.wait_for_selector("text=What changed")
     assert _what_changed(page, "Followers") == "~about +396"
