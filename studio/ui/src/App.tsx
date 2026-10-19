@@ -508,7 +508,7 @@ export default function App() {
               {active === "settings" && <BrandStudioSurface />}
               {active === "queue" && <QueueSurface />}
               {active === "docs" && <DocsSurface focus={focusFor("docs")} />}
-              {active === "command" && <CommandSurface />}
+              {active === "command" && <CommandSurface draft={draft} />}
               {active === "devtools" && <DevtoolsSurface />}
 
             </main>

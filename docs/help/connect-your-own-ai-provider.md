@@ -40,7 +40,7 @@ Once connected, this is what reaches the provider:
 | Feature | What is sent |
 | --- | --- |
 | **Re-Hook** on a selection | A prompt built from the first line of your selection |
-| **Command** console | Your instruction only, never your Composer draft |
+| **Command** console | Your instruction, and your Composer draft only when **Include my Composer draft** is ticked |
 | **Media** tab, **Preview prompt** and **Generate** | Your image description, so the model can describe the scene |
 | **Media** tab **Generate**, with `openai` or `gemini` | The image prompt, to DALL-E 3 or Imagen 3 |
 | **Audit** tab, and message drafts on **Leads** | Nothing. These always run locally. |
@@ -56,8 +56,9 @@ If no key is saved in the studio, which is always the case for `ollama`, it uses
 1. Open **Command** from the rail.
 2. Check the banner: it shows the active mode, then STAYS ON THIS MACHINE (no key) or SENT TO THE PROVIDER.
 3. Type in the **Instruction** box. Enter runs it. Shift+Enter adds a new line.
+4. To have the model work on what you are writing, tick **Include my Composer draft** first. The box is greyed out while the Composer is empty.
 
-The placeholder mentions your draft, but the console does not send it. Paste any text you want used. With no key, the console answers that no model is set up and writes nothing.
+Each answer is listed under your instruction, with the engine that wrote it beside RAN. With no key, the console answers that no model is set up and writes nothing.
 
 ## Go back to local only
 
@@ -81,6 +82,5 @@ A saved base URL applies only to `ollama` and `custom_openai`. It must use https
 | --- | --- |
 | A bare "400" under **Verify and save** | The test request failed. Nothing was saved. The panel does not show why. Run `python studio_cli.py ai configure --provider <id>`: it asks for the key and prints the reason, such as a rejected key or Ollama not running. `ai test` only checks the setup already saved. |
 | ENGINE STATUS UNAVAILABLE | The tab could not reach the studio's server. Reload the page, then see [The studio will not open or shows an error](the-studio-will-not-open.md). |
-| Command output that looks like JSON | Expected. Read the `output` field; `engine` names who wrote it. Line breaks show as `\n`. |
 
 See also [What leaves this machine, and when](what-leaves-this-machine.md).

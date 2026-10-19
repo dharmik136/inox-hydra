@@ -213,3 +213,32 @@ def test_without_a_model_re_hook_offers_labelled_fill_in_templates(page):
         text = cards.nth(index).inner_text()
         assert "[" in text, f"a template card reads as finished: {text!r}"
         assert "%" not in text and "enterprise" not in text.lower(), text
+
+
+def _run_command(page, text, include_draft):
+    page.click('button[aria-label="Command"]')
+    page.fill("#agent-command", text)
+    box = page.locator('input[type="checkbox"][name="include-draft"]')
+    if include_draft:
+        box.check()
+    page.click('button[aria-label="Run the command"]')
+    page.wait_for_selector("section li pre")
+
+
+def test_the_command_console_shows_the_answer_and_sends_the_draft_only_when_asked(page, provider):
+    """[WRITE-25]"""
+    page.click('button[aria-label="Composer"]')
+    page.locator('textarea[aria-label="Post body"]').fill("Our bakery moved orders to a simple form.")
+
+    _run_command(page, "Summarise my draft in one sentence", include_draft=True)
+    entry = page.locator("section li").first
+    assert entry.locator("pre").inner_text().strip() == "OK from the fake model."
+    assert "{" not in entry.inner_text(), "the console printed the raw JSON"
+    assert "Custom_openai (fake)" in entry.inner_text(), "the engine that answered is not named"
+    assert "Our bakery moved orders to a simple form." in provider.requests[-1]["messages"][-1]["content"]
+
+    page.locator('input[type="checkbox"][name="include-draft"]').uncheck()
+    page.fill("#agent-command", "Write one line about pricing")
+    page.click('button[aria-label="Run the command"]')
+    page.wait_for_function("document.querySelectorAll('section li pre').length >= 2")
+    assert "Our bakery" not in provider.requests[-1]["messages"][-1]["content"], "the draft was sent unasked"
