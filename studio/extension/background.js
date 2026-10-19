@@ -239,6 +239,22 @@ function getCookie(name) {
   });
 }
 
+// The LinkedIn account this browser is signed in to (signedInVanity, noted by
+// own_pages.js on the creator's own profile) holds only until the sign-in
+// changes. Signing out, or in as someone else, rewrites li_at, and the
+// analytics read after that must not be filed as the previous account's. The
+// next visit to your own profile notes it again.
+try {
+  chrome.cookies.onChanged.addListener((change) => {
+    const cookie = change && change.cookie;
+    if (cookie && cookie.name === "li_at" && /(^|\.)linkedin\.com$/.test(cookie.domain || "")) {
+      chrome.storage.local.remove("signedInVanity");
+    }
+  });
+} catch (err) {
+  // No cookies API (an old browser): the studio still refuses a mismatch.
+}
+
 /**
  * Forwards sanitized passive telemetry events to the local sharded ingress endpoint.
  */

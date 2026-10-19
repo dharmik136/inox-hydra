@@ -67,13 +67,23 @@ function studioApi(path, body, method) {
 // on (background.js registers it then). Messages claiming to come from it are
 // ignored while it is off: any script on the page can post one.
 let networkReadingOn = false;
+// The LinkedIn account this browser is signed in to, as LinkedIn itself has
+// shown it (own_pages.js notes it on the creator's own profile; the worker
+// forgets it when the sign-in changes). Analytics carry it, because neither
+// the analytics page nor LinkedIn's response names the account, and the
+// studio refuses a reading that is not from the profile open in it.
+let signedInVanity = null;
 try {
-  chrome.storage.local.get("networkReading", (items) => {
+  chrome.storage.local.get(["networkReading", "signedInVanity"], (items) => {
     networkReadingOn = !chrome.runtime.lastError && !!items && items.networkReading === true;
+    signedInVanity = (!chrome.runtime.lastError && items && items.signedInVanity) || null;
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.networkReading) {
       networkReadingOn = changes.networkReading.newValue === true;
+    }
+    if (area === "local" && changes.signedInVanity) {
+      signedInVanity = changes.signedInVanity.newValue || null;
     }
   });
 } catch (e) {}
@@ -127,6 +137,8 @@ window.addEventListener("message", (event) => {
         schema_version: result.schema_version,
         confidence: result.confidence,
         data: result.data,
+        // Whose figures these are; see signedInVanity.
+        vanity: signedInVanity,
         source_url: payload.url,
         http_status: payload.status,
         capture_id: payload.captureId,
@@ -503,6 +515,9 @@ function extractAndSyncAnalytics() {
     const today = new Date().toISOString().slice(0, 10);
 
     studioApi("/api/analytics/ingest", {
+        // The LinkedIn account signed in here, which the studio checks
+        // against the profile open in it.
+        author: signedInVanity,
         period_label: period,
         precision: precision,
         series: [{

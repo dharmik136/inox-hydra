@@ -6,9 +6,10 @@ See how your daily figures reach the studio, and read the chart, the three obser
 
 The studio does not fetch your analytics. The browser extension reads them from LinkedIn's own analytics page while you have it open. You need the extension loaded and paired first; see [Install the browser extension that captures leads and analytics](install-the-browser-extension.md).
 
-1. In that browser, open your LinkedIn creator analytics page, whose address starts `linkedin.com/analytics/creator`. A single post's analytics page is not read.
-2. Set LinkedIn's range selector to the past 24 hours.
-3. Wait a couple of seconds. The extension reads the impressions, engagements and followers cards and saves them under today's date (UTC).
+1. Confirm your profile in **Setup**, and open your own LinkedIn profile once in that browser. LinkedIn's analytics page does not say whose analytics it shows, so the extension remembers which account the browser is signed in to from your own profile, and the studio keeps analytics only from the account confirmed in **Setup**. Signing out of LinkedIn, or in as someone else, makes the extension forget, until you open your own profile again.
+2. In that browser, open your LinkedIn creator analytics page, whose address starts `linkedin.com/analytics/creator`. A single post's analytics page is not read.
+3. Set LinkedIn's range selector to the past 24 hours.
+4. Wait a couple of seconds. The extension reads the impressions, engagements and followers cards and saves them under today's date (UTC).
 
 One visit records one day. A second visit the same day updates that day. Days you do not visit have no figures, and nothing is filled in later.
 
@@ -18,7 +19,7 @@ One visit records one day. A second visit the same day updates that day. Days yo
 | "...so they were not saved as today's numbers. Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses. Change the range; the extension reads again. |
 | "Inox Hydra: could not reach your studio, so these analytics were not saved." | The studio is not running. Start it and reload the analytics page. |
 | "Inox Hydra: the studio refused this browser, so these analytics were not saved. ..." | This browser was never paired. Open the studio once in it, then reload the analytics page. |
-| "Inox Hydra: the studio did not save these analytics: ..." | The studio answered and refused; the rest of the notice says why. |
+| "Inox Hydra: the studio did not save these analytics: ..." | The studio answered and refused; the rest of the notice says why. "these analytics are from linkedin.com/in/..." means the browser is signed in to a different LinkedIn account from the profile open in the studio. "the bridge could not tell which LinkedIn account is signed in" means open your own profile once, then reload. |
 
 If the extension cannot tell which range is selected, it still saves the figures, labelled as an unknown period. The chart still plots that day, but the totals under **What changed** leave it out and say how many days they left out. Check the selector before you visit. Abbreviated figures such as 1.2K are stored as the rounded number, 1200, and marked as rounded.
 

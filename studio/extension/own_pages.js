@@ -302,6 +302,23 @@
     }
   }
 
+  // Which LinkedIn account this browser is signed in to, kept for the
+  // analytics readers in content.js: LinkedIn's analytics pages and responses
+  // do not name the account, and the studio refuses analytics that do not
+  // come from the profile open in it. Learnt only where LinkedIn shows it:
+  // a profile shown with its owner's controls, flagged as the viewer's own,
+  // or reached through /in/me/. The worker forgets it when the LinkedIn
+  // sign-in cookie changes.
+  function noteSignedInMember() {
+    const vanity = vanityOf(window.location.href);
+    if (!vanity || vanity === "me" || pageKind() !== "profile" || !selfEvidence().length) return;
+    try {
+      chrome.storage.local.set({ signedInVanity: vanity });
+    } catch (err) {
+      // The extension was reloaded under this page; the next load notes it.
+    }
+  }
+
   // An activity page is read only when it is the confirmed creator's. /in/me/
   // is LinkedIn's alias for whoever is signed in to this browser, which is the
   // creator only while nothing says otherwise: an in-page /in/me/ redirect that
@@ -1146,10 +1163,13 @@
       const kind = pageKind();
       if (["profile", "contact", "skills", "details_experience", "details_education"].includes(kind)) {
         captureProfile();
+        noteSignedInMember();
         // Experience, education and skills render lazily below the top card,
         // so a second read picks up what the first arrived too early for. The
         // studio keeps any section a read did not see.
-        if (kind === "profile") setTimeout(() => { if (pageKind() === kind) captureProfile(); }, 6000);
+        if (kind === "profile") {
+          setTimeout(() => { if (pageKind() === kind) { captureProfile(); noteSignedInMember(); } }, 6000);
+        }
       } else if (IMPORT_KIND[kind]) {
         onActivityPage(kind);
       } else if (kind === "post_analytics") {

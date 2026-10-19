@@ -67,7 +67,7 @@ def _clear_today():
         conn.close()
 
 
-def test_the_follower_count_from_the_network_is_stored_for_today():
+def test_the_follower_count_from_the_network_is_stored_for_today(confirmed_creator):
     init_db()
     _clear_today()
     before = len(_voyager_captures())
@@ -75,6 +75,8 @@ def test_the_follower_count_from_the_network_is_stored_for_today():
     result = record_voyager_ingest({
         "schema_name": "creator_analytics",
         "data": [{"followers": 1234, "impressions": 5678}],
+        # The signed-in account the bridge names; see test_qc_f3_analytics_owner.
+        "vanity": confirmed_creator,
         "extension_version": "test",
     })
 
@@ -87,10 +89,11 @@ def test_the_follower_count_from_the_network_is_stored_for_today():
     assert len(_voyager_captures()) == before + 1, "capture health did not record the reading"
 
 
-def test_an_aggregate_of_unknown_window_is_not_stored_as_a_day():
+def test_an_aggregate_of_unknown_window_is_not_stored_as_a_day(confirmed_creator):
     init_db()
     _clear_today()
-    record_voyager_ingest({"schema_name": "creator_analytics", "data": [{"followers": 900, "impressions": 40000}]})
+    record_voyager_ingest({"schema_name": "creator_analytics", "vanity": confirmed_creator,
+                           "data": [{"followers": 900, "impressions": 40000}]})
 
     row = _today_row()
     assert row["impressions"] is None, (
@@ -98,10 +101,11 @@ def test_an_aggregate_of_unknown_window_is_not_stored_as_a_day():
     )
 
 
-def test_a_reading_without_followers_writes_nothing():
+def test_a_reading_without_followers_writes_nothing(confirmed_creator):
     init_db()
     _clear_today()
-    result = record_voyager_ingest({"schema_name": "creator_analytics", "data": [{"impressions": 41}]})
+    result = record_voyager_ingest({"schema_name": "creator_analytics", "vanity": confirmed_creator,
+                                    "data": [{"impressions": 41}]})
 
     assert result["items_kept"] == 0
     assert _today_row() is None
