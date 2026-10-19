@@ -141,6 +141,21 @@ def test_the_cli_names_the_safety_backup_when_a_restore_fails(home, monkeypatch,
     assert "--into-active-profile" not in out
 
 
+def test_a_restore_left_part_way_never_ships_in_a_build():
+    """
+    A rollback that could not finish keeps the originals in .restore-*/old,
+    beside the data. In a source checkout that is inside studio/, which the
+    portable build copies, so the folder must be excluded from it.
+    """
+    import fnmatch
+
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
+    import build_portable
+
+    name = ".restore-20261019_101500-4242"
+    assert any(fnmatch.fnmatch(name, pattern) for pattern in build_portable.STUDIO_EXCLUDE)
+
+
 # ---------------------------------------------------------------------------
 # PLATFORM-10: a backup from a newer build is refused before anything changes
 # ---------------------------------------------------------------------------

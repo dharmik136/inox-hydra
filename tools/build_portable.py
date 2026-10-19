@@ -106,6 +106,9 @@ EMBED_URL = (
 STUDIO_EXCLUDE = {
     "data", "assets", "tests", "__pycache__", ".pytest_cache",
     "backups", "logs", "vault", "ui", "profiles", "exports",
+    # A restore stages beside the data, and keeps the originals there if a
+    # rollback could not finish. In a source checkout that is inside studio/.
+    ".restore-*",
 }
 
 # Secrets that must never leave this machine inside an artifact.
