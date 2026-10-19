@@ -538,8 +538,8 @@ export default function App() {
           // The post has left the draft list, so the editor lets go of it and
           // clears for the next one. It used to stay attached, and the next
           // post typed into it and saved was written over the post just
-          // published or queued, with no copy kept. The post itself is in
-          // the Queue, Posts and Analytics.
+          // published or queued, with no copy kept. A queued post stays on
+          // the Queue, and a published one in Analytics.
           touched.current = true;
           setDraftId(null);
           setDraft("");
