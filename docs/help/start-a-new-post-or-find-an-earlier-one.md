@@ -8,7 +8,7 @@ When you open or reload the studio, the **Composer** asks the local database for
 - If you start typing before the draft arrives, the Composer keeps what you typed and does not load the draft over it.
 - If there is no draft, or the request fails, the Composer opens empty. Your first **Save** then creates a new post.
 
-Your text is held in the page while you work. Switching to another surface in the rail, such as **Queue** or **Leads**, and coming back keeps it. Reloading or closing the tab does not: there is no autosave and no warning before you leave, so anything marked UNSAVED is lost.
+Your text is held in the page while you work. Switching to another surface in the rail, such as **Queue** or **Leads**, and coming back keeps it. There is no autosave, so reloading or closing the tab with text marked UNSAVED makes the browser ask first; if you choose to leave, that text is lost.
 
 ## Start a new post
 
@@ -56,8 +56,8 @@ The exports are written to the studio's home folder on this machine, and the pat
 
 | What you see | What it means |
 | --- | --- |
-| "There is nothing written to save." (hover over SAVE FAILED) | The editor is empty. Type something before you press **Save**. |
+| "There is nothing written to save." (under the bar, beside SAVE FAILED) | The editor is empty. Type something before you press **Save**. |
 | "Post content exceeds maximum 5,000 character limit." | The server refuses to save a post over 5,000 characters, whether it is new or already saved. Shorten it and save again. |
-| Your text is gone after a reload | It was never saved. The mark read UNSAVED when you reloaded, and there is no way to recover it. |
+| Your text is gone after a reload | It was never saved, and you chose to leave when the browser asked. There is no way to recover it. |
 | The Composer opened an older draft than you expected | It opens the draft created most recently, not the one edited most recently. Use **Publish** on drafts you are finished with so they leave the draft list. |
 | The Composer opened empty although you have drafts | The request for the draft failed. Reload the page. If it keeps happening, see [The studio will not open](the-studio-will-not-open.md). |
