@@ -187,6 +187,57 @@ def test_a_demo_post_whose_figures_changed_stays(demo_home, monkeypatch):
     assert _count(demo_home, "SELECT COUNT(*) FROM posts WHERE id = ?", (post,)) == 1
 
 
+def test_a_seed_draft_whose_post_was_scheduled_stays(demo_home, monkeypatch):
+    """
+    Rescheduling, and LinkedIn's native schedule, keep status "scheduled" and
+    set only scheduled_for, which the seeder leaves empty. Comparing status
+    and text alone purged a post the creator had put on the calendar.
+    """
+    draft = _seeded_draft_ids(demo_home)[0]
+    conn = demo_home.get_db()
+    try:
+        conn.execute(
+            "UPDATE posts SET scheduled_for = '2026-10-28T09:00:00+00:00' WHERE id LIKE 'post-day%' AND id LIKE ?",
+            (f"%-{draft}",))
+        conn.commit()
+    finally:
+        conn.close()
+    _restart_without_the_flag(monkeypatch, demo_home)
+    assert _count(demo_home, "SELECT COUNT(*) FROM drafts WHERE id = ?", (draft,)) == 1
+    assert _count(demo_home, "SELECT COUNT(*) FROM posts WHERE id LIKE 'post-day%' AND id LIKE ?", (f"%-{draft}",)) == 1
+
+
+def test_a_seed_draft_the_product_has_touched_stays(demo_home, monkeypatch):
+    """Queueing, saving and editing all move updated_at; the seeder writes it equal to created_at."""
+    draft = _seeded_draft_ids(demo_home)[0]
+    conn = demo_home.get_db()
+    try:
+        conn.execute("UPDATE drafts SET updated_at = '2026-10-20 08:00:00' WHERE id = ?", (draft,))
+        conn.commit()
+    finally:
+        conn.close()
+    _restart_without_the_flag(monkeypatch, demo_home)
+    assert _count(demo_home, "SELECT COUNT(*) FROM drafts WHERE id = ?", (draft,)) == 1
+
+
+@pytest.mark.parametrize("change", [
+    "scheduled_for = '2026-12-01T09:00:00Z'",
+    "published_at = '2026-10-02T09:00:00Z'",
+    "activity_urn = 'urn:li:activity:7385000000000000001'",
+    "draft_id = 1",
+])
+def test_a_demo_post_the_product_has_since_touched_stays(demo_home, monkeypatch, change):
+    post = demo_home.SEEDED_DEMO_POST_IDS[0]
+    conn = demo_home.get_db()
+    try:
+        conn.execute(f"UPDATE posts SET {change} WHERE id = ?", (post,))
+        conn.commit()
+    finally:
+        conn.close()
+    _restart_without_the_flag(monkeypatch, demo_home)
+    assert _count(demo_home, "SELECT COUNT(*) FROM posts WHERE id = ?", (post,)) == 1, change
+
+
 def test_the_purge_is_idempotent(demo_home, monkeypatch):
     queued = _seeded_draft_ids(demo_home)[0]
     conn = demo_home.get_db()
