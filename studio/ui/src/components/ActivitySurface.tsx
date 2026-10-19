@@ -39,6 +39,8 @@ export function ActivitySurface({
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  /** When the studio last answered, the one thing a refresh measures. */
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [tab, setTab] = useState<"posts" | "comments" | "reactions" | "leads" | "imports">("posts");
   const [copiedUrn, setCopiedUrn] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -51,6 +53,7 @@ export function ActivitySurface({
     try {
       const result = await fetchActivityStream(50);
       setStream(result);
+      setLoadedAt(new Date());
       setFailed(false);
     } catch {
       setFailed(true);
@@ -128,7 +131,7 @@ export function ActivitySurface({
         <div className="max-w-[44ch] text-center">
           <p className="studio-label text-signal-orange-text">ACTIVITY STREAM UNAVAILABLE</p>
           <p className="mt-2 text-[13px] text-ink-muted">
-            The local studio server is unreachable or returned an authentication error. Verify that the backend service is running on 127.0.0.1:8000.
+            The studio is not answering, or refused this page&apos;s request. Check that it is still running, then retry.
           </p>
           <button
             type="button"
@@ -206,8 +209,18 @@ export function ActivitySurface({
             )}
           >
             <Radio className="size-3.5" aria-hidden="true" />
-            <span>{autoRefresh ? "Live updates on" : "Live updates off"}</span>
+            <span>{autoRefresh ? "Auto refresh on" : "Auto refresh off"}</span>
           </button>
+          {/* This said "Live updates on" while the studio was down and the
+              list was stale. It says when the studio last answered instead,
+              and that it has stopped when it has. */}
+          {loadedAt && (
+            <span className={cn("studio-meta text-[10px]", failed ? "text-signal-orange-text" : "text-ink-muted")}>
+              {failed
+                ? `Studio not answering. Updated ${loadedAt.toLocaleTimeString()}`
+                : `Updated ${loadedAt.toLocaleTimeString()}`}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => loadData()}

@@ -207,7 +207,7 @@ export default function App() {
     };
   }, []);
 
-  // Whether the bridge has been heard from lately, for the mark beside Live
+  // Whether the bridge has been heard from lately, for the mark beside
   // Activity. That mark used to pulse green on every screen whatever the
   // bridge was doing, including on Setup beside "Not seen yet". Read from the
   // state Setup shows, again each minute while the header is on screen, since
@@ -609,7 +609,7 @@ export default function App() {
               {/* Words beside the icons from a small tablet up. On a phone
                   they pushed Search past the edge of the screen; there they
                   stay the button's name without taking its width. */}
-              <span className="max-sm:sr-only">Live Activity</span>
+              <span className="max-sm:sr-only">Activity</span>
               {bridgeConnected !== null && (
                 <span className="sr-only">{bridgeConnected ? ", bridge connected" : ", bridge not connected"}</span>
               )}

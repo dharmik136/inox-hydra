@@ -53,3 +53,32 @@ def test_rail_shield_points_to_what_leaves():
 def test_help_no_longer_says_the_rail_tooltip_is_out_of_date():
     article = _read(os.path.join(HELP, "what-leaves-this-machine.md"))
     assert "All processing is local to this machine" not in article
+
+
+# ---------------------------------------------------------------------------
+# UX-21 rest: Activity shows only what it measured, under one name
+# ---------------------------------------------------------------------------
+
+def test_activity_claims_no_live_feed_and_names_no_fixed_address():
+    """
+    It read "Live updates on" while the studio was down, and told the user to
+    check 127.0.0.1:8000, which is wrong whenever the studio runs elsewhere.
+    """
+    rendered = _rendered("ActivitySurface.tsx")
+    assert "Live updates" not in rendered
+    assert not re.search(r"127\.0\.0\.1|localhost|:8000", rendered), "Activity names a fixed address"
+
+
+def test_activity_says_when_it_last_heard_and_when_the_studio_stops_answering():
+    rendered = _rendered("ActivitySurface.tsx")
+    assert "Updated " in rendered, "Activity does not say when what it shows was read"
+    assert "not answering" in rendered, "Activity keeps showing old data as current when the studio stops"
+
+
+def test_the_header_button_calls_the_screen_activity():
+    with open(os.path.join(REPO_ROOT, "studio", "ui", "src", "App.tsx"), encoding="utf-8") as handle:
+        source = handle.read()
+    source = re.sub(r"\{/\*.*?\*/\}", "", source, flags=re.DOTALL)
+    source = re.sub(r"^\s*//[^\n]*$", "", source, flags=re.MULTILINE)
+    assert ">Live Activity<" not in source, "the header calls the Activity screen 'Live Activity'"
+    assert re.search(r'<span className="max-sm:sr-only">Activity</span>', source)
