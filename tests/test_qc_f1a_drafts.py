@@ -15,9 +15,11 @@ author can read, and nothing is written. A caller that sends no base_content
 import os
 import re
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import app
+from database import get_db
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 API_TS = os.path.join(REPO_ROOT, "studio", "ui", "src", "lib", "api.ts")
@@ -74,3 +76,47 @@ def test_the_interface_recognises_the_refusal_the_server_sends():
     marker = re.search(r'DRAFT_CHANGED_ELSEWHERE = "([^"]+)"', source)
     assert marker, "api.ts no longer names the phrase it recognises a conflict by"
     assert detail.startswith(marker.group(1)), (detail, marker.group(1))
+
+
+# F1b-N1: the Composer clears after Publish, but any other client (a second
+# tab, an old build) could still PUT new text over a post that is published,
+# queued, due or sent. Such a post's text now changes only when the request
+# says it means to.
+
+LOCKED = ["published", "scheduled", "queued", "due", "sent"]
+
+
+def _with_status(status):
+    post_id = _create(f"The {status} text.")
+    conn = get_db()
+    try:
+        conn.execute("UPDATE posts SET status = ? WHERE id = ?", (status, post_id))
+        conn.commit()
+    finally:
+        conn.close()
+    return post_id
+
+
+@pytest.mark.parametrize("status", LOCKED)
+def test_new_text_over_a_published_or_queued_post_is_refused(status):
+    post_id = _with_status(status)
+    refused = client.put(f"/api/posts/{post_id}", json={"content": "Next post, typed in a stale tab."})
+    assert refused.status_code == 409, refused.text
+    assert "already" in refused.json()["detail"]
+    assert _stored(post_id) == f"The {status} text."
+
+
+@pytest.mark.parametrize("status", LOCKED)
+def test_editing_that_text_on_purpose_still_works(status):
+    post_id = _with_status(status)
+    meant = client.put(f"/api/posts/{post_id}", json={"content": "A typo fixed on purpose.", "edit_posted_text": True})
+    assert meant.status_code == 200, meant.text
+    assert _stored(post_id) == "A typo fixed on purpose."
+
+
+def test_changes_that_leave_the_text_alone_are_not_refused():
+    post_id = _with_status("scheduled")
+    assert client.put(f"/api/posts/{post_id}", json={"content": "The scheduled text."}).status_code == 200
+    assert client.put(f"/api/posts/{post_id}", json={"tags": ["x"]}).status_code == 200
+    draft_id = _create("A draft")
+    assert client.put(f"/api/posts/{draft_id}", json={"content": "Still a draft"}).status_code == 200
