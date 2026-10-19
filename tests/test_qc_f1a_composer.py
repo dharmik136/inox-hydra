@@ -435,3 +435,18 @@ def test_the_strip_shows_the_count_against_linkedins_limit(new_page, studio_url,
     expect(strip).to_contain_text(f"{counted:,} / 3,000")
     expect(strip).to_contain_text(f"{len(hindi):,} / 3,000")
     expect(strip.locator(".text-signal-orange-text", has_text="/ 3,000")).to_be_visible()
+
+
+def test_the_theme_follows_the_system_and_is_remembered(new_page, studio_url):
+    page = new_page(color_scheme="light")
+    page.goto(studio_url + "/", wait_until="networkidle")
+    expect(page.locator("html")).to_have_attribute("data-theme", "light")
+
+    page.get_by_role("button", name="Switch to dark theme").click()
+    expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+    page.reload(wait_until="networkidle")
+    expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+
+    page.get_by_role("button", name="Switch to light theme").click()
+    page.reload(wait_until="networkidle")
+    expect(page.locator("html")).to_have_attribute("data-theme", "light")

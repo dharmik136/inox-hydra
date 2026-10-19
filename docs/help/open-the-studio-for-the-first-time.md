@@ -67,7 +67,7 @@ The rail on the left lists the surfaces. Hover an icon to see its name.
 - The mark at the top of the rail opens a tray that lists the same surfaces with their labels.
 - Press **Ctrl+K** (**Cmd+K** on a Mac), or click the magnifier at the top of the rail, to search your posts, leads, Swipe File and help from anywhere. Press **Escape** to close it. See [Search everything with Ctrl+K](use-the-command-palette.md).
 - On the Composer, the inspector sits on the right with the tabs **Preview**, **Audit**, **Media**, **Brand** and **Prompt**. If you close it, a small panel icon in the top right corner (named **Open inspector**) brings it back.
-- The studio opens in the dark theme. **Switch theme** changes it, but the choice is not saved: reloading the page or reopening the studio brings back the dark theme.
+- The studio opens in the light or dark theme your computer is set to. The sun or moon button in the top bar of every screen except the Composer, or **Switch theme** in Ctrl+K, changes it, and the studio remembers your choice in this browser.
 
 The **LOCAL** shield at the bottom of the rail says all processing is local. That stops being fully true once you connect a cloud AI provider or generate an image. See [What leaves this machine, and when](what-leaves-this-machine.md).
 

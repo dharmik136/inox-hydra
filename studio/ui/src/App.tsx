@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, PanelRight, Search } from "lucide-react";
+import { Activity, Moon, PanelRight, Search, Sun } from "lucide-react";
 import { StudioRail } from "@/components/StudioRail";
 import { NavigationTray } from "@/components/NavigationTray";
 import { ContextBar, SaveReason, type SaveState } from "@/components/ContextBar";
@@ -55,6 +55,21 @@ const WORDS_PER_MINUTE = 200;
 function sectionFromAddress(hash: string): SectionId | null {
   const id = hash.replace(/^#\/?/, "");
   return STUDIO_SECTIONS.some((section) => section.id === id && id !== "devtools") ? (id as SectionId) : null;
+}
+
+type Theme = "dark" | "light";
+
+/** Where this browser remembers the theme the creator chose. */
+const THEME_KEY = "inox-hydra:theme";
+
+/** The theme chosen earlier in this browser, if any. Storage can be blocked. */
+function rememberedTheme(): Theme | null {
+  try {
+    const value = window.localStorage.getItem(THEME_KEY);
+    return value === "light" || value === "dark" ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Puts a screen's address in the location bar, as a new history entry unless `replace`. */
@@ -254,10 +269,24 @@ export default function App() {
   }, []);
 
   // Dark first, matching docs/UI_CONVENTIONS.md: an unstamped document gets
-  // the dark palette, and data-theme="light" is the opt out.
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  // the dark palette, and data-theme="light" is the opt out. Dark is the
+  // default only when nothing says otherwise, though: a choice made here is
+  // remembered, and until there is one the computer's own setting decides.
+  // It used to be dark on every launch, reload and profile switch.
+  const prefersLight = useMediaQuery("(prefers-color-scheme: light)");
+  const [chosenTheme, setChosenTheme] = useState<Theme | null>(rememberedTheme);
+  const theme: Theme = chosenTheme ?? (prefersLight ? "light" : "dark");
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+  const toggleTheme = useCallback(() => {
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    setChosenTheme(next);
+    try {
+      window.localStorage.setItem(THEME_KEY, next);
+    } catch {
+      // Not remembered in a browser that blocks storage; it still switches.
+    }
   }, [theme]);
 
   const telemetry = useMemo(() => {
@@ -517,6 +546,18 @@ export default function App() {
             </button>
             <button
               type="button"
+              onClick={toggleTheme}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              className="grid size-7 shrink-0 place-items-center rounded-md border border-edge bg-canvas text-ink-muted transition-colors hover:border-edge-strong hover:text-ink-primary"
+            >
+              {theme === "dark" ? (
+                <Sun className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              ) : (
+                <Moon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              )}
+            </button>
+            <button
+              type="button"
               onClick={() => setPaletteOpen(true)}
               aria-keyshortcuts="Control+K Meta+K"
               className="flex shrink-0 items-center gap-2 rounded-md border border-edge bg-canvas py-1 pr-1.5 pl-2.5 text-[12px] text-ink-muted transition-colors duration-(--studio-motion-fast) hover:border-edge-strong hover:text-ink-primary"
@@ -653,7 +694,7 @@ export default function App() {
         sections={sections}
         onOpenResult={(result) => void onOpenResult(result)}
         onNavigate={navigate}
-        onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+        onToggleTheme={toggleTheme}
         onToggleInspector={() => setInspectorOpen((open) => !open)}
       />
     </div>
