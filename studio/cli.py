@@ -153,13 +153,35 @@ def cmd_restore(args) -> int:
 
 
 def cmd_export(args) -> int:
+    vault = None
     try:
-        destination = support.export_data(args.output, fmt=args.format)
+        if args.format == "obsidian":
+            # The vault export itself rather than through support, for what it
+            # reports: notes it named around one of yours, notes you edited,
+            # which it left alone, and notes about someone no longer here.
+            try:
+                from .backend.obsidian_export import export_obsidian_vault
+            except ImportError:
+                from studio.backend.obsidian_export import export_obsidian_vault
+            vault = export_obsidian_vault(args.output)
+            destination = vault["path"]
+        else:
+            destination = support.export_data(args.output, fmt=args.format)
     except ValueError as refused:
         print(f"Not exported: {refused}", file=sys.stderr)
         return 1
-    if args.format == "obsidian":
+    if vault is not None:
         print(f"Wrote an Obsidian vault to:\n  {destination}")
+        edited = set(vault["kept_edited"])
+        for moved in vault["renamed"]:
+            if moved["wanted"] not in edited:
+                print(f"  {moved['wanted']} is a note of yours, so this one was written to {moved['written']}.")
+        for path in vault["kept_edited"]:
+            fresh = next((m["written"] for m in vault["renamed"] if m["wanted"] == path), None)
+            print(f"  You edited {path}, so it was left as it is."
+                  + (f" The refreshed copy is {fresh}." if fresh else ""))
+        for path in vault["released"]:
+            print(f"  {path} is about something no longer in the studio. Only what you wrote in it was kept.")
         print()
         print("Open it in Obsidian with \"Open folder as vault\". Export again into the same")
         print("folder to refresh it: notes you add, and anything under a \"## Your notes\"")
