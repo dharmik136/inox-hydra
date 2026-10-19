@@ -58,7 +58,7 @@ def test_clean_text_formatting_em_dashes():
     """clean_text_formatting strips em-dashes and en-dashes dynamically."""
     em_dash = chr(0x2014)
     en_dash = chr(0x2013)
-    text = f"Architecture{em_dash}first principles{en_dash}always"
+    text = f"Architecture{em_dash}first principles {en_dash} always"
     cleaned = clean_text_formatting(text)
     assert em_dash not in cleaned
     assert en_dash not in cleaned

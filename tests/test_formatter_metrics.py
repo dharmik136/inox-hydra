@@ -96,11 +96,12 @@ def test_a_numeric_range_survives_cleaning():
 
 def test_an_en_dash_between_words_is_still_a_pause():
     """
-    It does two jobs. Between words it is a pause and a comma is right, which
-    is why mapping every en-dash the same way got one case wrong whichever way
-    it was mapped.
+    It does two jobs. Spaced between words it is a pause and a comma is
+    right, which is why mapping every en-dash the same way got one case wrong
+    whichever way it was mapped. Unspaced it joins a range, as
+    tests/test_qc_f1a_formatters.py holds.
     """
-    cleaned = clean_text_formatting("first principles" + EN_DASH + "always")
+    cleaned = clean_text_formatting("first principles " + EN_DASH + " always")
     assert cleaned == "first principles, always", cleaned
 
 

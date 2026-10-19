@@ -33,7 +33,7 @@ The 140 figure is the product's own approximation, and the studio's server-side 
 | Underline | Adds an underline mark after each character |
 | Monospace | Swaps the letters for Unicode monospace characters |
 | Strikethrough | Adds a strike mark after each character |
-| Clean formatting | Replaces em dashes, en dashes and double hyphens between words with commas, turns en dash number ranges such as 2021-2024 into plain hyphens, and tidies extra spaces |
+| Clean formatting | Replaces em dashes, spaced en dashes and double hyphens between words with commas, turns unspaced en dashes and number ranges, such as Mon-Fri, Q1-Q4 or 2021-2024, into plain hyphens, and tidies extra spaces inside a line. Indentation at the start of a line is kept |
 | Re-Hook | Generates ten alternative openings from the selection. See [Try a different opening line](try-a-different-opening-line.md) |
 
 These are real Unicode characters, not markup, so they survive copy and paste. The studio's own server on this PC does the formatting.
