@@ -313,6 +313,47 @@ def test_a_save_over_a_draft_changed_in_another_tab_is_refused(new_page, studio_
     assert stored["content"] == from_b
 
 
+def test_typing_while_a_format_request_runs_is_kept(new_page, studio_url, api):
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    page.evaluate(
+        """() => { const real = window.fetch;
+                   window.fetch = (input, init) => String(input).includes('/api/format/')
+                     ? new Promise(r => setTimeout(r, 1200)).then(() => real(input, init)) : real(input, init); }"""
+    )
+    editor.fill("pricing is a design problem")
+    editor.click()
+    page.keyboard.press("Control+Home")
+    for _ in range(7):
+        page.keyboard.press("Shift+ArrowRight")
+    page.get_by_role("button", name="Bold", exact=True).click()
+    page.keyboard.press("End")
+    page.keyboard.type(" and here is why")
+    page.wait_for_timeout(1800)
+    value = editor.input_value()
+    assert value.endswith(" and here is why"), f"the words typed during the request are gone: {value!r}"
+    assert value.startswith("\U0001d5fd\U0001d5ff"), f"the format was not applied: {value!r}"
+    page.keyboard.type("!")
+    assert editor.input_value().endswith("why!"), "the caret was pulled away from where the author was typing"
+
+
+def test_a_format_left_alone_keeps_its_selection_for_the_next_one(new_page, studio_url, api):
+    """Chaining formats still works when nothing was typed in between."""
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    editor.fill("pricing is a design problem")
+    editor.click()
+    page.keyboard.press("Control+Home")
+    for _ in range(7):
+        page.keyboard.press("Shift+ArrowRight")
+    page.get_by_role("button", name="Bold", exact=True).click()
+    expect(editor).to_have_value(re.compile("^\U0001d5fd"))
+    page.wait_for_timeout(200)
+    assert editor.evaluate("el => [el.selectionStart, el.selectionEnd]") == [0, 14]
+
+
 def test_the_strip_shows_the_count_against_linkedins_limit(new_page, studio_url, api):
     _clear_posts(api)
     page = new_page()

@@ -47,6 +47,11 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
   const [busy, setBusy] = useState(false);
   const [swap, setSwap] = useState<{ height: number; text: string } | null>(null);
 
+  // The text as of the latest render, for a format request that comes back
+  // after the author has typed more.
+  const latestValue = useRef(value);
+  latestValue.current = value;
+
   // The fold is a reader-facing position, so it is measured on text with
   // decoration stripped. Using value.length here would move the mark every time
   // someone struck a line through, because each struck character carries a
@@ -160,15 +165,35 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
       setBusy(true);
       try {
         const formatted = await formatText(kind, selected);
-        onChange(value.slice(0, selectionStart) + formatted + value.slice(selectionEnd));
+
+        // Applied to the text as it is now, not as it was when the button was
+        // pressed. Rebuilding from the old copy threw away whatever the author
+        // typed while the request was out. If the selected words themselves
+        // moved or changed meanwhile, the format is dropped, not the typing.
+        const current = latestValue.current;
+        if (current.slice(selectionStart, selectionEnd) !== selected) {
+          setToolbar(null);
+          return;
+        }
+        const caretStart = textarea.selectionStart;
+        const caretEnd = textarea.selectionEnd;
+        const stillSelected = caretStart === selectionStart && caretEnd === selectionEnd;
+        const shift = formatted.length - selected.length;
+        onChange(current.slice(0, selectionStart) + formatted + current.slice(selectionEnd));
 
         // Keep the same text selected so formatters can be chained. The end
         // offset moves, because a formatter changes how many code units the
-        // selection occupies even when it reads the same length.
+        // selection occupies even when it reads the same length. An author
+        // who moved on to type elsewhere keeps their caret instead.
         requestAnimationFrame(() => {
           textarea.focus();
-          textarea.setSelectionRange(selectionStart, selectionStart + formatted.length);
-          syncToolbar();
+          if (stillSelected) {
+            textarea.setSelectionRange(selectionStart, selectionStart + formatted.length);
+            syncToolbar();
+          } else {
+            const moved = (index: number) => (index >= selectionEnd ? index + shift : index);
+            textarea.setSelectionRange(moved(caretStart), moved(caretEnd));
+          }
         });
       } catch {
         // The selection is left exactly as it was. Nothing is reported as
