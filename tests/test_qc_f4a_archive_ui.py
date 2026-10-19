@@ -180,3 +180,24 @@ def test_a_download_still_arriving_is_shown_as_one(setup_page, studio):
     item = page.get_by_role("listitem").filter(has_text="Complete_LinkedInDataExport_10-19-2026.zip").last
     expect(item).to_contain_text("STILL DOWNLOADING")
     expect(item.get_by_role("button", name="See what is in it")).to_be_disabled()
+
+
+def test_a_folder_safari_unpacked_can_be_chosen_and_imported(setup_page, studio):
+    page = setup_page
+    folder = studio["tmp"] / "Complete_LinkedInDataExport_10-19-2026"
+    (folder / "Jobs").mkdir(parents=True)
+    (folder / "Profile.csv").write_text(PROFILE, encoding="utf-8")
+    (folder / "Shares.csv").write_text(SHARES, encoding="utf-8")
+    (folder / "Connections.csv").write_text(CONNECTIONS, encoding="utf-8")
+    (folder / "Jobs" / "Job Applications.csv").write_text("Application Date,Company Name\n", encoding="utf-8")
+    (folder / "Notes.txt").write_text("not read", encoding="utf-8")
+    page.set_input_files('input[aria-label="Choose the folder your LinkedIn data archive was unpacked into"]',
+                         str(folder))
+    expect(page.get_by_text("This archive belongs to Sample Alice.")).to_be_visible()
+    expect(page.get_by_text("Complete_LinkedInDataExport_10-19-2026", exact=True)).to_be_visible()
+    page.get_by_label("This is my archive: import Sample Alice's archive as my own record").check()
+    page.get_by_role("button", name="Import what is ticked").click()
+    expect(page.get_by_text("Imported from Complete_LinkedInDataExport_10-19-2026")).to_be_visible()
+    conn = sqlite3.connect(paths.get_db_path())
+    assert conn.execute("SELECT COUNT(*) FROM own_posts").fetchone()[0] == 1
+    assert conn.execute("SELECT COUNT(*) FROM connections").fetchone()[0] == 1

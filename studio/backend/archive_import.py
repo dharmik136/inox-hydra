@@ -97,6 +97,9 @@ MAX_RATIO = 100
 MAX_ROWS = 200_000
 MAX_HEADER_SCAN = 50
 MAX_MEMBERS = 5000
+# An archive a browser unpacked into a folder (Safari does, by default) is read
+# to this many folders deep; LinkedIn's has one level of subfolders.
+MAX_FOLDER_DEPTH = 3
 UPLOAD_TTL = timedelta(hours=24)
 # A post is at most 3,000 characters and a comment 1,250; csv's default field
 # limit (131,072) is enough for those, but not for the odd long "about".
@@ -205,13 +208,33 @@ def _partial(name: str) -> Tuple[str, bool]:
     return name, False
 
 
+def _unpacked_size(folder: str) -> Optional[int]:
+    """
+    The size of the CSVs in a folder that is LinkedIn's archive unpacked, or
+    None when it is not one: a real folder, not a link, holding at least one
+    of the files the studio reads.
+    """
+    if os.path.islink(folder) or not os.path.isdir(folder):
+        return None
+    wanted = {spec["file"] for spec in FILES.values()}
+    try:
+        entries = [e for e in os.scandir(folder) if e.is_file(follow_symlinks=False)]
+    except OSError:
+        return None
+    if not any(e.name.lower() in wanted for e in entries):
+        return None
+    return sum(e.stat(follow_symlinks=False).st_size for e in entries if e.name.lower().endswith(".csv"))
+
+
 def find_archives(limit: int = 5) -> List[Dict[str, Any]]:
     """
     LinkedIn export files in Downloads, newest first. Names and sizes only.
 
     A download still arriving is listed under its final name with
     `downloading`, so it is shown as such rather than offered and then
-    refused as a broken archive.
+    refused as a broken archive. An archive the browser unpacked into a
+    folder of the same name (Safari's "Open safe files after downloading"
+    does, and removes the ZIP) is listed too, with `folder`.
     """
     hits = []
     for directory in downloads_dirs():
@@ -222,7 +245,8 @@ def find_archives(limit: int = 5) -> List[Dict[str, Any]]:
         listed = set(names)
         for name in names:
             final, partial = _partial(name)
-            if not ARCHIVE_NAME.search(final) or (partial and final in listed):
+            zip_named = bool(ARCHIVE_NAME.search(final))
+            if (not zip_named and not ARCHIVE_NAME.search(final + ".zip")) or (partial and final in listed):
                 continue
             full = os.path.join(directory, name)
             try:
@@ -230,12 +254,14 @@ def find_archives(limit: int = 5) -> List[Dict[str, Any]]:
             except OSError:
                 continue
             is_file = os.path.isfile(full)
-            if not partial and not is_file:
+            folder_bytes = None if partial or zip_named else _unpacked_size(full)
+            if not partial and folder_bytes is None and not (zip_named and is_file):
                 continue
             hits.append({
                 "name": final,
                 "path": full,
-                "bytes": stat.st_size if is_file else 0,
+                "folder": folder_bytes is not None,
+                "bytes": folder_bytes if folder_bytes is not None else stat.st_size if is_file else 0,
                 "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
                 "downloading": partial or stat.st_size == 0 or any(final + s in listed for s in PARTIAL_SUFFIXES),
             })
@@ -374,8 +400,51 @@ def _norm(header: str) -> str:
     return " ".join((header or "").replace("﻿", "").strip().strip('"').lower().split())
 
 
-def _members(path: str) -> Dict[str, zipfile.ZipInfo]:
+class _FolderFile:
+    """A file of an archive unpacked into a folder, read the way a ZIP member is."""
+
+    def __init__(self, filename: str, path: str, file_size: int):
+        self.filename, self.path, self.file_size = filename, path, file_size
+
+
+def _folder_members(folder: str) -> Dict[str, _FolderFile]:
+    """
+    The CSVs of an unpacked archive by lower-case base name, shallowest first.
+
+    Held to the limits a ZIP is: as many files, as many bytes in all, each
+    file no larger. Links are not followed, so nothing outside the folder is
+    read.
+    """
+    found: Dict[str, _FolderFile] = {}
+    count = total = 0
+    for directory, subdirs, names in os.walk(folder):
+        rel = os.path.relpath(directory, folder)
+        if (0 if rel == "." else rel.count(os.sep) + 1) >= MAX_FOLDER_DEPTH:
+            subdirs[:] = []
+        subdirs.sort()
+        for name in sorted(names):
+            full = os.path.join(directory, name)
+            try:
+                stat = os.lstat(full)
+            except OSError:
+                continue
+            if os.path.islink(full) or not os.path.isfile(full):
+                continue
+            count, total = count + 1, total + stat.st_size
+            if count > MAX_MEMBERS:
+                raise ArchiveError("That archive holds far more files than LinkedIn's does.")
+            if total > MAX_ARCHIVE_BYTES:
+                raise ArchiveError("That archive unpacks to more than any LinkedIn archive the studio expects.")
+            base = name.lower()
+            if base.endswith(".csv") and base not in found:
+                found[base] = _FolderFile(os.path.relpath(full, folder).replace(os.sep, "/"), full, stat.st_size)
+    return found
+
+
+def _members(path: str) -> Dict[str, Any]:
     """CSV members by lower-case base name. Refuses archives built to exhaust memory or that cannot be opened."""
+    if os.path.isdir(path):
+        return _folder_members(path)
     try:
         archive = zipfile.ZipFile(path)
     except (zipfile.BadZipFile, OSError, ValueError) as error:
@@ -402,13 +471,17 @@ def _members(path: str) -> Dict[str, zipfile.ZipInfo]:
     return found
 
 
-def _read_text(path: str, info: zipfile.ZipInfo) -> str:
+def _read_text(path: str, info: Any) -> str:
     if info.file_size > MAX_MEMBER_BYTES:
         raise ArchiveError(f"{info.filename} is larger than any file in LinkedIn's archive.")
     try:
-        with zipfile.ZipFile(path) as archive:
-            with archive.open(info) as handle:
+        if isinstance(info, _FolderFile):
+            with open(info.path, "rb") as handle:
                 raw = handle.read(MAX_MEMBER_BYTES + 1)
+        else:
+            with zipfile.ZipFile(path) as archive:
+                with archive.open(info) as handle:
+                    raw = handle.read(MAX_MEMBER_BYTES + 1)
     except (zipfile.BadZipFile, zlib.error, RuntimeError, OSError, EOFError, NotImplementedError, ValueError) as error:
         raise _Unreadable(f"{info.filename} is damaged and cannot be read. Download the archive again.") from error
     if len(raw) > MAX_MEMBER_BYTES:
@@ -504,7 +577,8 @@ def _parse(path: str) -> Dict[str, Any]:
         info.filename for base, info in members.items()
         if base not in {s["file"] for s in FILES.values()}
     )
-    return {"parsed": parsed, "others": others, "bytes": os.path.getsize(path)}
+    size = os.path.getsize(path) if os.path.isfile(path) else sum(i.file_size for i in members.values())
+    return {"parsed": parsed, "others": others, "bytes": size}
 
 
 # ---------------------------------------------------------------------------

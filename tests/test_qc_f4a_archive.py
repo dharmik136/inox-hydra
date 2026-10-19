@@ -389,3 +389,71 @@ def test_a_finished_download_is_offered_as_before(client, home):
     [hit] = client.post("/api/v1/archive/requested").json()["found"]
     assert hit["downloading"] is False
     assert client.post("/api/v1/archive/preview", json={"source": "downloads:" + hit["path"]}).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# SETUP-12: an archive Safari unpacked into a folder is found and read like
+# the ZIP, within the same limits
+# ---------------------------------------------------------------------------
+
+UNPACKED = COMPLETE[:-len(".zip")]
+
+
+def _unpack(folder, members):
+    os.makedirs(folder)
+    for name, text in members.items():
+        os.makedirs(os.path.dirname(os.path.join(folder, name)) or folder, exist_ok=True)
+        with open(os.path.join(folder, name), "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+
+
+def test_an_unpacked_archive_folder_is_found_and_previews_like_the_zip(client, home):
+    members = _person_archive("Sample", "Alice")
+    members["messages.csv"] = "CONVERSATION ID,FROM,TO,DATE,CONTENT\n1,Someone,Sample,2024-01-01,private\n"
+    members["Jobs/Job Applications.csv"] = "Application Date,Company Name\n"
+    _unpack(home / "user" / "Downloads" / UNPACKED, members)
+    (home / "user" / "Downloads" / "Holiday photos").mkdir()
+    [hit] = client.post("/api/v1/archive/requested").json()["found"]
+    assert hit["name"] == UNPACKED and hit["downloading"] is False
+
+    from_folder = client.post("/api/v1/archive/preview", json={"source": "downloads:" + hit["path"]})
+    assert from_folder.status_code == 200, from_folder.text
+    from_zip = _upload(client, members)
+    rows = lambda preview: {f["kind"]: f["rows"] for f in preview["files"]}  # noqa: E731
+    assert rows(from_folder.json()) == rows(from_zip)
+    assert {os.path.basename(f["file"]) for f in from_folder.json()["not_imported"]} == {
+        "messages.csv", "Job Applications.csv"}
+
+    res = _import(client, "downloads:" + hit["path"], confirm_owner=True)
+    assert res.status_code == 200 and res.json()["summary"]["posts"]["added"] == 1
+    assert os.path.isdir(hit["path"]), "the creator's own folder was removed"
+
+
+def test_a_folder_without_linkedins_files_is_not_offered(client, home):
+    folder = home / "user" / "Downloads" / UNPACKED
+    folder.mkdir()
+    (folder / "notes.txt").write_text("not an archive")
+    assert client.post("/api/v1/archive/requested").json()["found"] == []
+
+
+def test_a_folder_is_read_within_the_archive_limits(client, home, monkeypatch):
+    _unpack(home / "user" / "Downloads" / UNPACKED, {"Skills.csv": "Name\n" + "Skill\n" * 2000})
+    [hit] = client.post("/api/v1/archive/requested").json()["found"]
+    monkeypatch.setattr(archive_import, "MAX_MEMBER_BYTES", 1000)
+    res = client.post("/api/v1/archive/preview", json={"source": "downloads:" + hit["path"]})
+    assert res.status_code == 400 and "larger than any file" in res.json()["detail"]
+    monkeypatch.setattr(archive_import, "MAX_MEMBERS", 0)
+    res = client.post("/api/v1/archive/preview", json={"source": "downloads:" + hit["path"]})
+    assert res.status_code == 400 and "far more files" in res.json()["detail"]
+
+
+@pytest.mark.skipif(not hasattr(os, "symlink") or sys.platform.startswith("win"), reason="symlinks")
+def test_a_link_inside_the_folder_is_not_followed(client, home):
+    folder = home / "user" / "Downloads" / UNPACKED
+    _unpack(folder, {"Skills.csv": "Name\nSynthetic Skill\n"})
+    secret = home / "elsewhere.csv"
+    secret.write_text("First Name,Last Name,URL\nSecret,Person,https://www.linkedin.com/in/secret\n")
+    os.symlink(secret, folder / "Connections.csv")
+    [hit] = client.post("/api/v1/archive/requested").json()["found"]
+    preview = client.post("/api/v1/archive/preview", json={"source": "downloads:" + hit["path"]}).json()
+    assert [f["kind"] for f in preview["files"]] == ["skills"]

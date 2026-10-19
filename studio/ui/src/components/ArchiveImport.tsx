@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, FileArchive, Loader2 } from "lucide-react";
+import { ExternalLink, FileArchive, FolderOpen, Loader2 } from "lucide-react";
 import {
   discardArchive,
   fetchArchiveState,
@@ -14,6 +14,7 @@ import {
   type ArchiveState,
   type FoundArchive,
 } from "@/lib/api";
+import { zipFolder } from "@/lib/folderZip";
 
 const LOOK_MS = 4000;
 
@@ -73,6 +74,7 @@ export function ArchiveImport({
   const [found, setFound] = useState<ArchiveProgress["found"]>([]);
   const [waiting, setWaiting] = useState(state.waiting);
   const picker = useRef<HTMLInputElement>(null);
+  const folderPicker = useRef<HTMLInputElement | null>(null);
   const chooser = useRef<HTMLButtonElement>(null);
   const previewTitle = useRef<HTMLParagraphElement>(null);
   const resultTitle = useRef<HTMLParagraphElement>(null);
@@ -242,7 +244,39 @@ export function ArchiveImport({
                 if (file) void run("upload", async () => show(await uploadArchive(file)));
               }}
             />
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => folderPicker.current?.click()}
+              className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+            >
+              {busy === "folder" ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <FolderOpen className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              )}
+              Choose the folder
+            </button>
+            <input
+              ref={(input) => {
+                folderPicker.current = input;
+                // A folder chooser; React has no prop for it.
+                input?.setAttribute("webkitdirectory", "");
+              }}
+              type="file"
+              tabIndex={-1}
+              className="sr-only"
+              aria-label="Choose the folder your LinkedIn data archive was unpacked into"
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []);
+                event.target.value = "";
+                if (files.length) void run("folder", async () => show(await uploadArchive(await zipFolder(files))));
+              }}
+            />
           </div>
+          <p className="studio-meta -mt-1 text-[10px] text-ink-muted">
+            IF YOUR BROWSER UNPACKED THE ARCHIVE INTO A FOLDER, AS SAFARI DOES, CHOOSE THE FOLDER
+          </p>
 
           {waiting && (
             <div>
