@@ -101,6 +101,7 @@ FILES: Dict[str, Dict[str, Any]] = {
         "file": "shares.csv", "label": "Posts you wrote", "default": True,
         "columns": {"date": ["date"], "link": ["sharelink", "share link", "link"],
                     "text": ["sharecommentary", "share commentary", "commentary"]},
+        "optional": {"shared": ["sharedurl", "shared url"], "media": ["mediaurl", "media url"]},
     },
     "comments": {
         "file": "comments.csv", "label": "Comments you wrote", "default": True,
@@ -547,31 +548,43 @@ def _texts_agree(a: str, b: str) -> bool:
     return a[:shorter] == b[:shorter]
 
 
-def find_twin(conn, urn: str, text: str, when: Optional[str] = None, archive_only: bool = False) -> Optional[str]:
+def find_twin(conn, urn: str, text: str, when: Optional[str] = None, archive_only: bool = False,
+              from_archive: bool = False) -> Optional[str]:
     """
     The own_posts row that is this post under another id, if one is.
 
     Used both ways: the archive import looks for a post the bridge already
-    read, and the bridge, reading a post, looks for the archive's row of it,
-    so the two become one row whichever came first.
+    read (`from_archive`), and the bridge, reading a post, looks for the
+    archive's row of it (`archive_only`), so the two become one row whichever
+    came first. Two rows the archive itself brought are never one post: the
+    archive gives each post its own id, so a creator who posts the same words
+    every week has that many posts.
     """
     moment = _parse_iso(when) or _moment(urn)
     mine = _fingerprint(text)
     query = "SELECT activity_urn, text, published_at FROM own_posts WHERE activity_urn != ?"
     if archive_only:
         query += " AND published_at_source = 'archive' AND activity_urn NOT LIKE 'urn:li:activity:%'"
+    if from_archive:
+        query += (" AND NOT (COALESCE(published_at_source, '') = 'archive'"
+                  " AND activity_urn NOT LIKE 'urn:li:activity:%')")
     for row in conn.execute(query, (urn,)):
-        # The same words in full, long enough not to be a one-liner anyone
-        # might post twice, are the same post whenever it was read.
-        if len(mine) >= 30 and _fingerprint(row[1] or "") == mine:
-            return row[0]
         # Either reading of the other row's time: the date it was stored with,
         # or the moment its own id carries.
         gaps = [abs(other - mine_at) for other in (_parse_iso(row[2]), _moment(row[0])) if other
                 for mine_at in (moment, _moment(urn)) if mine_at]
-        if not gaps or min(gaps) > TWIN_WINDOW:
+        if not gaps:
+            # With no time on one side, only the same words in full, long
+            # enough not to be a one-liner anyone might post twice, can say
+            # it is the same post.
+            if len(mine) >= 30 and _fingerprint(row[1] or "") == mine:
+                return row[0]
             continue
-        if not text and not row[1] and min(gaps) > timedelta(minutes=2):
+        if min(gaps) > TWIN_WINDOW:
+            continue
+        # A post with no words to compare (an image, a video, a document with
+        # no caption) is matched on its id's moment alone, so it must be close.
+        if (not mine or not _fingerprint(row[1] or "")) and min(gaps) > timedelta(minutes=2):
             continue
         if _texts_agree(text, row[1] or ""):
             return row[0]
@@ -592,13 +605,15 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
     now = _now()
     for row in rows:
         text, urn = row.get("text", ""), _urn(row.get("link", ""))
-        if not text.strip() or not urn:
-            # A repost with nothing written, or a row with no post link.
+        if not urn or (not text.strip() and row.get("shared") and not row.get("media")):
+            # A row with no post link, or a repost with nothing written. A
+            # post with no caption (an image, a video, a document) is still
+            # the creator's post, and is kept with no text.
             tally["skipped"] += 1
             continue
         when = _when(row.get("date", "")) or (_moment(urn).isoformat() if _moment(urn) else None)
         existing = conn.execute("SELECT published_at FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone()
-        same = urn if existing else find_twin(conn, urn, text, when)
+        same = urn if existing else find_twin(conn, urn, text, when, from_archive=True)
         if same:
             # The bridge's row stays, with its figures. The archive adds what
             # it alone has: the date, and the text in full where the page cut it.
@@ -608,14 +623,14 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
                 "published_at_source = CASE WHEN published_at IS NULL THEN 'archive' ELSE published_at_source END, "
                 "text = CASE WHEN text IS NULL OR length(text) < length(?) THEN ? ELSE text END "
                 "WHERE activity_urn = ?",
-                (when, text[:10000], text[:10000], same),
+                (when, text[:10000] or None, text[:10000] or None, same),
             )
             tally["already_there"] += 1
             continue
         conn.execute(
             "INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, reactions, comments, "
             "reposts, impressions, first_seen_at, last_seen_at) VALUES (?, ?, ?, 'archive', NULL, NULL, NULL, NULL, ?, ?)",
-            (urn, text[:10000], when, now, now),
+            (urn, text[:10000] or None, when, now, now),
         )
         tally["added"] += 1
     return tally
