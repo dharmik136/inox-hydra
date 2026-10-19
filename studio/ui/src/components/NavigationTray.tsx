@@ -75,12 +75,12 @@ export function NavigationTray({ sections, open, active, onSelect, onClose }: Na
             exit={{ opacity: 0, x: -12, scale: 0.98 }}
             /* Expressive tier: this is a navigation morph, not a hover. */
             transition={{ duration: 0.46, ease: [0.32, 0.72, 0.24, 1] }}
-            className="absolute top-3 left-3 z-30 w-80 origin-top-left rounded-lg border border-edge bg-raised p-2 shadow-2xl outline-none"
+            className="absolute top-3 left-3 z-30 w-80 max-w-[calc(100%-1.5rem)] origin-top-left rounded-lg border border-edge bg-raised p-2 shadow-2xl outline-none"
           >
             {/* Active profile & account switching */}
             <div className="mb-2 border-b border-edge px-1 pb-2">
               <p className="studio-label px-1 pt-1 pb-1.5">Active Profile</p>
-              <AccountSwitcher condensed={false} onAccountSwitched={() => onClose()} />
+              <AccountSwitcher condensed={false} placement="below" onAccountSwitched={() => onClose()} />
             </div>
 
             <p className="studio-label px-2 pt-1 pb-1">Workspaces</p>

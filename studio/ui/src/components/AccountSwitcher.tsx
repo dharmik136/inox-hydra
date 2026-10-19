@@ -27,12 +27,19 @@ interface AccountSwitcherProps {
   onAccountSwitched?: (account: CreatorAccount) => void;
   className?: string;
   condensed?: boolean;
+  /**
+   * Which side of the trigger the panel opens on. The rail's avatar sits at
+   * the bottom of the window, so its panel opens upward; the tray's card sits
+   * at the top, where opening upward drew the panel above the window.
+   */
+  placement?: "above" | "below";
 }
 
 export function AccountSwitcher({
   onAccountSwitched,
   className,
   condensed = true,
+  placement = "above",
 }: AccountSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [accounts, setAccounts] = useState<CreatorAccount[]>([]);
@@ -233,7 +240,10 @@ export function AccountSwitcher({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: -4 }}
               transition={{ duration: 0.16, ease: [0.32, 0.72, 0.24, 1] }}
-              className="absolute bottom-11 left-0 z-50 w-84 origin-bottom-left rounded-xl border border-edge bg-raised p-3 shadow-2xl outline-none"
+              className={cn(
+                "absolute left-0 z-50 rounded-xl border border-edge bg-raised p-3 shadow-2xl outline-none",
+                placement === "above" ? "bottom-11 w-84 origin-bottom-left" : "top-full right-0 mt-1.5 origin-top-left",
+              )}
             >
               {/* Header */}
               <div className="flex items-center justify-between border-b border-edge pb-2">

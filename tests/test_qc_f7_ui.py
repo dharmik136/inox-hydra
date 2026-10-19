@@ -334,3 +334,46 @@ def test_open_in_bridge_browser_says_which_browser_opened(studio, studio_url):
     _, page = _open_in_bridge(studio, studio_url, LAUNCHED)
     page.locator("article [role=status]").filter(has_text="Launched Brave").wait_for(
         state="visible", timeout=3000)
+
+
+# ---------------------------------------------------------------------------
+# UX-10: the profile switcher opened from the tray is on screen
+# ---------------------------------------------------------------------------
+
+def _inside(box, width, height):
+    return (box is not None and box["x"] >= 0 and box["y"] >= 0
+            and box["x"] + box["width"] <= width + 0.5 and box["y"] + box["height"] <= height + 0.5)
+
+
+def _open_tray(page):
+    page.get_by_role("button", name="Open navigation tray").click()
+    tray = page.locator("[role=dialog][aria-label='Studio navigation']")
+    tray.wait_for(state="visible")
+    return tray
+
+
+@pytest.mark.parametrize("width,height", [(1440, 900), (1024, 768), (375, 812)])
+def test_the_switcher_opened_from_the_tray_is_inside_the_window(studio, width, height):
+    page = studio(width, height).open()
+    tray = _open_tray(page)
+    tray.get_by_role("button", name="Current profile", exact=False).click()
+    panel = page.locator("[role=dialog][aria-label='Manage creator profiles']")
+    panel.wait_for(state="visible")
+    page.wait_for_timeout(250)
+    box = panel.bounding_box()
+    assert _inside(box, width, height), f"the profile panel is drawn at {box} in a {width}x{height} window"
+    close = panel.get_by_role("button", name="Close profile switcher")
+    assert _inside(close.bounding_box(), width, height), "the panel's close control is off screen"
+
+
+def test_the_switcher_on_the_rail_still_opens_above_its_avatar(studio):
+    page = studio(1280, 800).open()
+    rail = page.locator("nav[aria-label='Studio sections']")
+    trigger = rail.locator("xpath=..").get_by_role("button", name="Current profile", exact=False).first
+    trigger.click()
+    panel = page.locator("[role=dialog][aria-label='Manage creator profiles']")
+    panel.wait_for(state="visible")
+    page.wait_for_timeout(250)
+    box = panel.bounding_box()
+    assert _inside(box, 1280, 800), f"the rail's profile panel is drawn at {box}"
+    assert box["y"] + box["height"] <= trigger.bounding_box()["y"] + 1, "the rail's panel no longer opens upward"
