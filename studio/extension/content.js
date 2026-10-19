@@ -361,29 +361,53 @@ document.addEventListener("click", (e) => {
  * precision is "exact" for a fully written figure and "rounded" for an
  * abbreviated one, because "1.2K" means somewhere in [1150, 1250) and the studio
  * should not later present it as though it meant exactly 1200.
+ *
+ * The page's language decides what a separator means. On a German or Italian
+ * page "8.210" is eight thousand two hundred and ten and "1,2K" is 1.2K; read
+ * as English the first became 8, marked exact. So the decimal mark is the
+ * page's (document.documentElement.lang, or `lang` when given), thousands are
+ * grouped in threes by the other mark or a space, and a figure with no certain
+ * reading is refused rather than stored: a dotted "8.210" on a page that names
+ * no language, a comma with three digits after it on a German page, or a
+ * fraction with no K or M after it. A page with no language is read as English,
+ * LinkedIn's default.
  */
-function parseMetricValue(raw) {
+function parseMetricValue(raw, lang) {
   if (!raw) return null;
-  const text = String(raw).trim();
-
-  // A comma before one or two digits is a decimal comma, not a separator:
-  // "1,2K" is 1.2K in de-DE and fr-FR, and stripping the comma made it 12000.
-  // The metric classification in this file matches English words, so a page in
-  // another locale cannot be read correctly regardless. Refuse rather than
-  // return a number that is wrong by a factor of ten.
-  if (/\d,\d{1,2}(\s*[KMB])?$/i.test(text)) return null;
-
-  const normalized = text.replace(/,/g, "");
-  const match = normalized.match(/^([0-9]*\.?[0-9]+)\s*([KMB]?)$/i);
+  const text = String(raw).replace(/[   ]/g, " ").trim();
+  const match = text.match(/^(\d[\d.,' ]*?)\s*([A-Za-z]+\.?)?$/);
   if (!match) return null;
 
-  const base = parseFloat(match[1]);
-  if (!isFinite(base)) return null;
+  // Languages LinkedIn serves whose decimal mark is a comma.
+  const COMMA_DECIMAL = ["cs", "da", "de", "el", "es", "fi", "fr", "hu", "id", "it", "nl", "no", "nb",
+    "pl", "pt", "ro", "ru", "sv", "tr", "uk"];
+  const pageLang = lang !== undefined ? lang
+    : (typeof document !== "undefined" && document.documentElement && document.documentElement.lang) || "";
+  const decimalMark = COMMA_DECIMAL.includes(String(pageLang).toLowerCase().slice(0, 2)) ? "," : ".";
+  const groupMark = decimalMark === "," ? "." : ",";
 
-  const suffix = (match[2] || "").toUpperCase();
-  const multiplier = suffix === "K" ? 1e3 : suffix === "M" ? 1e6 : suffix === "B" ? 1e9 : 1;
+  // K, M and B, and the words LinkedIn uses for them in other languages.
+  const MULTIPLIERS = { k: 1e3, tsd: 1e3, mil: 1e3, m: 1e6, mio: 1e6, mln: 1e6, mn: 1e6, b: 1e9, mrd: 1e9, md: 1e9 };
+  const suffix = (match[2] || "").toLowerCase().replace(/\.$/, "");
+  if (suffix && !(suffix in MULTIPLIERS)) return null;
+
+  const parts = match[1].split(decimalMark);
+  if (parts.length > 2) return null;
+  const whole = parts[0].trim();
+  const fraction = parts.length === 2 ? parts[1].trim() : "";
+  if (parts.length === 2 && !/^\d+$/.test(fraction)) return null;
+  if (!/^\d+$/.test(whole)) {
+    // Grouped thousands: one mark, used throughout, with three digits after it.
+    const grouped = new RegExp("^\\d{1,3}(?:[" + groupMark + " ']\\d{3})+$");
+    if (!grouped.test(whole) || new Set(whole.replace(/\d/g, "")).size > 1) return null;
+  }
+  // A count has no fraction unless it is abbreviated.
+  if (fraction && !suffix) return null;
+
+  const base = parseFloat(whole.replace(/\D/g, "") + (fraction ? "." + fraction : ""));
+  if (!isFinite(base)) return null;
   return {
-    value: Math.round(base * multiplier),
+    value: Math.round(base * (suffix ? MULTIPLIERS[suffix] : 1)),
     precision: suffix ? "rounded" : "exact"
   };
 }

@@ -160,15 +160,40 @@
     return out;
   }
 
+  // The first figure in a line of text, read with the page's own separators,
+  // or null when it has no certain reading. "." was always a decimal point
+  // here, so a German profile's "8.210 Follower" was stored as 8. The rules
+  // are content.js parseMetricValue's: the page language's decimal mark,
+  // thousands grouped in threes by the other mark or a space, no fraction
+  // without K or M, and English when the page names no language.
+  const COMMA_DECIMAL = ["cs", "da", "de", "el", "es", "fi", "fr", "hu", "id", "it", "nl", "no", "nb",
+    "pl", "pt", "ro", "ru", "sv", "tr", "uk"];
+  const MULTIPLIERS = { k: 1e3, tsd: 1e3, mil: 1e3, m: 1e6, mio: 1e6, mln: 1e6, mn: 1e6, b: 1e9, mrd: 1e9, md: 1e9 };
+
   function parseCount(text) {
     if (!text) return null;
-    const match = /([\d.,]+)\s*([KkMm])?/.exec(text);
+    const normal = String(text).replace(/[   ]/g, " ");
+    const match = /(\d(?:[\d.,']|\s(?=\d{3}(?!\d)))*)(?:\s*(k|tsd|mil|mio|mln|mn|mrd|md|m|b)\.?(?![a-z]))?/i.exec(normal);
     if (!match) return null;
-    let value = parseFloat(match[1].replace(/,/g, ""));
+    const lang = (document.documentElement && document.documentElement.lang) || "";
+    const decimalMark = COMMA_DECIMAL.includes(lang.toLowerCase().slice(0, 2)) ? "," : ".";
+    const groupMark = decimalMark === "," ? "." : ",";
+    const figure = match[1].replace(/[.,]$/, "");
+    const suffix = (match[2] || "").toLowerCase();
+
+    const parts = figure.split(decimalMark);
+    if (parts.length > 2) return null;
+    const whole = parts[0];
+    const fraction = parts.length === 2 ? parts[1] : "";
+    if (parts.length === 2 && !/^\d+$/.test(fraction)) return null;
+    if (!/^\d+$/.test(whole)) {
+      const grouped = new RegExp("^\\d{1,3}(?:[" + groupMark + " ']\\d{3})+$");
+      if (!grouped.test(whole) || new Set(whole.replace(/\d/g, "")).size > 1) return null;
+    }
+    if (fraction && !suffix) return null;
+    const value = parseFloat(whole.replace(/\D/g, "") + (fraction ? "." + fraction : ""));
     if (Number.isNaN(value)) return null;
-    if (/k/i.test(match[2] || "")) value *= 1000;
-    if (/m/i.test(match[2] || "")) value *= 1000000;
-    return Math.round(value);
+    return Math.round(value * (suffix ? MULTIPLIERS[suffix] : 1));
   }
 
   // ---------------------------------------------------------------
