@@ -4,7 +4,9 @@ import {
   OWN_PROFILE_URL,
   confirmIdentity,
   copyExtensionPath,
+  createBackup,
   deleteLinkedInSession,
+  fetchBackups,
   fetchBrowserBridge,
   fetchOnboardingState,
   forgetIdentity,
@@ -41,6 +43,8 @@ const POLL_MS = 3000;
 type SetupState = OnboardingState & {
   /** Import all three, while one is under way. Kept by the studio, so it survives a restart. */
   sync_chain?: { sequence: SelfImportKind[]; current_kind: SelfImportKind } | null;
+  /** Readings of your posts' figures and archive connections: what deleting everything also removes. */
+  counts: { readings?: number; connections?: number };
 };
 
 export function OnboardingSurface() {
@@ -49,6 +53,7 @@ export function OnboardingSurface() {
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [sessionConfirm, setSessionConfirm] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -193,6 +198,7 @@ export function OnboardingSurface() {
           {identity && (
             <ProfileCard
               identity={identity}
+              counts={state.counts}
               busy={busy}
               onOpen={(url) => void open(url)}
               onForget={() =>
@@ -341,18 +347,29 @@ export function OnboardingSurface() {
               ? `Stored${state.session.saved_at ? ` since ${state.session.saved_at.slice(0, 10)}` : ""}, used only to hand a post to LinkedIn's scheduler.`
               : "Not stored. Only needed to schedule posts on LinkedIn itself; the extension's Sync button captures it."}
           </p>
-          {state.session.stored && (
-            <Secondary
-              disabled={busy !== null}
-              onPress={() =>
-                void act("session", async () => {
-                  await deleteLinkedInSession();
-                  return "The LinkedIn session is deleted.";
-                })
-              }
-            >
+          {state.session.stored && !sessionConfirm && (
+            <Secondary disabled={busy !== null} onPress={() => setSessionConfirm(true)}>
               Delete
             </Secondary>
+          )}
+          {state.session.stored && sessionConfirm && (
+            <div className="flex shrink-0 items-center gap-2">
+              <Secondary
+                disabled={busy !== null}
+                onPress={() =>
+                  void act("session", async () => {
+                    await deleteLinkedInSession();
+                    setSessionConfirm(false);
+                    return "The LinkedIn session is deleted. The extension's Sync button captures it again.";
+                  })
+                }
+              >
+                Yes, delete the session
+              </Secondary>
+              <Secondary disabled={busy !== null} onPress={() => setSessionConfirm(false)}>
+                Keep it
+              </Secondary>
+            </div>
           )}
         </div>
       </section>
@@ -450,15 +467,18 @@ function Step({
 
 function ProfileCard({
   identity,
+  counts,
   busy,
   onOpen,
   onForget,
 }: {
   identity: CreatorIdentity;
+  counts: SetupState["counts"];
   busy: string | null;
   onOpen: (url: string) => void;
   onForget: () => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
   const base = identity.profile_url ?? `https://www.linkedin.com/in/${identity.vanity}/`;
   return (
     <div className="flex flex-col gap-4">
@@ -538,13 +558,149 @@ function ProfileCard({
 
       <button
         type="button"
-        onClick={onForget}
-        disabled={busy !== null}
+        onClick={() => setConfirming(true)}
+        disabled={busy !== null || confirming}
+        aria-expanded={confirming}
         className="studio-meta self-start text-[10px] text-ink-muted transition-colors hover:text-signal-orange-text disabled:opacity-40"
       >
         NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU
       </button>
+      {confirming && (
+        <ForgetPanel
+          identity={identity}
+          counts={counts}
+          busy={busy}
+          onCancel={() => setConfirming(false)}
+          onConfirm={onForget}
+        />
+      )}
     </div>
+  );
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+/**
+ * The second, deliberate step before deleting everything. This used to be one
+ * click on a 10 px line, with no confirmation, no list of what goes and no
+ * backup; deleting a creator profile, which destroys less, asks you to type
+ * its name. It says what will be deleted, whether a backup exists, offers one,
+ * and waits for a typed word.
+ */
+function ForgetPanel({
+  identity,
+  counts,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  identity: CreatorIdentity;
+  counts: SetupState["counts"];
+  busy: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const [backup, setBackup] = useState<string | null>(null);
+  const [backingUp, setBackingUp] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    fetchBackups()
+      .then((listing) => {
+        if (!live) return;
+        const latest = listing.backups[0];
+        setBackup(
+          latest
+            ? `The latest backup of the studio is from ${latest.modified.slice(0, 16).replace("T", " ")}, ${latest.name}.`
+            : "There is no backup of the studio yet, so this could not be brought back.",
+        );
+      })
+      .catch(() => live && setBackup("Whether a backup exists could not be checked."));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  async function backUp() {
+    setBackingUp(true);
+    try {
+      const made = await createBackup("before-forget");
+      setBackup(`Backed up just now, to ${made.archive}.`);
+    } catch (caught) {
+      setBackup(`The backup did not work: ${caught instanceof Error ? caught.message : "unknown error"}.`);
+    } finally {
+      setBackingUp(false);
+    }
+  }
+
+  const profileParts = [
+    identity.positions.length ? plural(identity.positions.length, "role") : null,
+    identity.education.length ? plural(identity.education.length, "school") : null,
+    identity.skills.length ? plural(identity.skills.length, "skill") : null,
+    identity.contact_observed_at ? "contact info" : null,
+  ].filter(Boolean);
+  const ready = typed.trim().toLowerCase() === "delete";
+
+  return (
+    <section
+      aria-label="Delete everything the studio holds about you"
+      className="rounded-md border border-signal-orange p-4"
+    >
+      <p className="text-[13px] font-medium text-ink-primary">This deletes, from this computer, and cannot be undone:</p>
+      <ul className="mt-2 flex list-disc flex-col gap-0.5 pl-5 text-[13px] text-ink-secondary">
+        <li>
+          Your confirmed profile, linkedin.com/in/{identity.vanity}
+          {profileParts.length ? `: ${profileParts.join(", ")}` : ""}
+        </li>
+        <li>
+          {plural(counts.posts, "of your posts", "of your posts")}
+          {counts.readings !== undefined ? ` and ${plural(counts.readings, "reading")} of their figures` : ""}
+        </li>
+        <li>
+          {plural(counts.comments, "comment")} and {plural(counts.reactions, "reaction")} of yours on other posts
+        </li>
+        <li>
+          {counts.connections !== undefined ? `${plural(counts.connections, "connection")} and ` : ""}the record of your
+          archive and history imports
+        </li>
+        <li>The name, headline and company Setup filled in Brand Studio, unless you changed them</li>
+      </ul>
+      <p className="mt-2 text-[12px] text-ink-muted">Your leads, drafts and the posts you wrote in the studio are kept.</p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <p role="status" className="text-[12px] text-ink-secondary">
+          {backup ?? "Looking for a backup."}
+        </p>
+        <Secondary disabled={backingUp || busy !== null} onPress={() => void backUp()}>
+          {backingUp && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
+          Back up first
+        </Secondary>
+      </div>
+
+      <label className="mt-3 flex flex-col gap-1 text-[12px] text-ink-secondary">
+        Type delete to confirm
+        <input
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
+          autoFocus
+          className="w-48 rounded-md border border-edge bg-ink px-2 py-1 text-[13px] text-ink-primary outline-none focus-visible:border-edge-strong"
+        />
+      </label>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          disabled={!ready || busy !== null}
+          onClick={onConfirm}
+          className="rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+        >
+          Delete everything
+        </button>
+        <Secondary disabled={busy !== null} onPress={onCancel}>
+          Keep it
+        </Secondary>
+      </div>
+    </section>
   );
 }
 

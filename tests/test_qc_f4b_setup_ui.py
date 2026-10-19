@@ -138,6 +138,113 @@ def test_with_only_chrome_step_one_shows_the_folder_to_load(page, studio_url):
     assert step.get_by_text("Load unpacked").first.is_visible()
 
 
+# ---------------------------------------------------------------------------
+# SETUP-07 [UX-02]. One click on a 10 px line deleted the identity, every
+# imported post, every reading of their figures, comments, reactions,
+# connections and the archive record, with no confirmation and no backup.
+# ---------------------------------------------------------------------------
+
+def _seed_history():
+    _confirm()
+    conn = get_db()
+    with conn:
+        for i in range(3):
+            urn = f"urn:li:activity:73000000000000020{i:02d}"
+            conn.execute("INSERT INTO own_posts (activity_urn, text, first_seen_at, last_seen_at) "
+                         "VALUES (?, 'A post', '2026-10-01', '2026-10-01')", (urn,))
+            conn.execute("INSERT INTO post_metric_observations (activity_urn, observed_at, observed_hour, source, "
+                         "reactions) VALUES (?, '2026-10-01T10:00:00+00:00', '2026-10-01T10', 'activity_page', 4)",
+                         (urn,))
+        conn.execute("INSERT INTO outbound_engagements (target_activity_urn, kind, my_text_key, first_seen_at, "
+                     "last_seen_at) VALUES ('urn:li:activity:7300000000000009999', 'reaction', '', '2026-10-01', "
+                     "'2026-10-01')")
+    conn.close()
+
+
+def _own_post_count():
+    conn = get_db()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM own_posts").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def test_onboarding_state_counts_what_deleting_would_remove():
+    from fastapi.testclient import TestClient
+    _seed_history()
+    counts = TestClient(app).get("/api/v1/onboarding/state").json()["counts"]
+    assert counts["posts"] == 3 and counts["readings"] == 3 and counts["reactions"] == 1
+    assert "connections" in counts
+
+
+def test_deleting_everything_needs_a_deliberate_confirmation(page, studio_url):
+    _seed_history()
+    deletes = []
+    page.on("request", lambda r: deletes.append(r.url) if r.method == "DELETE" and "/api/v1/identity" in r.url else None)
+    page.route("**/api/v1/support/backups", _fulfil({"directory": "/x", "count": 0, "backups": []}))
+    _open_setup(page, studio_url)
+
+    page.get_by_role("button", name="Not you, or want it gone? Delete everything the studio holds about you").click()
+    page.wait_for_timeout(400)
+    assert deletes == [], "one click deleted everything"
+    assert _own_post_count() == 3
+
+    panel = page.get_by_role("region", name="Delete everything the studio holds about you")
+    panel.get_by_text("no backup", exact=False).wait_for(timeout=5000)
+    text = panel.inner_text()
+    assert "3 of your posts" in text and "3 readings" in text, text
+    assert "1 reaction" in text
+    assert "no backup" in text.lower()
+    assert panel.get_by_role("button", name="Back up first").is_visible()
+
+    confirm = panel.get_by_role("button", name="Delete everything")
+    assert confirm.is_disabled()
+    panel.get_by_label("Type delete to confirm").fill("delete")
+    assert confirm.is_enabled()
+    confirm.click()
+    page.wait_for_timeout(600)
+    assert len(deletes) == 1
+    assert _own_post_count() == 0
+
+
+def test_keeping_it_deletes_nothing(page, studio_url):
+    _seed_history()
+    page.route("**/api/v1/support/backups", _fulfil({"directory": "/x", "count": 1, "backups": [
+        {"name": "inox_backup_manual_20261018_101500.zip", "bytes": 10, "modified": "2026-10-18T10:15:00"}]}))
+    _open_setup(page, studio_url)
+    page.get_by_role("button", name="Not you, or want it gone? Delete everything the studio holds about you").click()
+    panel = page.get_by_role("region", name="Delete everything the studio holds about you")
+    panel.get_by_text("2026-10-18", exact=False).wait_for(timeout=5000)
+    panel.get_by_role("button", name="Keep it").click()
+    assert panel.count() == 0
+    assert _own_post_count() == 3
+
+
+def test_the_session_delete_asks_once_before_it_deletes(page, studio_url):
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('li_at', 'sample-not-a-real-session')")
+    conn.close()
+    try:
+        cookie_deletes = []
+        page.on("request", lambda r: cookie_deletes.append(r.url)
+                if r.method == "DELETE" and "/api/auth/cookies" in r.url else None)
+        page.route("**/api/auth/cookies", _fulfil({"status": "success"}))
+        _open_setup(page, studio_url)
+        section = page.locator("section", has_text="LINKEDIN SESSION")
+        section.get_by_role("button", name="Delete", exact=True).click()
+        page.wait_for_timeout(300)
+        assert cookie_deletes == []
+        section.get_by_role("button", name="Yes, delete the session").click()
+        page.wait_for_timeout(300)
+        assert len(cookie_deletes) == 1
+    finally:
+        conn = get_db()
+        with conn:
+            conn.execute("DELETE FROM settings WHERE key = 'li_at'")
+        conn.close()
+
+
 def test_with_a_browser_that_carries_the_bridge_no_folder_is_needed(page, studio_url):
     page.route("**/api/v1/browser/status", _fulfil({**CHROME_ONLY, "browsers": {
         "brave": {"id": "brave", "name": "Brave Browser", "path": "/x/brave", "is_available": True,

@@ -1537,6 +1537,9 @@ def onboarding_state() -> Dict[str, Any]:
         post_count = conn.execute("SELECT COUNT(*) FROM own_posts").fetchone()[0]
         outbound = {r["kind"]: r["n"] for r in conn.execute(
             "SELECT kind, COUNT(*) AS n FROM outbound_engagements GROUP BY kind")}
+        # What deleting everything would also remove, so Setup can say so first.
+        readings = conn.execute("SELECT COUNT(*) FROM post_metric_observations").fetchone()[0]
+        connections = conn.execute("SELECT COUNT(*) FROM connections").fetchone()[0]
         with conn:
             _expire_requests(conn)
         imports = [dict(r) for r in conn.execute(
@@ -1600,6 +1603,8 @@ def onboarding_state() -> Dict[str, Any]:
             "posts": post_count,
             "comments": outbound.get("comment", 0),
             "reactions": outbound.get("reaction", 0),
+            "readings": readings,
+            "connections": connections,
         },
         "imports": imports,
         # Import all three, while one is under way: which, and what comes next.
