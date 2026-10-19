@@ -1741,6 +1741,21 @@ class StagePostRequest(BaseModel):
     confirm: bool = False
 
 
+def _send_refusal_text(result: Dict[str, Any]) -> str:
+    """Why a send to LinkedIn did not happen, in one sentence the creator can act on."""
+    message = result.get("message")
+    if isinstance(message, str) and message.strip():
+        return message
+    status = result.get("http_status")
+    if status:
+        # LinkedIn's own body is often a page of HTML, which is not a reason.
+        return f"LinkedIn refused the post (HTTP {status}). Nothing was scheduled."
+    error = str(result.get("error") or "").strip()
+    if error:
+        return f"The studio could not reach LinkedIn ({error[:200]}). Nothing was scheduled."
+    return "LinkedIn did not accept the post. Nothing was scheduled."
+
+
 @app.post("/api/v1/posts/{post_id}/stage-to-linkedin", tags=["LinkedIn Native Scheduler"])
 def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
     """
@@ -1814,10 +1829,12 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
     )
 
     if result.get("status") != "success":
-        # Returned as-is with a 502. The refusal text names the flag or the
-        # breaker, and rewording it here would lose the one thing the creator
-        # needs in order to act.
-        raise HTTPException(status_code=502, detail=result)
+        # A 502 whose detail is a sentence. The refusal text names the flag or
+        # the breaker, and rewording it here would lose the one thing the
+        # creator needs in order to act, so it is passed through as written.
+        # The detail used to be the whole result dict, which the interface
+        # could not read, so the creator saw "502" and nothing else.
+        raise HTTPException(status_code=502, detail=_send_refusal_text(result))
 
     # A mock result is not a send, and must never be reported as one.
     #

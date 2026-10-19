@@ -22,6 +22,7 @@ import { DocsSurface } from "@/components/DocsSurface";
 import { CommandSurface } from "@/components/CommandSurface";
 import { PublishDialog } from "@/components/PublishDialog";
 import { DevtoolsSurface } from "@/components/DevtoolsSurface";
+import { StudioStatusBanner } from "@/components/StudioStatusBanner";
 import { STUDIO_SECTIONS, sectionById, type SectionId } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -347,6 +348,7 @@ export default function App() {
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
+        <StudioStatusBanner />
         {/* The context bar is about the document being written. On a surface
             that has no document it reported "0 chars, 0% of fold" beside a
             Save button with nothing to save, which is telemetry about nothing.

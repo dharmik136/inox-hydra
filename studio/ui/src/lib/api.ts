@@ -8,28 +8,139 @@
  * authorised by the cookie and the loopback Host check alone.
  */
 
-async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    ...init,
-    // Without this the cookie is not sent and every call is a 401.
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  });
+// ---------------------------------------------------------------------------
+// The request core
+// ---------------------------------------------------------------------------
 
-  if (!response.ok) {
-    // FastAPI puts the human readable reason in "detail", and some of them are
-    // things the author needs to read rather than a status code: exceeding the
-    // 5,000 character limit comes back as a 400 with the limit spelled out.
-    let reason = `${response.status}`;
-    try {
-      const body = await response.json();
-      if (typeof body?.detail === "string") reason = body.detail;
-    } catch {
-      // No JSON body. The status alone is all there is to report.
-    }
-    throw new Error(reason);
+/** What a window shows when the studio cannot be reached at all. */
+export const UNREACHABLE =
+  "The studio is not answering. It may have stopped, or this computer may have been asleep. Start it again, then retry.";
+
+/**
+ * A refusal or a failure, carrying the reason in words.
+ *
+ * status is 0 when the studio could not be reached. code is the studio's own
+ * name for a refusal when it gave one, for the few callers that act on a
+ * particular refusal rather than only showing it.
+ */
+export class StudioError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+
+  constructor(message: string, status: number, code: string | null = null) {
+    super(message);
+    this.name = "StudioError";
+    this.status = status;
+    this.code = code;
   }
+}
+
+/** Whether this window can reach the studio. */
+export type Connection = { state: "online" } | { state: "offline" };
+
+let connection: Connection = { state: "online" };
+const connectionListeners = new Set<(next: Connection) => void>();
+
+function setConnection(next: Connection): void {
+  if (next.state === connection.state) return;
+  connection = next;
+  for (const listener of connectionListeners) listener(next);
+}
+
+export function currentConnection(): Connection {
+  return connection;
+}
+
+/** Calls the listener whenever the connection state changes. Returns the unsubscribe. */
+export function onConnectionChange(listener: (next: Connection) => void): () => void {
+  connectionListeners.add(listener);
+  return () => {
+    connectionListeners.delete(listener);
+  };
+}
+
+/**
+ * fetch, carrying the cookie.
+ *
+ * A request that cannot reach the studio at all is the browser's TypeError,
+ * whose message is "Failed to fetch". That reached the screen verbatim; it now
+ * becomes a sentence, and every listener learns the studio is unreachable.
+ */
+async function studioFetch(path: string, init: RequestInit = {}, json = true): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (json && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+
+  let response: Response;
+  try {
+    // Without credentials the cookie is not sent and every call is a 401.
+    response = await fetch(path, { ...init, credentials: "same-origin", headers });
+  } catch (caught) {
+    if (caught instanceof DOMException && caught.name === "AbortError") throw caught;
+    setConnection({ state: "offline" });
+    throw new StudioError(UNREACHABLE, 0, "unreachable");
+  }
+  setConnection({ state: "online" });
+  return response;
+}
+
+/**
+ * The reason a refused response gives, in words, never a bare status code.
+ *
+ * FastAPI puts the reason in "detail", in three shapes: a string (the 5,000
+ * character limit, spelled out), an object some routes use to carry the
+ * provider's or LinkedIn's own message beside a code, and a list for a
+ * request that failed validation. Only the first was read, so the other two
+ * showed as "400" or "502" while the studio had said exactly what was wrong.
+ */
+export async function refusalFrom(response: Response): Promise<StudioError> {
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    // Not JSON: a proxy page or a crash. The status is all there is.
+  }
+  const detail = body && typeof body === "object" ? (body as { detail?: unknown }).detail : undefined;
+
+  let message: string | null = null;
+  let code: string | null = null;
+  if (typeof detail === "string" && detail.trim()) {
+    message = detail;
+  } else if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => (item && typeof item === "object" ? (item as { msg?: unknown }).msg : null))
+      .filter((part): part is string => typeof part === "string" && part.trim() !== "");
+    if (parts.length) message = `The studio could not accept this: ${parts.join("; ")}.`;
+  } else if (detail && typeof detail === "object") {
+    const fields = detail as Record<string, unknown>;
+    const said = [fields.error, fields.message].filter(
+      (part): part is string => typeof part === "string" && part.trim() !== "",
+    );
+    if (said.length) message = Array.from(new Set(said)).join(": ");
+    if (typeof fields.code === "string") code = fields.code;
+  }
+  return new StudioError(
+    message ?? `The studio refused this request (${response.status}${response.statusText ? ` ${response.statusText}` : ""}).`,
+    response.status,
+    code,
+  );
+}
+
+async function call<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await studioFetch(path, init);
+  if (!response.ok) throw await refusalFrom(response);
   return (await response.json()) as T;
+}
+
+/**
+ * Asks the studio for the cheapest thing it has, to learn whether it is back.
+ * The answer itself is not used.
+ */
+export async function pingStudio(): Promise<void> {
+  try {
+    await studioFetch("/api/queue/status");
+  } catch {
+    // Already recorded as unreachable.
+  }
 }
 
 export interface Draft {
@@ -760,21 +871,8 @@ export async function uploadMedia(file: File): Promise<UploadedMedia> {
   const form = new FormData();
   form.append("file", file);
 
-  const response = await fetch("/api/media/upload", {
-    method: "POST",
-    credentials: "same-origin",
-    body: form,
-  });
-  if (!response.ok) {
-    let reason = `${response.status}`;
-    try {
-      const body = await response.json();
-      if (typeof body?.detail === "string") reason = body.detail;
-    } catch {
-      // No JSON body; the status is all there is.
-    }
-    throw new Error(reason);
-  }
+  const response = await studioFetch("/api/media/upload", { method: "POST", body: form }, false);
+  if (!response.ok) throw await refusalFrom(response);
   return (await response.json()) as UploadedMedia;
 }
 
@@ -980,9 +1078,8 @@ export async function streamAiCompletion(
     onChunk?: (chunk: string) => void;
   },
 ): Promise<string> {
-  const response = await fetch("/api/ai/stream", {
+  const response = await studioFetch("/api/ai/stream", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       prompt,
       system_prompt: options?.systemPrompt ?? null,
@@ -991,16 +1088,7 @@ export async function streamAiCompletion(
     }),
   });
 
-  if (!response.ok) {
-    let reason = `${response.status} ${response.statusText}`;
-    try {
-      const body = await response.json();
-      if (typeof body?.detail === "string") reason = body.detail;
-    } catch {
-      // not JSON
-    }
-    throw new Error(reason);
-  }
+  if (!response.ok) throw await refusalFrom(response);
 
   const reader = response.body?.getReader();
   if (!reader) {
@@ -1647,22 +1735,12 @@ export async function previewArchive(source: string): Promise<ArchivePreview> {
  * at its size cap as the bytes arrive.
  */
 export async function uploadArchive(file: File): Promise<ArchivePreview> {
-  const response = await fetch("/api/v1/archive/upload", {
+  const response = await studioFetch("/api/v1/archive/upload", {
     method: "POST",
-    credentials: "same-origin",
     headers: { "Content-Type": "application/zip", "X-Archive-Name": encodeURIComponent(file.name) },
     body: file,
   });
-  if (!response.ok) {
-    let reason = `${response.status}`;
-    try {
-      const body = await response.json();
-      if (typeof body?.detail === "string") reason = body.detail;
-    } catch {
-      // No JSON body; the status is all there is.
-    }
-    throw new Error(reason);
-  }
+  if (!response.ok) throw await refusalFrom(response);
   return (await response.json()) as ArchivePreview;
 }
 
