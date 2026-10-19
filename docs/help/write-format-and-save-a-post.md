@@ -43,7 +43,7 @@ These are real Unicode characters, not markup, so they survive copy and paste. T
 
 ## Save
 
-Saving is manual. Press **Save** in the top bar. The mark beside it tells you where you stand:
+Saving is manual. Press **Save** in the top bar. While a save is under way the button is greyed out, so a second press cannot make a second copy. If you reload, close the tab or leave the studio with text that is not saved, the browser asks before it lets the text go. Moving between screens in the studio keeps the Composer's text. The mark beside **Save** tells you where you stand:
 
 | Mark | Meaning |
 | --- | --- |

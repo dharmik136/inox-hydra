@@ -39,13 +39,29 @@ import {
 import type { SearchFocus } from "@/lib/search";
 import { measurableLength, measurableWordCount, openingEnd, storedLength, swapOpening } from "@/lib/text";
 import { DOCKED_INSPECTOR_QUERY, useMediaQuery } from "@/lib/viewport";
-import { setUnsavedCheck } from "@/lib/unsaved";
+import { confirmLeaving, registerUnsavedWork } from "@/lib/unsaved";
 
 /** Average adult reading speed. Used for an estimate that is labelled as one. */
 const WORDS_PER_MINUTE = 200;
 
 export default function App() {
   const [active, setActive] = useState<SectionId>("composer");
+  const activeRef = useRef(active);
+  activeRef.current = active;
+
+  /**
+   * Moves to another screen, the one way every control and link does.
+   *
+   * Leaving a screen whose edits live only on that screen asks first (see
+   * lib/unsaved.ts), and answering Cancel stays put. `confirmed` is for a
+   * caller that has already asked. Returns whether the move happened.
+   */
+  const navigate = useCallback((next: SectionId, confirmed = false): boolean => {
+    if (next === activeRef.current) return true;
+    if (!confirmed && !confirmLeaving(activeRef.current)) return false;
+    setActive(next);
+    return true;
+  }, []);
   const [trayOpen, setTrayOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Docked beside the editor on a wide window; a drawer over it on a narrow
@@ -60,10 +76,18 @@ export default function App() {
   const [draftId, setDraftId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
-  // Read by anything that reloads the studio, such as switching profile.
-  useEffect(() => {
-    setUnsavedCheck(() => (saveState === "dirty" || saveState === "failed") && draft.trim().length > 0);
-  }, [saveState, draft]);
+  // Text in the Composer that is not on disk. Registered once with the
+  // unsaved-work registry, which asks before the page reloads or closes and
+  // which the profile switcher reads before it reloads the studio. A save
+  // still on its way counts: reloading now could cut it off. No section,
+  // because the draft lives here and survives moving between screens.
+  const composerUnsaved = useRef(false);
+  composerUnsaved.current =
+    (saveState === "dirty" || saveState === "failed" || saveState === "saving") && draft.trim().length > 0;
+  useEffect(
+    () => registerUnsavedWork("composer", { label: "The post in the Composer", check: () => composerUnsaved.current }),
+    [],
+  );
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -329,23 +353,23 @@ export default function App() {
   const onOpenResult = useCallback(
     async (result: SearchResult) => {
       const point = (target: SectionId, id: string, anchor: string | null = null) => {
+        if (!navigate(target)) return;
         focusNonce.current += 1;
         setFocus({ section: target, target: { id, anchor, nonce: focusNonce.current } });
-        setActive(target);
       };
 
       if (result.kind === "post") {
         if (result.opens !== "composer") {
-          setActive(result.opens === "queue" ? "queue" : "analytics");
+          navigate(result.opens === "queue" ? "queue" : "analytics");
           return;
         }
         if (result.id === draftId) {
-          setActive("composer");
+          navigate("composer");
           return;
         }
-        const unsaved = (saveState === "dirty" || saveState === "failed") && draft.trim().length > 0;
+        if (!confirmLeaving(activeRef.current)) return;
         if (
-          unsaved &&
+          composerUnsaved.current &&
           !window.confirm(
             "The post in the Composer has unsaved changes. Open the other draft and discard them?",
           )
@@ -356,7 +380,7 @@ export default function App() {
         if (!found) {
           // Published or queued since the search ran, so it no longer belongs
           // in the editor.
-          setActive("analytics");
+          navigate("analytics", true);
           return;
         }
         touched.current = true;
@@ -368,7 +392,7 @@ export default function App() {
         setSaveError(null);
         setGenerated(null);
         setHookUndo(null);
-        setActive("composer");
+        navigate("composer", true);
         return;
       }
 
@@ -376,7 +400,7 @@ export default function App() {
       else if (result.kind === "specimen") point("swipe", result.id);
       else if (result.kind === "help") point("docs", result.id, result.anchor_text ?? null);
     },
-    [draft, draftId, saveState],
+    [draftId, navigate],
   );
 
   const focusFor = (target: SectionId) => (focus && focus.section === target ? focus.target : null);
@@ -388,7 +412,7 @@ export default function App() {
       <StudioRail
         sections={sections}
         active={active}
-        onSelect={setActive}
+        onSelect={navigate}
         trayOpen={trayOpen}
         onToggleTray={() => setTrayOpen((open) => !open)}
         onSearch={() => setPaletteOpen(true)}
@@ -431,7 +455,7 @@ export default function App() {
             <span className="min-w-0 flex-1 truncate text-[13px] text-ink-muted">{section.blurb}</span>
             <button
               type="button"
-              onClick={() => setActive("activity")}
+              onClick={() => navigate("activity")}
               className={cn(
                 "flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors",
                 active === "activity"
@@ -482,32 +506,32 @@ export default function App() {
               {active === "setup" && <OnboardingSurface />}
               {active === "today" && (
                 <TodaySurface
-                  onOpenSetup={() => setActive("setup")}
-                  onOpenActivity={() => setActive("activity")}
+                  onOpenSetup={() => navigate("setup")}
+                  onOpenActivity={() => navigate("activity")}
                   onOpenLead={(leadId) => {
+                    if (!navigate("leads")) return;
                     focusNonce.current += 1;
                     setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
-                    setActive("leads");
                   }}
                 />
               )}
               {active === "activity" && (
                 <ActivitySurface
                   onOpenLead={(leadId) => {
+                    if (!navigate("leads")) return;
                     focusNonce.current += 1;
                     setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
-                    setActive("leads");
                   }}
                 />
               )}
               {active === "leads" && <LeadsSurface focus={focusFor("leads")} />}
               {active === "posts" && (
                 <PostsSurface
-                  onOpenActivity={() => setActive("activity")}
+                  onOpenActivity={() => navigate("activity")}
                   onOpenLead={(leadId) => {
+                    if (!navigate("leads")) return;
                     focusNonce.current += 1;
                     setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
-                    setActive("leads");
                   }}
                 />
               )}
@@ -550,7 +574,7 @@ export default function App() {
             sections={sections}
             open={trayOpen}
             active={active}
-            onSelect={setActive}
+            onSelect={navigate}
             onClose={() => setTrayOpen(false)}
           />
         </div>
@@ -580,7 +604,7 @@ export default function App() {
         onOpenChange={setPaletteOpen}
         sections={sections}
         onOpenResult={(result) => void onOpenResult(result)}
-        onNavigate={setActive}
+        onNavigate={navigate}
         onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
         onToggleInspector={() => setInspectorOpen((open) => !open)}
       />

@@ -134,6 +134,38 @@ def _rows_with(api, content):
     return [row for row in api.get("/api/posts").json()["posts"] if row["content"] == content]
 
 
+def test_reload_with_unsaved_text_asks_before_it_is_lost(new_page, studio_url, api):
+    """
+    Writing, then reloading or closing the tab, threw the text away without a
+    word. The page now asks first, and only while there is something to lose.
+    """
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    editor.click()
+    page.keyboard.type("A paragraph nobody has saved yet.")
+    expect(_status(page)).to_contain_text("UNSAVED")
+
+    dialogs = []
+
+    def answer(dialog):
+        dialogs.append(dialog.type)
+        dialog.accept()
+
+    page.on("dialog", answer)
+    page.reload(wait_until="networkidle")
+    assert dialogs == ["beforeunload"], f"reloading over unsaved text asked {dialogs}"
+
+    # Saved work is not nagged about.
+    editor = _open_composer(page, studio_url)
+    editor.click()
+    page.keyboard.type("Saved this time.")
+    page.get_by_role("button", name="Save", exact=True).click()
+    expect(_status(page)).to_contain_text("SAVED")
+    page.reload(wait_until="networkidle")
+    assert dialogs == ["beforeunload"], "a reload with nothing unsaved still asked"
+
+
 def test_a_hook_replaces_only_the_opening_when_the_blank_line_holds_a_space(new_page, studio_url, api):
     """
     Text pasted from LinkedIn keeps blank lines that are not empty: a space,

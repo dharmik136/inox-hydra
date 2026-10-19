@@ -9,7 +9,7 @@ import {
   type CreatorAccount,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { hasUnsavedWork } from "@/lib/unsaved";
+import { hasUnsavedWork, reloadStudio } from "@/lib/unsaved";
 
 const LICENCE_CHANGED = "inox:licence-changed";
 
@@ -93,7 +93,7 @@ export function AccountSwitcher({
       }
       // Each profile is its own database, so every screen has to read again.
       // A reload is the one way to be sure none keeps the last profile's data.
-      window.location.reload();
+      reloadStudio();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to switch profile");
     }
@@ -125,7 +125,7 @@ export function AccountSwitcher({
         if (onAccountSwitched) {
           onAccountSwitched(res.account);
         }
-        window.location.reload();
+        reloadStudio();
         return;
       }
       await loadAccounts();
