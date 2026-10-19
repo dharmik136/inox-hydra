@@ -108,6 +108,12 @@ out.sentProfile = seen[seen.length - 1].headers["x-inox-profile"] || null;
 out.switched = await attempt([{ ...accounts, headers: { "X-Inox-Profile": "client-b" } }], () => api.fetchAccounts());
 out.shownAfterSwitch = api.shownProfileId ? api.shownProfileId() : null;
 out.staleConnection = api.currentConnection ? api.currentConnection() : null;
+// An answer that names no profile (a crash page, a 401) does not prove the
+// window is back on its profile, so it stays stale.
+await attempt([{ status: 500, body: "<html>crash</html>" }], () => api.fetchAccounts());
+out.staleAfterCrash = api.currentConnection ? api.currentConnection().state : null;
+await attempt([{ ...accounts, headers: { "X-Inox-Profile": "default" } }], () => api.fetchAccounts());
+out.afterSwitchBack = api.currentConnection ? api.currentConnection().state : null;
 console.log(JSON.stringify(out));
 """
 
@@ -173,6 +179,11 @@ def test_every_request_names_the_profile_the_window_loaded_with(probe):
 def test_an_answer_for_another_profile_marks_the_window_stale(probe):
     assert probe["shownAfterSwitch"] == "default", "the window must keep the profile it loaded with"
     assert probe["staleConnection"] == {"state": "stale-profile", "shown": "default", "active": "client-b"}
+
+
+def test_an_answer_naming_no_profile_does_not_clear_a_stale_window(probe):
+    assert probe["staleAfterCrash"] == "stale-profile"
+    assert probe["afterSwitchBack"] == "online"
 
 
 def test_the_window_learns_the_studio_is_back(probe):

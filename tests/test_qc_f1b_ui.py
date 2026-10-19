@@ -304,6 +304,27 @@ def test_a_due_post_waits_on_the_queue_until_the_creator_posts_it(context, studi
     assert [r["status"] for r in _rows() if r["id"] == "qcf1b-due"] == ["published"]
 
 
+def test_a_due_post_the_creator_will_not_post_can_leave_the_queue(context, studio_url):
+    from datetime import datetime, timedelta, timezone
+
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO posts (id, content, status, scheduled_for) VALUES (?, ?, 'due', ?)",
+            ("qcf1b-due-drop", "QC F1B a due post the creator changed their mind about.",
+             (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    page = _open(context, studio_url, "Queue")
+    row = page.locator("section[aria-labelledby=queue-due] li", has_text="changed their mind")
+    row.wait_for()
+    row.get_by_role("button", name="Back to drafts").click()
+    row.wait_for(state="detached")
+    assert [r["status"] for r in _rows() if r["id"] == "qcf1b-due-drop"] == ["draft"]
+
+
 # ---------------------------------------------------------------------------
 # WRITE-01: a window left on another profile cannot save into the new one
 # ---------------------------------------------------------------------------
@@ -351,5 +372,19 @@ def test_a_window_left_on_the_old_profile_is_told_and_cannot_save(browser, studi
         with paths.using_profile("client-b"):
             leaked = [r for r in _rows() if "Confidential" in (r["content"] or "")]
         assert leaked == [], "the stale window's draft landed in the other profile"
+
+        # Reload asks first while the Composer holds unsaved text, and staying
+        # keeps the text on screen.
+        asked = []
+
+        def dismiss(dialog):
+            asked.append(dialog.message)
+            dialog.dismiss()
+
+        window_a.on("dialog", dismiss)
+        banner.get_by_role("button", name="Reload this window").click()
+        window_a.wait_for_timeout(500)
+        assert asked and "unsaved" in asked[0].lower()
+        assert "Confidential" in window_a.get_by_label("Post body").input_value()
     finally:
         ctx.close()

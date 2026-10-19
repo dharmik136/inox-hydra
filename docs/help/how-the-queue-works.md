@@ -57,6 +57,8 @@ Posts you sent with **Send to LinkedIn** are listed here too. LinkedIn publishes
 2. Press **Copy text**, paste it into LinkedIn and post it.
 3. Press **I posted it**. The post is recorded as published now, and appears in **Analytics**.
 
+If you decide not to post it, press **Back to drafts** instead. It leaves the Queue with its text kept, and you can open it again from search (**Ctrl+K**).
+
 If you open the post on LinkedIn with the bridge running, it is linked to its LinkedIn post and recorded as published even if you skip step 3.
 
 ## Check for due posts

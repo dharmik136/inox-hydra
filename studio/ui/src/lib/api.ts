@@ -93,6 +93,11 @@ function noteProfile(served: string | null): void {
       setConnection({ state: "stale-profile", shown: shownProfile, active: served });
       return;
     }
+  } else if (connection.state === "stale-profile") {
+    // An answer that names no profile (a crash page, a 401) says nothing
+    // about which profile is active, and the studio is still refusing this
+    // window's writes. Only an answer for the shown profile clears it.
+    return;
   }
   setConnection({ state: "online" });
 }
@@ -685,6 +690,17 @@ export async function fetchSmartSlots(): Promise<{ slots: QueueSlot[]; scheduled
 export async function fetchDuePosts(): Promise<ScheduledPost[]> {
   const data = await call<{ posts?: ScheduledPost[] }>("/api/posts?status=due");
   return data.posts ?? [];
+}
+
+/**
+ * Takes a due post off the Queue and back to the drafts, text kept, for a
+ * post the creator has decided not to post now. Only the status changes.
+ */
+export async function returnToDrafts(postId: string): Promise<void> {
+  await call(`/api/posts/${encodeURIComponent(postId)}`, {
+    method: "PUT",
+    body: JSON.stringify({ status: "draft" }),
+  });
 }
 
 export async function fetchCadenceHealth(): Promise<CadenceHealth> {
