@@ -813,8 +813,15 @@
 
   const TIME_BADGE = /^(?:\(edited\)\s*)?\d+\s*(?:s|m|h|d|w|mo|yr|y)$/i;
 
-  function extractCommentText(commentEl) {
-    const direct = textOf(commentEl, [
+  // A comment's text without the replies nested inside it.
+  function ownText(commentEl, replies) {
+    return (replies || []).reduce((text, reply) => text.replace(reply.innerText || "", ""), commentEl.innerText || "");
+  }
+
+  function extractCommentText(commentEl, replies) {
+    const outside = (el) => !(replies || []).some((reply) => reply.contains(el));
+    let direct = null;
+    for (const selector of [
       ".comments-comment-item__main-content",
       ".update-components-text",
       ".comments-comment-item-content-body",
@@ -823,10 +830,17 @@
       ".comments-comment-item__highlighted-text",
       ".comments-highlighted-comment",
       ".comment-body",
-    ]);
+    ]) {
+      const found = Array.from(commentEl.querySelectorAll(selector))
+        .find((el) => outside(el) && clean(el.innerText || el.textContent));
+      if (found) {
+        direct = clean(found.innerText || found.textContent);
+        break;
+      }
+    }
     if (direct) return direct;
 
-    const paragraphs = Array.from(commentEl.querySelectorAll("p"));
+    const paragraphs = Array.from(commentEl.querySelectorAll("p")).filter(outside);
     let seenTime = false;
     const bodyPs = [];
     for (const p of paragraphs) {
@@ -841,7 +855,7 @@
     }
     if (bodyPs.length) return bodyPs.join("\n").replace(/\n?…\s*more$/i, "").trim();
 
-    const lineList = lines(commentEl);
+    const lineList = ownText(commentEl, replies).split("\n").map((l) => l.trim()).filter(Boolean);
     let started = false;
     const bodyLines = [];
     for (const l of lineList) {
@@ -876,16 +890,24 @@
         const commentEls = Array.from(card.querySelectorAll(
           "article, .comments-comment-item, [data-view-name='feed-full-update-comment'], .feed-shared-main-content--comment, div[data-id^='urn:li:comment:'], .comments-comments-list__comment-item, div[id^='replaceableComment_urn:li:comment:']"
         ));
+        // A reply nests inside the comment it answers, so whose comment this
+        // is, and what it says, are read from its own part only. "• You" was
+        // looked for anywhere inside, the creator's nested reply included, so
+        // the stranger's comment they answered was saved as their own words.
+        const repliesIn = (c) => commentEls.filter((other) => other !== c && c.contains(other) &&
+          other.querySelector("a[href*='/in/']"));
         let mine = commentEls.filter((c) => {
-          const firstLink = c.querySelector("a[href*='/in/']");
+          const replies = repliesIn(c);
+          const outside = (el) => !replies.some((r) => r.contains(el));
+          const firstLink = Array.from(c.querySelectorAll("a[href*='/in/']")).find(outside);
           const v = firstLink ? vanityOf(firstLink.getAttribute("href")) : "";
           if (v === me || v === "me") return true;
-          const t = c.innerText || "";
+          const t = ownText(c, replies);
           if (t.includes("• You")) return true;
           return false;
         });
         for (const comment of mine) {
-          const text = extractCommentText(comment);
+          const text = extractCommentText(comment, repliesIn(comment));
           if (!text) continue;
           items.push({
             target_activity_urn: urn, kind: "comment", my_text: text,
