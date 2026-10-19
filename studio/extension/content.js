@@ -740,7 +740,17 @@ function maybeBindPostUrn() {
   if (!body) return;
   lastBoundUrn = urn;
 
-  studioApi("/api/v1/posts/bind-urn", { activity_urn: urn, post_text: body })
+  // A plain repost's permalink shows the creator's words under the repost's
+  // own id, and binding it left the creator's real post unbindable. So a
+  // repost is never offered, and the post's author goes with the rest, for the
+  // studio to refuse a post that is not the creator's.
+  const header = document.querySelector(
+    ".update-components-header__text-view, .update-components-header, .feed-shared-header, [data-view-name='feed-full-update-header']"
+  );
+  const opening = (document.querySelector("main") || document.body).innerText.split("\n").slice(0, 6).join(" ");
+  if (/\breposted\b/i.test((header && header.innerText) || "") || /\breposted this\b/i.test(opening)) return;
+
+  studioApi("/api/v1/posts/bind-urn", { activity_urn: urn, post_text: body, post_author: postAuthorFor(document.body) })
     .then(result => {
       if (result && result.status === "bound") {
         showInPageToast(
