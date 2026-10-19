@@ -480,7 +480,7 @@ export function ArchiveImport({
           <ul className="mt-2 flex flex-col gap-0.5">
             {Object.entries(result).map(([kind, tally]) => (
               <li key={kind} className="text-[12px] text-ink-secondary">
-                {labelFor(preview, kind)}: {tallyLine(tally)}
+                {labelFor(preview, kind)}: {tallyLine(kind, tally)}
               </li>
             ))}
           </ul>
@@ -527,13 +527,38 @@ function labelFor(preview: ArchivePreview | null, kind: string): string {
   return preview?.files.find((f) => f.kind === kind)?.label ?? kind;
 }
 
-function tallyLine(tally: ArchiveKindTally): string {
+/** The profile fields an import fills, in the creator's words rather than the database's. */
+const FIELD_WORDS: Record<string, string> = {
+  display_name: "your name",
+  headline: "headline",
+  about: "about",
+  location: "location",
+};
+
+/** Why the importer passes over a row of each kind, so "skipped" is never a bare number. */
+const SKIPPED_BECAUSE: Record<string, string> = {
+  posts: "reposts with nothing you wrote, or rows with no post link",
+  comments: "no text, no post link, or a date the studio cannot read",
+  reactions: "no post link, or a date the studio cannot read",
+  skills: "empty",
+  connections: "no public profile address",
+};
+
+function inWords(items: string[]): string {
+  return items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}` : items.join("");
+}
+
+function tallyLine(kind: string, tally: ArchiveKindTally): string {
   if ("left_out" in tally) return "left out";
   if ("not_understood" in tally) return "not understood, nothing imported";
-  if ("filled" in tally) return tally.filled.length ? `filled ${tally.filled.join(", ")}` : "nothing was missing";
+  if ("filled" in tally) {
+    return tally.filled.length
+      ? `filled ${inWords(tally.filled.map((field) => FIELD_WORDS[field] ?? field.replace(/_/g, " ")))}`
+      : "nothing was missing";
+  }
   const parts = [`${tally.added} added`];
   if (tally.already_there) parts.push(`${tally.already_there} already here`);
-  if (tally.skipped) parts.push(`${tally.skipped} skipped`);
+  if (tally.skipped) parts.push(`${tally.skipped} skipped${SKIPPED_BECAUSE[kind] ? `: ${SKIPPED_BECAUSE[kind]}` : ""}`);
   return parts.join(", ");
 }
 
@@ -553,8 +578,7 @@ function removedLine(removed: Record<string, number>): string {
     .filter(([kind]) => (removed[kind] ?? 0) > 0)
     .map(([kind, [one, many]]) => `${removed[kind]} ${removed[kind] === 1 ? one : many}`);
   if (parts.length === 0) return "Removed the record of that import. Nothing it added was still in the studio.";
-  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
-  return `Removed what that import added: ${list}.`;
+  return `Removed what that import added: ${inWords(parts)}.`;
 }
 
 function readable(bytes: number): string {

@@ -10,6 +10,7 @@ Every name and text here is invented.
 
 import io
 import os
+import re
 import shutil
 import socket
 import sqlite3
@@ -203,3 +204,15 @@ def test_a_folder_safari_unpacked_can_be_chosen_and_imported(setup_page, studio)
     conn = sqlite3.connect(paths.get_db_path())
     assert conn.execute("SELECT COUNT(*) FROM own_posts").fetchone()[0] == 1
     assert conn.execute("SELECT COUNT(*) FROM connections").fetchone()[0] == 1
+
+
+def test_the_result_is_in_words_not_column_names(setup_page, studio):
+    page = setup_page
+    _choose(page, studio, {"Profile.csv": PROFILE, "Shares.csv": SHARES, "Connections.csv": CONNECTIONS})
+    page.get_by_label("This is my archive: import Sample Alice's archive as my own record").check()
+    page.get_by_role("button", name="Import what is ticked").click()
+    panel = page.get_by_role("status").filter(has_text="Imported from")
+    expect(panel).to_contain_text("filled your name, headline, about and location")
+    expect(panel).to_contain_text("1 added, 1 skipped: no public profile address")
+    text = panel.inner_text()
+    assert not re.search(r"[a-z]+_[a-z]+", text), f"an identifier reached the screen: {text}"
