@@ -145,9 +145,15 @@ jobs:
             Download the ZIP below, extract it anywhere, and double click `InoxHydra.bat`.
             No Python installation and no administrator rights are required.
 
-            **Your data is safe across upgrades.** Drafts, leads and analytics live in
-            `%LOCALAPPDATA%\InoxHydra`, outside the application folder, so replacing this
-            folder with a newer one never touches your work. A timestamped database backup
-            is taken automatically before any schema upgrade.
+            **Where your data is.** By default, drafts, leads and analytics live in
+            `%LOCALAPPDATA%\InoxHydra`, outside the application folder. In true portable
+            mode (a folder named `data` inside `app\studio`) they live inside the folder.
+            A timestamped database backup is taken automatically before any schema upgrade.
 
-            To upgrade: delete the old folder and extract the new one.
+            To upgrade:
+            1. Back up every creator profile: `InoxHydra-CLI.bat backup --all`.
+            2. Run `InoxHydra-CLI.bat doctor`. It prints where your data is.
+            3. If that is outside the Inox Hydra folder, delete the old folder and extract
+               the new one. If it is inside (true portable mode), do not delete the folder:
+               replace only the program files, as the help article
+               "Check your version and update the studio" describes.

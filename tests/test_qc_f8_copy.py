@@ -9,6 +9,8 @@ claims are copy: a sentence on screen that a buyer relies on.
 import os
 import re
 
+import pytest
+
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 COMPONENTS = os.path.join(REPO_ROOT, "studio", "ui", "src", "components")
 HELP = os.path.join(REPO_ROOT, "docs", "help")
@@ -106,3 +108,37 @@ def test_cli_reference_describes_the_narrow_reset():
         assert kept in article
     assert "AI provider" in article and "LinkedIn session" in article
     assert "ai_api_key" in RESET_SETTING_KEYS and "li_at" in RESET_SETTING_KEYS
+
+
+# ---------------------------------------------------------------------------
+# Release notes agree with the portable-mode upgrade guidance (PLATFORM-13)
+# ---------------------------------------------------------------------------
+
+def _release_body():
+    with open(os.path.join(REPO_ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as handle:
+        workflow = handle.read()
+    return workflow[workflow.index("body: |"):]
+
+
+def test_release_notes_do_not_tell_every_user_to_delete_the_folder():
+    """
+    The notes said data lives in %LOCALAPPDATA% and "To upgrade: delete the
+    old folder", which in true portable mode (a data folder inside app\\studio)
+    deletes the creator's data. The update command and the help say not to.
+    """
+    body = _release_body()
+    assert "To upgrade: delete the old folder and extract the new one." not in body
+    assert "never touches your work" not in body
+    assert "app\\studio" in body and "do not delete the folder" in body, "the notes do not name true portable mode"
+    assert "backup --all" in body, "the notes do not say to back up every profile first"
+    assert "Check your version and update the studio" in body
+
+
+def test_release_notes_yaml_still_parses():
+    yaml = pytest.importorskip("yaml")
+
+    with open(os.path.join(REPO_ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as handle:
+        parsed = yaml.safe_load(handle.read())
+    steps = parsed["jobs"]["build-portable"]["steps"]
+    attach = next(s for s in steps if s.get("name") == "Attach To GitHub Release")
+    assert "do not delete the folder" in attach["with"]["body"]
