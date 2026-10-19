@@ -294,7 +294,10 @@ def clean_text_formatting(text: Any) -> str:
     cleaned = re.sub(r' +([,.:;?!]+)(?=\s|$)', r'\1', cleaned)
     # Clean double commas
     cleaned = re.sub(r',\s*,', ',', cleaned)
-    return cleaned.strip()
+    # Blank lines before the text and whitespace after it go. The first line's
+    # own indentation stays: Clean runs on a selection, which often starts on
+    # an indented line, and strip() took that indentation away.
+    return re.sub(r"\A(?:[ \t]*\n)+", "", cleaned).rstrip()
 
 
 def analyze_hook(text: Any) -> dict:

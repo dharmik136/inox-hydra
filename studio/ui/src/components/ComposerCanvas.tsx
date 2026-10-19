@@ -58,6 +58,14 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
   const [height, setHeight] = useState<number | null>(null);
   const [toolbar, setToolbar] = useState<ToolbarPosition | null>(null);
   const [busy, setBusy] = useState(false);
+  // Said when a format came back but could not be applied, so a press that
+  // changed nothing does not look like one that was ignored.
+  const [formatNote, setFormatNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!formatNote) return;
+    const timer = window.setTimeout(() => setFormatNote(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [formatNote]);
   const [swap, setSwap] = useState<{ height: number; text: string } | null>(null);
 
   // The text as of the latest render, for a format request that comes back
@@ -188,23 +196,36 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
 
       const selected = value.slice(selectionStart, selectionEnd);
       setBusy(true);
+      setFormatNote(null);
       try {
         const formatted = await formatText(kind, selected);
 
         // Applied to the text as it is now, not as it was when the button was
         // pressed. Rebuilding from the old copy threw away whatever the author
-        // typed while the request was out. If the selected words themselves
-        // moved or changed meanwhile, the format is dropped, not the typing.
+        // typed while the request was out. Typing before the selection moves
+        // the words without changing them, so they are found where they went;
+        // if the words themselves changed, the format is dropped, not the
+        // typing, and the author is told.
         const current = latestValue.current;
-        if (current.slice(selectionStart, selectionEnd) !== selected) {
-          setToolbar(null);
-          return;
+        let start = selectionStart;
+        let end = selectionEnd;
+        if (current.slice(start, end) !== selected) {
+          const moved = current.length - value.length;
+          const after = value.slice(selectionEnd);
+          if (moved !== 0 && current.slice(start + moved, end + moved) === selected && current.endsWith(after)) {
+            start += moved;
+            end += moved;
+          } else {
+            setToolbar(null);
+            setFormatNote("The formatting was not applied: the selected words changed while it was working. Select them and try again.");
+            return;
+          }
         }
         const caretStart = textarea.selectionStart;
         const caretEnd = textarea.selectionEnd;
-        const stillSelected = caretStart === selectionStart && caretEnd === selectionEnd;
+        const stillSelected = caretStart === start && caretEnd === end;
         const shift = formatted.length - selected.length;
-        onChange(current.slice(0, selectionStart) + formatted + current.slice(selectionEnd));
+        onChange(current.slice(0, start) + formatted + current.slice(end));
 
         // Keep the same text selected so formatters can be chained. The end
         // offset moves, because a formatter changes how many code units the
@@ -213,10 +234,10 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
         requestAnimationFrame(() => {
           textarea.focus();
           if (stillSelected) {
-            textarea.setSelectionRange(selectionStart, selectionStart + formatted.length);
+            textarea.setSelectionRange(start, start + formatted.length);
             syncToolbar();
           } else {
-            const moved = (index: number) => (index >= selectionEnd ? index + shift : index);
+            const moved = (index: number) => (index >= end ? index + shift : index);
             textarea.setSelectionRange(moved(caretStart), moved(caretEnd));
           }
         });
@@ -241,6 +262,11 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
 
   return (
     <div className="mx-auto w-full max-w-[68ch] px-10 py-12">
+      {formatNote && (
+        <p role="status" className="mb-3 text-[12px] leading-snug text-signal-orange-text">
+          {formatNote}
+        </p>
+      )}
       <div className="relative">
         {/* Measuring mirror. Laid out so Ranges have real geometry to report,
             but hidden from sight and from assistive technology. It must keep

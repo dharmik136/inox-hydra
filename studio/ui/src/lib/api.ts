@@ -258,11 +258,17 @@ export async function createDraft(content: string): Promise<string> {
  * refuses the write when the stored draft no longer matches it, because
  * someone saved it from another window in between; see
  * isDraftChangedElsewhere. Leaving it out overwrites whatever is stored.
+ *
+ * editPostedText says the author means to change the text of a post that is
+ * already queued, published or sent; without it the server refuses, see
+ * isPostedTextLocked.
  */
-export async function updateDraft(id: string, content: string, base?: string): Promise<void> {
+export async function updateDraft(id: string, content: string, base?: string, editPostedText = false): Promise<void> {
+  const body: Record<string, unknown> = base === undefined ? { content } : { content, base_content: base };
+  if (editPostedText) body.edit_posted_text = true;
   await call(`/api/posts/${encodeURIComponent(id)}`, {
     method: "PUT",
-    body: JSON.stringify(base === undefined ? { content } : { content, base_content: base }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -2519,4 +2525,32 @@ export async function updateLeadNotes(leadId: string, notes: string): Promise<st
  */
 export async function forgetLead(leadId: string): Promise<void> {
   await call(`/api/leads/${encodeURIComponent(leadId)}`, { method: "DELETE" });
+}
+
+// -------------------------------------------------------------
+// The text of a post that is no longer a draft
+// -------------------------------------------------------------
+
+/** Statuses whose text the server keeps unless asked on purpose (routers/posts.py). */
+export const POSTED_STATUSES = new Set(["published", "scheduled", "queued", "due", "sent"]);
+
+/** The code the server gives when it refuses new text over such a post. */
+const POSTED_TEXT_LOCKED = "posted_text_locked";
+
+/** Whether a failed updateDraft was refused because the post is queued, published or sent. */
+export function isPostedTextLocked(error: unknown): boolean {
+  return error instanceof Error && (error as Error & { code?: unknown }).code === POSTED_TEXT_LOCKED;
+}
+
+export interface StoredPost {
+  id: string;
+  content: string;
+  status: string;
+}
+
+/** One post by id, whatever its status, or null when there is none. */
+export async function fetchPostById(id: string): Promise<StoredPost | null> {
+  const data = await call<{ posts?: (PostRow & { status?: string })[] }>("/api/posts");
+  const row = (data.posts ?? []).find((post) => post.id === id);
+  return row ? { id: row.id, content: row.content, status: row.status ?? "draft" } : null;
 }

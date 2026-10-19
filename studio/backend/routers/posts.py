@@ -104,6 +104,12 @@ class PostUpdate(BaseModel):
 # whose time has come; "scheduled" is how a queued post is stored.
 POSTED_STATUSES = {"published", "scheduled", "queued", "due", "sent"}
 
+# The refusal's code, which the Composer acts on, and the words for each
+# status. The words name the post the way the Composer's buttons do
+# ("Correct the queued post"), so the message points at a control that exists.
+POSTED_TEXT_LOCKED = "posted_text_locked"
+POSTED_WORDS = {"published": "published", "scheduled": "queued", "queued": "queued", "due": "queued", "sent": "sent"}
+
 
 # Starts the refusal. studio/ui/src/lib/api.ts recognises a conflict by it.
 DRAFT_CHANGED_ELSEWHERE = "This draft was changed in another window"
@@ -235,10 +241,16 @@ def update_post(post_id: str, updates: PostUpdate):
             and not updates.edit_posted_text
         ):
             conn.close()
-            raise HTTPException(status_code=409, detail=(
-                f"This post is already {existing['status']}, so its text was not changed. "
-                "Start a new post for new writing; to correct this one's text, edit it on purpose."
-            ))
+            word = POSTED_WORDS.get(existing["status"], existing["status"])
+            raise HTTPException(status_code=409, detail={
+                "code": POSTED_TEXT_LOCKED,
+                "status": existing["status"],
+                "message": (
+                    f"This post is already {word}, so its text was not changed. Choose Correct the "
+                    f"{word} post to change its text on purpose, or Save as a new draft to keep this "
+                    "text as a separate post."
+                ),
+            })
 
         content = updates.content if updates.content is not None else existing["content"]
         media_urls = json.dumps(updates.media_urls) if updates.media_urls is not None else existing["media_urls"]

@@ -48,6 +48,13 @@ def test_indentation_survives_and_inner_runs_of_spaces_collapse():
     assert cleaned == "Run it like this:\n    npm run build\n\tthen ship", repr(cleaned)
 
 
+def test_the_first_line_of_a_selection_keeps_its_indentation():
+    """Clean runs on a selection, so its first line is often an indented one."""
+    assert clean_text_formatting("    indented  code\n    more") == "    indented code\n    more"
+    assert clean_text_formatting("\n\n  after blank lines  \n") == "  after blank lines"
+    assert clean_text_formatting("   ") == ""
+
+
 def test_a_dot_that_starts_a_word_keeps_its_space():
     assert clean_text_formatting("Use .env files .") == "Use .env files."
     assert clean_text_formatting("Ship it , then measure .") == "Ship it, then measure."

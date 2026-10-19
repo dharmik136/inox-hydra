@@ -28,7 +28,7 @@ const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
  * nothing had been posted. Pausing stops posts being marked due, and its state
  * is read back from the server rather than assumed from the click.
  */
-export function QueueSurface() {
+export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => void } = {}) {
   const [slots, setSlots] = useState<QueueSlot[] | null>(null);
   const [scheduled, setScheduled] = useState<ScheduledPost[]>([]);
   const [due, setDue] = useState<ScheduledPost[]>([]);
@@ -318,6 +318,17 @@ export function QueueSurface() {
                 <span className="truncate text-[12px] text-ink-secondary">
                   {post.content.split("\n")[0]}
                 </span>
+                {/* Opens the post in the Composer, which asks before it
+                    changes a queued post's text. */}
+                {onEditText && (
+                  <button
+                    type="button"
+                    onClick={() => onEditText(post.id)}
+                    className="ml-auto shrink-0 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+                  >
+                    Edit text
+                  </button>
+                )}
               </li>
             ))}
           </ul>
