@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AccountSwitcher } from "@/components/AccountSwitcher";
 import { type SectionId, type StudioSection } from "@/lib/navigation";
+import { useModalFocus } from "@/lib/modalFocus";
 import { cn } from "@/lib/utils";
 
 interface NavigationTrayProps {
@@ -22,31 +23,10 @@ interface NavigationTrayProps {
  */
 export function NavigationTray({ sections, open, active, onSelect, onClose }: NavigationTrayProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const restoreFocusTo = useRef<Element | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      restoreFocusTo.current = document.activeElement;
-      panelRef.current?.focus();
-      return;
-    }
-    if (restoreFocusTo.current instanceof HTMLElement) {
-      restoreFocusTo.current.focus();
-      restoreFocusTo.current = null;
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Takes focus, keeps Tab inside the tray, closes on Escape and hands focus
+  // back. Tab used to walk out into the page behind the scrim.
+  useModalFocus(panelRef, open, onClose, "self");
 
   return (
     <AnimatePresence>
@@ -75,12 +55,14 @@ export function NavigationTray({ sections, open, active, onSelect, onClose }: Na
             exit={{ opacity: 0, x: -12, scale: 0.98 }}
             /* Expressive tier: this is a navigation morph, not a hover. */
             transition={{ duration: 0.46, ease: [0.32, 0.72, 0.24, 1] }}
-            className="absolute top-3 left-3 z-30 w-80 origin-top-left rounded-lg border border-edge bg-raised p-2 shadow-2xl outline-none"
+            /* Bounded by the window and scrolled inside, so on a laptop
+               screen the last destinations are not below the bottom edge. */
+            className="absolute top-3 left-3 z-30 max-h-[calc(100%-1.5rem)] w-80 max-w-[calc(100%-1.5rem)] origin-top-left overflow-y-auto rounded-lg border border-edge bg-raised p-2 shadow-2xl outline-none"
           >
             {/* Active profile & account switching */}
             <div className="mb-2 border-b border-edge px-1 pb-2">
               <p className="studio-label px-1 pt-1 pb-1.5">Active Profile</p>
-              <AccountSwitcher condensed={false} onAccountSwitched={() => onClose()} />
+              <AccountSwitcher condensed={false} placement="below" onAccountSwitched={() => onClose()} />
             </div>
 
             <p className="studio-label px-2 pt-1 pb-1">Workspaces</p>

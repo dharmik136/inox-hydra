@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ArrowLeft, ChevronRight, LifeBuoy, Search, X } from "lucide-react";
 import {
   fetchDocLibrary,
@@ -208,6 +208,20 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
     if (view !== "document") readerRef.current?.scrollTo({ top: 0 });
   }, [view, sectionId]);
 
+  /**
+   * Typing on the home view's search box replaces the home view with the
+   * results, and the box goes with it, so the first letter landed and the
+   * rest went nowhere. The search carries on in the topics column's box.
+   */
+  const railSearch = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const field = railSearch.current;
+    if (view !== "results" || !field) return;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+  }, [view]);
+
   /** Which section is being read, for the contents rail. */
   useEffect(() => {
     if (view !== "document" || !doc || doc.outline.length < MIN_OUTLINE_FOR_RAIL) return;
@@ -336,8 +350,14 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
 
   const currentSection = sections.find((section) => section.id === sectionId) ?? null;
 
+  // Below md there is no room for two columns: the fixed topics column left
+  // the reader zero pixels wide, so opening an article changed nothing on a
+  // phone. There the reader takes the width, the topics column shrinks to its
+  // search box above it, and the home view, which has its own search box,
+  // shows no strip at all. The topics stay reachable from the reader's own
+  // "All topics" and the home view's sections.
   return (
-    <div className="flex h-full min-h-0">
+    <div className="flex h-full min-h-0 flex-col md:flex-row">
       <LibraryRail
         sections={sections}
         library={byId}
@@ -349,11 +369,13 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
         onHome={goHome}
         onOpenSection={openSection}
         onSelect={selectDocument}
+        hiddenWhenNarrow={view === "home"}
+        searchRef={railSearch}
       />
 
       <div
         ref={readerRef}
-        className="min-w-0 flex-1 overflow-y-auto"
+        className="min-h-0 min-w-0 flex-1 overflow-y-auto"
         tabIndex={0}
         role="region"
         aria-label="Document"
@@ -381,7 +403,7 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
           ) : !doc ? (
             <Centered>READING</Centered>
           ) : (
-            <article className="px-8 pt-6 pb-24">
+            <article className="px-5 pt-6 pb-24 md:px-8">
               <div className="max-w-[92ch]">
                 <button
                   type="button"
@@ -472,6 +494,9 @@ interface LibraryRailProps {
   onHome: () => void;
   onOpenSection: (id: string) => void;
   onSelect: (id: string, anchor?: string | null) => void;
+  /** Below md, whether to leave the column out entirely rather than show its search box. */
+  hiddenWhenNarrow: boolean;
+  searchRef: RefObject<HTMLInputElement>;
 }
 
 function LibraryRail({
@@ -485,6 +510,8 @@ function LibraryRail({
   onHome,
   onOpenSection,
   onSelect,
+  hiddenWhenNarrow,
+  searchRef,
 }: LibraryRailProps) {
   /** The curated seven carry a number worth showing beside their title. */
   const numberOf = useMemo(() => {
@@ -499,7 +526,13 @@ function LibraryRail({
   const toggle = (id: string) => setExpanded((state) => ({ ...state, [id]: !state[id] }));
 
   return (
-    <section aria-label="Help topics" className="flex w-[304px] shrink-0 flex-col border-r border-edge">
+    <section
+      aria-label="Help topics"
+      className={cn(
+        "w-full shrink-0 flex-col border-b border-edge md:flex md:w-[304px] md:border-r md:border-b-0",
+        hiddenWhenNarrow ? "hidden" : "flex",
+      )}
+    >
       <div className="shrink-0 px-4 pt-4 pb-3">
         <div className="relative">
           <Search
@@ -508,6 +541,7 @@ function LibraryRail({
             aria-hidden="true"
           />
           <input
+            ref={searchRef}
             value={query}
             onChange={(event) => onQuery(event.target.value)}
             placeholder="Search every document"
@@ -527,7 +561,7 @@ function LibraryRail({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto pb-6">
+      <div className="hidden min-h-0 flex-1 overflow-y-auto pb-6 md:block">
         <div className="px-2">
           <button
             type="button"

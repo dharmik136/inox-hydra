@@ -208,9 +208,7 @@ def test_e2e_multi_tenant_account_switching(page, monkeypatch):
         dialog.wait_for(state="visible")
 
     def add_profile(name):
-        opener = dialog.locator('button:has-text("Add Creator Profile")')
-        if opener.is_visible():
-            opener.click()
+        dialog.locator('button:has-text("Add Creator Profile")').click()
         dialog.locator('input[placeholder*="Profile Name"]').fill(name)
         dialog.locator('button:has-text("Add Profile")').click()
 
@@ -220,11 +218,9 @@ def test_e2e_multi_tenant_account_switching(page, monkeypatch):
     assert "its own database" in text
     assert "Agency licence" in text, "the switcher does not say a second profile needs a licence"
 
-    # Without a licence the second profile is refused, and the reason is shown.
-    add_profile("Marcus Vance")
-    alert = dialog.locator('[role="alert"]')
-    alert.wait_for(state="visible")
-    assert "Agency" in alert.inner_text()
+    # Without a licence the form is not offered at all, rather than refusing
+    # once it has been filled in (UX-27). The server still refuses on its own.
+    assert dialog.locator('button:has-text("Add Creator Profile")').count() == 0
     page.keyboard.press("Escape")
 
     installed = page.evaluate(

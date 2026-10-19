@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useState as useLocalState } from "react";
 import { Archive, Check, Loader2, Network, ShieldCheck } from "lucide-react";
 import {
@@ -19,6 +19,7 @@ import {
   type ProfileResponse,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { registerUnsavedWork } from "@/lib/unsaved";
 import { GroundingWorkspace } from "./GroundingWorkspace";
 import { LicenceWorkspace } from "./LicenceWorkspace";
 
@@ -54,6 +55,21 @@ export function BrandStudioSurface() {
   const [workspace, setWorkspace] = useState<Workspace>("Identity");
   const [state, setState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  // Edits not yet saved are unsaved work like the Composer's, so switching
+  // profile, reloading, or leaving this screen asks before they are thrown
+  // away. Only the Composer used to count, and these went without a word.
+  const unsaved = useRef(false);
+  unsaved.current = state === "dirty" || state === "failed";
+  useEffect(
+    () =>
+      registerUnsavedWork("brand-studio", {
+        label: "Your Brand Studio edits",
+        section: "settings",
+        check: () => unsaved.current,
+      }),
+    [],
+  );
 
   useEffect(() => {
     let live = true;
@@ -130,7 +146,9 @@ export function BrandStudioSurface() {
         </div>
       </div>
 
-      <div className="mt-6 flex items-center gap-1" role="tablist" aria-label="Brand workspaces">
+      {/* Wraps rather than running off a phone width window, where the last
+          two tabs could only be reached by a sideways scroll. */}
+      <div className="mt-6 flex flex-wrap items-center gap-1" role="tablist" aria-label="Brand workspaces">
         {WORKSPACES.map((candidate) => (
           <button
             key={candidate}
@@ -377,16 +395,36 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
       </dl>
 
       {/* This used to end "NOTHING ELSE IN THE STUDIO LEAVES THIS MACHINE",
-          which is not true. Four features reach out, and a blanket sentence a
-          reader cannot verify is worth less than a list they can. What stays
-          is the part that actually matters: the work itself never moves.
+          and then "YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THIS
+          MACHINE". Neither was true: Send to LinkedIn sends the draft with
+          that session, and a connected AI provider receives draft text. So
+          it says what stays, and each action that sends, what it sends and
+          where, matching the help article on what leaves this machine.
 
           tests/test_egress_surface.py holds this list to the code, so adding
           an outbound call without saying so here fails the suite. */}
       <div className="mt-5">
-        <p className="studio-meta leading-relaxed text-ink-muted">
-          YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THIS MACHINE.
+        <p className="text-[13px] leading-relaxed text-ink-secondary">
+          Your drafts, posts, leads, analytics and media stay in this profile&apos;s files on this
+          machine. Something leaves it only when you choose an action that sends it:
         </p>
+        <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-[13px] leading-relaxed text-ink-secondary">
+          <li>
+            <span className="text-ink-primary">Send to LinkedIn</span> sends the post&apos;s text to
+            LinkedIn, signed in with your stored LinkedIn session.
+          </li>
+          <li>
+            {ai?.has_api_key
+              ? "Re-Hook, Command and the other writing actions send the draft or instruction text to the AI provider you connected."
+              : ai
+                ? "No AI provider is connected, so Re-Hook, Command and the other writing actions run on this machine. Connect one, and they send the draft or instruction text to it."
+                : "With an AI provider connected, Re-Hook, Command and the other writing actions send the draft or instruction text to it."}
+          </li>
+          <li>
+            <span className="text-ink-primary">Generate</span> in the Media tab sends a prompt built
+            from your image description to an image service.
+          </li>
+        </ul>
       </div>
 
       <EgressLedger />

@@ -43,6 +43,8 @@ export function ActivitySurface({
   const [syncing, setSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [openingPost, setOpeningPost] = useState<string | null>(null);
+  /** What the last action on a post row came to, shown under that row. */
+  const [rowNote, setRowNote] = useState<{ urn: string; text: string } | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -82,24 +84,41 @@ export function ActivitySurface({
     }
   }
 
+  // The outcome is shown under the row, success or failure. Discarding the
+  // error left a click that changed nothing on screen when no browser opened.
   async function openBridgePost(activityUrn: string) {
     setOpeningPost(activityUrn);
+    setRowNote(null);
     try {
       const postUrl = `https://www.linkedin.com/feed/update/${activityUrn}/`;
-      await launchBridge("auto", postUrl);
-    } catch {
-      // Ignored if browser bridge cannot focus
+      const launched = await launchBridge("auto", postUrl);
+      setRowNote({ urn: activityUrn, text: launched.message || "Opened in the bridge browser." });
+    } catch (caught) {
+      setRowNote({
+        urn: activityUrn,
+        text: caught instanceof Error ? caught.message : "The browser could not be opened.",
+      });
     } finally {
       setOpeningPost(null);
     }
   }
 
+  // The tick waits for the browser to accept the copy. A refusal leaves the
+  // URN on screen to select by hand rather than claiming it is on the clipboard.
   function copyUrn(urn: string) {
-    if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(urn);
-      setCopiedUrn(urn);
-      window.setTimeout(() => setCopiedUrn(null), 2000);
+    setRowNote(null);
+    const refused = () => setRowNote({ urn, text: `Could not be copied. Select it by hand: ${urn}` });
+    if (!navigator?.clipboard?.writeText) {
+      refused();
+      return;
     }
+    navigator.clipboard
+      .writeText(urn)
+      .then(() => {
+        setCopiedUrn(urn);
+        window.setTimeout(() => setCopiedUrn(null), 2000);
+      })
+      .catch(refused);
   }
 
   if (failed && !stream) {
@@ -130,7 +149,7 @@ export function ActivitySurface({
       <div className="grid h-full place-items-center px-8">
         <div className="flex items-center gap-2 text-ink-muted">
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          <span className="studio-meta text-[11px]">LOADING LIVE ACTIVITY STREAM</span>
+          <span className="studio-meta text-[11px]">LOADING ACTIVITY</span>
         </div>
       </div>
     );
@@ -393,6 +412,11 @@ export function ActivitySurface({
                     <span aria-hidden="true">·</span>
                     <span>Loaded {ago(post.last_seen_at)}</span>
                   </div>
+                  {rowNote?.urn === post.activity_urn && (
+                    <p role="status" className="mt-1.5 text-[11px] break-all text-ink-secondary">
+                      {rowNote.text}
+                    </p>
+                  )}
                 </div>
               ))
             )}

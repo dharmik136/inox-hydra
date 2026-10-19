@@ -11,6 +11,7 @@ The **Save** button at the top right saves **Identity** and **Watermark** only, 
 
 - It is greyed out until you first change something, and while a save is running. After a save it stays available.
 - The mark beside it reads UNSAVED, SAVING, SAVED or SAVE FAILED. Hover over SAVE FAILED to read the reason.
+- While it reads UNSAVED or SAVE FAILED, switching profile asks first, naming "Your Brand Studio edits", because the switch reloads the studio and the edits would be lost.
 
 The controls on **Grounding** and **Local security** act as soon as you use them and do not need **Save**.
 
@@ -54,7 +55,7 @@ The tab opens with "This install processes your work on this machine." and four 
 | Model engine | RUNS LOCALLY or SENDS TO PROVIDER | SENDS TO PROVIDER when an AI key is saved. UNKNOWN if the status could not be read |
 | LinkedIn session | CONNECTED or NOT CONNECTED | Shown in green either way |
 
-Below the rows, the line YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THIS MACHINE is not the whole story: **Send to LinkedIn** sends the post itself to LinkedIn, using your session. Then come three sections:
+Below the rows, a short list says what stays and what leaves: your drafts, posts, leads, analytics and media stay on this machine, and three actions send something only when you use them. **Send to LinkedIn** sends the post's text to LinkedIn with your session. With an AI provider connected, **Re-Hook**, **Command** and the other writing actions send the draft or instruction text to it; the line says whether one is connected. **Generate** in the Media tab sends a prompt built from your image description to an image service. Then come three sections:
 
 - **What has left this machine**, the egress ledger. See [What leaves this machine, and when](what-leaves-this-machine.md).
 - **LinkedIn session**, where you paste your session. See [Connect your LinkedIn session](connect-your-linkedin-session.md).
@@ -74,4 +75,3 @@ Below the rows, the line YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THI
 | LOADING BRAND STUDIO stays on screen | The profile has not arrived. Reload the page |
 | THE PROFILE COULD NOT BE READ. | The request failed, usually because the server stopped. See [The studio will not open](the-studio-will-not-open.md) |
 | SAVE FAILED | Hover over it for the server's reason. Your edits are still in the form, so press **Save** again once it is fixed |
-| The inspector's **Brand** tab says EDITED IN BRAND STUDIO, WHICH IS NOT BUILT YET | That note is out of date. Brand Studio is built, and this is where you edit the profile |

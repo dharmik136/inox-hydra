@@ -80,4 +80,3 @@ Preview updates as you type. While the Audit tab is open, the audit and the gate
 | AUDITING that never changes | The server has not answered yet. If it stays, treat it like AUDIT UNAVAILABLE. |
 | No Checks section | That check failed on its own. The Distribution audit is unaffected. |
 | A preview card with no name | No Name is saved. Add one in **Brand Studio**, press **Save**, then go back to **Composer**. The inspector reads the name again when it reopens there. |
-| The **Brand** tab says EDITED IN BRAND STUDIO, WHICH IS NOT BUILT YET | That text is out of date. **Brand Studio** is in the rail. |

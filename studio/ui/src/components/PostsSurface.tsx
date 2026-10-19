@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, ChevronDown, ExternalLink } from "lucide-react";
+import { Activity, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
 import { fetchPostsInsights, launchBridge, type PostInsight, type PostsInsights } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
@@ -61,7 +61,7 @@ export function PostsSurface({
             className="flex items-center gap-1.5 rounded-md border border-edge bg-soft px-3 py-1.5 text-[12px] font-medium text-ink-primary transition-[filter] hover:brightness-110"
           >
             <Activity className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-            Live Ingestion Stream
+            Open Activity
           </button>
         )}
       </div>
@@ -167,17 +167,57 @@ function PostRow({
               NOBODY CAPTURED FROM THIS POST YET. OPEN IT IN THE BRIDGE BROWSER AND ITS COMMENTERS ARE READ.
             </p>
           )}
-          <button
-            type="button"
-            onClick={() => void launchBridge("auto", post.url)}
-            className="mt-2 flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
-          >
-            <ExternalLink className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-            Open the post
-          </button>
+          <OpenThePost url={post.url} />
         </div>
       )}
     </li>
+  );
+}
+
+/**
+ * Opens the post in the bridge browser, and says what came of it.
+ *
+ * The launch used to be fired and forgotten: no sign it was under way, and a
+ * failure surfaced only as an uncaught error in the console, so nobody could
+ * tell a browser opening behind the window from one that never started.
+ */
+function OpenThePost({ url }: { url: string }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function open() {
+    setBusy(true);
+    setNote(null);
+    try {
+      setNote((await launchBridge("auto", url)).message || "Opened in the bridge browser.");
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "The browser could not be opened.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => void open()}
+        disabled={busy}
+        className="mt-2 flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-50"
+      >
+        {busy ? (
+          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+        ) : (
+          <ExternalLink className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+        )}
+        Open the post
+      </button>
+      {note && (
+        <p role="status" className="mt-1.5 text-[12px] leading-snug text-ink-secondary">
+          {note}
+        </p>
+      )}
+    </>
   );
 }
 

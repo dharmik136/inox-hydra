@@ -144,9 +144,14 @@ def test_the_interface_does_not_claim_nothing_else_leaves():
     assert "NOTHING ELSE IN THE STUDIO LEAVES THIS MACHINE" not in rendered, (
         "the blanket claim is back. Four features reach out; say which."
     )
-    assert "YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THIS MACHINE" in rendered, (
-        "the true and load bearing half of the claim was dropped along with the "
-        "false half"
+    # The other half, "YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THIS
+    # MACHINE", was not true either: Send to LinkedIn sends the draft with that
+    # session (UX-15). What stays is still said, and so is what leaves.
+    assert "NEVER LEAVE THIS MACHINE" not in rendered.upper(), (
+        "Local security promises something never leaves, which Send to LinkedIn contradicts"
+    )
+    assert "stay in this profile" in rendered, (
+        "the true half of the claim, that the work is kept on this machine, was dropped"
     )
 
 

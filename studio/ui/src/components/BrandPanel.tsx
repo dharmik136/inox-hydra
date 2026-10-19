@@ -76,8 +76,11 @@ export function BrandPanel() {
         </dl>
       </section>
 
+      {/* This said Brand Studio was "NOT BUILT YET" long after it was, so a
+          creator looking for where to set their name concluded there was
+          nowhere. */}
       <p className="studio-meta border-t border-edge pt-3 text-ink-muted">
-        EDITED IN BRAND STUDIO, WHICH IS NOT BUILT YET
+        EDIT THESE IN BRAND STUDIO, FROM THE RAIL
       </p>
     </div>
   );

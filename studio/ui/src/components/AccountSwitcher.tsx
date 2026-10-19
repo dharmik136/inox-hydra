@@ -9,16 +9,22 @@ import {
   type CreatorAccount,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { hasUnsavedWork, reloadStudio } from "@/lib/unsaved";
+import { reloadStudio, unsavedWorkLabels } from "@/lib/unsaved";
+import { useModalFocus } from "@/lib/modalFocus";
 
 const LICENCE_CHANGED = "inox:licence-changed";
 
-/** Each profile is its own database, so switching reloads the studio. Asks first if that would lose work. */
+/**
+ * Each profile is its own database, so switching reloads the studio. Asks
+ * first if that would lose work, naming whose: the Composer was the only one
+ * it knew of, so Brand Studio edits went without a question.
+ */
 function mayReload(): boolean {
+  const lost = unsavedWorkLabels();
   return (
-    !hasUnsavedWork() ||
+    lost.length === 0 ||
     window.confirm(
-      "The post in the Composer has unsaved changes. Switching profile reloads the studio and discards them. Switch anyway?",
+      `${lost.join(" and ")} ${lost.length === 1 ? "has" : "have"} unsaved changes. Switching profile reloads the studio and discards them. Switch anyway?`,
     )
   );
 }
@@ -27,12 +33,19 @@ interface AccountSwitcherProps {
   onAccountSwitched?: (account: CreatorAccount) => void;
   className?: string;
   condensed?: boolean;
+  /**
+   * Which side of the trigger the panel opens on. The rail's avatar sits at
+   * the bottom of the window, so its panel opens upward; the tray's card sits
+   * at the top, where opening upward drew the panel above the window.
+   */
+  placement?: "above" | "below";
 }
 
 export function AccountSwitcher({
   onAccountSwitched,
   className,
   condensed = true,
+  placement = "above",
 }: AccountSwitcherProps) {
   const [open, setOpen] = useState(false);
   const [accounts, setAccounts] = useState<CreatorAccount[]>([]);
@@ -76,7 +89,14 @@ export function AccountSwitcher({
     return () => window.removeEventListener(LICENCE_CHANGED, onLicence);
   }, [loadAccounts]);
 
+  // Read again on every open, so a licence entered in another tab, or straight
+  // through the API, is reflected in whether a profile can be added.
+  useEffect(() => {
+    if (open) void loadAccounts();
+  }, [open, loadAccounts]);
+
   const activeAccount = accounts.find((a) => a.id === activeId) ?? accounts[0];
+  const atLimit = accounts.length >= limit;
 
   const handleSwitch = async (account: CreatorAccount) => {
     if (account.id === activeId) {
@@ -158,19 +178,14 @@ export function AccountSwitcher({
     }
   };
 
-  // Keyboard escape listener
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  // Focus moves into the panel, Tab stays in it, and Escape closes it and
+  // returns focus to the trigger. Tab used to walk out into the page.
+  useModalFocus(panelRef, open, () => setOpen(false));
+
+  const cancelCreate = () => {
+    setCreating(false);
+    closeRef.current?.focus();
+  };
 
   return (
     <div className={cn("relative", className)}>
@@ -228,7 +243,10 @@ export function AccountSwitcher({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: -4 }}
               transition={{ duration: 0.16, ease: [0.32, 0.72, 0.24, 1] }}
-              className="absolute bottom-11 left-0 z-50 w-84 origin-bottom-left rounded-xl border border-edge bg-raised p-3 shadow-2xl outline-none"
+              className={cn(
+                "absolute left-0 z-50 rounded-xl border border-edge bg-raised p-3 shadow-2xl outline-none",
+                placement === "above" ? "bottom-11 w-84 origin-bottom-left" : "top-full right-0 mt-1.5 origin-top-left",
+              )}
             >
               {/* Header */}
               <div className="flex items-center justify-between border-b border-edge pb-2">
@@ -376,12 +394,14 @@ export function AccountSwitcher({
                 })}
               </div>
 
-              {/* Add account section */}
-              {!creating && accounts.length >= limit && (
+              {/* Add account section. At the licence's limit the form is not
+                  offered: it used to take a name, headline and vanity and only
+                  then refuse, so the limit is explained up front instead. */}
+              {!creating && atLimit && (
                 <p className="mt-1 text-[11px] leading-snug text-ink-muted">
                   {limit === 1
-                    ? "More than one creator profile needs the Agency licence (Brand Studio, Licence)."
-                    : `Your licence covers ${limit} creator profiles.`}
+                    ? "Your licence covers one creator profile. More than one needs the Agency licence, entered in Brand Studio, Licence."
+                    : `Your licence covers ${limit} creator profiles, and all ${limit} are in use.`}
                 </p>
               )}
               {creating ? (
@@ -390,7 +410,7 @@ export function AccountSwitcher({
                     <span className="text-xs font-medium text-ink-primary">New Creator Profile</span>
                     <button
                       type="button"
-                      onClick={() => setCreating(false)}
+                      onClick={cancelCreate}
                       aria-label="Cancel new profile creation"
                       className="text-ink-muted hover:text-ink-primary"
                     >
@@ -403,6 +423,9 @@ export function AccountSwitcher({
                       <input
                         type="text"
                         placeholder="Profile Name (e.g. Elena Rostova)"
+                        // The button that opened the form is gone, so focus
+                        // goes to the first field rather than to the page.
+                        autoFocus
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
                         required
@@ -431,7 +454,7 @@ export function AccountSwitcher({
                     <div className="flex justify-end gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={() => setCreating(false)}
+                        onClick={cancelCreate}
                         className="rounded px-2 py-1 text-xs text-ink-muted hover:text-ink-primary"
                       >
                         Cancel
@@ -446,7 +469,7 @@ export function AccountSwitcher({
                     </div>
                   </div>
                 </form>
-              ) : (
+              ) : atLimit ? null : (
                 <button
                   type="button"
                   onClick={() => setCreating(true)}
