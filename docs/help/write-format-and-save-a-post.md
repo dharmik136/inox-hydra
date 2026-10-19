@@ -5,9 +5,6 @@ Write in the Composer, watch the mobile fold, format a selection, and save your 
 
 Open **Composer** from the rail. The editor is the large writing area in the middle, with the placeholder "Start writing. The fold mark appears once the post runs past it." The bar at the top shows the first line of your post as its title, or "Untitled draft" while it is empty.
 
-> [!NOTE]
-> The label **POST / DRAFT 01** in the top bar is fixed text. It is not a draft number.
-
 ## Watch the fold
 
 On a phone, LinkedIn hides a long post behind "see more". The studio draws that cut at 140 characters.

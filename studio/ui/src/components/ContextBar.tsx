@@ -13,7 +13,6 @@ export type SaveState = "idle" | "dirty" | "saving" | "saved" | "failed" | "publ
 
 interface ContextBarProps {
   kind: string;
-  draftRef: string;
   title: string;
   /** Every character as stored, the count LinkedIn's limit and Gate 2 apply. */
   storedChars: number;
@@ -36,7 +35,6 @@ interface ContextBarProps {
  */
 export function ContextBar({
   kind,
-  draftRef,
   title,
   storedChars,
   foldLabel,
@@ -55,7 +53,7 @@ export function ContextBar({
           save status on a phone. */}
       <div className="flex min-w-0 flex-1 items-baseline gap-3 md:flex-initial">
         <span className="studio-meta hidden shrink-0 uppercase sm:inline">
-          {kind} / {draftRef}
+          {kind}
         </span>
         <h1 className="truncate text-[13px] font-medium text-ink-primary">{title}</h1>
       </div>

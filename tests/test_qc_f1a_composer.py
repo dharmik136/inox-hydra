@@ -450,3 +450,18 @@ def test_the_theme_follows_the_system_and_is_remembered(new_page, studio_url):
     page.get_by_role("button", name="Switch to light theme").click()
     page.reload(wait_until="networkidle")
     expect(page.locator("html")).to_have_attribute("data-theme", "light")
+
+
+def test_the_header_claims_no_live_connection_it_has_not_seen(new_page, studio_url, api):
+    _clear_posts(api)
+    page = new_page()
+    page.goto(studio_url + "/#/setup", wait_until="networkidle")
+    activity = page.get_by_role("button", name=re.compile("Live Activity"))
+    expect(activity).to_be_visible()
+    assert activity.locator(".animate-pulse").count() == 0, "a pulsing dot claims live activity"
+    assert activity.locator(".bg-signal-green").count() == 0, "a green dot claims a bridge never seen"
+    expect(activity).to_contain_text("not connected")
+
+    editor = _open_composer(page, studio_url)
+    editor.fill("A post")
+    assert "DRAFT 01" not in page.locator("header").first.inner_text()

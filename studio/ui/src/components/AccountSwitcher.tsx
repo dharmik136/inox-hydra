@@ -207,11 +207,6 @@ export function AccountSwitcher({
             )}
           </span>
         )}
-
-        <span
-          className="absolute -right-0.5 -bottom-0.5 size-2 rounded-full bg-signal-green ring-2 ring-ink"
-          aria-hidden="true"
-        />
       </button>
 
       <AnimatePresence>

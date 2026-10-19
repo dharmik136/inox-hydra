@@ -206,6 +206,29 @@ export default function App() {
     };
   }, []);
 
+  // Whether the bridge has been heard from lately, for the mark beside Live
+  // Activity. That mark used to pulse green on every screen whatever the
+  // bridge was doing, including on Setup beside "Not seen yet". Read from the
+  // state Setup shows, again each minute while the header is on screen, since
+  // the server calls the bridge connected for 150 seconds after it last
+  // reported. Null until known, and then nothing is claimed.
+  const [bridgeConnected, setBridgeConnected] = useState<boolean | null>(null);
+  const showsHeader = active !== "composer";
+  useEffect(() => {
+    if (!showsHeader) return;
+    let live = true;
+    const read = () =>
+      fetchOnboardingState()
+        .then((state) => live && setBridgeConnected(state.bridge.connected))
+        .catch(() => live && setBridgeConnected(null));
+    void read();
+    const timer = window.setInterval(read, 60_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [showsHeader]);
+
   const sections = useMemo(
     () => STUDIO_SECTIONS.filter((section) => section.id !== "devtools" || devMode),
     [devMode],
@@ -504,7 +527,6 @@ export default function App() {
           <>
           <ContextBar
             kind="POST"
-            draftRef="DRAFT 01"
             title={draft.trim().split("\n")[0]?.slice(0, 72) || "Untitled draft"}
             storedChars={telemetry.stored}
             foldLabel={telemetry.foldLabel}
@@ -540,9 +562,18 @@ export default function App() {
                   : "border-edge bg-canvas text-ink-muted hover:border-edge-strong hover:text-ink-primary",
               )}
             >
-              <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true" />
+              <span
+                className={cn(
+                  "size-1.5 rounded-full",
+                  bridgeConnected ? "bg-signal-green" : "border border-edge-strong",
+                )}
+                aria-hidden="true"
+              />
               <Activity className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
               <span>Live Activity</span>
+              {bridgeConnected !== null && (
+                <span className="sr-only">{bridgeConnected ? ", bridge connected" : ", bridge not connected"}</span>
+              )}
             </button>
             <button
               type="button"
