@@ -97,6 +97,38 @@ def _posts(pages, body=POSTS):
     return page, [p for b in pages.sent(page, "/api/v1/self/posts/ingest") for p in b["posts"]]
 
 
+def test_a_repost_is_never_sent_as_your_post(pages):
+    _, posts = _posts(pages)
+    repost = [p for p in posts if p["activity_urn"] == "urn:li:activity:7386000000000000005"]
+    assert repost and repost[0]["actor"] != "test-creator"
+    own = [p for p in posts if p["activity_urn"] == "urn:li:activity:7386000000000000006"]
+    assert own and own[0]["actor"] == "test-creator"
+
+
+def test_a_repost_header_alone_marks_a_repost(pages):
+    # No author link at all: the header is the only sign.
+    body = POSTS.replace('<div><a href="https://www.linkedin.com/in/stranger-author/"><span>Stranger Author</span></a><span>Founder at Northwind</span></div>', "")
+    _, posts = _posts(pages, body)
+    repost = [p for p in posts if p["activity_urn"] == "urn:li:activity:7386000000000000005"]
+    assert repost and repost[0]["actor"] != "test-creator"
+
+
+def test_a_repost_whose_header_links_the_creator_is_still_a_repost(pages):
+    body = POSTS.replace("<div><span>Test Creator reposted this</span></div>",
+                         '<div><a href="https://www.linkedin.com/in/test-creator/">Test Creator</a> reposted this</div>')
+    _, posts = _posts(pages, body)
+    repost = [p for p in posts if p["activity_urn"] == "urn:li:activity:7386000000000000005"]
+    assert repost and repost[0]["actor"] == "stranger-author"
+
+
+def test_cards_whose_author_cannot_be_read_report_drift(pages):
+    body = POSTS.replace('<a href="https://www.linkedin.com/in/test-creator/"><span>Test Creator</span></a>', "<span>Test Creator</span>") \
+        .replace('<a href="https://www.linkedin.com/in/stranger-author/"><span>Stranger Author</span></a>', "<span>Stranger Author</span>")
+    page, _ = _posts(pages, body)
+    captures = [c for c in pages.sent(page, "/api/v1/bridge/capture") if c["extractor"] == "activity_posts"]
+    assert captures and captures[0]["drift"] == ["post_author"]
+
+
 COUNTED = """
 <main>
  <div class="feed-shared-update-v2" data-urn="urn:li:activity:7386000000000000041">

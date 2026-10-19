@@ -734,8 +734,8 @@
   // from the rest: measured on a live import, 18 of 18 posts. The opening
   // line is what a reader sees before "see more", so it is the one line the
   // studio most needs to have as written.
-  function cardText(card) {
-    const el = first(card, [
+  function cardTextElement(card) {
+    return first(card, [
       ".update-components-text",
       ".feed-shared-inline-show-more-text",
       ".feed-shared-update-v2__description",
@@ -747,6 +747,10 @@
       '[data-testid="expandable-text-box"]',
       '[data-test-id="expandable-text-box"]',
     ]);
+  }
+
+  function cardText(card) {
+    const el = cardTextElement(card);
     if (!el) return null;
     const text = (el.innerText || "")
       .split("\n")
@@ -768,8 +772,25 @@
     ]);
     if (direct) return direct;
     const lineList = lines(card);
-    const actionLine = lineList.find((l) => /(commented|likes\b|liked\b|supports\b|supported\b|celebrates\b|celebrated\b|loves\b|loved\b|finds\b)/i.test(l));
+    // "reposted" too: on the rebuilt cards "Ada Lovelace reposted this" is a
+    // plain line, and without it a repost was read as the creator's own post.
+    const actionLine = lineList.find((l) => /(commented|reposted\b|likes\b|liked\b|supports\b|supported\b|celebrates\b|celebrated\b|loves\b|loved\b|finds\b)/i.test(l));
     return actionLine || "";
+  }
+
+  // The author's profile link on a card whose actor classes are gone (the
+  // rebuilt layout): the first /in/ link above the post's text, other than
+  // one in a "reposted this" line, which names the reposter.
+  function cardHeaderAuthor(card) {
+    const textEl = cardTextElement(card);
+    for (const link of card.querySelectorAll("a[href*='/in/']")) {
+      if (textEl && (textEl.contains(link) ||
+          !(link.compareDocumentPosition(textEl) & Node.DOCUMENT_POSITION_FOLLOWING))) break;
+      if (/\breposted\b/i.test(clean((link.parentElement || link).innerText || ""))) continue;
+      const vanity = vanityOf(link.getAttribute("href"));
+      if (vanity) return vanity;
+    }
+    return "";
   }
 
   function cardCounts(card) {
@@ -871,19 +892,24 @@
 
   function readActivity(kind, me) {
     const items = [];
+    items.unreadActors = 0;
     for (const card of activityCards()) {
       const urn = cardUrn(card);
       if (!urn) continue;
-      let actor = cardActor(card);
+      let actor = cardActor(card) || (kind === "activity_posts" ? cardHeaderAuthor(card) : "");
       const isRepostCard = cardHeader(card).toLowerCase().includes("repost");
 
       if (kind === "activity_posts") {
-        // If actor could not be read from classes, or is /in/me, but there is no repost header
-        // on the creator's own activity posts feed, it is the creator's post.
-        if ((!actor || actor === "me" || actor === me) && !isRepostCard) {
+        // A repost is somebody else's writing, whoever its header names. An
+        // author read from the card who is not the creator is not the creator.
+        // Only a card with no author to read at all, and no repost header, on
+        // the creator's own activity page is taken to be theirs; that is
+        // counted, so a page where no author can be read reports drift.
+        if (!actor) items.unreadActors += 1;
+        if (isRepostCard) {
+          actor = actor && actor !== me && actor !== "me" ? actor : "repost";
+        } else if (!actor || actor === "me" || actor === me) {
           actor = me;
-        } else if (!actor && isRepostCard) {
-          actor = "repost";
         }
         items.push({ activity_urn: urn, actor, text: cardText(card), ...cardCounts(card) });
       } else if (kind === "activity_comments") {
@@ -931,10 +957,12 @@
   async function sendActivity(kind, me) {
     const cards = activityCards();
     const items = readActivity(kind, me);
-    // Post cards on the page whose author link could not be read are the
-    // markup changing: every post would then be skipped as not the creator's.
+    // Post cards on the page none of whose authors could be read are the
+    // markup changing. They are taken to be the creator's (see readActivity),
+    // so this is the only place the change shows. It was tested after the
+    // unread author had already been replaced by the creator, so never fired.
     const drift = [];
-    if (kind === "activity_posts" && cards.length && items.every((i) => !i.actor)) drift.push("post_author");
+    if (kind === "activity_posts" && items.length && items.unreadActors === items.length) drift.push("post_author");
     reportCapture(kind, cards.length, items.length, drift);
 
     const fresh = items.filter((item) => {
