@@ -137,6 +137,16 @@ export default function App() {
   /** Whether the author has put anything into the editor this session. */
   const touched = useRef(false);
 
+  // The text on screen now, for code that finishes after a render it began
+  // in: a save that returns has to know whether the author kept typing.
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
+
+  // Set while a save is on its way. A ref rather than the save state, because
+  // a double click lands both clicks before React renders between them, and
+  // each one created its own draft.
+  const saving = useRef(false);
+
   // Reopen the most recent draft from the studio's own database, which is
   // what the queue and the scheduler read. A draft held anywhere else is
   // invisible to both.
@@ -246,6 +256,7 @@ export default function App() {
    * 400, which the author needs to read rather than have swallowed.
    */
   const onSave = useCallback(async () => {
+    if (saving.current) return;
     if (!draft.trim()) {
       // Refuse rather than create an empty row the queue would later show as
       // a post with no content.
@@ -254,6 +265,7 @@ export default function App() {
       return;
     }
 
+    saving.current = true;
     setSaveState("saving");
     setSaveError(null);
     try {
@@ -261,6 +273,13 @@ export default function App() {
         await updateDraft(draftId, draft);
       } else {
         setDraftId(await createDraft(draft));
+      }
+      if (latestDraft.current !== draft) {
+        // Typed into while the save was out: what is on screen is not what
+        // was written, so it is not SAVED.
+        setSaveState("dirty");
+        setSavedAt(null);
+        return;
       }
       const now = new Date();
       setSavedAt(
@@ -273,6 +292,8 @@ export default function App() {
       setSaveState("failed");
       setSaveError(error instanceof Error ? error.message : "The save was rejected.");
       setSavedAt(null);
+    } finally {
+      saving.current = false;
     }
   }, [draft, draftId]);
 

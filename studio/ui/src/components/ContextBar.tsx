@@ -112,13 +112,16 @@ export function ContextBar({
 
         <span className="hidden h-4 w-px bg-edge sm:block" aria-hidden="true" />
 
+        {/* Disabled while a save is out, so a second press cannot start a
+            second write. */}
         <button
           type="button"
           onClick={onSave}
+          disabled={saveState === "saving"}
           className={cn(
             "rounded-md px-2.5 py-1 text-xs font-medium text-ink-secondary",
             "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
-            "hover:bg-soft hover:text-ink-primary",
+            "hover:bg-soft hover:text-ink-primary disabled:opacity-50 disabled:hover:bg-transparent",
           )}
         >
           Save

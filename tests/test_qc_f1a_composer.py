@@ -202,6 +202,59 @@ def test_windows_alt_codes_and_other_fields_never_apply_a_hook(new_page, studio_
     expect(editor).to_have_value(draft)
 
 
+def test_a_double_click_on_save_writes_one_draft(new_page, studio_url, api):
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    text = f"Double click test {time.time()}"
+    editor.fill(text)
+    # Three clicks inside one task, before React can re-render between them.
+    page.evaluate(
+        """() => { const save = [...document.querySelectorAll('header button')]
+                     .find(b => b.textContent.trim() === 'Save');
+                   save.click(); save.click(); save.click(); }"""
+    )
+    expect(_status(page)).to_contain_text("SAVED")
+    page.wait_for_timeout(500)
+    assert len(_rows_with(api, text)) == 1, "one Save gesture created several drafts"
+
+
+def test_save_is_disabled_while_a_save_is_running(new_page, studio_url, api):
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    editor.fill("Slow save")
+    page.evaluate(
+        """() => { const real = window.fetch;
+                   window.fetch = (input, init) => (init && init.method === 'POST' && String(input).endsWith('/api/posts'))
+                     ? new Promise(r => setTimeout(r, 800)).then(() => real(input, init)) : real(input, init); }"""
+    )
+    save = page.get_by_role("button", name="Save", exact=True)
+    save.click()
+    expect(save).to_be_disabled()
+    expect(_status(page)).to_contain_text("SAVED")
+    expect(save).to_be_enabled()
+
+
+def test_words_typed_while_a_save_runs_are_not_called_saved(new_page, studio_url, api):
+    """A save that returns after the author typed more must not mark the newer text SAVED."""
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    editor.fill("First words")
+    page.evaluate(
+        """() => { const real = window.fetch;
+                   window.fetch = (input, init) => (init && init.method === 'POST' && String(input).endsWith('/api/posts'))
+                     ? new Promise(r => setTimeout(r, 800)).then(() => real(input, init)) : real(input, init); }"""
+    )
+    page.get_by_role("button", name="Save", exact=True).click()
+    editor.click()
+    page.keyboard.press("End")
+    page.keyboard.type(" and more")
+    page.wait_for_timeout(1500)
+    expect(_status(page)).to_contain_text("UNSAVED")
+
+
 def test_the_strip_shows_the_count_against_linkedins_limit(new_page, studio_url, api):
     _clear_posts(api)
     page = new_page()
