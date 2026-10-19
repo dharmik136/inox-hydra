@@ -478,6 +478,22 @@ def bind_post_urn(req: BindUrnRequest):
         # Exactly one, as the history import binds: two candidates bind
         # neither, because a wrong binding credits one post's engagers to
         # another and is very hard to notice.
+        #
+        # Except where the side panel decides it. A database from before the
+        # insert route stopped copying posts holds a queued post and a second,
+        # armed copy the old route made when it was inserted. Both match by
+        # text; the armed one is the post the creator put into LinkedIn, and
+        # it is what bound before. So among several matches, the single one
+        # whose stored fingerprint matches wins; two armed ones still bind
+        # neither.
+        if len(matched) > 1:
+            armed = [
+                row for row in matched
+                if row["content_fingerprint"] and post_identity.fingerprint_matches(text, row["content_fingerprint"])
+            ]
+            if len(armed) == 1:
+                matched = armed
+
         if len(matched) == 1:
             row = matched[0]
             try:

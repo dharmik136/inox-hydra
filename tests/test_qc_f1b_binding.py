@@ -107,6 +107,48 @@ def test_two_matching_posts_bind_neither():
     assert _bind()["bound"] is False
     assert _row(first)["activity_urn"] is None and _row(second)["activity_urn"] is None
 
+def test_a_legacy_insert_copy_binds_rather_than_going_ambiguous():
+    """
+    Databases from before BRIDGE-03's fix hold a queued post and a second,
+    armed 'published' copy the old insert route made of it. Opening the post
+    must still bind the armed copy, as it did before, not neither.
+    """
+    import post_identity
+
+    queued = _draft()
+    when = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
+    client.post(f"/api/posts/{queued}/reschedule", json={"scheduled_for": when})
+    copy = "post-legacycopy1"
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO posts (id, content, status, published_at, content_fingerprint) VALUES (?, ?, 'published', ?, ?)",
+            (copy, TEXT, datetime.now(timezone.utc).isoformat(), post_identity.content_fingerprint(TEXT)),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    bound = _bind()
+    assert bound["status"] == "bound", bound
+    assert bound["post_id"] == copy
+
+
+def test_two_armed_matches_still_bind_neither():
+    import post_identity
+
+    conn = get_db()
+    try:
+        for pid in ("post-armed-a", "post-armed-b"):
+            conn.execute(
+                "INSERT INTO posts (id, content, status, content_fingerprint) VALUES (?, ?, 'injected', ?)",
+                (pid, TEXT, post_identity.content_fingerprint(TEXT)),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    assert _bind()["status"] == "ambiguous"
+
+
 # ---------------------------------------------------------------------------
 # BRIDGE-03 / WRITE-19
 # ---------------------------------------------------------------------------
