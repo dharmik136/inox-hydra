@@ -167,9 +167,14 @@ def _counts(profile_id: str) -> Dict[str, int]:
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         try:
-            for table, key in (("posts", "posts_count"), ("drafts", "drafts_count"), ("leads", "leads_count")):
+            # A Composer draft is a post with status 'draft'. The legacy drafts
+            # table is not what the Composer writes, so counting it said a
+            # profile with drafts had none, and counted each draft as a post.
+            for query, key in (("SELECT COUNT(*) FROM posts WHERE status IS NOT 'draft'", "posts_count"),
+                               ("SELECT COUNT(*) FROM posts WHERE status = 'draft'", "drafts_count"),
+                               ("SELECT COUNT(*) FROM leads", "leads_count")):
                 try:
-                    counts[key] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    counts[key] = conn.execute(query).fetchone()[0]
                 except sqlite3.Error:
                     pass
         finally:

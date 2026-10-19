@@ -127,6 +127,22 @@ def test_a_windows_device_name_cannot_be_a_profile_id(agency, tmp_path, reserved
     assert not os.path.exists(os.path.join(str(tmp_path), "profiles", reserved.lower()))
 
 
+# ---------------------------------------------------------------------------
+# WRITE-28: the switcher counts the drafts the Composer saves
+# ---------------------------------------------------------------------------
+
+def test_the_switcher_counts_composer_drafts(agency):
+    assert agency.post("/api/posts", json={"content": "A draft from the Composer"}).status_code == 200
+    me = next(a for a in agency.get("/api/v1/accounts").json()["accounts"] if a["id"] == "default")
+    assert me["drafts_count"] == 1, "a profile with a draft was shown as having none"
+    assert me["posts_count"] == 0, "the draft was counted as a post too"
+
+    assert agency.post("/api/posts", json={"content": "Queued", "status": "scheduled",
+                                           "scheduled_for": "2099-01-01T09:00:00+00:00"}).status_code == 200
+    me = next(a for a in agency.get("/api/v1/accounts").json()["accounts"] if a["id"] == "default")
+    assert (me["drafts_count"], me["posts_count"]) == (1, 1)
+
+
 def test_ordinary_short_ids_are_still_accepted(agency):
     for pid in ("cona", "com10", "lpt", "aux-1"):
         assert agency.post("/api/v1/accounts", json={"name": pid, "id": pid}).status_code == 200, pid
