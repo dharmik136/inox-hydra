@@ -504,21 +504,63 @@ function extractActivityUrn(text) {
   return null;
 }
 
+const POST_CARD_SELECTOR =
+  '[data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"], [data-urn*="ugcPost"], [data-urn*="share"]';
+const POST_ACTOR_SELECTOR =
+  ".update-components-actor__meta-link, a.update-components-actor__image, .update-components-actor a[href*='/in/']";
+
+/**
+ * The post whose list LinkedIn opened in a modal, or null.
+ *
+ * LinkedIn renders a post's reactions list in a modal in a body-level outlet,
+ * outside every feed card, so nothing in the modal says whose post it is. The
+ * reader used to take the first post in the feed instead, and when that was
+ * the creator's (normal right after posting) every reactor of every stranger's
+ * post the creator opened became the creator's lead.
+ *
+ * The click that opened the list does know: it landed inside that post's
+ * card. Clicks inside a dialog (scrolling the list, "Show more") leave the
+ * remembered post as it is; any other click replaces it, with null when it
+ * landed outside every card we can read, so a list opened from such a card is
+ * never filed under the post clicked before it.
+ */
+let postOpenedFromClick = null;
+
+document.addEventListener("click", (e) => {
+  const target = e.target && e.target.closest ? e.target : null;
+  if (!target || target.closest('.artdeco-modal, [role="dialog"], dialog')) return;
+  const card = target.closest(POST_CARD_SELECTOR);
+  postOpenedFromClick = card ? { urn: postUrnFor(card), author: postAuthorFor(card) } : null;
+}, true);
+
+function postOpenedFor(element) {
+  if (!element.closest('.artdeco-modal, [role="dialog"], dialog')) return null;
+  return postOpenedFromClick;
+}
+
 /**
  * The vanity of whoever wrote the post an element belongs to, or "".
  *
  * The studio stores an engager as a lead only when the post is the creator's,
  * and this is how it knows: the actor link on the update card that contains
  * the element. A comment card has its own author link, so the search starts at
- * the containing update rather than at the element. On a permalink the page's
- * first actor is the post's. A company page's post links to /company/, which
- * yields "" and is correctly not the creator's.
+ * the containing update rather than at the element. A list in a modal belongs
+ * to the post whose card was clicked to open it. Only on a permalink, where
+ * the page shows one post, is the page's first actor the post's; in the feed
+ * the first actor is merely the first post's, and "" is the honest answer. A
+ * company page's post links to /company/, which yields "" and is correctly not
+ * the creator's.
  */
 function postAuthorFor(element) {
-  const actorSelector =
-    ".update-components-actor__meta-link, a.update-components-actor__image, .update-components-actor a[href*='/in/']";
-  const card = element.closest('[data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"], [data-urn*="ugcPost"], [data-urn*="share"]');
-  const link = (card && card.querySelector(actorSelector)) || document.querySelector("main " + actorSelector);
+  const card = element.closest(POST_CARD_SELECTOR);
+  let link = card && card.querySelector(POST_ACTOR_SELECTOR);
+  if (!card) {
+    const opened = postOpenedFor(element);
+    if (opened) return opened.author;
+  }
+  if (!link && extractActivityUrn(window.location.pathname)) {
+    link = document.querySelector("main " + POST_ACTOR_SELECTOR);
+  }
   if (!link) return "";
   const match = /\/in\/([^/?#]+)/.exec(link.getAttribute("href") || "");
   return match ? decodeURIComponent(match[1]).toLowerCase() : "";
@@ -530,7 +572,8 @@ function postAuthorFor(element) {
  * On a permalink the URL is authoritative and needs no markup at all. In the
  * feed, where several posts share a page, the containing update card carries
  * the URN in a data attribute. Reading the URL first means the common case
- * never depends on a class name LinkedIn can rename.
+ * never depends on a class name LinkedIn can rename. A list in a modal sits
+ * outside every card and belongs to the post whose card opened it.
  */
 function postUrnFor(element) {
   const fromUrl = extractActivityUrn(window.location.pathname);
@@ -545,7 +588,8 @@ function postUrnFor(element) {
     }
     node = node.parentElement;
   }
-  return null;
+  const opened = postOpenedFor(element);
+  return opened ? opened.urn : null;
 }
 
 /**
@@ -747,6 +791,14 @@ function readNewLayoutComments() {
   const lists = document.querySelectorAll('[data-testid*="commentList"]');
   for (const list of lists) {
     const seen = new Set();
+    // Each list is one post's. It opens with the post header, so its first
+    // profile link outside the reactor faces is that post's author, and the
+    // post's URN is on the card around it. Both were read once, from the
+    // first list on the page, and applied to every commenter in every list.
+    const authorLink = Array.from(list.querySelectorAll('a[href*="/in/"]'))
+      .find((a) => !a.closest('[data-testid^="ReactionFacepile"]'));
+    const postAuthor = authorLink ? vanityFromHref(authorLink.getAttribute("href")) : "";
+    const postUrn = postUrnFor(list);
     for (const link of list.querySelectorAll('a[href*="/in/"]')) {
       const vanity = vanityFromHref(link.getAttribute("href"));
       if (!vanity || seen.has(vanity)) continue;
@@ -779,6 +831,8 @@ function readNewLayoutComments() {
         profileUrl: `https://www.linkedin.com/in/${encodeURIComponent(vanity)}/`,
         vanity,
         commentText: /^\d+$/.test(text) ? "" : text,
+        postAuthor,
+        postUrn,
       });
     }
   }
@@ -827,6 +881,8 @@ function observeAndCaptureEngagers() {
       const headline = headlineEl ? headlineEl.innerText.replace(/[\n\r]+/g, " ").trim() : "";
       const profileUrl = linkEl ? linkEl.href.split("?")[0] : "";
       const commentText = bodyEl ? bodyEl.innerText.trim().slice(0, 140) : "";
+      // Whose post this is cannot be told: not filed, rather than guessed.
+      if (!postUrnFor(card) && !postAuthorFor(card)) return;
 
       const dedupeKey = engagerDedupeKey(profileUrl, name, headline, postUrnFor(card));
       const isNew = !knownEngagersSet.has(dedupeKey);
@@ -854,13 +910,10 @@ function observeAndCaptureEngagers() {
   let newLayoutCommenters = [];
   if (!commentCards.length) {
     newLayoutCommenters = readNewLayoutComments();
-    const list = document.querySelector('[data-testid*="commentList"]');
-    const authorLink = list && list.querySelector('a[href*="/in/"]');
-    // The list opens with the post header, so its first profile link is the
-    // post's author, which the studio uses to decide the post is yours.
-    const author = authorLink ? vanityFromHref(authorLink.getAttribute("href")) : "";
     newLayoutCommenters.forEach((c) => {
-      const postUrn = postUrnFor(document.body);
+      // Each commenter carries its own list's post and author.
+      const postUrn = c.postUrn;
+      if (!postUrn && !c.postAuthor) return;
       const dedupeKey = engagerDedupeKey(c.profileUrl, c.name, c.headline, postUrn);
       const isNew = !knownEngagersSet.has(dedupeKey);
       knownEngagersSet.add(dedupeKey);
@@ -872,7 +925,7 @@ function observeAndCaptureEngagers() {
         engagement_type: "Commented",
         notes: c.commentText ? `Commented: "${c.commentText.slice(0, 140)}"` : "Commented on post",
         post_urn: postUrn,
-        post_author: author,
+        post_author: c.postAuthor,
         _isNew: isNew
       });
     });
@@ -912,6 +965,9 @@ function observeAndCaptureEngagers() {
 
         const headline = headlineEl ? headlineEl.innerText.replace(/[\n\r]+/g, " ").trim() : "";
         const profileUrl = linkEl.href.split("?")[0];
+        // A list whose post is unknown (opened from no card we can read, off
+        // a permalink) is not filed, rather than filed under a guessed post.
+        if (!postUrnFor(item) && !postAuthorFor(item)) return;
 
         const dedupeKey = engagerDedupeKey(profileUrl, name, headline, postUrnFor(item));
         const isNew = !knownEngagersSet.has(dedupeKey);
