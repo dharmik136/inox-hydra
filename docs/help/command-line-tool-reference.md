@@ -21,7 +21,7 @@ Some command output suggests `python -m studio.cli ...` even in the portable bui
 | `backup` | `--label LABEL` (default `manual`) | Writes `inox_backup_<label>_<stamp>.zip` to the backups folder |
 | `restore` | `ARCHIVE`, `--yes` | Replaces your current data with a backup |
 | `export` | `--format json` or `csv` (default `json`), `--output PATH` | Writes drafts, posts, leads and analytics without credentials. CSV is a ZIP of one file per table |
-| `reset` | `--yes` | Clears the settings table and keeps your content |
+| `reset` | `--yes` | Clears the AI provider settings and the stored LinkedIn session of the active profile, and keeps everything else |
 | `migrate` | `--dry-run` | Shows the schema version against the one this build targets, lists pending migrations and applies them, taking a backup first. `--dry-run` only lists them. It refuses when the database was written by a newer version |
 | `token` | `show` (default) or `reset` | Prints the studio token, its header name and accepted origins. `reset` issues a new one |
 | `update` | `check` (default), `enable`, `disable`, `status`, `--force` | Checks for a newer release, or turns checking on or off. `--force` ignores the saved ETag, so the version file is downloaded in full; it never overrides the off setting |
@@ -46,10 +46,10 @@ To do this in the interface instead, see [Connect your own AI provider](connect-
 `restore` and `reset` do nothing without `--yes`. Run them once without it to see what they would do; they then exit with code 1.
 
 - **restore** first prints the archive's creation date, app version, whether it holds a database and its media file count, then "This REPLACES your current drafts, leads and analytics." With `--yes` it takes a `pre_restore` safety backup, writes the database and media back, and tells you to restart. Stop the studio before you run it; the command does not check.
-- **reset** takes a `pre_reset` safety backup, then deletes every row of the settings table.
+- **reset** takes a `pre_reset` safety backup, then clears the AI provider settings (provider, key, model, address and any other `ai_` setting, plus a Gemini key) and the stored LinkedIn session cookies. It prints the names of the settings it cleared.
 
-> [!WARNING]
-> The `reset` message mentions only AI provider settings and the LinkedIn session. It clears more: your AI key, the LinkedIn session, the Brand Studio profile, grounding sources, the queue pause setting, the update-check preference and the Devtools switch. Drafts, posts, leads and analytics stay. Its closing hint suggests `python studio_cli.py ai configure`, which the portable build does not have.
+> [!NOTE]
+> Everything else stays: drafts, posts, leads, analytics, the queue and its pause setting, the Brand Studio profile, grounding sources, the update-check preference and the Devtools switch. Afterwards, connect your AI provider and your LinkedIn session again. The closing hint suggests `python studio_cli.py ai configure`, which the portable build does not have; there, use the Composer inspector's **Prompt** tab instead. See [Connect your own AI provider](connect-your-own-ai-provider.md).
 
 ## Handle secrets carefully
 

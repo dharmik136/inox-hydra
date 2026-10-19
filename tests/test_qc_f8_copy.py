@@ -82,3 +82,27 @@ def test_the_header_button_calls_the_screen_activity():
     source = re.sub(r"^\s*//[^\n]*$", "", source, flags=re.MULTILINE)
     assert ">Live Activity<" not in source, "the header calls the Activity screen 'Live Activity'"
     assert re.search(r'<span className="max-sm:sr-only">Activity</span>', source)
+
+
+# ---------------------------------------------------------------------------
+# F6-N1: the command-line reference describes the reset the studio now does
+# ---------------------------------------------------------------------------
+
+def test_cli_reference_describes_the_narrow_reset():
+    """
+    It said reset empties the settings table, Brand Studio profile, grounding
+    sources and queue pause included. support.reset_configuration clears only
+    the AI provider settings and the stored LinkedIn session.
+    """
+    import sys
+
+    sys.path.insert(0, os.path.join(REPO_ROOT, "studio", "backend"))
+    from support import RESET_SETTING_KEYS
+
+    article = _read(os.path.join(HELP, "command-line-tool-reference.md"))
+    for stale in ("every row of the settings table", "Clears the settings table", "It clears more"):
+        assert stale not in article, f"the article still says {stale!r}"
+    for kept in ("Brand Studio profile", "queue"):
+        assert kept in article
+    assert "AI provider" in article and "LinkedIn session" in article
+    assert "ai_api_key" in RESET_SETTING_KEYS and "li_at" in RESET_SETTING_KEYS
