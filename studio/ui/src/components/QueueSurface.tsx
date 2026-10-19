@@ -9,6 +9,7 @@ import {
   type QueueSlot,
   type ScheduledPost,
 } from "@/lib/api";
+import { formatLocal } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -199,9 +200,7 @@ export function QueueSurface() {
           <ul className="flex flex-col">
             {scheduled.map((post) => (
               <li key={post.id} className="flex items-baseline gap-4 border-b border-edge py-2">
-                <span className="studio-meta shrink-0 text-[11px]">
-                  {post.scheduled_for ? post.scheduled_for.slice(0, 16).replace("T", " ") : "unscheduled"}
-                </span>
+                <span className="studio-meta shrink-0 text-[11px]">{formatLocal(post.scheduled_for)}</span>
                 <span className="truncate text-[12px] text-ink-secondary">
                   {post.content.split("\n")[0]}
                 </span>

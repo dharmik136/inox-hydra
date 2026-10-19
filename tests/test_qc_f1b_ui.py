@@ -242,6 +242,33 @@ def test_the_publish_dialog_holds_focus_and_returns_it(context, studio_url):
 
 
 # ---------------------------------------------------------------------------
+# WRITE-22 / UX-05: the Queue shows local times
+# ---------------------------------------------------------------------------
+
+def test_the_queue_lists_a_post_at_its_local_time(browser, studio_url, api):
+    from datetime import datetime, timedelta, timezone
+
+    # 03:00 UTC on a day well ahead, which is 08:30 in India.
+    day = (datetime.now(timezone.utc) + timedelta(days=20)).replace(hour=3, minute=0, second=0, microsecond=0)
+    created = api.post("/api/posts", json={
+        "content": "QC F1B timezone check post.", "status": "scheduled", "scheduled_for": day.isoformat(),
+    })
+    assert created.status_code == 200, created.text
+
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800}, service_workers="block",
+                              timezone_id="Asia/Kolkata", locale="en-GB")
+    try:
+        page = _open(ctx, studio_url, "Queue")
+        row = page.locator("li", has_text="QC F1B timezone check post.")
+        row.wait_for()
+        text = row.inner_text()
+        assert "08:30" in text, text
+        assert "03:00" not in text
+    finally:
+        ctx.close()
+
+
+# ---------------------------------------------------------------------------
 # WRITE-01: a window left on another profile cannot save into the new one
 # ---------------------------------------------------------------------------
 

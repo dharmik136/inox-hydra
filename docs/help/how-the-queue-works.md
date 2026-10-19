@@ -17,7 +17,7 @@ Open **Queue** in the rail. The top row shows:
 
 **Next slot** shows the day, time and label of the next free slot, then either `12H CLEAR OF THE LAST POST` or `ONLY 6H SINCE THE LAST POST` (with your own figures). The hours are the distance to the nearest scheduled or published post.
 
-**Weekly slots** shows a card per day with each slot's time and label, or None. **Scheduled posts** lists every scheduled post, earliest time first, with its time and first line, or NOTHING IS SCHEDULED.
+**Weekly slots** shows a card per day with each slot's time and label, or None. **Scheduled posts** lists every scheduled post, earliest time first, with its time in this computer's local time and its first line, or NOTHING IS SCHEDULED.
 
 To add a post, use **Publish** then **Queue it** on the Composer.
 
@@ -71,7 +71,6 @@ The Queue page has no controls to add, edit or remove slots, or to reschedule or
 | --- | --- |
 | QUEUE UNAVAILABLE | The studio server did not answer. See [The studio will not open or shows an error](the-studio-will-not-open.md). |
 | THE DISPATCH RUN WAS REFUSED | The server rejected **Run due posts**. Try again, then check the server is running. |
-| Scheduled posts times look hours off | That list shows stored times in UTC. Slots and **Next slot** are local time, so they differ by your UTC offset. |
 | A post moved to a later slot | It was more than 2 hours late when the studio checked it, usually because the studio was closed. |
 | `H CLEAR OF THE LAST POST` with no number | There is no scheduled or published post within about 900 hours (37 days) of the slot to measure against. |
 | A post shows as published but is not on LinkedIn | Expected. The Queue records a status; post the text yourself. |
