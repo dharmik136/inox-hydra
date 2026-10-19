@@ -109,7 +109,7 @@ def _adopt_legacy_accounts() -> None:
         # The old code made ids with \w, so underscores and accented letters
         # are possible. Their data never was separate, so the id can change.
         pid = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-")[:48] or f"acc-{uuid.uuid4().hex[:8]}"
-        while pid in taken or not paths.is_valid_profile_id(pid):
+        while pid in taken or not paths.is_valid_profile_id(pid) or paths.is_reserved_profile_id(pid):
             pid = f"acc-{uuid.uuid4().hex[:8]}"
         taken.add(pid)
         entries.append({
@@ -305,6 +305,10 @@ def _create_account(data: Dict[str, Any], conn=None) -> Dict[str, Any]:
         acc_id = f"{slug}-{uuid.uuid4().hex[:6]}" if slug else f"acc-{uuid.uuid4().hex[:8]}"
     if not paths.is_valid_profile_id(acc_id) or acc_id == paths.DEFAULT_PROFILE_ID:
         return {"status": "error", "message": f"'{acc_id}' cannot be used as a profile ID"}
+    if paths.is_reserved_profile_id(acc_id):
+        return {"status": "error", "message": (
+            f"'{acc_id}' cannot be used as a profile ID: Windows reserves it for a device, so it "
+            f"cannot be a folder name there. Add a letter or two, for example '{acc_id}-1'.")}
     if any(e["id"] == acc_id for e in existing):
         return {"status": "error", "message": f"Account ID '{acc_id}' already exists"}
 

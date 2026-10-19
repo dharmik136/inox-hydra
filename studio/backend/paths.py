@@ -149,6 +149,18 @@ def is_valid_profile_id(profile_id: Any) -> bool:
     return isinstance(profile_id, str) and bool(_PROFILE_ID.match(profile_id))
 
 
+# Names Windows reserves for devices: a folder cannot be called any of them.
+# Refused for new profiles on every platform, so a profile made on Linux can
+# still move to Windows. Existing ones are left readable, never hidden.
+_WINDOWS_DEVICE_NAMES = frozenset(
+    {"con", "prn", "aux", "nul"} | {f"com{n}" for n in range(10)} | {f"lpt{n}" for n in range(10)}
+)
+
+
+def is_reserved_profile_id(profile_id: Any) -> bool:
+    return isinstance(profile_id, str) and profile_id.lower() in _WINDOWS_DEVICE_NAMES
+
+
 def get_profiles_root() -> str:
     """Where every profile other than the default one keeps its folder."""
     return os.path.join(get_app_home(), PROFILES_DIRNAME)

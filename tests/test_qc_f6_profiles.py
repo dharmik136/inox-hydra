@@ -113,3 +113,20 @@ def test_switching_to_a_profile_from_a_newer_build_says_why(agency, tmp_path):
     assert res.status_code == 409, res.text
     assert "newer" in res.json()["detail"]
     assert agency.get("/api/v1/accounts").json()["active_account_id"] == "default"
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM-19: a profile id must be a folder name Windows accepts
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("reserved", ["con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9", "CON", "Aux"])
+def test_a_windows_device_name_cannot_be_a_profile_id(agency, tmp_path, reserved):
+    res = agency.post("/api/v1/accounts", json={"name": "Short Name", "id": reserved})
+    assert res.status_code == 400, res.text
+    assert "Windows" in res.json()["detail"]
+    assert not os.path.exists(os.path.join(str(tmp_path), "profiles", reserved.lower()))
+
+
+def test_ordinary_short_ids_are_still_accepted(agency):
+    for pid in ("cona", "com10", "lpt", "aux-1"):
+        assert agency.post("/api/v1/accounts", json={"name": pid, "id": pid}).status_code == 200, pid
