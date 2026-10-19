@@ -194,3 +194,22 @@ def test_re_hook_shows_it_is_working_ignores_repeat_presses_and_says_why_it_fail
     page.click('button[aria-label="Re-hook this selection"]')
     page.wait_for_selector("text=refused the key")
     assert "Incorrect API key provided" in page.inner_text('div[role="status"]')
+
+
+def test_without_a_model_re_hook_offers_labelled_fill_in_templates(page):
+    """[WRITE-16]"""
+    from agno_agentos import model_gateway
+
+    model_gateway.save_ai_config(provider="local_deterministic")
+    _select_draft(page, "We moved our bakery orders to a simple form")
+    page.click('button[aria-label="Re-hook this selection"]')
+
+    page.wait_for_selector("text=THESE ARE FILL-IN TEMPLATES")
+    rail = page.locator('section[aria-label="Hook archetypes"]')
+    assert "Generated from selection".upper() in rail.inner_text().upper()
+    cards = rail.locator("li button")
+    assert cards.count() == 10
+    for index in range(cards.count()):
+        text = cards.nth(index).inner_text()
+        assert "[" in text, f"a template card reads as finished: {text!r}"
+        assert "%" not in text and "enterprise" not in text.lower(), text

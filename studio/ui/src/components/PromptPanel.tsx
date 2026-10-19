@@ -118,7 +118,8 @@ export function PromptPanel() {
         <p className="studio-label mb-2">{local ? "Connect a provider" : "Change provider"}</p>
         {local && (
           <p className="studio-meta mb-3 leading-relaxed text-ink-muted">
-            NO KEY IS CONFIGURED. EVERY FEATURE ABOVE STILL ANSWERS, DETERMINISTICALLY.
+            NO KEY IS CONFIGURED. RE-HOOK OFFERS FILL-IN TEMPLATES AND THE AUDIT RUNS HERE. COMMAND NEEDS A
+            MODEL.
           </p>
         )}
 

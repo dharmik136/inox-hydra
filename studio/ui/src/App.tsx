@@ -220,6 +220,9 @@ export default function App() {
   // swallowed here too, so a revoked key looked like a button doing nothing.
   const [reHook, setReHook] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
   const reHookInFlight = useRef(false);
+  // Without a model, Re-Hook answers with fill-in templates, which say so.
+  const fillIns =
+    !!generated?.length && generated.every((hook) => (hook as { source?: string }).source === "template");
 
   const onReHook = useCallback(async (selection: string) => {
     if (reHookInFlight.current) return;
@@ -426,16 +429,21 @@ export default function App() {
                 onClearGenerated={() => setGenerated(null)}
               />
             )}
-            {active === "composer" && (reHook.busy || reHook.error) && (
+            {active === "composer" && (reHook.busy || reHook.error || fillIns) && (
               <div
                 role="status"
                 className="flex shrink-0 items-baseline justify-between gap-3 border-b border-edge px-10 py-2"
               >
                 {reHook.busy ? (
                   <p className="studio-meta animate-pulse text-ink-muted">WRITING HOOKS FROM YOUR SELECTION</p>
-                ) : (
+                ) : reHook.error ? (
                   <p className="text-[12px] leading-snug text-signal-orange-text">
                     Re-Hook failed. {reHook.error}
+                  </p>
+                ) : (
+                  <p className="studio-meta text-ink-muted">
+                    NO MODEL IS SET UP, SO THESE ARE FILL-IN TEMPLATES. REPLACE EACH [BRACKET] WITH YOUR OWN
+                    WORDS BEFORE POSTING.
                   </p>
                 )}
                 {reHook.error && (

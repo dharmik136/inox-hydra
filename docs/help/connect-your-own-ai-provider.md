@@ -3,7 +3,7 @@ Plug in your own model key so Re-Hook and the Command console use it, and see ex
 
 ## You do not need one
 
-Without a key, the text features still answer, from local templates on this machine. The **Prompt** tab says so: "NO KEY IS CONFIGURED. EVERY FEATURE ABOVE STILL ANSWERS, DETERMINISTICALLY." Image generation is the exception: even with no key it sends a prompt to an outside image service (see [Add images and files to your media library](add-images-to-your-media-library.md)). A key changes who writes the text, and it means some of your text leaves your machine.
+Without a key, nothing writes for you. **Re-Hook** offers fill-in templates built around your own words, with a [bracket] wherever a fact of yours belongs, and the hook rail says they are templates. Replace every bracket before you post. The formatting tools and the **Audit** tab work as usual. The **Command** console needs a model and says so. The **Prompt** tab sums this up: "NO KEY IS CONFIGURED. RE-HOOK OFFERS FILL-IN TEMPLATES AND THE AUDIT RUNS HERE. COMMAND NEEDS A MODEL." Image generation is the exception: even with no key it sends a prompt to an outside image service (see [Add images and files to your media library](add-images-to-your-media-library.md)). A key changes who writes the text, and it means some of your text leaves your machine.
 
 ## Providers
 
@@ -57,7 +57,7 @@ If no key is saved in the studio, which is always the case for `ollama`, it uses
 2. Check the banner: it shows the active mode, then STAYS ON THIS MACHINE (no key) or SENT TO THE PROVIDER.
 3. Type in the **Instruction** box. Enter runs it. Shift+Enter adds a new line.
 
-The placeholder mentions your draft, but the console does not send it. Paste any text you want used. With no key, the console returns a fixed template post built around the first line of your instruction.
+The placeholder mentions your draft, but the console does not send it. Paste any text you want used. With no key, the console answers that no model is set up and writes nothing.
 
 ## Go back to local only
 

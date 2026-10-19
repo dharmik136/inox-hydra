@@ -271,30 +271,22 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
             "output": cleaned
         }
 
-    # Deterministic Antigravity Local Fallback
-    source_text = context_clean or command_clean
-    lines = [l.strip() for l in source_text.splitlines() if l.strip()]
-    topic = lines[0] if lines else "enterprise systems and content strategy"
-    topic_clean = re.sub(r'^(write|create|draft|stepping into|how to|why)\s*', '', topic, flags=re.IGNORECASE).strip()
-
-    fallback_post = (
-        f"{to_sans_bold('Zero manual intervention.')}\n\n"
-        f"That is the single metric that matters when building systems around {topic_clean}.\n\n"
-        f"Here is why:\n\n"
-        f"Most teams focus on typing faster.\n"
-        f"Top practitioners focus on deterministic architecture.\n\n"
-        f"Three principles that compound over time:\n\n"
-        f"1. Decouple business logic from transient storage.\n"
-        f"2. Make every state transition auditable.\n"
-        f"3. Eliminate manual handoffs between teams.\n\n"
-        f"Simple principles. Difficult discipline.\n\n"
-        f"What is your team's standard?"
-    )
-
+    # No model, so nothing is written.
+    #
+    # This was a fixed post about "zero manual intervention" and "deterministic
+    # architecture" with the creator's first line dropped into it, offered as
+    # their own writing. For a bakery owner it was another author's opinions;
+    # for anyone it was claims they had not made. An instruction needs a model
+    # to carry it out, so the honest answer is to say there is none.
     return {
         "status": "success",
-        "engine": "Antigravity Local Engine",
-        "output": clean_text_formatting(fallback_post)
+        "engine": "No model set up",
+        "output": (
+            "No model is set up, so nothing was written for this instruction. "
+            "Connect a provider on the Prompt tab of the Composer inspector to run instructions. "
+            "Without one, Re-Hook offers fill-in templates built around your own words, and the "
+            "formatting tools work on your text."
+        ),
     }
 
 
@@ -309,7 +301,7 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
     first_line = lines[0] if lines else clean_topic
     subject = re.sub(r'^(stepping into|how to|why|stop doing|the truth about|the secret to|lessons from)\s*', '', first_line, flags=re.IGNORECASE).strip()
     if not subject:
-        subject = "enterprise systems and observability"
+        subject = "[your topic]"
     subject_clean = subject.rstrip(".:,;")
 
     # Attempt AI generation if provider configured
@@ -360,6 +352,7 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
                         # Its only information is the fold verdict, which
                         # mobile_safe already carries under its real name.
                         "mobile_safe": is_safe,
+                        "source": "model",
                     })
                 return out
         except Exception as e:
@@ -369,47 +362,54 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
         # than serving the templates below as though it had written them.
         raise _unreadable(configured, "hooks")
 
-    # Deterministic Archetype Templates
+    # Fill-in templates, used only when no model is set up.
+    #
+    # Structure and the creator's own words, nothing else. These used to be
+    # finished openings that claimed things: "80% of teams are using X
+    # wrong", "eliminated 90% of our production friction", "across 12+
+    # enterprise modules", one author's job titles. Every fact now has a
+    # visible [placeholder] the creator replaces with theirs, so a template
+    # cannot be posted as though it were true.
     templates = [
         {
-            "archetype": "Pattern Interrupt / Contrarian",
-            "hook": f"{to_sans_bold('Zero manual intervention.')}\n\nThat is the only metric that actually matters when evaluating {subject_clean}."
+            "archetype": "Pattern Interrupt",
+            "hook": f"Most advice about {subject_clean} gets one thing backwards: [the thing]."
         },
         {
-            "archetype": "Concrete Metric & Statistic",
-            "hook": f"{to_sans_bold('80% of teams are using')} {subject_clean} {to_sans_bold('wrong.')}\n\nThey optimize for speed instead of verifiable architecture."
+            "archetype": "Concrete Number",
+            "hook": f"[A number you measured]. That is what {subject_clean} [did, saved or cost] for [who]."
         },
         {
-            "archetype": "Hard-Won Experience",
-            "hook": f"{to_sans_bold('Stepping into')} {subject_clean} {to_sans_bold('feels like learning a new language.')}\n\nLately, I have been going back to foundational drawing boards:"
+            "archetype": "Hard Lesson",
+            "hook": f"The hardest lesson {subject_clean} has taught [you or your team]:\n\n[The lesson, in one line.]"
         },
         {
-            "archetype": "Counter-Intuitive Insight",
-            "hook": f"Why faster output in {subject_clean} is actually slowing your organization down:\n\n(A 3-minute breakdown for systems practitioners)"
+            "archetype": "Counter-Intuitive",
+            "hook": f"Why [the usual approach] to {subject_clean} [backfires], and what to do instead:"
         },
         {
             "archetype": "Tactical Playbook",
-            "hook": f"The 4-step framework for {subject_clean} that eliminated 90% of our production friction:\n\nStep 1: Clean data boundaries."
+            "hook": f"[How many] steps for {subject_clean}, from [where you started]:\n\nStep 1: [the first step]."
         },
         {
-            "archetype": "The Cost of Inaction",
-            "hook": f"If your team ignores foundational {subject_clean} in 2026, here is what quietly breaks first:"
+            "archetype": "Cost of Inaction",
+            "hook": f"What [breaks or slips] first when {subject_clean} is left alone:"
         },
         {
-            "archetype": "The Quiet Title",
-            "hook": f"“Content Strategist” and “Systems Architect” sound quiet on paper.\n\nUntil you manage {subject_clean} across 12+ enterprise modules."
+            "archetype": "Plain Statement",
+            "hook": f"{subject_clean}, said plainly:\n\n[Your point, in one sentence.]"
         },
         {
             "archetype": "Unpopular Truth",
-            "hook": f"Unpopular opinion on {subject_clean}:\n\nMost meetings are a proxy for alignment that should have happened in a 2-page document."
+            "hook": f"Unpopular opinion on {subject_clean}:\n\n[Your opinion, in one sentence.]"
         },
         {
-            "archetype": "Before vs After Contrast",
-            "hook": f"Before: Endless fire drills and reactive patches.\nAfter: Deterministic workflows with {subject_clean}.\n\nHere is how we made the shift:"
+            "archetype": "Before vs After",
+            "hook": f"Before: [how it used to be].\nAfter: [how it is now] with {subject_clean}.\n\n[What changed in between.]"
         },
         {
-            "archetype": "The Razor of Leverage",
-            "hook": f"The Razor of Leverage applied to {subject_clean}:\n\nIf a workflow does not compound while you sleep, it is labor, not asset creation."
+            "archetype": "Direct Question",
+            "hook": f"What would change if you [did one thing differently] about {subject_clean}?"
         }
     ]
 
@@ -426,6 +426,8 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
             "hook_text": hk,
             "char_count": len(hk),
             "mobile_safe": is_safe,
+            # Said, so the interface can label these for what they are.
+            "source": "template",
         })
 
     return out
@@ -477,7 +479,7 @@ def audit_linkedin_algorithm_safety(text: Optional[str]) -> Dict[str, Any]:
         penalties.append(f"Hashtag stuffing ({len(hashtags)} tags detected; maximum optimal is 3-5).")
         recommendations.append("Reduce to 3-5 niche-relevant tags to avoid spam categorization.")
     elif len(hashtags) == 0:
-        recommendations.append("Consider adding 2-3 focused hashtags (e.g. #Enterprise #Systems #Architecture) to aid discovery.")
+        recommendations.append("Consider adding 2-3 focused hashtags about your topic to aid discovery.")
 
     # 3. Wall of text check (dense paragraphs > 3 lines without double line breaks)
     paragraphs = text_clean.split("\n\n")
@@ -533,8 +535,7 @@ def repurpose_content(raw_text: Optional[str]) -> List[Dict[str, str]]:
     """
     text_str = raw_text if isinstance(raw_text, str) else str(raw_text or "")
     clean_input = clean_text_formatting(text_str.strip()[:MAX_REPURPOSE_INPUT_LENGTH])
-    if not clean_input:
-        clean_input = "Zero manual intervention and deterministic systems architecture."
+    given = bool(clean_input)
 
     # Attempt AI generation if provider configured
     resp = None
@@ -584,50 +585,47 @@ def repurpose_content(raw_text: Optional[str]) -> List[Dict[str, str]]:
     if configured is not None:
         raise _unreadable(configured, "posts")
 
-    # Deterministic Fallback Templates
+    # Fill-in frameworks, used only when no model is set up.
+    #
+    # The creator's text, laid out five ways, with a [placeholder] wherever a
+    # point of theirs has to go. These were finished posts that claimed "80% of
+    # organizations are getting this wrong" and "lately, I have been
+    # dissecting foundational architectures", whatever the notes were about.
+    notes = clean_input if given else "[Your notes.]"
     words = clean_input.split()
-    headline = " ".join(words[:8]) if words else "Enterprise Systems Framework"
+    headline = " ".join(words[:8]) if words else "[your topic]"
 
     f1 = (
-        f"{to_sans_bold('Zero manual intervention.')}\n\n"
-        f"That is the single metric that matters when building systems around {headline}.\n\n"
-        f"Here is why:\n\n"
-        f"Most teams focus on typing faster. Top practitioners focus on deterministic execution.\n\n"
-        f"What is your team's standard?"
+        f"Most advice about {headline} gets one thing backwards: [the thing].\n\n"
+        f"{notes}\n\n"
+        f"[What you do instead, in one or two sentences.]\n\n"
+        f"[A question for your readers?]"
     )
 
     f2 = (
-        f"{to_sans_bold('Stepping into this feels like learning a new language.')}\n\n"
-        f"Lately, I have been dissecting foundational architectures around {headline}:\n\n"
-        f"1. Decouple your business logic from transient storage.\n"
-        f"2. Make every state transition auditable.\n"
-        f"3. Eliminate manual handoffs between teams.\n\n"
-        f"Simple principles. Difficult discipline."
+        f"[How many] steps for {headline}:\n\n"
+        f"1. [The first step.]\n"
+        f"2. [The second step.]\n"
+        f"3. [The third step.]\n\n"
+        f"{notes}"
     )
 
     f3 = (
-        f"{to_sans_bold('80% of organizations are getting this wrong:')}\n\n"
-        f"They buy software to fix a broken communication process.\n\n"
-        f"Regarding {headline}:\n\n"
-        f"• Tools do not fix culture\n"
-        f"• Dashboards do not fix broken metrics\n"
-        f"• Speed does not fix flawed direction\n\n"
-        f"Fix the foundation first."
+        f"The hard truth about {headline}: [your point].\n\n"
+        f"{notes}\n\n"
+        f"[What to stop doing.]"
     )
 
     f4 = (
-        f"The Razor of Leverage applied to {headline}:\n\n"
-        f"If an activity does not compound while you sleep, it is labor, not asset creation.\n\n"
-        f"Three assets worth building today:\n"
-        f"→ Automated verification pipelines\n"
-        f"→ Asynchronous documentation\n"
-        f"→ High-signal network relationships"
+        f"One rule for {headline}: [the rule].\n\n"
+        f"{notes}\n\n"
+        f"[Why the rule holds.]"
     )
 
     f5 = (
-        f"My job title has never explained what the work actually is.\n\n"
-        f"Working on {headline} taught me one truth:\n\n"
-        f"The best strategy is the one that is so simple everyone on the team can repeat it without slides."
+        f"[When and where it happened.]\n\n"
+        f"{notes}\n\n"
+        f"[What you took from it.]"
     )
 
     return [
