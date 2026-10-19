@@ -160,3 +160,43 @@ def test_the_queue_tab_shows_no_invented_time_and_literal_text(panel):
     assert item.query_selector(".queue-item-text").inner_text() == (
         "Why <b>every</b> founder should read <Thinking in Systems> before hiring"
     )
+
+
+# ---------------------------------------------------------------------------
+# BRIDGE-19: the panel's fold verdict is the studio's
+# ---------------------------------------------------------------------------
+
+FOLD_CASES = [
+    "x" * 165,  # one line past the 140 fold, which the old rule called safe
+    "x" * 120,
+    "Short first line.\n\nSecond paragraph that is long enough to carry the opening past the fold line of the studio, "
+    "which is one hundred and forty characters.",
+    "One.\nTwo.\nThree.\nFour, which is below the fold and never counts.",
+    "".join(chr(0x1D5D4 + (i % 26)) for i in range(130)),  # bold letters, two UTF-16 units each
+]
+
+
+@pytest.mark.parametrize("text", FOLD_CASES, ids=["one-line-165", "one-line-120", "paragraphs", "four-lines", "bold-130"])
+def test_the_panel_and_the_studio_agree_on_the_fold(panel, text):
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(EXT), "backend"))
+    from formatters import analyze_hook
+
+    page = panel()
+    page.fill("#sp-text", text)
+    verdict = page.inner_text("#sp-fold-status")
+    studio_safe = analyze_hook(text)["mobile_safe"]
+    assert (verdict == "Fold Safe") == studio_safe, (verdict, studio_safe)
+
+
+def test_the_panel_carries_the_studios_fold_numbers():
+    import re
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(EXT), "backend"))
+    import fold
+
+    with open(os.path.join(EXT, "sidepanel.js"), encoding="utf-8") as handle:
+        source = handle.read()
+    assert re.search(r"const MOBILE_FOLD_CHARS = (\d+);", source).group(1) == str(fold.MOBILE_FOLD_CHARS)
+    assert re.search(r"const MOBILE_FOLD_LINES = (\d+);", source).group(1) == str(fold.MOBILE_FOLD_LINES)
+    assert not re.search(r"length\s*[<>]=?\s*(140|180|210)\b", source), "a second fold number crept back in"

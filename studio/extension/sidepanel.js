@@ -34,6 +34,29 @@ function studioApiFromPanel(path, options) {
 /** The studio post whose text the panel was filled with, or null. */
 let panelPostId = null;
 
+// The studio's fold, the two numbers in studio/backend/fold.py. The panel used
+// to carry its own rule (over 210 characters, or a first line over 140 only
+// once there were three lines), so a 165 character one-line opening was "Fold
+// Safe" here while the studio said it was cut off.
+const MOBILE_FOLD_CHARS = 140;
+const MOBILE_FOLD_LINES = 3;
+
+/** The text as a reader counts it: decoration marks stripped, one per code point. */
+function measurableText(text) {
+  return Array.from(text || "").filter((ch) => !/\p{M}/u.test(ch)).join("");
+}
+
+/** The studio's verdict (formatters.analyze_hook): the first lines, and the first line alone, fit. */
+function isFoldSafe(value) {
+  const text = measurableText(value);
+  // Python's splitlines, which drops the empty line after a final break.
+  const lines = text.split(/\r\n|[\n\v\f\r\x1c-\x1e\x85\u2028\u2029]/);
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  const firstLine = (lines.find((line) => line.trim()) || "").trim();
+  const preFold = Array.from(lines.slice(0, MOBILE_FOLD_LINES).join("\n")).length;
+  return preFold <= MOBILE_FOLD_CHARS && Array.from(firstLine).length <= MOBILE_FOLD_CHARS;
+}
+
 /**
  * A GET against the studio, made by the service worker so it carries the
  * studio token. This page used to fetch the studio directly, which carries
@@ -86,9 +109,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateStats() {
     const val = textarea.value;
-    charCount.innerText = val.length;
-    const lines = val.split("\n");
-    if (val.length > 210 || (lines.length >= 3 && lines[0].length > 140)) {
+    charCount.innerText = Array.from(measurableText(val)).length;
+    if (!isFoldSafe(val)) {
       foldStatus.innerText = "Truncated by fold";
       foldStatus.style.color = "#f59e0b";
     } else {
