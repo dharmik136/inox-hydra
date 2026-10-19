@@ -403,6 +403,54 @@ def test_typing_while_a_format_request_runs_is_kept(new_page, studio_url, api):
     assert editor.input_value().endswith("why!"), "the caret was pulled away from where the author was typing"
 
 
+def _slow_formats(page):
+    page.evaluate(
+        """() => { const real = window.fetch;
+                   window.fetch = (input, init) => String(input).includes('/api/format/')
+                     ? new Promise(r => setTimeout(r, 1200)).then(() => real(input, init)) : real(input, init); }"""
+    )
+
+
+def _select(page, editor, start, length):
+    editor.click()
+    page.keyboard.press("Control+Home")
+    for _ in range(start):
+        page.keyboard.press("ArrowRight")
+    for _ in range(length):
+        page.keyboard.press("Shift+ArrowRight")
+
+
+def test_typing_before_the_selection_still_formats_the_selected_words(new_page, studio_url, api):
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    _slow_formats(page)
+    editor.fill("Say pricing is a design problem")
+    _select(page, editor, 4, 7)
+    page.get_by_role("button", name="Bold", exact=True).click()
+    page.keyboard.press("Control+Home")
+    page.keyboard.type("Honestly, ")
+    page.wait_for_timeout(1800)
+    value = editor.input_value()
+    assert value.startswith("Honestly, Say \U0001d5fd\U0001d5ff"), f"the format was dropped or misplaced: {value!r}"
+    assert value.endswith(" is a design problem")
+
+
+def test_a_format_dropped_because_the_words_changed_says_so(new_page, studio_url, api):
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    _slow_formats(page)
+    editor.fill("pricing is a design problem")
+    _select(page, editor, 0, 7)
+    page.get_by_role("button", name="Bold", exact=True).click()
+    page.keyboard.press("Control+Home")
+    page.keyboard.press("Delete")
+    page.wait_for_timeout(1800)
+    assert editor.input_value() == "ricing is a design problem", "the author's edit was undone"
+    expect(page.get_by_role("status").filter(has_text="not applied")).to_be_visible()
+
+
 def test_a_format_left_alone_keeps_its_selection_for_the_next_one(new_page, studio_url, api):
     """Chaining formats still works when nothing was typed in between."""
     _clear_posts(api)
