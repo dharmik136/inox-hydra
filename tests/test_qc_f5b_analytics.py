@@ -107,7 +107,7 @@ def _back(client, start, count, **metrics):
     """Daily captures from `start` days before END, going back `count` days."""
     series = [{"date": (END - dt.timedelta(days=b)).isoformat(), "period_label": "1d", "precision": "exact", **metrics}
               for b in range(start, start + count)]
-    assert client.post("/api/analytics/ingest", json={"series": series}).status_code == 200
+    assert client.post("/api/analytics/ingest", json={"series": series, "author": ME}).status_code == 200
 
 
 def test_unread_engagements_are_not_a_fall(studio):

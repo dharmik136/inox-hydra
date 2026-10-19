@@ -147,7 +147,7 @@ def test_unread_engagements_read_not_measured_not_a_fall(studio):
     series = [{"date": (END - dt.timedelta(days=b)).isoformat(), "period_label": "1d", "precision": "exact",
                "impressions": 1000, **({"reactions": 20, "comments": 2, "shares": 1} if b >= 30 else {})}
               for b in range(60)]
-    assert client.post("/api/analytics/ingest", json={"series": series}).status_code == 200
+    assert client.post("/api/analytics/ingest", json={"series": series, "author": ME}).status_code == 200
     page = _open(studio, "Analytics")
     page.wait_for_selector("text=What changed")
     assert _what_changed(page, "Impressions") == "0.0%"
