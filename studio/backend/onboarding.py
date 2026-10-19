@@ -792,6 +792,9 @@ def forget_identity() -> Dict[str, Any]:
             # And what LinkedIn's archive brought: connections and the record of each import.
             forget_archive(conn)
             _unfill_creator_settings(conn)
+            # The import requests it waited on are gone, and their ids can be
+            # issued again, so a chain left behind could take a new one for its own.
+            _save_chain(conn, None)
     finally:
         conn.close()
     return {"status": "forgotten"}
