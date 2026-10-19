@@ -410,31 +410,65 @@ def bind_post_urn(req: BindUrnRequest):
         if already:
             return {"status": "already_bound", "bound": True, "post_id": already["id"], "activity_urn": urn}
 
+        # A post that left the studio by any route, not only an inserted one.
+        # Only an insert stored a fingerprint, so a post marked as published,
+        # queued, or sent to LinkedIn's scheduler could never bind. Those are
+        # matched on the fingerprint their text gives now. A plain draft is
+        # left out: this runs on every post the creator opens, and a draft can
+        # hold someone else's words.
         cursor.execute(
             """
-            SELECT id, content_fingerprint FROM posts
-            WHERE activity_urn IS NULL AND content_fingerprint IS NOT NULL
-            ORDER BY published_at DESC
-            LIMIT 50
+            SELECT id, content, content_fingerprint FROM posts
+            WHERE activity_urn IS NULL
+              AND (content_fingerprint IS NOT NULL OR status IN ('published', 'scheduled', 'due'))
+            ORDER BY COALESCE(published_at, scheduled_for, created_at) DESC
+            LIMIT 200
             """
         )
         candidates = cursor.fetchall()
 
-        for row in candidates:
-            if post_identity.fingerprint_matches(req.post_text or "", row["content_fingerprint"]):
-                with conn:
-                    conn.execute(
-                        "UPDATE posts SET activity_urn = ? WHERE id = ?", (urn, row["id"])
-                    )
-                return {
-                    "status": "bound",
-                    "bound": True,
-                    "post_id": row["id"],
-                    "activity_urn": urn,
-                }
+        text = req.post_text or ""
+        matched = [
+            row for row in candidates
+            if any(
+                fingerprint and post_identity.fingerprint_matches(text, fingerprint)
+                for fingerprint in (row["content_fingerprint"], post_identity.content_fingerprint(row["content"] or ""))
+            )
+        ]
+
+        # Exactly one, as the history import binds: two candidates bind
+        # neither, because a wrong binding credits one post's engagers to
+        # another and is very hard to notice.
+        if len(matched) == 1:
+            row = matched[0]
+            try:
+                from ..onboarding import published_at_from_urn
+            except ImportError:
+                from onboarding import published_at_from_urn
+            # LinkedIn showing the post is the proof it was published, and its
+            # id carries the time it was.
+            with conn:
+                conn.execute(
+                    "UPDATE posts SET activity_urn = ?, status = 'published', "
+                    "content_fingerprint = COALESCE(content_fingerprint, ?), "
+                    "published_at = COALESCE(?, published_at, ?) WHERE id = ?",
+                    (
+                        urn,
+                        post_identity.content_fingerprint(row["content"] or ""),
+                        published_at_from_urn(urn),
+                        datetime.now(timezone.utc).isoformat(),
+                        row["id"],
+                    ),
+                )
+            return {
+                "status": "bound",
+                "bound": True,
+                "post_id": row["id"],
+                "activity_urn": urn,
+            }
 
         return {
-            "status": "no_match",
+            "status": "ambiguous" if matched else "no_match",
             "bound": False,
             "activity_urn": urn,
             "candidates_considered": len(candidates),
