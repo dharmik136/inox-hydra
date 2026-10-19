@@ -586,3 +586,36 @@ def test_switching_profile_asks_before_discarding_brand_studio_edits(studio, mon
         page.evaluate(FETCH, ["POST", "/api/v1/accounts/switch", {"account_id": "default"}])
         page.evaluate(FETCH, ["DELETE", f"/api/v1/accounts/{created['id']}", {"confirm": "Second Creator"}])
         page.evaluate(FETCH, ["DELETE", "/api/v1/licence", None])
+
+
+# ---------------------------------------------------------------------------
+# UX-09, Docs' part: an article is readable in a phone width window
+# ---------------------------------------------------------------------------
+
+def _open_article(page, title="What to do today"):
+    page.locator("main").get_by_role("button", name=title).first.click()
+    heading = page.locator("main article h1").first
+    heading.wait_for(state="attached")
+    page.wait_for_timeout(300)
+    return heading
+
+
+@pytest.mark.parametrize("scheme", ["dark", "light"])
+def test_a_help_article_has_room_on_a_phone(studio, scheme):
+    page = studio(375, 812, scheme).open("Docs")
+    heading = _open_article(page)
+    box = heading.bounding_box()
+    assert box is not None and box["width"] > 100, f"the article gets no width at 375 pixels: {box}"
+    assert _inside(box, 375, 812), f"the article's heading is off screen: {box}"
+    # The way back to the topics is on screen too.
+    back = page.locator("main article").get_by_role("button", name="ALL TOPICS")
+    assert _inside(back.bounding_box(), 375, 812)
+
+
+def test_a_wide_window_keeps_the_topics_beside_the_article(studio):
+    page = studio(1024, 768).open("Docs")
+    _open_article(page)
+    topics = page.get_by_role("region", name="Help topics")
+    assert topics.is_visible(), "the topics column went missing on a wide window"
+    article = page.locator("main article").bounding_box()
+    assert topics.bounding_box()["x"] < article["x"], "the topics are no longer beside the article"
