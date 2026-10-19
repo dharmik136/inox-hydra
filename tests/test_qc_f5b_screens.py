@@ -155,3 +155,39 @@ def test_a_rounded_follower_count_is_shown_as_approximate(studio):
     page.get_by_role("button", name="Followers", exact=True).click()
     assert "1 OF THESE DAYS WAS READ FROM A FIGURE LINKEDIN ROUNDED" in page.inner_text("body")
     assert not studio["errors"], studio["errors"]
+
+
+ME = "f5b-screens"
+
+
+def _confirm():
+    from database import get_db
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO creator_identity (id, vanity, display_name, confirmed_at) "
+                     "VALUES (1, ?, 'F5b Screens', '2026-09-27T00:00:00+00:00')", (ME,))
+    conn.close()
+
+
+def _urn(n, year_ms=1780000000000):
+    return f"urn:li:activity:{(year_ms + n * 86400000) << 22}"
+
+
+def _own_posts(client, posts, year_ms=1780000000000, start=0):
+    _confirm()
+    items = [{"activity_urn": _urn(start + i, year_ms), "actor": ME, **post} for i, post in enumerate(posts)]
+    res = client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": items})
+    assert res.status_code == 200, res.text
+    return [item["activity_urn"] for item in items]
+
+
+def test_imported_posts_are_compared_and_unread_figures_say_so(studio):
+    """AUDIENCE-09"""
+    _own_posts(studio["client"], [{"text": "Why sourdough needs patience", "reactions": 40, "comments": 3}])
+    page = _open(studio, "Analytics")
+    page.wait_for_selector("text=Post comparison")
+    assert "NO PUBLISHED POSTS TO COMPARE" not in page.inner_text("body")
+    row = page.locator("tbody tr", has_text="Why sourdough needs patience").first
+    cells = [c.strip() for c in row.locator("td").all_inner_texts()]
+    assert cells[1:] == ["not measured", "40", "3", "not measured"], cells
+    assert not studio["errors"], studio["errors"]

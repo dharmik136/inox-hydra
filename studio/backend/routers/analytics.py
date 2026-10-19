@@ -325,26 +325,66 @@ def export_analytics(format: str = "csv"):
         conn.close()
 
 
+def _rate(impressions, reactions, comments, shares):
+    """(reactions + comments + shares) / impressions, as a percentage, or None without both read."""
+    if not impressions or reactions is None:
+        return None
+    return round((reactions + (comments or 0) + (shares or 0)) * 100.0 / impressions, 2)
+
+
 @router.get("/api/analytics/posts")
 def get_posts_leaderboard():
+    """
+    The creator's posts, each with its figures and the leads it brought.
+
+    The comparison is the creator's LinkedIn posts, imported from their
+    activity pages or their archive: that is what they published. It read
+    only the studio's own posts table, so a creator with years of history
+    imported saw "NO PUBLISHED POSTS TO COMPARE". A studio post marked
+    published that no LinkedIn post has been matched to is listed as well.
+
+    Nothing reads a studio post's figures. The table writes every one at its
+    column default of 0, so a studio post whose figures are all 0 or empty
+    was never measured, and says so (None) rather than showing a 0% rate.
+    """
     conn = get_db()
     try:
         cursor = conn.cursor()
-        cursor.execute("""
-        SELECT id, content, media_urls, status, published_at, impressions, reactions, comments, shares, tags,
-               activity_urn,
-               CASE WHEN impressions > 0 THEN ROUND((reactions + comments + shares) * 100.0 / impressions, 2) ELSE 0.0 END as engagement_rate
-        FROM posts
-        WHERE status = 'published'
-        ORDER BY impressions DESC
-        """)
-        rows = []
-        for r in cursor.fetchall():
+        listed = []
+        for r in cursor.execute("""
+            SELECT o.activity_urn, o.text, o.published_at, o.impressions, o.reactions, o.comments, o.reposts,
+                   p.id AS post_id, p.media_urls, p.tags
+            FROM own_posts o LEFT JOIN posts p ON p.activity_urn = o.activity_urn
+        """).fetchall():
+            listed.append({
+                "id": r["activity_urn"], "content": r["text"] or "", "media_urls": r["media_urls"],
+                "status": "published", "published_at": r["published_at"], "impressions": r["impressions"],
+                "reactions": r["reactions"], "comments": r["comments"], "shares": r["reposts"], "tags": r["tags"],
+                "activity_urn": r["activity_urn"], "studio_post_id": r["post_id"],
+            })
+        for r in cursor.execute("""
+            SELECT id, content, media_urls, status, published_at, impressions, reactions, comments, shares, tags,
+                   activity_urn
+            FROM posts
+            WHERE status = 'published'
+              AND (activity_urn IS NULL OR activity_urn NOT IN (SELECT activity_urn FROM own_posts WHERE activity_urn IS NOT NULL))
+              AND id NOT IN (SELECT activity_urn FROM own_posts WHERE activity_urn IS NOT NULL)
+        """).fetchall():
             d = dict(r)
+            if all(not d[k] for k in ("impressions", "reactions", "comments", "shares")):
+                d.update(impressions=None, reactions=None, comments=None, shares=None)
+            d["studio_post_id"] = d["id"]
+            listed.append(d)
+
+        listed.sort(key=lambda d: (d["impressions"] is None, -(d["impressions"] or 0),
+                                   d["reactions"] is None, -(d["reactions"] or 0)))
+        rows = []
+        for d in listed:
+            d["engagement_rate"] = _rate(d["impressions"], d["reactions"], d["comments"], d["shares"])
             d["media_urls"] = json.loads(d["media_urls"]) if d["media_urls"] else []
             d["tags"] = json.loads(d["tags"]) if d["tags"] else []
 
-            post_id_str = str(d["id"])
+            post_id_str = str(d.pop("studio_post_id") or d["id"])
             post_urn = d.get("activity_urn") or ""
             cursor.execute("""
                 SELECT

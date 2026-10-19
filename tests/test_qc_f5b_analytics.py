@@ -9,6 +9,14 @@ days of the previous one happened to exist. Two weeks after install the
 previous 30 days held four captured days, so a flat 1,000 impressions a day
 was reported as +650%.
 
+AUDIENCE-10. A figure LinkedIn wrote as 2.4K was stored as rounded, and then
+plotted, summed and subtracted as if it were exact.
+
+AUDIENCE-09. The post comparison read only posts written in the studio, so a
+creator with their whole LinkedIn history imported saw NO PUBLISHED POSTS TO
+COMPARE, and a post marked published by hand showed 0 impressions and a 0%
+rate that nobody had ever read.
+
 Each test runs in a throwaway home of its own, so the session's demo rows
 cannot anchor or pad a window.
 """
@@ -149,3 +157,82 @@ def test_a_change_inside_the_rounding_of_a_rounded_day_is_not_reported(studio):
     kpis = _kpis(studio, "7d")
     assert kpis["impressions_delta_pct"] is None
     assert "impressions_delta_pct" in kpis["within_rounding"]
+
+
+# ---------------------------------------------------------------------------
+# AUDIENCE-09: the post comparison is the creator's LinkedIn posts, and a
+# figure nobody read is not measured, never 0
+# ---------------------------------------------------------------------------
+
+ME = "f5b-creator"
+
+
+def _confirm():
+    from database import get_db
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO creator_identity (id, vanity, display_name, confirmed_at) "
+                     "VALUES (1, ?, 'F5b Creator', '2026-09-27T00:00:00+00:00')", (ME,))
+    conn.close()
+
+
+def _urn(n):
+    # An activity id whose time decodes to 2026, as LinkedIn's do.
+    return f"urn:li:activity:{(1780000000000 + n * 86400000) << 22}"
+
+
+def _own_posts(client, *posts):
+    _confirm()
+    items = [{"activity_urn": _urn(i), "actor": ME, **post} for i, post in enumerate(posts)]
+    res = client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": items})
+    assert res.status_code == 200, res.text
+    return [item["activity_urn"] for item in items]
+
+
+def _leaderboard(client):
+    res = client.get("/api/analytics/posts")
+    assert res.status_code == 200, res.text
+    return res.json()["posts"]
+
+
+def test_imported_linkedin_posts_are_compared(studio):
+    urns = _own_posts(studio,
+                      {"text": "Why sourdough needs patience", "reactions": 40, "comments": 3, "reposts": 1},
+                      {"text": "Our cafe, first month numbers", "reactions": 61, "comments": 9})
+    rows = {row["id"]: row for row in _leaderboard(studio)}
+    assert set(urns) <= set(rows), "the creator's LinkedIn posts are missing from the comparison"
+    first = rows[urns[0]]
+    assert first["content"].startswith("Why sourdough")
+    assert first["reactions"] == 40 and first["comments"] == 3
+    assert first["impressions"] is None, "impressions nobody read were shown as a number"
+    assert first["engagement_rate"] is None, "a rate was computed without impressions"
+
+
+def test_a_post_marked_published_by_hand_is_not_measured(studio):
+    made = studio.post("/api/posts", json={"content": "My real post I published by hand", "status": "published"})
+    assert made.status_code == 200, made.text
+    row = next(r for r in _leaderboard(studio) if r["id"] == made.json()["id"])
+    for figure in ("impressions", "reactions", "comments", "shares", "engagement_rate"):
+        assert row[figure] is None, f"{figure} was never read and showed {row[figure]!r}"
+
+
+def test_a_measured_rate_comes_from_the_figures_read(studio):
+    urns = _own_posts(studio, {"text": "A post with its analytics page read", "reactions": 30, "comments": 5,
+                               "reposts": 5, "impressions": 2000})
+    row = next(r for r in _leaderboard(studio) if r["id"] == urns[0])
+    assert row["impressions"] == 2000
+    assert row["engagement_rate"] == 2.0
+
+
+def test_a_studio_post_bound_to_its_linkedin_post_appears_once(studio):
+    text = "Bound to LinkedIn, and imported afterwards from the activity page"
+    post_id = studio.post("/api/posts", json={"content": text, "status": "published"}).json()["id"]
+    from database import get_db
+    conn = get_db()
+    with conn:
+        conn.execute("UPDATE posts SET activity_urn = ? WHERE id = ?", (_urn(0), post_id))
+    conn.close()
+    _own_posts(studio, {"text": text, "reactions": 12})
+    rows = [r for r in _leaderboard(studio) if r["id"] in (post_id, _urn(0))]
+    assert len(rows) == 1, rows
+    assert rows[0]["reactions"] == 12

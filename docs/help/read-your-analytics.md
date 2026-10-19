@@ -42,12 +42,12 @@ These describe the numbers. They do not claim a cause.
 
 ## Post comparison
 
-The table lists every post whose status is published, including posts you only marked as published. Rate is (reactions + comments + shares) divided by impressions, as a percentage.
+The table lists your LinkedIn posts, the ones imported from your activity pages or your archive, and any post you marked as published in the studio that has not been matched to one of them. Rate is (reactions + comments + reposts) divided by impressions, as a percentage.
 
 > [!NOTE]
-> The extension does not capture per-post figures, so posts written in the studio show 0 impressions, reactions and comments, and a rate of 0%. The strongest-post observation then reports 0.00%.
+> A figure the bridge has not read shows "not measured", never 0. Impressions are read only from a post's own analytics page, so most posts show "not measured" for impressions and rate. A post marked published in the studio has no figures of its own until it is matched to its LinkedIn post.
 
-Click a row to see leads linked to it: a count of leads and interactions with names, or NO LEADS ATTRIBUTED TO THIS POST. In this build, posts written in the studio are not linked to their LinkedIn posts. The extension reports which post you opened, but the step that prepares a post for matching is refused by the extension itself, so expect NO LEADS ATTRIBUTED TO THIS POST.
+Click a row to see leads linked to it: a count of leads and interactions with names, or NO LEADS ATTRIBUTED TO THIS POST. An imported LinkedIn post carries the people the bridge captured on it. A post written in the studio is linked only once it has been matched to its LinkedIn post; until then expect NO LEADS ATTRIBUTED TO THIS POST.
 
 ## The seeded-data banner
 
@@ -64,6 +64,6 @@ Click **CSV** beside the range buttons. It downloads every stored day, whatever 
 | ANALYTICS UNAVAILABLE | The studio did not answer or refused the request. Check it is running and reload. |
 | NOTHING MEASURED IN THIS RANGE | No figures exist for that measure in this range. Visit your LinkedIn analytics page with the extension running. Profile views always shows this. |
 | "not measured" | That figure was never captured for that day or post. Under **What changed**, one of the figures it compares was not captured, or the previous period holds nothing to compare with. |
-| NO PUBLISHED POSTS TO COMPARE | No post has the published status yet. |
+| NO PUBLISHED POSTS TO COMPARE | None of your LinkedIn posts has been imported, and no studio post is marked published. Import your posts in Setup. |
 
 Audience demographics are not shown anywhere in the studio.
