@@ -1812,6 +1812,35 @@ class NativeStageRequest(BaseModel):
 class StagePostRequest(BaseModel):
     scheduled_at: str
     confirm: bool = False
+    # Sends again after an earlier send got no answer, once the creator has
+    # checked LinkedIn and the post is not there.
+    confirm_resend: bool = False
+
+
+# A send LinkedIn never answered, per post: the time it went out.
+UNANSWERED_SEND_KEY = "linkedin_send_unanswered:"
+
+
+def _unanswered_send(post_id: str) -> Optional[str]:
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (UNANSWERED_SEND_KEY + post_id,)).fetchone()
+        return row["value"] if row else None
+    finally:
+        conn.close()
+
+
+def _record_unanswered_send(post_id: str) -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+            (UNANSWERED_SEND_KEY + post_id, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _send_refusal_text(result: Dict[str, Any]) -> str:
@@ -1896,10 +1925,33 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
     if not content.strip():
         raise HTTPException(status_code=400, detail="This post has no content to send.")
 
+    # An earlier send that LinkedIn never answered may have scheduled the post
+    # already, so a second one waits until the creator has looked.
+    unanswered = _unanswered_send(post_id)
+    if unanswered and not req.confirm_resend:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "send_unconfirmed",
+                "message": (
+                    f"An earlier send of this post ({unanswered[:16].replace('T', ' ')} UTC) got no "
+                    "answer from LinkedIn, so LinkedIn may already be holding it. Check your "
+                    "scheduled posts on LinkedIn. Send again only if it is not there."
+                ),
+            },
+        )
+
     result = linkedin_client.schedule_norm_share(
         content=content,
         scheduled_at_ms=int(parsed.timestamp() * 1000),
     )
+
+    if result.get("status") == "unknown":
+        _record_unanswered_send(post_id)
+        raise HTTPException(
+            status_code=504,
+            detail={"code": "send_unknown", "message": _send_refusal_text(result)},
+        )
 
     if result.get("status") != "success":
         # A 502 whose detail is a sentence. The refusal text names the flag or
@@ -1942,6 +1994,7 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
             "UPDATE posts SET status = 'scheduled', scheduled_for = ? WHERE id = ?",
             (scheduled, post_id),
         )
+        conn.execute("DELETE FROM settings WHERE key = ?", (UNANSWERED_SEND_KEY + post_id,))
         conn.commit()
     finally:
         conn.close()

@@ -81,3 +81,59 @@ def test_a_refused_send_says_why_in_a_sentence(monkeypatch, result, expected):
     assert expected in detail
     assert "<html>" not in detail
     assert _row(post_id)["status"] == "draft"
+
+
+# ---------------------------------------------------------------------------
+# WRITE-30: a send LinkedIn never answered is not "nothing was scheduled"
+# ---------------------------------------------------------------------------
+
+def test_a_timeout_after_sending_is_reported_as_unknown(monkeypatch):
+    import requests
+
+    import linkedin_client as client_module
+
+    monkeypatch.setenv("INOX_ALLOW_LINKEDIN_EGRESS", "1")
+    monkeypatch.delenv("INOX_NO_EGRESS", raising=False)
+    sender = client_module.linkedin_client
+    monkeypatch.setattr(sender, "get_tokens", lambda: {"li_at": "AQEDAlive_shaped", "JSESSIONID": "ajax:1"})
+    monkeypatch.setattr(sender.circuit_breaker, "can_execute", lambda: True)
+
+    def timed_out(*args, **kwargs):
+        raise requests.exceptions.ReadTimeout("read timed out")
+
+    monkeypatch.setattr(client_module.requests, "post", timed_out)
+    result = sender.schedule_norm_share(content="A post.", scheduled_at_ms=1)
+    assert result["status"] == "unknown"
+    assert "Check your scheduled posts on LinkedIn" in result["message"]
+
+
+def test_a_second_send_after_an_unanswered_one_waits_for_the_creator(monkeypatch):
+    calls = []
+
+    def unanswered(**kwargs):
+        calls.append(kwargs)
+        return {"status": "unknown", "message": "The post was sent, but LinkedIn did not answer."}
+
+    monkeypatch.setattr(app_module.linkedin_client, "schedule_norm_share", unanswered)
+    post_id = _seed("timeout")
+
+    first = _send(post_id)
+    assert first.status_code == 504
+    assert first.json()["detail"]["code"] == "send_unknown"
+    assert _row(post_id)["status"] == "draft"
+
+    second = _send(post_id)
+    assert second.status_code == 409
+    assert second.json()["detail"]["code"] == "send_unconfirmed"
+    assert len(calls) == 1, "the second press reached LinkedIn without the creator checking first"
+
+    monkeypatch.setattr(
+        app_module.linkedin_client,
+        "schedule_norm_share",
+        lambda **kwargs: {"status": "success", "mode": "live", "scheduled_urn": "urn:li:share:1"},
+    )
+    confirmed = _send(post_id, confirm_resend=True)
+    assert confirmed.status_code == 200, confirmed.text
+    assert _row(post_id)["status"] == "scheduled"
+    # Settled, so a later send of another kind is not held up by it.
+    assert app_module._unanswered_send(post_id) is None

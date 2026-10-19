@@ -6,6 +6,7 @@ import {
   publishNow,
   schedulePost,
   stageToLinkedIn,
+  StudioError,
   validateCadence,
   type CadenceVerdict,
   type NextSlot,
@@ -53,6 +54,9 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
   // cleared whenever the dialog opens so a previous confirmation cannot carry
   // over into a new post.
   const [confirmingSend, setConfirmingSend] = useState(false);
+  // An earlier send got no answer from LinkedIn. Sending again is offered only
+  // once the studio has said so, and only as its own, named control.
+  const [resendOffered, setResendOffered] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -60,6 +64,7 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
     setError(null);
     setVerdict(null);
     setConfirmingSend(false);
+    setResendOffered(false);
     fetchNextSlot()
       .then(async (next) => {
         if (!live) return;
@@ -85,7 +90,7 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  async function run(action: "now" | "schedule" | "send") {
+  async function run(action: "now" | "schedule" | "send" | "resend") {
     if (!postId) return;
     setBusy(true);
     setError(null);
@@ -93,9 +98,9 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
       if (action === "now") {
         await publishNow(postId);
         onDone("Marked as published");
-      } else if (action === "send") {
+      } else if (action === "send" || action === "resend") {
         if (!slot) throw new Error("No slot is available to send into.");
-        const staged = await stageToLinkedIn(postId, slot.slot_datetime);
+        const staged = await stageToLinkedIn(postId, slot.slot_datetime, action === "resend");
         // The server's own sentence, not a cheerful rewrite of it. It is the
         // thing that distinguishes "LinkedIn has this" from "a row moved".
         onDone(staged.message);
@@ -113,6 +118,7 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
       // invites a second press at the exact moment the author is least sure
       // what just happened.
       setConfirmingSend(false);
+      setResendOffered(caught instanceof StudioError && caught.code === "send_unconfirmed");
     } finally {
       setBusy(false);
     }
@@ -194,7 +200,17 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
                     OR HAND IT TO LINKEDIN&apos;S OWN SCHEDULER, WHICH PUBLISHES IT EVEN IF
                     THIS MACHINE IS ASLEEP. THIS ONE REALLY SENDS.
                   </p>
-                  {confirmingSend ? (
+                  {resendOffered ? (
+                    <button
+                      type="button"
+                      disabled={busy || !slot}
+                      onClick={() => run("resend")}
+                      className="mt-3 flex items-center gap-1.5 rounded-md border border-signal-orange/60 px-2.5 py-1 text-[12px] text-signal-orange-text transition-colors hover:bg-soft disabled:opacity-40"
+                    >
+                      <Send className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                      It is not on LinkedIn, send it again
+                    </button>
+                  ) : confirmingSend ? (
                     <div className="mt-3">
                       <p className="text-[13px] leading-relaxed text-signal-orange-text">
                         This sends the post to LinkedIn for{" "}

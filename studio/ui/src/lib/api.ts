@@ -1033,16 +1033,22 @@ export interface StagedToLinkedIn {
  * thrown error carrying the server's own words, because each one tells the
  * author something different about what to do next: no saved session, the
  * linkedin egress category still switched off, or LinkedIn itself declining.
+ *
+ * Two more carry a code. "send_unknown": the post went out and LinkedIn never
+ * answered, so it may hold it already. "send_unconfirmed": a later send of
+ * that post, refused until the creator has checked LinkedIn and sends again
+ * with `confirmResend`.
  */
 export async function stageToLinkedIn(
   postId: string,
   scheduledAt: string,
+  confirmResend = false,
 ): Promise<StagedToLinkedIn> {
   return call<StagedToLinkedIn>(
     `/api/v1/posts/${encodeURIComponent(postId)}/stage-to-linkedin`,
     {
       method: "POST",
-      body: JSON.stringify({ scheduled_at: scheduledAt, confirm: true }),
+      body: JSON.stringify({ scheduled_at: scheduledAt, confirm: true, confirm_resend: confirmResend }),
     },
   );
 }
