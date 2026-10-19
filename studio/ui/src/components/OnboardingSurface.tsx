@@ -258,8 +258,8 @@ export function OnboardingSurface() {
                 Each import opens one of your activity pages and scrolls it for you at a steady pace until the list
                 ends. Keep that tab in view; it pauses while hidden, and the Stop button on the page ends it.
               </p>
-              <div className="mb-4 flex items-center justify-between rounded-md border border-edge bg-soft/40 p-3">
-                <div>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-edge bg-soft/40 p-3">
+                <div className="min-w-0 flex-1 basis-64">
                   <p className="text-[13px] font-medium text-ink-primary">All three, one after another</p>
                   <p className="text-[11px] text-ink-muted">
                     Opens your posts page, then your comments, then your reactions. The bridge scrolls each one to
@@ -279,7 +279,7 @@ export function OnboardingSurface() {
                       5,
                     )
                   }
-                  className="flex items-center gap-1.5 rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+                  className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
                 >
                   {busy === "all" ? (
                     <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
@@ -674,7 +674,8 @@ function ForgetPanel({
     fetchBackups()
       .then((listing) => {
         if (!live) return;
-        const latest = listing.backups[0];
+        // The listing is sorted by name, so the newest is found by its time.
+        const latest = [...listing.backups].sort((a, b) => b.modified.localeCompare(a.modified))[0];
         setBackup(
           latest
             ? `The latest backup of the studio is from ${latest.modified.slice(0, 16).replace("T", " ")}, ${latest.name}.`
@@ -734,7 +735,7 @@ function ForgetPanel({
       <p className="mt-2 text-[12px] text-ink-muted">Your leads, drafts and the posts you wrote in the studio are kept.</p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <p role="status" className="text-[12px] text-ink-secondary">
+        <p role="status" className="min-w-0 break-words text-[12px] text-ink-secondary">
           {backup ?? "Looking for a backup."}
         </p>
         <Secondary disabled={backingUp || busy !== null} onPress={() => void backUp()}>
