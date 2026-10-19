@@ -326,7 +326,8 @@ def test_anti_slop_dm_generator():
     assert "Siddharth" in dm
     assert "distributed task workers" in dm
     assert "How do you handle background queue retries" in dm
-    assert "Are you testing similar workflows in your stack?" in dm
+    # The closing question was the original author's world, not the creator's.
+    assert "stack" not in dm.lower()
 
 
 def test_reverse_crm_manager_ingestion():

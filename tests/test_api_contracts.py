@@ -179,7 +179,9 @@ def test_crm_leads_contract():
     # Test DM generation for prospect across all 3 styles
     first_lead_id = leads[0]["id"]
     for style in ["value_add", "resource_share", "quick_chat"]:
-        dm_resp = client.get(f"/api/leads/{first_lead_id}/dm-script?style={style}")
+        # An offer names what the creator would share; without it there is none.
+        offer = "&offer=the%20order%20checklist%20I%20use" if style == "resource_share" else ""
+        dm_resp = client.get(f"/api/leads/{first_lead_id}/dm-script?style={style}{offer}")
         assert dm_resp.status_code == 200
         dm_data = dm_resp.json()
         assert dm_data["status"] == "success"

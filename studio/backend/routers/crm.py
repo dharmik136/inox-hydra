@@ -150,8 +150,9 @@ def remove_lead(lead_id: str):
 
 
 @router.get("/api/leads/{lead_id}/dm-script")
-def get_lead_dm(lead_id: str, style: Optional[str] = "value_add", topic: Optional[str] = None):
-    return generate_dm_script(lead_id, style=style, post_topic=topic)
+def get_lead_dm(lead_id: str, style: Optional[str] = "value_add", topic: Optional[str] = None,
+                offer: Optional[str] = None):
+    return generate_dm_script(lead_id, style=style, post_topic=topic, offer=offer)
 
 
 @router.post("/api/leads/{lead_id}/enrich", tags=["Leads & CRM"])

@@ -53,25 +53,25 @@ Under **Pipeline**, click one of the four stages: **New Lead**, **Outreach Sent*
 ## Draft a message
 
 1. In **THE POST THEY ENGAGED WITH**, you can type the subject of the post. The box is optional. Left blank, the draft says only "my recent post". The studio does not know which post it was.
-2. Click a style: **Peer question**, **Offer a blueprint**, **Suggest a call** or **Reply to their comment**.
-3. Read the draft. Its label says which control wrote it.
-4. Click **COPY**, then edit and send it yourself in LinkedIn.
+2. To offer them something, type what it is in **WHAT YOU WOULD SHARE WITH THEM**, for example "the checklist I use for orders".
+3. Click a style: **Peer question**, **Suggest a call**, **Offer something** or **Reply to their comment**.
+4. Read the draft. Its label says which control wrote it.
+5. Click **COPY**, then edit and send it yourself in LinkedIn.
 
 | Control | What it writes |
 | --- | --- |
-| Peer question | Names their engagement, then asks how they and their company handle "foundational observability and decoupling logic" |
-| Offer a blueprint | Offers "a practical architecture blueprint and checklist" |
-| Suggest a call | Suggests a 15-minute virtual coffee |
+| Peer question | Names their engagement, then asks how it looks from where they sit, naming their company when the studio knows it |
+| Suggest a call | Suggests a short call to swap notes |
+| Offer something | Offers exactly what you typed in the share box, and nothing else. Greyed out until you type something. |
 | Reply to their comment | Quotes up to the first 60 characters of their latest comment |
 
-> [!IMPORTANT]
-> The drafts contain fixed wording about architecture and engineering. If a comment contains a question, **Reply to their comment** says it saw their question instead of thanking them for the comment. Rewrite anything that is not true of you before sending.
+The drafts use only the person's record (first name, company, how they engaged, their comment) and what you type in the two boxes. They say nothing about your work, your company or your background, because the studio does not know it. If a comment contains a question, **Reply to their comment** says it saw their question instead of thanking them for the comment. Read every draft before sending it.
 
-If the topic box is empty, the first three name no subject: **Peer question** and **Offer a blueprint** say only "my recent post", and **Suggest a call** says only "my post". **Reply to their comment** writes nothing until you fill in the box.
+If the topic box is empty, the openers name no subject: **Peer question** and **Offer something** say only "my recent post", and **Suggest a call** says only "my post". **Reply to their comment** writes nothing until you fill in the box.
 
 ## What happens
 
-Each draft is a fill-in template built from the stored record: first name, company, how they engaged, their comment and your topic. No AI provider is used, even with a key configured, and nothing leaves this machine. Nothing is sent from the studio. As the panel says, LinkedIn messages are not something the studio can send for you.
+Each draft is a fill-in template built from the stored record: first name, company, how they engaged, their comment, your topic and what you would share. No AI provider is used, even with a key configured, and nothing leaves this machine. Nothing is sent from the studio. As the panel says, LinkedIn messages are not something the studio can send for you.
 
 ## Export your leads
 
@@ -84,6 +84,7 @@ Click **CSV** above the stream to download every lead as `linkedin_studio_crm_le
 | LEAD PIPELINE UNAVAILABLE | The lead list could not be loaded. Check the studio is running and reload. |
 | DOSSIER UNAVAILABLE | That person's record could not be loaded. |
 | **Reply to their comment** is greyed out | Hover it: "This lead has left no comment to reply to". Use one of the other three. |
+| **Offer something** is greyed out | Hover it: "Say what you would share with them, above". Type it in the share box. |
 | "Say which post they commented on, above, and a reply can be drafted." | **Reply to their comment** needs the topic box. Type the subject of the post and press it again. |
 | "Lead not found" | The lead no longer exists. Reopen **Leads**. |
 | "The removal was refused." or another message under **Remove these** | The deletion did not run. Nothing was removed. Reopen **Leads** and try again. |

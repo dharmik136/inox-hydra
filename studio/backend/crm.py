@@ -353,20 +353,24 @@ class ICPScoringEngine:
         # The creator's own words, only when they supplied some. This used to
         # fall back to a canned sentence, "We found decoupling background
         # ingestion eliminates write lock contention entirely.", sent under
-        # the creator's name as a finding they never made.
+        # the creator's name as a finding they never made. The closing
+        # question, "Are you testing similar workflows in your stack?", and
+        # "the ... breakdown" were the original author's world as well, and a
+        # question reply promised "a quick perspective" it never gave.
         insight = f"{custom_insight.strip()} " if custom_insight and custom_insight.strip() else ""
         if "?" in text:
             return (
-                f"Hi {first_name}, saw your question on my recent post about {post_topic}. "
-                f"Specifically regarding \"{excerpt}...\", wanted to share a quick perspective directly. "
+                f"Hi {first_name}, saw your question on my recent post about {post_topic}: "
+                f"\"{excerpt}...\" "
                 f"{insight}"
-                f"Are you testing similar workflows in your stack?"
+                f"Happy to go into it here if that would help."
             )
         else:
             return (
-                f"Hi {first_name}, thanks for the comment on the {post_topic} breakdown. "
+                f"Hi {first_name}, thanks for the comment on my post about {post_topic}. "
                 f"Your point about \"{excerpt}...\" was spot on. "
-                f"Are you testing similar workflows in your stack?"
+                f"{insight}"
+                f"Would you be open to connecting here?"
             )
 
     @classmethod
@@ -403,15 +407,15 @@ class ICPScoringEngine:
             {
                 "angle": "Direct Technical Perspective",
                 "dm_text": (
-                    f"Hi {first_name}, saw your question on my recent post{about}. "
-                    f"Specifically regarding \"{excerpt}...\", wanted to share a quick perspective directly. "
+                    f"Hi {first_name}, saw your question on my recent post{about}: "
+                    f"\"{excerpt}...\" "
                     f"{insight}"
-                    f"Are you testing similar workflows in your stack?"
+                    f"Happy to go into it here if that would help."
                 ) if has_question else (
                     f"Hi {first_name}, thanks for the comment on my recent post{about}. "
                     f"Your point about \"{excerpt}...\" was spot on. "
                     f"{insight}"
-                    f"Are you testing similar workflows in your stack?"
+                    f"Would you be open to connecting here?"
                 )
             },
             {

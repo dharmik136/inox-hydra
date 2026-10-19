@@ -708,10 +708,13 @@ export async function generateLeadDm(
  * reacted rather than commented had no draft available at all. This one builds
  * from the stored row, their name, company and how they engaged, which is
  * present for every lead in the stream.
+ *
+ * The offer is not among them: it used to offer the original author's
+ * "architecture blueprint" under every creator's name, and now needs the
+ * creator to say what they would share. See fetchLeadOfferDraft.
  */
 export const DM_STYLES = [
   { id: "value_add", label: "Peer question" },
-  { id: "resource_share", label: "Offer a blueprint" },
   { id: "quick_chat", label: "Suggest a call" },
 ] as const;
 
@@ -2197,4 +2200,23 @@ export async function installLicence(key: string): Promise<{ status: string; lic
 
 export async function removeLicence(): Promise<{ status: string; licence: LicenceState }> {
   return call("/api/v1/licence", { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Leads: the offer draft, notes and forgetting a person
+// ---------------------------------------------------------------------------
+
+/**
+ * The "Offer something" opener. The creator says what they would share; the
+ * server refuses without it rather than offer something they never made.
+ */
+export async function fetchLeadOfferDraft(leadId: string, offer: string, topic?: string): Promise<string> {
+  const params = new URLSearchParams({ style: "resource_share", offer: offer.trim() });
+  if (topic?.trim()) params.set("topic", topic.trim());
+  const data = await call<{ dm_script?: string; error?: string }>(
+    `/api/leads/${encodeURIComponent(leadId)}/dm-script?${params}`,
+  );
+  if (data.error) throw new Error(data.error);
+  if (!data.dm_script) throw new Error("the server returned no draft");
+  return data.dm_script;
 }

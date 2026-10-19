@@ -8,6 +8,7 @@ import {
   copyExtensionPath,
   fetchBrowserBridge,
   fetchLeadDmScript,
+  fetchLeadOfferDraft,
   fetchLeadReview,
   fetchLeadTimeline,
   fetchLeads,
@@ -147,6 +148,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
   const [draft, setDraft] = useState<{ label: string; text: string } | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   const [topic, setTopic] = useState("");
+  const [offer, setOffer] = useState("");
   const [copied, setCopied] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -372,13 +374,13 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
        *
        * So the four sit together, and which ones are available depends on what
        * is actually known about the person rather than on which route existed
-       * first. The reply is listed last because it needs a comment; the three
-       * openers never do. */}
+       * first. The reply is listed last because it needs a comment; the two
+       * openers never do, and the offer needs only what you would share. */}
       <section className="mt-6">
         <p className="studio-label mb-1">Draft a message</p>
         <p className="mb-3 text-[12px] leading-snug text-ink-muted">
-          Written from this lead&rsquo;s own record, then yours to edit. Nothing is sent from here;
-          LinkedIn DMs are not something this studio can do on your behalf.
+          Written only from this lead&rsquo;s record and what you type below, then yours to edit.
+          Nothing is sent from here; LinkedIn DMs are not something this studio can do on your behalf.
         </p>
 
         {/* The template writes "my recent post on ...", and the studio does not
@@ -396,6 +398,20 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
           />
         </label>
 
+        {/* An offer is only true when you say what it is. The control used to
+            offer the original author's "architecture blueprint" and a diagram
+            under every creator's name. */}
+        <label className="mb-3 block">
+          <span className="studio-meta text-[10px] text-ink-muted">WHAT YOU WOULD SHARE WITH THEM</span>
+          <input
+            type="text"
+            value={offer}
+            onChange={(event) => setOffer(event.target.value)}
+            placeholder="Needed for Offer something, for example “the checklist I use for orders”"
+            className="mt-1 w-full rounded-md border border-edge bg-ink px-2.5 py-1.5 text-[13px] text-ink-primary placeholder:text-ink-muted focus:border-edge-strong focus:outline-none"
+          />
+        </label>
+
         <div className="flex flex-wrap gap-1">
           {DM_STYLES.map((style) => (
             <DraftButton
@@ -408,6 +424,15 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
               }
             />
           ))}
+          <DraftButton
+            label="Offer something"
+            pending={drafting === "offer"}
+            disabled={drafting !== null || !offer.trim()}
+            hint={offer.trim() ? undefined : "Say what you would share with them, above"}
+            onPress={() =>
+              void draftWith("offer", "Offer something", () => fetchLeadOfferDraft(lead.id, offer, topic))
+            }
+          />
           <DraftButton
             label="Reply to their comment"
             pending={drafting === "reply"}
