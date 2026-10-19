@@ -598,16 +598,23 @@ class ReverseCRMManager:
     def purge_lead(self, lead_id: str) -> Dict[str, Any]:
         """
         GDPR Right-to-be-Forgotten and Privacy Hard Purge.
-        Permanently cascades deletion across lead_interactions and leads.
+
+        Every row about the person, in one transaction: their engagements,
+        their stage history, any enrichment, and the lead itself. The stage
+        history used to be left behind, and since a lead's id is a hash of
+        their profile it reattached to them if they engaged again. Every
+        removal path calls this; the trigger from migration 19 covers any that
+        deletes from leads directly.
         """
         conn = get_db()
-        interactions_deleted = 0
+        deleted = {"lead_interactions": 0, "lead_stage_events": 0, "lead_enrichments": 0}
         lead_deleted = False
         try:
             with conn:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM lead_interactions WHERE lead_id = ?", (lead_id,))
-                interactions_deleted = cursor.rowcount
+                for table in deleted:
+                    cursor.execute(f"DELETE FROM {table} WHERE lead_id = ?", (lead_id,))
+                    deleted[table] = cursor.rowcount
 
                 cursor.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
                 lead_deleted = cursor.rowcount > 0
@@ -618,7 +625,8 @@ class ReverseCRMManager:
             "status": "purged" if lead_deleted else "not_found",
             "lead_id": lead_id,
             "lead_deleted": lead_deleted,
-            "interactions_deleted": interactions_deleted,
+            "interactions_deleted": deleted["lead_interactions"],
+            "stage_events_deleted": deleted["lead_stage_events"],
         }
 
     def archive_inactive_leads(self, inactive_days: int = 90) -> Dict[str, Any]:

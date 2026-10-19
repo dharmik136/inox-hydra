@@ -17,9 +17,9 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
 
 try:
-    from .crm import qualification_tier
+    from .crm import qualification_tier, reverse_crm
 except ImportError:
-    from crm import qualification_tier
+    from crm import qualification_tier, reverse_crm
 
 try:
     from .database import get_db
@@ -267,18 +267,11 @@ def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = Non
 
 
 def delete_lead(lead_id: str) -> Dict:
-    conn = get_db()
-    try:
-        c = conn.cursor()
-        c.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
-        deleted = c.rowcount
-        conn.commit()
-        conn.close()
-        if deleted == 0:
-            return {"status": "not_found", "id": lead_id}
-        return {"status": "success", "id": lead_id}
-    finally:
-        conn.close()
+    # The same removal as the purge route, so deleting someone here forgets
+    # their stage history and engagements too, not only the lead row.
+    if not reverse_crm.purge_lead(lead_id)["lead_deleted"]:
+        return {"status": "not_found", "id": lead_id}
+    return {"status": "success", "id": lead_id}
 
 
 def generate_dm_script(lead_id: str, style: str = "value_add", post_topic: Optional[str] = None) -> Dict:

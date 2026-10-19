@@ -763,6 +763,28 @@ _MIGRATION_18_ARCHIVE = (
 )
 
 
+_MIGRATION_19_FORGET = (
+    # Forgetting a lead used to leave their stage history behind:
+    # lead_stage_events has no foreign key and no removal path deleted from it,
+    # so the rows stayed in the database and every export, and because a lead's
+    # id is a hash of their profile, reattached to them if they engaged again.
+    # A trigger rather than a fix in each caller, because there are three
+    # callers today and the next one should not have to remember.
+    """
+    CREATE TRIGGER IF NOT EXISTS lead_forgotten AFTER DELETE ON leads
+    BEGIN
+        DELETE FROM lead_stage_events WHERE lead_id = OLD.id;
+        DELETE FROM lead_interactions WHERE lead_id = OLD.id;
+        DELETE FROM lead_enrichments WHERE lead_id = OLD.id;
+    END
+    """,
+    # What older versions left behind is about people already forgotten.
+    "DELETE FROM lead_stage_events WHERE lead_id NOT IN (SELECT id FROM leads)",
+    "DELETE FROM lead_interactions WHERE lead_id NOT IN (SELECT id FROM leads)",
+    "DELETE FROM lead_enrichments WHERE lead_id NOT IN (SELECT id FROM leads)",
+)
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -785,6 +807,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (16, "Create creator_accounts table for enterprise multi-tenant profiles", _migrate_creator_accounts),
     (17, "A captured lead says how they engaged, and where their profile is", _migrate_lead_engagement_labels),
     (18, "Connections and archive imports, from LinkedIn's own data archive", _MIGRATION_18_ARCHIVE),
+    (19, "Nothing about a forgotten lead outlives them", _MIGRATION_19_FORGET),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
