@@ -260,9 +260,10 @@ export function OnboardingSurface() {
               </p>
               <div className="mb-4 flex items-center justify-between rounded-md border border-edge bg-soft/40 p-3">
                 <div>
-                  <p className="text-[13px] font-medium text-ink-primary">One-Click Complete History Sync</p>
+                  <p className="text-[13px] font-medium text-ink-primary">All three, one after another</p>
                   <p className="text-[11px] text-ink-muted">
-                    Automates sequential ingestion across your posts, comments, and reactions via the bridge.
+                    Opens your posts page, then your comments, then your reactions. The bridge scrolls each one to
+                    the end and moves to the next page by itself.
                   </p>
                 </div>
                 <button
@@ -285,7 +286,7 @@ export function OnboardingSurface() {
                   ) : (
                     <Check className="size-3.5" strokeWidth={2} aria-hidden="true" />
                   )}
-                  Sync All Activity
+                  Import all three
                 </button>
               </div>
               {state.sync_chain && (

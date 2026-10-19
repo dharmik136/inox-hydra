@@ -237,6 +237,29 @@ def test_a_network_reading_part_appears_once_it_has_run():
 
 
 # ---------------------------------------------------------------------------
+# SETUP-18. The help never mentioned Sync All, and the panel's jargon
+# ("Automates sequential ingestion") hid that it moves the bridge from one
+# activity page to the next by itself, which the help's note said happens
+# only after you click Import.
+# ---------------------------------------------------------------------------
+
+SETUP_SCREEN = os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "OnboardingSurface.tsx")
+
+
+def test_the_import_all_button_is_described_in_the_help():
+    with open(SETUP_SCREEN, encoding="utf-8") as handle:
+        screen = handle.read()
+    with open(HELP, encoding="utf-8") as handle:
+        help_text = handle.read()
+    assert "Automates sequential ingestion" not in screen
+    assert "Import all three" in screen
+    step_five = help_text.split("## 5. Your history")[1].split("\n## ")[0]
+    assert "**Import all three**" in step_five
+    assert "one after another" in step_five and "by itself" in step_five
+    assert "only after you click **Import**." not in step_five, "the note leaves out Import all three"
+
+
+# ---------------------------------------------------------------------------
 # SETUP-09 [BRIDGE-08]. The profile page shows the first few roles and two or
 # three skills, with "Show all". Reading it replaced the full lists the
 # details pages or the archive had brought, so 40 skills became 2 every time

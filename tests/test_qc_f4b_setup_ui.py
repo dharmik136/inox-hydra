@@ -273,7 +273,7 @@ def test_an_import_result_appears_in_the_history_step(page, studio_url):
                                                    status=409))
     _open_setup(page, studio_url)
     step = page.locator("li", has_text="Your history")
-    step.get_by_role("button", name="Sync All Activity").click()
+    step.get_by_role("button", name="Import all three").click()
     step.get_by_text("Nothing was imported.", exact=False).wait_for(timeout=5000)
 
 
