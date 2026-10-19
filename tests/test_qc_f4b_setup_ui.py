@@ -298,6 +298,15 @@ def test_todays_result_appears_where_you_clicked(page, studio_url):
     assert _in_view(page, message)
 
 
+def test_step_five_is_not_ticked_by_the_archive_alone(page, studio_url):
+    """SETUP-13: rows from the archive are not your posts read to the end, which Today needs."""
+    _seed_history()
+    _open_setup(page, studio_url)
+    step = page.locator("li", has_text="Your history")
+    step.get_by_text("has not been read to its end yet", exact=False).wait_for(timeout=5000)
+    assert step.locator('[aria-label="Step 5"]').count() == 1, "step 5 is ticked"
+
+
 def test_with_a_browser_that_carries_the_bridge_no_folder_is_needed(page, studio_url):
     page.route("**/api/v1/browser/status", _fulfil({**CHROME_ONLY, "browsers": {
         "brave": {"id": "brave", "name": "Brave Browser", "path": "/x/brave", "is_available": True,

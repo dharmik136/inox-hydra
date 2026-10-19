@@ -1540,6 +1540,7 @@ def onboarding_state() -> Dict[str, Any]:
         # What deleting everything would also remove, so Setup can say so first.
         readings = conn.execute("SELECT COUNT(*) FROM post_metric_observations").fetchone()[0]
         connections = conn.execute("SELECT COUNT(*) FROM connections").fetchone()[0]
+        history_read = post_history_complete(conn)
         with conn:
             _expire_requests(conn)
         imports = [dict(r) for r in conn.execute(
@@ -1612,6 +1613,9 @@ def onboarding_state() -> Dict[str, Any]:
         "steps": {
             "bridge": bool(bridge["last_seen_at"]),
             "identity": confirmed,
+            # Step 5 is done when Today can use it: your posts read to the end
+            # of the list. Rows from the archive alone are not that.
+            "history": confirmed and history_read,
             "posts": post_count > 0,
             "activity": sum(outbound.values()) > 0,
             "archive": archive["last_import"] is not None,

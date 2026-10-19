@@ -45,6 +45,8 @@ type SetupState = OnboardingState & {
   sync_chain?: { sequence: SelfImportKind[]; current_kind: SelfImportKind } | null;
   /** Readings of your posts' figures and archive connections: what deleting everything also removes. */
   counts: { readings?: number; connections?: number };
+  /** history: your posts read to the end of the list, which is what Today needs. */
+  steps: { history?: boolean };
 };
 
 export function OnboardingSurface() {
@@ -237,12 +239,16 @@ export function OnboardingSurface() {
         <Step
           n={5}
           title="Your history"
-          done={steps.posts && steps.activity}
+          done={!!steps.history}
           current={steps.identity}
           last
           status={
             steps.identity
-              ? `${state.counts.posts} posts, ${state.counts.comments} comments, ${state.counts.reactions} reactions`
+              ? `${state.counts.posts} posts, ${state.counts.comments} comments, ${state.counts.reactions} reactions${
+                  steps.history
+                    ? ""
+                    : `. ${state.counts.posts ? "Your posts are in, but the" : "The"} list of your posts has not been read to its end yet: run Posts you wrote`
+                }`
               : "Your posts, and what you have liked and commented on"
           }
         >

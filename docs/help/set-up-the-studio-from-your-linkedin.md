@@ -63,7 +63,7 @@ Importing the same archive again adds nothing twice. When the bridge later reads
 
 ## 5. Your history
 
-If you imported your archive in step 4, this step only adds what has happened since and the counts LinkedIn shows on your posts. Three imports read your activity pages:
+If you imported your archive in step 4, this step only adds what has happened since and the counts LinkedIn shows on your posts. The step ticks once an import of **Posts you wrote** has read your posts to the end of the list, which is what **Today** needs to know your usual; posts from the archive alone do not tick it. Three imports read your activity pages:
 
 | Import | What it reads |
 | --- | --- |

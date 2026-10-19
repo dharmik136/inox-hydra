@@ -205,8 +205,13 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
     drifting = [h["label"] for h in state["health"] if h["state"] == "drifting"]
     if drifting:
         return {"action": "setup", "reason": f"{drifting[0]} has stopped reading LinkedIn's pages. See Capture health in Setup."}
-    if not onboarding.post_history_complete(conn):
-        return {"action": "setup", "reason": "Your post history has not been imported, so your usual is not known yet."}
+    if not state["steps"]["history"]:
+        # The same test as Setup's step 5, so Today never sends the creator
+        # to a Setup screen where that step is ticked.
+        return {"action": "setup", "reason": (
+            "Your posts have not been read to the end of the list yet, so your usual is not known. "
+            "Run Posts you wrote in Setup's step 5."
+        )}
     if latest and latest["age_hours"] <= COMPARE_WINDOW[1]:
         recent = conn.execute(
             "SELECT 1 FROM post_metric_observations WHERE activity_urn = ? AND source = 'post_analytics' "

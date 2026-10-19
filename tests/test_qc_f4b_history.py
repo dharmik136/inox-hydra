@@ -208,6 +208,53 @@ def test_todays_reply_to_lists_commenters_on_archive_posts():
 
 
 # ---------------------------------------------------------------------------
+# SETUP-13. Step 5 ticked when posts and activity rows existed, which the
+# archive alone provides, while Today needs a posts import read to the end,
+# so Today sent the creator to a Setup where every step was ticked.
+# ---------------------------------------------------------------------------
+
+def _state():
+    return client.get("/api/v1/onboarding/state").json()
+
+
+def _archive_activity():
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO outbound_engagements (target_activity_urn, kind, reaction_kind, my_text_key, "
+                     "first_seen_at, last_seen_at) VALUES (?, 'reaction', 'like', '', ?, ?)",
+                     (OTHER_URN, POSTED.isoformat(), POSTED.isoformat()))
+    conn.close()
+
+
+def test_the_archive_alone_does_not_tick_your_history():
+    _archive_post()
+    _archive_activity()
+    steps = _state()["steps"]
+    assert steps["history"] is False, "step 5 ticked before the identity was even confirmed"
+
+    _confirm()
+    client.post("/api/v1/bridge/heartbeat", json={"extension_version": "test"})
+    steps = _state()["steps"]
+    assert steps["posts"] is True and steps["activity"] is True
+    assert steps["history"] is False
+
+    open_next = client.get("/api/v1/today").json()["open_next"]
+    assert open_next["action"] == "setup"
+    assert "read to the end" in open_next["reason"]
+
+
+def test_a_posts_import_read_to_the_end_ticks_step_five_and_today_agrees():
+    _confirm()
+    _archive_post()
+    client.post("/api/v1/bridge/heartbeat", json={"extension_version": "test"})
+    client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [{"activity_urn": RECENT_URN, "actor": ME}]})
+    _posts_import(12, "end_of_list")
+    assert _state()["steps"]["history"] is True
+    open_next = client.get("/api/v1/today").json()["open_next"]
+    assert "post history" not in open_next["reason"]
+
+
+# ---------------------------------------------------------------------------
 # The extension says how an import ended
 # ---------------------------------------------------------------------------
 
