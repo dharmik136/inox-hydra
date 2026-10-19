@@ -218,6 +218,30 @@ def test_the_next_post_is_a_new_post(context, studio_url, choice, status):
 
 
 # ---------------------------------------------------------------------------
+# UX-18 (the Publish dialog): it takes the keyboard and gives it back
+# ---------------------------------------------------------------------------
+
+def test_the_publish_dialog_holds_focus_and_returns_it(context, studio_url):
+    page, editor = _composer(context, studio_url)
+    editor.fill("QC F1B a post to check the dialog's focus with.")
+    publish = page.get_by_role("button", name="Publish", exact=True)
+    publish.click()
+    dialog = _publish_dialog(page)
+    dialog.get_by_role("button", name="Queue it").wait_for()
+    page.wait_for_timeout(300)
+
+    inside = "() => !!document.activeElement && !!document.activeElement.closest('[role=dialog]')"
+    assert page.evaluate(inside), "focus stayed behind the dialog"
+    for press in range(20):
+        page.keyboard.press("Shift+Tab" if press % 7 == 6 else "Tab")
+        assert page.evaluate(inside), f"Tab {press + 1} left the dialog"
+
+    page.keyboard.press("Escape")
+    dialog.wait_for(state="detached")
+    assert page.evaluate("() => document.activeElement && document.activeElement.textContent.trim()") == "Publish"
+
+
+# ---------------------------------------------------------------------------
 # WRITE-01: a window left on another profile cannot save into the new one
 # ---------------------------------------------------------------------------
 

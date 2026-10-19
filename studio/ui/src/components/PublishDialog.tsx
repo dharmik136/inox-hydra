@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { CalendarClock, CheckCheck, Loader2, Send } from "lucide-react";
 import {
@@ -12,6 +12,8 @@ import {
   type NextSlot,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+
+const FOCUSABLE = "button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex='-1'])";
 
 interface PublishDialogProps {
   open: boolean;
@@ -83,14 +85,55 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
     };
   }, [open, postId]);
 
+  // The dialog takes the keyboard while it is open. Focus used to stay on the
+  // Publish button behind it, and Tab walked the hook rail under the overlay,
+  // where Enter applied a hook and rewrote the opening. Focus moves into the
+  // dialog on open, Tab and Shift+Tab cycle inside it, and on close it goes
+  // back to whatever opened it.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Read through a ref, so a parent that passes a new onClose on every render
+  // does not re-run this and pull focus back to the first control.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      if (!dialog || dialog.contains(document.activeElement)) return;
+      (dialog.querySelector<HTMLElement>(FOCUSABLE) ?? dialog).focus();
+    });
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        closeRef.current();
+        return;
+      }
+      const dialog = dialogRef.current;
+      if (event.key !== "Tab" || !dialog) return;
+      const items = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (!items.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const inside = dialog.contains(document.activeElement);
+      if (event.shiftKey && (!inside || document.activeElement === first || document.activeElement === dialog)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (!inside || document.activeElement === last)) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKey);
+      if (opener && opener.isConnected) opener.focus();
+    };
+  }, [open]);
 
   async function run(action: "now" | "schedule" | "send" | "resend") {
     if (!postId) return;
@@ -138,6 +181,8 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
           className="fixed inset-0 z-50 grid place-items-center bg-canvas/70 p-4 backdrop-blur-sm"
         >
           <motion.div
+            ref={dialogRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-label="Publish"
@@ -146,7 +191,7 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ duration: 0.22, ease: [0.32, 0.72, 0.24, 1] }}
             onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-md rounded-lg border border-edge bg-raised p-5 shadow-2xl"
+            className="w-full max-w-md rounded-lg border border-edge bg-raised p-5 shadow-2xl outline-none"
           >
             <p className="studio-label">Publish</p>
 
