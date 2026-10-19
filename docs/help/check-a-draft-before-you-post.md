@@ -51,7 +51,7 @@ The score starts at 100 and never goes below 20.
 The link penalty text says "-40% algorithmic reach penalty". That figure is the studio's rule of thumb. LinkedIn has not published it and the studio has not measured it. **Est. dwell** is worked out from word count at 200 words a minute. It is not a measurement of real readers.
 
 > [!TIP]
-> To clear the dash penalty, select the text and choose **Clean formatting** in the toolbar that appears over a selection. It replaces em dashes, and en dashes between words, with commas. An en dash between two numbers becomes a hyphen.
+> To clear the dash penalty, select the text and choose **Clean formatting** in the toolbar that appears over a selection. It replaces em dashes, and en dashes with a space on each side, with commas. An en dash with no spaces, as in Mon-Fri or 2021-2024, becomes a hyphen.
 
 ## Governance gates
 
