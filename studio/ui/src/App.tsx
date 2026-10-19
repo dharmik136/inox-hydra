@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, PanelRight, Search } from "lucide-react";
+import { Activity, Moon, PanelRight, Search, Sun } from "lucide-react";
 import { StudioRail } from "@/components/StudioRail";
 import { NavigationTray } from "@/components/NavigationTray";
-import { ContextBar, type SaveState } from "@/components/ContextBar";
+import { ContextBar, SaveReason, type SaveState } from "@/components/ContextBar";
 import { ComposerCanvas, FOLD_CHARS } from "@/components/ComposerCanvas";
 import { HookFilmstrip } from "@/components/HookFilmstrip";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -31,34 +31,96 @@ import {
   fetchLatestDraft,
   fetchOnboardingState,
   generateHooks,
+  isDraftChangedElsewhere,
   updateDraft,
   fetchDraftById,
   type GeneratedHook,
   type SearchResult,
 } from "@/lib/api";
 import type { SearchFocus } from "@/lib/search";
-import { measurableLength, measurableWordCount } from "@/lib/text";
+import { measurableLength, measurableWordCount, openingEnd, storedLength, swapOpening } from "@/lib/text";
 import { DOCKED_INSPECTOR_QUERY, useMediaQuery } from "@/lib/viewport";
-import { setUnsavedCheck } from "@/lib/unsaved";
+import { confirmLeaving, registerUnsavedWork } from "@/lib/unsaved";
 
 /** Average adult reading speed. Used for an estimate that is labelled as one. */
 const WORDS_PER_MINUTE = 200;
 
 /**
- * Replaces the opening paragraph, which is what applying a hook means.
+ * The screen an address names: "#/leads" is Leads.
  *
- * A paragraph ends at the first blank line. When the draft has no blank line
- * the whole thing is the opening, and when it is empty the hook simply becomes
- * the draft.
+ * Every screen has one, so a reload stays where it was, a help article or a
+ * teammate can link to a screen, and Back moves between screens instead of
+ * leaving the studio. The section is all an address holds. Devtools is never
+ * linked to, because in a consumer build every route behind it answers 404.
  */
-function swapFirstParagraph(draft: string, hook: string): string {
-  if (!draft.trim()) return hook;
-  const breakIndex = draft.indexOf("\n\n");
-  return breakIndex === -1 ? hook : hook + draft.slice(breakIndex);
+function sectionFromAddress(hash: string): SectionId | null {
+  const id = hash.replace(/^#\/?/, "");
+  return STUDIO_SECTIONS.some((section) => section.id === id && id !== "devtools") ? (id as SectionId) : null;
+}
+
+type Theme = "dark" | "light";
+
+/** Where this browser remembers the theme the creator chose. */
+const THEME_KEY = "inox-hydra:theme";
+
+/** The theme chosen earlier in this browser, if any. Storage can be blocked. */
+function rememberedTheme(): Theme | null {
+  try {
+    const value = window.localStorage.getItem(THEME_KEY);
+    return value === "light" || value === "dark" ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Puts a screen's address in the location bar, as a new history entry unless `replace`. */
+function writeAddress(section: SectionId, replace: boolean): void {
+  const address = `#/${section}`;
+  if (window.location.hash === address) return;
+  if (replace) window.history.replaceState(null, "", address);
+  else window.history.pushState(null, "", address);
 }
 
 export default function App() {
-  const [active, setActive] = useState<SectionId>("composer");
+  // Opened on an address, the studio starts on that screen and Setup's first
+  // run redirect leaves it alone.
+  const linked = useRef(sectionFromAddress(window.location.hash));
+  const [active, setActive] = useState<SectionId>(linked.current ?? "composer");
+  const activeRef = useRef(active);
+  activeRef.current = active;
+
+  /**
+   * Moves to another screen, the one way every control and link does.
+   *
+   * Leaving a screen whose edits live only on that screen asks first (see
+   * lib/unsaved.ts), and answering Cancel stays put. `confirmed` is for a
+   * caller that has already asked. Returns whether the move happened.
+   */
+  const navigate = useCallback((next: SectionId, confirmed = false): boolean => {
+    if (next === activeRef.current) return true;
+    if (!confirmed && !confirmLeaving(activeRef.current)) return false;
+    setActive(next);
+    writeAddress(next, false);
+    return true;
+  }, []);
+
+  // Back and Forward, and an address typed into the location bar. Leaving a
+  // screen whose edits would be lost asks first; staying puts that screen's
+  // address back, since the browser has already moved off it.
+  useEffect(() => {
+    if (!linked.current) writeAddress(activeRef.current, true);
+    const onPop = () => {
+      const target = sectionFromAddress(window.location.hash) ?? "composer";
+      if (target === activeRef.current) return;
+      if (!confirmLeaving(activeRef.current)) {
+        writeAddress(activeRef.current, false);
+        return;
+      }
+      setActive(target);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   const [trayOpen, setTrayOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   // Docked beside the editor on a wide window; a drawer over it on a narrow
@@ -73,12 +135,27 @@ export default function App() {
   const [draftId, setDraftId] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
 
-  // Read by anything that reloads the studio, such as switching profile.
-  useEffect(() => {
-    setUnsavedCheck(() => (saveState === "dirty" || saveState === "failed") && draft.trim().length > 0);
-  }, [saveState, draft]);
+  // Text in the Composer that is not on disk. Registered once with the
+  // unsaved-work registry, which asks before the page reloads or closes and
+  // which the profile switcher reads before it reloads the studio. A save
+  // still on its way counts: reloading now could cut it off. No section,
+  // because the draft lives here and survives moving between screens.
+  const composerUnsaved = useRef(false);
+  composerUnsaved.current =
+    (saveState === "dirty" || saveState === "failed" || saveState === "saving") && draft.trim().length > 0;
+  useEffect(
+    () => registerUnsavedWork("composer", { label: "The post in the Composer", check: () => composerUnsaved.current }),
+    [],
+  );
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // The text this window last loaded or saved for the draft it holds, sent
+  // with every save so the server can refuse one that would replace a newer
+  // save from another window. Tied to the id, so a draft swapped in by any
+  // other path is never checked against the wrong text.
+  const base = useRef<{ id: string; content: string } | null>(null);
+  const [changedElsewhere, setChangedElsewhere] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
 
   /**
@@ -114,9 +191,14 @@ export default function App() {
     let live = true;
     fetchOnboardingState()
       .then((state) => {
-        // Setup until the studio knows who you are, Today afterwards.
-        if (live) {
-          setActive((current) => (current === "composer" ? (state.steps.identity ? "today" : "setup") : current));
+        // Setup until the studio knows who you are, Today afterwards. Not
+        // when the studio was opened on a screen's address, and replacing
+        // the address rather than adding one, so Back does not return to a
+        // Composer the creator never chose.
+        if (live && !linked.current && activeRef.current === "composer") {
+          const home = state.steps.identity ? "today" : "setup";
+          setActive(home);
+          writeAddress(home, true);
         }
       })
       .catch(() => undefined);
@@ -124,6 +206,29 @@ export default function App() {
       live = false;
     };
   }, []);
+
+  // Whether the bridge has been heard from lately, for the mark beside Live
+  // Activity. That mark used to pulse green on every screen whatever the
+  // bridge was doing, including on Setup beside "Not seen yet". Read from the
+  // state Setup shows, again each minute while the header is on screen, since
+  // the server calls the bridge connected for 150 seconds after it last
+  // reported. Null until known, and then nothing is claimed.
+  const [bridgeConnected, setBridgeConnected] = useState<boolean | null>(null);
+  const showsHeader = active !== "composer";
+  useEffect(() => {
+    if (!showsHeader) return;
+    let live = true;
+    const read = () =>
+      fetchOnboardingState()
+        .then((state) => live && setBridgeConnected(state.bridge.connected))
+        .catch(() => live && setBridgeConnected(null));
+    void read();
+    const timer = window.setInterval(read, 60_000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [showsHeader]);
 
   const sections = useMemo(
     () => STUDIO_SECTIONS.filter((section) => section.id !== "devtools" || devMode),
@@ -139,8 +244,27 @@ export default function App() {
   // filmstrip shows them instead of the vaulted library.
   const [generated, setGenerated] = useState<GeneratedHook[] | null>(null);
 
+  // The author's own opening, kept while a hook stands in for it. Text set by
+  // the program is not on the textarea's undo stack, so Ctrl+Z could not
+  // bring it back and one click lost a paragraph for good. Kept across
+  // several hooks tried in a row, so Undo returns the author's words rather
+  // than the previous hook, and offered for as long as the hook is still the
+  // opening.
+  const [hookUndo, setHookUndo] = useState<{ opening: string; hook: string } | null>(null);
+  const canUndoHook = hookUndo !== null && draft.startsWith(hookUndo.hook);
+
   /** Whether the author has put anything into the editor this session. */
   const touched = useRef(false);
+
+  // The text on screen now, for code that finishes after a render it began
+  // in: a save that returns has to know whether the author kept typing.
+  const latestDraft = useRef(draft);
+  latestDraft.current = draft;
+
+  // Set while a save is on its way. A ref rather than the save state, because
+  // a double click lands both clicks before React renders between them, and
+  // each one created its own draft.
+  const saving = useRef(false);
 
   // Reopen the most recent draft from the studio's own database, which is
   // what the queue and the scheduler read. A draft held anywhere else is
@@ -157,6 +281,7 @@ export default function App() {
         if (!live || !existing || touched.current) return;
         setDraft(existing.content);
         setDraftId(existing.id);
+        base.current = { id: existing.id, content: existing.content };
       })
       .catch(() => {
         // Nothing loaded. The composer opens empty rather than claiming a
@@ -168,10 +293,24 @@ export default function App() {
   }, []);
 
   // Dark first, matching docs/UI_CONVENTIONS.md: an unstamped document gets
-  // the dark palette, and data-theme="light" is the opt out.
-  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  // the dark palette, and data-theme="light" is the opt out. Dark is the
+  // default only when nothing says otherwise, though: a choice made here is
+  // remembered, and until there is one the computer's own setting decides.
+  // It used to be dark on every launch, reload and profile switch.
+  const prefersLight = useMediaQuery("(prefers-color-scheme: light)");
+  const [chosenTheme, setChosenTheme] = useState<Theme | null>(rememberedTheme);
+  const theme: Theme = chosenTheme ?? (prefersLight ? "light" : "dark");
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+  }, [theme]);
+  const toggleTheme = useCallback(() => {
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    setChosenTheme(next);
+    try {
+      window.localStorage.setItem(THEME_KEY, next);
+    } catch {
+      // Not remembered in a browser that blocks storage; it still switches.
+    }
   }, [theme]);
 
   const telemetry = useMemo(() => {
@@ -182,6 +321,9 @@ export default function App() {
     const words = measurableWordCount(draft);
     return {
       chars,
+      // A length limit counts what is stored, not what a reader sees, so the
+      // strip's count against 3,000 is a different measure from the fold's.
+      stored: storedLength(draft),
       // Two different readings, because one number cannot serve both cases.
       // Under the fold the useful quantity is how much budget is left, so a
       // percentage. Past it, the percentage is meaningless (a 352 character
@@ -207,12 +349,15 @@ export default function App() {
   const onApplyHook = useCallback(
     (hook: string) => {
       touched.current = true;
-      setDraft((current) => swapFirstParagraph(current, hook));
+      const end = openingEnd(draft);
+      const opening = end === -1 || !draft.trim() ? draft : draft.slice(0, end);
+      setHookUndo({ opening: hookUndo && draft.startsWith(hookUndo.hook) ? hookUndo.opening : opening, hook });
+      setDraft(swapOpening(draft, hook));
       setSaveState("dirty");
       setSavedAt(null);
       setSwapKey((key) => key + 1);
     },
-    [],
+    [draft, hookUndo],
   );
 
   // Re-Hook in flight, and what the last one said when it failed. A press
@@ -224,6 +369,14 @@ export default function App() {
   // Without a model, Re-Hook answers with fill-in templates, which say so.
   const fillIns =
     !!generated?.length && generated.every((hook) => (hook as { source?: string }).source === "template");
+
+  const onUndoHook = useCallback(() => {
+    if (!hookUndo || !draft.startsWith(hookUndo.hook)) return;
+    setDraft(hookUndo.opening + draft.slice(hookUndo.hook.length));
+    setHookUndo(null);
+    setSaveState("dirty");
+    setSavedAt(null);
+  }, [draft, hookUndo]);
 
   const onReHook = useCallback(async (selection: string) => {
     if (reHookInFlight.current) return;
@@ -255,7 +408,8 @@ export default function App() {
    *
    * Resolves to whether the write landed, which Publish waits on.
    */
-  const onSave = useCallback(async (): Promise<boolean> => {
+  const onSave = useCallback(async (keepMine = false): Promise<boolean> => {
+    if (saving.current) return false;
     if (!draft.trim()) {
       // Refuse rather than create an empty row the queue would later show as
       // a post with no content.
@@ -264,13 +418,26 @@ export default function App() {
       return false;
     }
 
+    saving.current = true;
     setSaveState("saving");
     setSaveError(null);
+    setChangedElsewhere(false);
     try {
       if (draftId) {
-        await updateDraft(draftId, draft);
+        const known = base.current?.id === draftId ? base.current.content : undefined;
+        await updateDraft(draftId, draft, keepMine ? undefined : known);
+        base.current = { id: draftId, content: draft };
       } else {
-        setDraftId(await createDraft(draft));
+        const created = await createDraft(draft);
+        base.current = { id: created, content: draft };
+        setDraftId(created);
+      }
+      if (latestDraft.current !== draft) {
+        // Typed into while the save was out: what is on screen is not what
+        // was written, so it is not SAVED.
+        setSaveState("dirty");
+        setSavedAt(null);
+        return false;
       }
       const now = new Date();
       setSavedAt(
@@ -283,8 +450,11 @@ export default function App() {
     } catch (error) {
       setSaveState("failed");
       setSaveError(error instanceof Error ? error.message : "The save was rejected.");
+      setChangedElsewhere(isDraftChangedElsewhere(error));
       setSavedAt(null);
       return false;
+    } finally {
+      saving.current = false;
     }
   }, [draft, draftId]);
 
@@ -305,23 +475,23 @@ export default function App() {
   const onOpenResult = useCallback(
     async (result: SearchResult) => {
       const point = (target: SectionId, id: string, anchor: string | null = null) => {
+        if (!navigate(target)) return;
         focusNonce.current += 1;
         setFocus({ section: target, target: { id, anchor, nonce: focusNonce.current } });
-        setActive(target);
       };
 
       if (result.kind === "post") {
         if (result.opens !== "composer") {
-          setActive(result.opens === "queue" ? "queue" : "analytics");
+          navigate(result.opens === "queue" ? "queue" : "analytics");
           return;
         }
         if (result.id === draftId) {
-          setActive("composer");
+          navigate("composer");
           return;
         }
-        const unsaved = (saveState === "dirty" || saveState === "failed") && draft.trim().length > 0;
+        if (!confirmLeaving(activeRef.current)) return;
         if (
-          unsaved &&
+          composerUnsaved.current &&
           !window.confirm(
             "The post in the Composer has unsaved changes. Open the other draft and discard them?",
           )
@@ -332,17 +502,19 @@ export default function App() {
         if (!found) {
           // Published or queued since the search ran, so it no longer belongs
           // in the editor.
-          setActive("analytics");
+          navigate("analytics", true);
           return;
         }
         touched.current = true;
         setDraft(found.content);
         setDraftId(found.id);
+        base.current = { id: found.id, content: found.content };
         setSaveState("idle");
         setSavedAt(null);
         setSaveError(null);
         setGenerated(null);
-        setActive("composer");
+        setHookUndo(null);
+        navigate("composer", true);
         return;
       }
 
@@ -350,7 +522,7 @@ export default function App() {
       else if (result.kind === "specimen") point("swipe", result.id);
       else if (result.kind === "help") point("docs", result.id, result.anchor_text ?? null);
     },
-    [draft, draftId, saveState],
+    [draftId, navigate],
   );
 
   const focusFor = (target: SectionId) => (focus && focus.section === target ? focus.target : null);
@@ -362,7 +534,7 @@ export default function App() {
       <StudioRail
         sections={sections}
         active={active}
-        onSelect={setActive}
+        onSelect={navigate}
         trayOpen={trayOpen}
         onToggleTray={() => setTrayOpen((open) => !open)}
         onSearch={() => setPaletteOpen(true)}
@@ -375,18 +547,18 @@ export default function App() {
             Save button with nothing to save, which is telemetry about nothing.
             Those surfaces get a plain heading instead. */}
         {active === "composer" ? (
+          <>
           <ContextBar
             kind="POST"
-            draftRef="DRAFT 01"
             title={draft.trim().split("\n")[0]?.slice(0, 72) || "Untitled draft"}
-            chars={telemetry.chars}
+            storedChars={telemetry.stored}
             foldLabel={telemetry.foldLabel}
             pastFold={telemetry.pastFold}
             readSeconds={telemetry.readSeconds}
             saveState={saveState}
             savedAt={savedAt}
             saveError={saveError}
-            onSave={onSave}
+            onSave={() => void onSave()}
             onPublish={async () => {
             // Publishing acts on the stored post, so the stored post has to be
             // what is on screen. This saved only a post that had never been
@@ -408,13 +580,17 @@ export default function App() {
             setPublishOpen(true);
           }}
           />
+          {saveState === "failed" && saveError && (
+            <SaveReason reason={saveError} onKeepMine={changedElsewhere ? () => void onSave(true) : undefined} />
+          )}
+          </>
         ) : (
           <header className="flex h-12 shrink-0 items-center gap-3 border-b border-edge bg-ink px-4">
             <span className="studio-meta uppercase">{section.label}</span>
             <span className="min-w-0 flex-1 truncate text-[13px] text-ink-muted">{section.blurb}</span>
             <button
               type="button"
-              onClick={() => setActive("activity")}
+              onClick={() => navigate("activity")}
               className={cn(
                 "flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] font-medium transition-colors",
                 active === "activity"
@@ -422,9 +598,33 @@ export default function App() {
                   : "border-edge bg-canvas text-ink-muted hover:border-edge-strong hover:text-ink-primary",
               )}
             >
-              <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden="true" />
+              <span
+                className={cn(
+                  "size-1.5 rounded-full",
+                  bridgeConnected ? "bg-signal-green" : "border border-edge-strong",
+                )}
+                aria-hidden="true"
+              />
               <Activity className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-              <span>Live Activity</span>
+              {/* Words beside the icons from a small tablet up. On a phone
+                  they pushed Search past the edge of the screen; there they
+                  stay the button's name without taking its width. */}
+              <span className="max-sm:sr-only">Live Activity</span>
+              {bridgeConnected !== null && (
+                <span className="sr-only">{bridgeConnected ? ", bridge connected" : ", bridge not connected"}</span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={toggleTheme}
+              aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+              className="grid size-7 shrink-0 place-items-center rounded-md border border-edge bg-canvas text-ink-muted transition-colors hover:border-edge-strong hover:text-ink-primary"
+            >
+              {theme === "dark" ? (
+                <Sun className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              ) : (
+                <Moon className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              )}
             </button>
             <button
               type="button"
@@ -433,8 +633,8 @@ export default function App() {
               className="flex shrink-0 items-center gap-2 rounded-md border border-edge bg-canvas py-1 pr-1.5 pl-2.5 text-[12px] text-ink-muted transition-colors duration-(--studio-motion-fast) hover:border-edge-strong hover:text-ink-primary"
             >
               <Search className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-              Search everything
-              <kbd className="studio-meta rounded-sm border border-edge px-1 text-[10px] text-ink-muted">Ctrl K</kbd>
+              <span className="max-sm:sr-only">Search everything</span>
+              <kbd className="studio-meta rounded-sm border border-edge px-1 text-[10px] text-ink-muted max-sm:hidden">Ctrl K</kbd>
             </button>
           </header>
         )}
@@ -446,6 +646,8 @@ export default function App() {
                 onApply={onApplyHook}
                 generated={generated}
                 onClearGenerated={() => setGenerated(null)}
+                canUndo={canUndoHook}
+                onUndo={onUndoHook}
               />
             )}
             {active === "composer" && (reHook.busy || reHook.error || fillIns) && (
@@ -491,32 +693,32 @@ export default function App() {
               {active === "setup" && <OnboardingSurface />}
               {active === "today" && (
                 <TodaySurface
-                  onOpenSetup={() => setActive("setup")}
-                  onOpenActivity={() => setActive("activity")}
+                  onOpenSetup={() => navigate("setup")}
+                  onOpenActivity={() => navigate("activity")}
                   onOpenLead={(leadId) => {
+                    if (!navigate("leads")) return;
                     focusNonce.current += 1;
                     setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
-                    setActive("leads");
                   }}
                 />
               )}
               {active === "activity" && (
                 <ActivitySurface
                   onOpenLead={(leadId) => {
+                    if (!navigate("leads")) return;
                     focusNonce.current += 1;
                     setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
-                    setActive("leads");
                   }}
                 />
               )}
               {active === "leads" && <LeadsSurface focus={focusFor("leads")} />}
               {active === "posts" && (
                 <PostsSurface
-                  onOpenActivity={() => setActive("activity")}
+                  onOpenActivity={() => navigate("activity")}
                   onOpenLead={(leadId) => {
+                    if (!navigate("leads")) return;
                     focusNonce.current += 1;
                     setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
-                    setActive("leads");
                   }}
                 />
               )}
@@ -559,7 +761,7 @@ export default function App() {
             sections={sections}
             open={trayOpen}
             active={active}
-            onSelect={setActive}
+            onSelect={navigate}
             onClose={() => setTrayOpen(false)}
           />
         </div>
@@ -600,8 +802,8 @@ export default function App() {
         onOpenChange={setPaletteOpen}
         sections={sections}
         onOpenResult={(result) => void onOpenResult(result)}
-        onNavigate={setActive}
-        onToggleTheme={() => setTheme((current) => (current === "dark" ? "light" : "dark"))}
+        onNavigate={navigate}
+        onToggleTheme={toggleTheme}
         onToggleInspector={() => setInspectorOpen((open) => !open)}
       />
     </div>

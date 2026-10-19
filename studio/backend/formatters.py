@@ -37,11 +37,16 @@ def _measurable_text(text: Any) -> str:
 
     Only the combining-mark formatters cause this. Mathematical bold maps each
     letter to a single code point, and measures correctly without help.
+
+    Every mark goes, by Unicode category, which is the rule the editor applies
+    (\p{M} in studio/ui/src/lib/text.ts). unicodedata.combining() was narrower:
+    it kept the vowel signs of Hindi and Gujarati, so the editor and the
+    server put the fold of the same post in different places.
     """
     normalized = _normalize_text(text)
     if not normalized:
         return ""
-    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return "".join(ch for ch in normalized if not unicodedata.category(ch).startswith("M"))
 
 
 def to_sans_bold(text: Any) -> str:
@@ -269,19 +274,24 @@ def clean_text_formatting(text: Any) -> str:
     # "Revenue grew 2021-2024" became "Revenue grew 2021, 2024" and
     # "pages 10-20" became "pages 10, 20", which say different things.
     #
-    # Between words it is a pause, and a comma is right:
+    # Between words, spacing says which job it is doing. Unspaced it joins a
+    # range or a pair, "Mon-Fri", "Q1-Q4", "London-Paris", and a comma turned
+    # each into a list. Spaced it is a pause, and a comma is right:
     # "first principles - always" reads better than a hyphen.
     #
     # Mapping every en-dash the same way is what got one of these wrong,
     # whichever way it was mapped.
     cleaned = re.sub(r"(?<=\d)\s*" + en_dash + r"\s*(?=\d)", "-", cleaned)
+    cleaned = re.sub(r"(?<=\S)" + en_dash + r"(?=\S)", "-", cleaned)
     cleaned = cleaned.replace(en_dash, ", ")
     # Fix double/triple hyphens used as dashes
     cleaned = re.sub(r'(?<=\w)--+(?=\w)', ', ', cleaned)
-    # Clean redundant spaces
-    cleaned = re.sub(r'[ \t]+', ' ', cleaned)
-    # Clean space before commas or periods
-    cleaned = re.sub(r' +([,.:;?!])', r'\1', cleaned)
+    # Clean redundant spaces inside a line. Indentation at the start of one is
+    # left alone: it is how code and aligned lists are laid out.
+    cleaned = re.sub(r'(?<=\S)[ \t]+', ' ', cleaned)
+    # Clean space before commas or periods, where the mark ends the word. A
+    # dot that starts one, as in ".env", keeps the space before it.
+    cleaned = re.sub(r' +([,.:;?!]+)(?=\s|$)', r'\1', cleaned)
     # Clean double commas
     cleaned = re.sub(r',\s*,', ',', cleaned)
     return cleaned.strip()

@@ -88,6 +88,25 @@ class PostUpdate(BaseModel):
     status: Optional[str] = None
     scheduled_for: Optional[str] = None
     tags: Optional[List[str]] = None
+    # The text the editor last loaded or saved. When it is sent and the stored
+    # post no longer matches it, someone else saved in between and the update
+    # is refused rather than written over theirs. Callers that send none, such
+    # as the queue, are unchanged.
+    base_content: Optional[str] = None
+    # True only from a caller that means to change the text of a post that is
+    # already published, queued, due or sent. Without it such a change is
+    # refused, because the likeliest sender is a stale editor still attached
+    # to that post, writing the next post over it.
+    edit_posted_text: bool = False
+
+
+# Statuses whose text has left the drafting stage. "due" is a queued post
+# whose time has come; "scheduled" is how a queued post is stored.
+POSTED_STATUSES = {"published", "scheduled", "queued", "due", "sent"}
+
+
+# Starts the refusal. studio/ui/src/lib/api.ts recognises a conflict by it.
+DRAFT_CHANGED_ELSEWHERE = "This draft was changed in another window"
 
 
 class ReschedulePayload(BaseModel):
@@ -195,6 +214,31 @@ def update_post(post_id: str, updates: PostUpdate):
         if not existing:
             conn.close()
             raise HTTPException(status_code=404, detail="Post not found")
+
+        # Two windows on one draft: the later save used to replace the earlier
+        # one without a word, while the earlier window still said SAVED.
+        if updates.base_content is not None and existing["content"] != updates.base_content:
+            conn.close()
+            raise HTTPException(status_code=409, detail=(
+                f"{DRAFT_CHANGED_ELSEWHERE} after this one opened it, so saving would replace that "
+                "version. Keep this version to save over it, or copy your text and reload to see the other one."
+            ))
+
+        # A published or queued post keeps its text unless the caller says it
+        # is editing that text on purpose. The Composer clears after Publish,
+        # but a second tab or an older build still attached to the post would
+        # otherwise save the next post over it.
+        if (
+            updates.content is not None
+            and updates.content != existing["content"]
+            and existing["status"] in POSTED_STATUSES
+            and not updates.edit_posted_text
+        ):
+            conn.close()
+            raise HTTPException(status_code=409, detail=(
+                f"This post is already {existing['status']}, so its text was not changed. "
+                "Start a new post for new writing; to correct this one's text, edit it on purpose."
+            ))
 
         content = updates.content if updates.content is not None else existing["content"]
         media_urls = json.dumps(updates.media_urls) if updates.media_urls is not None else existing["media_urls"]

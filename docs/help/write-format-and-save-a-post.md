@@ -5,18 +5,15 @@ Write in the Composer, watch the mobile fold, format a selection, and save your 
 
 Open **Composer** from the rail. The editor is the large writing area in the middle, with the placeholder "Start writing. The fold mark appears once the post runs past it." The bar at the top shows the first line of your post as its title, or "Untitled draft" while it is empty.
 
-> [!NOTE]
-> The label **POST / DRAFT 01** in the top bar is fixed text. It is not a draft number.
-
 ## Watch the fold
 
 On a phone, LinkedIn hides a long post behind "see more". The studio draws that cut at 140 characters.
 
-- Once your post passes 140 characters, a dashed orange line appears in the editor at the point where the cut falls, labelled **LINKEDIN FOLD 140 CHARS**.
-- The status strip in the top bar reads, for example, `126 chars · 90% of fold · ~6s read` while you are under the fold, and `352 chars · 212 past fold · ~25s read` once you are over it. The strip is hidden when the window is narrow.
+- Once your post passes 140 characters, a dashed orange line appears in the editor at the point where the cut falls, labelled **LINKEDIN FOLD 140 CHARS** in the margin, or **FOLD 140** where the margin is narrow, as on a phone.
+- The status strip in the top bar reads, for example, `126 / 3,000 chars · 90% of fold · ~6s read` while you are under the fold, and `352 / 3,000 chars · 212 past fold · ~25s read` once you are over it. The count turns orange past 3,000, the length the Audit's Gate 2 blocks at. The strip is hidden when the window is narrow.
 - The read time assumes 200 words per minute. It is an estimate.
 
-Characters are counted as a reader sees them, so bold letters and struck-through letters count once each, not twice.
+The fold is measured as a reader sees the text, so bold letters and struck-through letters count once each, not twice. The count against 3,000 is every character as it is stored, which is what a length limit counts and the same count the Audit uses: underlined and struck-through letters count twice there, and so do the vowel signs of scripts such as Hindi and Gujarati. Which count LinkedIn itself applies has not been measured.
 
 The 140 figure is the product's own approximation, and the studio's server-side checks use the same number. It is not a number LinkedIn publishes, so treat it as a guide.
 
@@ -33,7 +30,7 @@ The 140 figure is the product's own approximation, and the studio's server-side 
 | Underline | Adds an underline mark after each character |
 | Monospace | Swaps the letters for Unicode monospace characters |
 | Strikethrough | Adds a strike mark after each character |
-| Clean formatting | Replaces em dashes, en dashes and double hyphens between words with commas, turns en dash number ranges such as 2021-2024 into plain hyphens, and tidies extra spaces |
+| Clean formatting | Replaces em dashes, spaced en dashes and double hyphens between words with commas, turns unspaced en dashes and number ranges, such as Mon-Fri, Q1-Q4 or 2021-2024, into plain hyphens, and tidies extra spaces inside a line. Indentation at the start of a line is kept |
 | Re-Hook | Generates ten alternative openings from the selection. See [Try a different opening line](try-a-different-opening-line.md) |
 
 These are real Unicode characters, not markup, so they survive copy and paste. The studio's own server on this PC does the formatting.
@@ -43,7 +40,7 @@ These are real Unicode characters, not markup, so they survive copy and paste. T
 
 ## Save
 
-Saving is manual. Press **Save** in the top bar. The mark beside it tells you where you stand:
+Saving is manual. Press **Save** in the top bar. While a save is under way the button is greyed out, so a second press cannot make a second copy. If you reload, close the tab or leave the studio with text that is not saved, the browser asks before it lets the text go. Moving between screens in the studio keeps the Composer's text. The mark beside **Save** tells you where you stand:
 
 | Mark | Meaning |
 | --- | --- |
@@ -51,7 +48,7 @@ Saving is manual. Press **Save** in the top bar. The mark beside it tells you wh
 | UNSAVED | You have changes that are not on disk |
 | SAVING | The save is in progress |
 | SAVED 14:02:37 | Written to the database at that time |
-| SAVE FAILED | The save did not happen. Your text is still in the editor |
+| SAVE FAILED | The save did not happen. Your text is still in the editor, and the reason is written in orange under the bar |
 | MARKED AS PUBLISHED | You used **Mark as published** on this post. After **Queue it** or **Send to LinkedIn**, that action's own message shows here instead, for example SCHEDULED FOR followed by the slot |
 
 ## What happens
@@ -66,7 +63,8 @@ After you use **Mark as published**, **Queue it** or **Send to LinkedIn**, the C
 
 ## If it does not work
 
-- **SAVE FAILED**: hover over the mark to read the reason. It is only shown as a tooltip.
+- **SAVE FAILED**: the reason is written in orange under the top bar, and a screen reader announces it with the mark.
 - "There is nothing written to save.": the editor is empty. Type something first.
+- "This draft was changed in another window after this one opened it...": the same draft is open in another window or tab, and it was saved there after this one loaded it. Nothing was written, so the other window's text is safe. Press **Keep this version** to save this window's text over it, or copy your text, reload, and compare.
 - "Post content exceeds maximum 5,000 character limit.": the server refuses posts over 5,000 characters. Shorten the post and save again. Underlined and struck-through text store an extra mark for every character, so they count double toward this limit and a heavily decorated post reaches it sooner.
 - Any other failure usually means the server stopped. See [The studio will not open or shows an error](the-studio-will-not-open.md).

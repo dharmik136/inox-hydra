@@ -9,10 +9,45 @@ interface HookFilmstripProps {
   /** Alternatives produced from a selection. When set, these replace the library. */
   generated: GeneratedHook[] | null;
   onClearGenerated: () => void;
+  /** Whether the opening a hook replaced can still be put back. */
+  canUndo: boolean;
+  onUndo: () => void;
 }
 
 /** How many specimens carry a keyboard shortcut. Alt and a digit, so 1 to 9. */
 const SHORTCUT_LIMIT = 9;
+
+/**
+ * On a Mac, Option and a digit types a character (Option+8 is the bullet), so
+ * the shortcut never fires there and is not advertised.
+ */
+const ALT_TYPES_CHARACTERS = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
+/**
+ * Which specimen, if any, a keystroke asks for.
+ *
+ * Only Alt and a digit on the top row, and only when that keystroke is not
+ * typing something. Reading event.key alone took Windows Alt codes for
+ * shortcuts: Alt+0149, the bullet, arrives as four numpad keydowns whose key
+ * is a digit, and applied hooks 1, 4 and 9 in turn over the author's opening.
+ * event.code names the physical key, so the numpad is left to Alt codes, and
+ * requiring the key to read as that digit leaves a Mac's Option+digit symbols
+ * to the author. Focus in any other field (the image concept, a key, a
+ * search) is never a shortcut either: only the editor, or nothing focused.
+ */
+function shortcutPosition(event: KeyboardEvent): number | null {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return null;
+  const digit = /^Digit([1-9])$/.exec(event.code)?.[1];
+  if (!digit || event.key !== digit) return null;
+  const target = event.target;
+  if (target instanceof HTMLElement && !target.hasAttribute("data-hook-shortcuts")) {
+    const editable =
+      target.isContentEditable || target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+    if (editable) return null;
+  }
+  return Number(digit);
+}
 
 /** One strip entry, whichever source it came from. */
 interface Specimen {
@@ -43,7 +78,7 @@ interface Specimen {
  * and no score. So each is labelled for what it is, and the fold
  * verdict appears only on the specimens that actually carry one.
  */
-export function HookFilmstrip({ onApply, generated, onClearGenerated }: HookFilmstripProps) {
+export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, onUndo }: HookFilmstripProps) {
   const [templates, setTemplates] = useState<HookTemplate[] | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -78,11 +113,10 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated }: HookFilm
   // Alt and a digit applies that specimen. Alt rather than a bare digit
   // because the composer is a text field and bare digits belong to the author.
   useEffect(() => {
-    if (!specimens?.length) return;
+    if (!specimens?.length || ALT_TYPES_CHARACTERS) return;
     const onKey = (event: KeyboardEvent) => {
-      if (!event.altKey || event.ctrlKey || event.metaKey) return;
-      const position = Number(event.key);
-      if (!Number.isInteger(position) || position < 1 || position > SHORTCUT_LIMIT) return;
+      const position = shortcutPosition(event);
+      if (position === null) return;
       const chosen = specimens[position - 1];
       if (!chosen) return;
       event.preventDefault();
@@ -101,9 +135,28 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated }: HookFilm
       <div className="flex items-baseline justify-between gap-3 px-10 pt-3">
         <p className="studio-label">{generated ? "Generated from selection" : "Hook rail"}</p>
         <div className="flex items-center gap-3">
+          {/* Announced, because a hook rewrites the post in one keystroke and
+              the way back has to be found as fast as that. */}
+          <p role="status" className="studio-meta flex items-center gap-2 text-[10px] text-ink-muted">
+            {canUndo && (
+              <>
+                OPENING REPLACED
+                <button
+                  type="button"
+                  onClick={onUndo}
+                  aria-label="Undo the hook and put your opening back"
+                  className="rounded-sm border border-edge px-1.5 text-ink-secondary transition-colors hover:border-edge-strong hover:text-ink-primary"
+                >
+                  UNDO
+                </button>
+              </>
+            )}
+          </p>
           {/* A keyboard hint, so not on a window narrow enough to be a phone,
               where it also sat under the inspector's open control. */}
-          <p className="studio-meta hidden text-[10px] text-ink-muted sm:block">ALT + NUMBER TO APPLY</p>
+          {!ALT_TYPES_CHARACTERS && (
+            <p className="studio-meta hidden text-[10px] text-ink-muted sm:block">ALT + NUMBER TO APPLY</p>
+          )}
           {generated && (
             <button
               type="button"
@@ -143,7 +196,7 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated }: HookFilm
                   <span className="mx-1.5">·</span>
                   {specimen.category.toUpperCase()}
                 </span>
-                {index < SHORTCUT_LIMIT && (
+                {index < SHORTCUT_LIMIT && !ALT_TYPES_CHARACTERS && (
                   <kbd className="studio-meta shrink-0 rounded border border-edge px-1 text-[9px] text-ink-muted">
                     ALT {index + 1}
                   </kbd>

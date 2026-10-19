@@ -21,8 +21,10 @@ from typing import Dict, Any, List, Optional
 
 try:
     from .database import get_db
+    from .formatters import _measurable_text
 except ImportError:
     from database import get_db
+    from formatters import _measurable_text
 
 MAX_TITLE_LENGTH = 300
 MAX_SPEC_LENGTH = 10000
@@ -413,6 +415,10 @@ class GStackGovernanceEngine:
         }
 
         # Gate 2: Engineering Manager (Structural Bounds)
+        # Every character as stored, decoration marks included, because that
+        # is what is saved and sent. The Composer's strip shows this same count
+        # against 3,000 (storedLength in studio/ui/src/lib/text.ts), so the two
+        # can no longer disagree about whether a post fits.
         char_count = len(safe_content)
         g2_passed = (50 <= char_count <= 3000)
         if char_count < 50:
@@ -425,18 +431,21 @@ class GStackGovernanceEngine:
         }
 
         # Gate 3: Designer (Mobile Fold Safety)
+        # The fold is where a reader's eye stops, so it is measured as the
+        # editor measures it: a struck or underlined letter counts once.
         raw_lines = safe_content.splitlines()
         first_line = raw_lines[0].strip() if raw_lines else ""
         first_3_lines_text = "\n".join(raw_lines[:3]) if len(raw_lines) >= 3 else safe_content
-        pre_fold_chars = len(first_3_lines_text)
-        g3_passed = (len(first_line) <= 140 and pre_fold_chars <= 210)
-        if len(first_line) > 140:
-            violations.append(f"Gate 3 (Designer): First line hook ({len(first_line)} chars) exceeds mobile 140-char limit.")
+        first_line_chars = len(_measurable_text(first_line))
+        pre_fold_chars = len(_measurable_text(first_3_lines_text))
+        g3_passed = (first_line_chars <= 140 and pre_fold_chars <= 210)
+        if first_line_chars > 140:
+            violations.append(f"Gate 3 (Designer): First line hook ({first_line_chars} chars) exceeds mobile 140-char limit.")
         if pre_fold_chars > 210:
             violations.append(f"Gate 3 (Designer): Pre-fold text ({pre_fold_chars} chars) exceeds mobile fold 210-char threshold.")
         gates["gate_3_designer"] = {
             "passed": g3_passed,
-            "first_line_chars": len(first_line),
+            "first_line_chars": first_line_chars,
             "pre_fold_chars": pre_fold_chars,
             "is_pre_fold_safe": g3_passed
         }

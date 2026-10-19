@@ -47,7 +47,7 @@ See [Start a new post, or find one you wrote earlier](start-a-new-post-or-find-a
 With nothing typed, the box lists what it can do without searching:
 
 - **Go to** each surface on the rail. **Go to Devtools** appears only when that surface is switched on. See [Turn on the Devtools surface](turn-on-devtools.md).
-- **Switch theme** changes between the light and dark themes. The choice is not saved, so reloading brings back the dark theme.
+- **Switch theme** changes between the light and dark themes, the same as the sun or moon button in the top bar. The studio remembers the choice in this browser; until you make one, it follows your computer's setting.
 - **Show or hide the inspector** switches to the Composer and opens or closes the inspector.
 
 Each action does what its label says. Earlier versions listed entries such as "Generate 5 hooks" and "Schedule at peak slot" that only switched screens; they have been removed.

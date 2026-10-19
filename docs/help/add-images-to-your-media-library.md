@@ -11,7 +11,7 @@ The library lists every asset with its size, and its dimensions or page count wh
 
 ## Upload
 
-Drop one or more files on the box, or click **Drop a file, or click to choose**.
+Drop one or more files on the box, or click **Drop a file, or click to choose**. The box says the files are kept on this computer: to use one in a post, add it on LinkedIn (see Current limits below).
 
 | Kind | Extensions | Stored as |
 | --- | --- | --- |
@@ -61,7 +61,7 @@ Uploads never leave your machine.
 
 Files live in the studio's data home: uploads in `assets\uploads`, generated images in `assets\generated`. On Windows the data home is normally `%LOCALAPPDATA%\InoxHydra`. If your install keeps a `data` folder inside its `studio` folder, as the portable build does, the data home is that `studio` folder.
 
-To delete an asset, hover over it in the library and click the bin icon. The file and its entry are removed. There is no confirmation step.
+To delete an asset, click the bin icon beside it in the library and confirm. The file and its entry are removed from this computer. If the delete fails, the reason is shown in orange above the library and the asset stays listed.
 
 ## If it does not work
 
@@ -73,4 +73,4 @@ To delete an asset, hover over it in the library and click the bin icon. The fil
 | "Generation failed." or the reason it failed | The task stopped. Try again. |
 | "Progress could not be read, so the outcome is unknown." | The studio stopped answering while you waited. The image may still arrive. Reopen the **Media** tab to check. |
 | MEDIA LIBRARY UNAVAILABLE | The list could not be loaded. See [The studio will not open or shows an error](the-studio-will-not-open.md). |
-| An asset stays after you delete it | A failed delete shows no message. Try again. |
+| An asset stays after you delete it, with a reason in orange | The studio could not remove the file. Read the reason, then try again. |

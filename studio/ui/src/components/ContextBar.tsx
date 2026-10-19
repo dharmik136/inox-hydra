@@ -1,4 +1,5 @@
 import { Check, Loader2 } from "lucide-react";
+import { POST_LIMIT_CHARS } from "@/lib/text";
 import { cn } from "@/lib/utils";
 
 /**
@@ -12,9 +13,9 @@ export type SaveState = "idle" | "dirty" | "saving" | "saved" | "failed" | "publ
 
 interface ContextBarProps {
   kind: string;
-  draftRef: string;
   title: string;
-  chars: number;
+  /** Every character as stored, the count LinkedIn's limit and Gate 2 apply. */
+  storedChars: number;
   foldLabel: string;
   pastFold: boolean;
   readSeconds: number;
@@ -34,9 +35,8 @@ interface ContextBarProps {
  */
 export function ContextBar({
   kind,
-  draftRef,
   title,
-  chars,
+  storedChars,
   foldLabel,
   pastFold,
   readSeconds,
@@ -53,7 +53,7 @@ export function ContextBar({
           save status on a phone. */}
       <div className="flex min-w-0 flex-1 items-baseline gap-3 md:flex-initial">
         <span className="studio-meta hidden shrink-0 uppercase sm:inline">
-          {kind} / {draftRef}
+          {kind}
         </span>
         <h1 className="truncate text-[13px] font-medium text-ink-primary">{title}</h1>
       </div>
@@ -61,7 +61,11 @@ export function ContextBar({
       {/* Centre telemetry. tabular-nums comes from .studio-meta so the numbers
           do not jitter sideways while typing. */}
       <p className="studio-meta mx-auto hidden shrink-0 md:block" aria-live="off">
-        {chars.toLocaleString()} chars
+        {/* Against the limit, so the strip and the Audit's Gate 2 give the
+            same answer. It used to show a bare count with no limit at all. */}
+        <span className={storedChars > POST_LIMIT_CHARS ? "text-signal-orange-text" : undefined}>
+          {storedChars.toLocaleString()} / {POST_LIMIT_CHARS.toLocaleString()} chars
+        </span>
         <span className="mx-1.5 text-ink-muted">·</span>
         <span className={pastFold ? "text-signal-orange-text" : undefined}>{foldLabel}</span>
         <span className="mx-1.5 text-ink-muted">·</span>~{readSeconds}s read
@@ -96,8 +100,12 @@ export function ContextBar({
             </span>
           )}
           {saveState === "failed" && (
-            <span className="text-signal-orange-text" title={saveError ?? undefined}>
+            <span className="text-signal-orange-text">
               SAVE FAILED
+              {/* The reason, announced with the mark. It used to be a title
+                  attribute, which keyboard, touch and screen reader users
+                  never get. */}
+              {saveError && <span className="sr-only">. {saveError}</span>}
             </span>
           )}
           {saveState === "dirty" && <span className="text-signal-orange-text">UNSAVED</span>}
@@ -106,13 +114,16 @@ export function ContextBar({
 
         <span className="hidden h-4 w-px bg-edge sm:block" aria-hidden="true" />
 
+        {/* Disabled while a save is out, so a second press cannot start a
+            second write. */}
         <button
           type="button"
           onClick={onSave}
+          disabled={saveState === "saving"}
           className={cn(
             "rounded-md px-2.5 py-1 text-xs font-medium text-ink-secondary",
             "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
-            "hover:bg-soft hover:text-ink-primary",
+            "hover:bg-soft hover:text-ink-primary disabled:opacity-50 disabled:hover:bg-transparent",
           )}
         >
           Save
@@ -131,5 +142,34 @@ export function ContextBar({
         </button>
       </div>
     </header>
+  );
+}
+
+/**
+ * Why the last save failed, in words under the bar.
+ *
+ * The bar has room for the mark, not the sentence, and the sentence is the
+ * part the author has to act on: the 5,000 character limit, an empty editor,
+ * a draft changed in another window. Hidden from assistive technology only
+ * because the status in the bar already announces it.
+ */
+export function SaveReason({ reason, onKeepMine }: { reason: string; onKeepMine?: () => void }) {
+  return (
+    <div className="flex shrink-0 items-center gap-3 border-b border-edge bg-ink px-3 py-1.5 sm:px-4">
+      <p className="min-w-0 flex-1 text-[12px] leading-snug text-signal-orange-text" aria-hidden="true">
+        {reason}
+      </p>
+      {/* Only for a draft saved from another window in between. The author
+          has seen that and chooses to replace it. */}
+      {onKeepMine && (
+        <button
+          type="button"
+          onClick={onKeepMine}
+          className="shrink-0 rounded-md border border-edge px-2.5 py-1 text-xs font-medium text-ink-secondary transition-colors hover:border-edge-strong hover:text-ink-primary"
+        >
+          Keep this version
+        </button>
+      )}
+    </div>
   );
 }

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { SelectionToolbar, type ToolbarPosition } from "./SelectionToolbar";
 import { formatText, type FormatKind } from "@/lib/api";
-import { measurableLength, rawIndexAtMeasurableOffset } from "@/lib/text";
+import { measurableLength, openingEnd, rawIndexAtMeasurableOffset } from "@/lib/text";
 
 /**
  * LinkedIn collapses the post body behind "see more" at roughly this many
@@ -18,6 +18,14 @@ import { measurableLength, rawIndexAtMeasurableOffset } from "@/lib/text";
  * tests/test_fold_is_one_number.py reads both files and fails if they differ.
  */
 export const FOLD_CHARS = 140;
+
+/**
+ * Margin the full fold label needs beside the column: the label itself, about
+ * 52 pixels, its 12 pixel gap and a little slack. With less, as on a phone or
+ * beside a docked inspector at 1024 pixels, it ran under the rail, so the
+ * short form is drawn instead.
+ */
+const ROOM_FOR_FOLD_LABEL = 72;
 
 interface ComposerCanvasProps {
   value: string;
@@ -42,10 +50,20 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
   const reduceMotion = useReducedMotion();
 
   const [foldTop, setFoldTop] = useState<number | null>(null);
+  // Room between the scrolling area's edge and the column, for the label.
+  const [gutter, setGutter] = useState<number | null>(null);
+  // Bumped when the column or the area around it changes size: either moves
+  // where the fold falls or how much margin the label has.
+  const [layoutPass, setLayoutPass] = useState(0);
   const [height, setHeight] = useState<number | null>(null);
   const [toolbar, setToolbar] = useState<ToolbarPosition | null>(null);
   const [busy, setBusy] = useState(false);
   const [swap, setSwap] = useState<{ height: number; text: string } | null>(null);
+
+  // The text as of the latest render, for a format request that comes back
+  // after the author has typed more.
+  const latestValue = useRef(value);
+  latestValue.current = value;
 
   // The fold is a reader-facing position, so it is measured on text with
   // decoration stripped. Using value.length here would move the mark every time
@@ -72,7 +90,17 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
   useLayoutEffect(() => {
     const mirror = mirrorRef.current;
     if (mirror) setHeight(mirror.scrollHeight);
-  }, [value]);
+  }, [value, layoutPass]);
+
+  useEffect(() => {
+    const mirror = mirrorRef.current;
+    if (!mirror || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setLayoutPass((pass) => pass + 1));
+    observer.observe(mirror);
+    const scroller = mirror.closest("main");
+    if (scroller) observer.observe(scroller);
+    return () => observer.disconnect();
+  }, []);
 
   useLayoutEffect(() => {
     if (!crossed) {
@@ -91,7 +119,9 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
     // the line the fold actually falls on. getBoundingClientRect would return
     // the union of them all and put the mark at the top of the post.
     setFoldTop(last && mirrorBox ? last.bottom - mirrorBox.top : null);
-  }, [value, crossed, rectsFor]);
+    const scroller = mirrorRef.current?.closest("main")?.getBoundingClientRect();
+    setGutter(mirrorBox && scroller ? mirrorBox.left - scroller.left : null);
+  }, [value, crossed, rectsFor, layoutPass]);
 
   /**
    * The opening paragraph settling into place (blueprint micro-interaction 3).
@@ -106,7 +136,7 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
     if (swapKey === 0) return;
     if (reduceMotion) return;
 
-    const paragraphBreak = value.indexOf("\n\n");
+    const paragraphBreak = openingEnd(value);
     const rawEnd = paragraphBreak === -1 ? value.length : paragraphBreak;
     const rects = rectsFor(0, rawEnd);
     const mirrorBox = mirrorRef.current?.getBoundingClientRect();
@@ -160,15 +190,35 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
       setBusy(true);
       try {
         const formatted = await formatText(kind, selected);
-        onChange(value.slice(0, selectionStart) + formatted + value.slice(selectionEnd));
+
+        // Applied to the text as it is now, not as it was when the button was
+        // pressed. Rebuilding from the old copy threw away whatever the author
+        // typed while the request was out. If the selected words themselves
+        // moved or changed meanwhile, the format is dropped, not the typing.
+        const current = latestValue.current;
+        if (current.slice(selectionStart, selectionEnd) !== selected) {
+          setToolbar(null);
+          return;
+        }
+        const caretStart = textarea.selectionStart;
+        const caretEnd = textarea.selectionEnd;
+        const stillSelected = caretStart === selectionStart && caretEnd === selectionEnd;
+        const shift = formatted.length - selected.length;
+        onChange(current.slice(0, selectionStart) + formatted + current.slice(selectionEnd));
 
         // Keep the same text selected so formatters can be chained. The end
         // offset moves, because a formatter changes how many code units the
-        // selection occupies even when it reads the same length.
+        // selection occupies even when it reads the same length. An author
+        // who moved on to type elsewhere keeps their caret instead.
         requestAnimationFrame(() => {
           textarea.focus();
-          textarea.setSelectionRange(selectionStart, selectionStart + formatted.length);
-          syncToolbar();
+          if (stillSelected) {
+            textarea.setSelectionRange(selectionStart, selectionStart + formatted.length);
+            syncToolbar();
+          } else {
+            const moved = (index: number) => (index >= selectionEnd ? index + shift : index);
+            textarea.setSelectionRange(moved(caretStart), moved(caretEnd));
+          }
         });
       } catch {
         // The selection is left exactly as it was. Nothing is reported as
@@ -213,6 +263,8 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
           onScroll={syncToolbar}
           spellCheck
           aria-label="Post body"
+          // The one text field where Alt and a digit applies a hook.
+          data-hook-shortcuts
           placeholder="Start writing. The fold mark appears once the post runs past it."
           style={height ? { height } : undefined}
           className="relative block min-h-[60vh] w-full resize-none overflow-hidden border-0 bg-transparent font-editorial text-[18px] leading-[1.75] text-ink-primary outline-none placeholder:text-ink-muted"
@@ -263,11 +315,19 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
                 the column so the crop mark annotates the text instead of
                 covering it, and stacked so it fits the narrow gutter that is
                 left once the inspector is docked. */}
-            <span className="studio-meta absolute top-0 right-full mr-3 -translate-y-1/2 text-right leading-tight text-[10px] tracking-wider text-signal-orange-text">
-              LINKEDIN FOLD
-              <br />
-              {FOLD_CHARS} CHARS
-            </span>
+            {gutter === null || gutter >= ROOM_FOR_FOLD_LABEL ? (
+              <span className="studio-meta absolute top-0 right-full mr-3 -translate-y-1/2 text-right leading-tight text-[10px] tracking-wider text-signal-orange-text">
+                LINKEDIN FOLD
+                <br />
+                {FOLD_CHARS} CHARS
+              </span>
+            ) : (
+              <span className="studio-meta absolute top-0 right-full mr-1.5 -translate-y-1/2 text-right leading-tight text-[10px] tracking-wider text-signal-orange-text">
+                FOLD
+                <br />
+                {FOLD_CHARS}
+              </span>
+            )}
           </motion.div>
         )}
       </div>
