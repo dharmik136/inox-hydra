@@ -235,9 +235,9 @@ def _launcher_target() -> Optional[str]:
         if found and os.path.isfile(found):
             return found
 
-    if not is_windows():
-        return sys.executable
-
+    # No launcher: say so, on every platform. Off Windows this used to return
+    # the bare interpreter, so an installed copy reported autostart enabled
+    # with an entry that ran python with no arguments and started nothing.
     return None
 
 

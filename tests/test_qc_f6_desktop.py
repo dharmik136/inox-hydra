@@ -133,3 +133,18 @@ def test_the_shortcut_script_quotes_its_launcher(tmp_path):
     assert done.returncode == 0, done.stdout + done.stderr
     entry = home / ".local" / "share" / "applications" / "inox-hydra.desktop"
     assert _exec_argv(_exec_of(entry)) == [launcher]
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM-20: no launcher means autostart is unavailable, not bare python
+# ---------------------------------------------------------------------------
+
+def test_without_a_launcher_autostart_is_unavailable_and_says_why(linux, monkeypatch):
+    empty = linux / "installed-copy"
+    empty.mkdir()
+    monkeypatch.setattr(desktop, "_install_roots", lambda: [str(empty)])
+
+    assert desktop.describe()["autostart_available"] is False
+    result = desktop.enable_autostart()
+    assert result["enabled"] is False and result["reason"]
+    assert not os.path.exists(desktop.get_startup_shortcut_path()), "an entry that starts nothing was written"
