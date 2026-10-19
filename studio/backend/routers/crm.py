@@ -21,7 +21,7 @@ try:
         generate_dm_script,
         export_leads_csv,
     )
-    from ..crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
+    from ..crm import ICPScoringEngine, ReverseCRMManager, reverse_crm, qualification_tier
     from .. import onboarding
 except (ImportError, ValueError):
     from database import get_db
@@ -34,7 +34,7 @@ except (ImportError, ValueError):
         generate_dm_script,
         export_leads_csv,
     )
-    from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
+    from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm, qualification_tier
     import onboarding
 
 router = APIRouter()
@@ -268,6 +268,12 @@ def get_lead_interaction_timeline(lead_id: str):
     if res["status"] == "not_found":
         raise HTTPException(status_code=404, detail="Lead not found")
     res["interactions"] = onboarding.annotate_interactions(res["interactions"])
+    # Whether the lead was scored at all, and its tier under the one rule. A
+    # captured lead is scored at capture, and a student's 0 is a score; only a
+    # lead added by hand, with nothing captured, has none. The dossier read
+    # every 0 as "Not scored".
+    res["lead"]["scored"] = bool(res["interactions"]) or float(res["lead"].get("icp_score") or 0) > 0
+    res["lead"]["qualification_tier"] = qualification_tier(res["lead"].get("icp_score"))
     conn = get_db()
     try:
         res["stage_history"] = [dict(r) for r in conn.execute(

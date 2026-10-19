@@ -156,6 +156,18 @@ def test_times_are_the_creators_own(browser, studio_url):
         ctx.close()
 
 
+def test_a_lead_scored_zero_says_zero(browser, studio_url):
+    ctx, page = _leads_page(browser, studio_url)
+    try:
+        _open(page, "Rahul Student")
+        score = page.locator("article dl div", has_text="ICP score").inner_text()
+        assert "0" in score and "Not scored" not in score and "disqualified" in score.lower(), score
+        _open(page, "Manual Person")
+        assert "Not scored" in page.locator("article dl div", has_text="ICP score").inner_text()
+    finally:
+        ctx.close()
+
+
 def test_the_stream_can_be_searched_and_filtered(browser, studio_url):
     ctx, page = _leads_page(browser, studio_url)
     try:

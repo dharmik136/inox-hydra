@@ -25,6 +25,16 @@ import {
 import { cn } from "@/lib/utils";
 import type { SearchFocus } from "@/lib/search";
 
+/** The timeline's lead: whether it was scored at all, and its tier under the one rule. */
+type DossierLead = Lead & { scored?: boolean; qualification_tier?: string };
+
+const TIER_LABELS: Record<string, string> = {
+  TIER_1_VIP: "VIP",
+  QUALIFIED: "Qualified",
+  NURTURE: "Nurture",
+  DISQUALIFIED: "Disqualified",
+};
+
 /** How many rows the stream draws before asking. Five thousand drawn at once was 30,000 nodes. */
 const STREAM_PAGE = 200;
 
@@ -239,7 +249,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
  * The person dossier. A research sheet, not a modal.
  */
 function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void }) {
-  const [data, setData] = useState<{ lead: Lead; interactions: LeadInteraction[]; stage_history?: LeadStageEvent[] } | null>(null);
+  const [data, setData] = useState<{ lead: DossierLead; interactions: LeadInteraction[]; stage_history?: LeadStageEvent[] } | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   // The label travels with the text, so the panel can say which of the four
@@ -336,10 +346,18 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
       <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-2 border-y border-edge py-4">
         <Field label="Company" value={lead.company} />
         <Field label="Seniority" value={lead.seniority_level} />
-        {/* Zero means never scored, which is a different statement from a
-            lead scored zero, so it is reported as unscored rather than as a
-            number the reader would compare against other leads. */}
-        <Field label="ICP score" value={lead.icp_score > 0 ? lead.icp_score.toFixed(0) : "Not scored"} />
+        {/* A captured lead is scored at capture, and a student's 0 is a low
+            fit, not a missing score. Only a lead added by hand has none; the
+            server says which, with the tier under the one rule. Reading every
+            0 as unscored made a low fit look like a capture problem. */}
+        <Field
+          label="ICP score"
+          value={
+            lead.scored === false
+              ? "Not scored"
+              : `${lead.icp_score.toFixed(0)}${lead.qualification_tier ? ` · ${TIER_LABELS[lead.qualification_tier] ?? lead.qualification_tier}` : ""}`
+          }
+        />
         <Field label="First seen" value={lead.created_at ? localDate(lead.created_at) : null} />
       </dl>
 

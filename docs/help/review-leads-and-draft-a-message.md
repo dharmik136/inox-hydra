@@ -26,7 +26,7 @@ The right side is a sheet on one person. Under their name, **OPEN THEIR PROFILE 
 | --- | --- |
 | Company | Taken from the headline, for example the part after "at". Left blank if the headline names none. |
 | Seniority | A level worked out from the headline, or Unknown |
-| ICP score | 0 to 100, or "Not scored" |
+| ICP score | 0 to 100 and its tier: VIP from 80, Qualified from 60, Nurture from 30, otherwise Disqualified. A student or intern often scores 0, which is a score. "Not scored" appears only for someone added by hand, with nothing captured. |
 | First seen | The date the studio recorded them |
 
 The ICP score is calculated on this machine by fixed rules: seniority words in the headline, how they engaged and how long their comment was, whether a company is known and what it is called, and whether the comment contains a question mark. It is worked out again at every capture, from their current headline and their best recorded engagement, so it can fall as well as rise.
