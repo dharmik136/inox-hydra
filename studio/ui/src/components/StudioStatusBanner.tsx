@@ -7,6 +7,32 @@ import {
   watchProfileSwitches,
   type Connection,
 } from "@/lib/api";
+import * as unsaved from "@/lib/unsaved";
+
+/**
+ * Reloads through the unsaved-work guard: asks first when anything would be
+ * lost, as the profile switcher does, and reloads only on a yes.
+ *
+ * reloadStudio is read off the module rather than imported by name: it is
+ * the registry's way to reload once the author has agreed, so the page's own
+ * leave guard does not ask a second time, and a build without it falls back
+ * to a plain reload after the same question.
+ */
+function reloadAfterAsking(): void {
+  const guard = unsaved as typeof unsaved & {
+    unsavedWorkLabels?: () => string[];
+    reloadStudio?: () => void;
+  };
+  if (guard.hasUnsavedWork()) {
+    const lost = guard.unsavedWorkLabels?.() ?? [];
+    const what = lost.length ? lost.join(" and ") : "The post in the Composer";
+    if (!window.confirm(`${what} ${lost.length > 1 ? "have" : "has"} unsaved changes. Reloading discards them. Reload anyway?`)) {
+      return;
+    }
+  }
+  if (guard.reloadStudio) guard.reloadStudio();
+  else window.location.reload();
+}
 
 /** How often a window that has lost the studio asks again. */
 const RETRY_MS = 5000;
@@ -87,7 +113,7 @@ export function StudioStatusBanner() {
         </span>
         <button
           type="button"
-          onClick={() => window.location.reload()}
+          onClick={reloadAfterAsking}
           className="shrink-0 rounded-md bg-signal-orange px-2.5 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110"
         >
           Reload this window
