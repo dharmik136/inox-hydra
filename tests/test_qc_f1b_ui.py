@@ -141,6 +141,57 @@ def test_a_lost_studio_is_announced_and_never_reads_failed_to_fetch(context, stu
 
 
 # ---------------------------------------------------------------------------
+# WRITE-03 / UX-17: Publish acts on what is on screen
+# ---------------------------------------------------------------------------
+
+def _composer(context, studio_url):
+    page = _open(context, studio_url, "Composer")
+    editor = page.get_by_label("Post body")
+    editor.fill("")
+    return page, editor
+
+
+def _publish_dialog(page):
+    return page.get_by_role("dialog", name="Publish")
+
+
+def test_publish_queues_the_text_on_screen_not_the_last_saved_one(context, studio_url):
+    page, editor = _composer(context, studio_url)
+    editor.fill("QC F1B version one of the post, saved.")
+    page.get_by_role("button", name="Save", exact=True).click()
+    page.get_by_text("SAVED", exact=False).first.wait_for()
+    editor.fill("QC F1B version two, the one on screen, with the typo fixed. Not saved.")
+    page.get_by_text("UNSAVED").wait_for()
+
+    page.get_by_role("button", name="Publish", exact=True).click()
+    dialog = _publish_dialog(page)
+    assert "version two" in dialog.inner_text(), "the dialog does not show the post it acts on"
+    dialog.get_by_role("button", name="Queue it").click()
+    dialog.wait_for(state="detached")
+
+    queued = [r for r in _rows("scheduled") if (r["content"] or "").startswith("QC F1B")]
+    assert [r["content"] for r in queued] == ["QC F1B version two, the one on screen, with the typo fixed. Not saved."]
+
+
+def test_publish_with_nothing_written_explains_and_opens_no_dialog(context, studio_url):
+    page, _ = _composer(context, studio_url)
+    page.get_by_role("button", name="Publish", exact=True).click()
+    page.get_by_text("SAVE FAILED").wait_for()
+    assert page.get_by_title("There is nothing written to publish.").count() == 1
+    assert _publish_dialog(page).count() == 0
+
+
+def test_publish_after_a_refused_save_shows_the_reason_and_opens_no_dialog(context, studio_url):
+    page, editor = _composer(context, studio_url)
+    editor.fill("QC F1B " + "x" * 5100)
+    page.get_by_role("button", name="Publish", exact=True).click()
+    page.get_by_text("SAVE FAILED").wait_for()
+    assert page.locator("[title*='5,000']").count() == 1
+    assert _publish_dialog(page).count() == 0
+    assert not [r for r in _rows() if (r["content"] or "").startswith("QC F1B")]
+
+
+# ---------------------------------------------------------------------------
 # WRITE-01: a window left on another profile cannot save into the new one
 # ---------------------------------------------------------------------------
 

@@ -16,6 +16,8 @@ import { cn } from "@/lib/utils";
 interface PublishDialogProps {
   open: boolean;
   postId: string | null;
+  /** The first line of the stored post, which is what every choice acts on. */
+  opening: string;
   onClose: () => void;
   onDone: (message: string) => void;
 }
@@ -45,7 +47,7 @@ interface PublishDialogProps {
  * write rejects an invalid time with a 400 and a rejection after the click
  * reads as a broken control rather than as the twelve hour rule it is.
  */
-export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogProps) {
+export function PublishDialog({ open, postId, opening, onClose, onDone }: PublishDialogProps) {
   const [slot, setSlot] = useState<NextSlot | null>(null);
   const [verdict, setVerdict] = useState<CadenceVerdict | null>(null);
   const [busy, setBusy] = useState(false);
@@ -149,12 +151,31 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
             <p className="studio-label">Publish</p>
 
             {!postId ? (
-              <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
-                Save the draft first. Publishing acts on a stored post, and this one has not been
-                written to the studio yet.
-              </p>
+              <>
+                <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
+                  Save the draft first. Publishing acts on a stored post, and this one has not been
+                  written to the studio yet.
+                </p>
+                <div className="mt-5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="rounded-md px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
             ) : (
               <>
+                {/* The post every choice below acts on, as stored. Publish
+                    saves what is on screen first, so this is what the author
+                    was looking at. */}
+                {opening && (
+                  <p className="mt-3 truncate rounded-md border border-edge bg-ink px-3 py-2 text-[13px] text-ink-primary">
+                    {opening}
+                  </p>
+                )}
                 <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
                   Mark this as published in your record, or put it in the local queue.
                 </p>
