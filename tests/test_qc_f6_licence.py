@@ -144,6 +144,50 @@ def test_profiles_beyond_an_ended_licence_close_but_keep_their_data(client, vaul
     assert gone.status_code == 200
 
 
+# ---------------------------------------------------------------------------
+# PLATFORM-06: the vendor's tool issues a monthly licence for a month
+# ---------------------------------------------------------------------------
+
+def _issue(tmp_path, capsys, *extra):
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools"))
+    import json
+    import licence_keys
+
+    secret_file = tmp_path / "throwaway.secret"
+    secret_file.write_text(THROWAWAY_SECRET.hex() + "\n")
+    code = licence_keys.main(["issue", "--key", str(secret_file), "--email", "buyer@example.com", *extra])
+    captured = capsys.readouterr()
+    if code != 0:
+        return code, None, captured.err
+    body = captured.out.strip().split(".")[1]
+    payload = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+    return code, payload, captured.err
+
+
+def test_a_monthly_licence_lasts_a_month(vault, capsys):
+    from datetime import timedelta
+
+    code, payload, err = _issue(vault, capsys, "--tier", "agency", "--kind", "monthly")
+    assert code == 0, err
+    assert payload["kind"] == "monthly"
+    assert payload["expires_at"] == (date.today() + timedelta(days=31)).isoformat(), payload
+    assert payload["expires_at"] in err, "the tool did not show the end date it signed"
+
+
+def test_the_tool_refuses_what_it_would_have_to_guess(vault, capsys):
+    with pytest.raises(SystemExit):
+        _issue(vault, capsys, "--tier", "agency")  # monthly or annual?
+    code, _payload, err = _issue(vault, capsys, "--tier", "agency", "--kind", "monthly", "--days", "0")
+    assert code == 2 and "days" in err
+
+
+def test_days_still_overrides_the_default(vault, capsys):
+    from datetime import timedelta
+
+    code, payload, _err = _issue(vault, capsys, "--tier", "agency", "--kind", "annual", "--days", "400")
+    assert code == 0 and payload["expires_at"] == (date.today() + timedelta(days=400)).isoformat()
+
+
 def test_an_ended_key_cannot_be_installed_by_setting_the_clock_back(vault):
     licensing.current(today=date(2026, 11, 25))
     result = licensing.install(_signed(expires_at="2026-11-19"), today=date(2026, 11, 1))
