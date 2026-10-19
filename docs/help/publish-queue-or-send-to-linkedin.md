@@ -52,7 +52,7 @@ Press **Queue it**. The strip shows the time, for example SCHEDULED FOR MONDAY 0
 
 **Send to LinkedIn** reads the text from the saved post, which **Publish** has just saved from the editor. It then sends one request to LinkedIn's `contentcreation/normShares` endpoint with the text, the slot time, public visibility and a scheduled state, authenticated with your stored `li_at` and `JSESSIONID` cookies. No images are sent. The request asks LinkedIn to hold the post and publish it at that time, so publishing would not depend on your computer being awake. Only after LinkedIn accepts does the local post become scheduled, and the strip shows LINKEDIN IS HOLDING THIS POST AND WILL PUBLISH IT AT THE SCHEDULED TIME. Later edits in the studio, and pausing the Queue, do not reach LinkedIn.
 
-After any of the three, the Composer still holds the same post, and the next **Save** overwrites it. To start a new post, reload the page. The Composer reopens your newest remaining draft, or opens empty.
+After any of the three, the Composer lets go of the post and clears, so the next post you type is saved as a new one. A queued post is listed on the **Queue**, and a published one in **Analytics**.
 
 ## If it does not work
 

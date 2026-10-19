@@ -192,6 +192,32 @@ def test_publish_after_a_refused_save_shows_the_reason_and_opens_no_dialog(conte
 
 
 # ---------------------------------------------------------------------------
+# WRITE-02 / UX-01: the next post does not overwrite the one just published
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("choice, status", [("Mark as published", "published"), ("Queue it", "scheduled")])
+def test_the_next_post_is_a_new_post(context, studio_url, choice, status):
+    page, editor = _composer(context, studio_url)
+    first = f"QC F1B post A about hiring juniors ({status})."
+    editor.fill(first)
+    page.get_by_role("button", name="Publish", exact=True).click()
+    dialog = _publish_dialog(page)
+    dialog.get_by_role("button", name=choice).click()
+    dialog.wait_for(state="detached")
+
+    # The editor let go of the post and is ready for the next one.
+    assert editor.input_value() == ""
+    editor.fill("QC F1B post B, a completely different idea.")
+    page.get_by_role("button", name="Save", exact=True).click()
+    page.get_by_text("SAVED", exact=False).first.wait_for()
+
+    gone_out = [r for r in _rows(status) if (r["content"] or "").startswith("QC F1B post A")]
+    assert [r["content"] for r in gone_out] == [first], "the published or queued post was overwritten"
+    drafts = [r["content"] for r in _rows("draft") if (r["content"] or "").startswith("QC F1B post B")]
+    assert drafts == ["QC F1B post B, a completely different idea."]
+
+
+# ---------------------------------------------------------------------------
 # WRITE-01: a window left on another profile cannot save into the new one
 # ---------------------------------------------------------------------------
 

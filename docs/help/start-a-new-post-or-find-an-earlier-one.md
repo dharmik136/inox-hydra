@@ -14,14 +14,11 @@ Your text is held in the page while you work. Switching to another surface in th
 
 The top bar on the Composer has only **Save** and **Publish**. There is no New draft button.
 
-1. If the post in the editor is finished, press **Publish** and choose **Mark as published**, **Queue it** or **Send to LinkedIn**. Each one moves the post out of the draft list. See [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md).
-2. Reload the page.
-3. The Composer opens your most recent remaining draft, or opens empty if none is left.
+1. When the post in the editor is finished, press **Publish** and choose **Mark as published**, **Queue it** or **Send to LinkedIn**. See [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md).
+2. The post leaves the draft list, and the editor clears. The strip shows what happened, for example MARKED AS PUBLISHED.
+3. Type the next post. Its first **Save** creates a new post; the one you just published or queued is not touched.
 
 For what **Save** does and the marks beside it, see [Write, format and save a post](write-format-and-save-a-post.md).
-
-> [!WARNING]
-> Do not skip the reload. After **Publish**, the Composer is still attached to the post you just recorded or queued. If you type and press **Save**, you overwrite that post's text.
 
 > [!CAUTION]
 > Do not use **Mark as published** just to clear the editor. It records the post as published, and it then appears in **Analytics** as one of your published posts.
