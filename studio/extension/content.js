@@ -453,7 +453,9 @@ function parseMetricValue(raw, lang) {
   if (!/^\d+$/.test(whole)) {
     // Grouped thousands: one mark, used throughout, with three digits after it.
     const grouped = new RegExp("^\\d{1,3}(?:[" + groupMark + " ']\\d{3})+$");
-    if (!grouped.test(whole) || new Set(whole.replace(/\d/g, "")).size > 1) return null;
+    // Indian lakh and crore grouping, "12,34,567", wherever the comma groups.
+    const lakh = groupMark === "," && /^\d{1,2}(?:,\d{2})+,\d{3}$/.test(whole);
+    if (!(grouped.test(whole) || lakh) || new Set(whole.replace(/\d/g, "")).size > 1) return null;
   }
   // A count has no fraction unless it is abbreviated.
   if (fraction && !suffix) return null;
