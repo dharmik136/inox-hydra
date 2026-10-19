@@ -21,6 +21,7 @@ import threading
 import contextvars
 import urllib.request
 import urllib.error
+from urllib.parse import quote
 
 from fastapi import HTTPException
 
@@ -193,6 +194,8 @@ class AIProviderConfig:
     ):
         self.provider = provider if provider in SUPPORTED_PROVIDERS else "local_deterministic"
         self.api_key = api_key or ""
+        # Known by value to the redactor, whatever shape the key has.
+        _egress.remember_secret(self.api_key)
         prov_meta = SUPPORTED_PROVIDERS[self.provider]
         self.model = model or prov_meta.get("default_model", "deterministic-heuristics-v2")
         self.base_url = _resolve_base_url(self.provider, base_url, prov_meta).rstrip("/")
@@ -392,6 +395,10 @@ _READ_TIMEOUT_SECONDS = 15.0
 PROVIDER_CONCURRENCY = 3
 _provider_slots = threading.BoundedSemaphore(PROVIDER_CONCURRENCY)
 
+# Verify and save has slots of its own, so a check of a new setup is never
+# refused because the old one is stalled.
+_verify_slots = threading.BoundedSemaphore(2)
+
 # Answers are short JSON. Anything larger than this is not one.
 _MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
@@ -444,7 +451,7 @@ def _refusal(error: "urllib.error.HTTPError", who: str, model: str) -> ProviderE
     """An HTTP error from the provider, said as what it means."""
     detail = ""
     try:
-        body = json.loads(error.read().decode("utf-8", "replace"))
+        body = json.loads(error.read(65536).decode("utf-8", "replace"))
         problem = body.get("error") if isinstance(body, dict) else None
         if isinstance(problem, dict):
             detail = str(problem.get("message") or "")
@@ -464,8 +471,81 @@ def _refusal(error: "urllib.error.HTTPError", who: str, model: str) -> ProviderE
     else:
         lead = f"{who} rejected the request"
     text = f"{lead} (HTTP {code})"
-    text += f": {detail[:300]}" if detail else "."
+    # Redacted before it is cut short, so a key cannot survive as a fragment.
+    detail = _egress.redact(detail)[:300]
+    text += f": {detail}" if detail else "."
     return ProviderError(text, status_code=502, upstream_status=code)
+
+
+class _Sockets:
+    """
+    The sockets one request opens, so the deadline can cut them.
+
+    A socket timeout bounds each read, and a provider or proxy that sends its
+    status line or headers a byte at a time never trips it: urlopen kept
+    parsing, and the thread held its slot until the connection ended, twenty
+    minutes in one test. Shutting the sockets down at the deadline ends that
+    read whatever stage the exchange is at.
+    """
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._held: list = []
+        self.cut = False
+
+    def hold(self, sock) -> None:
+        with self._lock:
+            self._held.append(sock)
+            if self.cut:
+                self._shut(sock)
+
+    def cut_all(self) -> None:
+        with self._lock:
+            self.cut = True
+            for sock in self._held:
+                self._shut(sock)
+
+    @staticmethod
+    def _shut(sock) -> None:
+        try:
+            sock.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+
+def _opener_holding(sockets: "_Sockets"):
+    """An opener, proxies included, whose every new socket is held by `sockets`."""
+    import http.client
+
+    def holding(connection_class):
+        class Held(connection_class):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                make = self._create_connection
+
+                def made(*a, **k):
+                    sock = make(*a, **k)
+                    sockets.hold(sock)
+                    return sock
+
+                self._create_connection = made
+
+        return Held
+
+    plain, secure = holding(http.client.HTTPConnection), holding(http.client.HTTPSConnection)
+
+    class PlainHandler(urllib.request.HTTPHandler):
+        def http_open(self, req):
+            return self.do_open(plain, req)
+
+    class SecureHandler(urllib.request.HTTPSHandler):
+        def https_open(self, req):
+            options = {"context": getattr(self, "_context", None)}
+            if getattr(self, "_check_hostname", None) is not None:
+                options["check_hostname"] = self._check_hostname
+            return self.do_open(secure, req, **options)
+
+    return urllib.request.build_opener(PlainHandler, SecureHandler)
 
 
 def _post_json(endpoint: str, payload: Dict[str, Any], headers: Dict[str, str],
@@ -473,18 +553,27 @@ def _post_json(endpoint: str, payload: Dict[str, Any], headers: Dict[str, str],
     """
     POSTs and reads the whole answer before `stop`, a time.monotonic() value.
 
-    Runs on a provider thread. Raises ProviderError for anything short of a
-    JSON answer, and EgressRefused when model requests are off.
+    The deadline covers the whole exchange, connection and headers included:
+    a timer shuts the request's sockets down when it runs out. Runs on a
+    provider thread. Raises ProviderError for anything short of a JSON answer,
+    and EgressRefused when model requests are off.
     """
     request = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
     late = ProviderError(
         f"{who} did not finish answering within {int(budget)} seconds. Nothing was changed.", status_code=504
     )
+    silent = ProviderError(
+        f"{who} stopped answering for {_READ_TIMEOUT_SECONDS:g} seconds. Nothing was changed.", status_code=504
+    )
     # Refuses rather than connecting when this category is off. See egress.py.
     _egress.require(endpoint, "model")
+    sockets = _Sockets()
+    timer = threading.Timer(max(0.0, stop - time.monotonic()), sockets.cut_all)
+    timer.daemon = True
+    timer.start()
     try:
-        read_timeout = max(0.5, min(stop - time.monotonic(), _READ_TIMEOUT_SECONDS))
-        with urllib.request.urlopen(request, timeout=read_timeout) as response:
+        read_timeout = max(0.1, min(stop - time.monotonic(), _READ_TIMEOUT_SECONDS))
+        with _opener_holding(sockets).open(request, timeout=read_timeout) as response:
             chunks, size = [], 0
             while True:
                 if time.monotonic() > stop:
@@ -496,33 +585,47 @@ def _post_json(endpoint: str, payload: Dict[str, Any], headers: Dict[str, str],
                 if size > _MAX_RESPONSE_BYTES:
                     raise ProviderError(f"{who} sent an answer far too large to be one.")
                 chunks.append(chunk)
+            if sockets.cut:
+                raise late
     except urllib.error.HTTPError as error:
-        raise _refusal(error, who, model) from None
-    except urllib.error.URLError as error:
-        if isinstance(error.reason, (socket.timeout, TimeoutError)):
+        if sockets.cut:
             raise late from None
-        raise ProviderError(f"{who} could not be reached: {error.reason}.") from None
-    except (socket.timeout, TimeoutError):
-        raise late from None
+        raise _refusal(error, who, model) from None
     except (ProviderError, _egress.EgressRefused):
         raise
+    except urllib.error.URLError as error:
+        if sockets.cut:
+            raise late from None
+        if isinstance(error.reason, (socket.timeout, TimeoutError)):
+            raise ProviderError(
+                f"{who} could not be reached within {_READ_TIMEOUT_SECONDS:g} seconds.", status_code=504
+            ) from None
+        raise ProviderError(f"{who} could not be reached: {error.reason}.") from None
+    except (socket.timeout, TimeoutError):
+        raise (late if sockets.cut else silent) from None
     except Exception as error:
+        if sockets.cut:
+            raise late from None
         raise ProviderError(f"{who} could not be reached: {error}.") from None
+    finally:
+        timer.cancel()
     try:
         return json.loads(b"".join(chunks).decode("utf-8"))
     except ValueError:
         raise ProviderError(f"{who} answered with something that is not JSON.") from None
 
 
-def _within_deadline(call, budget: float):
+def _within_deadline(call, budget: float, slots=None):
     """
     Runs call(stop) on a provider thread and waits at most `budget` seconds.
 
     The caller has an answer by the deadline whatever the connection is
-    doing. The thread itself stops at its next read after the deadline and
-    holds its slot until then, so stalled requests cannot pile up.
+    doing, and the thread's sockets are shut at the same moment, so its slot
+    is free again within the budget. `slots` is the pool to draw from: the
+    completions' unless given.
     """
-    if not _provider_slots.acquire(blocking=False):
+    slots = slots or _provider_slots
+    if not slots.acquire(blocking=False):
         raise ProviderError(
             "Your provider is still working on earlier requests. Wait for them to finish, then try again.",
             status_code=503,
@@ -538,13 +641,13 @@ def _within_deadline(call, budget: float):
         except BaseException as error:  # handed to the waiting caller
             outcome["error"] = error
         finally:
-            _provider_slots.release()
+            slots.release()
             finished.set()
 
     try:
         threading.Thread(target=run, name="inox-provider", daemon=True).start()
     except BaseException:
-        _provider_slots.release()
+        slots.release()
         raise
     if not finished.wait(budget + 2.0):
         raise ProviderError(
@@ -565,7 +668,7 @@ def _request_for(provider: str, base_url: str, api_key: str, model: str, prompt:
             parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
         parts.append({"text": prompt})
         return (
-            f"{base_url}/models/{model}:generateContent",
+            f"{base_url}/models/{quote(model, safe='')}:generateContent",
             {"contents": [{"parts": parts}],
              "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature}},
             _gemini_headers(api_key),
@@ -637,6 +740,7 @@ def verify_ai_connection(
     # setup then ignored that address.
     base_url = _resolve_base_url(provider, base_url, prov_meta).rstrip("/")
     api_key = api_key or ""
+    _egress.remember_secret(api_key)
 
     if prov_meta["requires_key"] and not api_key:
         return False, f"Provider '{provider}' requires an API key.", 0.0
@@ -650,7 +754,8 @@ def verify_ai_connection(
     start_time = time.time()
     try:
         data = _within_deadline(
-            lambda stop: _post_json(endpoint, payload, headers, stop, who, model, timeout), timeout
+            lambda stop: _post_json(endpoint, payload, headers, stop, who, model, timeout), timeout,
+            slots=_verify_slots,
         )
     except ProviderError as error:
         return False, error.message, round((time.time() - start_time) * 1000, 1)
@@ -730,7 +835,7 @@ async def execute_llm_completion_async(
 
     try:
         if config.provider == "gemini":
-            endpoint = f"{config.base_url}/models/{config.model}:generateContent"
+            endpoint = f"{config.base_url}/models/{quote(config.model, safe='')}:generateContent"
             parts = []
             if system_prompt:
                 parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
@@ -875,7 +980,7 @@ async def stream_llm_completion_async(
                         continue
 
     elif config.provider == "gemini":
-        endpoint = f"{config.base_url}/models/{config.model}:streamGenerateContent?alt=sse"
+        endpoint = f"{config.base_url}/models/{quote(config.model, safe='')}:streamGenerateContent?alt=sse"
         parts = []
         if system_prompt:
             parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})

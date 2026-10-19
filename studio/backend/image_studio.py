@@ -537,6 +537,7 @@ class ImageStudioManager:
 
     def _call_openai_dalle3(self, prompt: str, api_key: str, width: int, height: int) -> Optional[bytes]:
         """Invokes OpenAI DALL-E 3 image generation API."""
+        _egress.remember_secret(api_key)
         import base64
         url = "https://api.openai.com/v1/images/generations"
         headers = {
@@ -578,6 +579,7 @@ class ImageStudioManager:
 
     def _call_gemini_imagen(self, prompt: str, api_key: str, width: int, height: int) -> Optional[bytes]:
         """Invokes Google Gemini Imagen API."""
+        _egress.remember_secret(api_key)
         # The key goes in a header. In the URL it was printed with every
         # connection error and stored in the egress ledger.
         url = "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict"

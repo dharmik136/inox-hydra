@@ -126,6 +126,7 @@ def call_gemini_api(prompt: str, system_instruction: str = "") -> Optional[str]:
         return None
 
     api_key = get_gemini_api_key()
+    _egress.remember_secret(api_key)
     if not api_key:
         return None
 
