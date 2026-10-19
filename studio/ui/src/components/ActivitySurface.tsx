@@ -15,6 +15,7 @@ import {
   syncAllActivity,
   type ActivityStreamData,
 } from "@/lib/api";
+import { importEnding } from "@/lib/importOutcome";
 import { cn } from "@/lib/utils";
 
 function ago(iso: string): string {
@@ -535,34 +536,39 @@ export function ActivitySurface({
                     </td>
                   </tr>
                 ) : (
-                  stream.recent_imports.map((req) => (
-                    <tr key={req.id}>
-                      <td className="py-2 font-medium uppercase text-ink-primary">{req.kind}</td>
-                      <td className="py-2">
-                        <span
-                          className={cn(
-                            "rounded px-1.5 py-0.5 text-[10px] uppercase font-medium",
-                            req.outcome === "completed"
-                              ? "bg-signal-green-subtle text-signal-green-text"
-                              : req.outcome === "pending"
-                              ? "bg-signal-orange-subtle text-signal-orange-text"
-                              : "bg-soft text-ink-secondary",
-                          )}
-                        >
-                          {req.outcome}
-                        </span>
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-ink-secondary">
-                        {req.items_seen ?? "-"}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-ink-muted">
-                        {ago(req.requested_at)}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-ink-muted">
-                        {req.finished_at ? ago(req.finished_at) : "-"}
-                      </td>
-                    </tr>
-                  ))
+                  stream.recent_imports.map((req) => {
+                    // Green only for an import read to the end. This keyed on
+                    // the old "completed", so a whole history showed in grey.
+                    const ending = importEnding(req);
+                    return (
+                      <tr key={req.id}>
+                        <td className="py-2 font-medium uppercase text-ink-primary">{req.kind}</td>
+                        <td className="py-2">
+                          <span
+                            className={cn(
+                              "rounded px-1.5 py-0.5 text-[10px] uppercase font-medium",
+                              ending.tone === "done"
+                                ? "bg-signal-green-subtle text-signal-green-text"
+                                : ending.tone === "partial"
+                                ? "bg-signal-orange-subtle text-signal-orange-text"
+                                : "bg-soft text-ink-secondary",
+                            )}
+                          >
+                            {ending.label}
+                          </span>
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-ink-secondary">
+                          {req.items_seen ?? "-"}
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-ink-muted">
+                          {ago(req.requested_at)}
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-ink-muted">
+                          {req.finished_at ? ago(req.finished_at) : "-"}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
