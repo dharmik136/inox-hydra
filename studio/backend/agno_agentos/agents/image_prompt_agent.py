@@ -108,28 +108,25 @@ class ImagePromptSynthesizerAgent:
         lower_c = clean_concept.lower()
         explicit_statue = any(k in lower_c for k in ["statue", "bust", "portrait", "face of"])
 
-        # Detect and extract quote details
+        # Only a quote the creator typed, attributed to whom they typed.
+        #
+        # Naming Socrates, Marcus Aurelius, Steve Jobs or Seneca used to draw a
+        # stock line under that name, and two of the four are not quotations
+        # from the person at all ("Luck is what happens when preparation meets
+        # opportunity" has no source in Seneca). A phrase in quotation marks was
+        # signed "Leadership". The creator posts the image under their own
+        # name, so a misattribution here becomes theirs.
         quote_text = prompt_input.custom_quote_text
         quote_author = prompt_input.custom_quote_author
 
         if not quote_text:
-            if "socrates" in lower_c:
-                quote_author = quote_author or "Socrates"
-                quote_text = "The only true wisdom is in knowing you know nothing."
-            elif "marcus aurelius" in lower_c:
-                quote_author = quote_author or "Marcus Aurelius"
-                quote_text = "You have power over your mind, not outside events."
-            elif "steve jobs" in lower_c:
-                quote_author = quote_author or "Steve Jobs"
-                quote_text = "Stay hungry, stay foolish."
-            elif "seneca" in lower_c:
-                quote_author = quote_author or "Seneca"
-                quote_text = "Luck is what happens when preparation meets opportunity."
-            else:
-                m = re.search(r'["\']([^"\']{6,120})["\']', clean_concept)
-                if m:
-                    quote_text = m.group(1).strip()
-                    quote_author = quote_author or "Leadership"
+            m = re.search(r'["\']([^"\']{6,120})["\']', clean_concept)
+            if m:
+                quote_text = m.group(1).strip()
+
+        # A request for a quote image keeps its layout even before the quote is
+        # typed: the frame stays clear for type and no bust is drawn.
+        wants_quote_layout = bool(quote_text) or bool(re.search(r"\bquotes?\b", lower_c))
 
         style_desc = self.STYLE_PROFILES.get(prompt_input.visual_style, self.STYLE_PROFILES["photorealistic"])
         palette_desc = self.PALETTE_PROFILES.get(prompt_input.color_palette, self.PALETTE_PROFILES["navy_cyan"])
@@ -154,7 +151,7 @@ class ImagePromptSynthesizerAgent:
         scene_for_brief = clean_concept
         reserve_negative_space = False
 
-        if quote_text and not explicit_statue:
+        if wants_quote_layout and not explicit_statue:
             negative_prompt = f"{self.NEGATIVE_PROMPT}, marble bust, statue of person, human face portrait, distorted text"
             # Formulate scene background
             scene_desc = clean_concept
@@ -314,7 +311,7 @@ class ImagePromptSynthesizerAgent:
             "Write one flowing description, maximum 60 words, no lists, no headings.",
         ]
 
-        if quote_text and not is_statue:
+        if (quote_text or reserve_negative_space) and not is_statue:
             forbidden = ["marble bust", "statue", "portrait", "human face", "sculpture"]
             constraints.append(
                 "The lower third of the frame must stay visually quiet and uncluttered, "

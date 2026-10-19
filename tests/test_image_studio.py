@@ -161,10 +161,12 @@ def test_quote_synthesis_and_bust_prevention():
     assert "marble bust" in data["negative_prompt"].lower()
     assert "statue" in data["negative_prompt"].lower()
 
-    # 3. Technical parameters must capture extracted quote
+    # 3. No quote is put in Socrates' mouth: only one the creator typed is
+    # used. The canned line drawn here was a misattribution waiting to be
+    # posted. [WRITE-29]
     params = data.get("technical_parameters", {})
-    assert params.get("quote_text") == "The only true wisdom is in knowing you know nothing."
-    assert params.get("quote_author") == "Socrates"
+    assert params.get("quote_text") is None
+    assert params.get("quote_author") is None
 
 
 def test_render_typographic_quote_compositor():

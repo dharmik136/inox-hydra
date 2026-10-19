@@ -31,7 +31,7 @@ The studio checks that each file is not empty and, for every type except `.webm`
 Every image is square (1:1). The percentages mark fixed stages, some with short built-in pauses, so they are not a measure of rendering work.
 
 > [!TIP]
-> A phrase in quotation marks in your description (6 to 120 characters) is drawn onto the image as a quote, attributed to "LEADERSHIP". Single quotes count too, so two apostrophes can turn the words between them into a quote. Naming Socrates, Marcus Aurelius, Steve Jobs or Seneca adds a fixed quote by that person instead.
+> A phrase in quotation marks in your description (6 to 120 characters) is drawn onto the image as a quote, with no name under it unless you give one. Single quotes count too, so two apostrophes can turn the words between them into a quote. Naming a person adds no quote of theirs: the studio only draws words you typed.
 
 ## What happens
 
