@@ -188,3 +188,55 @@ def test_a_split_within_one_period_is_still_compared(studio):
               when=dt.datetime(2026, 3, 2 + i * 3, 9, tzinfo=dt.timezone.utc), salt=100 + i)
     contrast = next(c for c in _get(studio, "/api/v1/insights/contrasts")["contrasts"] if c["key"] == "hashtags")
     assert contrast["status"] == "conclusive" and contrast["planted_or_significant"] is True
+
+
+# ---------------------------------------------------------------------------
+# AUDIENCE-27: topics come from the creator's own posts, not from the
+# original author's software vocabulary
+# ---------------------------------------------------------------------------
+
+BAKERY = [
+    "Why sourdough needs patience\nHere is what I learned.",
+    "5 lessons from our bakery launch #smallbusiness",
+    "Are you pricing your croissants right?\nA thread.",
+    "Excited to share our new shop opening!",
+    "Short one today.",
+    "How we cut flour waste by 30 percent",
+    "\U0001f950 Croissant Friday recap",
+    "What nobody tells you about early mornings",
+    "Our café in Zürich: first month numbers",
+    "Hiring: pastry chef in Ahmedabad",
+    "On saying no to wholesale",
+    "Why I write every morning",
+]
+OLD_VOCABULARY = {"Product & Strategy", "Architecture & Systems", "AI & Machine Learning", "Leadership & Hiring",
+                  "Practitioner Insights", "General Practitioner"}
+
+
+def test_a_bakery_is_not_sorted_into_software_topics(studio):
+    for i, text in enumerate(BAKERY):
+        _post(text, 40 + i * 7, salt=i)
+    body = _get(studio, "/api/v1/insights/attribution")
+    names = {t["topic"] for t in body["topics"]}
+    assert not names & OLD_VOCABULARY, names
+    assert {"Croissant", "Morning"} <= names, names
+    by_name = {t["topic"]: t["posts_count"] for t in body["topics"]}
+    assert by_name["Croissant"] == 2 and by_name["Morning"] == 2
+    assert "own posts" in body["grouping"], "the screen cannot say how the topics were made"
+
+
+def test_a_hashtag_the_creator_uses_is_a_topic(studio):
+    for i in range(4):
+        _post(f"Notes from week {i} #sourdough", 10 + i, salt=i)
+    for i in range(4):
+        _post(f"Shop floor diary {i}", 10 + i, salt=10 + i)
+    names = {t["topic"]: t["posts_count"] for t in _get(studio, "/api/v1/insights/attribution")["topics"]}
+    assert names.get("Sourdough") == 4, names
+
+
+def test_the_obsidian_topics_follow_the_same_grouping():
+    from evidence_briefing import classify_post_topic, derive_topic_vocabulary
+    vocabulary = derive_topic_vocabulary(BAKERY)
+    assert classify_post_topic("Croissant Friday, part two", vocabulary) == "Croissant"
+    assert classify_post_topic("Something else entirely", vocabulary) == "Other posts"
+    assert classify_post_topic(None, vocabulary) == "Other posts"

@@ -264,6 +264,14 @@ function TopicAttributionSection({ attribution }: { attribution: TopicAttributio
       <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
         {attribution.summary_sentence}
       </p>
+      {/* The topics are words, not meanings, and the reader is told so. They
+          were four fixed software buckets, so a bakery's posts all landed in
+          one of them. */}
+      <p className="mt-1 text-[12px] leading-snug text-ink-muted">
+        Topics are the {(attribution as { grouping?: string }).grouping ?? "words that recur across your own posts"}.
+        A post goes under the first of them it mentions, and one that mentions none goes under Other posts. This is a
+        keyword grouping, not a reading of what a post means.
+      </p>
       <div className="mt-4 overflow-x-auto border-y border-edge">
         <table className="w-full text-left text-[12px]">
           <thead>

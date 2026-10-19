@@ -263,3 +263,18 @@ def test_a_contrast_mixed_up_with_time_is_not_shown_as_a_finding(studio):
     assert "MOSTLY 2024 AGAINST MOSTLY 2026: MIXED UP WITH WHEN YOU POSTED, NOT A FINDING" in text, text
     assert row.locator(".text-signal-green-text").count() == 0, "the confounded ratio is still coloured as a finding"
     assert not studio["errors"], studio["errors"]
+
+
+def test_topics_are_the_creators_own_words_and_say_so(studio):
+    """AUDIENCE-27"""
+    texts = ["Are you pricing your croissants right?", "Croissant Friday recap", "Why I write every morning",
+             "What nobody tells you about early mornings", "Short one today.", "On saying no to wholesale"]
+    _own_posts(studio["client"], [{"text": text, "reactions": 10 + i} for i, text in enumerate(texts)])
+    page = _open(studio, "Patterns")
+    page.wait_for_selector("text=Which topics bring qualified pipeline")
+    section = page.locator("section", has_text="Which topics bring qualified pipeline")
+    topics = [t.strip() for t in section.locator("tbody tr td:first-child").all_inner_texts()]
+    assert set(topics) == {"Croissant", "Morning", "Other posts"}, topics
+    assert "keywords and hashtags that recur across your own posts" in section.inner_text()
+    assert "keyword grouping, not a reading of what a post means" in section.inner_text()
+    assert not studio["errors"], studio["errors"]

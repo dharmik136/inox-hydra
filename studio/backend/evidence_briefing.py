@@ -10,33 +10,166 @@ Strict Invariants:
 - Clean connection closure in finally blocks.
 """
 
-import re
+import time
+import unicodedata
+from collections import Counter
 from typing import Dict, Any, List, Optional, Tuple
 
 try:
-    from .database import get_db
+    from .database import get_db, get_db_path
     from .contrast_engine import compute_all_contrasts
 except ImportError:
-    from database import get_db
+    from database import get_db, get_db_path
     from contrast_engine import compute_all_contrasts
 
 
-TOPIC_PATTERNS: List[Tuple[str, re.Pattern]] = [
-    ("Product & Strategy", re.compile(r"\b(saas|pricing|revenue|growth|product|market|b2b|customer retention)\b", re.IGNORECASE)),
-    ("Architecture & Systems", re.compile(r"\b(architecture|distributed|system|database|sqlite|postgres|wal|infrastructure|concurrency|backend)\b", re.IGNORECASE)),
-    ("AI & Machine Learning", re.compile(r"\b(ai|llm|agent|model|inference|rag|prompt|gemini|openai|claude|ollama)\b", re.IGNORECASE)),
-    ("Leadership & Hiring", re.compile(r"\b(hiring|engineer recruiting|management|culture|interview|career|compensation)\b", re.IGNORECASE)),
-]
+# ---------------------------------------------------------------------------
+# Topics, from the creator's own posts
+# ---------------------------------------------------------------------------
+#
+# Topics were four fixed buckets in the original author's own vocabulary
+# (sqlite, postgres, wal, backend, llm, saas), with everything else filed as
+# "Practitioner Insights". A bakery's history put 10 of 12 posts in that one
+# bucket, and "pricing your croissants" became Product & Strategy.
+#
+# So the topics are now the words and hashtags that recur across the
+# creator's own posts. A post goes under the first chosen topic it mentions,
+# and a post that shares none goes under "Other posts". It is a keyword
+# grouping, not a reading of what a post means, and the screen says so.
+
+TOPIC_GROUPING = "keywords and hashtags that recur across your own posts"
+OTHER_TOPIC = "Other posts"
+MAX_TOPICS = 6
+MIN_POSTS_PER_TOPIC = 2
+# A word on more than this share of the posts separates nothing.
+MAX_TOPIC_SHARE = 0.5
+# Only the most widespread words can win a round, so only they are weighed.
+TOPIC_CANDIDATES = 300
+
+_STOPWORDS = frozenset("""
+a about above after again against all almost also always am among an and another any anyone anything are
+around as ask asked at away back be became because become been before being below best better between big
+both but by came can cannot come could day days did do does doing done down during each else enough even
+ever every everyone everything few find first for found from full get gets getting give go goes going gone
+good got great had has have having he hello her here hers him his how however i if in into is isn it its
+just keep kind know last least less let lets like little long look lot lots made make makes making many may
+me might more most much must my need needs never new next no nobody none nor not nothing now of off often
+on once one only or other others our ours out over own part people per post posts put quite rather read
+real really right said same say says see seen she should show since so some someone something sometimes
+start still such sure take than thank thanks that the their them then there these they thing things think
+this those though thought three through time times to today together too took toward try two under until
+up upon us use used using very want wants was way ways we week weeks well went were what when where whether
+which while who whom whose why will with within without work would yes yet you your yours year years
+""".split())
 
 
-def classify_post_topic(text: Optional[str]) -> str:
-    """Classifies a post text into a distinct topic based on domain regex."""
-    if not text:
-        return "General Practitioner"
-    for topic_name, pattern in TOPIC_PATTERNS:
-        if pattern.search(text):
-            return topic_name
-    return "Practitioner Insights"
+def _words(text: str) -> List[Tuple[str, str, bool]]:
+    """(key, as written, was a hashtag) for each word of the text, in any alphabet."""
+    out, word, tagged = [], [], False
+
+    def flush():
+        written = "".join(word)
+        key = written.casefold()
+        if len(key) >= 3 and key not in _STOPWORDS and not key.isdigit():
+            # A plural and its singular are one topic: croissants, croissant.
+            if len(key) > 4 and key.endswith("s") and not key.endswith("ss"):
+                key = key[:-1]
+            out.append((key, written, tagged))
+
+    for ch in str(text or "") + " ":
+        if ch.isalnum() or (word and unicodedata.category(ch).startswith("M")):
+            word.append(ch)
+            continue
+        if word:
+            flush()
+        word, tagged = [], ch == "#"
+    return out
+
+
+def derive_topic_vocabulary(texts: List[Optional[str]]) -> List[Tuple[str, str]]:
+    """
+    The creator's topics, as (key, label) in the order a post is tested against them.
+
+    Chosen greedily: each round takes the word or hashtag that covers the
+    most posts not yet covered, preferring one the creator used as a
+    hashtag, then the longer, more specific word, and stops at MAX_TOPICS
+    or when nothing covers two more posts.
+    """
+    posts_with: Dict[str, set] = {}
+    written: Dict[str, Counter] = {}
+    hashtags = set()
+    count = 0
+    for text in texts:
+        if not text:
+            continue
+        for key, form, tagged in _words(text):
+            posts_with.setdefault(key, set()).add(count)
+            written.setdefault(key, Counter())[form.casefold()] += 1
+            if tagged:
+                hashtags.add(key)
+        count += 1
+    ceiling = max(MIN_POSTS_PER_TOPIC, int(count * MAX_TOPIC_SHARE))
+    candidates = sorted((k for k, ids in posts_with.items() if MIN_POSTS_PER_TOPIC <= len(ids) <= ceiling),
+                        key=lambda k: -len(posts_with[k]))[:TOPIC_CANDIDATES]
+
+    chosen: List[Tuple[str, str]] = []
+    uncovered = set(range(count))
+    while len(chosen) < MAX_TOPICS and candidates:
+        gain = {k: len(posts_with[k] & uncovered) for k in candidates}
+        best = max(candidates, key=lambda k: (gain[k], k in hashtags, len(k), [-ord(c) for c in k]))
+        if gain[best] < MIN_POSTS_PER_TOPIC:
+            break
+        form = sorted(written[best].items(), key=lambda item: (-item[1], len(item[0]), item[0]))[0][0]
+        chosen.append((best, form[:1].upper() + form[1:]))
+        uncovered -= posts_with[best]
+        candidates.remove(best)
+    return chosen
+
+
+# The Obsidian export classifies one post at a time, 2,000 calls for 2,000
+# posts, so the active creator's vocabulary is kept, and whether their posts
+# have changed is asked at most once every few seconds.
+_VOCABULARY_RECHECK_SECONDS = 2.0
+_vocabulary_cache: Dict[str, Dict[str, Any]] = {}
+
+
+def _creator_vocabulary() -> List[Tuple[str, str]]:
+    """The vocabulary of the active creator's posts, rebuilt only when their posts change."""
+    path = get_db_path()
+    cached = _vocabulary_cache.get(path)
+    now = time.monotonic()
+    if cached and now - cached["checked"] < _VOCABULARY_RECHECK_SECONDS:
+        return cached["vocabulary"]
+    conn = get_db()
+    try:
+        signature = tuple(conn.execute(
+            "SELECT COUNT(*), MAX(last_seen_at), TOTAL(LENGTH(text)) FROM own_posts WHERE text IS NOT NULL"
+        ).fetchone())
+        if not cached or cached["signature"] != signature:
+            texts = [r[0] for r in conn.execute("SELECT text FROM own_posts WHERE text IS NOT NULL")]
+            cached = {"signature": signature, "vocabulary": derive_topic_vocabulary(texts)}
+        cached["checked"] = now
+        _vocabulary_cache.clear()
+        _vocabulary_cache[path] = cached
+        return cached["vocabulary"]
+    finally:
+        conn.close()
+
+
+def classify_post_topic(text: Optional[str], vocabulary: Optional[List[Tuple[str, str]]] = None) -> str:
+    """
+    The topic a post goes under: the first of the creator's topics it mentions.
+
+    Without a vocabulary, the active creator's own is used, so the Obsidian
+    export groups posts exactly as Patterns does.
+    """
+    if vocabulary is None:
+        vocabulary = _creator_vocabulary()
+    keys = {key for key, _w, _t in _words(text or "")}
+    for key, label in vocabulary:
+        if key in keys:
+            return label
+    return OTHER_TOPIC
 
 
 def _people(n: int) -> str:
@@ -94,10 +227,11 @@ def get_topic_attribution_map() -> Dict[str, Any]:
             qualified_people.add(row["id"])
 
     # Aggregate by topic
+    vocabulary = derive_topic_vocabulary([p.get("text") for p in posts])
     topic_aggregates: Dict[str, Dict[str, Any]] = {}
     for p in posts:
         urn = p.get("activity_urn") or ""
-        topic = classify_post_topic(p.get("text"))
+        topic = classify_post_topic(p.get("text"), vocabulary)
         rxn = p.get("reactions") or 0
 
         entry = topic_aggregates.setdefault(topic, {
@@ -147,6 +281,7 @@ def get_topic_attribution_map() -> Dict[str, Any]:
 
     return {
         "status": "success",
+        "grouping": TOPIC_GROUPING,
         "topics": topic_list,
         "summary_sentence": summary_sentence
     }

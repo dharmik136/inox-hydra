@@ -24,6 +24,8 @@ When most posts on one side are from a different year than the other, the line i
 
 **Feature Contrasts**, further down, make the same comparisons with at least eight posts on each side. The same rule applies there: a contrast whose sides come from different years is shown muted, marked **MIXED UP WITH WHEN YOU POSTED, NOT A FINDING**, and is not passed to the copilot as evidence.
 
+**Which topics bring qualified pipeline** groups your posts by the words and hashtags that recur across your own posts, up to six of them; a post goes under the first it mentions, and one that mentions none goes under **Other posts**. It is a keyword grouping, not a reading of what a post means. For each topic it counts the people captured on its posts, each person once, how many of them are qualified, and **Share qualified**, the qualified share of those people, which reads "not measured" when nobody was captured. The Obsidian export's `Topics/` notes use the same grouping.
+
 These are differences between your posts, not causes. Treat a large one as something to try.
 
 **Cadence**, on the same screen, gives how many posts you have made, days since your last one, your usual gap between posts, how much of the next 14 days of queue slots is filled, your longest gap, posts per month and posts per weekday. It does not name a best day or time: you chose the days you posted on, and a few posts per day cannot separate the day from everything else about those posts.
