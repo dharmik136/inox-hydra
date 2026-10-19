@@ -307,6 +307,37 @@ def test_step_five_is_not_ticked_by_the_archive_alone(page, studio_url):
     assert step.locator('[aria-label="Step 5"]').count() == 1, "step 5 is ticked"
 
 
+def test_an_import_by_an_older_extension_says_to_reload_it(page, studio_url):
+    """Review of BRIDGE-04: the row said NOT TO THE END. IMPORT AGAIN, which looped while the old extension ran."""
+    _confirm()
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO self_import_requests (kind, requested_at, started_at, finished_at, items_seen, "
+                     "outcome) VALUES ('posts', '2026-10-01T10:00:00+00:00', '2026-10-01T10:00:00+00:00', "
+                     "'2026-10-01T10:05:00+00:00', 40, 'completed')")
+    conn.close()
+    _open_setup(page, studio_url)
+    step = page.locator("li", has_text="Your history")
+    row = step.get_by_text("OLDER EXTENSION", exact=False).first
+    row.wait_for(timeout=5000)
+    text = step.inner_text()
+    assert "RELOAD" in text.upper() and "EXTENSIONS PAGE" in text.upper()
+    assert "NOT TO THE END" not in text.upper()
+
+
+def test_an_unchecked_browser_is_not_said_to_fail(page, studio_url):
+    """Review of SETUP-22: Opera has not been probed, which is not the same as cannot."""
+    page.route("**/api/v1/browser/status", _fulfil({**CHROME_ONLY, "browsers": {
+        "opera": {"id": "opera", "name": "Opera", "path": "/x/opera", "is_available": True,
+                  "carries_extension": None}}}))
+    _open_setup(page, studio_url)
+    step = page.locator("li", has_text="Connect the browser")
+    step.get_by_text(EXTENSION_PATH).wait_for(timeout=5000)
+    text = step.inner_text()
+    assert "Opera cannot" not in text
+    assert "has not been checked" in text
+
+
 def test_with_a_browser_that_carries_the_bridge_no_folder_is_needed(page, studio_url):
     page.route("**/api/v1/browser/status", _fulfil({**CHROME_ONLY, "browsers": {
         "brave": {"id": "brave", "name": "Brave Browser", "path": "/x/brave", "is_available": True,

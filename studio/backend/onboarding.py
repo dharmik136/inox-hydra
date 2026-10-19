@@ -798,6 +798,9 @@ def forget_identity() -> Dict[str, Any]:
             # And what LinkedIn's archive brought: connections and the record of each import.
             forget_archive(conn)
             _unfill_creator_settings(conn)
+            # The import requests it waited on are gone, and their ids can be
+            # issued again, so a chain left behind could take a new one for its own.
+            _save_chain(conn, None)
     finally:
         conn.close()
     return {"status": "forgotten"}
@@ -1019,12 +1022,16 @@ def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: 
             for fingerprint in (stored_fingerprint, post_identity.content_fingerprint(content or ""))
         )
 
-    # A studio record can only be where a LinkedIn post came from if it existed
-    # by the time the post went out. Without this, a new draft that reused an
-    # old hit's opening was taken over by a history import: marked published,
-    # with the old post's date and figures, and gone from the drafts. A post
-    # marked published or scheduled is judged by that date, since it may be
-    # entered after the fact; anything else by when it was written.
+    # A draft can only be where a LinkedIn post came from if it was written by
+    # the time the post went out. Without this, a new draft that reused an old
+    # hit's opening was taken over by a history import: marked published, with
+    # the old post's date and figures, and gone from the drafts.
+    #
+    # A row the creator marked published is exempt: they said it is out, and
+    # it is often marked, or pasted in, after posting on LinkedIn ("Mark as
+    # published" stamps the click time), so any date on it can be later than
+    # the post. A scheduled row counts from the earlier of when it was written
+    # and when it was due.
     posted = _parse_moment(published_at)
 
     def existed_by_then(row) -> bool:
@@ -1032,13 +1039,10 @@ def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: 
             return True
         status = (row["status"] or "").lower() if "status" in row.keys() else ""
         if status == "published":
-            when = row["published_at"]
-        elif status == "scheduled":
-            when = row["scheduled_for"]
-        else:
-            when = row["created_at"]
-        moment = _parse_moment(when)
-        return moment is None or moment <= posted + BIND_CLOCK_SKEW
+            return True
+        times = [row["created_at"]] + ([row["scheduled_for"]] if status == "scheduled" else [])
+        moments = [m for m in (_parse_moment(t) for t in times) if m]
+        return not moments or min(moments) <= posted + BIND_CLOCK_SKEW
 
     posts = [r for r in conn.execute(
         "SELECT id, content, content_fingerprint, status, published_at, scheduled_for, created_at FROM posts "
@@ -1231,14 +1235,35 @@ def _import_outcome(outcome: Any, items_seen: Optional[int]) -> str:
 
     An older extension said "completed" whenever the list stopped growing for
     twenty seconds, which a slow "Show more", a button in another language or
-    the round cap all produce, and said it even after reading nothing. That
-    cannot be told apart from the end, so it is recorded as "partial". A list
-    that ended with nothing read is "nothing_read", not a history.
+    the round cap all produce, and said it even after reading nothing. Whether
+    such an import reached the end is not known, so it is recorded as
+    "old_extension": not the whole history, and not claimed to have missed
+    the end either. A browser keeps running the old extension until it is
+    reloaded, so importing again only repeats this; Setup and Today say to
+    reload it. A list that ended with nothing read is "nothing_read".
     """
     said = (_text(outcome, 40) or "").lower()
     if said == "end_of_list":
         return "end_of_list" if items_seen else "nothing_read"
-    return said if said in IMPORT_OUTCOMES else "partial"
+    return said if said in IMPORT_OUTCOMES else "old_extension"
+
+
+# Outcomes from an extension that did not say how an import ended: what an older
+# extension sent, and what earlier studios stored for it.
+OLD_EXTENSION_OUTCOMES = ("old_extension", "completed", "partial")
+
+
+def extension_outdated(conn) -> bool:
+    """
+    True when the latest finished posts import came from an older extension,
+    which cannot say whether it reached the end of the list. The fix is to
+    reload the extension, not to import again.
+    """
+    row = conn.execute(
+        "SELECT outcome FROM self_import_requests WHERE kind = 'posts' AND finished_at IS NOT NULL "
+        "AND outcome NOT IN ('superseded', 'expired', 'not_opened') ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return bool(row) and row["outcome"] in OLD_EXTENSION_OUTCOMES
 
 
 def post_history_complete(conn) -> bool:
@@ -1596,6 +1621,7 @@ def onboarding_state() -> Dict[str, Any]:
         readings = conn.execute("SELECT COUNT(*) FROM post_metric_observations").fetchone()[0]
         connections = conn.execute("SELECT COUNT(*) FROM connections").fetchone()[0]
         history_read = post_history_complete(conn)
+        outdated = extension_outdated(conn)
         with conn:
             _expire_requests(conn)
         imports = [dict(r) for r in conn.execute(
@@ -1666,6 +1692,8 @@ def onboarding_state() -> Dict[str, Any]:
         "imports": imports,
         # Import all three, while one is under way: which, and what comes next.
         "sync_chain": {"sequence": chain["sequence"], "current_kind": chain["current_kind"]} if chain else None,
+        # The latest posts import came from an older extension: reload it.
+        "extension_outdated": outdated,
         "steps": {
             "bridge": bool(bridge["last_seen_at"]),
             "identity": confirmed,

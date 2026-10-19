@@ -153,6 +153,47 @@ def test_what_a_partial_import_read_is_recorded_as_partial():
     assert entry["outcome"] == "nothing_read"
 
 
+# Review of BRIDGE-04: a browser keeps running the old extension until it is
+# reloaded, and the old code says "completed" for every import. Recorded as
+# partial, Setup and Today sent the creator to import again, forever, while the
+# studio claimed an end of list it cannot know was missed.
+
+def test_an_import_from_an_older_extension_says_to_reload_it():
+    _confirm()
+    client.post("/api/v1/bridge/heartbeat", json={"extension_version": "test"})
+    for _ in range(2):  # importing again with the same old extension changes nothing
+        request_id = _posts_import(3, "completed")
+        entry = next(i for i in _state()["imports"] if i["id"] == request_id)
+        assert entry["outcome"] == "old_extension"
+        state = _state()
+        assert state["steps"]["history"] is False
+        assert state["extension_outdated"] is True
+
+        reason = client.get("/api/v1/today").json()["open_next"]["reason"]
+        assert "reload the extension" in reason.lower()
+        assert "extensions page" in reason
+        assert "read to the end" not in reason, "the studio cannot know the old import missed the end"
+
+
+def test_an_old_completed_row_from_before_the_upgrade_says_the_same():
+    _confirm()
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO self_import_requests (kind, requested_at, started_at, finished_at, items_seen, "
+                     "outcome) VALUES ('posts', ?, ?, ?, 40, 'completed')", (POSTED.isoformat(),) * 3)
+    conn.close()
+    assert _state()["extension_outdated"] is True
+
+
+def test_reloading_and_importing_again_ends_it():
+    _confirm()
+    _posts_import(3, "completed")
+    _posts_import(12, "end_of_list")
+    state = _state()
+    assert state["extension_outdated"] is False
+    assert state["steps"]["history"] is True
+
+
 def test_an_import_that_read_to_the_end_completes_your_history():
     _confirm()
     client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [{"activity_urn": RECENT_URN, "actor": ME}]})
@@ -314,6 +355,22 @@ def test_an_old_post_does_not_bind_to_a_draft_written_after_it(studio_rows):
     conn.close()
     studio_rows["drafts"].append(draft_id)
     assert _ingest_old_post()["bound_to_drafts"] == 0
+
+
+def test_a_post_marked_published_after_it_went_out_still_binds(studio_rows):
+    """
+    Review of WRITE-18: 'Mark as published' stamps the click time, and a
+    creator who posts on LinkedIn first and marks it in the studio later, or
+    pastes it in afterwards, must still get the two linked.
+    """
+    _confirm()
+    created = client.post("/api/posts", json={"content": OLD_POST, "status": "draft"}).json()
+    post_id = created.get("id") or created.get("post", {}).get("id")
+    studio_rows["posts"].append(post_id)
+    assert client.post(f"/api/posts/{post_id}/publish-now").status_code == 200
+
+    assert _ingest_old_post()["bound_to_posts"] == 1
+    assert _row(post_id)["activity_urn"] == ACTIVITY_URN
 
 
 def test_a_draft_written_before_the_post_still_binds(studio_rows):

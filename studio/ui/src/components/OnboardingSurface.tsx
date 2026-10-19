@@ -47,6 +47,8 @@ type SetupState = OnboardingState & {
   counts: { readings?: number; connections?: number };
   /** history: your posts read to the end of the list, which is what Today needs. */
   steps: { history?: boolean };
+  /** The latest posts import came from an older extension; reloading it is the fix, not importing again. */
+  extension_outdated?: boolean;
 };
 
 export function OnboardingSurface() {
@@ -252,7 +254,9 @@ export function OnboardingSurface() {
               ? `${state.counts.posts} posts, ${state.counts.comments} comments, ${state.counts.reactions} reactions${
                   steps.history
                     ? ""
-                    : `. ${state.counts.posts ? "Your posts are in, but the" : "The"} list of your posts has not been read to its end yet: run Posts you wrote`
+                    : state.extension_outdated
+                      ? ". Your last posts import came from an older copy of the extension, which cannot tell whether it reached the end: reload the extension on your browser's extensions page, then run Posts you wrote again"
+                      : `. ${state.counts.posts ? "Your posts are in, but the" : "The"} list of your posts has not been read to its end yet: run Posts you wrote`
                 }`
               : "Your posts, and what you have liked and commented on"
           }
@@ -780,6 +784,9 @@ function ForgetPanel({
  * many Windows machines have only Chrome, which ignores --load-extension. The
  * launch message pointed at a folder this screen never showed.
  */
+const names = (browsers: { name: string }[], says: string) =>
+  browsers.length ? `${browsers.map((b) => b.name).join(", ")} ${says}` : "";
+
 function LoadByHand({ bridge }: { bridge: BrowserBridge }) {
   const [copied, setCopied] = useState<string | null>(null);
   const none = bridge.browsers.length === 0;
@@ -788,7 +795,13 @@ function LoadByHand({ bridge }: { bridge: BrowserBridge }) {
       <p className="text-[13px] leading-relaxed text-ink-secondary">
         {none
           ? "No Chromium browser was found on this computer. Install Microsoft Edge or Brave, which load the bridge by themselves, then click the button above."
-          : `${bridge.browsers.map((b) => b.name).join(", ")} cannot load the bridge by itself. Install Microsoft Edge or Brave and click the button above, or load it by hand.`}
+          : `${[
+              names(bridge.browsers.filter((b) => b.carries_extension === false), "cannot load the bridge by itself"),
+              // Not probed is not the same as cannot.
+              names(bridge.browsers.filter((b) => b.carries_extension !== false), "has not been checked for loading the bridge on this computer"),
+            ]
+              .filter(Boolean)
+              .join(". ")}. Install Microsoft Edge or Brave and click the button above, or load it by hand.`}
       </p>
       {!none && (
         <>
@@ -873,7 +886,10 @@ function importLine(entry: SelfImport): string {
   if (entry.outcome === "nothing_read") return "NOTHING READ. OPEN THE PAGE AND IMPORT AGAIN";
   if (entry.outcome === "stalled") return `THE LIST STOPPED LOADING AT ${read}. IMPORT AGAIN`;
   if (entry.outcome === "round_limit") return `READ ${read}, THE MOST ONE IMPORT READS`;
-  return `READ ${read}, NOT TO THE END. IMPORT AGAIN`;
+  // An older extension said "completed" for every import, so whether it
+  // reached the end is not known. It keeps running until it is reloaded, and
+  // importing again before that only repeats this, so say to reload it.
+  return `READ ${read} WITH AN OLDER EXTENSION, END NOT KNOWN. RELOAD IT ON THE BROWSER'S EXTENSIONS PAGE, THEN IMPORT AGAIN`;
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {

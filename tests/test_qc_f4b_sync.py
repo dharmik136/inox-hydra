@@ -245,6 +245,18 @@ def test_with_only_chrome_the_launcher_names_the_folder_to_load(launcher, monkey
     assert len(no_real_browser.launched) == 1  # recorded by the stand-in, nothing started
 
 
+def test_deleting_everything_also_clears_the_chain():
+    """Review of SETUP-16: request ids can start again after the delete, and a stale chain could match one."""
+    _confirm()
+    onboarding.start_sync_chain()
+    assert client.delete("/api/v1/identity").status_code == 200
+    conn = get_db()
+    try:
+        assert conn.execute("SELECT 1 FROM settings WHERE key = 'history_sync_chain'").fetchone() is None
+    finally:
+        conn.close()
+
+
 def test_a_chain_whose_request_expired_is_over():
     _confirm()
     onboarding.start_sync_chain()
