@@ -4,7 +4,7 @@ Agno AgentOS Multi-Model Gateway (BYO-AI / Provider-Agnostic Engine)
 Unified interface enabling Inox Hydra to orchestrate across any LLM provider:
 - Google Gemini (Gemini 2.5 Flash, Gemini 1.5 Pro, Imagen 3)
 - OpenAI (GPT-4o, GPT-4o-mini, DALL-E 3)
-- Anthropic Claude (Claude 3.5 Sonnet, Claude 3 Haiku)
+- Anthropic Claude (Claude Sonnet 5.5, Opus 5.5, Haiku 5.5)
 - Local LLMs via Ollama / vLLM / LocalAI (Llama 3, Mistral, DeepSeek)
 - Groq / DeepSeek Cloud APIs (OpenAI-compatible)
 - Local Deterministic Intelligence Engine (Zero-egress fallback)
@@ -15,8 +15,14 @@ Supports instant credential verification, latency benchmarking, and automated fa
 import os
 import json
 import time
+import asyncio
+import socket
+import threading
+import contextvars
 import urllib.request
 import urllib.error
+
+from fastapi import HTTPException
 
 try:  # the shared egress chokepoint
     from .. import egress as _egress
@@ -54,8 +60,8 @@ SUPPORTED_PROVIDERS = {
     },
     "anthropic": {
         "name": "Anthropic Claude",
-        "default_model": "claude-3-5-sonnet-20241022",
-        "supported_models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
+        "default_model": "claude-sonnet-5-5",
+        "supported_models": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
         "requires_key": True,
         "default_base_url": "https://api.anthropic.com/v1",
         "supports_images": False
@@ -163,6 +169,17 @@ try:
 except ImportError:
     from secret_settings import seal as _seal_setting, unseal as _unseal_setting
 
+
+def _gemini_headers(api_key: str) -> Dict[str, str]:
+    """
+    Gemini's key travels in a header, never in the URL.
+
+    It used to be ?key=, and every place that records or prints a URL then
+    held it: the egress ledger the Local security tab reads, and the requests
+    exception printed to the log on any network failure.
+    """
+    return {"Content-Type": "application/json", "x-goog-api-key": api_key}
+
 class AIProviderConfig:
     """Encapsulates active AI provider settings."""
     def __init__(
@@ -194,10 +211,12 @@ class AIProviderConfig:
     def to_dict(self, mask_key: bool = True) -> Dict[str, Any]:
         key_display = ""
         if self.api_key:
-            if mask_key and len(self.api_key) > 8:
-                key_display = f"{self.api_key[:4]}...{self.api_key[-4:]}"
+            # The last four at most. The first four said which provider issued
+            # it and, with the last four, left only the middle to guess.
+            if mask_key and len(self.api_key) > 12:
+                key_display = f"...{self.api_key[-4:]}"
             elif mask_key:
-                key_display = "********"
+                key_display = "set"
             else:
                 key_display = self.api_key
 
@@ -271,7 +290,7 @@ def get_current_ai_config() -> AIProviderConfig:
         elif env_anthropic:
             provider = "anthropic"
             api_key = env_anthropic
-            model = "claude-3-5-sonnet-20241022"
+            model = SUPPORTED_PROVIDERS["anthropic"]["default_model"]
         elif env_groq:
             provider = "groq"
             api_key = env_groq
@@ -348,7 +367,247 @@ def save_ai_config(
                 except Exception:
                     pass
 
+    # A failure belonged to the setup just replaced.
+    _record_outcome(None)
     return config
+
+
+# How long one provider request may take, start to finish.
+#
+# urlopen's timeout bounds each socket read, not the request, so a provider or
+# a proxy that kept the connection alive with a byte every few seconds never
+# timed out at all. This is the whole budget, connection to last byte.
+PROVIDER_DEADLINE_SECONDS = 40.0
+
+# Longest silence tolerated on one read before giving up early.
+_READ_TIMEOUT_SECONDS = 15.0
+
+# The most provider requests in flight at once.
+#
+# Each request used to run on one of the web server's worker threads for as
+# long as it took, so about forty presses of Re-Hook against a stalled
+# provider left no thread to serve anything else, Save included. Requests now
+# run on their own threads, at most this many, and a request that finds them
+# all busy is answered at once rather than queued.
+PROVIDER_CONCURRENCY = 3
+_provider_slots = threading.BoundedSemaphore(PROVIDER_CONCURRENCY)
+
+# Answers are short JSON. Anything larger than this is not one.
+_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+_last_failure: Dict[str, Optional[str]] = {"message": None, "at": None}
+
+
+class ProviderError(HTTPException):
+    """
+    A configured provider that failed, in words the creator can act on.
+
+    An HTTPException, so a route that lets it through answers with the
+    status here and the message as its detail, which the interface prints.
+    It used to be swallowed: execute_llm_completion returned "" and every
+    caller served its deterministic templates as a success, so a revoked key
+    or an empty account looked exactly like a working one.
+
+    The message is redacted on the way in. It quotes what the provider said,
+    and a provider can quote the key back.
+    """
+
+    def __init__(self, message: str, status_code: int = 502, upstream_status: Optional[int] = None):
+        self.message = _egress.redact(message)
+        self.upstream_status = upstream_status
+        super().__init__(status_code=status_code, detail=self.message)
+
+    def __str__(self) -> str:
+        return self.message
+
+
+def last_provider_failure() -> Dict[str, Optional[str]]:
+    """The most recent provider failure and when, or Nones since a success."""
+    return dict(_last_failure)
+
+
+def _record_outcome(failure: Optional[ProviderError]) -> None:
+    if failure is None:
+        _last_failure.update({"message": None, "at": None})
+    else:
+        from datetime import datetime
+        _last_failure.update({"message": failure.message, "at": datetime.now().isoformat(timespec="seconds")})
+
+
+def _provider_label(provider: str) -> str:
+    if provider == "custom_openai":
+        return "Your provider"
+    return SUPPORTED_PROVIDERS.get(provider, {}).get("name", provider)
+
+
+def _refusal(error: "urllib.error.HTTPError", who: str, model: str) -> ProviderError:
+    """An HTTP error from the provider, said as what it means."""
+    detail = ""
+    try:
+        body = json.loads(error.read().decode("utf-8", "replace"))
+        problem = body.get("error") if isinstance(body, dict) else None
+        if isinstance(problem, dict):
+            detail = str(problem.get("message") or "")
+        elif problem:
+            detail = str(problem)
+    except Exception:
+        pass
+    code = error.code
+    if code in (401, 403):
+        lead = f"{who} refused the key"
+    elif code == 404:
+        lead = f"{who} did not find the model '{model}'"
+    elif code == 429:
+        lead = f"{who} is limiting this key, or the account is out of credit"
+    elif code >= 500:
+        lead = f"{who} had a failure of its own"
+    else:
+        lead = f"{who} rejected the request"
+    text = f"{lead} (HTTP {code})"
+    text += f": {detail[:300]}" if detail else "."
+    return ProviderError(text, status_code=502, upstream_status=code)
+
+
+def _post_json(endpoint: str, payload: Dict[str, Any], headers: Dict[str, str],
+               stop: float, who: str, model: str, budget: float) -> Any:
+    """
+    POSTs and reads the whole answer before `stop`, a time.monotonic() value.
+
+    Runs on a provider thread. Raises ProviderError for anything short of a
+    JSON answer, and EgressRefused when model requests are off.
+    """
+    request = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers)
+    late = ProviderError(
+        f"{who} did not finish answering within {int(budget)} seconds. Nothing was changed.", status_code=504
+    )
+    # Refuses rather than connecting when this category is off. See egress.py.
+    _egress.require(endpoint, "model")
+    try:
+        read_timeout = max(0.5, min(stop - time.monotonic(), _READ_TIMEOUT_SECONDS))
+        with urllib.request.urlopen(request, timeout=read_timeout) as response:
+            chunks, size = [], 0
+            while True:
+                if time.monotonic() > stop:
+                    raise late
+                chunk = response.read1(65536)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > _MAX_RESPONSE_BYTES:
+                    raise ProviderError(f"{who} sent an answer far too large to be one.")
+                chunks.append(chunk)
+    except urllib.error.HTTPError as error:
+        raise _refusal(error, who, model) from None
+    except urllib.error.URLError as error:
+        if isinstance(error.reason, (socket.timeout, TimeoutError)):
+            raise late from None
+        raise ProviderError(f"{who} could not be reached: {error.reason}.") from None
+    except (socket.timeout, TimeoutError):
+        raise late from None
+    except (ProviderError, _egress.EgressRefused):
+        raise
+    except Exception as error:
+        raise ProviderError(f"{who} could not be reached: {error}.") from None
+    try:
+        return json.loads(b"".join(chunks).decode("utf-8"))
+    except ValueError:
+        raise ProviderError(f"{who} answered with something that is not JSON.") from None
+
+
+def _within_deadline(call, budget: float):
+    """
+    Runs call(stop) on a provider thread and waits at most `budget` seconds.
+
+    The caller has an answer by the deadline whatever the connection is
+    doing. The thread itself stops at its next read after the deadline and
+    holds its slot until then, so stalled requests cannot pile up.
+    """
+    if not _provider_slots.acquire(blocking=False):
+        raise ProviderError(
+            "Your provider is still working on earlier requests. Wait for them to finish, then try again.",
+            status_code=503,
+        )
+    outcome: Dict[str, Any] = {}
+    finished = threading.Event()
+    context = contextvars.copy_context()
+    stop = time.monotonic() + budget
+
+    def run():
+        try:
+            outcome["value"] = context.run(call, stop)
+        except BaseException as error:  # handed to the waiting caller
+            outcome["error"] = error
+        finally:
+            _provider_slots.release()
+            finished.set()
+
+    try:
+        threading.Thread(target=run, name="inox-provider", daemon=True).start()
+    except BaseException:
+        _provider_slots.release()
+        raise
+    if not finished.wait(budget + 2.0):
+        raise ProviderError(
+            f"Your provider did not finish answering within {int(budget)} seconds. Nothing was changed.",
+            status_code=504,
+        )
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
+
+
+def _request_for(provider: str, base_url: str, api_key: str, model: str, prompt: str,
+                 system_prompt: Optional[str], max_tokens: int, temperature: float):
+    """The endpoint, body and headers for one completion, per provider family."""
+    if provider == "gemini":
+        parts = []
+        if system_prompt:
+            parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
+        parts.append({"text": prompt})
+        return (
+            f"{base_url}/models/{model}:generateContent",
+            {"contents": [{"parts": parts}],
+             "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature}},
+            _gemini_headers(api_key),
+        )
+    if provider in ("openai", "groq", "ollama", "custom_openai"):
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        return (
+            f"{base_url}/chat/completions",
+            {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature},
+            headers,
+        )
+    if provider == "anthropic":
+        payload = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]}
+        if system_prompt:
+            payload["system"] = system_prompt
+        return (
+            f"{base_url}/messages",
+            payload,
+            {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"},
+        )
+    return None
+
+
+def _text_of(provider: str, data: Any) -> Optional[str]:
+    """The answer's text, or None when the answer has no text where it should."""
+    try:
+        if provider == "gemini":
+            return data["candidates"][0]["content"]["parts"][0]["text"]
+        if provider == "anthropic":
+            for block in data.get("content", []):
+                if block.get("type") == "text":
+                    return block.get("text", "")
+            return None
+        return data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return None
 
 
 def verify_ai_connection(
@@ -356,11 +615,13 @@ def verify_ai_connection(
     api_key: Optional[str] = None,
     model: Optional[str] = None,
     base_url: Optional[str] = None,
-    timeout: float = 8.0
+    timeout: float = 15.0
 ) -> Tuple[bool, str, float]:
     """
     Actively tests an AI provider configuration with a test prompt ping.
     Returns: (is_success, status_message, latency_ms)
+
+    `timeout` is the whole budget for the ping, not a per-read limit.
     """
     if provider == "local_deterministic":
         return True, "Local deterministic engine verified (100% zero cloud egress).", 1.2
@@ -370,104 +631,36 @@ def verify_ai_connection(
         return False, f"Unsupported provider '{provider}'. Available: {list(SUPPORTED_PROVIDERS.keys())}", 0.0
 
     prov_meta = SUPPORTED_PROVIDERS[provider]
-    model = model or prov_meta["default_model"]
-    base_url = (base_url or prov_meta["default_base_url"] or "").rstrip("/")
+    model = (model or "").strip() or prov_meta["default_model"]
+    # The address the saved setup will use, so the ping tests what is saved.
+    # It used to go to whatever was typed, with the key, even when the saved
+    # setup then ignored that address.
+    base_url = _resolve_base_url(provider, base_url, prov_meta).rstrip("/")
     api_key = api_key or ""
 
     if prov_meta["requires_key"] and not api_key:
         return False, f"Provider '{provider}' requires an API key.", 0.0
 
-    start_time = time.time()
-
-    try:
-        if provider == "gemini":
-            # Test Gemini generateContent
-            endpoint = f"{base_url}/models/{model}:generateContent?key={api_key}"
-            payload = json.dumps({
-                "contents": [{"parts": [{"text": "Say 'OK' in one word."}]}],
-                "generationConfig": {"maxOutputTokens": 5, "temperature": 0.1}
-            }).encode("utf-8")
-
-            req = urllib.request.Request(endpoint, data=payload, headers={"Content-Type": "application/json"})
-            # Refuses rather than connecting when this category is off. See egress.py.
-            _egress.require(endpoint, "model")
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                latency = round((time.time() - start_time) * 1000, 1)
-                if "candidates" in data:
-                    return True, f"Connected to Google Gemini ({model}) successfully!", latency
-                return False, "Unexpected Gemini API response structure.", latency
-
-        elif provider in ("openai", "groq", "ollama", "custom_openai"):
-            # Test OpenAI-compatible /chat/completions
-            endpoint = f"{base_url}/chat/completions"
-            payload = json.dumps({
-                "model": model,
-                "messages": [{"role": "user", "content": "Say 'OK' in one word."}],
-                "max_tokens": 5,
-                "temperature": 0.1
-            }).encode("utf-8")
-
-            headers = {"Content-Type": "application/json"}
-            if api_key:
-                headers["Authorization"] = f"Bearer {api_key}"
-
-            req = urllib.request.Request(endpoint, data=payload, headers=headers)
-            # Refuses rather than connecting when this category is off. See egress.py.
-            _egress.require(endpoint, "model")
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                latency = round((time.time() - start_time) * 1000, 1)
-                if "choices" in data and len(data["choices"]) > 0:
-                    return True, f"Connected to {prov_meta['name']} ({model}) successfully!", latency
-                return False, "Received empty choices response.", latency
-
-        elif provider == "anthropic":
-            # Test Anthropic messages API
-            endpoint = f"{base_url}/messages"
-            payload = json.dumps({
-                "model": model,
-                "max_tokens": 5,
-                "messages": [{"role": "user", "content": "Say 'OK' in one word."}]
-            }).encode("utf-8")
-
-            headers = {
-                "Content-Type": "application/json",
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01"
-            }
-
-            req = urllib.request.Request(endpoint, data=payload, headers=headers)
-            # Refuses rather than connecting when this category is off. See egress.py.
-            _egress.require(endpoint, "model")
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                latency = round((time.time() - start_time) * 1000, 1)
-                if "content" in data:
-                    return True, f"Connected to Anthropic Claude ({model}) successfully!", latency
-                return False, "Unexpected Anthropic response structure.", latency
-
+    built = _request_for(provider, base_url, api_key, model, "Say 'OK' in one word.", None, 5, 0.1)
+    if built is None:
         return False, "Provider test routine not implemented.", 0.0
+    endpoint, payload, headers = built
+    who = prov_meta["name"] if provider != "custom_openai" else "The endpoint"
 
-    except urllib.error.HTTPError as e:
-        latency = round((time.time() - start_time) * 1000, 1)
-        err_msg = f"HTTP {e.code}: {e.reason}"
-        try:
-            body = json.loads(e.read().decode("utf-8"))
-            if "error" in body:
-                err_detail = body["error"].get("message") if isinstance(body["error"], dict) else str(body["error"])
-                err_msg = f"HTTP {e.code}: {err_detail}"
-        except Exception:
-            pass
-        return False, err_msg, latency
+    start_time = time.time()
+    try:
+        data = _within_deadline(
+            lambda stop: _post_json(endpoint, payload, headers, stop, who, model, timeout), timeout
+        )
+    except ProviderError as error:
+        return False, error.message, round((time.time() - start_time) * 1000, 1)
+    except Exception as error:
+        return False, _egress.redact(f"Connection error: {error}"), round((time.time() - start_time) * 1000, 1)
 
-    except urllib.error.URLError as e:
-        latency = round((time.time() - start_time) * 1000, 1)
-        return False, f"Network unreachable: {e.reason}", latency
-
-    except Exception as e:
-        latency = round((time.time() - start_time) * 1000, 1)
-        return False, f"Connection error: {str(e)}", latency
+    latency = round((time.time() - start_time) * 1000, 1)
+    if _text_of(provider, data) is None:
+        return False, f"{who} answered, but not in the shape a {prov_meta['name']} answer has.", latency
+    return True, f"Connected to {prov_meta['name']} ({model}) successfully!", latency
 
 
 def execute_llm_completion(
@@ -479,87 +672,44 @@ def execute_llm_completion(
 ) -> str:
     """
     Routes prompt completion through the configured AI provider.
-    Returns generated text string.
+
+    Returns the generated text, or "" when no provider is configured. A
+    configured provider that fails raises ProviderError, and one refused by
+    egress policy raises EgressRefused. Neither is ever an empty string, which
+    callers used to answer with their templates, as a success.
     """
     if config.provider == "local_deterministic" or not config.api_key and config.provider != "ollama":
         return ""
 
+    built = _request_for(config.provider, config.base_url, config.api_key, config.model,
+                         prompt, system_prompt, max_tokens, temperature)
+    if built is None:
+        return ""
+    endpoint, payload, headers = built
+    who = _provider_label(config.provider)
+    budget = PROVIDER_DEADLINE_SECONDS
+
     try:
-        if config.provider == "gemini":
-            endpoint = f"{config.base_url}/models/{config.model}:generateContent?key={config.api_key}"
-            parts = []
-            if system_prompt:
-                parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
-            parts.append({"text": prompt})
-
-            payload = json.dumps({
-                "contents": [{"parts": parts}],
-                "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature}
-            }).encode("utf-8")
-
-            req = urllib.request.Request(endpoint, data=payload, headers={"Content-Type": "application/json"})
-            # Refuses rather than connecting when this category is off. See egress.py.
-            _egress.require(endpoint, "model")
-            with urllib.request.urlopen(req, timeout=15) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                return data["candidates"][0]["content"]["parts"][0]["text"].strip()
-
-        elif config.provider in ("openai", "groq", "ollama", "custom_openai"):
-            endpoint = f"{config.base_url}/chat/completions"
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
-
-            payload = json.dumps({
-                "model": config.model,
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature
-            }).encode("utf-8")
-
-            headers = {"Content-Type": "application/json"}
-            if config.api_key:
-                headers["Authorization"] = f"Bearer {config.api_key}"
-
-            req = urllib.request.Request(endpoint, data=payload, headers=headers)
-            # Refuses rather than connecting when this category is off. See egress.py.
-            _egress.require(endpoint, "model")
-            with urllib.request.urlopen(req, timeout=18) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                return data["choices"][0]["message"]["content"].strip()
-
-        elif config.provider == "anthropic":
-            endpoint = f"{config.base_url}/messages"
-            payload_dict = {
-                "model": config.model,
-                "max_tokens": max_tokens,
-                "messages": [{"role": "user", "content": prompt}]
-            }
-            if system_prompt:
-                payload_dict["system"] = system_prompt
-
-            headers = {
-                "Content-Type": "application/json",
-                "x-api-key": config.api_key,
-                "anthropic-version": "2023-06-01"
-            }
-
-            req = urllib.request.Request(endpoint, data=json.dumps(payload_dict).encode("utf-8"), headers=headers)
-            # Refuses rather than connecting when this category is off. See egress.py.
-            _egress.require(endpoint, "model")
-            with urllib.request.urlopen(req, timeout=18) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                for block in data.get("content", []):
-                    if block.get("type") == "text":
-                        return block.get("text", "").strip()
-
+        data = _within_deadline(
+            lambda stop: _post_json(endpoint, payload, headers, stop, who, config.model, budget), budget
+        )
+        text = _text_of(config.provider, data)
+        if text is None:
+            raise ProviderError(f"{who} answered, but with no text in it.")
     except _egress.EgressRefused:
         raise
-    except Exception as e:
-        print(f"[ModelGateway] Error executing LLM completion ({config.provider}): {e}")
+    except ProviderError as failure:
+        print(f"[ModelGateway] {config.provider} request failed: {failure.message}")
+        _record_outcome(failure)
+        raise
+    except Exception as error:
+        failure = ProviderError(f"{who} request failed: {error}")
+        print(f"[ModelGateway] {config.provider} request failed: {failure.message}")
+        _record_outcome(failure)
+        raise failure from None
 
-    return ""
+    _record_outcome(None)
+    return text.strip()
 
 
 async def execute_llm_completion_async(
@@ -580,7 +730,7 @@ async def execute_llm_completion_async(
 
     try:
         if config.provider == "gemini":
-            endpoint = f"{config.base_url}/models/{config.model}:generateContent?key={config.api_key}"
+            endpoint = f"{config.base_url}/models/{config.model}:generateContent"
             parts = []
             if system_prompt:
                 parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
@@ -592,7 +742,7 @@ async def execute_llm_completion_async(
             }
             _egress.require(endpoint, "model")
             async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.post(endpoint, json=payload, headers={"Content-Type": "application/json"})
+                resp = await asyncio.wait_for(client.post(endpoint, json=payload, headers=_gemini_headers(config.api_key)), PROVIDER_DEADLINE_SECONDS)
                 resp.raise_for_status()
                 data = resp.json()
                 return data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -616,7 +766,7 @@ async def execute_llm_completion_async(
 
             _egress.require(endpoint, "model")
             async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.post(endpoint, json=payload, headers=headers)
+                resp = await asyncio.wait_for(client.post(endpoint, json=payload, headers=headers), PROVIDER_DEADLINE_SECONDS)
                 resp.raise_for_status()
                 data = resp.json()
                 return data["choices"][0]["message"]["content"].strip()
@@ -638,7 +788,7 @@ async def execute_llm_completion_async(
             }
             _egress.require(endpoint, "model")
             async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.post(endpoint, json=payload_dict, headers=headers)
+                resp = await asyncio.wait_for(client.post(endpoint, json=payload_dict, headers=headers), PROVIDER_DEADLINE_SECONDS)
                 resp.raise_for_status()
                 data = resp.json()
                 for block in data.get("content", []):
@@ -648,9 +798,23 @@ async def execute_llm_completion_async(
     except _egress.EgressRefused:
         raise
     except Exception as e:
-        print(f"[ModelGateway] Error in async LLM completion ({config.provider}): {e}")
+        print(f"[ModelGateway] Error in async LLM completion ({config.provider}): {_egress.redact(e)}")
 
     return ""
+
+
+async def _lines_until(response, stop: float):
+    """The lines of a streamed answer, ending at `stop` (a time.monotonic() value)."""
+    lines = response.aiter_lines().__aiter__()
+    while True:
+        remaining = stop - time.monotonic()
+        if remaining <= 0:
+            return
+        try:
+            line = await asyncio.wait_for(lines.__anext__(), remaining)
+        except (StopAsyncIteration, asyncio.TimeoutError):
+            return
+        yield line
 
 
 async def stream_llm_completion_async(
@@ -662,12 +826,17 @@ async def stream_llm_completion_async(
 ):
     """
     Streaming token generator yielding text chunks for real-time SSE UI consumption.
+
+    The stream ends at PROVIDER_DEADLINE_SECONDS from its start, however the
+    provider is pacing its bytes.
     """
     if config.provider == "local_deterministic" or not config.api_key and config.provider != "ollama":
         yield ""
         return
 
     import httpx
+
+    stop = time.monotonic() + PROVIDER_DEADLINE_SECONDS
 
     if config.provider in ("openai", "groq", "ollama", "custom_openai"):
         endpoint = f"{config.base_url}/chat/completions"
@@ -690,7 +859,7 @@ async def stream_llm_completion_async(
         _egress.require(endpoint, "model")
         async with httpx.AsyncClient(timeout=30.0) as client:
             async with client.stream("POST", endpoint, json=payload, headers=headers) as response:
-                async for line in response.aiter_lines():
+                async for line in _lines_until(response, stop):
                     if not line:
                         continue
                     if line.startswith("data: "):
@@ -706,7 +875,7 @@ async def stream_llm_completion_async(
                         continue
 
     elif config.provider == "gemini":
-        endpoint = f"{config.base_url}/models/{config.model}:streamGenerateContent?alt=sse&key={config.api_key}"
+        endpoint = f"{config.base_url}/models/{config.model}:streamGenerateContent?alt=sse"
         parts = []
         if system_prompt:
             parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
@@ -718,8 +887,8 @@ async def stream_llm_completion_async(
         }
         _egress.require(endpoint, "model")
         async with httpx.AsyncClient(timeout=30.0) as client:
-            async with client.stream("POST", endpoint, json=payload, headers={"Content-Type": "application/json"}) as response:
-                async for line in response.aiter_lines():
+            async with client.stream("POST", endpoint, json=payload, headers=_gemini_headers(config.api_key)) as response:
+                async for line in _lines_until(response, stop):
                     if not line:
                         continue
                     if line.startswith("data: "):
@@ -754,7 +923,7 @@ async def stream_llm_completion_async(
         _egress.require(endpoint, "model")
         async with httpx.AsyncClient(timeout=30.0) as client:
             async with client.stream("POST", endpoint, json=payload, headers=headers) as response:
-                async for line in response.aiter_lines():
+                async for line in _lines_until(response, stop):
                     if not line:
                         continue
                     if line.startswith("data: "):

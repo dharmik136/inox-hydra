@@ -143,6 +143,56 @@ def prompt_block() -> str:
     )
 
 
+def _read(max_openers: int):
+    """(who, habits, openers, post count), each empty when there is no data."""
+    conn = get_db()
+    try:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        if not {"creator_identity", "own_posts"} <= tables:
+            return [], [], [], 0
+        who = _who(conn)
+        texts = [r["text"] for r in conn.execute(
+            "SELECT text FROM own_posts WHERE text IS NOT NULL AND TRIM(text) != ''"
+        )]
+        return who, _habits(texts), _openers(conn, max_openers), len(texts)
+    finally:
+        conn.close()
+
+
+# Each line _who can write, and what it is called where the creator reads it.
+_WHO_SAID = (
+    ("Headline: ", "your headline"),
+    ("Current role: ", "your current role"),
+    ("Before that: ", "your earlier roles"),
+    ("Works at: ", "your employer"),
+    ("Skills they list: ", "the skills on your profile"),
+    ("In their own words: ", f"the first {ABOUT_CHARS} characters of your About section"),
+)
+
+
+def disclosure(max_openers: int = 3) -> List[str]:
+    """
+    What prompt_block() adds to a prompt, in the creator's own terms.
+
+    Read by the Prompt tab and returned with each Command answer. The pack
+    went with every Re-Hook and Command request while the screen said only
+    "prompt text" left the machine and the help said the instruction alone
+    did, so a creator deciding what to share was told less than was sent.
+    Derived from the same reads as the pack, so the two cannot drift. Empty
+    when nothing would be added.
+    """
+    who, habits, openers, post_count = _read(max_openers)
+    said = [label for line in who for prefix, label in _WHO_SAID if line.startswith(prefix)]
+    if habits:
+        said.append(
+            f"how your posts are usually shaped, measured from {post_count} of them: "
+            "length, paragraphs, opening questions, emoji and hashtags"
+        )
+    if openers:
+        said.append(f"the opening lines of your {len(openers)} most-reacted posts")
+    return said
+
+
 def get_voice_pack(max_openers: int = 3) -> Dict[str, Any]:
     """
     The voice pack as a brief section, and what went into it.
@@ -150,19 +200,7 @@ def get_voice_pack(max_openers: int = 3) -> Dict[str, Any]:
     Returns {"has_voice": bool, "brief_section": str | None, "parts": [...]},
     where parts names which of who, habits and openers had data.
     """
-    conn = get_db()
-    try:
-        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        if not {"creator_identity", "own_posts"} <= tables:
-            return {"has_voice": False, "brief_section": None, "parts": []}
-        who = _who(conn)
-        texts = [r["text"] for r in conn.execute(
-            "SELECT text FROM own_posts WHERE text IS NOT NULL AND TRIM(text) != ''"
-        )]
-        habits = _habits(texts)
-        openers = _openers(conn, max_openers)
-    finally:
-        conn.close()
+    who, habits, openers, _count = _read(max_openers)
 
     sections: List[str] = []
     parts: List[str] = []

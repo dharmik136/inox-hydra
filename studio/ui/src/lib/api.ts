@@ -2221,3 +2221,44 @@ export async function undoArchiveImport(): Promise<{
 export async function markArchiveNoPosts(): Promise<ArchiveState> {
   return call<ArchiveState>("/api/v1/archive/no-posts", { method: "POST" });
 }
+
+/** One provider as /api/ai/config describes it, for the Prompt tab's model field. */
+export interface AiProviderOption {
+  id: string;
+  /** The model a blank model field means. */
+  defaultModel: string;
+  /** Models to suggest. Empty for an endpoint that accepts any name. */
+  models: string[];
+}
+
+/**
+ * The saved setup and every provider with its models, from /api/ai/config.
+ *
+ * fetchAiConfig keeps only the provider ids, and the Prompt tab needs each
+ * one's default and list to offer a model field. Without one, a provider
+ * whose default had been retired could not be connected from the interface.
+ */
+export async function fetchAiProviders(): Promise<{ config: AiConfig; providers: AiProviderOption[] }> {
+  const data = await call<{ config?: Record<string, unknown>; supported_providers?: Record<string, unknown> }>(
+    "/api/ai/config",
+  );
+  const cfg = data.config ?? {};
+  const listed = data.supported_providers && typeof data.supported_providers === "object" ? data.supported_providers : {};
+  const providers = Object.entries(listed).map(([id, raw]) => {
+    const meta = (raw ?? {}) as Record<string, unknown>;
+    const models = Array.isArray(meta.supported_models) ? meta.supported_models.map(String) : [];
+    return {
+      id,
+      defaultModel: typeof meta.default_model === "string" ? meta.default_model : "",
+      models: models.filter((name) => name !== "*"),
+    };
+  });
+  return {
+    config: {
+      provider: typeof cfg.provider === "string" ? cfg.provider : "",
+      model: typeof cfg.model === "string" ? cfg.model : null,
+      is_configured: cfg.is_configured === true,
+    },
+    providers,
+  };
+}

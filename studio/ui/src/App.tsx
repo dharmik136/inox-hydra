@@ -214,14 +214,31 @@ export default function App() {
     [],
   );
 
+  // Re-Hook in flight, and what the last one said when it failed. A press
+  // while one is running is ignored: each used to start another request, and
+  // enough of them against a stalled provider froze the studio. A failure was
+  // swallowed here too, so a revoked key looked like a button doing nothing.
+  const [reHook, setReHook] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  const reHookInFlight = useRef(false);
+  // Without a model, Re-Hook answers with fill-in templates, which say so.
+  const fillIns =
+    !!generated?.length && generated.every((hook) => (hook as { source?: string }).source === "template");
+
   const onReHook = useCallback(async (selection: string) => {
+    if (reHookInFlight.current) return;
+    reHookInFlight.current = true;
+    setReHook({ busy: true, error: null });
     try {
       const hooks = await generateHooks(selection);
       // An empty result is left alone rather than swapping the filmstrip to an
       // empty strip, which would read as though the library had vanished.
       if (hooks.length) setGenerated(hooks);
-    } catch {
+      setReHook({ busy: false, error: null });
+    } catch (caught) {
       setGenerated(null);
+      setReHook({ busy: false, error: caught instanceof Error ? caught.message : "The request did not complete." });
+    } finally {
+      reHookInFlight.current = false;
     }
   }, []);
 
@@ -412,6 +429,34 @@ export default function App() {
                 onClearGenerated={() => setGenerated(null)}
               />
             )}
+            {active === "composer" && (reHook.busy || reHook.error || fillIns) && (
+              <div
+                role="status"
+                className="flex shrink-0 items-baseline justify-between gap-3 border-b border-edge px-10 py-2"
+              >
+                {reHook.busy ? (
+                  <p className="studio-meta animate-pulse text-ink-muted">WRITING HOOKS FROM YOUR SELECTION</p>
+                ) : reHook.error ? (
+                  <p className="text-[12px] leading-snug text-signal-orange-text">
+                    Re-Hook failed. {reHook.error}
+                  </p>
+                ) : (
+                  <p className="studio-meta text-ink-muted">
+                    NO MODEL IS SET UP, SO THESE ARE FILL-IN TEMPLATES. REPLACE EACH [BRACKET] WITH YOUR OWN
+                    WORDS BEFORE POSTING.
+                  </p>
+                )}
+                {reHook.error && (
+                  <button
+                    type="button"
+                    onClick={() => setReHook({ busy: false, error: null })}
+                    className="studio-meta shrink-0 text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+                  >
+                    DISMISS
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* The surfaces that scroll internally manage their own overflow,
                 so the shell does not add a second scrollbar around them. */}
@@ -463,7 +508,7 @@ export default function App() {
               {active === "settings" && <BrandStudioSurface />}
               {active === "queue" && <QueueSurface />}
               {active === "docs" && <DocsSurface focus={focusFor("docs")} />}
-              {active === "command" && <CommandSurface />}
+              {active === "command" && <CommandSurface draft={draft} />}
               {active === "devtools" && <DevtoolsSurface />}
 
             </main>

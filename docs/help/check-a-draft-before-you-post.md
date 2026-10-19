@@ -32,7 +32,7 @@ The card shows the **Name** and **Headline** saved in **Brand Studio** under **I
 
 The audit shows:
 
-- **Distribution**: a score out of 100 and a label. OPTIMAL is 85 or more, MODERATE RISK is 60 to 84, HIGH PENALTY RISK is below 60. An empty draft reads EMPTY DRAFT.
+- **Distribution**: a score out of 100 and a label. OPTIMAL is 85 or more, MODERATE RISK is 60 to 84, HIGH PENALTY RISK is below 60. With nothing in the Composer, the tab shows no score and reads NOTHING TO AUDIT YET.
 - The measured rows: **Outbound links** (PRESENT or NONE), **Hashtags**, **Mentions**, **Words** and **Est. dwell** in seconds. A row turns orange when it breaks a rule.
 - **Penalties**: each rule the draft breaks. With none, the panel reads NO DISTRIBUTION PENALTIES DETECTED.
 - **Suggestions**: advice in a separate list. Some items have no matching penalty, such as a note that a post is brief or sits in the 45 to 90 second reading window.
@@ -54,9 +54,9 @@ The link penalty text says "-40% algorithmic reach penalty". That figure is the 
 > [!TIP]
 > To clear the dash penalty, select the text and choose **Clean formatting** in the toolbar that appears over a selection. It replaces em dashes, and en dashes between words, with commas. An en dash between two numbers becomes a hyphen.
 
-## Governance gates
+## Checks
 
-Below the audit is a second check with six gates. It shows a score (the share of gates passed, as a whole number out of 100, for example 83 when five of six pass) and PASSED or BLOCKED, then either the violations or ALL SIX GATES CLEAR.
+Below the audit is a second section, **Checks**, with six fixed rules. It shows how many pass, such as 5 OF 6 PASS, and ALL CLEAR or WORTH A LOOK, then either a message for each rule the draft breaks or ALL SIX CHECKS PASS. WORTH A LOOK is advice and never stops you posting; see [Why does the Audit tab say WORTH A LOOK?](why-does-the-audit-say-blocked.md).
 
 | Gate | Blocks when |
 | --- | --- |
@@ -79,6 +79,6 @@ Preview updates as you type. While the Audit tab is open, the audit and the gate
 | --- | --- |
 | AUDIT UNAVAILABLE | The audit request failed, usually because the studio server has stopped. See [The studio will not open or shows an error](the-studio-will-not-open.md). |
 | AUDITING that never changes | The server has not answered yet. If it stays, treat it like AUDIT UNAVAILABLE. |
-| No Governance gates section | That check failed on its own. The Distribution audit is unaffected. |
+| No Checks section | That check failed on its own. The Distribution audit is unaffected. |
 | A preview card with no name | No Name is saved. Add one in **Brand Studio**, press **Save**, then go back to **Composer**. The inspector reads the name again when it reopens there. |
 | The **Brand** tab says EDITED IN BRAND STUDIO, WHICH IS NOT BUILT YET | That text is out of date. **Brand Studio** is in the rail. |

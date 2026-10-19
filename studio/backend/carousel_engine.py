@@ -250,7 +250,9 @@ class CarouselDeckEngine:
         safe_total = max(1, int(total_slides) if isinstance(total_slides, (int, float)) else 1)
         safe_index = max(0, min(int(slide_index) if isinstance(slide_index, (int, float)) else 0, safe_total - 1))
 
-        raw_tag = slide.get("tag") or slide.get("category") or "ARCHITECTURE"
+        # No tag means no header. It defaulted to ARCHITECTURE, one author's
+        # niche, on every untagged slide.
+        raw_tag = slide.get("tag") or slide.get("category") or ""
         tag = html.escape(str(raw_tag)[:MAX_SLIDE_TAG_LENGTH])
 
         raw_title = slide.get("title") or slide.get("headline") or ""
@@ -259,7 +261,9 @@ class CarouselDeckEngine:
         raw_body = slide.get("body") or slide.get("content") or ""
         body = html.escape(str(raw_body)[:MAX_SLIDE_BODY_LENGTH])
 
-        author_name_safe = html.escape(str(author_name or "Creator")[:MAX_AUTHOR_NAME_LENGTH])
+        # Signed with the creator's name or not at all. "Creator" stood in for
+        # a missing Brand Studio name, as though it were one.
+        author_name_safe = html.escape(str(author_name or "")[:MAX_AUTHOR_NAME_LENGTH])
         author_title_safe = html.escape(str(author_title or "")[:MAX_AUTHOR_TITLE_LENGTH])
 
         num_str = f"{safe_index + 1:02d} / {safe_total:02d}"
@@ -279,6 +283,15 @@ class CarouselDeckEngine:
         progress_pct = min(100.0, max(0.0, ((safe_index + 1) / safe_total) * 100))
         bar_width = max(0, min(width, int(width * progress_pct / 100)))
 
+        # Drawn only when there is something to draw.
+        tag_node = f'<text x="0" y="30" class="tag">{tag}</text>' if tag else ""
+        author_nodes = "\n    ".join(
+            node for node in (
+                f'<text x="0" y="0" class="author">{author_name_safe}</text>' if author_name_safe else "",
+                f'<text x="0" y="26" class="author-sub">{author_title_safe}</text>' if author_title_safe else "",
+            ) if node
+        )
+
         svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" width="{width}" height="{height}">
   <defs>
     <style>
@@ -293,8 +306,8 @@ class CarouselDeckEngine:
          weight rather than to a face that has to be fetched. */
       .tag {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: 26px; font-weight: 700; fill: {th['accent']}; letter-spacing: 2px; text-transform: uppercase; }}
       .pagination {{ font-family: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Consolas, monospace; font-size: 24px; font-weight: 600; fill: {th['text_secondary']}; }}
-      .title {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: {title_font}px; font-weight: 800; fill: {th['text_primary']}; line-height: {TITLE_LINE_RATIO}; letter-spacing: -0.5px; overflow-wrap: break-word; }}
-      .body {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: {body_font}px; font-weight: 400; fill: {th['text_body']}; line-height: {BODY_LINE_RATIO}; overflow-wrap: break-word; }}
+      .title {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: {title_font}px; font-weight: 800; color: {th['text_primary']}; line-height: {TITLE_LINE_RATIO}; letter-spacing: -0.5px; overflow-wrap: break-word; }}
+      .body {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: {body_font}px; font-weight: 400; color: {th['text_body']}; line-height: {BODY_LINE_RATIO}; overflow-wrap: break-word; }}
       .author {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: 24px; font-weight: 700; fill: {th['text_primary']}; }}
       .author-sub {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: 18px; font-weight: 500; fill: {th['text_secondary']}; }}
       .swipe-cta {{ font-family: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif; font-size: 22px; font-weight: 600; fill: {th['accent']}; }}
@@ -315,7 +328,7 @@ class CarouselDeckEngine:
 
   <!-- Slide Header -->
   <g transform="translate(90, 110)">
-    <text x="0" y="30" class="tag">{tag}</text>
+    {tag_node}
     <text x="{width - 180}" y="30" text-anchor="end" class="pagination">{num_str}</text>
   </g>
 
@@ -332,8 +345,7 @@ class CarouselDeckEngine:
   <!-- Slide Footer -->
   <line x1="90" y1="{height - 130}" x2="{width - 90}" y2="{height - 130}" stroke="{th['border']}" stroke-width="2"/>
   <g transform="translate(90, {height - 85})">
-    <text x="0" y="0" class="author">{author_name_safe}</text>
-    <text x="0" y="26" class="author-sub">{author_title_safe}</text>
+    {author_nodes}
     <text x="{width - 180}" y="12" text-anchor="end" class="swipe-cta">Swipe &gt;&gt;</text>
   </g>
 </svg>"""

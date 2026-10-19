@@ -68,8 +68,10 @@ call sites whose failure path was already an exception. Both count.
 """
 
 import os
+import re
 import threading
 from typing import Any, Dict, Optional
+from urllib.parse import urlsplit, urlunsplit
 
 # Categories, their env override, and the default when no override is set.
 #
@@ -123,6 +125,51 @@ def allowed(category: str) -> bool:
     return _truthy(override)
 
 
+def public_destination(destination: str) -> str:
+    """
+    Where a request went, without what it carried.
+
+    Scheme, host and path only. A query string or a user:password@ prefix can
+    hold a credential: Gemini took its API key as ?key=, and the ledger stored
+    that URL whole, so the Local security tab handed the key to anyone shown
+    its data. A destination that is not a URL keeps everything before its
+    first ? or #.
+    """
+    text = str(destination or "")
+    try:
+        parts = urlsplit(text)
+    except ValueError:
+        parts = None
+    if parts is not None and parts.scheme and parts.netloc:
+        host = parts.netloc.rsplit("@", 1)[-1]
+        return urlunsplit((parts.scheme, host, parts.path, "", ""))
+    return re.split(r"[?#]", text, maxsplit=1)[0]
+
+
+# Credential shapes, for text on its way to a log line or a response. Request
+# libraries quote the URL they failed on, and a header dict printed by mistake
+# carries its values, so both are scrubbed as well as the key formats the
+# providers issue.
+_SECRET_PATTERNS = (
+    (re.compile(r"(?i)([?&](?:key|api[_-]?key|access[_-]?token|token)=)[^&#\s'\"]+"), r"\1[redacted]"),
+    (
+        re.compile(r"(?i)((?:authorization|x-api-key|x-goog-api-key)['\"]?\s*[:=]\s*['\"]?)(?:bearer\s+)?[^\s'\",}]+"),
+        r"\1[redacted]",
+    ),
+    (re.compile(r"(?i)\b(bearer\s+)[A-Za-z0-9._~+/=-]+"), r"\1[redacted]"),
+    (re.compile(r"AIza[0-9A-Za-z_-]{16,}"), "[redacted]"),
+    (re.compile(r"\b(?:sk|gsk|xai)[-_][A-Za-z0-9_-]{8,}"), "[redacted]"),
+)
+
+
+def redact(text: Any) -> str:
+    """Text with every API key, bearer token and key= value replaced."""
+    cleaned = str(text if text is not None else "")
+    for pattern, replacement in _SECRET_PATTERNS:
+        cleaned = pattern.sub(replacement, cleaned)
+    return cleaned
+
+
 def guard(destination: str, category: str = "linkedin") -> Optional[Dict[str, Any]]:
     """
     Call before any outbound request.
@@ -135,6 +182,8 @@ def guard(destination: str, category: str = "linkedin") -> Optional[Dict[str, An
         raise ValueError(f"unknown egress category: {category!r}")
 
     stats = _stats[category]
+    # Recorded and returned without its query, which is where a key can sit.
+    destination = public_destination(destination)
     if allowed(category):
         with _lock:
             stats["performed"] += 1

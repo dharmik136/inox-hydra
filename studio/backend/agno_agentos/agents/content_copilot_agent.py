@@ -75,14 +75,19 @@ def _with_grounding(record: dict, grounded: dict) -> dict:
 class LinkedInContentCopilotAgent:
     """Agent for LinkedIn post optimization, hook generation, and dwell optimization."""
 
+    # Fill-in hooks for when no model is set up. Structure only: a fact the
+    # creator has to supply is a visible [placeholder]. These were one
+    # author's background ("10 years in enterprise architecture"), invented
+    # results ("saved our team hundreds of hours") and another field's
+    # problems ("24/7 fire-drills"), offered as the creator's own opening.
     HOOK_TEMPLATES = [
-        "Most teams fail at {topic} because they optimize for the wrong metric.",
-        "Here is what 10 years in enterprise architecture taught me about {topic}:",
-        "The uncomfortable truth about {topic} nobody wants to say out loud:",
-        "Stop treating {topic} like a tooling problem. It is a systems problem.",
-        "3 counter-intuitive lessons on {topic} that saved our team hundreds of hours:",
-        "How to scale {topic} without breaking production (and without burning out your team):",
-        "If your {topic} architecture requires 24/7 fire-drills, it is already broken."
+        "Most advice about {topic} gets one thing backwards: [the thing].",
+        "The hardest lesson {topic} has taught [you or your team]: [the lesson].",
+        "The uncomfortable truth about {topic}: [your point].",
+        "Stop treating {topic} like [the usual framing]. It is [your framing].",
+        "[How many] lessons on {topic} from [where you learned them]:",
+        "How to [do the thing] with {topic} without [the usual cost]:",
+        "If {topic} needs [the symptom], [what that tells you]."
     ]
 
     def _gather_grounding(self) -> dict:
@@ -142,7 +147,7 @@ class LinkedInContentCopilotAgent:
 
         # Extract topic from first line
         first_line = raw.split("\n")[0].strip()
-        topic = re.sub(r'[^a-zA-Z0-9 ]', '', first_line)[:40].strip() or "engineering systems"
+        topic = re.sub(r'[^a-zA-Z0-9 ]', '', first_line)[:40].strip() or "[your topic]"
 
         # Generate 5-7 hooks
         hook_variants = [
@@ -162,13 +167,16 @@ class LinkedInContentCopilotAgent:
         fold_safe, pre_fold_chars = validate_pre_fold_hook(opening_hook, max_chars=HOOK_FOLD_LIMIT)
 
         # Contextual media callout based on media type
+        # Says what is attached and nothing about it: the studio does not know
+        # a video's length or what an image shows. These read "45-second
+        # walkthrough" and "Architecture schematic" for every creator.
         media_callout = None
         if media_type == "carousel":
-            media_callout = "📌 Swipe through the multi-slide breakdown below ➡️"
+            media_callout = "📌 Swipe through the slides below ➡️"
         elif media_type == "video":
-            media_callout = "▶️ Watch the 45-second walkthrough below 🎬"
+            media_callout = "▶️ Watch the video below 🎬"
         elif media_type == "image":
-            media_callout = "📊 Architecture schematic attached below 👇"
+            media_callout = "📊 See the image below 👇"
 
         # Assemble optimized post
         optimized_body = "\n\n".join(paragraphs)

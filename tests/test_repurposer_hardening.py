@@ -80,7 +80,9 @@ def test_repurpose_content_empty_input_safe():
     frameworks = repurpose_content("   ")
     assert isinstance(frameworks, list)
     assert len(frameworks) == 5
-    assert "Zero manual intervention" in frameworks[0]["content"]
+    # Nothing to repurpose, so placeholders, not another author's post. [WRITE-16]
+    assert "Zero manual intervention" not in frameworks[0]["content"]
+    assert "[Your notes.]" in frameworks[0]["content"]
 
 
 def test_generate_10x_hooks_none_input_safe():

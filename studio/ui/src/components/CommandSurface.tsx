@@ -6,6 +6,10 @@ interface Entry {
   command: string;
   response: string;
   failed: boolean;
+  /** Who wrote the response, as the engine reports it. */
+  engine: string | null;
+  /** What went to the provider with the instruction, when one was used. */
+  sent: string[];
 }
 
 /**
@@ -15,12 +19,18 @@ interface Entry {
  * or is sent to a provider depends entirely on whether a key is configured,
  * and the person typing is the one who needs to know which it is before they
  * type anything into it.
+ *
+ * The Composer draft goes with an instruction only when the box under it is
+ * ticked. The placeholder used to offer to work with "your draft" while the
+ * draft was never sent, so "summarise my draft" was answered about nothing.
  */
-export function CommandSurface() {
+export function CommandSurface({ draft = "" }: { draft?: string }) {
   const [status, setStatus] = useState<AiStatus | null>(null);
   const [command, setCommand] = useState("");
+  const [includeDraft, setIncludeDraft] = useState(false);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<Entry[]>([]);
+  const hasDraft = draft.trim().length > 0;
 
   useEffect(() => {
     let live = true;
@@ -41,19 +51,19 @@ export function CommandSurface() {
 
     setBusy(true);
     try {
-      const result = await runAiCommand(text);
-      // The engine returns different shapes per command, so the readable
-      // field is taken where it exists and the whole payload shown where it
-      // does not, rather than printing "undefined".
+      const result = await runAiCommand(text, includeDraft && hasDraft ? draft : undefined);
+      // The engine answers in "output". That field was never read, so every
+      // answer was printed as the whole JSON payload with its line breaks
+      // escaped. The payload is still the last resort, rather than "undefined".
       const readable =
-        typeof result.response === "string"
-          ? result.response
+        typeof result.output === "string"
+          ? result.output
           : typeof result.message === "string"
             ? result.message
-            : typeof result.result === "string"
-              ? result.result
-              : JSON.stringify(result, null, 2);
-      setLog((entries) => [{ command: text, response: readable, failed: false }, ...entries]);
+            : JSON.stringify(result, null, 2);
+      const engine = typeof result.engine === "string" ? result.engine : null;
+      const sent = Array.isArray(result.sent) ? result.sent.map(String) : [];
+      setLog((entries) => [{ command: text, response: readable, failed: false, engine, sent }, ...entries]);
       setCommand("");
     } catch (error) {
       setLog((entries) => [
@@ -61,6 +71,8 @@ export function CommandSurface() {
           command: text,
           response: error instanceof Error ? error.message : "The command was refused.",
           failed: true,
+          engine: null,
+          sent: [],
         },
         ...entries,
       ]);
@@ -103,7 +115,7 @@ export function CommandSurface() {
               }
             }}
             rows={3}
-            placeholder="Ask the engine to do something with your draft or your pipeline"
+            placeholder="Tell the model what to write. Tick the box below to include your Composer draft."
             className="flex-1 resize-none rounded-md border border-edge bg-ink px-3 py-2 text-[13px] text-ink-primary outline-none placeholder:text-ink-muted focus-visible:border-edge-strong"
           />
           <button
@@ -119,6 +131,18 @@ export function CommandSurface() {
             )}
           </button>
         </div>
+        <label className="mt-2 flex items-center gap-2 text-[12px] text-ink-secondary">
+          <input
+            type="checkbox"
+            name="include-draft"
+            checked={includeDraft && hasDraft}
+            disabled={!hasDraft}
+            onChange={(event) => setIncludeDraft(event.target.checked)}
+            className="size-4 accent-[var(--studio-orange)]"
+          />
+          Include my Composer draft
+          {!hasDraft && <span className="text-ink-muted">(the Composer is empty)</span>}
+        </label>
       </form>
 
       <section className="mt-8">
@@ -128,11 +152,17 @@ export function CommandSurface() {
           <ul className="flex flex-col gap-6">
             {log.map((entry, index) => (
               <li key={`${index}-${entry.command}`} className="border-l border-edge pl-4">
-                <p className="studio-meta text-[10px]">{entry.failed ? "REFUSED" : "RAN"}</p>
+                <p className="studio-meta text-[10px]">
+                  {entry.failed ? "REFUSED" : "RAN"}
+                  {entry.engine && <span className="text-ink-muted"> · {entry.engine}</span>}
+                </p>
                 <p className="mt-1 text-[13px] text-ink-primary">{entry.command}</p>
                 <pre className="mt-2 font-editorial text-[13px] leading-relaxed whitespace-pre-wrap text-ink-secondary">
                   {entry.response}
                 </pre>
+                {entry.sent.length > 0 && (
+                  <p className="mt-2 text-[11px] leading-snug text-ink-muted">Sent with it: {entry.sent.join("; ")}.</p>
+                )}
               </li>
             ))}
           </ul>

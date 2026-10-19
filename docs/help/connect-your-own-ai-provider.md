@@ -3,7 +3,7 @@ Plug in your own model key so Re-Hook and the Command console use it, and see ex
 
 ## You do not need one
 
-Without a key, the text features still answer, from local templates on this machine. The **Prompt** tab says so: "NO KEY IS CONFIGURED. EVERY FEATURE ABOVE STILL ANSWERS, DETERMINISTICALLY." Image generation is the exception: even with no key it sends a prompt to an outside image service (see [Add images and files to your media library](add-images-to-your-media-library.md)). A key changes who writes the text, and it means some of your text leaves your machine.
+Without a key, nothing writes for you. **Re-Hook** offers fill-in templates built around your own words, with a [bracket] wherever a fact of yours belongs, and the hook rail says they are templates. Replace every bracket before you post. The formatting tools and the **Audit** tab work as usual. The **Command** console needs a model and says so. The **Prompt** tab sums this up: "NO KEY IS CONFIGURED. RE-HOOK OFFERS FILL-IN TEMPLATES AND THE AUDIT RUNS HERE. COMMAND NEEDS A MODEL." Image generation is the exception: even with no key it sends a prompt to an outside image service (see [Add images and files to your media library](add-images-to-your-media-library.md)). A key changes who writes the text, and it means some of your text leaves your machine.
 
 ## Providers
 
@@ -11,7 +11,7 @@ Without a key, the text features still answer, from local templates on this mach
 | --- | --- | --- | --- |
 | `gemini` | `gemini-2.5-flash` | Required | Google |
 | `openai` | `gpt-4o` | Required | OpenAI |
-| `anthropic` | `claude-3-5-sonnet-20241022` | Required | Anthropic |
+| `anthropic` | `claude-sonnet-5-5` (also `claude-opus-5-5`, `claude-haiku-5-5`) | Required | Anthropic |
 | `groq` | `llama-3.3-70b-versatile` | Required | Groq |
 | `ollama` | `llama3:latest` | None | `http://localhost:11434/v1` |
 | `custom_openai` | `default` | Optional | `http://localhost:8080/v1` |
@@ -24,9 +24,10 @@ Without a key, the text features still answer, from local templates on this mach
 1. Open **Composer** from the rail.
 2. If the inspector is closed, click **Open inspector** at the top right, or press Ctrl+K and choose **Show or hide the inspector**.
 3. Choose the **Prompt** tab.
-4. Under **Connect a provider**, pick the provider id from the list.
-5. Paste your key into the **API key** field. Leave it empty for `ollama`.
-6. Click **Verify and save**. The note reads "Connected." and the **Egress** row changes to SENDS TO PROVIDER. For `custom_openai` without a key it stays NONE, RUNS LOCALLY.
+4. Under **Connect a provider**, pick the provider id from the list. The **Model** field fills with that provider's default.
+5. To use another model, type its name in **Model** or pick one of the suggestions.
+6. Paste your key into the **API key** field. Leave it empty for `ollama`.
+7. Click **Verify and save**. The note reads "Connected." and the **Egress** row changes to SENDS TO PROVIDER. For `custom_openai` without a key it stays NONE, RUNS LOCALLY.
 
 ## What happens
 
@@ -40,14 +41,22 @@ Once connected, this is what reaches the provider:
 | Feature | What is sent |
 | --- | --- |
 | **Re-Hook** on a selection | A prompt built from the first line of your selection |
-| **Command** console | Your instruction only, never your Composer draft |
+| **Command** console | Your instruction, and your Composer draft only when **Include my Composer draft** is ticked |
 | **Media** tab, **Preview prompt** and **Generate** | Your image description, so the model can describe the scene |
 | **Media** tab **Generate**, with `openai` or `gemini` | The image prompt, to DALL-E 3 or Imagen 3 |
 | **Audit** tab, and message drafts on **Leads** | Nothing. These always run locally. |
 
+Re-Hook and Command also send what the studio knows about how you write, so the model matches your voice rather than a generic one. It is read from your own profile and posts, and only the parts the studio has go:
+
+- once you have confirmed your profile: your headline, your current role and up to two earlier roles, the skills on your profile, and the first 400 characters of your About section
+- once at least three of your posts are imported: how your posts are usually shaped (length, paragraphs, opening questions, emoji and hashtags)
+- the opening lines of your 3 most-reacted posts
+
+The **Prompt** tab lists exactly which of these the studio holds for you, under **What a provider would receive**, and each Command answer ends with what was sent with it. The model is told not to mention your title or employer unless your text does. There is no setting that leaves this out while a provider is connected.
+
 The **Prompt** tab also lists Repurposing and Tailored DMs, but no control in this interface repurposes text, and message drafts never use the model.
 
-If a provider call fails, Re-Hook and Command fall back to local output. Your text is not passed to any other provider.
+If a provider call fails, Re-Hook and Command say so and give the provider's reason, such as a refused key or an account out of credit, and the **Prompt** tab shows the last failure until a request succeeds. Nothing is replaced with local templates, and your text is not passed to any other provider. A request that has not finished after 40 seconds is stopped. While one Re-Hook is running, pressing it again does nothing.
 
 If no key is saved in the studio, which is always the case for `ollama`, it uses `OPENAI_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, or `GROQ_API_KEY` from your environment, in that order, and that provider replaces the one you chose. Starting the studio with `INOX_ALLOW_MODEL_EGRESS=0` or `INOX_NO_EGRESS=1` refuses all model traffic.
 
@@ -56,8 +65,9 @@ If no key is saved in the studio, which is always the case for `ollama`, it uses
 1. Open **Command** from the rail.
 2. Check the banner: it shows the active mode, then STAYS ON THIS MACHINE (no key) or SENT TO THE PROVIDER.
 3. Type in the **Instruction** box. Enter runs it. Shift+Enter adds a new line.
+4. To have the model work on what you are writing, tick **Include my Composer draft** first. The box is greyed out while the Composer is empty.
 
-The placeholder mentions your draft, but the console does not send it. Paste any text you want used. With no key, the console returns a fixed template post built around the first line of your instruction.
+Each answer is listed under your instruction, with the engine that wrote it beside RAN. With no key, the console answers that no model is set up and writes nothing.
 
 ## Go back to local only
 
@@ -67,13 +77,13 @@ Choose `local_deterministic` in the **Prompt** tab, leave the key field empty an
 
 Both save an empty key. If you had connected `gemini`, a second copy of that key stays in the settings table under `gemini_api_key`, and neither route removes it. If one of the environment variables above is set, the studio will pick that key up instead, so remove it too.
 
-## Set a model or a base URL
+## Set a base URL
 
-The interface has no model or base URL field. Use the command line:
+The **Prompt** tab sets the model but has no base URL field. Use the command line:
 
 `python studio_cli.py ai configure --provider ollama --model mistral:latest --base-url http://localhost:11434/v1`
 
-A saved base URL applies only to `ollama` and `custom_openai`. It must use https unless the host is `localhost` or a loopback or private IP address; otherwise the default address is saved in its place, with no warning. For other providers the saved setup ignores it. The test request always goes to the address you typed, with your key, even when the saved setup then ignores or replaces it. `ai list-providers`, `ai status` and `ai test` show the options, the saved setup, and a live check of the saved setup.
+A saved base URL applies only to `ollama` and `custom_openai`. It must use https unless the host is `localhost` or a loopback or private IP address; otherwise the default address is saved in its place, with no warning. For other providers the saved setup ignores it. The test request goes to the same address the saved setup will use, so a passing test is a test of what is saved. `ai list-providers`, `ai status` and `ai test` show the options, the saved setup, and a live check of the saved setup.
 
 ## If it does not work
 
@@ -81,6 +91,5 @@ A saved base URL applies only to `ollama` and `custom_openai`. It must use https
 | --- | --- |
 | A bare "400" under **Verify and save** | The test request failed. Nothing was saved. The panel does not show why. Run `python studio_cli.py ai configure --provider <id>`: it asks for the key and prints the reason, such as a rejected key or Ollama not running. `ai test` only checks the setup already saved. |
 | ENGINE STATUS UNAVAILABLE | The tab could not reach the studio's server. Reload the page, then see [The studio will not open or shows an error](the-studio-will-not-open.md). |
-| Command output that looks like JSON | Expected. Read the `output` field; `engine` names who wrote it. Line breaks show as `\n`. |
 
 See also [What leaves this machine, and when](what-leaves-this-machine.md).

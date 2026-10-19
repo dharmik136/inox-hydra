@@ -69,9 +69,52 @@ fi
 if [ "$SERVER_RUNNING" -eq 1 ]; then
     echo "[*] Inox Hydra backend is already running on http://127.0.0.1:8000."
 else
-    echo "[*] Starting Inox Hydra backend daemon..."
-    nohup "$PYTHON_CMD" -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000 >/tmp/inox_studio_backend.log 2>&1 &
-    sleep 2
+    # The log goes to the app home's logs folder, the one the diagnostics
+    # bundle reads and the desktop shell writes engine.log into. It was a fixed
+    # file in /tmp: shared by every account on the machine, overwritten on each
+    # launch, never collected, and on systems with protected_regular a second
+    # user could not open it, so the backend never started at all.
+    LOG_DIR="$("$PYTHON_CMD" -c 'from studio.backend.paths import get_logs_dir; print(get_logs_dir())' 2>/dev/null || true)"
+    if [ -z "$LOG_DIR" ]; then
+        if [ -n "$INOX_HYDRA_HOME" ]; then
+            LOG_DIR="$INOX_HYDRA_HOME/logs"
+        elif [ "$(uname)" = "Darwin" ]; then
+            LOG_DIR="$HOME/Library/Application Support/InoxHydra/logs"
+        else
+            LOG_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/inox-hydra/logs"
+        fi
+    fi
+    mkdir -p "$LOG_DIR"
+    LOG_FILE="$LOG_DIR/engine.log"
+    # Bounded as the desktop shell bounds it: the log explains the launch that
+    # just failed, it is not an archive.
+    if [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE" | tr -d ' ')" -gt 2097152 ]; then
+        rm -f "$LOG_FILE"
+    fi
+    echo "--- engine launch at unix time $(date +%s) ---" >> "$LOG_FILE"
+
+    echo "[*] Starting Inox Hydra backend daemon. Log: $LOG_FILE"
+    nohup "$PYTHON_CMD" -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000 >>"$LOG_FILE" 2>&1 &
+
+    # Wait for it to answer before opening a window onto it, so a backend
+    # that fails at startup is reported here rather than as a dead page.
+    STARTED=0
+    if command -v curl >/dev/null 2>&1; then
+        for _ in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8000/api/v1/health >/dev/null 2>&1; then
+                STARTED=1
+                break
+            fi
+            sleep 0.5
+        done
+    else
+        sleep 2
+        STARTED=1
+    fi
+    if [ "$STARTED" -ne 1 ]; then
+        echo "[!] The backend did not start. Its output is in: $LOG_FILE"
+        exit 1
+    fi
 fi
 
 # Locate browser for native App Mode (borderless desktop window)

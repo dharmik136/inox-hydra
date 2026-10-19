@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { configureAi, fetchAiConfig, fetchAiStatus, type AiStatus } from "@/lib/api";
+import { configureAi, fetchAiProviders, fetchAiStatus, type AiProviderOption, type AiStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /** The capability keys the backend returns, in words rather than identifiers. */
@@ -13,6 +13,28 @@ const CAPABILITY_LABELS: Record<string, string> = {
 };
 
 /**
+ * What /api/ai/status adds to AiStatus: the last request that failed, until
+ * one succeeds, and what from the creator's own profile and posts goes with
+ * every Re-Hook and Command request.
+ */
+type StatusWithFailure = AiStatus & {
+  last_error?: string | null;
+  last_error_at?: string | null;
+  voice_pack_sent?: string[];
+};
+
+/**
+ * What each feature sends, in the order the creator meets them. The voice
+ * pack goes with the first two and is listed under them from the server,
+ * because it depends on what the studio knows about this creator.
+ */
+const SENT_BY_FEATURE: { feature: string; what: string }[] = [
+  { feature: "Re-Hook", what: "the first line of your selection" },
+  { feature: "Command", what: "your instruction, and your Composer draft when you tick the box to include it" },
+  { feature: "Media", what: "your image description" },
+];
+
+/**
  * The prompt inspector (blueprint section 10).
  *
  * Which engine is answering, and whether anything leaves this machine to do
@@ -20,24 +42,36 @@ const CAPABILITY_LABELS: Record<string, string> = {
  * with the colour on it.
  */
 export function PromptPanel() {
-  const [status, setStatus] = useState<AiStatus | null>(null);
+  const [status, setStatus] = useState<StatusWithFailure | null>(null);
   const [failed, setFailed] = useState(false);
 
-  const [providers, setProviders] = useState<string[]>([]);
+  const [providers, setProviders] = useState<AiProviderOption[]>([]);
   const [provider, setProvider] = useState("");
+  // The model is chosen here. There was no field, so the ping always named the
+  // provider's default, and when Anthropic retired that one no Claude key
+  // could be connected from the interface.
+  const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [current, config] = await Promise.all([
+    const [current, setup] = await Promise.all([
       fetchAiStatus(),
-      fetchAiConfig().catch(() => ({ config: null, providers: [] as string[] })),
+      fetchAiProviders().catch(() => ({ config: null, providers: [] as AiProviderOption[] })),
     ]);
     setStatus(current);
-    setProviders(config.providers);
-    setProvider((existing) => existing || config.config?.provider || config.providers[0] || "");
+    setProviders(setup.providers);
+    setProvider((existing) => existing || setup.config?.provider || setup.providers[0]?.id || "");
+    setModel((typed) => typed || setup.config?.model || "");
   }, []);
+
+  function onChooseProvider(id: string) {
+    setProvider(id);
+    setModel(providers.find((option) => option.id === id)?.defaultModel ?? "");
+  }
+
+  const suggestions = providers.find((option) => option.id === provider)?.models ?? [];
 
   useEffect(() => {
     load().catch(() => setFailed(true));
@@ -51,7 +85,7 @@ export function PromptPanel() {
       // The endpoint pings the provider before saving, and answers 400 without
       // writing anything when it cannot reach it, so a failure here leaves the
       // previous configuration intact.
-      await configureAi(provider, apiKey);
+      await configureAi(provider, apiKey, model.trim());
       setApiKey("");
       setNote("Connected.");
       await load();
@@ -75,15 +109,45 @@ export function PromptPanel() {
       <section>
         <p className="studio-label mb-2">Engine</p>
         <dl className="flex flex-col gap-1.5">
-          <Row label="Mode" value={status.active_mode} />
-          <Row label="Provider" value={status.provider} />
-          <Row label="Model" value={status.model} />
+          {/* Said in plain words. active_mode carries an internal engine
+              codename for the no-model case, which meant nothing to a
+              creator; the provider and model they configured do. */}
+          <Row label="Mode" value={local ? "Built-in templates, no model" : "Your provider"} />
+          <Row label="Provider" value={local ? "None set up" : status.provider} />
+          <Row label="Model" value={local ? "None" : status.model} />
           <Row
             label="Egress"
             value={local ? "NONE, RUNS LOCALLY" : "SENDS TO PROVIDER"}
             tone={local ? "text-signal-green-text" : "text-signal-orange-text"}
           />
         </dl>
+        {/* A key that stopped working used to be invisible: every feature
+            kept answering from templates. */}
+        {!local && status.last_error && (
+          <p role="status" className="mt-2 text-[12px] leading-snug text-signal-orange-text">
+            The last request failed{status.last_error_at ? ` at ${status.last_error_at.replace("T", " ")}` : ""}:{" "}
+            {status.last_error}
+          </p>
+        )}
+      </section>
+
+      {/* Said where the choice is made. The pack went with every request
+          while this tab said only that "prompt text" leaves. */}
+      <section>
+        <p className="studio-label mb-2">{local ? "What a provider would receive" : "What the provider receives"}</p>
+        <dl className="flex flex-col gap-1.5">
+          {SENT_BY_FEATURE.map(({ feature, what }) => (
+            <div key={feature} className="flex gap-3">
+              <dt className="w-16 shrink-0 text-[11px] text-ink-muted">{feature}</dt>
+              <dd className="text-[12px] leading-snug text-ink-secondary">{what}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-2 text-[12px] leading-snug text-ink-secondary">
+          {status.voice_pack_sent?.length
+            ? `With every Re-Hook and Command request, from your own profile and posts: ${status.voice_pack_sent.join("; ")}.`
+            : "Nothing from your profile or posts goes with them yet."}
+        </p>
       </section>
 
       <section>
@@ -104,24 +168,43 @@ export function PromptPanel() {
         <p className="studio-label mb-2">{local ? "Connect a provider" : "Change provider"}</p>
         {local && (
           <p className="studio-meta mb-3 leading-relaxed text-ink-muted">
-            NO KEY IS CONFIGURED. EVERY FEATURE ABOVE STILL ANSWERS, DETERMINISTICALLY.
+            NO KEY IS CONFIGURED. RE-HOOK OFFERS FILL-IN TEMPLATES AND THE AUDIT RUNS HERE. COMMAND NEEDS A
+            MODEL.
           </p>
         )}
 
         <div className="flex flex-col gap-2">
           <select
             value={provider}
-            onChange={(event) => setProvider(event.target.value)}
+            onChange={(event) => onChooseProvider(event.target.value)}
             aria-label="Model provider"
             className="rounded-md border border-edge bg-ink px-2 py-1.5 text-[12px] text-ink-primary outline-none focus-visible:border-edge-strong"
           >
             {providers.length === 0 && <option value="">No providers reported</option>}
-            {providers.map((name) => (
-              <option key={name} value={name}>
-                {name}
+            {providers.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.id}
               </option>
             ))}
           </select>
+
+          {/* Free text with suggestions, because an endpoint of your own takes
+              whatever model names it serves. */}
+          <input
+            type="text"
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+            list="prompt-model-options"
+            placeholder="Model"
+            aria-label="Model"
+            spellCheck={false}
+            className="rounded-md border border-edge bg-ink px-2 py-1.5 text-[12px] text-ink-primary outline-none placeholder:text-ink-muted focus-visible:border-edge-strong"
+          />
+          <datalist id="prompt-model-options">
+            {suggestions.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
 
           <input
             type="password"
@@ -149,8 +232,8 @@ export function PromptPanel() {
           )}
 
           <p className="studio-meta leading-relaxed text-ink-muted">
-            THE KEY IS STORED IN THIS MACHINE&apos;S ENCRYPTED VAULT. CONFIGURING ONE MEANS PROMPT
-            TEXT LEAVES THIS MACHINE FOR THAT PROVIDER.
+            THE KEY IS STORED IN THIS MACHINE&apos;S ENCRYPTED VAULT. CONFIGURING ONE MEANS WHAT IS
+            LISTED ABOVE LEAVES THIS MACHINE FOR THAT PROVIDER.
           </p>
         </div>
       </section>
