@@ -56,6 +56,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import unicodedata
 import uuid
@@ -88,6 +89,11 @@ NO_POSTS_KEY = "archive_no_posts_at"
 # removed again on its own (remove_last_import).
 BROUGHT_KEY = "archive_import_brought:"
 PROFILE_COLUMNS = ("display_name", "headline", "about", "location")
+# One import or removal at a time: two at once would each record part of what
+# the other added, and undoing one would take rows the other still claims.
+_BUSY = threading.Lock()
+BUSY_MESSAGE = ("The studio is already importing an archive, or removing one. Wait for it to finish, "
+                "then try again.")
 
 MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
 # LinkedIn's CSVs are small: years of posts are a few megabytes. These bound
@@ -175,6 +181,10 @@ class ArchiveError(ValueError):
 
 class _Unreadable(ArchiveError):
     """The file does not open as a ZIP, or a file in it is cut short: damaged, or not finished downloading."""
+
+
+class ArchiveBusy(ArchiveError):
+    """Another import, or the removal of one, is running."""
 
 
 class OwnerUnconfirmed(ArchiveError):
@@ -951,6 +961,10 @@ class _Batches:
         self.conn = conn
         self.brought: Dict[str, Any] = {}
         self._kept: Dict[str, Any] = {}
+        # Where the record of what was brought is kept, written with each
+        # batch it describes, so even a process killed part way leaves its
+        # rows recorded.
+        self.ledger_key: Optional[str] = None
         self._begin()
 
     def _begin(self) -> None:
@@ -960,10 +974,16 @@ class _Batches:
     def add(self, kind: str, key: Any) -> None:
         self.brought.setdefault(kind, []).append(key)
 
+    def save(self) -> None:
+        if self.ledger_key:
+            self.conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                              (self.ledger_key, json.dumps(self.brought)))
+
     def row(self) -> bool:
         """Called after each row written. True when a new batch has begun, so what was read may be stale."""
         if time.monotonic() - self._started < BATCH_SECONDS:
             return False
+        self.save()
         self.conn.commit()
         self._kept = {k: len(v) if isinstance(v, list) else v for k, v in self.brought.items()}
         time.sleep(BATCH_PAUSE)
@@ -1220,12 +1240,38 @@ def import_archive(source: str, include: Optional[List[str]] = None, confirm_own
     if ownership["needs_confirmation"] and not confirm_owner:
         raise OwnerUnconfirmed(ownership["needs_confirmation"] + " Nothing was imported. Say that it is yours "
                                "to import it.")
+    if not _BUSY.acquire(blocking=False):
+        raise ArchiveBusy(BUSY_MESSAGE)
+    try:
+        summary = _write_import(name, result, wanted, ownership)
+    finally:
+        _BUSY.release()
+    _discard(source)
+    return {"status": "success", "archive": {"name": name, "bytes": result["bytes"]}, "summary": summary}
 
+
+def _write_import(name: str, result: Dict[str, Any], wanted: set, ownership: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Writes an import, recorded from its first batch as one in progress.
+
+    The record (archive_imports row and the list of what it brought) commits
+    with the first batch and is updated with each, so an import cut off by a
+    killed process is still listed, as not finished, and can be removed.
+    """
     summary: Dict[str, Any] = {}
+    import_id = None
     conn = get_db()
     try:
         batches = _Batches(conn)
         try:
+            cursor = conn.execute(
+                "INSERT INTO archive_imports (archive_name, archive_bytes, imported_at, summary) VALUES (?, ?, ?, ?)",
+                (name[:200], result["bytes"], _now(), json.dumps({"in_progress": True})),
+            )
+            import_id = cursor.lastrowid
+            batches.ledger_key = f"{BROUGHT_KEY}{import_id}"
+            if ownership["owner"]:
+                batches.brought["owner"] = ownership["owner"]["name"]
             for kind, entry in result["parsed"].items():
                 if kind == "posts" and entry["rows"] == []:
                     # A Shares.csv with no rows is LinkedIn saying the account
@@ -1239,29 +1285,25 @@ def import_archive(source: str, include: Optional[List[str]] = None, confirm_own
                     summary[kind] = {"not_understood": True, "columns": entry["header"][:12]}
                     continue
                 summary[kind] = _IMPORTERS[kind](conn, entry["rows"], batches)
-            cursor = conn.execute(
-                "INSERT INTO archive_imports (archive_name, archive_bytes, imported_at, summary) VALUES (?, ?, ?, ?)",
-                (name[:200], result["bytes"], _now(), json.dumps(summary, sort_keys=True)),
-            )
-            if ownership["owner"]:
-                batches.brought["owner"] = ownership["owner"]["name"]
-            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                         (f"{BROUGHT_KEY}{cursor.lastrowid}", json.dumps(batches.brought)))
+            conn.execute("UPDATE archive_imports SET imported_at = ?, summary = ? WHERE id = ?",
+                         (_now(), json.dumps(summary, sort_keys=True), import_id))
+            batches.save()
             conn.commit()
         except BaseException:
             conn.rollback()
-            # What the earlier batches committed is taken out again, so an
-            # import that fails leaves nothing of itself behind.
+            # What the earlier batches committed is taken out again, with the
+            # record of it, so an import that fails leaves nothing behind.
             try:
                 _remove(conn, batches.committed())
+                conn.execute("DELETE FROM archive_imports WHERE id = ?", (import_id,))
+                conn.execute("DELETE FROM settings WHERE key = ?", (f"{BROUGHT_KEY}{import_id}",))
                 conn.commit()
             except Exception:
                 conn.rollback()
             raise
     finally:
         conn.close()
-    _discard(source)
-    return {"status": "success", "archive": {"name": name, "bytes": result["bytes"]}, "summary": summary}
+    return summary
 
 
 def _remove(conn, brought: Dict[str, Any], batches: Optional[_Batches] = None) -> Dict[str, int]:
@@ -1325,6 +1367,15 @@ def remove_last_import() -> Dict[str, Any]:
     found already there is left as it was, and so is a post the bridge has
     since read as the creator's own.
     """
+    if not _BUSY.acquire(blocking=False):
+        raise ArchiveBusy(BUSY_MESSAGE)
+    try:
+        return _remove_last_import()
+    finally:
+        _BUSY.release()
+
+
+def _remove_last_import() -> Dict[str, Any]:
     conn = get_db()
     try:
         last = conn.execute("SELECT id, archive_name FROM archive_imports ORDER BY id DESC LIMIT 1").fetchone()
@@ -1383,6 +1434,8 @@ def _held_posts(archive_name: str, summary: Dict[str, Any]) -> bool:
     An import held the posts when its Shares.csv was read, or when it was the
     complete archive and had no Shares.csv at all.
     """
+    if summary.get("in_progress"):
+        return False
     posts = summary.get("posts")
     if isinstance(posts, dict) and "added" in posts:
         return True
@@ -1415,7 +1468,7 @@ def archive_state(look: bool = False) -> Dict[str, Any]:
     covered = with_posts + ([no_posts_at] if no_posts_at else [])
     waiting = bool(requested_at) and not any(at >= requested_at for at in covered)
     found = find_archives() if look and waiting else []
-    imported_names = {name for name, _at, _summary in readings}
+    imported_names = {name for name, _at, summary in readings if not summary.get("in_progress")}
     for hit in found:
         hit["imported"] = hit["name"] in imported_names
     last = readings[-1] if readings else None
@@ -1433,6 +1486,9 @@ def archive_state(look: bool = False) -> Dict[str, Any]:
             "imported_at": last[1],
             "summary": last[2],
             "held_posts": _held_posts(last[0], last[2]),
+            # Recorded as in progress, and no import is running: the studio
+            # stopped part way, and what it wrote can be removed.
+            "interrupted": bool(last[2].get("in_progress")) and not _BUSY.locked(),
         } if last else None,
     }
 

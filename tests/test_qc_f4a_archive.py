@@ -601,3 +601,75 @@ def test_a_partial_name_match_asks_first(client, first, last):
 def test_the_same_name_in_another_order_or_case_is_the_creator(client):
     _confirm_bob(client)
     assert _upload(client, _person_archive("BOB", "Sámple"))["needs_confirmation"] == ""
+
+
+def test_a_second_import_waits_for_the_first(client, monkeypatch):
+    """SETUP-05: two imports at once would split the record of what each added."""
+    import threading
+    started, release = threading.Event(), threading.Event()
+    real = archive_import._IMPORTERS["skills"]
+
+    def slow(conn, rows, batches):
+        started.set()
+        release.wait(10)
+        return real(conn, rows, batches)
+
+    monkeypatch.setitem(archive_import._IMPORTERS, "skills", slow)
+    first = _upload(client, _person_archive("Sample", "Alice"))["source"]
+    second = _upload(client, _person_archive("Sample", "Alice"))["source"]
+    outcome = {}
+    worker = threading.Thread(target=lambda: outcome.setdefault(
+        "first", archive_import.import_archive(first, confirm_owner=True)))
+    worker.start()
+    try:
+        assert started.wait(10)
+        res = _import(client, second, confirm_owner=True)
+        assert res.status_code == 409 and "already importing" in res.json()["detail"]
+        assert client.post("/api/v1/archive/undo").status_code == 409
+    finally:
+        release.set()
+        worker.join(20)
+    assert outcome["first"]["status"] == "success"
+    assert _import(client, second, confirm_owner=True).status_code == 200
+
+
+KILLED = r'''
+import os, sys
+sys.path.insert(0, sys.argv[2])
+import archive_import
+archive_import.BATCH_SECONDS = 0
+archive_import.BATCH_PAUSE = 0
+def die(conn, rows, batches):
+    os._exit(9)
+archive_import._IMPORTERS["connections"] = die
+archive_import.import_archive(sys.argv[1], confirm_owner=True)
+'''
+
+
+def test_an_import_killed_part_way_can_be_removed(client, tmp_path):
+    """SETUP-05: a process killed mid-import leaves its committed rows recorded, as an import that did not finish."""
+    import subprocess
+    shares = SHARES_HEADER + "".join(
+        _share_row(datetime(2022, 1, 3 + i % 25, 9, i % 60, tzinfo=timezone.utc), i, f"Synthetic post {i} on compilers.")
+        for i in range(50))
+    members = _person_archive("Sample", "Alice")
+    members["Shares.csv"] = shares
+    source = _upload(client, members)["source"]
+    script = tmp_path / "killed.py"
+    script.write_text(KILLED)
+    backend = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "backend"))
+    done = subprocess.run([sys.executable, str(script), source, backend], env=dict(os.environ), cwd=str(tmp_path))
+    assert done.returncode == 9
+    assert _db().execute("SELECT COUNT(*) FROM own_posts").fetchone()[0] == 50
+    state = client.get("/api/v1/archive").json()
+    assert state["last_import"]["interrupted"] is True and state["complete"] is False
+    res = client.post("/api/v1/archive/undo")
+    assert res.status_code == 200, res.text
+    assert res.json()["removed"]["posts"] == 50
+    assert _nothing_imported()
+
+
+def test_the_archive_step_says_when_an_import_did_not_finish():
+    source = open(os.path.join(os.path.dirname(__file__), "..", "studio", "ui", "src", "components",
+                               "ArchiveImport.tsx"), encoding="utf-8").read()
+    assert "last_import?.interrupted" in source and "That import did not finish" in source
