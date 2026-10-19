@@ -326,3 +326,21 @@ def test_the_checks_read_as_advice_without_team_roles(page):
     for role in ("(CEO)", "(Eng Manager)", "(Designer)", "(QA)", "(CSO)", "Gate 2"):
         assert role not in text, f"{role!r} is still shown: {text}"
     assert "Content is too short" in text
+
+
+def test_the_prompt_panel_never_shows_the_engine_codename():
+    """[F7-N3] The Mode row read the internal 'Antigravity' engine name."""
+    source = open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "PromptPanel.tsx"), encoding="utf-8").read()
+    assert "status.active_mode" not in source, "the panel renders the server's engine codename"
+    rendered = "\n".join(line for line in source.splitlines() if not line.strip().startswith(("//", "*", "/*")))
+    assert "Antigravity" not in rendered
+
+
+def test_the_prompt_tab_says_plainly_that_no_model_is_set_up(page):
+    """[F7-N3]"""
+    from agno_agentos import model_gateway
+
+    model_gateway.save_ai_config(provider="local_deterministic")
+    panel = _open_prompt_tab(page).inner_text()
+    assert "ANTIGRAVITY" not in panel.upper()
+    assert "BUILT-IN TEMPLATES, NO MODEL" in panel.upper()

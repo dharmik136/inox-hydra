@@ -109,9 +109,12 @@ export function PromptPanel() {
       <section>
         <p className="studio-label mb-2">Engine</p>
         <dl className="flex flex-col gap-1.5">
-          <Row label="Mode" value={status.active_mode} />
-          <Row label="Provider" value={status.provider} />
-          <Row label="Model" value={status.model} />
+          {/* Said in plain words. active_mode carries an internal engine
+              codename for the no-model case, which meant nothing to a
+              creator; the provider and model they configured do. */}
+          <Row label="Mode" value={local ? "Built-in templates, no model" : "Your provider"} />
+          <Row label="Provider" value={local ? "None set up" : status.provider} />
+          <Row label="Model" value={local ? "None" : status.model} />
           <Row
             label="Egress"
             value={local ? "NONE, RUNS LOCALLY" : "SENDS TO PROVIDER"}
