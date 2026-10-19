@@ -124,11 +124,19 @@ def cmd_restore(args) -> int:
     info = support.inspect_backup(args.archive)
     manifest = info.get("manifest") or {}
     print(f"Backup: {args.archive}")
-    print(f"  created      {manifest.get('created_at', 'unknown')}")
-    print(f"  app version  {manifest.get('app_version', 'unknown')}")
-    print(f"  database     {'yes' if info['has_database'] else 'NO'}")
-    print(f"  media files  {info['asset_count']}")
-    print(f"  profile      {manifest.get('profile', 'not recorded (made before profiles were separate)')}")
+    if info.get("kind") == "database":
+        # A pre-upgrade copy: the database alone, with no manifest to read.
+        print("  kind         a copy of the database alone, taken before an upgrade")
+        print(f"  created      {info.get('created_at') or 'unknown'}")
+        print(f"  schema       {info.get('schema_version')}")
+        print(f"  database     {'yes' if info['has_database'] else 'NO'}")
+        print("  media files  none (your current media files are left as they are)")
+    else:
+        print(f"  created      {manifest.get('created_at', 'unknown')}")
+        print(f"  app version  {manifest.get('app_version', 'unknown')}")
+        print(f"  database     {'yes' if info['has_database'] else 'NO'}")
+        print(f"  media files  {info['asset_count']}")
+        print(f"  profile      {manifest.get('profile', 'not recorded (made before profiles were separate)')}")
     print(f"  restoring into the active profile: {support.paths.get_active_profile_id()}")
     print()
 

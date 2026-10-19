@@ -83,6 +83,8 @@ The interface has no restore button. Use a terminal opened in the checkout folde
 
 If the studio will not start because its database is damaged, restore your latest backup the same way. The restore still runs: the current database cannot be copied normally, so the safety backup (`inox_backup_pre_restore_damaged_<date>_<time>.zip`) keeps its files exactly as they were, in a `damaged` folder inside the ZIP, and the command says so.
 
+To go back to the state from before an upgrade, restore its automatic copy the same way: `python -m studio.cli restore "<path to linkedin_studio_premigration_<date>_<time>.db>" --yes`. It replaces the database only and leaves your media files as they are. The next start brings it up to the current layout again.
+
 In the portable build, use `InoxHydra-CLI.bat backup`, `InoxHydra-CLI.bat restore <zip>` and `InoxHydra-CLI.bat export`.
 
 ## Moving to another computer

@@ -233,3 +233,45 @@ def test_a_good_backup_restores_over_a_damaged_database(home, capsys):
         assert "data/linkedin_studio.db" not in z.namelist()
     stray = [n for n in os.listdir(paths.get_backups_dir()) if n.startswith("linkedin_studio_snapshot_")]
     assert stray == [], f"a failed snapshot left a file behind: {stray}"
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM-08: the automatic pre-upgrade .db copies can be restored
+# ---------------------------------------------------------------------------
+
+def test_a_pre_upgrade_database_copy_can_be_restored(home, capsys):
+    _add_post("before-upgrade")
+    conn = sqlite3.connect(paths.get_db_path())
+    conn.execute(f"PRAGMA user_version = {migrations.SCHEMA_VERSION - 1}")
+    conn.commit()
+    conn.close()
+    copy = migrations.backup_database("premigration")
+    assert os.path.basename(copy).startswith("linkedin_studio_premigration_")
+    database.init_db()
+    _add_post("after-upgrade")
+    uploads = _images(1)
+
+    assert cli.main(["restore", copy]) == 1
+    preview = capsys.readouterr().out
+    assert "database     yes" in preview
+
+    assert cli.main(["restore", copy, "--yes"]) == 0, capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "--into-active-profile" not in out
+    assert _post_ids() == {"before-upgrade"}
+    conn = sqlite3.connect(paths.get_db_path())
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == migrations.SCHEMA_VERSION - 1
+    conn.close()
+    assert os.path.exists(os.path.join(uploads, "img0.png")), "a database-only restore touched the media"
+
+
+def test_a_database_copy_from_another_profile_is_not_restored_by_accident(home, monkeypatch):
+    other = os.path.join(paths.get_profiles_root(), "client-a")
+    monkeypatch.setattr(paths, "read_profiles", lambda: {
+        "active": "default", "profiles": [{"id": "client-a", "name": "Client A"}]})
+    with paths.using_profile("client-a"):
+        database.init_db()
+        copy = migrations.backup_database("premigration")
+    assert copy.startswith(other)
+    with pytest.raises(support.ProfileMismatch, match="client-a"):
+        support.restore_backup(copy, take_safety_backup=False)

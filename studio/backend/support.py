@@ -248,11 +248,38 @@ def _schema_version_of(header: bytes) -> Optional[int]:
     return int.from_bytes(header[60:64], "big")
 
 
+def _database_header(path: str) -> bytes:
+    try:
+        with open(path, "rb") as handle:
+            return handle.read(100)
+    except OSError:
+        return b""
+
+
+def _is_database_copy(path: str) -> bool:
+    """A bare SQLite file, such as the copy taken before every schema upgrade."""
+    return os.path.isfile(path) and _database_header(path).startswith(SQLITE_HEADER)
+
+
 def inspect_backup(archive: str) -> Dict[str, Any]:
     """Reads a backup's manifest without restoring it, so a user can check first."""
+    if _is_database_copy(archive):
+        # linkedin_studio_premigration_<stamp>.db: the database alone, no media
+        # and no manifest. It is the only backup the studio takes on its own,
+        # and the one every upgrade error points at.
+        return {
+            "archive": archive,
+            "kind": "database",
+            "has_database": True,
+            "asset_count": 0,
+            "manifest": {},
+            "created_at": datetime.fromtimestamp(os.path.getmtime(archive)).isoformat(timespec="seconds"),
+            "schema_version": _schema_version_of(_database_header(archive)),
+        }
     if not os.path.exists(archive) or not zipfile.is_zipfile(archive):
         return {
             "archive": archive,
+            "kind": None,
             "has_database": False,
             "asset_count": 0,
             "manifest": {},
@@ -269,11 +296,23 @@ def inspect_backup(archive: str) -> Dict[str, Any]:
                 schema_version = _schema_version_of(handle.read(100))
     return {
         "archive": archive,
+        "kind": "backup",
         "has_database": "data/linkedin_studio.db" in names,
         "asset_count": len([n for n in names if n.startswith("assets/")]),
         "manifest": manifest,
+        "created_at": manifest.get("created_at"),
         "schema_version": schema_version,
     }
+
+
+def _profile_whose_backups_hold(path: str) -> Optional[str]:
+    """The profile whose backups folder a file sits in, or None."""
+    folder = os.path.normcase(os.path.realpath(os.path.dirname(os.path.abspath(path))))
+    for pid in paths.profile_ids():
+        home = os.path.join(paths.get_profile_home(pid), "backups")
+        if os.path.normcase(os.path.realpath(home)) == folder:
+            return pid
+    return None
 
 
 def _refuse_incompatible(info: Dict[str, Any]) -> None:
@@ -456,16 +495,23 @@ def restore_backup(archive: str, take_safety_backup: bool = True, into_active_pr
     It used to write the database in place and then the media, so a failure
     while writing media left the database already replaced and the user told
     only "Error".
-    """
-    if not os.path.exists(archive) or not zipfile.is_zipfile(archive):
-        raise ValueError(f"{archive} does not exist or is not a valid zip archive")
 
+    `archive` is a backup ZIP, or a bare database copy such as the one taken
+    before every schema upgrade, which replaces the database and leaves the
+    media alone.
+    """
     info = inspect_backup(archive)
+    if info["kind"] is None:
+        raise ValueError(f"{archive} does not exist or is not a valid zip archive or database copy")
     if not info["has_database"]:
         raise ValueError(f"{archive} contains no database and cannot be restored")
     # A backup is one creator profile's. Restoring it into another would put
-    # one client's data in another's place, so that takes asking for.
-    origin = (info.get("manifest") or {}).get("profile")
+    # one client's data in another's place, so that takes asking for. A bare
+    # database copy has no manifest, so the folder it sits in says whose it is.
+    if info["kind"] == "database":
+        origin = _profile_whose_backups_hold(archive)
+    else:
+        origin = (info.get("manifest") or {}).get("profile")
     active = paths.get_active_profile_id()
     if origin and origin != active and not into_active_profile:
         raise ProfileMismatch(
@@ -480,7 +526,14 @@ def restore_backup(archive: str, take_safety_backup: bool = True, into_active_pr
     safety = None
     try:
         os.makedirs(staging)
-        plan = _stage_archive(archive, staging, assets_root)
+        if info["kind"] == "database":
+            target_db = paths.get_db_path()
+            staged_db = os.path.join(staging, "new", "data", paths.DB_FILENAME)
+            os.makedirs(os.path.dirname(staged_db))
+            shutil.copyfile(archive, staged_db)
+            plan = [(staged_db, target_db), (None, target_db + "-wal"), (None, target_db + "-shm")]
+        else:
+            plan = _stage_archive(archive, staging, assets_root)
         _verify_staged_database(plan[0][0], archive)
         for staged, target in plan:
             if staged is not None and os.path.isdir(target):
@@ -505,6 +558,7 @@ def restore_backup(archive: str, take_safety_backup: bool = True, into_active_pr
         "safety_backup": safety,
         "safety_note": safety_note,
         "assets_restored": len([1 for staged, _ in plan[3:] if staged is not None]),
+        "kind": info["kind"],
         "manifest": info["manifest"],
     }
 
