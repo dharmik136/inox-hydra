@@ -279,7 +279,9 @@ def find_archives(limit: int = 5) -> List[Dict[str, Any]]:
         for name in names:
             final, partial = _partial(name)
             zip_named = bool(ARCHIVE_NAME.search(final))
-            if (not zip_named and not ARCHIVE_NAME.search(final + ".zip")) or (partial and final in listed):
+            if not zip_named and (partial or not ARCHIVE_NAME.search(final + ".zip")):
+                continue
+            if partial and final in listed:
                 continue
             full = os.path.join(directory, name)
             try:
@@ -841,7 +843,9 @@ class _Twins:
                             " AS INTEGER) BETWEEN ? AND ?)")
             self._params = [datetime.fromtimestamp(low, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
                             datetime.fromtimestamp(high, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
-                            int(low * 1000) << 22, (int(high * 1000) + 1) << 22]
+                            # SQLite's integers are signed 64-bit; an id read as
+                            # a moment late this century would not fit.
+                            min(int(low * 1000) << 22, 2 ** 63 - 1), min((int(high * 1000) + 1) << 22, 2 ** 63 - 1)]
         self._times: List[Tuple[float, str]] = []
         self._moments: Dict[str, List[float]] = {}
         self._texts: Dict[str, str] = {}
@@ -1407,7 +1411,8 @@ def forget(conn) -> None:
     """Everything the archive brought, for when the creator deletes what the studio holds about them."""
     for table in ("connections", "archive_imports"):
         conn.execute(f"DELETE FROM {table}")
-    conn.execute("DELETE FROM settings WHERE key IN (?, ?) OR key LIKE ?", (REQUESTED_KEY, NO_POSTS_KEY, BROUGHT_KEY + "%"))
+    conn.execute("DELETE FROM settings WHERE key IN (?, ?) OR key LIKE ?",
+                 (REQUESTED_KEY, NO_POSTS_KEY, BROUGHT_KEY + "%"))
     for name in os.listdir(_uploads_dir()):
         try:
             os.remove(os.path.join(_uploads_dir(), name))

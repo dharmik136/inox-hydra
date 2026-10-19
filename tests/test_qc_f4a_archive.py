@@ -374,6 +374,11 @@ def test_a_chrome_download_in_progress_is_listed_under_its_final_name(client, ho
     assert hit["name"] == COMPLETE and hit["downloading"] is True
 
 
+def test_only_linkedins_exports_count_as_downloads_in_progress(client, home):
+    (home / "user" / "Downloads" / "my linkedin data export notes.txt.part").write_bytes(b"x")
+    assert client.post("/api/v1/archive/requested").json()["found"] == []
+
+
 def test_a_file_written_moments_ago_that_does_not_open_may_still_be_downloading(client, home):
     downloads = home / "user" / "Downloads"
     (downloads / COMPLETE).write_bytes(_archive(_person_archive("Sample", "Alice"))[:200])

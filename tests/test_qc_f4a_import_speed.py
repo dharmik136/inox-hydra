@@ -138,7 +138,8 @@ def test_a_draft_saved_during_a_large_import_is_saved(client, monkeypatch):
     outcome = {}
 
     def run():
-        outcome["import"] = client.post("/api/v1/archive/import", json={"source": source, "include": ["posts"], "confirm_owner": True})
+        outcome["import"] = client.post("/api/v1/archive/import", json={
+            "source": source, "include": ["posts"], "confirm_owner": True})
 
     worker = threading.Thread(target=run)
     worker.start()
@@ -155,3 +156,22 @@ def test_a_draft_saved_during_a_large_import_is_saved(client, monkeypatch):
     assert took < 2, f"the draft waited {took:.1f} s for the import"
     assert outcome["import"].status_code == 200
     assert outcome["import"].json()["summary"]["posts"]["added"] == POSTS
+
+
+def test_the_bridge_reads_only_the_archive_posts_near_its_own(client):
+    """The bridge's lookup of the archive's row of a post reads the posts near it, and any id at all is safe."""
+    conn = sqlite3.connect(paths.get_db_path())
+    conn.executemany(
+        "INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, first_seen_at, last_seen_at) "
+        "VALUES (?, ?, ?, 'archive', 'x', 'x')",
+        [(f"urn:li:share:{_snow(_when(i), i)}", _text(i), _when(i).isoformat()) for i in range(POSTS)])
+    conn.commit()
+    i = POSTS // 2
+    seen = archive_import._Twins(conn, archive_only=True, near=archive_import._times_of(
+        f"urn:li:activity:{_snow(_when(i), 7)}", None))
+    assert len(seen._moments) == 1, "the bridge read every archive post to match one"
+    assert archive_import.find_twin(conn, f"urn:li:activity:{_snow(_when(i), 7)}", _text(i)[:50],
+                                    archive_only=True) == f"urn:li:share:{_snow(_when(i), i)}"
+    # An id whose moment lies late this century must not overflow SQLite's integers.
+    late = datetime(2090, 1, 1, tzinfo=timezone.utc)
+    assert archive_import.find_twin(conn, f"urn:li:activity:{_snow(late, 1)}", "x", archive_only=True) is None
