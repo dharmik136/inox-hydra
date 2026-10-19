@@ -34,7 +34,7 @@ The line under the title counts your reactions and comments on other people's po
 | --- | --- |
 | **Engaged back** | People you engage with who have also engaged with one of your posts |
 | **One-way** | People and pages you have engaged with at least three times who have not engaged with your posts |
-| **Most engaged with** | Everyone you engage with, most first, with your reactions, your comments, and how often they appeared on your posts |
+| **Most engaged with** | Everyone you engage with, most first, with your reactions, your comments, and on how many of your posts they appeared |
 
 **One-way** is not shown until the studio has read who engaged with at least half of your posts. Until then it says how many it has read. Opening your posts in the bridge browser, for example from **Posts**, is what reads them.
 

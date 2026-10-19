@@ -39,6 +39,14 @@ def classify_post_topic(text: Optional[str]) -> str:
     return "Practitioner Insights"
 
 
+def _people(n: int) -> str:
+    return f"{n} {'person' if n == 1 else 'people'}"
+
+
+def _posts(n: int) -> str:
+    return f"{n} {'post' if n == 1 else 'posts'}"
+
+
 def get_topic_attribution_map() -> Dict[str, Any]:
     """
     Computes CP4 Topic to Qualified-Lead Attribution Map.
@@ -70,23 +78,26 @@ def get_topic_attribution_map() -> Dict[str, Any]:
             "summary_sentence": "Cold start: no post topics recorded yet."
         }
 
-    # Map post URN to qualified leads count
-    leads_per_post: Dict[str, int] = {}
+    # People per post, not interactions. Adding one per interaction row made
+    # a founder who commented and reacted two qualified leads, three people
+    # "6 qualified leads", and leads divided by posts a 600% "conversion".
+    people_per_post: Dict[str, set] = {}
+    qualified_people: set = set()
     for row in interactions:
         urn = row["post_urn"]
         icp = row["icp_score"] or 0
         lead_status = (row["lead_status"] or "").upper()
         status = (row["status"] or "").lower()
         is_qualified = (icp >= 60.0) or (lead_status in ("ENGAGED", "CONVERTED")) or ("connected" in status or "meeting" in status)
+        people_per_post.setdefault(urn, set()).add(row["id"])
         if is_qualified:
-            leads_per_post[urn] = leads_per_post.get(urn, 0) + 1
+            qualified_people.add(row["id"])
 
     # Aggregate by topic
     topic_aggregates: Dict[str, Dict[str, Any]] = {}
     for p in posts:
         urn = p.get("activity_urn") or ""
         topic = classify_post_topic(p.get("text"))
-        q_leads = leads_per_post.get(urn, 0)
         rxn = p.get("reactions") or 0
 
         entry = topic_aggregates.setdefault(topic, {
@@ -94,12 +105,18 @@ def get_topic_attribution_map() -> Dict[str, Any]:
             "posts_count": 0,
             "post_count": 0,
             "total_reactions": 0,
-            "qualified_leads": 0
+            "people": set(),
         })
         entry["posts_count"] += 1
         entry["post_count"] += 1
         entry["total_reactions"] += rxn
-        entry["qualified_leads"] += q_leads
+        # A person who engaged with two posts of a topic is one person for it.
+        entry["people"] |= people_per_post.get(urn, set())
+
+    for entry in topic_aggregates.values():
+        people = entry.pop("people")
+        entry["people_engaged"] = len(people)
+        entry["qualified_leads"] = len(people & qualified_people)
 
     topic_list = sorted(
         topic_aggregates.values(),
@@ -108,19 +125,23 @@ def get_topic_attribution_map() -> Dict[str, Any]:
     )
 
     for t in topic_list:
-        t["lead_conversion_rate"] = round(t["qualified_leads"] / max(1, t["posts_count"]), 4)
-        t["summary"] = f"{t['qualified_leads']} qualified leads from {t['posts_count']} posts"
+        # The share of the people captured on the topic's posts who are
+        # qualified: a rate that cannot pass 100%, and none without people.
+        t["lead_conversion_rate"] = (round(t["qualified_leads"] / t["people_engaged"], 4)
+                                     if t["people_engaged"] else None)
+        t["summary"] = f"{_people(t['qualified_leads'])} qualified from {_posts(t['posts_count'])}"
 
     if len(topic_list) >= 2:
         top = topic_list[0]
         bottom = topic_list[-1]
         summary_sentence = (
-            f"Your {top['topic']} posts: {top['qualified_leads']} qualified leads from {top['posts_count']} posts. "
+            f"Your {top['topic']} posts: {_people(top['qualified_leads'])} qualified from {_posts(top['posts_count'])}. "
             f"{bottom['topic']}: {bottom['qualified_leads']} from {bottom['posts_count']}."
         )
     elif topic_list:
         top = topic_list[0]
-        summary_sentence = f"Your {top['topic']} posts: {top['qualified_leads']} qualified leads from {top['posts_count']} posts."
+        summary_sentence = (f"Your {top['topic']} posts: {_people(top['qualified_leads'])} qualified "
+                            f"from {_posts(top['posts_count'])}.")
     else:
         summary_sentence = "No topic attribution available yet."
 
@@ -138,21 +159,26 @@ def get_retrieval_evidence_brief(limit_top: int = 3, limit_bottom: int = 2) -> D
     """
     conn = get_db()
     try:
+        # Ranked by reactions, the measure "top performing" names, with the
+        # people each post brought counted once each and shown beside it. It
+        # was ranked by a count of interactions, which put a 50 reaction post
+        # with three chatty commenters above posts with 300.
+        #
         # The interactions are joined to leads from the leads side, inside
         # the subquery. Joined the other way, lead_interactions.lead_id
         # (INTEGER affinity) against leads.id (TEXT) can use no index, and
         # every post scanned every lead: 1.8 s at 2,000 posts, 19 ms now.
         rows = conn.execute("""
             SELECT p.activity_urn, p.text, p.reactions, p.comments,
-                   COUNT(CASE WHEN q.icp_score >= 60 THEN 1 END) AS qualified_leads
+                   COUNT(DISTINCT CASE WHEN q.icp_score >= 60 THEN q.lead_id END) AS qualified_leads
             FROM own_posts p
             LEFT JOIN (
-                SELECT li.post_urn, l.icp_score
+                SELECT li.post_urn, l.id AS lead_id, l.icp_score
                 FROM leads l CROSS JOIN lead_interactions li ON li.lead_id = l.id
             ) q ON q.post_urn = p.activity_urn
             WHERE p.text IS NOT NULL AND p.reactions IS NOT NULL
             GROUP BY p.activity_urn
-            ORDER BY qualified_leads DESC, p.reactions DESC
+            ORDER BY p.reactions DESC
         """).fetchall()
         posts = [dict(r) for r in rows]
     finally:
@@ -198,7 +224,7 @@ def get_retrieval_evidence_brief(limit_top: int = 3, limit_bottom: int = 2) -> D
         excerpt = " ".join((p.get("text") or "").split())[:90]
         q_leads = p.get("qualified_leads", 0)
         rxn = p.get("reactions", 0)
-        lines.append(f"- \"{excerpt}...\" ({rxn} reactions, {q_leads} qualified leads)")
+        lines.append(f"- \"{excerpt}...\" ({rxn} reactions, {_people(q_leads)} qualified)")
 
     brief_section = "\n".join(lines)
 

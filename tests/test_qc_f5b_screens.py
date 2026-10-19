@@ -212,3 +212,34 @@ def test_a_range_change_keeps_the_screen_and_reads_the_posts_once(studio):
     assert not page.evaluate("window.__blanked"), "a range change blanked the screen to LOADING ANALYTICS"
     assert len(reads) == 1, f"the posts were read {len(reads)} times for one visit"
     assert not studio["errors"], studio["errors"]
+
+
+# ---------------------------------------------------------------------------
+# Patterns
+# ---------------------------------------------------------------------------
+
+def _engaged(lead_id, name, urn, *kinds, score=80.0):
+    from database import get_db
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT OR IGNORE INTO leads (id, name, full_name, icp_score) VALUES (?, ?, ?, ?)",
+                     (lead_id, name, name, score))
+        for kind in kinds:
+            conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type) VALUES (?, ?, ?)",
+                         (lead_id, urn, kind))
+    conn.close()
+
+
+def test_topic_attribution_counts_people_and_no_share_passes_100(studio):
+    """AUDIENCE-12"""
+    urns = _own_posts(studio["client"], [{"text": "Why we moved our database to Postgres", "reactions": 50}])
+    for k in range(3):
+        _engaged(f"lead-founder-{k}", f"Founder {k}", urns[0], "COMMENT", "LIKE")
+    _engaged("lead-student", "A Student", urns[0], "LIKE", score=10.0)
+    page = _open(studio, "Patterns")
+    page.wait_for_selector("text=Which topics bring qualified pipeline")
+    row = page.locator("section", has_text="Which topics").locator("tbody tr").first
+    cells = [c.strip() for c in row.locator("td").all_inner_texts()]
+    assert cells[1:] == ["1", "50", "4", "3", "75%"], cells
+    assert "600" not in page.inner_text("body")
+    assert not studio["errors"], studio["errors"]

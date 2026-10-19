@@ -14,6 +14,12 @@ import {
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 
+/** A topic as the attribution route returns it: people counted once, and a rate only when someone was captured. */
+type TopicRow = Omit<TopicAttributionInsights["topics"][number], "lead_conversion_rate"> & {
+  people_engaged?: number;
+  lead_conversion_rate: number | null;
+};
+
 /**
  * Patterns and cadence: what your own posts suggest, and how steadily you post.
  *
@@ -250,24 +256,27 @@ function TopicAttributionSection({ attribution }: { attribution: TopicAttributio
               <th className="py-2 pr-4 font-normal">Topic</th>
               <th className="py-2 px-3 text-right font-normal">Posts</th>
               <th className="py-2 px-3 text-right font-normal">Reactions</th>
-              <th className="py-2 px-3 text-right font-normal">Qualified Leads</th>
-              <th className="py-2 pl-3 text-right font-normal">Conversion Rate</th>
+              <th className="py-2 px-3 text-right font-normal">People captured</th>
+              <th className="py-2 px-3 text-right font-normal">Qualified</th>
+              <th className="py-2 pl-3 text-right font-normal">Share qualified</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-edge">
-            {attribution.topics.map((t) => {
+            {(attribution.topics as TopicRow[]).map((t) => {
               const count = t.post_count ?? t.posts_count ?? 0;
-              const rate = t.lead_conversion_rate != null
-                ? (t.lead_conversion_rate * 100).toFixed(1)
-                : ((t.qualified_leads / Math.max(1, count)) * 100).toFixed(1);
+              // Qualified people over the people captured on the topic's posts,
+              // so it cannot pass 100%. It was qualified leads over posts, which
+              // read 600% for three people who each commented and reacted.
+              const rate = t.lead_conversion_rate;
               return (
                 <tr key={t.topic} className="py-2">
                   <td className="py-2.5 pr-4 text-ink-primary font-medium">{t.topic}</td>
                   <td className="py-2.5 px-3 text-right tabular-nums text-ink-secondary">{count}</td>
                   <td className="py-2.5 px-3 text-right tabular-nums text-ink-secondary">{t.total_reactions}</td>
+                  <td className="py-2.5 px-3 text-right tabular-nums text-ink-secondary">{t.people_engaged ?? 0}</td>
                   <td className="py-2.5 px-3 text-right tabular-nums text-ink-primary font-semibold">{t.qualified_leads}</td>
-                  <td className="py-2.5 pl-3 text-right tabular-nums text-signal-green-text font-medium">
-                    {rate}%
+                  <td className="py-2.5 pl-3 text-right tabular-nums text-ink-secondary">
+                    {rate == null ? <span className="text-ink-muted">not measured</span> : `${(rate * 100).toFixed(0)}%`}
                   </td>
                 </tr>
               );

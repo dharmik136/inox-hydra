@@ -132,14 +132,15 @@ def outbound_overview() -> Dict[str, Any]:
         rows = [dict(r) for r in conn.execute(
             "SELECT target_author, kind, reaction_kind, my_text, last_seen_at FROM outbound_engagements")]
         own_ids = onboarding._own_activity_ids(conn)
-        # People who engaged with your posts, by display name.
-        engaged_back: Dict[str, int] = {}
+        # People who engaged with your posts, by display name, and on how
+        # many of them: a comment and a like on one post is one post, not two.
+        engaged_back: Dict[str, set] = {}
         for row in conn.execute(
             "SELECT COALESCE(l.full_name, l.name) AS name, i.post_urn FROM lead_interactions i "
             "JOIN leads l ON l.id = i.lead_id WHERE i.post_urn IS NOT NULL"):
-            if onboarding._activity_id(row["post_urn"]) in own_ids:
-                key = _name_key(row["name"])
-                engaged_back[key] = engaged_back.get(key, 0) + 1
+            post = onboarding._activity_id(row["post_urn"])
+            if post in own_ids:
+                engaged_back.setdefault(_name_key(row["name"]), set()).add(post)
     finally:
         conn.close()
 
@@ -158,7 +159,7 @@ def outbound_overview() -> Dict[str, Any]:
 
     for key, entry in authors.items():
         entry["total"] = entry["reactions"] + entry["comments"]
-        entry["engaged_back"] = engaged_back.get(key, 0)
+        entry["engaged_back"] = len(engaged_back.get(key, ()))
 
     ranked = sorted(authors.values(), key=lambda a: (a["total"], a["comments"]), reverse=True)
 
