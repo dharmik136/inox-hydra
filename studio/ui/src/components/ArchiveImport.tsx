@@ -1,19 +1,49 @@
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, FileArchive, Loader2 } from "lucide-react";
+import { ExternalLink, FileArchive, FolderOpen, Loader2 } from "lucide-react";
 import {
   discardArchive,
   fetchArchiveState,
   importArchive,
+  markArchiveNoPosts,
   markArchiveRequested,
   previewArchive,
+  undoArchiveImport,
   uploadArchive,
   type ArchiveKindTally,
   type ArchivePreview,
   type ArchiveState,
   type FoundArchive,
 } from "@/lib/api";
+import { zipFolder } from "@/lib/folderZip";
 
 const LOOK_MS = 4000;
+
+/**
+ * The preview also says whose archive it is: the member LinkedIn made it for,
+ * from its Profile.csv, and the creator the studio knows. When they are not
+ * plainly one person, or no profile is confirmed yet, `needs_confirmation`
+ * says so and nothing is imported until the creator ticks `confirm_label`.
+ */
+type OwnedPreview = ArchivePreview & {
+  owner?: { name: string; headline: string | null; profile_url: string | null } | null;
+  creator?: { name: string | null; vanity: string } | null;
+  needs_confirmation?: string;
+  confirm_label?: string;
+};
+
+/**
+ * Where the step stands. LinkedIn sends its archive in two parts, and only
+ * the complete one has the posts, so the step is `complete` once an import
+ * brought them (`held_posts`) or the creator said the account has none.
+ */
+type ArchiveProgress = Omit<ArchiveState, "found" | "last_import"> & {
+  complete?: boolean;
+  no_posts_at?: string | null;
+  /** The folders Downloads is looked for in, while the step waits. */
+  watching?: string[];
+  found: (FoundArchive & { imported?: boolean; downloading?: boolean })[];
+  last_import: (NonNullable<ArchiveState["last_import"]> & { held_posts?: boolean }) | null;
+};
 
 /**
  * Setup, LinkedIn's data archive.
@@ -38,15 +68,20 @@ export function ArchiveImport({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [preview, setPreview] = useState<ArchivePreview | null>(null);
+  const [preview, setPreview] = useState<OwnedPreview | null>(null);
+  const [ownerAgreed, setOwnerAgreed] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<Record<string, ArchiveKindTally> | null>(null);
-  const [found, setFound] = useState<FoundArchive[]>([]);
+  const [found, setFound] = useState<ArchiveProgress["found"]>([]);
+  const [watching, setWatching] = useState<string[]>([]);
   const [waiting, setWaiting] = useState(state.waiting);
   const picker = useRef<HTMLInputElement>(null);
+  const folderPicker = useRef<HTMLInputElement | null>(null);
   const chooser = useRef<HTMLButtonElement>(null);
   const previewTitle = useRef<HTMLParagraphElement>(null);
   const resultTitle = useRef<HTMLParagraphElement>(null);
+  const progress = state as ArchiveProgress;
 
   useEffect(() => setWaiting(state.waiting), [state.waiting]);
 
@@ -63,6 +98,7 @@ export function ArchiveImport({
         .then((fresh) => {
           if (!live) return;
           setFound(fresh.found);
+          setWatching((fresh as ArchiveProgress).watching ?? []);
           setWaiting(fresh.waiting);
         })
         .catch(() => undefined);
@@ -100,9 +136,10 @@ export function ArchiveImport({
     }
   }
 
-  function show(found: ArchivePreview) {
+  function show(found: OwnedPreview) {
     setPreview(found);
     setResult(null);
+    setOwnerAgreed(false);
     setTicked(new Set(found.files.filter((f) => f.importable && f.default).map((f) => f.kind)));
     if (!found.recognised) setNote("This file does not look like LinkedIn's data archive.");
   }
@@ -112,7 +149,34 @@ export function ArchiveImport({
     <div className="flex flex-col gap-3">
       {!preview && (
         <>
-          {state.last_import ? (
+          {progress.last_import && !progress.complete ? (
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-[13px] leading-relaxed text-ink-secondary">
+                {"posts" in progress.last_import.summary
+                  ? "Your posts were not imported from that archive. To bring them in, import it again with " +
+                    "Posts you wrote ticked."
+                  : "That was LinkedIn's first part, which has no posts. The complete archive, with your posts, " +
+                    "comments and reactions, usually follows within a day. " +
+                    (waiting
+                      ? "This step keeps looking for it in your Downloads folder."
+                      : "When it arrives, choose it here, or click I have asked for it and this step will look " +
+                        "for it in your Downloads folder.")}
+              </p>
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() =>
+                  void run("no-posts", async () => {
+                    await markArchiveNoPosts();
+                    onChanged();
+                  })
+                }
+                className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+              >
+                My account has no posts
+              </button>
+            </div>
+          ) : state.last_import ? (
             <p className="text-[13px] leading-relaxed text-ink-secondary">
               For a newer copy, ask LinkedIn again on the same page. Importing it again adds only
               what is new.
@@ -148,6 +212,7 @@ export function ArchiveImport({
                   void run("requested", async () => {
                     const fresh = await markArchiveRequested();
                     setFound(fresh.found);
+                    setWatching((fresh as ArchiveProgress).watching ?? []);
                     setWaiting(fresh.waiting);
                     onChanged();
                   })
@@ -184,26 +249,61 @@ export function ArchiveImport({
                 if (file) void run("upload", async () => show(await uploadArchive(file)));
               }}
             />
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => folderPicker.current?.click()}
+              className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+            >
+              {busy === "folder" ? (
+                <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+              ) : (
+                <FolderOpen className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              )}
+              Choose the folder
+            </button>
+            <input
+              ref={(input) => {
+                folderPicker.current = input;
+                // A folder chooser; React has no prop for it.
+                input?.setAttribute("webkitdirectory", "");
+              }}
+              type="file"
+              tabIndex={-1}
+              className="sr-only"
+              aria-label="Choose the folder your LinkedIn data archive was unpacked into"
+              onChange={(event) => {
+                const files = Array.from(event.target.files ?? []);
+                event.target.value = "";
+                if (files.length) void run("folder", async () => show(await uploadArchive(await zipFolder(files))));
+              }}
+            />
           </div>
+          <p className="studio-meta -mt-1 text-[10px] text-ink-muted">
+            IF YOUR BROWSER UNPACKED THE ARCHIVE INTO A FOLDER, AS SAFARI DOES, CHOOSE THE FOLDER
+          </p>
 
           {waiting && (
             <div>
               <p className="studio-meta text-[10px] text-ink-muted">
-                IN YOUR DOWNLOADS FOLDER{found.length === 0 ? ": NOTHING FROM LINKEDIN YET" : ""}
+                IN YOUR DOWNLOADS FOLDER{watching.length > 0 ? ` (${watching.join(", ")})` : ""}
+                {found.length === 0 ? ": NOTHING FROM LINKEDIN YET" : ""}
               </p>
               {found.length > 0 && (
                 <ul className="mt-1.5 flex flex-col gap-1.5">
                   {found.map((hit) => (
                     <li key={hit.path} className="flex items-center justify-between gap-3">
-                      <span className="min-w-0 truncate text-[13px] text-ink-secondary">
-                        {hit.name}
-                        <span className="studio-meta ml-2 text-[10px] text-ink-muted">
+                      <span className="min-w-0 text-[13px] text-ink-secondary">
+                        <span className="block truncate">{hit.name}</span>
+                        <span className="studio-meta block text-[10px] text-ink-muted">
                           {readable(hit.bytes)} · {localDate(hit.modified)}
+                          {hit.imported ? " · ALREADY IMPORTED" : ""}
+                          {hit.downloading ? " · STILL DOWNLOADING" : ""}
                         </span>
                       </span>
                       <button
                         type="button"
-                        disabled={busy !== null}
+                        disabled={busy !== null || hit.downloading}
                         onClick={() =>
                           void run(hit.path, async () => show(await previewArchive(`downloads:${hit.path}`)))
                         }
@@ -217,6 +317,52 @@ export function ArchiveImport({
               )}
             </div>
           )}
+
+          {state.last_import &&
+            (removing ? (
+              <div className="rounded-md border border-edge p-3" role="group" aria-label="Remove the last import">
+                <p className="text-[13px] leading-relaxed text-ink-secondary">
+                  Remove the posts, comments, reactions, roles, skills, connections and profile details that{" "}
+                  {state.last_import.archive_name} added? What was in the studio before it, and what the bridge
+                  has read since, is kept.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() =>
+                      void run("remove", async () => {
+                        const done = await undoArchiveImport();
+                        setRemoving(false);
+                        setNote(removedLine(done.removed));
+                        onChanged();
+                      })
+                    }
+                    className="flex items-center gap-1.5 rounded-md border border-edge-strong px-2.5 py-1 text-[12px] text-ink-primary transition-colors hover:bg-soft disabled:opacity-40"
+                  >
+                    {busy === "remove" && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
+                    Remove it
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => setRemoving(false)}
+                    className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                  >
+                    Keep it
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => setRemoving(true)}
+                className="self-start text-[12px] text-ink-muted underline-offset-2 transition-colors hover:text-ink-primary hover:underline disabled:opacity-40"
+              >
+                Remove what this import added
+              </button>
+            ))}
         </>
       )}
 
@@ -225,7 +371,7 @@ export function ArchiveImport({
           onSubmit={(event) => {
             event.preventDefault();
             void run("import", async () => {
-              const done = await importArchive(preview.source, [...ticked]);
+              const done = await importArchive(preview.source, [...ticked], ownerAgreed);
               setResult(done.summary);
               onChanged();
             });
@@ -239,6 +385,27 @@ export function ArchiveImport({
           <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
             {readable(preview.archive.bytes)} · NOTHING IS IMPORTED UNTIL YOU SAY SO
           </p>
+          {preview.needs_confirmation ? (
+            <div className="mt-3 rounded-md border border-signal-orange/40 bg-signal-orange-subtle p-3">
+              <p className="text-[13px] leading-relaxed text-ink-primary">{preview.needs_confirmation}</p>
+              <label className="mt-2 flex items-start gap-2 text-[13px] text-ink-primary">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={ownerAgreed}
+                  onChange={(event) => setOwnerAgreed(event.target.checked)}
+                />
+                <span>{preview.confirm_label}</span>
+              </label>
+            </div>
+          ) : (
+            preview.owner && (
+              <p className="mt-2 text-[13px] text-ink-secondary">
+                This archive belongs to <span className="text-ink-primary">{preview.owner.name}</span>, the
+                profile you confirmed.
+              </p>
+            )
+          )}
           <fieldset className="mt-3 flex flex-col gap-2">
             <legend className="sr-only">Files to import</legend>
             {preview.files.map((file) => (
@@ -287,7 +454,7 @@ export function ArchiveImport({
           <div className="mt-3 flex gap-2">
             <button
               type="submit"
-              disabled={busy !== null || ticked.size === 0}
+              disabled={busy !== null || ticked.size === 0 || (!!preview.needs_confirmation && !ownerAgreed)}
               className="flex items-center gap-1.5 rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
             >
               {busy === "import" && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
@@ -313,7 +480,7 @@ export function ArchiveImport({
           <ul className="mt-2 flex flex-col gap-0.5">
             {Object.entries(result).map(([kind, tally]) => (
               <li key={kind} className="text-[12px] text-ink-secondary">
-                {labelFor(preview, kind)}: {tallyLine(tally)}
+                {labelFor(preview, kind)}: {tallyLine(kind, tally)}
               </li>
             ))}
           </ul>
@@ -337,6 +504,10 @@ export function ArchiveImport({
 }
 
 export function archiveStatus(state: ArchiveState): string {
+  const progress = state as ArchiveProgress;
+  if (progress.last_import && progress.complete === false) {
+    return `Imported ${localDate(progress.last_import.imported_at)} from ${progress.last_import.archive_name}, without your posts`;
+  }
   if (state.last_import) {
     const posts = state.last_import.summary.posts;
     const added = posts && "added" in posts ? `, ${posts.added} new post${posts.added === 1 ? "" : "s"}` : "";
@@ -356,14 +527,58 @@ function labelFor(preview: ArchivePreview | null, kind: string): string {
   return preview?.files.find((f) => f.kind === kind)?.label ?? kind;
 }
 
-function tallyLine(tally: ArchiveKindTally): string {
+/** The profile fields an import fills, in the creator's words rather than the database's. */
+const FIELD_WORDS: Record<string, string> = {
+  display_name: "your name",
+  headline: "headline",
+  about: "about",
+  location: "location",
+};
+
+/** Why the importer passes over a row of each kind, so "skipped" is never a bare number. */
+const SKIPPED_BECAUSE: Record<string, string> = {
+  posts: "reposts with nothing you wrote, or rows with no post link",
+  comments: "no text, no post link, or a date the studio cannot read",
+  reactions: "no post link, or a date the studio cannot read",
+  skills: "empty",
+  connections: "no public profile address",
+};
+
+function inWords(items: string[]): string {
+  return items.length > 1 ? `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}` : items.join("");
+}
+
+function tallyLine(kind: string, tally: ArchiveKindTally): string {
   if ("left_out" in tally) return "left out";
   if ("not_understood" in tally) return "not understood, nothing imported";
-  if ("filled" in tally) return tally.filled.length ? `filled ${tally.filled.join(", ")}` : "nothing was missing";
+  if ("filled" in tally) {
+    return tally.filled.length
+      ? `filled ${inWords(tally.filled.map((field) => FIELD_WORDS[field] ?? field.replace(/_/g, " ")))}`
+      : "nothing was missing";
+  }
   const parts = [`${tally.added} added`];
   if (tally.already_there) parts.push(`${tally.already_there} already here`);
-  if (tally.skipped) parts.push(`${tally.skipped} skipped`);
+  if (tally.skipped) parts.push(`${tally.skipped} skipped${SKIPPED_BECAUSE[kind] ? `: ${SKIPPED_BECAUSE[kind]}` : ""}`);
   return parts.join(", ");
+}
+
+const REMOVED_WORDS: Record<string, [string, string]> = {
+  posts: ["post", "posts"],
+  comments: ["comment", "comments"],
+  reactions: ["reaction", "reactions"],
+  positions: ["role", "roles"],
+  education: ["school", "schools"],
+  skills: ["skill", "skills"],
+  connections: ["connection", "connections"],
+  profile: ["profile detail", "profile details"],
+};
+
+function removedLine(removed: Record<string, number>): string {
+  const parts = Object.entries(REMOVED_WORDS)
+    .filter(([kind]) => (removed[kind] ?? 0) > 0)
+    .map(([kind, [one, many]]) => `${removed[kind]} ${removed[kind] === 1 ? one : many}`);
+  if (parts.length === 0) return "Removed the record of that import. Nothing it added was still in the studio.";
+  return `Removed what that import added: ${inWords(parts)}.`;
 }
 
 function readable(bytes: number): string {

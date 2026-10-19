@@ -43,9 +43,13 @@ Confirming also fills your name, headline and company in **Brand Studio**, but o
 LinkedIn gives every member a copy of what it holds about their account. It is the quickest and safest way to bring in your history: years of posts, comments and reactions, your roles and skills, and your connections, in one file, with nothing read from LinkedIn's pages. This step does not need the bridge, apart from opening LinkedIn's page for you.
 
 1. Click **Open LinkedIn's download page**. On it, choose **Download larger data archive**, then **Request archive**. LinkedIn asks for your password, then emails you a link: usually within minutes for the first part, and within a day for all of it. The link lasts 72 hours.
-2. Click **I have asked for it**. From then on, while this step is on screen, the studio looks in your Downloads folder for a file named like LinkedIn's export, such as `Complete_LinkedInDataExport_10-19-2026.zip`. It looks only for those names, only after you click this, and stops once an archive has been imported.
-3. When the file appears under **IN YOUR DOWNLOADS FOLDER**, click **See what is in it**. If you saved it somewhere else, click **Choose the file** instead.
-4. The studio lists each file in the archive it can read, with how many rows it holds, all ticked. Untick anything you do not want, then click **Import what is ticked**. Nothing is written before you do.
+2. Click **I have asked for it**. From then on, while this step is on screen, the studio looks in your Downloads folder for a file named like LinkedIn's export, such as `Complete_LinkedInDataExport_10-19-2026.zip`. It looks only for those names, only after you click this, and stops once an archive with your posts has been imported. The step names the folder it is looking in; on Windows that is your Downloads folder wherever you have moved it, to another drive or into OneDrive.
+3. When the file appears under **IN YOUR DOWNLOADS FOLDER**, click **See what is in it**. While your browser is still downloading it, it is marked **STILL DOWNLOADING** and cannot be opened yet. If you saved it somewhere else, click **Choose the file** instead. Safari unpacks a downloaded archive into a folder of the same name and removes the file; that folder is offered in the same way, and if it is somewhere else, click **Choose the folder**.
+4. The studio says whose archive it is, from the name in it, and lists each file it can read, with how many rows it holds, all ticked. Untick anything you do not want, then click **Import what is ticked**. Nothing is written before you do.
+
+Everything in an archive becomes your own record, so the studio checks the name in it against the profile you confirmed in step 2. If they differ, it says so, for example "This archive belongs to Sample Alice, but the studio knows you as Sample Bob", and imports nothing until you tick the box naming both of you. It asks the same if you have not confirmed your profile yet, because it cannot check.
+
+LinkedIn sends the archive in two parts. The first, `Basic_LinkedInDataExport_...`, arrives within minutes and holds your profile, roles and connections but no posts. You can import it, and the step then reads "without your posts" and keeps looking in your Downloads folder for the complete one, `Complete_LinkedInDataExport_...`, which usually follows within a day; files you have imported already are marked **ALREADY IMPORTED**. The step ticks once your posts are in. If your account has no posts, click **My account has no posts**.
 
 | File in the archive | Where it goes |
 | --- | --- |
@@ -58,6 +62,8 @@ LinkedIn gives every member a copy of what it holds about their account. It is t
 Your messages stay in the archive and are never imported, and the list under **other files stay in the archive** says which other files were not read. If a file reads **NOT UNDERSTOOD**, LinkedIn has changed its columns; the note lists the ones it found, and nothing from that file is imported.
 
 Importing the same archive again adds nothing twice. When the bridge later reads a post the archive brought in, the two become one: the archive's date and full text, and the figures LinkedIn shows on the page. A comment or reaction whose date the studio cannot read is skipped and counted, never given today's date. A file you chose by hand is kept by the studio only until it is imported or you click **Not now**, or for a day; a file in your Downloads folder is never moved or deleted.
+
+To take out what an import added, for example an archive that was not yours, click **Remove what this import added** in this step, then **Remove it**. The posts, comments, reactions, roles, skills and connections it added are deleted, and the profile details it filled are emptied again. What was in the studio before the import stays, and so does a post the bridge has read since. This works before you have confirmed your profile, too.
 
 ## 5. Your history
 

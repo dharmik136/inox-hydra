@@ -132,7 +132,7 @@ def test_a_preview_writes_nothing_and_says_what_it_found(client):
 
 def test_the_import_reads_each_file_into_its_place(client):
     source = _upload(client)["source"]
-    res = client.post("/api/v1/archive/import", json={"source": source})
+    res = client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True})
     assert res.status_code == 200, res.text
     summary = res.json()["summary"]
     assert summary["posts"] == {"added": 2, "already_there": 0, "skipped": 1}, "a repost with no text became a post"
@@ -159,7 +159,7 @@ def test_the_import_reads_each_file_into_its_place(client):
 
 def test_connections_never_carry_an_email_address(client):
     source = _upload(client)["source"]
-    client.post("/api/v1/archive/import", json={"source": source})
+    client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True})
     conn = _db()
     columns = [r[1] for r in conn.execute("PRAGMA table_info(connections)")]
     assert not any("mail" in c for c in columns)
@@ -179,7 +179,7 @@ def test_what_the_bridge_captured_is_kept(client):
         "INSERT INTO creator_identity (id, display_name, headline) VALUES (1, 'G. Hopper', 'Read by the bridge')")
     conn.commit()
     source = _upload(client)["source"]
-    summary = client.post("/api/v1/archive/import", json={"source": source}).json()["summary"]
+    summary = client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True}).json()["summary"]
     assert summary["posts"]["already_there"] == 1
     conn = _db()
     kept = conn.execute("SELECT reactions, published_at FROM own_posts WHERE activity_urn LIKE '%99'").fetchone()
@@ -193,22 +193,22 @@ def test_what_the_bridge_captured_is_kept(client):
 def test_importing_twice_adds_nothing_the_second_time(client):
     for _ in range(2):
         source = _upload(client)["source"]
-        summary = client.post("/api/v1/archive/import", json={"source": source}).json()["summary"]
+        summary = client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True}).json()["summary"]
     assert summary["posts"]["added"] == 0 and summary["comments"]["added"] == 0
     assert summary["reactions"]["added"] == 0 and summary["connections"]["added"] == 0
 
 
 def test_only_what_stays_ticked_is_imported(client):
     source = _upload(client)["source"]
-    summary = client.post("/api/v1/archive/import", json={"source": source, "include": ["posts"]}).json()["summary"]
+    summary = client.post("/api/v1/archive/import", json={"source": source, "include": ["posts"], "confirm_owner": True}).json()["summary"]
     assert summary["connections"] == {"left_out": True}
     assert _db().execute("SELECT COUNT(*) FROM connections").fetchone()[0] == 0
 
 
 def test_an_uploaded_copy_is_deleted_once_imported(client):
     source = _upload(client)["source"]
-    client.post("/api/v1/archive/import", json={"source": source})
-    assert client.post("/api/v1/archive/preview", json={"source": source}).status_code == 400
+    client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True})
+    assert client.post("/api/v1/archive/preview", json={"source": source, "confirm_owner": True}).status_code == 400
     assert not os.listdir(os.path.join(paths.get_data_dir(), "archive_uploads"))
 
 
@@ -228,13 +228,13 @@ def test_downloads_is_looked_in_only_after_the_archive_was_requested(client, hom
     state = client.post("/api/v1/archive/requested").json()
     assert [f["name"] for f in state["found"]] == ["Basic_LinkedInDataExport_10-19-2026.zip"]
     source = "downloads:" + state["found"][0]["path"]
-    assert client.post("/api/v1/archive/preview", json={"source": source}).status_code == 200
+    assert client.post("/api/v1/archive/preview", json={"source": source, "confirm_owner": True}).status_code == 200
     assert os.path.exists(state["found"][0]["path"]), "the creator's own download was removed"
 
     # Setup's polling of onboarding state, which Today also calls, never looks.
     assert client.get("/api/v1/onboarding/state").json()["archive"]["found"] == []
     # Once an archive has been imported, the studio stops looking.
-    client.post("/api/v1/archive/import", json={"source": source})
+    client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True})
     after = client.get("/api/v1/archive").json()
     assert after["waiting"] is False and after["found"] == []
 
@@ -243,7 +243,7 @@ def test_only_sources_the_studio_offered_are_opened(client, home):
     secret = home / "elsewhere.zip"
     secret.write_bytes(_archive(FULL))
     for source in ("downloads:" + str(secret), "upload:../../etc", str(secret)):
-        assert client.post("/api/v1/archive/preview", json={"source": source}).status_code == 400
+        assert client.post("/api/v1/archive/preview", json={"source": source, "confirm_owner": True}).status_code == 400
 
 
 def test_an_oversized_upload_is_refused_as_it_arrives(client, monkeypatch):
@@ -276,7 +276,7 @@ def test_setup_carries_the_archive_step(client):
     assert state["archive"]["download_page"].startswith("https://www.linkedin.com/")
     assert state["steps"]["archive"] is False
     source = _upload(client)["source"]
-    client.post("/api/v1/archive/import", json={"source": source})
+    client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True})
     state = client.get("/api/v1/onboarding/state").json()
     assert state["steps"]["archive"] is True and state["archive"]["last_import"]["summary"]["posts"]["added"] == 2
 
@@ -303,7 +303,7 @@ def test_a_post_read_by_the_bridge_after_the_import_becomes_the_same_row(client)
     import onboarding
 
     source = _upload(client, {"Shares.csv": SHARES})["source"]
-    client.post("/api/v1/archive/import", json={"source": source})
+    client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True})
     _confirm_me()
     onboarding.ingest_own_posts("grace", [{"activity_urn": ACTIVITY, "actor": "grace", "reactions": 7,
                                            "text": "Compilers are for people. Machines do not\u2026more"}])
@@ -322,7 +322,7 @@ def test_a_post_the_bridge_read_first_is_not_imported_again(client):
                  "'2024-03-05T10:22:11.500000+00:00', 'urn_decode', 7, 'x', 'x')", (ACTIVITY,))
     conn.commit()
     source = _upload(client, {"Shares.csv": SHARES})["source"]
-    summary = client.post("/api/v1/archive/import", json={"source": source}).json()["summary"]
+    summary = client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True}).json()["summary"]
     assert summary["posts"]["already_there"] == 1
     row = _db().execute("SELECT text, reactions FROM own_posts WHERE activity_urn = ?", (ACTIVITY,)).fetchone()
     assert row["reactions"] == 7 and row["text"] == POST_TEXT
@@ -333,7 +333,7 @@ def test_the_same_words_on_different_posts_are_different_comments(client):
                 + "".join(f"2024-06-0{i} 12:00:00,https://www.linkedin.com/feed/update/urn:li:activity:72000000000000000{i}0,"
                           "Congratulations!\n" for i in range(1, 4)))
     source = _upload(client, {"Comments.csv": comments})["source"]
-    summary = client.post("/api/v1/archive/import", json={"source": source}).json()["summary"]
+    summary = client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True}).json()["summary"]
     assert summary["comments"] == {"added": 3, "already_there": 0, "skipped": 0}
 
 
@@ -341,7 +341,7 @@ def test_an_unreadable_date_is_skipped_never_made_today(client):
     comments = "Date,Link,Message\nsometime,https://www.linkedin.com/feed/update/urn:li:activity:7200000000000000004,Hello\n"
     reactions = "Date,Type,Link\n2024-06-02 09:00:00 UTC,EMPATHY,https://www.linkedin.com/feed/update/urn:li:activity:7200000000000000005\n"
     source = _upload(client, {"Comments.csv": comments, "Reactions.csv": reactions})["source"]
-    summary = client.post("/api/v1/archive/import", json={"source": source}).json()["summary"]
+    summary = client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True}).json()["summary"]
     assert summary["comments"]["skipped"] == 1 and summary["comments"]["added"] == 0
     reaction = _db().execute("SELECT reaction_kind, first_seen_at FROM outbound_engagements").fetchone()
     assert tuple(reaction) == ("love", "2024-06-02T09:00:00+00:00"), "LinkedIn's internal name or a UTC suffix leaked through"
@@ -359,7 +359,7 @@ def test_a_broken_row_is_reported_not_merged_into_the_next(client):
 
 def test_forgetting_yourself_removes_what_the_archive_brought(client):
     source = _upload(client)["source"]
-    client.post("/api/v1/archive/import", json={"source": source})
+    client.post("/api/v1/archive/import", json={"source": source, "confirm_owner": True})
     client.post("/api/v1/archive/requested")
     assert client.delete("/api/v1/identity").status_code == 200
     conn = _db()
@@ -371,7 +371,7 @@ def test_forgetting_yourself_removes_what_the_archive_brought(client):
 
 def test_an_upload_set_aside_is_deleted(client):
     source = _upload(client)["source"]
-    assert client.post("/api/v1/archive/discard", json={"source": source}).status_code == 200
+    assert client.post("/api/v1/archive/discard", json={"source": source, "confirm_owner": True}).status_code == 200
     assert not os.listdir(os.path.join(paths.get_data_dir(), "archive_uploads"))
 
 

@@ -1666,11 +1666,20 @@ export async function uploadArchive(file: File): Promise<ArchivePreview> {
   return (await response.json()) as ArchivePreview;
 }
 
+/**
+ * Imports what is ticked. `confirmOwner` is the creator's word that the
+ * archive is theirs, which the studio needs when the archive names someone
+ * else or no profile is confirmed yet (409 without it).
+ */
 export async function importArchive(
   source: string,
   include: string[],
+  confirmOwner = false,
 ): Promise<{ status: string; archive: { name: string; bytes: number }; summary: Record<string, ArchiveKindTally> }> {
-  return call("/api/v1/archive/import", { method: "POST", body: JSON.stringify({ source, include }) });
+  return call("/api/v1/archive/import", {
+    method: "POST",
+    body: JSON.stringify({ source, include, confirm_owner: confirmOwner }),
+  });
 }
 
 export interface OnboardingState {
@@ -2197,4 +2206,18 @@ export async function installLicence(key: string): Promise<{ status: string; lic
 
 export async function removeLicence(): Promise<{ status: string; licence: LicenceState }> {
   return call("/api/v1/licence", { method: "DELETE" });
+}
+
+/** Removes what the last archive import added, and the record of it. Counts per kind. */
+export async function undoArchiveImport(): Promise<{
+  status: string;
+  archive: { name: string };
+  removed: Record<string, number>;
+}> {
+  return call("/api/v1/archive/undo", { method: "POST" });
+}
+
+/** The creator says their LinkedIn account has no posts, so the archive step is done without any. */
+export async function markArchiveNoPosts(): Promise<ArchiveState> {
+  return call<ArchiveState>("/api/v1/archive/no-posts", { method: "POST" });
 }

@@ -2758,11 +2758,14 @@ class ArchiveSourcePayload(BaseModel):
 
 class ArchiveImportPayload(ArchiveSourcePayload):
     include: Optional[List[str]] = Field(None, description="Kinds to import; the defaults when omitted")
+    confirm_owner: bool = Field(False, description="The creator says the archive is theirs, whoever it names")
 
 
 def _archive_call(work):
     try:
         return work()
+    except archive_import.OwnerUnconfirmed as error:
+        raise HTTPException(status_code=409, detail=str(error))
     except archive_import.ArchiveError as error:
         raise HTTPException(status_code=400, detail=str(error))
 
@@ -2781,6 +2784,12 @@ def get_archive_state():
 def post_archive_requested():
     """The creator says they asked LinkedIn for their archive, so Downloads may be looked in."""
     return archive_import.mark_requested()
+
+
+@app.post("/api/v1/archive/no-posts", tags=["Onboarding"])
+def post_archive_no_posts():
+    """The creator says their LinkedIn account has no posts, so the archive step is done without any."""
+    return archive_import.mark_no_posts()
 
 
 @app.post("/api/v1/archive/upload", tags=["Onboarding"])
@@ -2827,12 +2836,24 @@ def post_archive_preview(payload: ArchiveSourcePayload):
     return _archive_call(lambda: archive_import.preview(payload.source))
 
 
+@app.post("/api/v1/archive/undo", tags=["Onboarding"])
+def post_archive_undo():
+    """Removes what the last archive import added: its posts, activity, profile fields and connections."""
+    return _archive_call(archive_import.remove_last_import)
+
+
 @app.post("/api/v1/archive/import", tags=["Onboarding"])
 def post_archive_import(payload: ArchiveImportPayload):
-    """Imports what the creator kept ticked from their own LinkedIn archive."""
+    """
+    Imports what the creator kept ticked from their own LinkedIn archive.
+
+    409 when the archive names someone other than the confirmed creator, or
+    no creator is confirmed yet, and the creator has not said it is theirs.
+    """
     if not licensing.allows("archive_import"):
         raise HTTPException(status_code=402, detail="Importing the LinkedIn archive is part of the Creator licence.")
-    return _archive_call(lambda: archive_import.import_archive(payload.source, payload.include))
+    return _archive_call(lambda: archive_import.import_archive(payload.source, payload.include,
+                                                               confirm_owner=payload.confirm_owner))
 
 
 @app.get("/api/v1/licence", tags=["Multi-Tenancy & Profiles"])

@@ -1387,6 +1387,7 @@ def onboarding_state() -> Dict[str, Any]:
             "identity": confirmed,
             "posts": post_count > 0,
             "activity": sum(outbound.values()) > 0,
-            "archive": archive["last_import"] is not None,
+            # Done when the posts are in, not at LinkedIn's first, basic part.
+            "archive": archive["complete"],
         },
     }
