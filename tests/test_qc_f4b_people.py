@@ -83,7 +83,7 @@ def test_activity_lists_the_people_just_captured_first():
     _lead("lead-aaaa-f4b", "Captured Last", now - timedelta(minutes=1))
     _lead("lead-cccc-f4b", "Captured Between", now - timedelta(minutes=10))
 
-    stream = client.get("/api/v1/self/activity-stream?limit=200").json()
+    stream = client.get("/api/v1/self/activity-stream?limit=100000").json()
     names = [lead["name"] for lead in stream["recent_leads"] if lead["id"].endswith("-f4b")]
     assert names == ["Captured Last", "Captured Between", "Captured First"]
 
@@ -94,7 +94,7 @@ def test_activity_does_not_invent_how_someone_engaged():
     with conn:
         conn.execute("UPDATE leads SET engagement_type = NULL WHERE id = 'lead-dddd-f4b'")
     conn.close()
-    stream = client.get("/api/v1/self/activity-stream?limit=200").json()
+    stream = client.get("/api/v1/self/activity-stream?limit=100000").json()
     lead = next(l for l in stream["recent_leads"] if l["id"] == "lead-dddd-f4b")
     assert lead["engagement_type"] != "Commented"
 
