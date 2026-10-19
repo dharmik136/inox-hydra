@@ -195,7 +195,10 @@ export function TodaySurface({
   );
 }
 
-function Person({ person, onOpen }: { person: TodayPerson; onOpen: () => void }) {
+/** engaged_at: when the studio first saw their latest comment, not when it was last re-read. */
+type ReplyPerson = TodayPerson & { engaged_at?: string | null };
+
+function Person({ person, onOpen }: { person: ReplyPerson; onOpen: () => void }) {
   return (
     <li>
       <button
@@ -207,7 +210,7 @@ function Person({ person, onOpen }: { person: TodayPerson; onOpen: () => void })
           <p className="truncate text-[13px] font-medium text-ink-primary">{person.name}</p>
           <p className="studio-meta shrink-0 text-[10px] text-ink-muted">
             {person.posts_engaged > 1 ? `${person.posts_engaged} OF YOUR POSTS` : person.commented ? "COMMENTED" : "REACTED"}
-            {person.last_seen_at ? ` · ${ago(person.last_seen_at)}` : ""}
+            {person.engaged_at ? ` · ${ago(person.engaged_at)}` : ""}
           </p>
         </div>
         {person.headline && <p className="mt-0.5 truncate text-[11px] text-ink-muted">{person.headline}</p>}
