@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { ArrowLeft, ChevronRight, LifeBuoy, Search, X } from "lucide-react";
 import {
   fetchDocLibrary,
@@ -208,6 +208,20 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
     if (view !== "document") readerRef.current?.scrollTo({ top: 0 });
   }, [view, sectionId]);
 
+  /**
+   * Typing on the home view's search box replaces the home view with the
+   * results, and the box goes with it, so the first letter landed and the
+   * rest went nowhere. The search carries on in the topics column's box.
+   */
+  const railSearch = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const field = railSearch.current;
+    if (view !== "results" || !field) return;
+    if (document.activeElement && document.activeElement !== document.body) return;
+    field.focus();
+    field.setSelectionRange(field.value.length, field.value.length);
+  }, [view]);
+
   /** Which section is being read, for the contents rail. */
   useEffect(() => {
     if (view !== "document" || !doc || doc.outline.length < MIN_OUTLINE_FOR_RAIL) return;
@@ -356,6 +370,7 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
         onOpenSection={openSection}
         onSelect={selectDocument}
         hiddenWhenNarrow={view === "home"}
+        searchRef={railSearch}
       />
 
       <div
@@ -481,6 +496,7 @@ interface LibraryRailProps {
   onSelect: (id: string, anchor?: string | null) => void;
   /** Below md, whether to leave the column out entirely rather than show its search box. */
   hiddenWhenNarrow: boolean;
+  searchRef: RefObject<HTMLInputElement>;
 }
 
 function LibraryRail({
@@ -495,6 +511,7 @@ function LibraryRail({
   onOpenSection,
   onSelect,
   hiddenWhenNarrow,
+  searchRef,
 }: LibraryRailProps) {
   /** The curated seven carry a number worth showing beside their title. */
   const numberOf = useMemo(() => {
@@ -524,6 +541,7 @@ function LibraryRail({
             aria-hidden="true"
           />
           <input
+            ref={searchRef}
             value={query}
             onChange={(event) => onQuery(event.target.value)}
             placeholder="Search every document"

@@ -619,3 +619,22 @@ def test_a_wide_window_keeps_the_topics_beside_the_article(studio):
     assert topics.is_visible(), "the topics column went missing on a wide window"
     article = page.locator("main article").bounding_box()
     assert topics.bounding_box()["x"] < article["x"], "the topics are no longer beside the article"
+
+
+# ---------------------------------------------------------------------------
+# F7-N1: typing in the Docs home search box keeps every keystroke
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("width,height", [(1024, 768), (375, 812)])
+def test_typing_a_search_on_the_docs_home_keeps_every_letter(studio, width, height):
+    page = studio(width, height).open("Docs")
+    page.get_by_label("Search the documentation").click()
+    page.keyboard.type("backup", delay=40)
+    page.wait_for_timeout(400)
+    field = page.get_by_label("Search the playbook")
+    assert field.input_value() == "backup", (
+        f"only {field.input_value()!r} was typed: the box lost focus when the results replaced the home view"
+    )
+    assert page.evaluate("() => document.activeElement && document.activeElement.getAttribute('aria-label')") == (
+        "Search the playbook"
+    )
