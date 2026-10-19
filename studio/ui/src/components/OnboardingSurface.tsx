@@ -593,6 +593,7 @@ function importLine(entry: SelfImport): string {
   if (entry.outcome === "left_page") return `LEFT THE PAGE AT ${read}`;
   if (entry.outcome === "superseded") return "REPLACED BY A NEWER IMPORT";
   if (entry.outcome === "expired") return "EXPIRED, CLICK IMPORT AGAIN";
+  if (entry.outcome === "not_opened") return "NOT STARTED, NO BROWSER WITH THE BRIDGE OPENED";
   if (entry.outcome === "nothing_read") return "NOTHING READ. OPEN THE PAGE AND IMPORT AGAIN";
   if (entry.outcome === "stalled") return `THE LIST STOPPED LOADING AT ${read}. IMPORT AGAIN`;
   if (entry.outcome === "round_limit") return `READ ${read}, THE MOST ONE IMPORT READS`;

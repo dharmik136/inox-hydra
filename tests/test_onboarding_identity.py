@@ -683,11 +683,17 @@ def test_the_extension_reports_what_it_could_not_read():
     assert 'reportCapture("profile"' in own and '"post_author"' in own
 
 
-def test_sync_all_activity_sequential_chain():
+def test_sync_all_activity_sequential_chain(monkeypatch):
     """
     A single click on sync-all begins an autonomous sequential chain
     (posts -> comments -> reactions) that advances automatically on event completion.
     """
+    # Sync All now reports what the launcher did, so the result no longer
+    # depends on whichever browsers this machine has installed.
+    monkeypatch.setattr(app_module.browser_router_module, "launch_browser_with_extension",
+                        lambda browser_id="auto", target_url="": {
+                            "status": "success", "browser": "Brave Browser", "carries_extension": True,
+                            "message": "Launched Brave Browser with the bridge loaded."})
     _confirm()
 
     res = client.post("/api/v1/self/sync-all").json()

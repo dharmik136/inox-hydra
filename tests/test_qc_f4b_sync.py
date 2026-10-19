@@ -152,6 +152,68 @@ def test_stopping_or_a_single_import_ends_the_chain():
     assert onboarding.get_active_sync_chain() is None
 
 
+def _launcher(monkeypatch, result):
+    """Sync All's launcher, replaced: what it would have reported, and nothing opened."""
+    launched = []
+
+    def fake(browser_id="auto", target_url=""):
+        launched.append(target_url)
+        return dict(result, target_url=target_url)
+
+    monkeypatch.setattr(app_module.browser_router_module, "launch_browser_with_extension", fake)
+    return launched
+
+
+def _bridge_heard_from():
+    client.post("/api/v1/bridge/heartbeat", json={"extension_version": "test", "page_kind": "feed"})
+
+
+NO_BROWSER = {"status": "error", "message": "No Chromium browser was found on this computer."}
+CHROME_ONLY = {"status": "success", "browser": "Google Chrome", "browser_id": "chrome", "carries_extension": False,
+               "message": "Launched Google Chrome, but it ignores --load-extension."}
+BRAVE = {"status": "success", "browser": "Brave Browser", "browser_id": "brave", "carries_extension": True,
+         "message": "Launched Brave Browser with the bridge loaded."}
+
+
+@pytest.mark.parametrize("launch", [NO_BROWSER, CHROME_ONLY], ids=["no_browser", "chrome_only"])
+def test_sync_all_never_says_started_when_nothing_can_start(monkeypatch, launch):
+    _confirm()
+    _launcher(monkeypatch, launch)
+    response = client.post("/api/v1/self/sync-all")
+    assert response.status_code == 409, response.text
+    detail = response.json()["detail"]
+    assert "started" not in detail.lower()
+    assert "nothing was imported" in detail.lower()
+    assert onboarding.get_active_sync_chain() is None
+    waiting = [i for i in _imports().values() if not i["finished_at"]]
+    assert waiting == [], "a request is left waiting for a page that will not open"
+
+
+def test_chrome_with_the_bridge_running_elsewhere_says_where_to_go(monkeypatch):
+    _confirm()
+    _bridge_heard_from()
+    _launcher(monkeypatch, CHROME_ONLY)
+    response = client.post("/api/v1/self/sync-all")
+    assert response.status_code == 200
+    body = response.json()
+    assert "cannot load the bridge" in body["message"]
+    assert onboarding.get_active_sync_chain() is not None
+
+
+def test_sync_all_says_what_it_opened_and_in_which_order(monkeypatch):
+    _confirm()
+    launched = _launcher(monkeypatch, BRAVE)
+    body = client.post("/api/v1/self/sync-all", json={"sequence": ["comments", "posts"]}).json()
+    assert body["status"] == "success"
+    assert launched and "recent-activity/comments" in launched[0]
+    message = body["message"]
+    assert "Brave Browser" in message
+    assert message.index("comments") < message.index("posts")
+    assert "reactions" not in message
+    # The bridge has not reported in, so the import has not begun yet.
+    assert "starts when the bridge reports in" in message
+
+
 def test_a_chain_whose_request_expired_is_over():
     _confirm()
     onboarding.start_sync_chain()

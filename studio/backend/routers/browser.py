@@ -121,6 +121,34 @@ def sync_all_activity(payload: Optional[Dict[str, Any]] = None):
     # Launch or switch the browser tab to the first activity page via CDP
     launch_res = launch_browser_with_extension("auto", target_url=target_url)
 
+    # What actually happened. This said "Autonomous activity sync started"
+    # whatever the launcher reported: with no browser installed, with only
+    # Chrome (which cannot load the bridge), and with the bridge not running.
+    connected = bool(onboarding.bridge_status().get("connected"))
+    name = launch_res.get("browser") or "the browser"
+    order = ", then ".join(chain_res["sequence"])
+    if launch_res.get("status") != "success" or launch_res.get("carries_extension") is False:
+        reason = launch_res.get("message") or "The browser could not be opened."
+        if not connected:
+            onboarding.cancel_sync_chain(withdraw=True)
+            raise HTTPException(status_code=409, detail=f"{reason} Nothing was imported.")
+        message = (
+            f"{name} cannot load the bridge. " if launch_res.get("status") == "success"
+            else "No browser could be opened from here. "
+        ) + (
+            f"The bridge is running in another browser: open your {first_kind} activity page there and "
+            f"the import starts ({order})."
+        )
+    else:
+        message = f"Opened your {first_kind} activity page in {name}. "
+        if connected:
+            message += f"The bridge imports your {order}, one after another; keep that tab in view."
+        else:
+            message += (f"The import starts when the bridge reports in, within a minute, and goes on to "
+                        f"your {order} one after another; keep that tab in view.")
+        if launch_res.get("carries_extension") is None:
+            message += f" Whether {name} loads the bridge has not been checked on this computer; if nothing starts, use Edge or Brave."
+
     return {
         "status": "success",
         "current_kind": first_kind,
@@ -132,7 +160,9 @@ def sync_all_activity(payload: Optional[Dict[str, Any]] = None):
             "reactions": reactions_count,
         },
         "browser": launch_res.get("browser", "Browser Bridge"),
-        "message": f"Autonomous activity sync started ({first_kind} -> comments -> reactions). Extension will automatically progress across all streams.",
+        "carries_extension": launch_res.get("carries_extension"),
+        "bridge_connected": connected,
+        "message": message,
     }
 
 

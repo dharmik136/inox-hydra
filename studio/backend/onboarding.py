@@ -1354,10 +1354,21 @@ def start_sync_chain(sequence: Optional[List[str]] = None) -> Dict[str, Any]:
     }
 
 
-def cancel_sync_chain() -> None:
+def cancel_sync_chain(withdraw: bool = False) -> None:
+    """
+    Ends the chain. With withdraw, also closes the request it was waiting on,
+    as "not_opened", for when Sync All could not open a page that would carry
+    it out, so Setup does not show it waiting.
+    """
     conn = get_db()
     try:
         with conn:
+            chain = _load_chain(conn)
+            if withdraw and chain:
+                conn.execute(
+                    "UPDATE self_import_requests SET finished_at = ?, outcome = 'not_opened' "
+                    "WHERE id = ? AND finished_at IS NULL", (_now(), chain.get("request_id")),
+                )
             _save_chain(conn, None)
     finally:
         conn.close()
