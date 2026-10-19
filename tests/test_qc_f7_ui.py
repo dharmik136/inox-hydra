@@ -377,3 +377,32 @@ def test_the_switcher_on_the_rail_still_opens_above_its_avatar(studio):
     box = panel.bounding_box()
     assert _inside(box, 1280, 800), f"the rail's profile panel is drawn at {box}"
     assert box["y"] + box["height"] <= trigger.bounding_box()["y"] + 1, "the rail's panel no longer opens upward"
+
+
+# ---------------------------------------------------------------------------
+# UX-25: the tray and Brand Studio's tabs fit the window
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("width,height", [(1366, 768), (1280, 720), (375, 812)])
+def test_every_tray_destination_can_be_reached_in_a_short_window(studio, width, height):
+    page = studio(width, height).open()
+    tray = _open_tray(page)
+    page.wait_for_timeout(250)
+    box = tray.bounding_box()
+    assert box["y"] + box["height"] <= height + 0.5, f"the tray runs below a {height} pixel window: {box}"
+    last = tray.get_by_role("button", name="Brand Studio")
+    last.scroll_into_view_if_needed()
+    assert _inside(last.bounding_box(), width, height), "the tray's last destination cannot be brought on screen"
+    last.click()
+    page.wait_for_timeout(300)
+    assert page.locator("h1", has_text="Brand Studio").is_visible()
+
+
+@pytest.mark.parametrize("scheme", ["dark", "light"])
+def test_brand_studio_tabs_are_all_on_a_phone_screen(studio, scheme):
+    page = studio(375, 812, scheme).open("Brand Studio")
+    tabs = page.get_by_role("tablist", name="Brand workspaces").get_by_role("tab")
+    assert tabs.count() == 5
+    for index in range(tabs.count()):
+        tab = tabs.nth(index)
+        assert _inside(tab.bounding_box(), 375, 812), f"{tab.inner_text()} is off screen at 375 pixels"

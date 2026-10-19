@@ -130,7 +130,9 @@ export function BrandStudioSurface() {
         </div>
       </div>
 
-      <div className="mt-6 flex items-center gap-1" role="tablist" aria-label="Brand workspaces">
+      {/* Wraps rather than running off a phone width window, where the last
+          two tabs could only be reached by a sideways scroll. */}
+      <div className="mt-6 flex flex-wrap items-center gap-1" role="tablist" aria-label="Brand workspaces">
         {WORKSPACES.map((candidate) => (
           <button
             key={candidate}

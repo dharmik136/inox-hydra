@@ -75,7 +75,9 @@ export function NavigationTray({ sections, open, active, onSelect, onClose }: Na
             exit={{ opacity: 0, x: -12, scale: 0.98 }}
             /* Expressive tier: this is a navigation morph, not a hover. */
             transition={{ duration: 0.46, ease: [0.32, 0.72, 0.24, 1] }}
-            className="absolute top-3 left-3 z-30 w-80 max-w-[calc(100%-1.5rem)] origin-top-left rounded-lg border border-edge bg-raised p-2 shadow-2xl outline-none"
+            /* Bounded by the window and scrolled inside, so on a laptop
+               screen the last destinations are not below the bottom edge. */
+            className="absolute top-3 left-3 z-30 max-h-[calc(100%-1.5rem)] w-80 max-w-[calc(100%-1.5rem)] origin-top-left overflow-y-auto rounded-lg border border-edge bg-raised p-2 shadow-2xl outline-none"
           >
             {/* Active profile & account switching */}
             <div className="mb-2 border-b border-edge px-1 pb-2">
