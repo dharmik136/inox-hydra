@@ -465,3 +465,25 @@ def test_the_header_claims_no_live_connection_it_has_not_seen(new_page, studio_u
     editor = _open_composer(page, studio_url)
     editor.fill("A post")
     assert "DRAFT 01" not in page.locator("header").first.inner_text()
+
+
+def test_phone_width_keeps_search_and_the_fold_label_on_screen(new_page, studio_url, api):
+    _clear_posts(api)
+    page = new_page(viewport={"width": 375, "height": 812})
+    page.goto(studio_url + "/#/setup", wait_until="networkidle")
+    header_search = page.locator("header").get_by_role("button", name=re.compile("Search everything"))
+    box = header_search.bounding_box()
+    assert box and box["x"] + box["width"] <= 375, f"the header's Search runs off a 375 pixel screen: {box}"
+
+    # A phone, and a 1024 pixel window with the inspector docked: both leave
+    # the column a 40 pixel margin, which the full label does not fit.
+    for width in (375, 1024):
+        page.set_viewport_size({"width": width, "height": 812})
+        editor = _open_composer(page, studio_url)
+        editor.fill("This sentence is long enough to pass the LinkedIn fold on a phone. " * 4)
+        page.wait_for_timeout(400)
+        label = page.get_by_text("FOLD", exact=False).filter(has_text="140").first
+        expect(label).to_be_visible()
+        label_box = label.bounding_box()
+        main_box = page.locator("main").bounding_box()
+        assert label_box["x"] >= main_box["x"], f"at {width} the fold label sits under the rail: {label_box} vs {main_box}"

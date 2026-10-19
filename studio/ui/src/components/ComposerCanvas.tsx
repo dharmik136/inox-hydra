@@ -19,6 +19,14 @@ import { measurableLength, openingEnd, rawIndexAtMeasurableOffset } from "@/lib/
  */
 export const FOLD_CHARS = 140;
 
+/**
+ * Margin the full fold label needs beside the column: the label itself, about
+ * 52 pixels, its 12 pixel gap and a little slack. With less, as on a phone or
+ * beside a docked inspector at 1024 pixels, it ran under the rail, so the
+ * short form is drawn instead.
+ */
+const ROOM_FOR_FOLD_LABEL = 72;
+
 interface ComposerCanvasProps {
   value: string;
   onChange: (next: string) => void;
@@ -42,6 +50,11 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
   const reduceMotion = useReducedMotion();
 
   const [foldTop, setFoldTop] = useState<number | null>(null);
+  // Room between the scrolling area's edge and the column, for the label.
+  const [gutter, setGutter] = useState<number | null>(null);
+  // Bumped when the column or the area around it changes size: either moves
+  // where the fold falls or how much margin the label has.
+  const [layoutPass, setLayoutPass] = useState(0);
   const [height, setHeight] = useState<number | null>(null);
   const [toolbar, setToolbar] = useState<ToolbarPosition | null>(null);
   const [busy, setBusy] = useState(false);
@@ -77,7 +90,17 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
   useLayoutEffect(() => {
     const mirror = mirrorRef.current;
     if (mirror) setHeight(mirror.scrollHeight);
-  }, [value]);
+  }, [value, layoutPass]);
+
+  useEffect(() => {
+    const mirror = mirrorRef.current;
+    if (!mirror || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setLayoutPass((pass) => pass + 1));
+    observer.observe(mirror);
+    const scroller = mirror.closest("main");
+    if (scroller) observer.observe(scroller);
+    return () => observer.disconnect();
+  }, []);
 
   useLayoutEffect(() => {
     if (!crossed) {
@@ -96,7 +119,9 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
     // the line the fold actually falls on. getBoundingClientRect would return
     // the union of them all and put the mark at the top of the post.
     setFoldTop(last && mirrorBox ? last.bottom - mirrorBox.top : null);
-  }, [value, crossed, rectsFor]);
+    const scroller = mirrorRef.current?.closest("main")?.getBoundingClientRect();
+    setGutter(mirrorBox && scroller ? mirrorBox.left - scroller.left : null);
+  }, [value, crossed, rectsFor, layoutPass]);
 
   /**
    * The opening paragraph settling into place (blueprint micro-interaction 3).
@@ -290,11 +315,19 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
                 the column so the crop mark annotates the text instead of
                 covering it, and stacked so it fits the narrow gutter that is
                 left once the inspector is docked. */}
-            <span className="studio-meta absolute top-0 right-full mr-3 -translate-y-1/2 text-right leading-tight text-[10px] tracking-wider text-signal-orange-text">
-              LINKEDIN FOLD
-              <br />
-              {FOLD_CHARS} CHARS
-            </span>
+            {gutter === null || gutter >= ROOM_FOR_FOLD_LABEL ? (
+              <span className="studio-meta absolute top-0 right-full mr-3 -translate-y-1/2 text-right leading-tight text-[10px] tracking-wider text-signal-orange-text">
+                LINKEDIN FOLD
+                <br />
+                {FOLD_CHARS} CHARS
+              </span>
+            ) : (
+              <span className="studio-meta absolute top-0 right-full mr-1.5 -translate-y-1/2 text-right leading-tight text-[10px] tracking-wider text-signal-orange-text">
+                FOLD
+                <br />
+                {FOLD_CHARS}
+              </span>
+            )}
           </motion.div>
         )}
       </div>

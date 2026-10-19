@@ -570,7 +570,10 @@ export default function App() {
                 aria-hidden="true"
               />
               <Activity className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-              <span>Live Activity</span>
+              {/* Words beside the icons from a small tablet up. On a phone
+                  they pushed Search past the edge of the screen; there they
+                  stay the button's name without taking its width. */}
+              <span className="max-sm:sr-only">Live Activity</span>
               {bridgeConnected !== null && (
                 <span className="sr-only">{bridgeConnected ? ", bridge connected" : ", bridge not connected"}</span>
               )}
@@ -594,8 +597,8 @@ export default function App() {
               className="flex shrink-0 items-center gap-2 rounded-md border border-edge bg-canvas py-1 pr-1.5 pl-2.5 text-[12px] text-ink-muted transition-colors duration-(--studio-motion-fast) hover:border-edge-strong hover:text-ink-primary"
             >
               <Search className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-              Search everything
-              <kbd className="studio-meta rounded-sm border border-edge px-1 text-[10px] text-ink-muted">Ctrl K</kbd>
+              <span className="max-sm:sr-only">Search everything</span>
+              <kbd className="studio-meta rounded-sm border border-edge px-1 text-[10px] text-ink-muted max-sm:hidden">Ctrl K</kbd>
             </button>
           </header>
         )}

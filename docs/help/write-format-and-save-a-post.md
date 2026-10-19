@@ -9,7 +9,7 @@ Open **Composer** from the rail. The editor is the large writing area in the mid
 
 On a phone, LinkedIn hides a long post behind "see more". The studio draws that cut at 140 characters.
 
-- Once your post passes 140 characters, a dashed orange line appears in the editor at the point where the cut falls, labelled **LINKEDIN FOLD 140 CHARS**.
+- Once your post passes 140 characters, a dashed orange line appears in the editor at the point where the cut falls, labelled **LINKEDIN FOLD 140 CHARS** in the margin, or **FOLD 140** where the margin is narrow, as on a phone.
 - The status strip in the top bar reads, for example, `126 / 3,000 chars · 90% of fold · ~6s read` while you are under the fold, and `352 / 3,000 chars · 212 past fold · ~25s read` once you are over it. The count turns orange past 3,000, the length the Audit's Gate 2 blocks at. The strip is hidden when the window is narrow.
 - The read time assumes 200 words per minute. It is an estimate.
 
