@@ -12,6 +12,16 @@ import { cn } from "@/lib/utils";
 const SETTLE_MS = 700;
 
 /**
+ * A violation without the team role it is filed under.
+ *
+ * The server prefixes each one with its gate and a role, "Gate 2 (Eng
+ * Manager): ...", which told a creator nothing they could act on.
+ */
+function plainly(violation: string): string {
+  return violation.replace(/^Gate \d+ \([^)]*\):\s*/, "");
+}
+
+/**
  * The audit inspector (blueprint section 10).
  *
  * The score is a secondary summary at the top rather than the visual centre.
@@ -22,7 +32,12 @@ export function AuditPanel({ draft }: { draft: string }) {
   const [gates, setGates] = useState<GStackAudit | null>(null);
   const [failed, setFailed] = useState(false);
 
+  const empty = !draft.trim();
+
   useEffect(() => {
+    // Nothing to audit, so nothing is asked. The server scored an empty draft
+    // 100, which read as a perfect post.
+    if (!draft.trim()) return;
     let live = true;
     const timer = window.setTimeout(() => {
       auditDraft(draft)
@@ -46,6 +61,13 @@ export function AuditPanel({ draft }: { draft: string }) {
     };
   }, [draft]);
 
+  if (empty) {
+    return (
+      <p className="studio-meta pt-8 text-center text-ink-muted">
+        NOTHING TO AUDIT YET. WRITE IN THE COMPOSER AND THE CHECKS RUN AS YOU GO.
+      </p>
+    );
+  }
   if (failed) return <p className="studio-meta pt-8 text-center text-ink-muted">AUDIT UNAVAILABLE</p>;
   if (!audit) return <p className="studio-meta pt-8 text-center text-ink-muted">AUDITING</p>;
 
@@ -106,10 +128,13 @@ export function AuditPanel({ draft }: { draft: string }) {
         <p className="studio-meta text-signal-green-text">NO DISTRIBUTION PENALTIES DETECTED</p>
       )}
 
+      {/* Advice, and said as advice. BLOCKED read as a stop, though nothing
+          is ever blocked by these checks, and the score out of 100 was a count
+          of six restated as a percentage. */}
       {gates && (
         <section className="border-t border-edge pt-4">
           <div className="mb-2 flex items-baseline justify-between">
-            <p className="studio-label">Governance gates</p>
+            <p className="studio-label">Checks</p>
             <span className="studio-meta">
               <span
                 className={cn(
@@ -117,19 +142,19 @@ export function AuditPanel({ draft }: { draft: string }) {
                   gates.passed ? "text-signal-green-text" : "text-signal-orange-text",
                 )}
               >
-                {gates.score}
+                {passing(gates)} OF {Object.keys(gates.gates).length} PASS
               </span>
               <span className="mx-1.5 text-ink-muted">·</span>
-              {gates.passed ? "PASSED" : "BLOCKED"}
+              {gates.passed ? "ALL CLEAR" : "WORTH A LOOK"}
             </span>
           </div>
           {gates.violations.length === 0 ? (
-            <p className="studio-meta text-ink-muted">ALL SIX GATES CLEAR</p>
+            <p className="studio-meta text-ink-muted">ALL SIX CHECKS PASS</p>
           ) : (
             <ul className="flex flex-col gap-1.5">
               {gates.violations.map((violation) => (
                 <li key={violation} className="text-[12px] leading-snug text-ink-secondary">
-                  {violation}
+                  {plainly(violation)}
                 </li>
               ))}
             </ul>
@@ -138,6 +163,11 @@ export function AuditPanel({ draft }: { draft: string }) {
       )}
     </div>
   );
+}
+
+/** How many of the checks passed, counted from the server's own per-check verdicts. */
+function passing(audit: GStackAudit): number {
+  return Object.values(audit.gates).filter((gate) => (gate as { passed?: unknown })?.passed === true).length;
 }
 
 function Measure({ label, value, bad }: { label: string; value: string; bad: boolean }) {

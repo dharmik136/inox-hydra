@@ -294,3 +294,35 @@ def test_the_prompt_tab_lets_you_choose_the_model_and_sends_it(page):
     panel.locator('button:has-text("Verify and save")').click()
     page.wait_for_function("() => document.body.innerText.includes('Connected.')")
     assert sent and sent[-1]["provider"] == "anthropic" and sent[-1]["model"] == "claude-opus-5-5", sent
+
+
+def _open_audit_tab(page, text):
+    page.click('button[aria-label="Composer"]')
+    page.locator('textarea[aria-label="Post body"]').fill(text)
+    opener = page.locator('button[aria-label="Open inspector"]')
+    if opener.count() and opener.is_visible():
+        opener.click()
+    page.click('aside[aria-label="Inspector"] button:has-text("Audit")')
+    return page.locator('aside[aria-label="Inspector"]')
+
+
+def test_the_audit_scores_nothing_for_an_empty_draft(page):
+    """[UX-23]"""
+    panel = _open_audit_tab(page, "")
+    page.wait_for_selector("text=NOTHING TO AUDIT YET")
+    page.wait_for_timeout(1200)  # past the audit's settle delay, in case it ran
+    text = panel.inner_text()
+    assert "100" not in text, "an empty draft was given a perfect score"
+    assert "NO DISTRIBUTION PENALTIES DETECTED" not in text
+    assert "BLOCKED" not in text
+
+
+def test_the_checks_read_as_advice_without_team_roles(page):
+    """[UX-23]"""
+    panel = _open_audit_tab(page, "Short.")
+    page.wait_for_selector("text=OF 6 PASS")
+    text = panel.inner_text()
+    assert "BLOCKED" not in text and "WORTH A LOOK" in text, text
+    for role in ("(CEO)", "(Eng Manager)", "(Designer)", "(QA)", "(CSO)", "Gate 2"):
+        assert role not in text, f"{role!r} is still shown: {text}"
+    assert "Content is too short" in text
