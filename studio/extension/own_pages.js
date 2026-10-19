@@ -269,7 +269,14 @@
     // including your own, so a real owner page was always rejected.
     const labels = (root) => Array.from(root.querySelectorAll("button, a")).slice(0, 400)
       .map((el) => clean(el.getAttribute("aria-label") || el.innerText || ""));
-    const ownerSeen = labels(mainElement()).some((label) => OWNER_CONTROL.test(label));
+    // The owner's own edit links ("/in/<you>/edit/intro/", "/add-edit/...")
+    // count in every language. The labels above are English only, so a
+    // German creator's "Profil bearbeiten" was no evidence at all, and their
+    // own profile, opened from a link, taught the bridge nothing.
+    const pageVanity = vanityOf(window.location.href);
+    const ownerLink = !!pageVanity && Array.from(mainElement().querySelectorAll("a[href*='/edit/'], a[href*='/add-edit/']"))
+      .some((a) => vanityOf(a.getAttribute("href")) === pageVanity);
+    const ownerSeen = ownerLink || labels(mainElement()).some((label) => OWNER_CONTROL.test(label));
     const card = topCard();
     const visitorInCard = card ? labels(card).some((label) => VISITOR_CONTROL.test(label)) : false;
     if (ownerSeen && !visitorInCard) evidence.push("owner_edit_controls");
