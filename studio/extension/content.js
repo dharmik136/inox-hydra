@@ -297,6 +297,10 @@ async function injectIntoLinkedInComposer(text) {
   return true;
 }
 
+// A status that screen readers announce (an alert for a warning), shown for
+// 6 s, and built as text: a notice can carry a studio reason or a name, which
+// must never be read as markup. It used to be innerHTML with no role, gone
+// after 3.5 s.
 function showInPageToast(message, type = "success") {
   const existing = document.getElementById("studio-bridge-inpage-toast");
   if (existing) existing.remove();
@@ -304,16 +308,22 @@ function showInPageToast(message, type = "success") {
   const toast = document.createElement("div");
   toast.id = "studio-bridge-inpage-toast";
   toast.className = `studio-inpage-toast ${type}`;
-  toast.innerHTML = `
-    <div class="studio-toast-icon">LS</div>
-    <div class="studio-toast-msg">${message}</div>
-  `;
+  toast.setAttribute("role", type === "warning" ? "alert" : "status");
+  toast.setAttribute("aria-live", type === "warning" ? "assertive" : "polite");
+  const icon = document.createElement("div");
+  icon.className = "studio-toast-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = "LS";
+  const text = document.createElement("div");
+  text.className = "studio-toast-msg";
+  text.textContent = message;
+  toast.append(icon, text);
 
   document.body.appendChild(toast);
   setTimeout(() => {
     toast.classList.add("studio-toast-fade");
     setTimeout(() => toast.remove(), 400);
-  }, 3500);
+  }, 6000);
 }
 
 // -------------------------------------------------------------
