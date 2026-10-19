@@ -430,9 +430,14 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
               <button
                 type="button"
                 onClick={() => {
-                  void navigator.clipboard.writeText(draft?.text ?? suggested ?? "");
-                  setCopied(true);
-                  window.setTimeout(() => setCopied(false), 1600);
+                  // COPIED once the browser has taken the text, and not before.
+                  navigator.clipboard
+                    .writeText(draft?.text ?? suggested ?? "")
+                    .then(() => {
+                      setCopied(true);
+                      window.setTimeout(() => setCopied(false), 1600);
+                    })
+                    .catch(() => setActionError("The browser refused the copy. Select the text below and copy it."));
                 }}
                 className="studio-meta flex items-center gap-1 text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
               >
@@ -679,8 +684,17 @@ function EmptyStream() {
     setBusy("copy");
     setNote(null);
     try {
-      const path = await copyExtensionPath();
-      setNote(`Copied to the clipboard: ${path}`);
+      const copied = await copyExtensionPath();
+      if (copied.ok) {
+        setNote(`Copied to the clipboard: ${copied.path}`);
+      } else {
+        // The server's reason, with the path selected so Ctrl+C finishes the
+        // job. Announcing a copy here sent people to paste whatever was
+        // already on the clipboard into Load unpacked.
+        setNote(copied.message || "The path could not be copied. Copy it from above by hand.");
+        const shown = document.getElementById("extension-folder-path");
+        if (shown) window.getSelection()?.selectAllChildren(shown);
+      }
     } catch {
       setNote("The path could not be copied.");
     } finally {
@@ -761,7 +775,7 @@ function EmptyStream() {
                 <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
                 Copy the folder path
               </button>
-              <p className="studio-meta mt-2 break-all text-[10px] text-ink-muted">
+              <p id="extension-folder-path" className="studio-meta mt-2 break-all text-[10px] text-ink-muted">
                 {bridge.extension_path}
               </p>
             </div>

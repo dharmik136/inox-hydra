@@ -1502,13 +1502,23 @@ export async function launchBridge(browserId: string, url?: string): Promise<Bro
   };
 }
 
-/** Puts the extension folder on the clipboard, for Load Unpacked by hand. */
-export async function copyExtensionPath(): Promise<string> {
-  const data = await call<{ path?: string; extension_path?: string }>(
+/**
+ * Puts the extension folder on the clipboard, for Load Unpacked by hand.
+ *
+ * The server answers 200 whether or not the clipboard took it, with the
+ * outcome in status, so ok is read from there. Reporting only the path made a
+ * failed copy look like a successful one.
+ */
+export async function copyExtensionPath(): Promise<{ ok: boolean; message: string; path: string }> {
+  const data = await call<{ status?: string; message?: string; path?: string; extension_path?: string }>(
     "/api/v1/browser/copy-path",
     { method: "POST" },
   );
-  return data.path ?? data.extension_path ?? "";
+  return {
+    ok: data.status === "success",
+    message: data.message ?? "",
+    path: data.path ?? data.extension_path ?? "",
+  };
 }
 
 // -------------------------------------------------------------

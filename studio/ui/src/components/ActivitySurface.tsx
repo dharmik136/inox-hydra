@@ -43,6 +43,8 @@ export function ActivitySurface({
   const [syncing, setSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [openingPost, setOpeningPost] = useState<string | null>(null);
+  /** What the last action on a post row came to, shown under that row. */
+  const [rowNote, setRowNote] = useState<{ urn: string; text: string } | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -94,12 +96,22 @@ export function ActivitySurface({
     }
   }
 
+  // The tick waits for the browser to accept the copy. A refusal leaves the
+  // URN on screen to select by hand rather than claiming it is on the clipboard.
   function copyUrn(urn: string) {
-    if (navigator?.clipboard?.writeText) {
-      navigator.clipboard.writeText(urn);
-      setCopiedUrn(urn);
-      window.setTimeout(() => setCopiedUrn(null), 2000);
+    setRowNote(null);
+    const refused = () => setRowNote({ urn, text: `Could not be copied. Select it by hand: ${urn}` });
+    if (!navigator?.clipboard?.writeText) {
+      refused();
+      return;
     }
+    navigator.clipboard
+      .writeText(urn)
+      .then(() => {
+        setCopiedUrn(urn);
+        window.setTimeout(() => setCopiedUrn(null), 2000);
+      })
+      .catch(refused);
   }
 
   if (failed && !stream) {
@@ -393,6 +405,11 @@ export function ActivitySurface({
                     <span aria-hidden="true">·</span>
                     <span>Loaded {ago(post.last_seen_at)}</span>
                   </div>
+                  {rowNote?.urn === post.activity_urn && (
+                    <p role="status" className="mt-1.5 text-[11px] break-all text-ink-secondary">
+                      {rowNote.text}
+                    </p>
+                  )}
                 </div>
               ))
             )}
