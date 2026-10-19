@@ -103,6 +103,45 @@ def test_a_few_missing_days_compare_the_daily_level_not_the_sum(studio):
     assert kpis["impressions_delta_pct"] == 20.0
 
 
+def _back(client, start, count, **metrics):
+    """Daily captures from `start` days before END, going back `count` days."""
+    series = [{"date": (END - dt.timedelta(days=b)).isoformat(), "period_label": "1d", "precision": "exact", **metrics}
+              for b in range(start, start + count)]
+    assert client.post("/api/analytics/ingest", json={"series": series}).status_code == 200
+
+
+def test_unread_engagements_are_not_a_fall(studio):
+    # Review of AUDIENCE-05: coverage was counted per row, so 30 days with
+    # impressions only were 30 captured engagement days of 0, a -100% fall.
+    _back(studio, 30, 30, impressions=1000, reactions=20, comments=2, shares=1)
+    _back(studio, 0, 30, impressions=1000)
+    kpis = _kpis(studio, "30d")
+    assert kpis["impressions_delta_pct"] == 0.0
+    assert kpis["engagements_delta_pct"] is None, "engagements nobody read were compared as zero"
+    assert kpis["total_engagements"] is None
+    assert kpis["avg_engagement_rate"] is None and kpis["engagement_rate_delta"] is None
+    assert kpis["coverage"]["engagements"] == {"current": 0, "previous": 30}
+
+
+def test_engagements_read_on_a_third_of_the_days_are_not_compared(studio):
+    _back(studio, 30, 30, impressions=1000, reactions=20, comments=2, shares=1)
+    _back(studio, 10, 20, impressions=1000)
+    _back(studio, 0, 10, impressions=1000, reactions=20, comments=2, shares=1)
+    kpis = _kpis(studio, "30d")
+    assert kpis["engagements_delta_pct"] is None, "10 read days were compared with 30 as if equal"
+    assert kpis["engagement_rate_delta"] is None
+    # The rate over the days that read both is still the true one.
+    assert kpis["avg_engagement_rate"] == 2.3
+
+
+def test_a_followers_only_day_does_not_dilute_impressions(studio):
+    _back(studio, 1, 59, impressions=1000)
+    _back(studio, 0, 1, followers=2100)
+    kpis = _kpis(studio, "30d")
+    assert kpis["coverage"]["impressions"] == {"current": 29, "previous": 30}
+    assert kpis["impressions_delta_pct"] == 0.0, "a day without impressions was counted as a day of 0"
+
+
 # ---------------------------------------------------------------------------
 # AUDIENCE-10: a figure LinkedIn rounded (2.4K) is approximate, and is not
 # compared with an exact one as if it were exact
@@ -124,8 +163,9 @@ def test_growth_to_a_rounded_follower_count_is_marked_approximate(studio):
 
 
 def test_a_change_smaller_than_the_rounding_is_not_reported(studio):
-    # "2K" is anything from 1,500 to 2,499 as far as the studio can tell, so a
-    # reading of 2K a week after an exact 2,027 says nothing about growth.
+    # LinkedIn writes 2,000 to 2,049 as "2K" (it drops a trailing ".0"), so a
+    # rounded 2,000 is 1,950 to 2,049, and a week after an exact 2,027 it says
+    # nothing about growth.
     _days(studio, 34, impressions=1000, followers=lambda back: 2033 - back)
     _rounded_today(studio, followers=2000)
     kpis = _kpis(studio, "7d")
@@ -298,3 +338,25 @@ def test_the_evidence_brief_answers_fast_at_volume(studio):
     elapsed, body = _timed(studio, "/api/v1/insights/evidence")
     assert elapsed < 750, f"/api/v1/insights/evidence took {elapsed:.0f} ms at 2,000 posts"
     assert body["has_evidence"] is True
+
+
+def test_the_rounding_margin_follows_how_linkedin_writes_the_figure():
+    # LinkedIn's compact numbers: one decimal below 10K (1.2K), whole
+    # thousands to 999K (12K), one decimal below 10M (1.2M), whole millions.
+    from routers.analytics import rounding_half_width
+    assert rounding_half_width(1200, "rounded") == 50
+    assert rounding_half_width(2000, "rounded") == 50
+    assert rounding_half_width(20000, "rounded") == 500, "a bare 20K was given a 5,000 margin"
+    assert rounding_half_width(120000, "rounded") == 500
+    assert rounding_half_width(1000000, "rounded") == 50000
+    assert rounding_half_width(20000000, "rounded") == 500000
+    assert rounding_half_width(12500, "rounded") == 0, "12,500 cannot be how LinkedIn wrote a rounded figure"
+    assert rounding_half_width(1200, "exact") == 0
+
+
+def test_a_rise_from_20k_to_23k_is_reported(studio):
+    _days(studio, 7, impressions=1000, followers=20000, precision="rounded")
+    _rounded_today(studio, followers=23000)
+    kpis = _kpis(studio, "7d")
+    assert kpis["follower_growth"] == 3000, "a rise of at least 2,000 read as less than the rounding"
+    assert "follower_growth" in kpis["approximate"]

@@ -136,8 +136,25 @@ def test_a_thin_previous_period_reads_not_measured_and_says_why(studio):
     assert _what_changed(page, "Impressions") == "not measured"
     assert _what_changed(page, "Engagements") == "not measured"
     body = page.inner_text("body")
-    assert "THIS ONE HAS 30, THE ONE BEFORE IT 4" in body
+    assert "IMPRESSIONS: 30 DAYS IN THIS PERIOD, 4 IN THE ONE BEFORE." in body
     assert "+650" not in body and "rose together" not in body
+    assert not studio["errors"], studio["errors"]
+
+
+def test_unread_engagements_read_not_measured_not_a_fall(studio):
+    """AUDIENCE-05, as sent back: coverage counted per figure, not per day."""
+    client = studio["client"]
+    series = [{"date": (END - dt.timedelta(days=b)).isoformat(), "period_label": "1d", "precision": "exact",
+               "impressions": 1000, **({"reactions": 20, "comments": 2, "shares": 1} if b >= 30 else {})}
+              for b in range(60)]
+    assert client.post("/api/analytics/ingest", json={"series": series}).status_code == 200
+    page = _open(studio, "Analytics")
+    page.wait_for_selector("text=What changed")
+    assert _what_changed(page, "Impressions") == "0.0%"
+    assert _what_changed(page, "Engagements") == "not measured"
+    body = page.inner_text("body")
+    assert "-100.0%" not in body and "fell together" not in body
+    assert "ENGAGEMENTS: 0 DAYS IN THIS PERIOD, 30 IN THE ONE BEFORE." in body
     assert not studio["errors"], studio["errors"]
 
 

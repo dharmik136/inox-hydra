@@ -47,19 +47,21 @@ def rounding_half_width(value, precision) -> float:
     How far a stored figure can be from the true one, given how LinkedIn wrote it.
 
     A row marked 'rounded' holds at least one figure LinkedIn abbreviated,
-    such as 1.2K stored as 1200, without saying which. An abbreviation only
-    ever produces a multiple of 100 from 1,000 up, so any other value in that
-    row was written out in full and is exact. For the rest, the last non-zero
-    digit is the one LinkedIn rounded to: 1.2K is 1,150 to 1,249, 50 either
-    way, and a bare 2K is taken as 500 either way, the wider of what it can
-    mean.
+    such as 1.2K stored as 1200, without saying which. LinkedIn writes compact
+    numbers the way the browser's compact number format does: one decimal
+    below 10K (1.2K, and 2K for 2.0K), whole thousands up to 999K (12K), one
+    decimal below 10M (1.2M), whole millions above. So the step a figure was
+    rounded to follows from its size: 100 below 10,000, 1,000 below a
+    million, 100,000 below 10 million, 1,000,000 above, and the figure is
+    half a step either way. A value that is not a multiple of its step
+    cannot be one LinkedIn abbreviated, so it was written out in full and is
+    exact. (This replaced reading the last non-zero digit, which gave a bare
+    20K a margin of 5,000.)
     """
-    if precision != "rounded" or value is None or value < 1000 or value % 100:
+    if precision != "rounded" or value is None or value < 1000:
         return 0.0
-    step = 100
-    while value % (step * 10) == 0 and step * 10 <= value:
-        step *= 10
-    return step / 2.0
+    step = 100 if value < 10_000 else 1_000 if value < 1_000_000 else 100_000 if value < 10_000_000 else 1_000_000
+    return step / 2.0 if value % step == 0 else 0.0
 
 
 def get_range_days(range_str: str) -> int:
@@ -103,22 +105,61 @@ def get_kpis(range: str = "30d"):
         daily_only = "(period_label IN ('1d', 'day', 'daily') OR (period_label IS NULL AND source = 'seed'))"
 
         def window_totals(start, end):
-            """Days counted, impressions and engagements summed, and how far rounding can move each sum."""
+            """
+            Per metric: the days it was read on, its sum over those days, and
+            how far rounding can move that sum.
+
+            Counted per metric, not per row. A day whose impressions were read
+            and whose engagements were not is a captured impressions day and
+            an uncaptured engagements day: counted per row it was a captured
+            day of 0 engagements, and a month read that way was a -100% fall.
+            The rate uses only days on which both were read.
+            """
             cursor.execute(f"""
             SELECT impressions, reactions, comments, shares, precision
             FROM analytics_daily
             WHERE date >= ? AND date <= ? AND {daily_only}
             """, (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")))
             rows = cursor.fetchall()
-            imp = sum(r["impressions"] or 0 for r in rows)
-            eng = sum((r["reactions"] or 0) + (r["comments"] or 0) + (r["shares"] or 0) for r in rows)
-            imp_slack = sum(rounding_half_width(r["impressions"], r["precision"]) for r in rows)
-            eng_slack = sum(rounding_half_width(r[k], r["precision"]) for r in rows
-                            for k in ("reactions", "comments", "shares"))
-            return len(rows), imp, eng, imp_slack, eng_slack
+            parts = ("reactions", "comments", "shares")
 
-        cur_days, cur_imp, cur_eng, cur_imp_slack, cur_eng_slack = window_totals(start_cur, end_date)
-        cur_eng_rate = round((cur_eng / cur_imp * 100), 2) if cur_imp > 0 else None
+            def imp_read(r):
+                return r["impressions"] is not None
+
+            def eng_read(r):
+                return any(r[k] is not None for k in parts)
+
+            def eng(r):
+                return sum(r[k] or 0 for k in parts)
+
+            def imp_slack(r):
+                return rounding_half_width(r["impressions"], r["precision"])
+
+            def eng_slack(r):
+                return sum(rounding_half_width(r[k], r["precision"]) for k in parts)
+
+            imp_rows = [r for r in rows if imp_read(r)]
+            eng_rows = [r for r in rows if eng_read(r)]
+            both = [r for r in imp_rows if eng_read(r)]
+            return {
+                "rows": len(rows),
+                "impressions": (len(imp_rows), sum(r["impressions"] for r in imp_rows),
+                                sum(imp_slack(r) for r in imp_rows)),
+                "engagements": (len(eng_rows), sum(eng(r) for r in eng_rows), sum(eng_slack(r) for r in eng_rows)),
+                "rate": (len(both), sum(r["impressions"] for r in both), sum(eng(r) for r in both),
+                         sum(imp_slack(r) for r in both), sum(eng_slack(r) for r in both)),
+            }
+
+        cur, prev = window_totals(start_cur, end_date), window_totals(start_prev, end_prev)
+        cur_days, prev_days = cur["rows"], prev["rows"]
+        cur_imp_days, cur_imp, cur_imp_slack = cur["impressions"]
+        cur_eng_days, cur_eng, cur_eng_slack = cur["engagements"]
+
+        def rate_of(window):
+            n, imp, eng, _is, _es = window["rate"]
+            return round(eng / imp * 100, 2) if n and imp > 0 else None
+
+        cur_eng_rate, prev_eng_rate = rate_of(cur), rate_of(prev)
 
         cursor.execute(f"""
         SELECT COUNT(*) FROM analytics_daily
@@ -126,11 +167,11 @@ def get_kpis(range: str = "30d"):
         """, (start_cur.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
         excluded_days = cursor.fetchone()[0]
 
-        prev_days, prev_imp, prev_eng, prev_imp_slack, prev_eng_slack = window_totals(start_prev, end_prev)
-        prev_eng_rate = round((prev_eng / prev_imp * 100), 2) if prev_imp > 0 else None
-
         days_needed = math.ceil(days * MIN_CAPTURED_SHARE_TO_COMPARE)
-        comparable = (cur_days or 0) >= days_needed and (prev_days or 0) >= days_needed
+
+        def comparable(metric):
+            """Each metric's change stands or falls on that metric's own coverage."""
+            return cur[metric][0] >= days_needed and prev[metric][0] >= days_needed
 
         # Every figure built from one LinkedIn rounded is named in
         # "approximate", and a change smaller than the rounding could hide is
@@ -150,26 +191,28 @@ def get_kpis(range: str = "30d"):
             approximate.append(key)
             return value
 
-        def calc_delta(key, cur, cur_slack, prev, prev_slack):
-            if not comparable or prev == 0:
+        def calc_delta(key, metric):
+            (cur_n, cur_sum, cur_slack), (prev_n, prev_sum, prev_slack) = cur[metric], prev[metric]
+            if not comparable(metric) or prev_sum == 0:
                 return None
-            cur_level, prev_level = cur / cur_days, prev / prev_days
+            cur_level, prev_level = cur_sum / cur_n, prev_sum / prev_n
             pct = round(((cur_level - prev_level) / prev_level) * 100.0, 1)
-            return judged(key, pct, cur_slack / cur_days + prev_slack / prev_days, cur_level - prev_level)
+            return judged(key, pct, cur_slack / cur_n + prev_slack / prev_n, cur_level - prev_level)
 
-        imp_delta = calc_delta("impressions_delta_pct", cur_imp, cur_imp_slack, prev_imp, prev_imp_slack)
-        eng_delta = calc_delta("engagements_delta_pct", cur_eng, cur_eng_slack, prev_eng, prev_eng_slack)
+        imp_delta = calc_delta("impressions_delta_pct", "impressions")
+        eng_delta = calc_delta("engagements_delta_pct", "engagements")
 
-        def rate_bounds(eng, eng_slack, imp, imp_slack):
+        def rate_bounds(window):
+            _n, imp, eng, imp_slack, eng_slack = window["rate"]
             return ((eng - eng_slack) / (imp + imp_slack) * 100,
                     (eng + eng_slack) / max(imp - imp_slack, 1) * 100)
 
         eng_rate_delta = None
-        if comparable and cur_eng_rate is not None and prev_eng_rate is not None:
+        if comparable("rate") and cur_eng_rate is not None and prev_eng_rate is not None:
             eng_rate_delta = round(cur_eng_rate - prev_eng_rate, 2)
-            if cur_imp_slack or cur_eng_slack or prev_imp_slack or prev_eng_slack:
-                cur_lo, cur_hi = rate_bounds(cur_eng, cur_eng_slack, cur_imp, cur_imp_slack)
-                prev_lo, prev_hi = rate_bounds(prev_eng, prev_eng_slack, prev_imp, prev_imp_slack)
+            if any(cur["rate"][3:]) or any(prev["rate"][3:]):
+                cur_lo, cur_hi = rate_bounds(cur)
+                prev_lo, prev_hi = rate_bounds(prev)
                 overlap = cur_lo <= prev_hi and prev_lo <= cur_hi
                 (within_rounding if overlap else approximate).append("engagement_rate_delta")
                 if overlap:
@@ -202,7 +245,7 @@ def get_kpis(range: str = "30d"):
             approximate.append("impressions")
         if cur_eng_slack:
             approximate.append("total_engagements")
-        if cur_eng_rate is not None and (cur_imp_slack or cur_eng_slack):
+        if cur_eng_rate is not None and any(cur["rate"][3:]):
             approximate.append("avg_engagement_rate")
         if cur_followers is not None and slack_of(latest_stat, "followers"):
             approximate.append("total_followers")
@@ -214,14 +257,20 @@ def get_kpis(range: str = "30d"):
 
         conn.close()
 
-        if not cur_days:
-            cur_imp = cur_eng = None
+        # A metric read on no day of the range is not measured, not 0.
+        if not cur_imp_days:
+            cur_imp = None
+        if not cur_eng_days:
+            cur_eng = None
 
         return {
             "range": f"{days}d",
             "days_counted": cur_days,
             "previous_days_counted": prev_days,
             "days_needed_to_compare": days_needed,
+            # Days each figure was read on, this period and the one before.
+            "coverage": {metric: {"current": cur[metric][0], "previous": prev[metric][0]}
+                         for metric in ("impressions", "engagements", "rate")},
             "days_excluded_unknown_window": excluded_days,
             "impressions": cur_imp,
             "impressions_delta_pct": imp_delta,

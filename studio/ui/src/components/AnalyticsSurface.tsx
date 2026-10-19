@@ -32,6 +32,8 @@ type MetricKey = (typeof METRICS)[number]["key"];
 type Kpis = AnalyticsKpis & {
   previous_days_counted?: number;
   days_needed_to_compare?: number;
+  /** Days each figure was read on, this period and the one before. */
+  coverage?: Record<"impressions" | "engagements" | "rate", { current: number; previous: number }>;
   /** Fields built from a figure LinkedIn rounded, such as 1.2K. */
   approximate?: string[];
   /** Changes not shown because they are smaller than that rounding. */
@@ -452,13 +454,18 @@ function Observations({ kpis, posts }: { kpis: Kpis | null; posts: AnalyticsPost
 /** Why Impressions and Engagements read "not measured", when the reason is too few captured days. */
 function coverageNote(kpis: Kpis): string | null {
   const need = kpis.days_needed_to_compare;
-  if (need == null || kpis.days_counted == null) return null;
-  const now = kpis.days_counted;
-  const before = kpis.previous_days_counted ?? 0;
-  if (now >= need && before >= need) return null;
+  if (need == null || !kpis.coverage) return null;
+  // Counted per figure: a day whose impressions were read and whose
+  // engagements were not is a captured day for one and not the other.
+  const short = (["impressions", "engagements"] as const)
+    .map((metric) => ({ metric, ...kpis.coverage![metric] }))
+    .filter((c) => c.current < need || c.previous < need);
+  if (!short.length) return null;
   return (
-    `A CHANGE IS SHOWN ONLY WHEN THIS PERIOD AND THE ONE BEFORE IT EACH HAVE AT LEAST ${need} CAPTURED DAYS. ` +
-    `THIS ONE HAS ${now}, THE ONE BEFORE IT ${before}.`
+    `A CHANGE IS SHOWN ONLY WHEN THIS PERIOD AND THE ONE BEFORE IT EACH HAVE THAT FIGURE CAPTURED ON AT LEAST ${need} DAYS. ` +
+    short
+      .map((c) => `${c.metric.toUpperCase()}: ${c.current} DAYS IN THIS PERIOD, ${c.previous} IN THE ONE BEFORE.`)
+      .join(" ")
   );
 }
 

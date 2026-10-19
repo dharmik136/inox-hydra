@@ -55,7 +55,9 @@ def fold(text: Any) -> str:
     dropped too, so a creator who types "Olander" finds Ölander.
     """
     decomposed = unicodedata.normalize("NFKD", str(text or ""))
-    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+    # The Turkish dotless i has no decomposition, so it is mapped by hand:
+    # without this "isik" never found Işık.
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold().replace("\u0131", "i")
 
 
 def _folded_with_offsets(text: str):
@@ -72,7 +74,9 @@ def terms_of(query: Any) -> List[str]:
     """The words of a query, lowercased and unquoted, bounded in count and length."""
     text = str(query or "")[:MAX_QUERY_LENGTH].strip().casefold()
     words = [word.strip(QUOTES) for word in re.split(r"\s+", text)]
-    return [word for word in words if word][:MAX_TERMS]
+    # A term that folds to nothing, such as a lone accent, would be LIKE '%%'
+    # and match every row.
+    return [word for word in words if fold(word)][:MAX_TERMS]
 
 
 def _register_fold(conn) -> None:
