@@ -101,11 +101,14 @@
   // Where we are
   // ---------------------------------------------------------------
 
+  // Decoded, in NFC and lower case: the one spelling the studio keeps, so an
+  // address with an accented or non-Latin letter names the same person
+  // whether LinkedIn's link percent-encodes it or not.
   function vanityOf(href) {
     const match = /linkedin\.com\/in\/([^/?#]+)/i.exec(href || "") || /^\/in\/([^/?#]+)/i.exec(href || "");
     if (!match) return "";
     try {
-      return decodeURIComponent(match[1]).toLowerCase();
+      return decodeURIComponent(match[1]).normalize("NFC").toLowerCase();
     } catch (err) {
       return match[1].toLowerCase();
     }

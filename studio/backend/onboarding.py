@@ -33,8 +33,10 @@ Strict Invariants:
 import hashlib
 import json
 import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote, unquote
 
 try:
     from .database import get_db
@@ -55,7 +57,6 @@ HEARTBEAT_RETENTION = timedelta(days=7)
 
 IMPORT_KINDS = ("posts", "comments", "reactions")
 
-_VANITY = re.compile(r"^[a-z0-9][a-z0-9\-_%]{1,99}$")
 _ACTIVITY_URN = re.compile(r"^urn:li:activity:(\d{10,25})$")
 
 # Evidence a profile page belongs to the person viewing it. Named so the
@@ -77,12 +78,29 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _is_vanity(value: str) -> bool:
+    """
+    Letters, marks and digits of any script, '-' and '_', starting with a
+    letter or digit, 2 to 100 long.
+
+    The pattern was a-z and 0-9 only, so a creator whose address carries an
+    e-acute, a u-umlaut, or Chinese, Cyrillic, Arabic or Devanagari letters had
+    every profile capture refused and could never pass step 2. Marks are
+    allowed because Devanagari and other scripts write vowels with them.
+    """
+    if not 2 <= len(value) <= 100 or unicodedata.category(value[0])[0] not in "LN":
+        return False
+    return all(ch in "-_" or unicodedata.category(ch)[0] in "LMN" for ch in value)
+
+
 def normalise_vanity(raw: Any) -> str:
     """
     The public identifier from `/in/<vanity>/`, in one canonical spelling.
 
-    Accepts a bare vanity or any LinkedIn profile URL. Lowercased, without
-    query string or trailing slash. Returns "" for anything that is not one.
+    Accepts a bare vanity or any LinkedIn profile URL. Percent-decoded, in NFC,
+    lowercased, without query string or trailing slash, so `jos%C3%A9-x` and
+    `josé-x` are one person, which is how the extension reads them. Returns ""
+    for anything that is not one.
     """
     if not isinstance(raw, str):
         return ""
@@ -90,8 +108,17 @@ def normalise_vanity(raw: Any) -> str:
     match = re.search(r"linkedin\.com/in/([^/?#]+)", value, re.IGNORECASE)
     if match:
         value = match.group(1)
-    value = value.strip("/").lower()
-    return value if _VANITY.match(value) else ""
+    try:
+        value = unquote(value, errors="strict")
+    except UnicodeDecodeError:
+        return ""
+    value = unicodedata.normalize("NFC", value.strip("/")).lower()
+    return value if _is_vanity(value) else ""
+
+
+def profile_url_for(vanity: str) -> str:
+    """The profile address for a vanity, percent-encoded so a browser can be handed it."""
+    return f"https://www.linkedin.com/in/{quote(vanity, safe='-_')}/"
 
 
 def _text(value: Any, limit: int) -> Optional[str]:
@@ -586,7 +613,7 @@ def observe_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     evidence = [e for e in (payload.get("self_evidence") or []) if e in KNOWN_SELF_EVIDENCE]
     clean = _clean_profile(payload)
-    profile_url = f"https://www.linkedin.com/in/{vanity}/"
+    profile_url = profile_url_for(vanity)
 
     conn = get_db()
     try:
@@ -656,7 +683,7 @@ def confirm_identity(vanity: Any) -> Dict[str, Any]:
                 "candidate_evidence = NULL, candidate_observed_at = NULL WHERE id = 1",
                 (wanted, _now()),
             )
-            _write_profile(conn, wanted, f"https://www.linkedin.com/in/{wanted}/", clean)
+            _write_profile(conn, wanted, profile_url_for(wanted), clean)
             _fill_creator_settings(conn, clean)
     finally:
         conn.close()
@@ -1220,7 +1247,7 @@ def request_import(kind: Any, is_chain: bool = False) -> Dict[str, Any]:
     finally:
         conn.close()
     return {"status": "requested", "id": request_id, "kind": kind,
-            "open_url": f"https://www.linkedin.com/in/{confirmed_vanity()}/recent-activity/{_activity_tab(kind)}/"}
+            "open_url": f"{profile_url_for(confirmed_vanity())}recent-activity/{_activity_tab(kind)}/"}
 
 
 def _activity_tab(kind: str) -> str:
