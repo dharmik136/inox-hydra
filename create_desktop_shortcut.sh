@@ -33,10 +33,16 @@ if [ "$OS_NAME" = "Linux" ]; then
 
     mkdir -p "$APPS_DIR"
 
+    # Exec splits on spaces, so the launcher path is quoted as the Desktop
+    # Entry spec requires: inside the quotes a double quote, backtick, dollar
+    # sign or backslash takes a backslash, every backslash is then doubled
+    # once more, and % is doubled.
+    EXEC_ARG="$(printf '%s' "$LAUNCHER" | sed -e 's/\\/\\\\\\\\/g' -e 's/["`$]/\\\\&/g' -e 's/%/%%/g')"
+
     SHORTCUT_CONTENT="[Desktop Entry]
 Name=Inox Hydra
 Comment=Local privacy-first creator engine and analytics studio
-Exec=$LAUNCHER
+Exec=\"$EXEC_ARG\"
 Icon=$ICON
 Terminal=false
 Type=Application
@@ -46,7 +52,7 @@ StartupWMClass=inox-hydra
 
     # Install to application menu
     APP_ENTRY="$APPS_DIR/inox-hydra.desktop"
-    echo "$SHORTCUT_CONTENT" > "$APP_ENTRY"
+    printf '%s\n' "$SHORTCUT_CONTENT" > "$APP_ENTRY"
     chmod +x "$APP_ENTRY"
 
     if command -v update-desktop-database >/dev/null 2>&1; then
@@ -58,7 +64,7 @@ StartupWMClass=inox-hydra
     # Install to Desktop if directory exists
     if [ -d "$DESKTOP_DIR" ]; then
         DESKTOP_ENTRY="$DESKTOP_DIR/inox-hydra.desktop"
-        echo "$SHORTCUT_CONTENT" > "$DESKTOP_ENTRY"
+        printf '%s\n' "$SHORTCUT_CONTENT" > "$DESKTOP_ENTRY"
         chmod +x "$DESKTOP_ENTRY"
         # On Ubuntu / Mint, trust desktop file
         if command -v gio >/dev/null 2>&1; then
