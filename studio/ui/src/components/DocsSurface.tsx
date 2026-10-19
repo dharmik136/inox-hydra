@@ -212,12 +212,23 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
    * Typing on the home view's search box replaces the home view with the
    * results, and the box goes with it, so the first letter landed and the
    * rest went nowhere. The search carries on in the topics column's box.
+   * The reverse happens at phone width: clearing the search returns to the
+   * home view, which hides the topics strip and its focused box, so the
+   * search carries on in the home view's own box.
    */
   const railSearch = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    const field = railSearch.current;
-    if (view !== "results" || !field) return;
-    if (document.activeElement && document.activeElement !== document.body) return;
+    // A box hidden by the layout is still the active element until the
+    // browser's next update, so hidden counts as stranded too.
+    const active = document.activeElement;
+    if (active && active !== document.body && active.getClientRects().length > 0) return;
+    const field =
+      view === "results"
+        ? railSearch.current
+        : view === "home"
+          ? readerRef.current?.querySelector<HTMLInputElement>("input") ?? null
+          : null;
+    if (!field) return;
     field.focus();
     field.setSelectionRange(field.value.length, field.value.length);
   }, [view]);
