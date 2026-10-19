@@ -177,7 +177,8 @@ def test_publish_with_nothing_written_explains_and_opens_no_dialog(context, stud
     page, _ = _composer(context, studio_url)
     page.get_by_role("button", name="Publish", exact=True).click()
     page.get_by_text("SAVE FAILED").wait_for()
-    assert page.get_by_title("There is nothing written to publish.").count() == 1
+    # F1a (UX-16) shows the reason as text beside SAVE FAILED, not in a tooltip.
+    assert page.get_by_text("There is nothing written to publish.").count() >= 1
     assert _publish_dialog(page).count() == 0
 
 
@@ -186,7 +187,7 @@ def test_publish_after_a_refused_save_shows_the_reason_and_opens_no_dialog(conte
     editor.fill("QC F1B " + "x" * 5100)
     page.get_by_role("button", name="Publish", exact=True).click()
     page.get_by_text("SAVE FAILED").wait_for()
-    assert page.locator("[title*='5,000']").count() == 1
+    assert page.get_by_text("5,000", exact=False).count() >= 1
     assert _publish_dialog(page).count() == 0
     assert not [r for r in _rows() if (r["content"] or "").startswith("QC F1B")]
 
