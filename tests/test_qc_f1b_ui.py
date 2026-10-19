@@ -138,3 +138,54 @@ def test_a_lost_studio_is_announced_and_never_reads_failed_to_fetch(context, stu
     context.unroute("**/api/**")
     # The banner asks again by itself and goes once the studio answers.
     banner.first.wait_for(state="detached", timeout=12000)
+
+
+# ---------------------------------------------------------------------------
+# WRITE-01: a window left on another profile cannot save into the new one
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def second_profile(api, monkeypatch):
+    import base64
+
+    import ed25519
+    import licensing
+
+    secret = bytes(range(32))
+    monkeypatch.setattr(licensing, "PUBLIC_KEYS", [base64.b64encode(ed25519.public_key(secret)).decode()])
+    payload = {
+        "v": 1, "id": "test", "email": "buyer@example.com", "name": "", "tier": "agency", "kind": "annual",
+        "profiles": 5, "issued_at": "2026-10-19", "expires_at": "2099-01-01", "updates_until": "2099-01-01",
+    }
+    key = licensing.encode(payload, lambda message: ed25519.sign(secret, message))
+    assert api.post("/api/v1/licence", json={"key": key}).status_code == 200
+    assert api.post("/api/v1/accounts", json={"name": "Client B", "id": "client-b"}).status_code == 200
+    yield "client-b"
+    api.post("/api/v1/accounts/switch", json={"account_id": "default"})
+    api.request("DELETE", "/api/v1/accounts/client-b", json={"confirm": "Client B"})
+    api.delete("/api/v1/licence")
+
+
+def test_a_window_left_on_the_old_profile_is_told_and_cannot_save(browser, studio_url, second_profile):
+    import paths
+
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800}, service_workers="block")
+    try:
+        window_a = _open(ctx, studio_url, "Composer")
+        window_a.get_by_label("Post body").fill("QC F1B Confidential: My studio's launch announcement")
+
+        window_b = _open(ctx, studio_url)
+        window_b.get_by_role("button", name="Current profile").first.click()
+        window_b.get_by_role("button", name="Client B").first.click()
+        window_b.wait_for_load_state("networkidle")
+
+        banner = window_a.get_by_role("alert").filter(has_text="switched to Client B")
+        banner.wait_for(timeout=5000)
+
+        window_a.get_by_role("button", name="Save", exact=True).click()
+        window_a.get_by_text("SAVE FAILED").wait_for(timeout=5000)
+        with paths.using_profile("client-b"):
+            leaked = [r for r in _rows() if "Confidential" in (r["content"] or "")]
+        assert leaked == [], "the stale window's draft landed in the other profile"
+    finally:
+        ctx.close()

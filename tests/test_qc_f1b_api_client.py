@@ -96,7 +96,18 @@ out.back = await attempt(
   [{ status: 200, body: { accounts: [], active_account_id: "default", profile_limit: 1 } }],
   () => api.fetchAccounts(),
 );
-out.changes = changes;
+out.changes = changes.slice();
+
+// WRITE-01: the window learns its profile from the first answer that names
+// one, names it on every request after, and notices when the studio answers
+// for another.
+const accounts = { status: 200, body: { accounts: [], active_account_id: "default", profile_limit: 1 } };
+await attempt([{ ...accounts, headers: { "X-Inox-Profile": "default" } }], () => api.fetchAccounts());
+await attempt([{ ...accounts, headers: { "X-Inox-Profile": "default" } }], () => api.fetchAccounts());
+out.sentProfile = seen[seen.length - 1].headers["x-inox-profile"] || null;
+out.switched = await attempt([{ ...accounts, headers: { "X-Inox-Profile": "client-b" } }], () => api.fetchAccounts());
+out.shownAfterSwitch = api.shownProfileId ? api.shownProfileId() : null;
+out.staleConnection = api.currentConnection ? api.currentConnection() : null;
 console.log(JSON.stringify(out));
 """
 
@@ -153,6 +164,15 @@ def test_an_unreachable_studio_is_said_in_words_and_announced(probe):
     assert "not answering" in result["message"]
     assert result["status"] == 0
     assert result["state"] == "offline"
+
+
+def test_every_request_names_the_profile_the_window_loaded_with(probe):
+    assert probe["sentProfile"] == "default"
+
+
+def test_an_answer_for_another_profile_marks_the_window_stale(probe):
+    assert probe["shownAfterSwitch"] == "default", "the window must keep the profile it loaded with"
+    assert probe["staleConnection"] == {"state": "stale-profile", "shown": "default", "active": "client-b"}
 
 
 def test_the_window_learns_the_studio_is_back(probe):

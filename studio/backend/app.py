@@ -383,6 +383,40 @@ async def enforce_local_access(request: Request, call_next):
     return response
 
 
+# Which creator profile a window is showing. The interface sends it on every
+# request, and every trusted answer carries the profile that served it.
+PROFILE_HEADER = "X-Inox-Profile"
+
+
+def _is_trusted_api_request(request: Request) -> bool:
+    """
+    The checks enforce_local_access makes, asked again here.
+
+    pin_creator_profile is the outer middleware, so it runs before the
+    security one. Without these it would tell an unauthenticated caller which
+    profile is active, and refuse its writes with a different code than the
+    401 it is owed.
+    """
+    path = request.scope.get("path", "")
+    if not path.startswith("/api") or security.request_is_exempt(path):
+        return False
+    host = request.headers.get("host")
+    if not security.is_loopback_host(host):
+        return False
+    if not security.is_allowed_origin(request.headers.get("origin"), security.extract_port(host)):
+        return False
+    supplied = request.headers.get(security.TOKEN_HEADER) or request.cookies.get(security.TOKEN_COOKIE)
+    return security.constant_time_match(supplied, security.get_or_create_token())
+
+
+def _profile_name(profile_id: str) -> str:
+    try:
+        account = accounts.get_account(profile_id)
+    except Exception:
+        account = None
+    return (account or {}).get("name") or profile_id[:64]
+
+
 @app.middleware("http")
 async def pin_creator_profile(request: Request, call_next):
     """
@@ -391,9 +425,48 @@ async def pin_creator_profile(request: Request, call_next):
     Every connection the request opens then goes to the same profile's
     database, even if the creator switches profile while it is running. A
     switch takes effect from the next request.
+
+    A write from a window that still shows another profile is refused. The
+    active profile is one value for the whole studio, so a second window left
+    on profile A went on saving into profile B after another window switched,
+    while still showing A and reporting SAVED: one client's confidential draft
+    landed in another client's profile. The interface names the profile it
+    loaded with in X-Inox-Profile; a write naming one that is no longer active
+    is a 409 the window shows, and changes nothing. Reads still answer, and
+    each answer names the active profile, which is how the window notices.
+    The profile routes themselves are exempt: switching from a stale window is
+    the creator's explicit choice, and it reloads that window.
     """
-    with paths_module.using_profile(paths_module.get_active_profile_id()):
-        return await call_next(request)
+    active = paths_module.get_active_profile_id()
+    trusted = _is_trusted_api_request(request)
+    shown = request.headers.get(PROFILE_HEADER)
+    path = request.scope.get("path", "")
+    if (
+        trusted
+        and shown
+        and shown != active
+        and request.method not in ("GET", "HEAD", "OPTIONS")
+        and not path.startswith("/api/v1/accounts")
+    ):
+        response = JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "profile_changed",
+                    "message": (
+                        f"This window still shows {_profile_name(shown)}, but the studio has "
+                        f"switched to {_profile_name(active)} in another window. Nothing was "
+                        "changed. Copy anything you have not saved, then reload this window."
+                    ),
+                }
+            },
+        )
+    else:
+        with paths_module.using_profile(active):
+            response = await call_next(request)
+    if trusted:
+        response.headers[PROFILE_HEADER] = active
+    return response
 
 
 # -------------------------------------------------------------

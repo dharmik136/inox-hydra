@@ -12,6 +12,17 @@
 // The request core
 // ---------------------------------------------------------------------------
 
+/**
+ * Names the creator profile this window is showing, on every request.
+ *
+ * The active profile is one value for the whole studio, so a second window
+ * left on profile A kept saving into profile B after another window switched,
+ * while still showing A. The studio now refuses a write whose window shows a
+ * profile that is no longer active, and names the profile it served on every
+ * answer, which is how a window learns which profile it loaded with.
+ */
+const PROFILE_HEADER = "X-Inox-Profile";
+
 /** What a window shows when the studio cannot be reached at all. */
 export const UNREACHABLE =
   "The studio is not answering. It may have stopped, or this computer may have been asleep. Start it again, then retry.";
@@ -35,14 +46,24 @@ export class StudioError extends Error {
   }
 }
 
-/** Whether this window can reach the studio. */
-export type Connection = { state: "online" } | { state: "offline" };
+/** Whether this window can reach the studio, and whether it shows the active profile. */
+export type Connection =
+  | { state: "online" }
+  | { state: "offline" }
+  | { state: "stale-profile"; shown: string; active: string };
 
 let connection: Connection = { state: "online" };
 const connectionListeners = new Set<(next: Connection) => void>();
 
+/** The profile this window loaded with: the first one the studio answered for. */
+let shownProfile: string | null = null;
+
 function setConnection(next: Connection): void {
-  if (next.state === connection.state) return;
+  const same =
+    next.state === connection.state &&
+    (next.state !== "stale-profile" ||
+      (connection.state === "stale-profile" && connection.active === next.active));
+  if (same) return;
   connection = next;
   for (const listener of connectionListeners) listener(next);
 }
@@ -59,8 +80,25 @@ export function onConnectionChange(listener: (next: Connection) => void): () => 
   };
 }
 
+/** The profile id this window is showing, once the studio has answered once. */
+export function shownProfileId(): string | null {
+  return shownProfile;
+}
+
+/** Records which profile answered, and that the studio answered at all. */
+function noteProfile(served: string | null): void {
+  if (served) {
+    if (shownProfile === null) shownProfile = served;
+    if (served !== shownProfile) {
+      setConnection({ state: "stale-profile", shown: shownProfile, active: served });
+      return;
+    }
+  }
+  setConnection({ state: "online" });
+}
+
 /**
- * fetch, carrying the cookie.
+ * fetch, carrying the cookie and the profile this window shows.
  *
  * A request that cannot reach the studio at all is the browser's TypeError,
  * whose message is "Failed to fetch". That reached the screen verbatim; it now
@@ -69,6 +107,7 @@ export function onConnectionChange(listener: (next: Connection) => void): () => 
 async function studioFetch(path: string, init: RequestInit = {}, json = true): Promise<Response> {
   const headers = new Headers(init.headers);
   if (json && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (shownProfile) headers.set(PROFILE_HEADER, shownProfile);
 
   let response: Response;
   try {
@@ -76,10 +115,10 @@ async function studioFetch(path: string, init: RequestInit = {}, json = true): P
     response = await fetch(path, { ...init, credentials: "same-origin", headers });
   } catch (caught) {
     if (caught instanceof DOMException && caught.name === "AbortError") throw caught;
-    setConnection({ state: "offline" });
+    if (connection.state !== "stale-profile") setConnection({ state: "offline" });
     throw new StudioError(UNREACHABLE, 0, "unreachable");
   }
-  setConnection({ state: "online" });
+  noteProfile(response.headers.get(PROFILE_HEADER));
   return response;
 }
 
@@ -132,8 +171,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /**
- * Asks the studio for the cheapest thing it has, to learn whether it is back.
- * The answer itself is not used.
+ * Asks the studio for the cheapest thing it has, to learn whether it is back
+ * and which profile it is on. The answer itself is not used.
  */
 export async function pingStudio(): Promise<void> {
   try {
@@ -141,6 +180,35 @@ export async function pingStudio(): Promise<void> {
   } catch {
     // Already recorded as unreachable.
   }
+}
+
+const PROFILE_CHANNEL = "inox-hydra-profile";
+
+/** Tells every other window of this browser that the active profile changed. */
+function announceProfileSwitch(active: string): void {
+  if (typeof BroadcastChannel === "undefined") return;
+  const channel = new BroadcastChannel(PROFILE_CHANNEL);
+  channel.postMessage({ active });
+  channel.close();
+}
+
+/**
+ * Listens for a profile switch made in another window of this browser.
+ *
+ * A window in another browser, or the desktop window beside a browser tab,
+ * cannot hear this; it learns of the switch from the next answer the studio
+ * gives it, which names the active profile.
+ */
+export function watchProfileSwitches(): () => void {
+  if (typeof BroadcastChannel === "undefined") return () => undefined;
+  const channel = new BroadcastChannel(PROFILE_CHANNEL);
+  channel.onmessage = (event: MessageEvent) => {
+    const active = (event.data as { active?: unknown } | null)?.active;
+    if (typeof active === "string" && shownProfile && active !== shownProfile) {
+      setConnection({ state: "stale-profile", shown: shownProfile, active });
+    }
+  };
+  return () => channel.close();
 }
 
 export interface Draft {
@@ -2222,10 +2290,17 @@ export async function createAccount(data: {
 }
 
 export async function switchAccount(accountId: string): Promise<{ status: string; active_account_id: string; account?: CreatorAccount }> {
-  return call("/api/v1/accounts/switch", {
-    method: "POST",
-    body: JSON.stringify({ account_id: accountId }),
-  });
+  const result = await call<{ status: string; active_account_id: string; account?: CreatorAccount }>(
+    "/api/v1/accounts/switch",
+    {
+      method: "POST",
+      body: JSON.stringify({ account_id: accountId }),
+    },
+  );
+  // Every other window of this browser is now showing a profile that is not
+  // the active one, and has to say so before it saves anything.
+  announceProfileSwitch(result.active_account_id ?? accountId);
+  return result;
 }
 
 /** Deletes the profile's folder and everything in it. `confirm` repeats its name. */
