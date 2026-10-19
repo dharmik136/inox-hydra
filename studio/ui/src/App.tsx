@@ -36,25 +36,12 @@ import {
   type SearchResult,
 } from "@/lib/api";
 import type { SearchFocus } from "@/lib/search";
-import { measurableLength, measurableWordCount, storedLength } from "@/lib/text";
+import { measurableLength, measurableWordCount, openingEnd, storedLength, swapOpening } from "@/lib/text";
 import { DOCKED_INSPECTOR_QUERY, useMediaQuery } from "@/lib/viewport";
 import { setUnsavedCheck } from "@/lib/unsaved";
 
 /** Average adult reading speed. Used for an estimate that is labelled as one. */
 const WORDS_PER_MINUTE = 200;
-
-/**
- * Replaces the opening paragraph, which is what applying a hook means.
- *
- * A paragraph ends at the first blank line. When the draft has no blank line
- * the whole thing is the opening, and when it is empty the hook simply becomes
- * the draft.
- */
-function swapFirstParagraph(draft: string, hook: string): string {
-  if (!draft.trim()) return hook;
-  const breakIndex = draft.indexOf("\n\n");
-  return breakIndex === -1 ? hook : hook + draft.slice(breakIndex);
-}
 
 export default function App() {
   const [active, setActive] = useState<SectionId>("composer");
@@ -138,6 +125,15 @@ export default function App() {
   // filmstrip shows them instead of the vaulted library.
   const [generated, setGenerated] = useState<GeneratedHook[] | null>(null);
 
+  // The author's own opening, kept while a hook stands in for it. Text set by
+  // the program is not on the textarea's undo stack, so Ctrl+Z could not
+  // bring it back and one click lost a paragraph for good. Kept across
+  // several hooks tried in a row, so Undo returns the author's words rather
+  // than the previous hook, and offered for as long as the hook is still the
+  // opening.
+  const [hookUndo, setHookUndo] = useState<{ opening: string; hook: string } | null>(null);
+  const canUndoHook = hookUndo !== null && draft.startsWith(hookUndo.hook);
+
   /** Whether the author has put anything into the editor this session. */
   const touched = useRef(false);
 
@@ -209,13 +205,24 @@ export default function App() {
   const onApplyHook = useCallback(
     (hook: string) => {
       touched.current = true;
-      setDraft((current) => swapFirstParagraph(current, hook));
+      const end = openingEnd(draft);
+      const opening = end === -1 || !draft.trim() ? draft : draft.slice(0, end);
+      setHookUndo({ opening: hookUndo && draft.startsWith(hookUndo.hook) ? hookUndo.opening : opening, hook });
+      setDraft(swapOpening(draft, hook));
       setSaveState("dirty");
       setSavedAt(null);
       setSwapKey((key) => key + 1);
     },
-    [],
+    [draft, hookUndo],
   );
+
+  const onUndoHook = useCallback(() => {
+    if (!hookUndo || !draft.startsWith(hookUndo.hook)) return;
+    setDraft(hookUndo.opening + draft.slice(hookUndo.hook.length));
+    setHookUndo(null);
+    setSaveState("dirty");
+    setSavedAt(null);
+  }, [draft, hookUndo]);
 
   const onReHook = useCallback(async (selection: string) => {
     try {
@@ -323,6 +330,7 @@ export default function App() {
         setSavedAt(null);
         setSaveError(null);
         setGenerated(null);
+        setHookUndo(null);
         setActive("composer");
         return;
       }
@@ -413,6 +421,8 @@ export default function App() {
                 onApply={onApplyHook}
                 generated={generated}
                 onClearGenerated={() => setGenerated(null)}
+                canUndo={canUndoHook}
+                onUndo={onUndoHook}
               />
             )}
 

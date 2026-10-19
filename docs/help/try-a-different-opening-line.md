@@ -9,10 +9,10 @@ The hook rail is the strip above the editor in the **Composer**. It shows the 12
 2. Click a specimen, or press **Alt** plus its number (1 to 9). The first nine carry an ALT label, and the rail reads ALT + NUMBER TO APPLY.
 3. The specimen replaces your opening paragraph.
 
-Your opening paragraph is everything up to the first blank line. If your draft has no blank line, the specimen replaces the whole draft. If the editor is empty, the specimen becomes the draft.
+Your opening paragraph is everything up to the first blank line. A line that holds only spaces, or the blank spacer character people paste from LinkedIn, counts as blank. If your draft has no blank line, the specimen replaces the whole draft. If the editor is empty, the specimen becomes the draft.
 
-> [!WARNING]
-> Applying a hook replaces your first paragraph outright. There is no undo button. Save before you try hooks, or copy your opening somewhere first.
+> [!NOTE]
+> After a hook replaces your opening, the rail reads **OPENING REPLACED** with an **UNDO** button. Press it to put your own opening back. It stays while the hook is still your first line, and it brings back your words even if you tried several hooks in a row. Ctrl+Z does not undo a hook.
 
 The status mark turns to UNSAVED. Press **Save** to keep the change.
 

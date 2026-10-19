@@ -92,3 +92,34 @@ export function rawIndexAtMeasurableOffset(text: string, target: number): number
 
   return rawIndex;
 }
+
+/**
+ * A line a reader sees as blank: nothing on it but spacing.
+ *
+ * Not only "\n\n". Text pasted from LinkedIn or another editor keeps blank
+ * lines holding a space or a no-break space, and LinkedIn writers put U+2800
+ * on them so the gap survives posting. [^\S\n] is any whitespace except the
+ * line break; the rest are characters that take no room but are not
+ * whitespace to a regular expression.
+ */
+const BLANK_LINE = /\n(?:[^\S\n]|[\u2800\u200b\u200c\u200d\u2060\ufeff])*\n/;
+
+/** Where the opening paragraph ends: the index of its blank line, or -1. */
+export function openingEnd(text: string): number {
+  const match = BLANK_LINE.exec(text);
+  return match ? match.index : -1;
+}
+
+/**
+ * Replaces the opening paragraph, which is what applying a hook means.
+ *
+ * A paragraph ends at the first blank line. When the draft has no blank line
+ * the whole thing is the opening, and when it is empty the hook simply becomes
+ * the draft. Testing only for "\n\n" took a blank line that held a space for
+ * part of a paragraph, and a hook then replaced the whole post.
+ */
+export function swapOpening(draft: string, hook: string): string {
+  if (!draft.trim()) return hook;
+  const end = openingEnd(draft);
+  return end === -1 ? hook : hook + draft.slice(end);
+}

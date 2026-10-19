@@ -134,6 +134,30 @@ def _rows_with(api, content):
     return [row for row in api.get("/api/posts").json()["posts"] if row["content"] == content]
 
 
+def test_a_hook_replaces_only_the_opening_when_the_blank_line_holds_a_space(new_page, studio_url, api):
+    """
+    Text pasted from LinkedIn keeps blank lines that are not empty: a space,
+    or the U+2800 spacer people use so the gap survives. Applying a hook then
+    replaced the whole post. It replaces the opening, and Undo puts it back.
+    """
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    for spacer in (" ", "⠀"):
+        draft = f"My own opening line.\n{spacer}\nThe body I wrote over an hour.\n{spacer}\nThe closing."
+        editor.fill(draft)
+        card = page.get_by_role("button", name=re.compile(r"^Apply ")).first
+        card.click()
+        value = editor.input_value()
+        assert value.endswith(f"\n{spacer}\nThe body I wrote over an hour.\n{spacer}\nThe closing."), (
+            f"the body did not survive a hook with {spacer!r} on the blank line: {value!r}"
+        )
+        assert not value.startswith("My own opening line."), "the hook was not applied"
+
+        page.get_by_role("button", name=re.compile(r"^Undo ")).click()
+        assert editor.input_value() == draft, "Undo did not restore the opening"
+
+
 def test_the_strip_shows_the_count_against_linkedins_limit(new_page, studio_url, api):
     _clear_posts(api)
     page = new_page()

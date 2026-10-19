@@ -9,6 +9,9 @@ interface HookFilmstripProps {
   /** Alternatives produced from a selection. When set, these replace the library. */
   generated: GeneratedHook[] | null;
   onClearGenerated: () => void;
+  /** Whether the opening a hook replaced can still be put back. */
+  canUndo: boolean;
+  onUndo: () => void;
 }
 
 /** How many specimens carry a keyboard shortcut. Alt and a digit, so 1 to 9. */
@@ -43,7 +46,7 @@ interface Specimen {
  * and no score. So each is labelled for what it is, and the fold
  * verdict appears only on the specimens that actually carry one.
  */
-export function HookFilmstrip({ onApply, generated, onClearGenerated }: HookFilmstripProps) {
+export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, onUndo }: HookFilmstripProps) {
   const [templates, setTemplates] = useState<HookTemplate[] | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -101,6 +104,23 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated }: HookFilm
       <div className="flex items-baseline justify-between gap-3 px-10 pt-3">
         <p className="studio-label">{generated ? "Generated from selection" : "Hook rail"}</p>
         <div className="flex items-center gap-3">
+          {/* Announced, because a hook rewrites the post in one keystroke and
+              the way back has to be found as fast as that. */}
+          <p role="status" className="studio-meta flex items-center gap-2 text-[10px] text-ink-muted">
+            {canUndo && (
+              <>
+                OPENING REPLACED
+                <button
+                  type="button"
+                  onClick={onUndo}
+                  aria-label="Undo the hook and put your opening back"
+                  className="rounded-sm border border-edge px-1.5 text-ink-secondary transition-colors hover:border-edge-strong hover:text-ink-primary"
+                >
+                  UNDO
+                </button>
+              </>
+            )}
+          </p>
           {/* A keyboard hint, so not on a window narrow enough to be a phone,
               where it also sat under the inspector's open control. */}
           <p className="studio-meta hidden text-[10px] text-ink-muted sm:block">ALT + NUMBER TO APPLY</p>

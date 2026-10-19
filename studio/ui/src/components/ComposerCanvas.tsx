@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { SelectionToolbar, type ToolbarPosition } from "./SelectionToolbar";
 import { formatText, type FormatKind } from "@/lib/api";
-import { measurableLength, rawIndexAtMeasurableOffset } from "@/lib/text";
+import { measurableLength, openingEnd, rawIndexAtMeasurableOffset } from "@/lib/text";
 
 /**
  * LinkedIn collapses the post body behind "see more" at roughly this many
@@ -106,7 +106,7 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
     if (swapKey === 0) return;
     if (reduceMotion) return;
 
-    const paragraphBreak = value.indexOf("\n\n");
+    const paragraphBreak = openingEnd(value);
     const rawEnd = paragraphBreak === -1 ? value.length : paragraphBreak;
     const rects = rectsFor(0, rawEnd);
     const mirrorBox = mirrorRef.current?.getBoundingClientRect();
