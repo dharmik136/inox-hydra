@@ -191,3 +191,24 @@ def test_imported_posts_are_compared_and_unread_figures_say_so(studio):
     cells = [c.strip() for c in row.locator("td").all_inner_texts()]
     assert cells[1:] == ["not measured", "40", "3", "not measured"], cells
     assert not studio["errors"], studio["errors"]
+
+
+def test_a_range_change_keeps_the_screen_and_reads_the_posts_once(studio):
+    """AUDIENCE-22"""
+    _days(studio["client"], 34, impressions=1000)
+    _own_posts(studio["client"], [{"text": "Why sourdough needs patience", "reactions": 40}])
+    reads = []
+    studio["page"].on("request", lambda req: reads.append(req.url) if "/api/analytics/posts" in req.url else None)
+    page = _open(studio, "Analytics")
+    page.locator("tbody tr", has_text="Why sourdough needs patience").first.wait_for()
+    page.evaluate("""() => { window.__blanked = false; new MutationObserver(() => {
+        if (document.body.innerText.includes('LOADING ANALYTICS')) window.__blanked = true; })
+        .observe(document.body, {subtree: true, childList: true, characterData: true}); }""")
+    for target in ("7d", "90d", "30d"):
+        page.get_by_role("button", name=target, exact=True).click()
+        page.wait_for_function(
+            "document.querySelector('[aria-label=\"Date range\"]').getAttribute('aria-busy') === 'false'")
+    page.wait_for_load_state("networkidle")
+    assert not page.evaluate("window.__blanked"), "a range change blanked the screen to LOADING ANALYTICS"
+    assert len(reads) == 1, f"the posts were read {len(reads)} times for one visit"
+    assert not studio["errors"], studio["errors"]

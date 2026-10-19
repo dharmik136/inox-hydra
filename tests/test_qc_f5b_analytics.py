@@ -236,3 +236,64 @@ def test_a_studio_post_bound_to_its_linkedin_post_appears_once(studio):
     rows = [r for r in _leaderboard(studio) if r["id"] in (post_id, _urn(0))]
     assert len(rows) == 1, rows
     assert rows[0]["reactions"] == 12
+
+
+# ---------------------------------------------------------------------------
+# AUDIENCE-22: Analytics opens fast at 2,000 posts and 5,000 leads
+# ---------------------------------------------------------------------------
+
+def _volume():
+    """2,000 imported posts, each bound to a studio post, 5,000 leads and 10,000 interactions.
+
+    Written straight to the tables, with lead ids as text in the INTEGER
+    affinity lead_id column exactly as the ingest route stores them, because
+    that type mismatch is what defeated the index.
+    """
+    from database import get_db
+    conn = get_db()
+    with conn:
+        for i in range(2000):
+            urn = _urn(i)
+            conn.execute("INSERT INTO own_posts (activity_urn, text, published_at, reactions, comments, reposts, "
+                         "first_seen_at, last_seen_at) VALUES (?, ?, '2026-06-01T09:00:00+00:00', ?, ?, 1, "
+                         "'2026-10-01', '2026-10-01')", (urn, f"Post {i} about pricing\n" + "word " * 50, i % 900, i % 80))
+            conn.execute("INSERT INTO posts (id, content, status, activity_urn) VALUES (?, ?, 'published', ?)",
+                         (f"vol-{i}", f"Post {i} about pricing", urn))
+        for i in range(5000):
+            conn.execute("INSERT INTO leads (id, name, full_name, icp_score) VALUES (?, ?, ?, ?)",
+                         (f"lead-{i:05d}", f"Person {i}", f"Person {i}", float(i % 100)))
+            for j in range(2):
+                conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type) VALUES (?, ?, ?)",
+                             (f"lead-{i:05d}", _urn((i * 7 + j * 13) % 600), "LIKE" if j else "COMMENT"))
+    conn.close()
+
+
+def _timed(client, path):
+    import time
+    started = time.perf_counter()
+    res = client.get(path)
+    assert res.status_code == 200, res.text
+    return (time.perf_counter() - started) * 1000, res.json()
+
+
+def test_the_post_comparison_answers_fast_at_volume(studio):
+    _volume()
+    elapsed, body = _timed(studio, "/api/analytics/posts")
+    # 4,000 ms before: one query per post, each scanning every lead. The
+    # bound is loose on purpose so a slow CI machine does not fail it.
+    assert elapsed < 750, f"/api/analytics/posts took {elapsed:.0f} ms at 2,000 posts"
+    assert len(body["posts"]) == 2000
+    busiest = next(p for p in body["posts"] if p["id"] == _urn(0))
+    from database import get_db
+    conn = get_db()
+    expected = conn.execute("SELECT COUNT(DISTINCT lead_id) FROM lead_interactions WHERE post_urn = ?",
+                            (_urn(0),)).fetchone()[0]
+    conn.close()
+    assert busiest["attribution"]["total_leads"] == expected > 0
+
+
+def test_the_evidence_brief_answers_fast_at_volume(studio):
+    _volume()
+    elapsed, body = _timed(studio, "/api/v1/insights/evidence")
+    assert elapsed < 750, f"/api/v1/insights/evidence took {elapsed:.0f} ms at 2,000 posts"
+    assert body["has_evidence"] is True

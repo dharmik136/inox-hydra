@@ -378,6 +378,23 @@ def get_posts_leaderboard():
 
         listed.sort(key=lambda d: (d["impressions"] is None, -(d["impressions"] or 0),
                                    d["reactions"] is None, -(d["reactions"] or 0)))
+        # Who each post brought, read once for every post rather than once per
+        # post. The per-post query joined lead_interactions.lead_id (INTEGER
+        # affinity) to leads.id (TEXT), which no index can serve, so every
+        # post scanned every lead: 4 seconds at 2,000 posts and 5,000 leads.
+        # Driving the join from leads lets SQLite use idx_interactions_lead.
+        scores: Dict[str, Any] = {}
+        people: Dict[str, set] = {}
+        for r in cursor.execute("""
+            SELECT li.post_urn AS post_key, l.id AS lead_id, l.icp_score
+            FROM leads l CROSS JOIN lead_interactions li ON li.lead_id = l.id
+            WHERE li.post_urn IS NOT NULL AND li.post_urn != ''
+            UNION ALL
+            SELECT post_id, id, icp_score FROM leads WHERE post_id IS NOT NULL AND post_id != ''
+        """).fetchall():
+            scores[r["lead_id"]] = r["icp_score"]
+            people.setdefault(r["post_key"], set()).add(r["lead_id"])
+
         rows = []
         for d in listed:
             d["engagement_rate"] = _rate(d["impressions"], d["reactions"], d["comments"], d["shares"])
@@ -386,20 +403,12 @@ def get_posts_leaderboard():
 
             post_id_str = str(d.pop("studio_post_id") or d["id"])
             post_urn = d.get("activity_urn") or ""
-            cursor.execute("""
-                SELECT
-                    COUNT(DISTINCT l.id) as total_leads,
-                    COUNT(DISTINCT CASE WHEN l.icp_score >= 75.0 THEN l.id END) as vip_leads,
-                    ROUND(AVG(l.icp_score), 1) as avg_icp
-                FROM leads l
-                LEFT JOIN lead_interactions li ON l.id = li.lead_id
-                WHERE (li.post_urn != '' AND li.post_urn IN (?, ?)) OR l.post_id = ?
-            """, (post_id_str, post_urn, post_id_str))
-            attr_row = cursor.fetchone()
+            brought = people.get(post_id_str, set()) | people.get(post_urn, set())
+            known = [scores[lead] for lead in brought if scores[lead] is not None]
             d["attribution"] = {
-                "total_leads": int(attr_row["total_leads"] or 0) if attr_row else 0,
-                "vip_leads": int(attr_row["vip_leads"] or 0) if attr_row else 0,
-                "avg_icp": float(attr_row["avg_icp"] or 0.0) if attr_row and attr_row["avg_icp"] else 0.0,
+                "total_leads": len(brought),
+                "vip_leads": sum(1 for score in known if score >= 75.0),
+                "avg_icp": round(sum(known) / len(known), 1) if known else 0.0,
             }
             rows.append(d)
         conn.close()

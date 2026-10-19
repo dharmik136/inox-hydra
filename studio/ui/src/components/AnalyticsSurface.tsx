@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ChevronRight, Download } from "lucide-react";
 import {
   fetchAnalyticsKpis,
@@ -53,21 +53,37 @@ export function AnalyticsSurface() {
   const [metric, setMetric] = useState<MetricKey>("impressions");
   const [series, setSeries] = useState<Point[] | null>(null);
   const [kpis, setKpis] = useState<Kpis | null>(null);
-  const [posts, setPosts] = useState<AnalyticsPost[]>([]);
+  const [posts, setPosts] = useState<AnalyticsPost[] | null>(null);
+  const [loadingRange, setLoadingRange] = useState(false);
   const [failed, setFailed] = useState(false);
 
+  // The posts do not depend on the range, so they are read once. They were
+  // read again on every range click, and at 2,000 posts the screen went back
+  // to LOADING ANALYTICS for five seconds each time.
   useEffect(() => {
     let live = true;
-    setSeries(null);
-    Promise.all([fetchAnalyticsOverview(range), fetchAnalyticsKpis(range), fetchAnalyticsPosts()])
-      .then(([overview, kpiData, postRows]) => {
+    fetchAnalyticsPosts()
+      .then((rows) => live && setPosts(rows))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // A range change keeps the current chart on screen until the new one
+  // arrives, rather than blanking the page.
+  useEffect(() => {
+    let live = true;
+    setLoadingRange(true);
+    Promise.all([fetchAnalyticsOverview(range), fetchAnalyticsKpis(range)])
+      .then(([overview, kpiData]) => {
         if (!live) return;
         setSeries(overview);
         setKpis(kpiData);
-        setPosts(postRows);
         setFailed(false);
       })
-      .catch(() => live && setFailed(true));
+      .catch(() => live && setFailed(true))
+      .finally(() => live && setLoadingRange(false));
     return () => {
       live = false;
     };
@@ -115,7 +131,7 @@ export function AnalyticsSurface() {
             <Download className="size-3" strokeWidth={2} aria-hidden="true" />
             CSV
           </a>
-        <div className="flex items-center gap-1" role="group" aria-label="Date range">
+        <div className="flex items-center gap-1" role="group" aria-label="Date range" aria-busy={loadingRange}>
           {RANGES.map((candidate) => (
             <button
               key={candidate}
@@ -197,30 +213,44 @@ export function AnalyticsSurface() {
 
       <section className="mt-10">
         <p className="studio-label mb-3">Post comparison</p>
-        {posts.length === 0 ? (
+        {posts === null ? (
+          <p className="studio-meta text-ink-muted">READING YOUR POSTS</p>
+        ) : posts.length === 0 ? (
           <p className="studio-meta text-ink-muted">NO PUBLISHED POSTS TO COMPARE</p>
         ) : (
-          <table className="w-full text-left">
-            <thead>
-              <tr className="studio-label border-b border-edge">
-                <th scope="col" className="py-2 font-medium">Post</th>
-                <th scope="col" className="py-2 text-right font-medium">Impressions</th>
-                <th scope="col" className="py-2 text-right font-medium">Reactions</th>
-                <th scope="col" className="py-2 text-right font-medium">Comments</th>
-                <th scope="col" className="py-2 text-right font-medium">Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {posts.map((post) => (
-                <PostRow key={post.id} post={post} />
-              ))}
-            </tbody>
-          </table>
+          <PostTable posts={posts} />
         )}
       </section>
     </div>
   );
 }
+
+/**
+ * The comparison table, drawn again only when the posts change.
+ *
+ * The posts do not depend on the range, and at 2,000 rows redrawing them on
+ * every range click took most of a second.
+ */
+const PostTable = memo(function PostTable({ posts }: { posts: AnalyticsPost[] }) {
+  return (
+    <table className="w-full text-left">
+      <thead>
+        <tr className="studio-label border-b border-edge">
+          <th scope="col" className="py-2 font-medium">Post</th>
+          <th scope="col" className="py-2 text-right font-medium">Impressions</th>
+          <th scope="col" className="py-2 text-right font-medium">Reactions</th>
+          <th scope="col" className="py-2 text-right font-medium">Comments</th>
+          <th scope="col" className="py-2 text-right font-medium">Rate</th>
+        </tr>
+      </thead>
+      <tbody>
+        {posts.map((post) => (
+          <PostRow key={post.id} post={post} />
+        ))}
+      </tbody>
+    </table>
+  );
+});
 
 /**
  * One post, expandable into the leads it actually produced.
@@ -328,7 +358,7 @@ function Cell({ value, suffix = "" }: { value: number | null; suffix?: string })
  * it does not run experiments, so it cannot separate correlation from cause and
  * must not write sentences that imply it did.
  */
-function Observations({ kpis, posts }: { kpis: Kpis | null; posts: AnalyticsPost[] }) {
+function Observations({ kpis, posts }: { kpis: Kpis | null; posts: AnalyticsPost[] | null }) {
   if (!kpis) return null;
   const coverage = coverageNote(kpis);
   const approx = new Set(kpis.approximate ?? []);
@@ -337,7 +367,7 @@ function Observations({ kpis, posts }: { kpis: Kpis | null; posts: AnalyticsPost
   const pct = (value: number | null) =>
     value === null ? null : `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 
-  const best = posts.reduce<AnalyticsPost | null>(
+  const best = (posts ?? []).reduce<AnalyticsPost | null>(
     (acc, post) =>
       post.engagement_rate !== null && (acc === null || post.engagement_rate > (acc.engagement_rate ?? -1))
         ? post
@@ -401,7 +431,9 @@ function Observations({ kpis, posts }: { kpis: Kpis | null; posts: AnalyticsPost
 
       <section>
         <p className="studio-label mb-1.5">What to look at next</p>
-        {best ? (
+        {posts === null ? (
+          <p className="studio-meta text-ink-muted">READING YOUR POSTS</p>
+        ) : best ? (
           <p className="text-[12px] leading-relaxed text-ink-secondary">
             Your strongest post in this set ran at{" "}
             <span className="text-ink-primary">{best.engagement_rate?.toFixed(2)}%</span> engagement.
