@@ -163,15 +163,40 @@
     return out;
   }
 
+  // The first figure in a line of text, read with the page's own separators,
+  // or null when it has no certain reading. "." was always a decimal point
+  // here, so a German profile's "8.210 Follower" was stored as 8. The rules
+  // are content.js parseMetricValue's: the page language's decimal mark,
+  // thousands grouped in threes by the other mark or a space, no fraction
+  // without K or M, and English when the page names no language.
+  const COMMA_DECIMAL = ["cs", "da", "de", "el", "es", "fi", "fr", "hu", "id", "it", "nl", "no", "nb",
+    "pl", "pt", "ro", "ru", "sv", "tr", "uk"];
+  const MULTIPLIERS = { k: 1e3, tsd: 1e3, mil: 1e3, m: 1e6, mio: 1e6, mln: 1e6, mn: 1e6, b: 1e9, mrd: 1e9, md: 1e9 };
+
   function parseCount(text) {
     if (!text) return null;
-    const match = /([\d.,]+)\s*([KkMm])?/.exec(text);
+    const normal = String(text).replace(/[   ]/g, " ");
+    const match = /(\d(?:[\d.,']|\s(?=\d{3}(?!\d)))*)(?:\s*(k|tsd|mil|mio|mln|mn|mrd|md|m|b)\.?(?![a-z]))?/i.exec(normal);
     if (!match) return null;
-    let value = parseFloat(match[1].replace(/,/g, ""));
+    const lang = (document.documentElement && document.documentElement.lang) || "";
+    const decimalMark = COMMA_DECIMAL.includes(lang.toLowerCase().slice(0, 2)) ? "," : ".";
+    const groupMark = decimalMark === "," ? "." : ",";
+    const figure = match[1].replace(/[.,]$/, "");
+    const suffix = (match[2] || "").toLowerCase();
+
+    const parts = figure.split(decimalMark);
+    if (parts.length > 2) return null;
+    const whole = parts[0];
+    const fraction = parts.length === 2 ? parts[1] : "";
+    if (parts.length === 2 && !/^\d+$/.test(fraction)) return null;
+    if (!/^\d+$/.test(whole)) {
+      const grouped = new RegExp("^\\d{1,3}(?:[" + groupMark + " ']\\d{3})+$");
+      if (!grouped.test(whole) || new Set(whole.replace(/\d/g, "")).size > 1) return null;
+    }
+    if (fraction && !suffix) return null;
+    const value = parseFloat(whole.replace(/\D/g, "") + (fraction ? "." + fraction : ""));
     if (Number.isNaN(value)) return null;
-    if (/k/i.test(match[2] || "")) value *= 1000;
-    if (/m/i.test(match[2] || "")) value *= 1000000;
-    return Math.round(value);
+    return Math.round(value * (suffix ? MULTIPLIERS[suffix] : 1));
   }
 
   // ---------------------------------------------------------------
@@ -277,6 +302,23 @@
       }
     } catch (err) {
       // Ignored; this is one of several signals.
+    }
+  }
+
+  // Which LinkedIn account this browser is signed in to, kept for the
+  // analytics readers in content.js: LinkedIn's analytics pages and responses
+  // do not name the account, and the studio refuses analytics that do not
+  // come from the profile open in it. Learnt only where LinkedIn shows it:
+  // a profile shown with its owner's controls, flagged as the viewer's own,
+  // or reached through /in/me/. The worker forgets it when the LinkedIn
+  // sign-in cookie changes.
+  function noteSignedInMember() {
+    const vanity = vanityOf(window.location.href);
+    if (!vanity || vanity === "me" || pageKind() !== "profile" || !selfEvidence().length) return;
+    try {
+      chrome.storage.local.set({ signedInVanity: vanity });
+    } catch (err) {
+      // The extension was reloaded under this page; the next load notes it.
     }
   }
 
@@ -552,10 +594,17 @@
   // Activity: posts, comments, reactions
   // ---------------------------------------------------------------
 
+  // The post's id as LinkedIn names it. A share or ugcPost id is a different
+  // number from the post's activity id (card_urns.js says the same), and it
+  // was relabelled urn:li:activity:<same digits>, an id LinkedIn never issued,
+  // which the post's analytics page, the network readings and the studio's
+  // binding then looked for in vain. An activity id wins when a text has both.
   function extractActivityUrn(text) {
     if (!text) return null;
-    const direct = /urn:li:(?:activity|share|ugcPost):(\d+)/.exec(text);
-    if (direct) return `urn:li:activity:${direct[1]}`;
+    const activity = /urn:li:activity:(\d+)/.exec(text);
+    if (activity) return `urn:li:activity:${activity[1]}`;
+    const other = /urn:li:(share|ugcPost):(\d+)/.exec(text);
+    if (other) return `urn:li:${other[1]}:${other[2]}`;
     const slug = /-activity-(\d{6,})/.exec(text);
     if (slug) return `urn:li:activity:${slug[1]}`;
     const bareUrn = /urn:li:activity:\d+/.exec(text);
@@ -565,24 +614,32 @@
     return null;
   }
 
+  // A card's activity id wherever it carries one, before a share or ugcPost
+  // id it may carry elsewhere: a document card can name its ugcPost on the
+  // card and its activity id only in a link.
   function cardUrn(card) {
     if (!card) return null;
+    let other = null;
+    const take = (value) => {
+      const urn = extractActivityUrn(value);
+      if (urn && urn.startsWith("urn:li:activity:")) return urn;
+      if (urn && !other) other = urn;
+      return null;
+    };
     for (const attr of ["data-urn", "data-id", "data-activity-urn", "data-chameleon-urn"]) {
-      const val = card.getAttribute && card.getAttribute(attr);
-      const urn = extractActivityUrn(val);
+      const urn = take(card.getAttribute && card.getAttribute(attr));
       if (urn) return urn;
     }
     const inners = card.querySelectorAll("[data-urn], [data-id], [data-activity-urn], [data-chameleon-urn]");
     for (const inner of inners) {
       for (const attr of ["data-urn", "data-id", "data-activity-urn", "data-chameleon-urn"]) {
-        const val = inner.getAttribute(attr);
-        const urn = extractActivityUrn(val);
+        const urn = take(inner.getAttribute(attr));
         if (urn) return urn;
       }
     }
     const links = card.querySelectorAll("a[href*='/feed/update/urn:li:'], a[href*='-activity-'], a[href*='urn:li:activity:'], a[href*='urn:li:share:'], a[href*='urn:li:ugcPost:']");
     for (const link of links) {
-      const urn = extractActivityUrn(link.getAttribute("href"));
+      const urn = take(link.getAttribute("href"));
       if (urn) return urn;
     }
     const els = [card, ...Array.from(card.querySelectorAll("*"))];
@@ -591,13 +648,13 @@
       for (const k in el) {
         if (k.startsWith("__reactProps")) {
           try {
-            const urn = extractActivityUrn(JSON.stringify(el[k]));
+            const urn = take(JSON.stringify(el[k]));
             if (urn) return urn;
           } catch (e) {}
         }
       }
     }
-    return null;
+    return other;
   }
 
   const CARD_CONTAINERS = [
@@ -695,8 +752,8 @@
   // from the rest: measured on a live import, 18 of 18 posts. The opening
   // line is what a reader sees before "see more", so it is the one line the
   // studio most needs to have as written.
-  function cardText(card) {
-    const el = first(card, [
+  function cardTextElement(card) {
+    return first(card, [
       ".update-components-text",
       ".feed-shared-inline-show-more-text",
       ".feed-shared-update-v2__description",
@@ -708,6 +765,10 @@
       '[data-testid="expandable-text-box"]',
       '[data-test-id="expandable-text-box"]',
     ]);
+  }
+
+  function cardText(card) {
+    const el = cardTextElement(card);
     if (!el) return null;
     const text = (el.innerText || "")
       .split("\n")
@@ -729,8 +790,25 @@
     ]);
     if (direct) return direct;
     const lineList = lines(card);
-    const actionLine = lineList.find((l) => /(commented|likes\b|liked\b|supports\b|supported\b|celebrates\b|celebrated\b|loves\b|loved\b|finds\b)/i.test(l));
+    // "reposted" too: on the rebuilt cards "Ada Lovelace reposted this" is a
+    // plain line, and without it a repost was read as the creator's own post.
+    const actionLine = lineList.find((l) => /(commented|reposted\b|likes\b|liked\b|supports\b|supported\b|celebrates\b|celebrated\b|loves\b|loved\b|finds\b)/i.test(l));
     return actionLine || "";
+  }
+
+  // The author's profile link on a card whose actor classes are gone (the
+  // rebuilt layout): the first /in/ link above the post's text, other than
+  // one in a "reposted this" line, which names the reposter.
+  function cardHeaderAuthor(card) {
+    const textEl = cardTextElement(card);
+    for (const link of card.querySelectorAll("a[href*='/in/']")) {
+      if (textEl && (textEl.contains(link) ||
+          !(link.compareDocumentPosition(textEl) & Node.DOCUMENT_POSITION_FOLLOWING))) break;
+      if (/\breposted\b/i.test(clean((link.parentElement || link).innerText || ""))) continue;
+      const vanity = vanityOf(link.getAttribute("href"));
+      if (vanity) return vanity;
+    }
+    return "";
   }
 
   function cardCounts(card) {
@@ -752,13 +830,21 @@
       const match = named ? / and (\d[\d,]*) others?$/i.exec(named.getAttribute("aria-label") || "") : null;
       if (match) counts.reactions = parseCount(match[1]) + 1;
     }
+    // The post's own words are not its figures. A short post such as "We just
+    // crossed 10,000 impressions!" sits before the real counts, and the first
+    // element naming impressions was taken, so 10,000 was stored as measured.
+    // So the post's text is skipped, and a count is a figure directly followed
+    // by its word ("9 comments"), never a figure somewhere in a sentence.
+    const textEl = cardTextElement(card);
+    const counted = (text, word) => new RegExp("^\\d[\\d.,'\\s]*[km]?\\s*(?:" + word + ")\\b", "i").test(text);
     card.querySelectorAll("button, span, a").forEach((el) => {
+      if (textEl && textEl.contains(el)) return;
       const text = clean(el.getAttribute("aria-label") || el.innerText || "");
       if (text.length > 60) return;
-      if (counts.reactions === null && /\b(\d[\d,]*)\s+(?:reactions?|likes?)\b/i.test(text)) counts.reactions = parseCount(text);
-      if (counts.comments === null && /\bcomments?\b/i.test(text)) counts.comments = parseCount(text);
-      if (counts.reposts === null && /\breposts?\b/i.test(text)) counts.reposts = parseCount(text);
-      if (counts.impressions === null && /\bimpressions?\b/i.test(text)) counts.impressions = parseCount(text);
+      if (counts.reactions === null && counted(text, "reactions?|likes?")) counts.reactions = parseCount(text);
+      if (counts.comments === null && counted(text, "comments?")) counts.comments = parseCount(text);
+      if (counts.reposts === null && counted(text, "reposts?")) counts.reposts = parseCount(text);
+      if (counts.impressions === null && counted(text, "impressions?")) counts.impressions = parseCount(text);
     });
     return counts;
   }
@@ -774,8 +860,15 @@
 
   const TIME_BADGE = /^(?:\(edited\)\s*)?\d+\s*(?:s|m|h|d|w|mo|yr|y)$/i;
 
-  function extractCommentText(commentEl) {
-    const direct = textOf(commentEl, [
+  // A comment's text without the replies nested inside it.
+  function ownText(commentEl, replies) {
+    return (replies || []).reduce((text, reply) => text.replace(reply.innerText || "", ""), commentEl.innerText || "");
+  }
+
+  function extractCommentText(commentEl, replies) {
+    const outside = (el) => !(replies || []).some((reply) => reply.contains(el));
+    let direct = null;
+    for (const selector of [
       ".comments-comment-item__main-content",
       ".update-components-text",
       ".comments-comment-item-content-body",
@@ -784,10 +877,17 @@
       ".comments-comment-item__highlighted-text",
       ".comments-highlighted-comment",
       ".comment-body",
-    ]);
+    ]) {
+      const found = Array.from(commentEl.querySelectorAll(selector))
+        .find((el) => outside(el) && clean(el.innerText || el.textContent));
+      if (found) {
+        direct = clean(found.innerText || found.textContent);
+        break;
+      }
+    }
     if (direct) return direct;
 
-    const paragraphs = Array.from(commentEl.querySelectorAll("p"));
+    const paragraphs = Array.from(commentEl.querySelectorAll("p")).filter(outside);
     let seenTime = false;
     const bodyPs = [];
     for (const p of paragraphs) {
@@ -802,7 +902,7 @@
     }
     if (bodyPs.length) return bodyPs.join("\n").replace(/\n?…\s*more$/i, "").trim();
 
-    const lineList = lines(commentEl);
+    const lineList = ownText(commentEl, replies).split("\n").map((l) => l.trim()).filter(Boolean);
     let started = false;
     const bodyLines = [];
     for (const l of lineList) {
@@ -818,35 +918,48 @@
 
   function readActivity(kind, me) {
     const items = [];
+    items.unreadActors = 0;
     for (const card of activityCards()) {
       const urn = cardUrn(card);
       if (!urn) continue;
-      let actor = cardActor(card);
+      let actor = cardActor(card) || (kind === "activity_posts" ? cardHeaderAuthor(card) : "");
       const isRepostCard = cardHeader(card).toLowerCase().includes("repost");
 
       if (kind === "activity_posts") {
-        // If actor could not be read from classes, or is /in/me, but there is no repost header
-        // on the creator's own activity posts feed, it is the creator's post.
-        if ((!actor || actor === "me" || actor === me) && !isRepostCard) {
+        // A repost is somebody else's writing, whoever its header names. An
+        // author read from the card who is not the creator is not the creator.
+        // Only a card with no author to read at all, and no repost header, on
+        // the creator's own activity page is taken to be theirs; that is
+        // counted, so a page where no author can be read reports drift.
+        if (!actor) items.unreadActors += 1;
+        if (isRepostCard) {
+          actor = actor && actor !== me && actor !== "me" ? actor : "repost";
+        } else if (!actor || actor === "me" || actor === me) {
           actor = me;
-        } else if (!actor && isRepostCard) {
-          actor = "repost";
         }
         items.push({ activity_urn: urn, actor, text: cardText(card), ...cardCounts(card) });
       } else if (kind === "activity_comments") {
         const commentEls = Array.from(card.querySelectorAll(
           "article, .comments-comment-item, [data-view-name='feed-full-update-comment'], .feed-shared-main-content--comment, div[data-id^='urn:li:comment:'], .comments-comments-list__comment-item, div[id^='replaceableComment_urn:li:comment:']"
         ));
+        // A reply nests inside the comment it answers, so whose comment this
+        // is, and what it says, are read from its own part only. "• You" was
+        // looked for anywhere inside, the creator's nested reply included, so
+        // the stranger's comment they answered was saved as their own words.
+        const repliesIn = (c) => commentEls.filter((other) => other !== c && c.contains(other) &&
+          other.querySelector("a[href*='/in/']"));
         let mine = commentEls.filter((c) => {
-          const firstLink = c.querySelector("a[href*='/in/']");
+          const replies = repliesIn(c);
+          const outside = (el) => !replies.some((r) => r.contains(el));
+          const firstLink = Array.from(c.querySelectorAll("a[href*='/in/']")).find(outside);
           const v = firstLink ? vanityOf(firstLink.getAttribute("href")) : "";
           if (v === me || v === "me") return true;
-          const t = c.innerText || "";
+          const t = ownText(c, replies);
           if (t.includes("• You")) return true;
           return false;
         });
         for (const comment of mine) {
-          const text = extractCommentText(comment);
+          const text = extractCommentText(comment, repliesIn(comment));
           if (!text) continue;
           items.push({
             target_activity_urn: urn, kind: "comment", my_text: text,
@@ -870,10 +983,12 @@
   async function sendActivity(kind, me) {
     const cards = activityCards();
     const items = readActivity(kind, me);
-    // Post cards on the page whose author link could not be read are the
-    // markup changing: every post would then be skipped as not the creator's.
+    // Post cards on the page none of whose authors could be read are the
+    // markup changing. They are taken to be the creator's (see readActivity),
+    // so this is the only place the change shows. It was tested after the
+    // unread author had already been replaced by the creator, so never fired.
     const drift = [];
-    if (kind === "activity_posts" && cards.length && items.every((i) => !i.actor)) drift.push("post_author");
+    if (kind === "activity_posts" && items.length && items.unreadActors === items.length) drift.push("post_author");
     reportCapture(kind, cards.length, items.length, drift);
 
     const fresh = items.filter((item) => {
@@ -1136,8 +1251,11 @@
   // Heartbeat, so the studio can say the bridge is running
   // ---------------------------------------------------------------
 
+  // From a hidden tab too. The launcher opens LinkedIn with the studio in a
+  // second tab, so while the creator reads Setup the LinkedIn tab is hidden,
+  // and a heartbeat sent only from a visible tab made Setup say the bridge was
+  // gone while its tab sat open.
   function heartbeat() {
-    if (document.visibilityState !== "visible") return;
     studio("/api/v1/bridge/heartbeat", { extension_version: EXTENSION_VERSION, page_kind: pageKind() });
   }
 
@@ -1160,10 +1278,13 @@
       const kind = pageKind();
       if (["profile", "contact", "skills", "details_experience", "details_education"].includes(kind)) {
         captureProfile();
+        noteSignedInMember();
         // Experience, education and skills render lazily below the top card,
         // so a second read picks up what the first arrived too early for. The
         // studio keeps any section a read did not see.
-        if (kind === "profile") setTimeout(() => { if (pageKind() === kind) captureProfile(); }, 6000);
+        if (kind === "profile") {
+          setTimeout(() => { if (pageKind() === kind) { captureProfile(); noteSignedInMember(); } }, 6000);
+        }
       } else if (IMPORT_KIND[kind]) {
         onActivityPage(kind);
       } else if (kind === "post_analytics") {

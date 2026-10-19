@@ -404,6 +404,12 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
                 # impressionAggregate is a total over a window the response does
                 # not name, and storing it as today's impressions is the defect
                 # migration 5 exists to stop. It stays in the capture log only.
+                #
+                # The response does not say whose analytics these are, so the
+                # bridge names the account signed in to LinkedIn, and a reading
+                # from any other account (or none) is refused. It was filed
+                # under whichever profile was open in the studio.
+                _require_me(conn, payload.get("vanity"))
                 entry = data[0] if data else {}
                 followers = _count(entry.get("followers"))
                 if followers is not None:

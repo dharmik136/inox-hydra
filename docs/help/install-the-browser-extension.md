@@ -50,19 +50,20 @@ If you used option A, this is already done: the studio tab that opened beside Li
 
 | Where you are | What is read | Where it goes |
 | --- | --- | --- |
-| Feed, post pages and activity pages | Name, headline, profile link and the first 140 characters of comment text of commenters; people in an open reactions list | **Leads** |
-| A post's own page | The post's ID and text | Offered to the studio to link to a post you wrote. In this build that link does not complete; see [Read your analytics](read-your-analytics.md). |
-| Your creator analytics page, any address starting `/analytics/creator` | Impressions, engagements and followers from the figure cards, about 2 seconds after the page loads or after you click through to it from elsewhere on LinkedIn | **Analytics** |
+| Feed and post pages | Name, headline, profile link and the first 140 characters of comment text of commenters; people in an open reactions list | **Leads** |
+| A post's own page | The post's ID, text and author; nothing on a page that shows someone's repost | Offered to the studio to link to a post you wrote, which it refuses when the author is someone else. In this build that link does not complete; see [Read your analytics](read-your-analytics.md). |
+| Your creator analytics page, any address starting `/analytics/creator` | Impressions, engagements and followers from the figure cards, about 2 seconds after the page loads or after you click through to it from elsewhere on LinkedIn, with the LinkedIn account this browser is signed in to | **Analytics**, only when that account is the profile confirmed in **Setup** |
+| Your own profile | Which LinkedIn account this browser is signed in to, forgotten when you sign out of LinkedIn | Kept in the extension, to name the account analytics came from |
 | When you press **Sync LinkedIn Session** in the popup | Your LinkedIn session cookies, if both exist | The studio's saved LinkedIn session |
 | Some LinkedIn data requests the page makes (feed updates, profiles, creator analytics) | The address (without its query) and status code | The studio's local telemetry store |
 
-Everything goes only to the studio at `127.0.0.1:8000`. Lead capture skips profile pages. On the feed, the extension reads commenters and reactors on any post you can see, but the studio keeps only people who engaged with your own posts, and only after you have confirmed your profile in **Setup**. See [Why is my lead list empty?](why-is-my-lead-list-empty.md) Nothing copies your session on a timer; see [Connect your LinkedIn session](connect-your-linkedin-session.md).
+Everything goes only to the studio at `127.0.0.1:8000`. Lead capture skips profile pages, and your activity pages (`linkedin.com/in/you/recent-activity/...`) are not read for leads: open the post itself, or find it in your feed, to capture the people who engaged with it. On the feed, the extension reads commenters and reactors on any post you can see, but the studio keeps only people who engaged with your own posts, and only after you have confirmed your profile in **Setup**. A reactions list opens outside the post it belongs to, so the extension files it under the post whose reaction count you clicked, or the post page you are on, and sends nothing from a list whose post it cannot tell. See [Why is my lead list empty?](why-is-my-lead-list-empty.md) Nothing copies your session on a timer; see [Connect your LinkedIn session](connect-your-linkedin-session.md).
 
 ## What it never does
 
 It does not post, comment, react, message or follow on your behalf, and it does not load LinkedIn pages. Apart from the session cookies and request addresses above, it reads only what your browser is already showing. The one thing it can do on a LinkedIn page is the side panel's insert button: it opens LinkedIn's post box if needed and types your text into it, but it does not press Post.
 
-The part of the extension that runs inside LinkedIn pages relays to just three studio functions: saving analytics, linking a post, and saving an engagement. Fields named after LinkedIn session credentials are stripped out first.
+The part of the extension that runs inside LinkedIn pages can reach only a fixed list of studio functions: saving analytics, linking a post, saving an engagement, the bridge's heartbeat and capture log, recognising your own profile, saving your own posts, comments and reactions and the history imports that read them, and, only while network reading is on, the network readings. Fields named after LinkedIn session credentials are stripped out first.
 
 > [!NOTE]
 > The toolbar popup and side panel ask the studio through the extension's background worker, which carries the studio token. The popup's server line reads Online, Not paired or Offline, and a side panel list that cannot load names the reason: the studio is not running, has not paired with this browser, or answered with an error status.

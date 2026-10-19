@@ -28,7 +28,7 @@ import { ArchiveImport, archiveStatus } from "./ArchiveImport";
  * Setup: the studio learns who you are from your own LinkedIn.
  *
  * Five steps, each showing its real state rather than a checkbox the creator
- * ticks: the bridge is connected when the extension has been heard from, you
+ * ticks: the bridge is connected once the extension has been heard from, you
  * are known when you have said "that's me", and history counts are rows in
  * the database, not intentions.
  *
@@ -112,11 +112,14 @@ export function OnboardingSurface() {
       </p>
 
       <ol className="mt-8 flex flex-col">
+        {/* Done once the bridge has been heard from; whether it is running
+            now is the line under it. Tied to "connected", the step unticked
+            whenever the LinkedIn tab sat in the background for a few minutes. */}
         <Step
           n={1}
           title="Connect the browser"
-          done={state.bridge.connected}
-          current={!state.bridge.connected}
+          done={steps.bridge}
+          current={!steps.bridge}
           status={bridgeLine(state)}
         >
           {!state.bridge.connected && (
@@ -128,9 +131,11 @@ export function OnboardingSurface() {
               >
                 Open LinkedIn with the bridge
               </Primary>
-              <p className="studio-meta text-[10px] text-ink-muted">
-                SIGN IN THERE IF IT ASKS. THIS STEP TICKS BY ITSELF.
-              </p>
+              {!steps.bridge && (
+                <p className="studio-meta text-[10px] text-ink-muted">
+                  SIGN IN THERE IF IT ASKS. THIS STEP TICKS BY ITSELF.
+                </p>
+              )}
             </div>
           )}
           {!state.bridge.connected && bridge && !bridge.browsers.some((b) => b.carries_extension === true) && (

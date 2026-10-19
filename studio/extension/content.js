@@ -15,6 +15,9 @@
  *
  * Resolves to the parsed body, or null when the studio is offline. Callers
  * treat a failure as "not captured", never as an error worth interrupting for.
+ * A studio that answered with an error status resolves to
+ * {status: "refused", httpStatus, detail}: it is running and said no, which a
+ * notice must not describe as either success or "could not reach".
  */
 function studioApi(path, body, method) {
   return new Promise((resolve) => {
@@ -22,8 +25,14 @@ function studioApi(path, body, method) {
       chrome.runtime.sendMessage(
         { action: "STUDIO_API", path: path, method: method || "POST", body: body },
         (response) => {
-          if (chrome.runtime.lastError || !response || response.status !== "success") {
+          if (chrome.runtime.lastError || !response) {
             resolve(null);
+            return;
+          }
+          if (response.status !== "success") {
+            resolve(response.httpStatus
+              ? { status: "refused", httpStatus: response.httpStatus, detail: (response.data && response.data.detail) || "" }
+              : null);
             return;
           }
           resolve(response.data || {});
@@ -58,13 +67,23 @@ function studioApi(path, body, method) {
 // on (background.js registers it then). Messages claiming to come from it are
 // ignored while it is off: any script on the page can post one.
 let networkReadingOn = false;
+// The LinkedIn account this browser is signed in to, as LinkedIn itself has
+// shown it (own_pages.js notes it on the creator's own profile; the worker
+// forgets it when the sign-in changes). Analytics carry it, because neither
+// the analytics page nor LinkedIn's response names the account, and the
+// studio refuses a reading that is not from the profile open in it.
+let signedInVanity = null;
 try {
-  chrome.storage.local.get("networkReading", (items) => {
+  chrome.storage.local.get(["networkReading", "signedInVanity"], (items) => {
     networkReadingOn = !chrome.runtime.lastError && !!items && items.networkReading === true;
+    signedInVanity = (!chrome.runtime.lastError && items && items.signedInVanity) || null;
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.networkReading) {
       networkReadingOn = changes.networkReading.newValue === true;
+    }
+    if (area === "local" && changes.signedInVanity) {
+      signedInVanity = changes.signedInVanity.newValue || null;
     }
   });
 } catch (e) {}
@@ -118,6 +137,8 @@ window.addEventListener("message", (event) => {
         schema_version: result.schema_version,
         confidence: result.confidence,
         data: result.data,
+        // Whose figures these are; see signedInVanity.
+        vanity: signedInVanity,
         source_url: payload.url,
         http_status: payload.status,
         capture_id: payload.captureId,
@@ -202,11 +223,35 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+/**
+ * The editor of LinkedIn's post composer, or null.
+ *
+ * The first matching editor in the page used to be taken. LinkedIn's comment
+ * boxes and message boxes are the same kind of editor, and the composer
+ * renders last, in a modal, so a draft went into an open comment box behind
+ * the composer, or into a message to a contact, and the page said it was in
+ * the composer. The composer always opens as a dialog; an editor inside a
+ * comment or messaging block, or labelled for a comment, message or reply,
+ * is never it.
+ */
+function composerEditor() {
+  const editors = document.querySelectorAll(
+    '.share-creation-state__text-editor div[contenteditable="true"], div.ql-editor[contenteditable="true"], div[role="textbox"][contenteditable="true"]'
+  );
+  for (const editor of editors) {
+    if (!editor.closest('[role="dialog"], .artdeco-modal, dialog')) continue;
+    if (editor.closest('.comments-comment-box, .comments-comment-texteditor, [class*="comments-comment"], [class*="msg-"], [data-view-name*="comment"], [data-testid*="comment" i]')) continue;
+    const label = ["aria-label", "aria-placeholder", "data-placeholder"].map((a) => editor.getAttribute(a) || "").join(" ");
+    const dialog = editor.closest('[role="dialog"], .artdeco-modal, dialog');
+    if (/comment|message|reply/i.test(label + " " + (dialog.getAttribute("aria-label") || ""))) continue;
+    return editor;
+  }
+  return null;
+}
+
 async function injectIntoLinkedInComposer(text) {
   // 1. Check if composer modal is already open
-  let editor = document.querySelector('div.ql-editor[contenteditable="true"]') ||
-               document.querySelector('div[role="textbox"][contenteditable="true"]') ||
-               document.querySelector('.share-creation-state__text-editor div[contenteditable="true"]');
+  let editor = composerEditor();
 
   // 2. If not open, try to click the "Start a post" button on feed
   if (!editor) {
@@ -218,8 +263,7 @@ async function injectIntoLinkedInComposer(text) {
       // Wait up to 1.5s for modal to render
       for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 100));
-        editor = document.querySelector('div.ql-editor[contenteditable="true"]') ||
-                 document.querySelector('div[role="textbox"][contenteditable="true"]');
+        editor = composerEditor();
         if (editor) break;
       }
     }
@@ -253,6 +297,10 @@ async function injectIntoLinkedInComposer(text) {
   return true;
 }
 
+// A status that screen readers announce (an alert for a warning), shown for
+// 6 s, and built as text: a notice can carry a studio reason or a name, which
+// must never be read as markup. It used to be innerHTML with no role, gone
+// after 3.5 s.
 function showInPageToast(message, type = "success") {
   const existing = document.getElementById("studio-bridge-inpage-toast");
   if (existing) existing.remove();
@@ -260,16 +308,22 @@ function showInPageToast(message, type = "success") {
   const toast = document.createElement("div");
   toast.id = "studio-bridge-inpage-toast";
   toast.className = `studio-inpage-toast ${type}`;
-  toast.innerHTML = `
-    <div class="studio-toast-icon">LS</div>
-    <div class="studio-toast-msg">${message}</div>
-  `;
+  toast.setAttribute("role", type === "warning" ? "alert" : "status");
+  toast.setAttribute("aria-live", type === "warning" ? "assertive" : "polite");
+  const icon = document.createElement("div");
+  icon.className = "studio-toast-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = "LS";
+  const text = document.createElement("div");
+  text.className = "studio-toast-msg";
+  text.textContent = message;
+  toast.append(icon, text);
 
   document.body.appendChild(toast);
   setTimeout(() => {
     toast.classList.add("studio-toast-fade");
     setTimeout(() => toast.remove(), 400);
-  }, 3500);
+  }, 6000);
 }
 
 // -------------------------------------------------------------
@@ -361,29 +415,53 @@ document.addEventListener("click", (e) => {
  * precision is "exact" for a fully written figure and "rounded" for an
  * abbreviated one, because "1.2K" means somewhere in [1150, 1250) and the studio
  * should not later present it as though it meant exactly 1200.
+ *
+ * The page's language decides what a separator means. On a German or Italian
+ * page "8.210" is eight thousand two hundred and ten and "1,2K" is 1.2K; read
+ * as English the first became 8, marked exact. So the decimal mark is the
+ * page's (document.documentElement.lang, or `lang` when given), thousands are
+ * grouped in threes by the other mark or a space, and a figure with no certain
+ * reading is refused rather than stored: a dotted "8.210" on a page that names
+ * no language, a comma with three digits after it on a German page, or a
+ * fraction with no K or M after it. A page with no language is read as English,
+ * LinkedIn's default.
  */
-function parseMetricValue(raw) {
+function parseMetricValue(raw, lang) {
   if (!raw) return null;
-  const text = String(raw).trim();
-
-  // A comma before one or two digits is a decimal comma, not a separator:
-  // "1,2K" is 1.2K in de-DE and fr-FR, and stripping the comma made it 12000.
-  // The metric classification in this file matches English words, so a page in
-  // another locale cannot be read correctly regardless. Refuse rather than
-  // return a number that is wrong by a factor of ten.
-  if (/\d,\d{1,2}(\s*[KMB])?$/i.test(text)) return null;
-
-  const normalized = text.replace(/,/g, "");
-  const match = normalized.match(/^([0-9]*\.?[0-9]+)\s*([KMB]?)$/i);
+  const text = String(raw).replace(/[   ]/g, " ").trim();
+  const match = text.match(/^(\d[\d.,' ]*?)\s*([A-Za-z]+\.?)?$/);
   if (!match) return null;
 
-  const base = parseFloat(match[1]);
-  if (!isFinite(base)) return null;
+  // Languages LinkedIn serves whose decimal mark is a comma.
+  const COMMA_DECIMAL = ["cs", "da", "de", "el", "es", "fi", "fr", "hu", "id", "it", "nl", "no", "nb",
+    "pl", "pt", "ro", "ru", "sv", "tr", "uk"];
+  const pageLang = lang !== undefined ? lang
+    : (typeof document !== "undefined" && document.documentElement && document.documentElement.lang) || "";
+  const decimalMark = COMMA_DECIMAL.includes(String(pageLang).toLowerCase().slice(0, 2)) ? "," : ".";
+  const groupMark = decimalMark === "," ? "." : ",";
 
-  const suffix = (match[2] || "").toUpperCase();
-  const multiplier = suffix === "K" ? 1e3 : suffix === "M" ? 1e6 : suffix === "B" ? 1e9 : 1;
+  // K, M and B, and the words LinkedIn uses for them in other languages.
+  const MULTIPLIERS = { k: 1e3, tsd: 1e3, mil: 1e3, m: 1e6, mio: 1e6, mln: 1e6, mn: 1e6, b: 1e9, mrd: 1e9, md: 1e9 };
+  const suffix = (match[2] || "").toLowerCase().replace(/\.$/, "");
+  if (suffix && !(suffix in MULTIPLIERS)) return null;
+
+  const parts = match[1].split(decimalMark);
+  if (parts.length > 2) return null;
+  const whole = parts[0].trim();
+  const fraction = parts.length === 2 ? parts[1].trim() : "";
+  if (parts.length === 2 && !/^\d+$/.test(fraction)) return null;
+  if (!/^\d+$/.test(whole)) {
+    // Grouped thousands: one mark, used throughout, with three digits after it.
+    const grouped = new RegExp("^\\d{1,3}(?:[" + groupMark + " ']\\d{3})+$");
+    if (!grouped.test(whole) || new Set(whole.replace(/\d/g, "")).size > 1) return null;
+  }
+  // A count has no fraction unless it is abbreviated.
+  if (fraction && !suffix) return null;
+
+  const base = parseFloat(whole.replace(/\D/g, "") + (fraction ? "." + fraction : ""));
+  if (!isFinite(base)) return null;
   return {
-    value: Math.round(base * multiplier),
+    value: Math.round(base * (suffix ? MULTIPLIERS[suffix] : 1)),
     precision: suffix ? "rounded" : "exact"
   };
 }
@@ -397,21 +475,36 @@ function parseMetricValue(raw) {
  * the dashboard then summed overlapping windows. Returning null is honest, and
  * the backend refuses the write, which is better than silently recording a
  * number that means something other than what the column says.
+ *
+ * Any "N days" is read, in English and the other languages LinkedIn serves,
+ * so "Past 365 days" is no longer a window nobody recognised. A range control
+ * whose words are not understood (a custom range prints dates) answers
+ * "unrecognised", which the studio refuses as a daily figure. null is kept for
+ * a page with no range control at all.
  */
+function analyticsPeriodOf(text) {
+  const t = (text || "").toLowerCase();
+  if (/\b24\s*(hours?|stunden|ore|heures|horas|uur|timmar|timer|godzin)(?![a-z])|\b(past|last) day\b/.test(t)) return "1d";
+  if (/\b12\s*(months?|monate[n]?|mesi|mois|meses|maanden|månader|miesięcy)(?![a-z])|\b(past|last) year\b/.test(t)) return "365d";
+  // An adjective may sit between the figure and the word: "365 derniers jours".
+  const days = /\b(\d{1,3})\s*(?:[a-zà-ÿ]+\s+)?(days?|tage[n]?|giorni|jours|días|dias|dagen|dagar|dage|dni|dní|gün)(?![a-z])/.exec(t);
+  if (days) return Number(days[1]) === 1 ? "1d" : Number(days[1]) + "d";
+  return null;
+}
+
 function detectAnalyticsPeriod() {
   const candidates = document.querySelectorAll(
     '.artdeco-dropdown__trigger, [data-test-analytics-time-range], .analytics-time-range-selector, button[aria-label*="time range" i]'
   );
+  let unread = false;
   for (const el of candidates) {
-    const t = (el.innerText || "").toLowerCase();
-    if (/past 24 hours|last 24 hours|past day/.test(t)) return "1d";
-    if (/past 7 days|last 7 days/.test(t)) return "7d";
-    if (/past 14 days|last 14 days/.test(t)) return "14d";
-    if (/past 28 days|last 28 days|past 30 days/.test(t)) return "28d";
-    if (/past 90 days|last 90 days/.test(t)) return "90d";
-    if (/past year|last 365/.test(t)) return "365d";
+    const text = el.innerText || "";
+    const period = analyticsPeriodOf(text);
+    if (period) return period;
+    // A generic dropdown without a figure in it is some other control.
+    if (/\d/.test(text) || !el.matches(".artdeco-dropdown__trigger")) unread = unread || !!text.trim();
   }
-  return null;
+  return unread ? "unrecognised" : null;
 }
 
 function extractAndSyncAnalytics() {
@@ -455,6 +548,9 @@ function extractAndSyncAnalytics() {
     const today = new Date().toISOString().slice(0, 10);
 
     studioApi("/api/analytics/ingest", {
+        // The LinkedIn account signed in here, which the studio checks
+        // against the profile open in it.
+        author: signedInVanity,
         period_label: period,
         precision: precision,
         series: [{
@@ -466,16 +562,40 @@ function extractAndSyncAnalytics() {
           followers: followers
         }]
       })
+      // Says what the studio did. "Synced" used to follow any answer at all,
+      // including none, so a creator whose studio was closed or unpaired was
+      // told their figures were saved.
       .then(result => {
-        if (result && result.status === "window_mismatch") {
+        if (!result) {
+          showInPageToast("Inox Hydra: could not reach your studio, so these analytics were not saved.", "warning");
+          return;
+        }
+        if (result.status === "refused") {
           showInPageToast(
-            "Inox Hydra: these figures cover " + (period || "an unknown period") +
-            ", so they were not saved as today's numbers. Set the range to 24 hours to sync a daily figure.",
+            result.httpStatus === 401 || result.httpStatus === 403
+              ? "Inox Hydra: the studio refused this browser, so these analytics were not saved. Open the studio once in this browser, then reload this page."
+              : "Inox Hydra: the studio did not save these analytics" + (result.detail ? ": " + result.detail + "." : "."),
             "warning"
           );
           return;
         }
-        showInPageToast("Inox Hydra: creator analytics synced to your local studio.", "success");
+        if (result.status === "window_mismatch") {
+          const cover = period === "unrecognised"
+            ? "Inox Hydra: could not tell which period these figures cover"
+            : "Inox Hydra: these figures cover " + (period || "an unknown period");
+          const kept = result.followers_saved > 0 ? " Your follower count was saved." : "";
+          showInPageToast(
+            cover + ", so they were not saved as today's numbers." + kept +
+            " Set the range to 24 hours to sync a daily figure.",
+            "warning"
+          );
+          return;
+        }
+        if (result.status === "success" && result.buckets_ingested > 0) {
+          showInPageToast("Inox Hydra: creator analytics synced to your local studio.", "success");
+          return;
+        }
+        showInPageToast("Inox Hydra: the studio saved nothing from this page.", "warning");
       })
       .catch(() => {});
   } catch (e) {
@@ -504,21 +624,63 @@ function extractActivityUrn(text) {
   return null;
 }
 
+const POST_CARD_SELECTOR =
+  '[data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"], [data-urn*="ugcPost"], [data-urn*="share"]';
+const POST_ACTOR_SELECTOR =
+  ".update-components-actor__meta-link, a.update-components-actor__image, .update-components-actor a[href*='/in/']";
+
+/**
+ * The post whose list LinkedIn opened in a modal, or null.
+ *
+ * LinkedIn renders a post's reactions list in a modal in a body-level outlet,
+ * outside every feed card, so nothing in the modal says whose post it is. The
+ * reader used to take the first post in the feed instead, and when that was
+ * the creator's (normal right after posting) every reactor of every stranger's
+ * post the creator opened became the creator's lead.
+ *
+ * The click that opened the list does know: it landed inside that post's
+ * card. Clicks inside a dialog (scrolling the list, "Show more") leave the
+ * remembered post as it is; any other click replaces it, with null when it
+ * landed outside every card we can read, so a list opened from such a card is
+ * never filed under the post clicked before it.
+ */
+let postOpenedFromClick = null;
+
+document.addEventListener("click", (e) => {
+  const target = e.target && e.target.closest ? e.target : null;
+  if (!target || target.closest('.artdeco-modal, [role="dialog"], dialog')) return;
+  const card = target.closest(POST_CARD_SELECTOR);
+  postOpenedFromClick = card ? { urn: postUrnFor(card), author: postAuthorFor(card) } : null;
+}, true);
+
+function postOpenedFor(element) {
+  if (!element.closest('.artdeco-modal, [role="dialog"], dialog')) return null;
+  return postOpenedFromClick;
+}
+
 /**
  * The vanity of whoever wrote the post an element belongs to, or "".
  *
  * The studio stores an engager as a lead only when the post is the creator's,
  * and this is how it knows: the actor link on the update card that contains
  * the element. A comment card has its own author link, so the search starts at
- * the containing update rather than at the element. On a permalink the page's
- * first actor is the post's. A company page's post links to /company/, which
- * yields "" and is correctly not the creator's.
+ * the containing update rather than at the element. A list in a modal belongs
+ * to the post whose card was clicked to open it. Only on a permalink, where
+ * the page shows one post, is the page's first actor the post's; in the feed
+ * the first actor is merely the first post's, and "" is the honest answer. A
+ * company page's post links to /company/, which yields "" and is correctly not
+ * the creator's.
  */
 function postAuthorFor(element) {
-  const actorSelector =
-    ".update-components-actor__meta-link, a.update-components-actor__image, .update-components-actor a[href*='/in/']";
-  const card = element.closest('[data-urn^="urn:li:activity:"], [data-id^="urn:li:activity:"], [data-urn*="ugcPost"], [data-urn*="share"]');
-  const link = (card && card.querySelector(actorSelector)) || document.querySelector("main " + actorSelector);
+  const card = element.closest(POST_CARD_SELECTOR);
+  let link = card && card.querySelector(POST_ACTOR_SELECTOR);
+  if (!card) {
+    const opened = postOpenedFor(element);
+    if (opened) return opened.author;
+  }
+  if (!link && extractActivityUrn(window.location.pathname)) {
+    link = document.querySelector("main " + POST_ACTOR_SELECTOR);
+  }
   if (!link) return "";
   const match = /\/in\/([^/?#]+)/.exec(link.getAttribute("href") || "");
   return match ? decodeURIComponent(match[1]).toLowerCase() : "";
@@ -530,7 +692,8 @@ function postAuthorFor(element) {
  * On a permalink the URL is authoritative and needs no markup at all. In the
  * feed, where several posts share a page, the containing update card carries
  * the URN in a data attribute. Reading the URL first means the common case
- * never depends on a class name LinkedIn can rename.
+ * never depends on a class name LinkedIn can rename. A list in a modal sits
+ * outside every card and belongs to the post whose card opened it.
  */
 function postUrnFor(element) {
   const fromUrl = extractActivityUrn(window.location.pathname);
@@ -545,7 +708,8 @@ function postUrnFor(element) {
     }
     node = node.parentElement;
   }
-  return null;
+  const opened = postOpenedFor(element);
+  return opened ? opened.urn : null;
 }
 
 /**
@@ -586,7 +750,17 @@ function maybeBindPostUrn() {
   if (!body) return;
   lastBoundUrn = urn;
 
-  studioApi("/api/v1/posts/bind-urn", { activity_urn: urn, post_text: body })
+  // A plain repost's permalink shows the creator's words under the repost's
+  // own id, and binding it left the creator's real post unbindable. So a
+  // repost is never offered, and the post's author goes with the rest, for the
+  // studio to refuse a post that is not the creator's.
+  const header = document.querySelector(
+    ".update-components-header__text-view, .update-components-header, .feed-shared-header, [data-view-name='feed-full-update-header']"
+  );
+  const opening = (document.querySelector("main") || document.body).innerText.split("\n").slice(0, 6).join(" ");
+  if (/\breposted\b/i.test((header && header.innerText) || "") || /\breposted this\b/i.test(opening)) return;
+
+  studioApi("/api/v1/posts/bind-urn", { activity_urn: urn, post_text: body, post_author: postAuthorFor(document.body) })
     .then(result => {
       if (result && result.status === "bound") {
         showInPageToast(
@@ -747,6 +921,14 @@ function readNewLayoutComments() {
   const lists = document.querySelectorAll('[data-testid*="commentList"]');
   for (const list of lists) {
     const seen = new Set();
+    // Each list is one post's. It opens with the post header, so its first
+    // profile link outside the reactor faces is that post's author, and the
+    // post's URN is on the card around it. Both were read once, from the
+    // first list on the page, and applied to every commenter in every list.
+    const authorLink = Array.from(list.querySelectorAll('a[href*="/in/"]'))
+      .find((a) => !a.closest('[data-testid^="ReactionFacepile"]'));
+    const postAuthor = authorLink ? vanityFromHref(authorLink.getAttribute("href")) : "";
+    const postUrn = postUrnFor(list);
     for (const link of list.querySelectorAll('a[href*="/in/"]')) {
       const vanity = vanityFromHref(link.getAttribute("href"));
       if (!vanity || seen.has(vanity)) continue;
@@ -779,18 +961,39 @@ function readNewLayoutComments() {
         profileUrl: `https://www.linkedin.com/in/${encodeURIComponent(vanity)}/`,
         vanity,
         commentText: /^\d+$/.test(text) ? "" : text,
+        postAuthor,
+        postUrn,
       });
     }
   }
   return found;
 }
 
+/**
+ * Runs the engager read at most every 4 s, and always once more after the
+ * last change.
+ *
+ * The read used to run on the first mutation and drop every call inside the
+ * next 4 s. A reactions list that arrived just after its modal shell fell into
+ * that window and was not read until some unrelated change happened later, if
+ * it ever did. One pending read is kept instead: it runs 600 ms after the
+ * change that scheduled it, or when the 4 s since the last read are up.
+ */
+let engagerReadTimer = null;
+
+function scheduleEngagerRead() {
+  if (engagerReadTimer || !isPostEngagementSurface()) return;
+  const wait = Math.max(600, 4000 - (Date.now() - lastCommentScrapeTime));
+  engagerReadTimer = setTimeout(() => {
+    engagerReadTimer = null;
+    observeAndCaptureEngagers();
+  }, wait);
+}
+
 function observeAndCaptureEngagers() {
   if (!isPostEngagementSurface()) return;
 
-  const now = Date.now();
-  if (now - lastCommentScrapeTime < 4000) return; // Debounce 4s
-  lastCommentScrapeTime = now;
+  lastCommentScrapeTime = Date.now();
 
   const leads = [];
 
@@ -827,12 +1030,15 @@ function observeAndCaptureEngagers() {
       const headline = headlineEl ? headlineEl.innerText.replace(/[\n\r]+/g, " ").trim() : "";
       const profileUrl = linkEl ? linkEl.href.split("?")[0] : "";
       const commentText = bodyEl ? bodyEl.innerText.trim().slice(0, 140) : "";
+      // Whose post this is cannot be told: not filed, rather than guessed.
+      if (!postUrnFor(card) && !postAuthorFor(card)) return;
 
       const dedupeKey = engagerDedupeKey(profileUrl, name, headline, postUrnFor(card));
       const isNew = !knownEngagersSet.has(dedupeKey);
       knownEngagersSet.add(dedupeKey);
 
       leads.push({
+        _key: dedupeKey,
         name,
         headline,
         company: headline.includes(" at ") ? headline.split(" at ")[1].split("|")[0].trim() : (headline.includes(" @ ") ? headline.split(" @ ")[1].split("|")[0].trim() : ""),
@@ -854,17 +1060,15 @@ function observeAndCaptureEngagers() {
   let newLayoutCommenters = [];
   if (!commentCards.length) {
     newLayoutCommenters = readNewLayoutComments();
-    const list = document.querySelector('[data-testid*="commentList"]');
-    const authorLink = list && list.querySelector('a[href*="/in/"]');
-    // The list opens with the post header, so its first profile link is the
-    // post's author, which the studio uses to decide the post is yours.
-    const author = authorLink ? vanityFromHref(authorLink.getAttribute("href")) : "";
     newLayoutCommenters.forEach((c) => {
-      const postUrn = postUrnFor(document.body);
+      // Each commenter carries its own list's post and author.
+      const postUrn = c.postUrn;
+      if (!postUrn && !c.postAuthor) return;
       const dedupeKey = engagerDedupeKey(c.profileUrl, c.name, c.headline, postUrn);
       const isNew = !knownEngagersSet.has(dedupeKey);
       knownEngagersSet.add(dedupeKey);
       leads.push({
+        _key: dedupeKey,
         name: c.name,
         headline: c.headline,
         company: c.headline.includes(" at ") ? c.headline.split(" at ")[1].split("|")[0].trim() : "",
@@ -872,7 +1076,7 @@ function observeAndCaptureEngagers() {
         engagement_type: "Commented",
         notes: c.commentText ? `Commented: "${c.commentText.slice(0, 140)}"` : "Commented on post",
         post_urn: postUrn,
-        post_author: author,
+        post_author: c.postAuthor,
         _isNew: isNew
       });
     });
@@ -912,12 +1116,16 @@ function observeAndCaptureEngagers() {
 
         const headline = headlineEl ? headlineEl.innerText.replace(/[\n\r]+/g, " ").trim() : "";
         const profileUrl = linkEl.href.split("?")[0];
+        // A list whose post is unknown (opened from no card we can read, off
+        // a permalink) is not filed, rather than filed under a guessed post.
+        if (!postUrnFor(item) && !postAuthorFor(item)) return;
 
         const dedupeKey = engagerDedupeKey(profileUrl, name, headline, postUrnFor(item));
         const isNew = !knownEngagersSet.has(dedupeKey);
         knownEngagersSet.add(dedupeKey);
 
         leads.push({
+          _key: dedupeKey,
           name,
           headline,
           company: headline.includes(" at ") ? headline.split(" at ")[1].split("|")[0].trim() : (headline.includes(" @ ") ? headline.split(" @ ")[1].split("|")[0].trim() : ""),
@@ -1015,8 +1223,23 @@ function observeAndCaptureEngagers() {
     // the creator learns to ignore.
     Promise.allSettled(writes).then(results => {
       const answers = results.map(r => (r.status === "fulfilled" ? r.value : null));
+      // A person counts as seen on this post only once the studio has decided
+      // about them: kept, or deliberately skipped by its rule. Marking them
+      // seen before the write meant that everyone read while the studio was
+      // down or restarting was skipped on every later read of the page. They
+      // are offered again after 30 s, not on the next read, so a studio that
+      // is down is not asked every 4 s.
+      const undecided = identified
+        .filter((lead, i) => !answers[i] || (answers[i].status !== "success" && answers[i].status !== "skipped"))
+        .map((lead) => lead._key);
+      if (undecided.length) {
+        setTimeout(() => undecided.forEach((key) => knownEngagersSet.delete(key)), 30000);
+      }
       const stored = answers.filter(a => a && a.status === "success").length;
-      const unreachable = answers.filter(a => a === null).length;
+      // Not running, or running and refusing this unpaired browser: either
+      // way nothing was saved, which is what the notice below says.
+      const unreachable = answers.filter(a => a === null ||
+        (a.status === "refused" && (a.httpStatus === 401 || a.httpStatus === 403))).length;
       const needsSetup = answers.some(a => a && a.status === "skipped" && /Setup/.test(a.reason || ""));
 
       if (stored > 0) {
@@ -1037,7 +1260,7 @@ function observeAndCaptureEngagers() {
 
 // Observe DOM mutations for opened comments sections and reaction modals
 const commentObserver = new MutationObserver(() => {
-  observeAndCaptureEngagers();
+  scheduleEngagerRead();
 });
 commentObserver.observe(document.body, { childList: true, subtree: true });
 

@@ -284,6 +284,30 @@ def get_post_leads_attribution(post_id: str, account_id: str = "default"):
 
 @router.post("/api/analytics/ingest", tags=["Analytics"])
 def ingest_live_analytics(payload: dict):
+    # Analytics belong to one LinkedIn account. A reading was filed under
+    # whichever creator profile was open, whoever was signed in to LinkedIn,
+    # so an agency user's own figures landed in a client's profile as measured
+    # fact. The bridge now names the signed-in account as `author`, and a
+    # reading that names another account, or none, or reaches a profile that
+    # has not confirmed who it is, is refused, as own posts already are.
+    if payload.get("series") or (payload.get("data") or {}).get("series") or payload.get("profile_views") is not None:
+        try:
+            from .. import onboarding
+        except (ImportError, ValueError):
+            import onboarding
+        me = onboarding.confirmed_vanity()
+        author = onboarding.normalise_vanity(payload.get("author"))
+        if not me:
+            raise HTTPException(status_code=409, detail=(
+                "confirm your profile in Setup first, so the studio knows whose analytics these are"))
+        if not author:
+            raise HTTPException(status_code=409, detail=(
+                "the bridge could not tell which LinkedIn account is signed in. Open your own LinkedIn "
+                "profile once in this browser, then reload the analytics page"))
+        if author != me:
+            raise HTTPException(status_code=409, detail=(
+                f"these analytics are from linkedin.com/in/{author}, not from linkedin.com/in/{me}, "
+                "the profile open in the studio"))
     if telemetry_buffer:
         try:
             event_type = payload.get("event_type") or ("feed_updates" if "posts" in payload or "feed_updates" in payload else "analytics_ingest")

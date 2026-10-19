@@ -111,6 +111,8 @@ class InjectedPostRequest(BaseModel):
 class BindUrnRequest(BaseModel):
     activity_urn: str
     post_text: Optional[str] = ""
+    # The vanity of the post's author, as the page showed it.
+    post_author: Optional[str] = None
 
 
 @router.get("/api/posts")
@@ -401,6 +403,21 @@ def bind_post_urn(req: BindUrnRequest):
     urn = post_identity.extract_activity_urn(req.activity_urn) or req.activity_urn
     if not post_identity.ACTIVITY_URN_PATTERN.fullmatch(urn or ""):
         return {"status": "invalid_urn", "bound": False, "activity_urn": urn}
+
+    # Whose post the page showed. A follower's plain repost of the creator's
+    # post shows the creator's text under the repost's own activity id, so a
+    # text match alone bound the repost, and the real post never bound after
+    # it. A post naming any author but the confirmed creator is refused; one
+    # naming none (a page whose author the bridge could not read) is matched
+    # by its text, as before.
+    if req.post_author:
+        try:
+            from .. import onboarding
+        except (ImportError, ValueError):
+            import onboarding
+        me = onboarding.confirmed_vanity()
+        if not me or onboarding.normalise_vanity(req.post_author) != me:
+            return {"status": "not_yours", "bound": False, "activity_urn": urn}
 
     conn = get_db()
     try:

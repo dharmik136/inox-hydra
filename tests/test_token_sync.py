@@ -71,6 +71,9 @@ def test_auth_status_endpoint():
 def test_analytics_ingest_endpoint(confirmed_creator):
     test_date = "2026-09-15"
     payload = {
+        # Analytics name the LinkedIn account they came from, and the studio
+        # keeps them only for the confirmed creator.
+        "author": confirmed_creator,
         "series": [
             {
                 "date": test_date,

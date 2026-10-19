@@ -54,9 +54,13 @@ LinkedIn's User Agreement restricts automated access. The bridge is built to sta
 When you browse LinkedIn and view comments or open the reaction modal (Likes/Celebrates) of any post, `content.js` passively observes DOM mutations:
 
 * **Comment Extraction**: Observes comments in feed updates and permalink post views, parsing person names, headlines, profile URLs, and exact comment text.
-* **Reaction Modal Extraction**: When you click the reaction count on any post to see who liked/celebrated it, the extension captures all listed reactors into your CRM pipeline as warm engagers.
+* **Reaction Modal Extraction**: When you click the reaction count on a post to see who liked/celebrated it, the extension reads the listed reactors and files them under that post: LinkedIn renders the list outside the post's card, so the post is the one whose card was clicked, or the post page you are on. A list whose post cannot be told is not sent. The studio keeps only people who engaged with your own posts.
 * **Smart Deduplication**: Re-engaging prospects have their latest context notes updated in SQLite rather than creating duplicate entries.
-* **In-Page Feedback**: Displays a subtle toast on LinkedIn when new engagers are ingested (`⚡ Inox Hydra CRM: Ingested X warm engagers!`).
+* **In-Page Feedback**: Shows a notice on LinkedIn saying what the studio did ("Inox Hydra: N engager(s) on your post captured.", or that it could not be reached and nothing was saved). Notices are announced to screen readers and stay for 6 seconds. People read while the studio was unreachable are offered again 30 seconds later.
+
+### Analytics, and whose they are
+
+LinkedIn's analytics page and its network responses do not say whose figures they show. The extension learns which LinkedIn account the browser is signed in to from your own profile (shown with its owner's edit controls, or reached through `/in/me/`), forgets it when LinkedIn's sign-in cookie changes, and sends it with every analytics reading. The studio keeps a reading only when that account is the profile confirmed in Setup. Figures are read in the page's language, and a follower count is kept whatever range the page shows.
 
 ### Lead Extraction Fields:
 * **Name**: Sanitized author name.
