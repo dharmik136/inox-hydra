@@ -487,3 +487,54 @@ def test_phone_width_keeps_search_and_the_fold_label_on_screen(new_page, studio_
         label_box = label.bounding_box()
         main_box = page.locator("main").bounding_box()
         assert label_box["x"] >= main_box["x"], f"at {width} the fold label sits under the rail: {label_box} vs {main_box}"
+
+
+PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c6360000002000100e221bc330000000049454e44ae426082"
+)
+
+
+def test_media_delete_asks_and_reports_a_failure(new_page, studio_url, api):
+    page = new_page()
+    _open_composer(page, studio_url)
+    page.get_by_role("button", name="Media", exact=True).click()
+    page.get_by_label("Choose media to upload").set_input_files(
+        files=[{"name": "square.png", "mimeType": "image/png", "buffer": PNG}]
+    )
+    delete = page.get_by_role("button", name="Delete square.png")
+    expect(delete).to_be_attached()
+    opacity = delete.evaluate("el => getComputedStyle(el).opacity")
+    assert float(opacity) > 0, "the delete control is invisible until hovered"
+
+    page.route("**/api/media/*", lambda route: route.fulfill(status=500, json={"detail": "The disk is read only."})
+               if route.request.method == "DELETE" else route.continue_())
+    dialogs = []
+
+    def answer(dialog):
+        dialogs.append(dialog.message)
+        dialog.accept()
+
+    page.on("dialog", answer)
+    delete.click()
+    assert dialogs and "square.png" in dialogs[0], "deleting a file did not ask first"
+    expect(page.get_by_text("The disk is read only.")).to_be_visible()
+    expect(page.get_by_role("button", name="Delete square.png")).to_be_visible()
+
+    # Answering no leaves the file alone and sends nothing.
+    page.unroute("**/api/media/*")
+    page.remove_listener("dialog", answer)
+    page.once("dialog", lambda dialog: dialog.dismiss())
+    page.get_by_role("button", name="Delete square.png").click()
+    page.wait_for_timeout(300)
+    expect(page.get_by_role("button", name="Delete square.png")).to_be_visible()
+
+
+def test_the_media_tab_and_preview_promise_nothing_the_composer_cannot_do(new_page, studio_url):
+    page = new_page()
+    _open_composer(page, studio_url)
+    page.get_by_role("button", name="Media", exact=True).click()
+    assert "CAROUSEL" not in page.get_by_label("Inspector", exact=True).inner_text().upper()
+    page.get_by_role("button", name="Preview", exact=True).click()
+    expect(page.get_by_role("tab", name="Mobile")).to_be_visible()
+    assert page.get_by_role("tab", name="Carousel").count() == 0, "the Carousel tab offers slides nothing makes"

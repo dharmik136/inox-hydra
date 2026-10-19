@@ -115,7 +115,12 @@ export function MediaPanel() {
         <span className="text-[12px] text-ink-secondary">
           {busy ? "Uploading" : "Drop a file, or click to choose"}
         </span>
-        <span className="studio-meta text-[10px]">IMAGES, PDF CAROUSELS, MP4 AND WEBM</span>
+        <span className="studio-meta text-[10px]">IMAGES, PDF, MP4 AND WEBM</span>
+        {/* Said here because nothing in the Composer attaches a file to a
+            post, and the box read as though it did. */}
+        <span className="text-[11px] leading-snug text-ink-muted">
+          Kept on this computer. To use one in a post, add it on LinkedIn.
+        </span>
       </button>
 
       <input
@@ -173,14 +178,24 @@ export function MediaPanel() {
                       )}
                     </p>
                   </div>
+                  {/* Always visible, so it can be found without a pointer to
+                      hover with. Asks first, because the file is removed from
+                      this computer, and says so when the delete fails rather
+                      than leaving the file listed with no word. */}
                   <button
                     type="button"
                     onClick={async () => {
-                      await deleteMedia(asset.id).catch(() => undefined);
+                      if (!window.confirm(`Delete ${asset.filename}? The file is removed from this computer.`)) return;
+                      setNote(null);
+                      try {
+                        await deleteMedia(asset.id);
+                      } catch (error) {
+                        setNote(`${asset.filename}: ${error instanceof Error ? error.message : "the delete was refused"}`);
+                      }
                       await load();
                     }}
                     aria-label={`Delete ${asset.filename}`}
-                    className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    className="shrink-0 rounded-sm"
                   >
                     <Trash2 className="size-3.5 text-ink-muted hover:text-signal-orange-text" strokeWidth={1.75} aria-hidden="true" />
                   </button>
