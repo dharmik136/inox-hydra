@@ -85,7 +85,7 @@ Each draft is a fill-in template built from the stored record: first name, compa
 
 ## Export your leads
 
-Click **CSV** above the stream to download every lead as `linkedin_studio_crm_leads.csv`. Its Qualification Tier column uses the studio's one tier rule: TIER_1_VIP from an ICP score of 80, QUALIFIED from 60, NURTURE from 30, otherwise DISQUALIFIED.
+Click **CSV** above the stream to download every lead as `linkedin_studio_crm_leads.csv`. Its Qualification Tier column uses the studio's one tier rule: TIER_1_VIP from an ICP score of 80, QUALIFIED from 60, NURTURE from 30, otherwise DISQUALIFIED. Its Status column shows the stage as the dossier does, such as Outreach Sent. Names, headlines and notes are written by other people, so any cell that starts with =, +, -, @ or a tab begins with an apostrophe: a spreadsheet then shows it as text instead of running it as a formula.
 
 ## If it does not work
 
