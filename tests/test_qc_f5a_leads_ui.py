@@ -143,6 +143,28 @@ def _open(page, name):
     expect(page.locator("article h2")).to_have_text(name)
 
 
+def test_the_stream_can_be_searched_and_filtered(browser, studio_url):
+    ctx, page = _leads_page(browser, studio_url)
+    try:
+        rows = page.locator("[data-lead-id]")
+        assert rows.count() <= 200, f"{rows.count()} rows drawn at once"
+        assert page.get_by_role("button", name="Show more").is_visible()
+
+        page.get_by_label("Find a lead").fill("crumb")
+        expect(rows).to_have_count(1)
+        assert "Asha Rao" in rows.first.inner_text()
+
+        page.get_by_label("Find a lead").fill("zoe angstrom")
+        expect(rows).to_have_count(1)
+
+        page.get_by_label("Find a lead").fill("")
+        page.get_by_label("Stage").select_option("Meeting Booked")
+        expect(rows).to_have_count(1)
+        assert "Asha Rao" in rows.first.inner_text()
+    finally:
+        ctx.close()
+
+
 def test_at_phone_width_the_dossier_is_on_screen(browser, studio_url):
     ctx, page = _leads_page(browser, studio_url, viewport={"width": 375, "height": 812})
     try:

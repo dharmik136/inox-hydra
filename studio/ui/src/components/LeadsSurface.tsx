@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { ArrowLeft, Copy, Download, ExternalLink, Loader2 } from "lucide-react";
 import {
@@ -25,6 +25,14 @@ import {
 import { cn } from "@/lib/utils";
 import type { SearchFocus } from "@/lib/search";
 
+/** How many rows the stream draws before asking. Five thousand drawn at once was 30,000 nodes. */
+const STREAM_PAGE = 200;
+
+/** Lower case without accents, so "zoe" finds Zoë and "angstrom" finds Ångström. */
+function folded(text: string): string {
+  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+}
+
 /**
  * The CRM (blueprint section 11).
  *
@@ -40,6 +48,22 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
   // choosing a lead changed nothing visible. There the stream and the dossier
   // take turns; from md up both are always shown and this has no effect.
   const [pane, setPane] = useState<"stream" | "dossier">(focus ? "dossier" : "stream");
+  // The stream had no way to narrow it, so five thousand leads were one list
+  // drawn in full. The box and the stage filter work on the loaded list, and
+  // only the first STREAM_PAGE matches are drawn until the creator asks for more.
+  const [query, setQuery] = useState("");
+  const [stage, setStage] = useState("All");
+  const [limit, setLimit] = useState(STREAM_PAGE);
+  const shown = useMemo(() => {
+    const words = folded(query).split(/\s+/).filter(Boolean);
+    return (leads ?? []).filter(
+      (lead) =>
+        (stage === "All" || lead.status === stage) &&
+        words.every((word) =>
+          folded([lead.name, lead.company, lead.headline, lead.notes].filter(Boolean).join(" ")).includes(word),
+        ),
+    );
+  }, [leads, query, stage]);
 
   // Re-read after an action so the row and the dossier cannot disagree about
   // a lead's status. The stream shows the status on every row, so a change
@@ -65,9 +89,14 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
   // person twice still scrolls back to them.
   useEffect(() => {
     if (!focus || !leads) return;
-    if (!leads.some((lead) => lead.id === focus.id)) return;
+    const index = leads.findIndex((lead) => lead.id === focus.id);
+    if (index < 0) return;
     setSelected(focus.id);
     setPane("dossier");
+    // The row must be drawn to be scrolled to.
+    setQuery("");
+    setStage("All");
+    setLimit((current) => Math.max(current, index + 1));
     window.requestAnimationFrame(() => {
       document.querySelector(`[data-lead-id="${CSS.escape(focus.id)}"]`)?.scrollIntoView({ block: "nearest" });
     });
@@ -91,7 +120,9 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
         <div className="flex items-baseline justify-between gap-2 px-4 pt-4 pb-2">
           <h1 className="studio-label">Lead stream</h1>
           <div className="flex items-baseline gap-2">
-            <p className="studio-meta text-[10px]">{leads.length}</p>
+            <p className="studio-meta text-[10px]">
+              {shown.length === leads.length ? leads.length : `${shown.length} OF ${leads.length}`}
+            </p>
             {/* A download, not a fetch: the route streams a file, so the
                 browser is the right thing to hand it to. */}
             <a
@@ -103,9 +134,41 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
             </a>
           </div>
         </div>
+        <div className="flex gap-2 px-4 pb-2">
+          <input
+            type="search"
+            aria-label="Find a lead"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              setLimit(STREAM_PAGE);
+            }}
+            placeholder="Name, company, headline or notes"
+            className="min-w-0 flex-1 rounded-md border border-edge bg-ink px-2.5 py-1 text-[12px] text-ink-primary placeholder:text-ink-muted focus:border-edge-strong focus:outline-none"
+          />
+          <select
+            aria-label="Stage"
+            value={stage}
+            onChange={(event) => {
+              setStage(event.target.value);
+              setLimit(STREAM_PAGE);
+            }}
+            className="rounded-md border border-edge bg-ink px-1.5 py-1 text-[12px] text-ink-secondary focus:border-edge-strong focus:outline-none"
+          >
+            <option value="All">Every stage</option>
+            {LEAD_STATUSES.map((status) => (
+              <option key={status} value={status}>
+                {status}
+              </option>
+            ))}
+          </select>
+        </div>
         <LeadReviewPanel onChanged={reload} />
         <ul className="min-h-0 flex-1 overflow-y-auto">
-          {leads.map((lead) => (
+          {shown.length === 0 && (
+            <li className="studio-meta px-4 py-3 text-[10px] text-ink-muted">NO LEAD MATCHES</li>
+          )}
+          {shown.slice(0, limit).map((lead) => (
             <li key={lead.id}>
               <button
                 type="button"
@@ -140,6 +203,20 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
               </button>
             </li>
           ))}
+          {shown.length > limit && (
+            <li className="px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setLimit((current) => current + STREAM_PAGE)}
+                className="studio-meta text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+              >
+                Show more
+              </button>
+              <span className="studio-meta ml-2 text-[10px] text-ink-muted">
+                {shown.length - limit} NOT SHOWN YET
+              </span>
+            </li>
+          )}
         </ul>
       </section>
 

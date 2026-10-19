@@ -12,7 +12,11 @@ Open **Leads** in the rail. The left column, **Lead stream**, shows how many peo
 - how they engaged, such as COMMENTED or LIKED (ENGAGED when unknown)
 - their pipeline stage
 
-The first lead opens automatically. Click any row to open that person. The list loads when you open **Leads**, so leave and reopen it to see people captured since. The stream has no filter of its own. To find one person, press **Ctrl+K** and type their name, their company or something they said; see [Search everything with Ctrl+K](use-the-command-palette.md).
+The first lead opens automatically. Click any row to open that person. The list loads when you open **Leads**, so leave and reopen it to see people captured since.
+
+To narrow the stream, type in **Find a lead** (a name, company, headline or words from your notes; accents do not matter, so "zoe" finds Zoë), or choose a stage in the **Stage** list. The count then reads, for example, "3 OF 120". The stream shows 200 people at a time; click **Show more** at the bottom for the next 200. To search what people said in their comments too, press **Ctrl+K**; see [Search everything with Ctrl+K](use-the-command-palette.md).
+
+On a phone-sized window the stream and the dossier take turns: click a person to open their dossier, and **Back to the lead stream** to return.
 
 ## The dossier
 
