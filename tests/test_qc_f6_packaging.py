@@ -40,6 +40,8 @@ def test_every_release_carries_the_manifest_the_check_reads():
     files = attach[attach.index("files:"):attach.index("generate_release_notes")]
     assert "release/latest.json" in files, "the release does not attach latest.json"
     assert re.search(r"dist/portable/\*\.zip", files)
+    step = attach[:attach.index("body:")]
+    assert re.search(r"fail_on_unmatched_files:\s*true", step), "a release without latest.json would still publish"
 
 
 # ---------------------------------------------------------------------------

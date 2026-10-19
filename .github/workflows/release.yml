@@ -135,6 +135,9 @@ jobs:
           files: |
             dist/portable/*.zip
             release/latest.json
+          # A release without latest.json would leave every installed copy's
+          # update check answering 404, so a missing file fails the job.
+          fail_on_unmatched_files: true
           generate_release_notes: true
           body: |
             ## Inox Hydra ${{ github.ref_name }}
