@@ -170,8 +170,13 @@ export function SaveReason({
   actions?: BarAction[];
   tone?: "failed" | "note";
 }) {
+  // A note is a landmark of its own, so it is not text floating outside one.
+  const Box = tone === "note" ? "aside" : "div";
   return (
-    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-edge bg-ink px-3 py-1.5 sm:px-4">
+    <Box
+      aria-label={tone === "note" ? "About the post in the Composer" : undefined}
+      className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-edge bg-ink px-3 py-1.5 sm:px-4"
+    >
       <p
         className={cn(
           "min-w-0 flex-1 basis-60 text-[12px] leading-snug",
@@ -191,6 +196,6 @@ export function SaveReason({
           {action.label}
         </button>
       ))}
-    </div>
+    </Box>
   );
 }
