@@ -146,9 +146,12 @@ def cmd_restore(args) -> int:
             print(f"  safety snapshot       {failed.safety_backup}")
             print("  It holds your state from just before this restore.")
         return 1
-    except ValueError as error:
+    except support.ProfileMismatch as error:
         print(str(error))
         print("Pass --into-active-profile to restore it into the active profile anyway.")
+        return 1
+    except ValueError as error:
+        print(f"Not restored: {error}")
         return 1
     print(f"Restored from {result['restored_from']}")
     print(f"  media files restored  {result['assets_restored']}")

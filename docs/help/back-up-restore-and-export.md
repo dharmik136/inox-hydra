@@ -99,3 +99,4 @@ Restoring on a new PC brings back drafts, posts, leads, analytics, queue items, 
 | The note shows a server message or a status code instead of "Saved" | The backup or export did not complete | Read the message. If unclear, run `python -m studio.cli doctor` |
 | `No such backup` | The path you typed is wrong | Copy the file name from the list in **Your data** and the folder path shown below it |
 | `contains no database and cannot be restored` | The file is an export or another ZIP, not a backup | Choose an `inox_backup_` file |
+| `This backup was made by a newer version of Inox Hydra` | The backup comes from a newer studio, for example on another computer, and this one could not open it after restoring | Update this studio to the version the message names, or newer, then restore again. Nothing was changed |

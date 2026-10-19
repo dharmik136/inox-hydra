@@ -139,3 +139,55 @@ def test_the_cli_names_the_safety_backup_when_a_restore_fails(home, monkeypatch,
     out = capsys.readouterr().out
     assert "/backups/safety.zip" in out
     assert "--into-active-profile" not in out
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM-10: a backup from a newer build is refused before anything changes
+# ---------------------------------------------------------------------------
+
+def _stamped_copy(archive, version, app_version):
+    """The same backup, its database stamped as a newer build would leave it."""
+    import json
+    import tempfile
+
+    work = tempfile.mkdtemp(prefix="inox_newer_", dir=paths.get_app_home())
+    with zipfile.ZipFile(archive) as z:
+        z.extractall(work)
+    db = os.path.join(work, "data", "linkedin_studio.db")
+    conn = sqlite3.connect(db)
+    conn.execute(f"PRAGMA user_version = {version:d}")
+    conn.commit()
+    conn.close()
+    manifest_path = os.path.join(work, "backup_manifest.json")
+    with open(manifest_path, encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    manifest["app_version"] = app_version
+    with open(manifest_path, "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle)
+    newer = os.path.join(os.path.dirname(work), f"inox_backup_from_laptop_{app_version}.zip")
+    with zipfile.ZipFile(newer, "w") as z:
+        for base, _dirs, files in os.walk(work):
+            for name in files:
+                full = os.path.join(base, name)
+                z.write(full, os.path.relpath(full, work).replace(os.sep, "/"))
+    return newer
+
+
+def test_a_backup_from_a_newer_build_is_refused_and_nothing_changes(home, capsys):
+    _add_post("from-laptop")
+    archive = support.create_backup("laptop")
+    newer = _stamped_copy(archive, migrations.SCHEMA_VERSION + 1, "9.9.0")
+    _add_post("this-machine")
+    before = sorted(os.listdir(paths.get_backups_dir()))
+
+    with pytest.raises(ValueError, match="newer") as refused:
+        support.restore_backup(newer)
+    assert "9.9.0" in str(refused.value) and "Update" in str(refused.value)
+    assert _post_ids() == {"from-laptop", "this-machine"}
+    assert sorted(os.listdir(paths.get_backups_dir())) == before, "a refused restore still took a safety copy"
+
+    assert cli.main(["restore", newer, "--yes"]) == 1
+    out = capsys.readouterr().out
+    assert "9.9.0" in out and "--into-active-profile" not in out
+    # The studio still starts: the live database is still this build's.
+    database.init_db()

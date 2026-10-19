@@ -38,11 +38,11 @@ from typing import Any, Dict, List, Optional
 
 try:
     from . import paths
-    from .migrations import describe as describe_schema, backup_database
+    from .migrations import describe as describe_schema, backup_database, SCHEMA_VERSION, MIN_SUPPORTED_SCHEMA
     from ..__version__ import __version__
 except ImportError:  # top-level import mode
     import paths
-    from migrations import describe as describe_schema, backup_database
+    from migrations import describe as describe_schema, backup_database, SCHEMA_VERSION, MIN_SUPPORTED_SCHEMA
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     from __version__ import __version__
 
@@ -232,6 +232,16 @@ def create_backup(label: str = "manual") -> str:
     return archive
 
 
+SQLITE_HEADER = b"SQLite format 3\x00"
+
+
+def _schema_version_of(header: bytes) -> Optional[int]:
+    """PRAGMA user_version, read from a database file's first 100 bytes without opening it."""
+    if len(header) < 64 or not header.startswith(SQLITE_HEADER):
+        return None
+    return int.from_bytes(header[60:64], "big")
+
+
 def inspect_backup(archive: str) -> Dict[str, Any]:
     """Reads a backup's manifest without restoring it, so a user can check first."""
     if not os.path.exists(archive) or not zipfile.is_zipfile(archive):
@@ -240,18 +250,54 @@ def inspect_backup(archive: str) -> Dict[str, Any]:
             "has_database": False,
             "asset_count": 0,
             "manifest": {},
+            "schema_version": None,
         }
+    schema_version = None
     with zipfile.ZipFile(archive) as z:
         names = z.namelist()
         manifest = {}
         if "backup_manifest.json" in names:
             manifest = json.loads(z.read("backup_manifest.json").decode("utf-8"))
+        if "data/linkedin_studio.db" in names:
+            with z.open("data/linkedin_studio.db") as handle:
+                schema_version = _schema_version_of(handle.read(100))
     return {
         "archive": archive,
         "has_database": "data/linkedin_studio.db" in names,
         "asset_count": len([n for n in names if n.startswith("assets/")]),
         "manifest": manifest,
+        "schema_version": schema_version,
     }
+
+
+def _refuse_incompatible(info: Dict[str, Any]) -> None:
+    """
+    ValueError for a backup this build could restore but then not start from.
+
+    A backup made by a newer build used to be restored and reported as done,
+    after which the studio refused to start with SchemaTooNewError, and in the
+    portable build the window holding that message closed by itself.
+    """
+    version = info.get("schema_version")
+    if version is None:
+        return
+    made_by = (info.get("manifest") or {}).get("app_version")
+    if version > SCHEMA_VERSION:
+        raise ValueError(
+            f"This backup was made by a newer version of Inox Hydra ({made_by or 'unknown version'}, "
+            f"database schema {version}). This studio is {__version__} and reads schemas up to "
+            f"{SCHEMA_VERSION}. Update the studio to {made_by or 'that version'} or newer first, then "
+            f"restore this backup. Nothing was changed."
+        )
+    if 0 < version < MIN_SUPPORTED_SCHEMA:
+        raise ValueError(
+            f"This backup's database (schema {version}) is older than this studio can upgrade "
+            f"(schema {MIN_SUPPORTED_SCHEMA} or newer). Nothing was changed."
+        )
+
+
+class ProfileMismatch(ValueError):
+    """The backup is of another creator profile than the one it would replace."""
 
 
 class RestoreFailed(RuntimeError):
@@ -381,10 +427,11 @@ def restore_backup(archive: str, take_safety_backup: bool = True, into_active_pr
     origin = (info.get("manifest") or {}).get("profile")
     active = paths.get_active_profile_id()
     if origin and origin != active and not into_active_profile:
-        raise ValueError(
+        raise ProfileMismatch(
             f"This backup is of creator profile '{origin}', and the active profile is '{active}'. "
             f"Switch to '{origin}' first, or restore it into '{active}' on purpose."
         )
+    _refuse_incompatible(info)
 
     assets_root = paths.get_assets_dir()
     staging = os.path.join(paths.get_profile_home(), f".restore-{datetime.now().strftime('%Y%m%d_%H%M%S')}-{os.getpid()}")
