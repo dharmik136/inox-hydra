@@ -151,3 +151,19 @@ def test_a_studio_post_and_its_linkedin_post_are_one_result(studio):
     _import(studio, text)
     posts = _search(studio, "flour waste")["groups"]["posts"]
     assert [p["id"] for p in posts] == [post_id], posts
+
+
+def test_a_turkish_dotless_i_is_found_from_a_plain_i(studio):
+    from database import get_db
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO leads (id, name, full_name, status, lead_status) "
+                     "VALUES ('lead-isik', 'Işık Demir', 'Işık Demir', 'New Lead', 'NEW')")
+    conn.close()
+    for query in ("isik", "IŞIK", "Işık", "ışık"):
+        assert _lead_names(studio, query) == ["Işık Demir"], query
+
+
+def test_a_lone_accent_matches_nothing(studio):
+    body = _search(studio, "́")
+    assert body["groups"]["leads"] == [] and body["groups"]["posts"] == [], "an empty term matched everything"
