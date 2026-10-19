@@ -166,12 +166,25 @@ document.addEventListener("DOMContentLoaded", () => {
           // attach to, and three complete attribution surfaces keep returning
           // zero. It is bookkeeping on an event the studio itself caused, so
           // it contacts nothing but the local backend.
+          //
+          // The toast waits for the studio's answer. It used to promise the
+          // link whatever the studio said, including when it answered that
+          // the text could not be identified again.
           studioApiFromPanel("/api/v1/posts/injected", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ content: content })
-          }).catch(() => {});
-          showToast("✅ Inserted into the composer. Open the post once after publishing and the studio will link it.");
+          }).then((res) => res.json()).then((data) => {
+            if (data && data.status === "recorded") {
+              showToast("✅ Inserted into the composer. Open the post once after publishing and the studio will link it.");
+            } else if (data && data.message) {
+              showToast("Inserted into the composer. " + data.message);
+            } else {
+              showToast("Inserted into the composer, but the studio did not record it, so it cannot link this post later.");
+            }
+          }).catch(() => {
+            showToast("Inserted into the composer, but the studio did not record it, so it cannot link this post later.");
+          });
         } else {
           showToast("⚠️ Click 'Start a post' on LinkedIn first!");
         }

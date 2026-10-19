@@ -889,8 +889,14 @@ def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: 
         return None
 
     def matches(stored_fingerprint, content):
-        fingerprint = stored_fingerprint or post_identity.content_fingerprint(content or "")
-        return bool(fingerprint) and post_identity.fingerprint_matches(text, fingerprint)
+        # The stored fingerprint, and the one the row's text gives today: a
+        # fingerprint stored before the normaliser kept every script's letters
+        # no longer matches text with accents, circled digits or non-Latin
+        # letters in it.
+        return any(
+            fingerprint and post_identity.fingerprint_matches(text, fingerprint)
+            for fingerprint in (stored_fingerprint, post_identity.content_fingerprint(content or ""))
+        )
 
     posts = [r for r in conn.execute(
         "SELECT id, content, content_fingerprint, status, published_at FROM posts "
