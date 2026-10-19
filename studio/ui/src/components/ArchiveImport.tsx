@@ -293,9 +293,9 @@ export function ArchiveImport({
                 <ul className="mt-1.5 flex flex-col gap-1.5">
                   {found.map((hit) => (
                     <li key={hit.path} className="flex items-center justify-between gap-3">
-                      <span className="min-w-0 truncate text-[13px] text-ink-secondary">
-                        {hit.name}
-                        <span className="studio-meta ml-2 text-[10px] text-ink-muted">
+                      <span className="min-w-0 text-[13px] text-ink-secondary">
+                        <span className="block truncate">{hit.name}</span>
+                        <span className="studio-meta block text-[10px] text-ink-muted">
                           {readable(hit.bytes)} · {localDate(hit.modified)}
                           {hit.imported ? " · ALREADY IMPORTED" : ""}
                           {hit.downloading ? " · STILL DOWNLOADING" : ""}
@@ -387,7 +387,7 @@ export function ArchiveImport({
           </p>
           {preview.needs_confirmation ? (
             <div className="mt-3 rounded-md border border-signal-orange/40 bg-signal-orange-subtle p-3">
-              <p className="text-[13px] leading-relaxed text-signal-orange-text">{preview.needs_confirmation}</p>
+              <p className="text-[13px] leading-relaxed text-ink-primary">{preview.needs_confirmation}</p>
               <label className="mt-2 flex items-start gap-2 text-[13px] text-ink-primary">
                 <input
                   type="checkbox"
