@@ -255,6 +255,80 @@ def test_a_posts_import_read_to_the_end_ticks_step_five_and_today_agrees():
 
 
 # ---------------------------------------------------------------------------
+# WRITE-18. A history import bound an old LinkedIn post to a newer, unpublished
+# draft that reused its opening, marking the draft published with the old date.
+# ---------------------------------------------------------------------------
+
+OPENING = ("Last spring I turned down a client worth a third of our revenue. It was the best decision our "
+           "two person design studio has made in five years, and I almost did not make it at all, honestly.")
+OLD_POST = OPENING + "\n\nHere is what happened next, and what it taught me about pricing."
+NEW_DRAFT = OPENING + "\n\nOne year on: what that decision did to our pipeline, with the actual numbers this time."
+
+
+@pytest.fixture
+def studio_rows():
+    made = {"posts": [], "drafts": []}
+    yield made
+    conn = get_db()
+    with conn:
+        for pid in made["posts"]:
+            conn.execute("DELETE FROM posts WHERE id = ?", (pid,))
+        for did in made["drafts"]:
+            conn.execute("DELETE FROM posts WHERE draft_id = ?", (did,))
+            conn.execute("DELETE FROM drafts WHERE id = ?", (did,))
+    conn.close()
+
+
+def _row(pid):
+    conn = get_db()
+    try:
+        return dict(conn.execute("SELECT status, published_at, activity_urn FROM posts WHERE id = ?", (pid,)).fetchone())
+    finally:
+        conn.close()
+
+
+def _ingest_old_post():
+    return client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [
+        {"activity_urn": ACTIVITY_URN, "actor": ME, "text": OLD_POST}]}).json()
+
+
+def test_an_old_post_does_not_take_over_a_newer_draft(studio_rows):
+    _confirm()
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO posts (id, content, status) VALUES ('f4b-new-draft', ?, 'draft')", (NEW_DRAFT,))
+    conn.close()
+    studio_rows["posts"].append("f4b-new-draft")
+
+    assert _ingest_old_post()["bound_to_posts"] == 0
+    row = _row("f4b-new-draft")
+    assert row["status"] == "draft" and row["activity_urn"] is None and row["published_at"] is None
+
+
+def test_an_old_post_does_not_bind_to_a_draft_written_after_it(studio_rows):
+    _confirm()
+    conn = get_db()
+    with conn:
+        draft_id = conn.execute("INSERT INTO drafts (title, raw_content) VALUES ('Follow-up', ?)",
+                                (NEW_DRAFT,)).lastrowid
+    conn.close()
+    studio_rows["drafts"].append(draft_id)
+    assert _ingest_old_post()["bound_to_drafts"] == 0
+
+
+def test_a_draft_written_before_the_post_still_binds(studio_rows):
+    _confirm()
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO posts (id, content, status, created_at) VALUES ('f4b-old-draft', ?, 'draft', ?)",
+                     (OLD_POST, (POSTED - timedelta(days=1)).strftime("%Y-%m-%d %H:%M:%S")))
+    conn.close()
+    studio_rows["posts"].append("f4b-old-draft")
+    assert _ingest_old_post()["bound_to_posts"] == 1
+    assert _row("f4b-old-draft")["status"] == "published"
+
+
+# ---------------------------------------------------------------------------
 # The extension says how an import ended
 # ---------------------------------------------------------------------------
 

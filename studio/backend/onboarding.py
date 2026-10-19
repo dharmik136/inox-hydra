@@ -955,6 +955,22 @@ def post_readings(activity_urn: str) -> List[Dict[str, Any]]:
         conn.close()
 
 
+# How far a studio record's time may run past a post's publish time and still
+# be its source: the machine's clock and LinkedIn's can disagree a little.
+BIND_CLOCK_SKEW = timedelta(minutes=10)
+
+
+def _parse_moment(value: Any) -> Optional[datetime]:
+    """A stored time, ISO or SQLite's "YYYY-MM-DD HH:MM:SS" (UTC), or None."""
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
 def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: Optional[str]) -> Optional[str]:
     """
     Connects one of the creator's LinkedIn posts to the studio record it came
@@ -991,10 +1007,31 @@ def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: 
         fingerprint = stored_fingerprint or post_identity.content_fingerprint(content or "")
         return bool(fingerprint) and post_identity.fingerprint_matches(text, fingerprint)
 
+    # A studio record can only be where a LinkedIn post came from if it existed
+    # by the time the post went out. Without this, a new draft that reused an
+    # old hit's opening was taken over by a history import: marked published,
+    # with the old post's date and figures, and gone from the drafts. A post
+    # marked published or scheduled is judged by that date, since it may be
+    # entered after the fact; anything else by when it was written.
+    posted = _parse_moment(published_at)
+
+    def existed_by_then(row) -> bool:
+        if posted is None:
+            return True
+        status = (row["status"] or "").lower() if "status" in row.keys() else ""
+        if status == "published":
+            when = row["published_at"]
+        elif status == "scheduled":
+            when = row["scheduled_for"]
+        else:
+            when = row["created_at"]
+        moment = _parse_moment(when)
+        return moment is None or moment <= posted + BIND_CLOCK_SKEW
+
     posts = [r for r in conn.execute(
-        "SELECT id, content, content_fingerprint, status, published_at FROM posts "
+        "SELECT id, content, content_fingerprint, status, published_at, scheduled_for, created_at FROM posts "
         "WHERE activity_urn IS NULL AND COALESCE(content, '') != ''")
-        if matches(r["content_fingerprint"], r["content"])]
+        if matches(r["content_fingerprint"], r["content"]) and existed_by_then(r)]
     if len(posts) == 1:
         row = posts[0]
         conn.execute(
@@ -1008,9 +1045,9 @@ def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: 
         return None
 
     drafts = [r for r in conn.execute(
-        "SELECT id, raw_content FROM drafts WHERE COALESCE(raw_content, '') != '' "
+        "SELECT id, raw_content, created_at FROM drafts WHERE COALESCE(raw_content, '') != '' "
         "AND id NOT IN (SELECT draft_id FROM posts WHERE draft_id IS NOT NULL)")
-        if matches(None, r["raw_content"])]
+        if matches(None, r["raw_content"]) and existed_by_then(r)]
     if len(drafts) == 1:
         conn.execute(
             "INSERT INTO posts (id, content, status, published_at, content_fingerprint, draft_id, activity_urn) "

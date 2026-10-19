@@ -535,8 +535,9 @@ def test_a_draft_retyped_on_linkedin_finds_its_post(studio_records):
     _confirm()
     conn = get_db()
     with conn:
-        draft_id = conn.execute("INSERT INTO drafts (title, raw_content) VALUES (?, ?)",
-                                ("Rollback", OPENING)).lastrowid
+        # Written before the post went out, as a draft that became a post is.
+        draft_id = conn.execute("INSERT INTO drafts (title, raw_content, created_at) VALUES (?, ?, ?)",
+                                ("Rollback", OPENING, "2024-03-04 09:00:00")).lastrowid
     conn.close()
     studio_records["drafts"].append(draft_id)
 
