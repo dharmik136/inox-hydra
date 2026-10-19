@@ -657,13 +657,45 @@ def _fill_creator_settings(conn, clean: Dict[str, Any]) -> None:
     """
     row = conn.execute("SELECT value FROM settings WHERE key = 'creator_profile'").fetchone()
     profile = json.loads(row["value"]) if row and row["value"] else {}
+    filled = {}
     for key, source in (("name", "display_name"), ("headline", "headline"), ("company", "current_company")):
         if not (profile.get(key) or "").strip() and clean.get(source):
-            profile[key] = clean[source]
+            profile[key] = filled[key] = clean[source]
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('creator_profile', ?)",
         (json.dumps(profile),),
     )
+    # What was filled, kept apart from the profile, which Brand Studio rewrites
+    # whole on every save. Forgetting takes back exactly these.
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+        (FILLED_PROFILE_KEY, json.dumps(filled)),
+    )
+
+
+FILLED_PROFILE_KEY = "identity_filled_profile"
+
+
+def _unfill_creator_settings(conn) -> None:
+    """
+    Clears the Brand Studio fields confirming filled, where they still hold
+    the value it put there.
+
+    Forgetting the wrong account used to leave its name, headline and company
+    in Brand Studio, and the next confirmation fills only blanks, so carousel
+    bylines and the watermark went on signing as the forgotten person. A field
+    the creator has since changed is theirs and stays.
+    """
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (FILLED_PROFILE_KEY,)).fetchone()
+    filled = json.loads(row["value"]) if row and row["value"] else {}
+    stored = conn.execute("SELECT value FROM settings WHERE key = 'creator_profile'").fetchone()
+    if filled and stored and stored["value"]:
+        profile = json.loads(stored["value"])
+        for key, value in filled.items():
+            if profile.get(key) == value:
+                profile[key] = ""
+        conn.execute("UPDATE settings SET value = ? WHERE key = 'creator_profile'", (json.dumps(profile),))
+    conn.execute("DELETE FROM settings WHERE key = ?", (FILLED_PROFILE_KEY,))
 
 
 def confirm_identity(vanity: Any) -> Dict[str, Any]:
@@ -721,6 +753,7 @@ def forget_identity() -> Dict[str, Any]:
                 conn.execute(f"DELETE FROM {table}")
             # And what LinkedIn's archive brought: connections and the record of each import.
             forget_archive(conn)
+            _unfill_creator_settings(conn)
     finally:
         conn.close()
     return {"status": "forgotten"}

@@ -135,3 +135,51 @@ def test_the_extension_reads_the_same_spelling_the_studio_keeps(decoded, encoded
     assert _vanity_of(href) == onboarding.normalise_vanity(href) == decoded
     # A decomposed accent in the address is read as the studio spells it too.
     assert _vanity_of("https://www.linkedin.com/in/jose%CC%81-sample/") == "josé-sample"
+
+
+# ---------------------------------------------------------------------------
+# SETUP-08. Confirming fills Brand Studio's name, headline and company where
+# they are empty. Forgetting left them, and confirming the right account then
+# filled only blanks, so bylines and the watermark kept signing as the wrong
+# person after Setup said everything was deleted.
+# ---------------------------------------------------------------------------
+
+def _brand():
+    return client.get("/api/settings/profile").json()["profile"]
+
+
+def _confirm_as(vanity, name, headline, company):
+    observed = _observe(vanity, display_name=name, headline=headline, current_company=company).json()
+    assert observed["status"] == "candidate"
+    assert client.post("/api/v1/identity/confirm", json={"vanity": vanity}).status_code == 200
+
+
+def test_forgetting_the_wrong_account_takes_back_what_it_filled_in():
+    _confirm_as("sample-bob", "Sample Bob", "Bob's synthetic headline", "Bob Co")
+    assert _brand()["name"] == "Sample Bob"
+
+    assert client.delete("/api/v1/identity").status_code == 200
+    brand = _brand()
+    assert (brand["name"], brand["headline"], brand["company"]) == ("", "", "")
+
+    _confirm_as("sample-carol", "Sample Carol", "Carol's headline", "Carol Co")
+    brand = _brand()
+    assert (brand["name"], brand["headline"], brand["company"]) == ("Sample Carol", "Carol's headline", "Carol Co")
+
+
+def test_what_you_typed_in_brand_studio_survives_forgetting():
+    profile = _brand()
+    profile.update({"name": "", "headline": "The headline I wrote", "company": ""})
+    assert client.post("/api/settings/profile", json=profile).status_code == 200
+
+    _confirm_as("sample-bob", "Sample Bob", "Bob's synthetic headline", "Bob Co")
+    # Saved again in Brand Studio, with one filled field edited by hand.
+    profile = _brand()
+    profile["company"] = "My own company"
+    assert client.post("/api/settings/profile", json=profile).status_code == 200
+
+    client.delete("/api/v1/identity")
+    brand = _brand()
+    assert brand["headline"] == "The headline I wrote"
+    assert brand["company"] == "My own company"
+    assert brand["name"] == "", "the name came from the forgotten account and was not changed since"

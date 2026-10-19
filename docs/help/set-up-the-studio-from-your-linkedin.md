@@ -36,7 +36,7 @@ The profile page does not show everything, so three buttons open the pages that 
 
 Anything the page did not show is left as it was, so a section that had not loaded yet does not erase what was read before. A field reading "Not read" is one the studio has not found yet.
 
-Confirming also fills your name, headline and company in **Brand Studio**, but only where those are empty. What you typed there is never replaced.
+Confirming also fills your name, headline and company in **Brand Studio**, but only where those are empty. What you typed there is never replaced. If you later delete what the studio holds about you, the fields it filled are cleared again, unless you have changed them since.
 
 ## 4. Your LinkedIn archive
 
