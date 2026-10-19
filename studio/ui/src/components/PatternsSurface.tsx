@@ -14,6 +14,13 @@ import {
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 
+/** A contrast as the route returns it, including one whose sides come from different periods. */
+type Contrast = Omit<ContrastFinding, "status"> & {
+  status: string;
+  typical_year_with?: number;
+  typical_year_without?: number;
+};
+
 /** A topic as the attribution route returns it: people counted once, and a rate only when someone was captured. */
 type TopicRow = Omit<TopicAttributionInsights["topics"][number], "lead_conversion_rate"> & {
   people_engaged?: number;
@@ -157,11 +164,12 @@ export function PatternsSurface() {
           <p className="studio-label">Feature Contrasts</p>
           <h2 className="studio-title mt-2 text-[15px]">Binary feature comparisons</h2>
           <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
-            Compares settled posts older than 7 days across structural forms.
-            Requires at least {contrasts.min_arm_size} posts per arm before concluding.
+            Compares settled posts older than 7 days across structural forms. A difference counts only with at least{" "}
+            {contrasts.min_arm_size} posts on each side, from the same period; one whose sides come from different years
+            is shown muted and is not passed to the copilot.
           </p>
           <ul className="mt-4 flex flex-col divide-y divide-edge border-y border-edge">
-            {contrasts.contrasts.map((c) => (
+            {(contrasts.contrasts as Contrast[]).map((c) => (
               <ContrastRow key={c.key} contrast={c} />
             ))}
           </ul>
@@ -199,8 +207,11 @@ function PatternRow({ pattern, muted = false }: { pattern: PatternFinding; muted
   );
 }
 
-function ContrastRow({ contrast }: { contrast: ContrastFinding }) {
+function ContrastRow({ contrast }: { contrast: Contrast }) {
   const isConclusive = contrast.status === "conclusive";
+  // Enough posts on both sides, but from different years, as under "Mixed up
+  // with when you posted" above. It was coloured as a finding here.
+  const isMixed = contrast.status === "different_period";
   const ratio = contrast.ratio ?? null;
 
   return (
@@ -218,14 +229,18 @@ function ContrastRow({ contrast }: { contrast: ContrastFinding }) {
           >
             {ratio.toFixed(2)}x
           </p>
+        ) : isMixed && ratio !== null ? (
+          <p className="studio-meta shrink-0 text-[11px] tabular-nums text-ink-muted">{ratio.toFixed(2)}x</p>
         ) : (
           <span className="studio-meta shrink-0 text-[10px] text-ink-muted">ABSTAIN (N &lt; 8)</span>
         )}
       </div>
       <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
-        {isConclusive
+        {isConclusive || isMixed
           ? `MEDIAN ${contrast.median_with} REACTIONS ON ${contrast.n_with} POSTS WITH IT, ${contrast.median_without} ON ${contrast.n_without} WITHOUT`
           : `CURRENT: ${contrast.n_with} WITH, ${contrast.n_without} WITHOUT (NEEDS AT LEAST ${contrast.min_required} PER ARM)`}
+        {isMixed &&
+          ` · MOSTLY ${contrast.typical_year_with} AGAINST MOSTLY ${contrast.typical_year_without}: MIXED UP WITH WHEN YOU POSTED, NOT A FINDING`}
       </p>
     </li>
   );

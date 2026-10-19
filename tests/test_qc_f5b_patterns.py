@@ -144,3 +144,47 @@ def test_on_your_posts_counts_posts_not_interactions(studio):
     authors = _get(studio, "/api/v1/insights/outbound")["authors"]
     assert authors[0]["name"] == "Founder 0"
     assert authors[0]["engaged_back"] == 1, "one comment and one like on one post were counted as two posts"
+
+
+# ---------------------------------------------------------------------------
+# AUDIENCE-13: a comparison flagged as mixed up with when you posted is never
+# called conclusive, on screen or to the copilot
+# ---------------------------------------------------------------------------
+
+def _hashtags_then_plain():
+    """Nine hashtag posts from 2024 at about 300 reactions, ten plain ones from 2026 at about 100."""
+    for i in range(9):
+        _post(f"Weekly notes {i}\nSome thoughts #leadership #growthmindset", 300 + i,
+              when=dt.datetime(2024, 3, 1 + i * 3, 9, tzinfo=dt.timezone.utc), salt=i)
+    for i in range(10):
+        _post(f"Field notes {i}\nSome thoughts without tags", 100 + i,
+              when=dt.datetime(2026, 8, 1 + i * 3, 9, tzinfo=dt.timezone.utc), salt=100 + i)
+
+
+def test_patterns_and_contrasts_agree_about_a_period_split(studio):
+    _hashtags_then_plain()
+    pattern = next(p for p in _get(studio, "/api/v1/insights/patterns")["patterns"] if p["key"] == "hashtags")
+    assert pattern["different_period"] is True
+    contrast = next(c for c in _get(studio, "/api/v1/insights/contrasts")["contrasts"] if c["key"] == "hashtags")
+    assert contrast["status"] != "conclusive", "the same split was mixed up with time above and conclusive below"
+    assert contrast["status"] == "different_period"
+    assert (contrast["typical_year_with"], contrast["typical_year_without"]) == (2024, 2026)
+    assert contrast["planted_or_significant"] is False
+
+
+def test_the_copilot_is_not_told_a_period_split_is_a_finding(studio):
+    _hashtags_then_plain()
+    brief = _get(studio, "/api/v1/insights/evidence")
+    assert "hashtags" not in brief["brief_section"].lower(), brief["brief_section"]
+    assert all(c["key"] != "hashtags" for c in brief["contrast_findings"])
+
+
+def test_a_split_within_one_period_is_still_compared(studio):
+    for i in range(9):
+        _post(f"Weekly notes {i}\nSome thoughts #leadership", 300 + i,
+              when=dt.datetime(2026, 3, 1 + i * 3, 9, tzinfo=dt.timezone.utc), salt=i)
+    for i in range(10):
+        _post(f"Field notes {i}\nSome thoughts without tags", 100 + i,
+              when=dt.datetime(2026, 3, 2 + i * 3, 9, tzinfo=dt.timezone.utc), salt=100 + i)
+    contrast = next(c for c in _get(studio, "/api/v1/insights/contrasts")["contrasts"] if c["key"] == "hashtags")
+    assert contrast["status"] == "conclusive" and contrast["planted_or_significant"] is True

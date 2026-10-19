@@ -243,3 +243,23 @@ def test_topic_attribution_counts_people_and_no_share_passes_100(studio):
     assert cells[1:] == ["1", "50", "4", "3", "75%"], cells
     assert "600" not in page.inner_text("body")
     assert not studio["errors"], studio["errors"]
+
+
+MARCH_2024 = 1709283600000
+AUGUST_2026 = 1785574800000
+
+
+def test_a_contrast_mixed_up_with_time_is_not_shown_as_a_finding(studio):
+    """AUDIENCE-13"""
+    client = studio["client"]
+    _own_posts(client, [{"text": f"Weekly notes {i}\nSome thoughts #leadership", "reactions": 300 + i}
+                        for i in range(9)], year_ms=MARCH_2024)
+    _own_posts(client, [{"text": f"Field notes {i}\nSome thoughts without tags", "reactions": 100 + i}
+                        for i in range(10)], year_ms=AUGUST_2026)
+    page = _open(studio, "Patterns")
+    page.wait_for_selector("text=Binary feature comparisons")
+    row = page.locator("section", has_text="Binary feature comparisons").locator("li", has_text="Contains hashtags")
+    text = row.inner_text()
+    assert "MOSTLY 2024 AGAINST MOSTLY 2026: MIXED UP WITH WHEN YOU POSTED, NOT A FINDING" in text, text
+    assert row.locator(".text-signal-green-text").count() == 0, "the confounded ratio is still coloured as a finding"
+    assert not studio["errors"], studio["errors"]

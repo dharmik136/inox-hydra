@@ -25,9 +25,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import onboarding
+    from . import contrast_engine, onboarding
     from .database import get_db
 except ImportError:
+    import contrast_engine
     import onboarding
     from database import get_db
 
@@ -284,10 +285,7 @@ def patterns_overview() -> Dict[str, Any]:
         # hashtags went with 2.7x the reactions, and the hashtag posts were
         # mostly from two years earlier, when the account and its audience
         # were different. Flagged rather than hidden.
-        gap_days = abs(statistics.median(with_dates) - statistics.median(without_dates)) / 86400.0
-        entry["different_period"] = gap_days > 270
-        entry["typical_year_with"] = datetime.fromtimestamp(statistics.median(with_dates)).year
-        entry["typical_year_without"] = datetime.fromtimestamp(statistics.median(without_dates)).year
+        entry.update(contrast_engine.different_periods(with_dates, without_dates))
         found.append(entry)
 
     found.sort(key=lambda e: abs((e["ratio"] or 1) - 1), reverse=True)

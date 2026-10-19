@@ -22,6 +22,8 @@ The forms compared are: a short opening line (60 characters or fewer), an openin
 
 When most posts on one side are from a different year than the other, the line is moved under **Mixed up with when you posted**. Your account and audience were different then, so the difference may be about the time rather than the form.
 
+**Feature Contrasts**, further down, make the same comparisons with at least eight posts on each side. The same rule applies there: a contrast whose sides come from different years is shown muted, marked **MIXED UP WITH WHEN YOU POSTED, NOT A FINDING**, and is not passed to the copilot as evidence.
+
 These are differences between your posts, not causes. Treat a large one as something to try.
 
 **Cadence**, on the same screen, gives how many posts you have made, days since your last one, your usual gap between posts, how much of the next 14 days of queue slots is filled, your longest gap, posts per month and posts per weekday. It does not name a best day or time: you chose the days you posted on, and a few posts per day cannot separate the day from everything else about those posts.

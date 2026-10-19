@@ -24,6 +24,10 @@ except ImportError:
 
 MIN_ARM_SAMPLE_SIZE = 8
 SETTLED_AFTER_HOURS = 7 * 24
+# Two sides whose typical posts are further apart than this come from
+# different periods, and the difference between them may be about when
+# rather than how. Patterns uses the same rule, through different_periods.
+DIFFERENT_PERIOD_DAYS = 270
 
 _ANNOUNCEMENT = re.compile(
     r"\b(excited|thrilled|happy to share|pleased to|proud to|congratulations|new position|starting a new)\b",
@@ -41,6 +45,35 @@ def _age_hours(published_at: Optional[str]) -> Optional[float]:
         return (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0
     except Exception:
         return None
+
+
+def _timestamp(published_at: Optional[str]) -> Optional[float]:
+    try:
+        dt = datetime.fromisoformat(published_at)
+    except (TypeError, ValueError):
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
+
+
+def different_periods(with_dates: List[float], without_dates: List[float]) -> Dict[str, Any]:
+    """
+    Whether two sides of a comparison come from different periods, and which.
+
+    The one rule for Patterns and for the contrasts below. Patterns flagged a
+    hashtag difference as mixed up with when you posted while this engine,
+    with no period check, called the same split conclusive a screen lower and
+    told the copilot to use it.
+    """
+    if not with_dates or not without_dates:
+        return {"different_period": False}
+    typical_with, typical_without = statistics.median(with_dates), statistics.median(without_dates)
+    return {
+        "different_period": abs(typical_with - typical_without) / 86400.0 > DIFFERENT_PERIOD_DAYS,
+        "typical_year_with": datetime.fromtimestamp(typical_with).year,
+        "typical_year_without": datetime.fromtimestamp(typical_without).year,
+    }
 
 
 def opening_line(text: Optional[str]) -> str:
@@ -98,6 +131,8 @@ def evaluate_contrast_for_posts(posts: List[Dict[str, Any]], feature_key: str) -
 
     with_it: List[float] = []
     without: List[float] = []
+    with_dates: List[float] = []
+    without_dates: List[float] = []
 
     for p in posts:
         text = p.get("text") or p.get("content") or ""
@@ -110,10 +145,15 @@ def evaluate_contrast_for_posts(posts: List[Dict[str, Any]], feature_key: str) -
         except (ValueError, TypeError):
             continue
 
+        when = _timestamp(p.get("published_at"))
         if test_func(text, opening):
             with_it.append(rxn_float)
+            if when is not None:
+                with_dates.append(when)
         else:
             without.append(rxn_float)
+            if when is not None:
+                without_dates.append(when)
 
     n_with = len(with_it)
     n_without = len(without)
@@ -133,6 +173,23 @@ def evaluate_contrast_for_posts(posts: List[Dict[str, Any]], feature_key: str) -
     med_with = statistics.median(with_it)
     med_without = statistics.median(without)
     ratio = round(med_with / med_without, 2) if med_without > 0 else None
+    period = different_periods(with_dates, without_dates)
+
+    if period["different_period"]:
+        # Enough posts on each side, but from different years: not a finding.
+        return {
+            "key": key,
+            "label": label,
+            "status": "different_period",
+            "n_with": n_with,
+            "n_without": n_without,
+            "median_with": med_with,
+            "median_without": med_without,
+            "ratio": ratio,
+            "planted_or_significant": False,
+            "min_required": MIN_ARM_SAMPLE_SIZE,
+            **period,
+        }
 
     return {
         "key": key,
