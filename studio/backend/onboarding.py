@@ -1220,14 +1220,35 @@ def _import_outcome(outcome: Any, items_seen: Optional[int]) -> str:
 
     An older extension said "completed" whenever the list stopped growing for
     twenty seconds, which a slow "Show more", a button in another language or
-    the round cap all produce, and said it even after reading nothing. That
-    cannot be told apart from the end, so it is recorded as "partial". A list
-    that ended with nothing read is "nothing_read", not a history.
+    the round cap all produce, and said it even after reading nothing. Whether
+    such an import reached the end is not known, so it is recorded as
+    "old_extension": not the whole history, and not claimed to have missed
+    the end either. A browser keeps running the old extension until it is
+    reloaded, so importing again only repeats this; Setup and Today say to
+    reload it. A list that ended with nothing read is "nothing_read".
     """
     said = (_text(outcome, 40) or "").lower()
     if said == "end_of_list":
         return "end_of_list" if items_seen else "nothing_read"
-    return said if said in IMPORT_OUTCOMES else "partial"
+    return said if said in IMPORT_OUTCOMES else "old_extension"
+
+
+# Outcomes from an extension that did not say how an import ended: what an older
+# extension sent, and what earlier studios stored for it.
+OLD_EXTENSION_OUTCOMES = ("old_extension", "completed", "partial")
+
+
+def extension_outdated(conn) -> bool:
+    """
+    True when the latest finished posts import came from an older extension,
+    which cannot say whether it reached the end of the list. The fix is to
+    reload the extension, not to import again.
+    """
+    row = conn.execute(
+        "SELECT outcome FROM self_import_requests WHERE kind = 'posts' AND finished_at IS NOT NULL "
+        "AND outcome NOT IN ('superseded', 'expired', 'not_opened') ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+    return bool(row) and row["outcome"] in OLD_EXTENSION_OUTCOMES
 
 
 def post_history_complete(conn) -> bool:
@@ -1585,6 +1606,7 @@ def onboarding_state() -> Dict[str, Any]:
         readings = conn.execute("SELECT COUNT(*) FROM post_metric_observations").fetchone()[0]
         connections = conn.execute("SELECT COUNT(*) FROM connections").fetchone()[0]
         history_read = post_history_complete(conn)
+        outdated = extension_outdated(conn)
         with conn:
             _expire_requests(conn)
         imports = [dict(r) for r in conn.execute(
@@ -1655,6 +1677,8 @@ def onboarding_state() -> Dict[str, Any]:
         "imports": imports,
         # Import all three, while one is under way: which, and what comes next.
         "sync_chain": {"sequence": chain["sequence"], "current_kind": chain["current_kind"]} if chain else None,
+        # The latest posts import came from an older extension: reload it.
+        "extension_outdated": outdated,
         "steps": {
             "bridge": bool(bridge["last_seen_at"]),
             "identity": confirmed,

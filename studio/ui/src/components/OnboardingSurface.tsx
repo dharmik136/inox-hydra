@@ -47,6 +47,8 @@ type SetupState = OnboardingState & {
   counts: { readings?: number; connections?: number };
   /** history: your posts read to the end of the list, which is what Today needs. */
   steps: { history?: boolean };
+  /** The latest posts import came from an older extension; reloading it is the fix, not importing again. */
+  extension_outdated?: boolean;
 };
 
 export function OnboardingSurface() {
@@ -247,7 +249,9 @@ export function OnboardingSurface() {
               ? `${state.counts.posts} posts, ${state.counts.comments} comments, ${state.counts.reactions} reactions${
                   steps.history
                     ? ""
-                    : `. ${state.counts.posts ? "Your posts are in, but the" : "The"} list of your posts has not been read to its end yet: run Posts you wrote`
+                    : state.extension_outdated
+                      ? ". Your last posts import came from an older copy of the extension, which cannot tell whether it reached the end: reload the extension on your browser's extensions page, then run Posts you wrote again"
+                      : `. ${state.counts.posts ? "Your posts are in, but the" : "The"} list of your posts has not been read to its end yet: run Posts you wrote`
                 }`
               : "Your posts, and what you have liked and commented on"
           }
@@ -868,7 +872,10 @@ function importLine(entry: SelfImport): string {
   if (entry.outcome === "nothing_read") return "NOTHING READ. OPEN THE PAGE AND IMPORT AGAIN";
   if (entry.outcome === "stalled") return `THE LIST STOPPED LOADING AT ${read}. IMPORT AGAIN`;
   if (entry.outcome === "round_limit") return `READ ${read}, THE MOST ONE IMPORT READS`;
-  return `READ ${read}, NOT TO THE END. IMPORT AGAIN`;
+  // An older extension said "completed" for every import, so whether it
+  // reached the end is not known. It keeps running until it is reloaded, and
+  // importing again before that only repeats this, so say to reload it.
+  return `READ ${read} WITH AN OLDER EXTENSION, END NOT KNOWN. RELOAD IT ON THE BROWSER'S EXTENSIONS PAGE, THEN IMPORT AGAIN`;
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
