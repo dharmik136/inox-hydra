@@ -14,8 +14,11 @@ One visit records one day. A second visit the same day updates that day. Days yo
 
 | Notice on LinkedIn | Meaning |
 | --- | --- |
-| "Inox Hydra: creator analytics synced to your local studio." | The extension sent the figures. It also shows this when the studio could not be reached, so confirm on **Analytics**. |
+| "Inox Hydra: creator analytics synced to your local studio." | The studio saved today's figures. |
 | "...so they were not saved as today's numbers. Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses. Change the range; the extension reads again. |
+| "Inox Hydra: could not reach your studio, so these analytics were not saved." | The studio is not running. Start it and reload the analytics page. |
+| "Inox Hydra: the studio refused this browser, so these analytics were not saved. ..." | This browser was never paired. Open the studio once in it, then reload the analytics page. |
+| "Inox Hydra: the studio did not save these analytics: ..." | The studio answered and refused; the rest of the notice says why. |
 
 If the extension cannot tell which range is selected, it still saves the figures, labelled as an unknown period. The chart still plots that day, but the totals under **What changed** leave it out and say how many days they left out. Check the selector before you visit. Abbreviated figures such as 1.2K are stored as the rounded number, 1200, and marked as rounded.
 

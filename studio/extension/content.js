@@ -15,6 +15,9 @@
  *
  * Resolves to the parsed body, or null when the studio is offline. Callers
  * treat a failure as "not captured", never as an error worth interrupting for.
+ * A studio that answered with an error status resolves to
+ * {status: "refused", httpStatus, detail}: it is running and said no, which a
+ * notice must not describe as either success or "could not reach".
  */
 function studioApi(path, body, method) {
   return new Promise((resolve) => {
@@ -22,8 +25,14 @@ function studioApi(path, body, method) {
       chrome.runtime.sendMessage(
         { action: "STUDIO_API", path: path, method: method || "POST", body: body },
         (response) => {
-          if (chrome.runtime.lastError || !response || response.status !== "success") {
+          if (chrome.runtime.lastError || !response) {
             resolve(null);
+            return;
+          }
+          if (response.status !== "success") {
+            resolve(response.httpStatus
+              ? { status: "refused", httpStatus: response.httpStatus, detail: (response.data && response.data.detail) || "" }
+              : null);
             return;
           }
           resolve(response.data || {});
@@ -505,16 +514,40 @@ function extractAndSyncAnalytics() {
           followers: followers
         }]
       })
+      // Says what the studio did. "Synced" used to follow any answer at all,
+      // including none, so a creator whose studio was closed or unpaired was
+      // told their figures were saved.
       .then(result => {
-        if (result && result.status === "window_mismatch") {
+        if (!result) {
+          showInPageToast("Inox Hydra: could not reach your studio, so these analytics were not saved.", "warning");
+          return;
+        }
+        if (result.status === "refused") {
           showInPageToast(
-            "Inox Hydra: these figures cover " + (period || "an unknown period") +
-            ", so they were not saved as today's numbers. Set the range to 24 hours to sync a daily figure.",
+            result.httpStatus === 401 || result.httpStatus === 403
+              ? "Inox Hydra: the studio refused this browser, so these analytics were not saved. Open the studio once in this browser, then reload this page."
+              : "Inox Hydra: the studio did not save these analytics" + (result.detail ? ": " + result.detail + "." : "."),
             "warning"
           );
           return;
         }
-        showInPageToast("Inox Hydra: creator analytics synced to your local studio.", "success");
+        if (result.status === "window_mismatch") {
+          const cover = period === "unrecognised"
+            ? "Inox Hydra: could not tell which period these figures cover"
+            : "Inox Hydra: these figures cover " + (period || "an unknown period");
+          const kept = result.followers_saved > 0 ? " Your follower count was saved." : "";
+          showInPageToast(
+            cover + ", so they were not saved as today's numbers." + kept +
+            " Set the range to 24 hours to sync a daily figure.",
+            "warning"
+          );
+          return;
+        }
+        if (result.status === "success" && result.buckets_ingested > 0) {
+          showInPageToast("Inox Hydra: creator analytics synced to your local studio.", "success");
+          return;
+        }
+        showInPageToast("Inox Hydra: the studio saved nothing from this page.", "warning");
       })
       .catch(() => {});
   } catch (e) {
@@ -1145,7 +1178,10 @@ function observeAndCaptureEngagers() {
         setTimeout(() => undecided.forEach((key) => knownEngagersSet.delete(key)), 30000);
       }
       const stored = answers.filter(a => a && a.status === "success").length;
-      const unreachable = answers.filter(a => a === null).length;
+      // Not running, or running and refusing this unpaired browser: either
+      // way nothing was saved, which is what the notice below says.
+      const unreachable = answers.filter(a => a === null ||
+        (a.status === "refused" && (a.httpStatus === 401 || a.httpStatus === 403))).length;
       const needsSetup = answers.some(a => a && a.status === "skipped" && /Setup/.test(a.reason || ""));
 
       if (stored > 0) {
