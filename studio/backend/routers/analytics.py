@@ -303,7 +303,8 @@ def ingest_live_analytics(payload: dict):
         if not author:
             raise HTTPException(status_code=409, detail=(
                 "the bridge could not tell which LinkedIn account is signed in. Open your own profile at "
-                "https://www.linkedin.com/in/me/ once in this browser, then reload the analytics page"))
+                "https://www.linkedin.com/in/me/"
+                " once in this browser, then reload the analytics page"))
         if author != me:
             raise HTTPException(status_code=409, detail=(
                 f"these analytics are from linkedin.com/in/{author}, not from linkedin.com/in/{me}, "
