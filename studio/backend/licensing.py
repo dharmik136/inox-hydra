@@ -277,7 +277,7 @@ def current(today: Optional[date] = None) -> Dict[str, Any]:
     """
     today = today or date.today()
     effective = _latest_date_seen(today)
-    key = (_licence_path(), _licence_stamp(), today, effective, tuple(PUBLIC_KEYS), BETA_OPEN)
+    key = (paths.get_app_home(), _licence_stamp(), today, effective, tuple(PUBLIC_KEYS), BETA_OPEN)
     if _current_cache["key"] == key:
         return json.loads(json.dumps(_current_cache["value"]))
 
