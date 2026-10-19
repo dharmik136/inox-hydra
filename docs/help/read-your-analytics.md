@@ -23,7 +23,7 @@ One visit records one day. A second visit the same day updates that day. Days yo
 
 The extension reads the range selector in English and in the other languages LinkedIn offers, for example "Past 365 days", "Past 12 months" or "Letzte 7 Tage". If it finds a range it cannot read, such as a custom date range, the notice says it "could not tell which period these figures cover", and only the follower count is saved. If the page shows no range selector at all, it still saves the figures, labelled as an unknown period. The chart still plots that day, but the totals under **What changed** leave it out and say how many days they left out. Check the selector before you visit.
 
-Figures are read in the page's language: on a German or Italian page 8.210 is 8210, and 1,2K is 1200. Abbreviated figures such as 1.2K or 1,2 Mio. are stored as the rounded number and marked as rounded. A figure the extension cannot read with certainty, such as 8.210 on a page that does not say its language, is not saved at all, rather than saved as 8.
+Figures are read in the page's language: on a German or Italian page 8.210 is 8210, and 1,2K is 1200. Abbreviated figures such as 1.2K or 1,2 Mio. are stored as the rounded number and marked as rounded. A figure the extension cannot read with certainty, such as 8.210 on a page that does not say its language, is not saved at all, rather than saved as 8. 1.2K is anything from 1,150 to 1,249, so on **Analytics** a figure or change built from one is shown with a ~, a note under the chart says how many plotted days are rounded, and a change smaller than the rounding is not shown.
 
 ## Read the page
 
@@ -40,7 +40,7 @@ Figures are read in the page's language: on a German or Italian page 8.210 is 82
 
 ## The three observations
 
-- **What changed**: Impressions and Engagements (reactions, comments and shares) summed over the range, counting only days that hold a single day's figures, and compared with the previous period of the same length. Days captured with an unknown range are left out, and a note under the list says how many. Profile views compares the last day's figure with the first day's, and Followers is the difference between them. If either day has no figure, or the previous period holds nothing to compare with, the change reads "not measured" rather than 0 or +100.0%.
+- **What changed**: Impressions and Engagements (reactions, comments and shares) over the range, counting only days that hold a single day's figures, compared with the previous period of the same length by the level per captured day. A change is shown only when each period has at least 80 percent of its days captured (6 of 7, 24 of 30, 72 of 90); otherwise it reads "not measured" and a note says how many days each period has. Days captured with an unknown range are left out, and a note under the list says how many. Profile views compares the last day's figure with the first day's, and Followers is the difference between them. If either day has no figure, or the previous period holds nothing to compare with, the change reads "not measured" rather than 0 or +100.0%.
 - **What moved with it**: one sentence on how reach and engagement moved together.
 - **What to look at next**: your post with the highest engagement rate.
 
@@ -48,12 +48,12 @@ These describe the numbers. They do not claim a cause.
 
 ## Post comparison
 
-The table lists every post whose status is published, including posts you only marked as published. Rate is (reactions + comments + shares) divided by impressions, as a percentage.
+The table lists your LinkedIn posts, the ones imported from your activity pages or your archive, and any post you marked as published in the studio that has not been matched to one of them. Rate is (reactions + comments + reposts) divided by impressions, as a percentage.
 
 > [!NOTE]
-> The extension does not capture per-post figures, so posts written in the studio show 0 impressions, reactions and comments, and a rate of 0%. The strongest-post observation then reports 0.00%.
+> A figure the bridge has not read shows "not measured", never 0. Impressions are read only from a post's own analytics page, so most posts show "not measured" for impressions and rate. A post marked published in the studio has no figures of its own until it is matched to its LinkedIn post.
 
-Click a row to see leads linked to it: a count of leads and interactions with names, or NO LEADS ATTRIBUTED TO THIS POST. In this build, posts written in the studio are not linked to their LinkedIn posts. The extension reports which post you opened, but the step that prepares a post for matching is refused by the extension itself, so expect NO LEADS ATTRIBUTED TO THIS POST.
+Click a row to see leads linked to it: a count of leads and interactions with names, or NO LEADS ATTRIBUTED TO THIS POST. An imported LinkedIn post carries the people the bridge captured on it. A post written in the studio is linked only once it has been matched to its LinkedIn post; until then expect NO LEADS ATTRIBUTED TO THIS POST.
 
 ## The seeded-data banner
 
@@ -70,6 +70,6 @@ Click **CSV** beside the range buttons. It downloads every stored day, whatever 
 | ANALYTICS UNAVAILABLE | The studio did not answer or refused the request. Check it is running and reload. |
 | NOTHING MEASURED IN THIS RANGE | No figures exist for that measure in this range. Visit your LinkedIn analytics page with the extension running. Profile views always shows this. |
 | "not measured" | That figure was never captured for that day or post. Under **What changed**, one of the figures it compares was not captured, or the previous period holds nothing to compare with. |
-| NO PUBLISHED POSTS TO COMPARE | No post has the published status yet. |
+| NO PUBLISHED POSTS TO COMPARE | None of your LinkedIn posts has been imported, and no studio post is marked published. Import your posts in Setup. |
 
 Audience demographics are not shown anywhere in the studio.

@@ -271,9 +271,9 @@ def search_everything(q: str = "", limit: int = 6):
         found = []
         for template in intelligence_sync_engine.get_templates(limit=500):
             hook = template.get("hook_text") or ""
-            haystack = " ".join(str(template.get(key) or "") for key in
-                                ("hook_text", "archetype", "pacing_style")).lower()
-            if all(term in haystack for term in terms):
+            haystack = universal_search.fold(" ".join(str(template.get(key) or "") for key in
+                                                      ("hook_text", "archetype", "pacing_style")))
+            if all(universal_search.fold(term) in haystack for term in terms):
                 found.append({
                     "kind": "specimen",
                     "id": f"tpl-{template.get('id')}",

@@ -135,6 +135,9 @@ def test_a_wildcard_in_a_query_is_a_character(seeded):
     conn = get_db()
     try:
         contents = {str(r["id"]): (r["content"] or "").lower() for r in conn.execute("SELECT id, content FROM posts")}
+        # Posts imported from LinkedIn are searched too, under their URN.
+        contents.update({r["activity_urn"]: (r["text"] or "").lower()
+                         for r in conn.execute("SELECT activity_urn, text FROM own_posts")})
     finally:
         conn.close()
     for query in ("%", "_", "%%", "x_l", "100%"):

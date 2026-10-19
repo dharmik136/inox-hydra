@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ChevronRight, Download } from "lucide-react";
 import {
   fetchAnalyticsKpis,
@@ -28,6 +28,19 @@ const METRICS = [
 
 type MetricKey = (typeof METRICS)[number]["key"];
 
+/** What the KPI route reports beyond the shared type: how much of each period was captured. */
+type Kpis = AnalyticsKpis & {
+  previous_days_counted?: number;
+  days_needed_to_compare?: number;
+  /** Fields built from a figure LinkedIn rounded, such as 1.2K. */
+  approximate?: string[];
+  /** Changes not shown because they are smaller than that rounding. */
+  within_rounding?: string[];
+};
+
+/** A day as the overview route returns it, with how precisely LinkedIn wrote its figures. */
+type Point = AnalyticsPoint & { precision?: string | null };
+
 /**
  * Analytics (blueprint section 13).
  *
@@ -38,23 +51,39 @@ type MetricKey = (typeof METRICS)[number]["key"];
 export function AnalyticsSurface() {
   const [range, setRange] = useState<AnalyticsRange>("30d");
   const [metric, setMetric] = useState<MetricKey>("impressions");
-  const [series, setSeries] = useState<AnalyticsPoint[] | null>(null);
-  const [kpis, setKpis] = useState<AnalyticsKpis | null>(null);
-  const [posts, setPosts] = useState<AnalyticsPost[]>([]);
+  const [series, setSeries] = useState<Point[] | null>(null);
+  const [kpis, setKpis] = useState<Kpis | null>(null);
+  const [posts, setPosts] = useState<AnalyticsPost[] | null>(null);
+  const [loadingRange, setLoadingRange] = useState(false);
   const [failed, setFailed] = useState(false);
 
+  // The posts do not depend on the range, so they are read once. They were
+  // read again on every range click, and at 2,000 posts the screen went back
+  // to LOADING ANALYTICS for five seconds each time.
   useEffect(() => {
     let live = true;
-    setSeries(null);
-    Promise.all([fetchAnalyticsOverview(range), fetchAnalyticsKpis(range), fetchAnalyticsPosts()])
-      .then(([overview, kpiData, postRows]) => {
+    fetchAnalyticsPosts()
+      .then((rows) => live && setPosts(rows))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // A range change keeps the current chart on screen until the new one
+  // arrives, rather than blanking the page.
+  useEffect(() => {
+    let live = true;
+    setLoadingRange(true);
+    Promise.all([fetchAnalyticsOverview(range), fetchAnalyticsKpis(range)])
+      .then(([overview, kpiData]) => {
         if (!live) return;
         setSeries(overview);
         setKpis(kpiData);
-        setPosts(postRows);
         setFailed(false);
       })
-      .catch(() => live && setFailed(true));
+      .catch(() => live && setFailed(true))
+      .finally(() => live && setLoadingRange(false));
     return () => {
       live = false;
     };
@@ -72,6 +101,17 @@ export function AnalyticsSurface() {
     const synthetic = series.filter((row) => row.source && row.source !== "observed").length;
     return { synthetic, total: series.length };
   }, [series]);
+
+  // Days whose plotted figure may be one LinkedIn abbreviated. Only a
+  // multiple of 100 from 1,000 up can have come from "1.2K".
+  const roundedDays = useMemo(
+    () =>
+      (series ?? []).filter((row) => {
+        const value = row[metric];
+        return row.precision === "rounded" && value !== null && value >= 1000 && value % 100 === 0;
+      }).length,
+    [series, metric],
+  );
 
   if (failed) return <Centered>ANALYTICS UNAVAILABLE</Centered>;
   if (!series) return <Centered>LOADING ANALYTICS</Centered>;
@@ -91,7 +131,7 @@ export function AnalyticsSurface() {
             <Download className="size-3" strokeWidth={2} aria-hidden="true" />
             CSV
           </a>
-        <div className="flex items-center gap-1" role="group" aria-label="Date range">
+        <div className="flex items-center gap-1" role="group" aria-label="Date range" aria-busy={loadingRange}>
           {RANGES.map((candidate) => (
             <button
               key={candidate}
@@ -160,6 +200,12 @@ export function AnalyticsSurface() {
           {/* A single series, so the heading names it and no legend box is drawn. */}
           <p className="studio-label mb-2">{metricLabel} per day</p>
           <TimeSeriesChart points={points} label={metricLabel} />
+          {roundedDays > 0 && (
+            <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
+              {roundedDays} OF THESE DAYS {roundedDays === 1 ? "WAS" : "WERE"} READ FROM A FIGURE LINKEDIN
+              ROUNDED, SUCH AS 1.2K, SO {roundedDays === 1 ? "ITS POINT IS" : "THEIR POINTS ARE"} APPROXIMATE.
+            </p>
+          )}
         </div>
 
         <Observations kpis={kpis} posts={posts} />
@@ -167,30 +213,44 @@ export function AnalyticsSurface() {
 
       <section className="mt-10">
         <p className="studio-label mb-3">Post comparison</p>
-        {posts.length === 0 ? (
+        {posts === null ? (
+          <p className="studio-meta text-ink-muted">READING YOUR POSTS</p>
+        ) : posts.length === 0 ? (
           <p className="studio-meta text-ink-muted">NO PUBLISHED POSTS TO COMPARE</p>
         ) : (
-          <table className="w-full text-left">
-            <thead>
-              <tr className="studio-label border-b border-edge">
-                <th scope="col" className="py-2 font-medium">Post</th>
-                <th scope="col" className="py-2 text-right font-medium">Impressions</th>
-                <th scope="col" className="py-2 text-right font-medium">Reactions</th>
-                <th scope="col" className="py-2 text-right font-medium">Comments</th>
-                <th scope="col" className="py-2 text-right font-medium">Rate</th>
-              </tr>
-            </thead>
-            <tbody>
-              {posts.map((post) => (
-                <PostRow key={post.id} post={post} />
-              ))}
-            </tbody>
-          </table>
+          <PostTable posts={posts} />
         )}
       </section>
     </div>
   );
 }
+
+/**
+ * The comparison table, drawn again only when the posts change.
+ *
+ * The posts do not depend on the range, and at 2,000 rows redrawing them on
+ * every range click took most of a second.
+ */
+const PostTable = memo(function PostTable({ posts }: { posts: AnalyticsPost[] }) {
+  return (
+    <table className="w-full text-left">
+      <thead>
+        <tr className="studio-label border-b border-edge">
+          <th scope="col" className="py-2 font-medium">Post</th>
+          <th scope="col" className="py-2 text-right font-medium">Impressions</th>
+          <th scope="col" className="py-2 text-right font-medium">Reactions</th>
+          <th scope="col" className="py-2 text-right font-medium">Comments</th>
+          <th scope="col" className="py-2 text-right font-medium">Rate</th>
+        </tr>
+      </thead>
+      <tbody>
+        {posts.map((post) => (
+          <PostRow key={post.id} post={post} />
+        ))}
+      </tbody>
+    </table>
+  );
+});
 
 /**
  * One post, expandable into the leads it actually produced.
@@ -298,13 +358,16 @@ function Cell({ value, suffix = "" }: { value: number | null; suffix?: string })
  * it does not run experiments, so it cannot separate correlation from cause and
  * must not write sentences that imply it did.
  */
-function Observations({ kpis, posts }: { kpis: AnalyticsKpis | null; posts: AnalyticsPost[] }) {
+function Observations({ kpis, posts }: { kpis: Kpis | null; posts: AnalyticsPost[] | null }) {
   if (!kpis) return null;
+  const coverage = coverageNote(kpis);
+  const approx = new Set(kpis.approximate ?? []);
+  const hidden = WHAT_CHANGED.filter((line) => (kpis.within_rounding ?? []).includes(line.key)).map((l) => l.label);
 
   const pct = (value: number | null) =>
     value === null ? null : `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 
-  const best = posts.reduce<AnalyticsPost | null>(
+  const best = (posts ?? []).reduce<AnalyticsPost | null>(
     (acc, post) =>
       post.engagement_rate !== null && (acc === null || post.engagement_rate > (acc.engagement_rate ?? -1))
         ? post
@@ -317,14 +380,33 @@ function Observations({ kpis, posts }: { kpis: AnalyticsKpis | null; posts: Anal
       <section>
         <p className="studio-label mb-1.5">What changed</p>
         <ul className="flex flex-col gap-1">
-          <Line label="Impressions" value={pct(kpis.impressions_delta_pct)} />
-          <Line label="Engagements" value={pct(kpis.engagements_delta_pct)} />
-          <Line label="Profile views" value={pct(kpis.profile_views_delta_pct)} />
+          <Line label="Impressions" value={pct(kpis.impressions_delta_pct)} approx={approx.has("impressions_delta_pct")} />
+          <Line label="Engagements" value={pct(kpis.engagements_delta_pct)} approx={approx.has("engagements_delta_pct")} />
+          <Line
+            label="Profile views"
+            value={pct(kpis.profile_views_delta_pct)}
+            approx={approx.has("profile_views_delta_pct")}
+          />
           <Line
             label="Followers"
             value={kpis.follower_growth === null ? null : `${kpis.follower_growth > 0 ? "+" : ""}${kpis.follower_growth}`}
+            approx={approx.has("follower_growth")}
           />
         </ul>
+        {/* LinkedIn writes some figures as 1.2K, which is anything from 1,150
+            to 1,249. A change built from one is approximate, and a change
+            smaller than that rounding is not shown at all. */}
+        {WHAT_CHANGED.some((line) => approx.has(line.key)) && (
+          <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
+            ~ MARKS A CHANGE BUILT FROM A FIGURE LINKEDIN ROUNDED, SUCH AS 1.2K, SO IT IS APPROXIMATE.
+          </p>
+        )}
+        {hidden.length > 0 && (
+          <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
+            {hidden.join(" AND ").toUpperCase()} MOVED LESS THAN LINKEDIN&rsquo;S ROUNDING OF THE FIGURES (1.2K IS
+            ANYTHING FROM 1,150 TO 1,249), SO NO CHANGE IS SHOWN.
+          </p>
+        )}
         {/* A day captured with the range selector on 7 or 28 days holds a
             multi-day total, so it is left out of every sum rather than counted
             as one day. Saying so explains a total that looks low. */}
@@ -335,6 +417,9 @@ function Observations({ kpis, posts }: { kpis: AnalyticsKpis | null; posts: Anal
             UNKNOWN NUMBER OF DAYS. SET LINKEDIN&rsquo;S RANGE TO 24 HOURS WHEN YOU OPEN ANALYTICS.
           </p>
         )}
+        {/* A change from a period that is mostly uncaptured would compare
+            thirty days with four, so it is not shown, and this says why. */}
+        {coverage && <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">{coverage}</p>}
       </section>
 
       <section>
@@ -346,7 +431,9 @@ function Observations({ kpis, posts }: { kpis: AnalyticsKpis | null; posts: Anal
 
       <section>
         <p className="studio-label mb-1.5">What to look at next</p>
-        {best ? (
+        {posts === null ? (
+          <p className="studio-meta text-ink-muted">READING YOUR POSTS</p>
+        ) : best ? (
           <p className="text-[12px] leading-relaxed text-ink-secondary">
             Your strongest post in this set ran at{" "}
             <span className="text-ink-primary">{best.engagement_rate?.toFixed(2)}%</span> engagement.
@@ -359,6 +446,19 @@ function Observations({ kpis, posts }: { kpis: AnalyticsKpis | null; posts: Anal
         )}
       </section>
     </aside>
+  );
+}
+
+/** Why Impressions and Engagements read "not measured", when the reason is too few captured days. */
+function coverageNote(kpis: Kpis): string | null {
+  const need = kpis.days_needed_to_compare;
+  if (need == null || kpis.days_counted == null) return null;
+  const now = kpis.days_counted;
+  const before = kpis.previous_days_counted ?? 0;
+  if (now >= need && before >= need) return null;
+  return (
+    `A CHANGE IS SHOWN ONLY WHEN THIS PERIOD AND THE ONE BEFORE IT EACH HAVE AT LEAST ${need} CAPTURED DAYS. ` +
+    `THIS ONE HAS ${now}, THE ONE BEFORE IT ${before}.`
   );
 }
 
@@ -381,11 +481,27 @@ function describeRelationship(kpis: AnalyticsKpis): string {
   return "Reach and engagements rose together, in step rather than one leading the other.";
 }
 
-function Line({ label, value }: { label: string; value: string | null }) {
+/** The "What changed" lines, by the KPI field each one shows. */
+const WHAT_CHANGED = [
+  { key: "impressions_delta_pct", label: "Impressions" },
+  { key: "engagements_delta_pct", label: "Engagements" },
+  { key: "profile_views_delta_pct", label: "Profile views" },
+  { key: "follower_growth", label: "Followers" },
+] as const;
+
+function Line({ label, value, approx = false }: { label: string; value: string | null; approx?: boolean }) {
   return (
     <li className="flex items-baseline justify-between gap-3">
       <span className="text-[11px] text-ink-muted">{label}</span>
-      <span className="studio-meta text-ink-secondary">{value ?? "not measured"}</span>
+      <span className="studio-meta text-ink-secondary">
+        {value !== null && approx && (
+          <>
+            <span aria-hidden="true">~</span>
+            <span className="sr-only">about </span>
+          </>
+        )}
+        {value ?? "not measured"}
+      </span>
     </li>
   );
 }

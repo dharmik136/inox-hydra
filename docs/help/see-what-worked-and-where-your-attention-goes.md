@@ -6,7 +6,7 @@ All three screens are built from your own imported history. Import your posts, c
 
 ## Posts
 
-The line under the title gives your usual: the median reactions, comments and impressions of your posts that are at least a week old.
+The line under the title gives your usual: the median reactions, comments and impressions of your posts that are at least a week old. If your week-old posts have no figures, as posts imported from LinkedIn's archive do not, the line says how many and asks you to run **Posts you wrote** in **Setup**, so the bridge reads them.
 
 Each post shows its date, opening, and the reactions, comments and impressions last read on it. For a post at least a week old, each figure is followed by how it compares with your usual, for example "55 REACTIONS (1.8x)". Green is at least 1.2 times your usual, orange is 0.8 times or less. A post under a week old is marked **STILL GROWING** and not compared, because its numbers are still arriving.
 
@@ -16,11 +16,15 @@ Click a post to see the people the studio captured engaging with it. Click a nam
 
 ## Patterns
 
-**Patterns** compares your posts that have a form with those that do not, by median reactions, across your posts at least a week old. Each line gives both medians and both counts, for example "MEDIAN 38 REACTIONS ON 7 POSTS WITH IT, 25 ON 11 WITHOUT".
+**Patterns** compares your posts that have a form with those that do not, by median reactions, across your posts at least a week old with reactions recorded. Posts with none recorded, such as those from LinkedIn's archive, are left out, and a note under the introduction says how many. Each line gives both medians and both counts, for example "MEDIAN 38 REACTIONS ON 7 POSTS WITH IT, 25 ON 11 WITHOUT".
 
 The forms compared are: a short opening line (60 characters or fewer), an opening that asks a question, an opening that starts with an emoji or symbol, an announcement ("excited", "thrilled", "happy to share", a new position), bold or styled Unicode letters, hashtags, and a post over 1,500 characters. A form is compared only when at least three posts have it and three do not; the others are listed as not enough posts.
 
 When most posts on one side are from a different year than the other, the line is moved under **Mixed up with when you posted**. Your account and audience were different then, so the difference may be about the time rather than the form.
+
+**Feature Contrasts**, further down, make the same comparisons with at least eight posts on each side. The same rule applies there: a contrast whose sides come from different years is shown muted, marked **MIXED UP WITH WHEN YOU POSTED, NOT A FINDING**, and is not passed to the copilot as evidence.
+
+**Which topics bring qualified pipeline** groups your posts by the words and hashtags that recur across your own posts, up to six of them; a post goes under the first it mentions, and one that mentions none goes under **Other posts**. It is a keyword grouping, not a reading of what a post means. For each topic it counts the people captured on its posts, each person once, how many of them are qualified, and **Share qualified**, the qualified share of those people, which reads "not measured" when nobody was captured. The Obsidian export's `Topics/` notes use the same grouping.
 
 These are differences between your posts, not causes. Treat a large one as something to try.
 
@@ -30,11 +34,13 @@ These are differences between your posts, not causes. Treat a large one as somet
 
 The line under the title counts your reactions and comments on other people's posts, and how many people and pages they were on.
 
+LinkedIn's archive names the post you reacted to or commented on, but not its author, so what the archive import brings in cannot be ranked by person. The screen says how many reactions and comments that is. Run **Posts you reacted to** and **Comments you left** in **Setup**: the bridge reads the authors and adds them to the same rows.
+
 | Section | What it shows |
 | --- | --- |
 | **Engaged back** | People you engage with who have also engaged with one of your posts |
 | **One-way** | People and pages you have engaged with at least three times who have not engaged with your posts |
-| **Most engaged with** | Everyone you engage with, most first, with your reactions, your comments, and how often they appeared on your posts |
+| **Most engaged with** | Everyone you engage with, most first, with your reactions, your comments, and on how many of your posts they appeared |
 
 **One-way** is not shown until the studio has read who engaged with at least half of your posts. Until then it says how many it has read. Opening your posts in the bridge browser, for example from **Posts**, is what reads them.
 

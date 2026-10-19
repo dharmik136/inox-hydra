@@ -14,6 +14,19 @@ import {
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 
+/** A contrast as the route returns it, including one whose sides come from different periods. */
+type Contrast = Omit<ContrastFinding, "status"> & {
+  status: string;
+  typical_year_with?: number;
+  typical_year_without?: number;
+};
+
+/** A topic as the attribution route returns it: people counted once, and a rate only when someone was captured. */
+type TopicRow = Omit<TopicAttributionInsights["topics"][number], "lead_conversion_rate"> & {
+  people_engaged?: number;
+  lead_conversion_rate: number | null;
+};
+
 /**
  * Patterns and cadence: what your own posts suggest, and how steadily you post.
  *
@@ -59,18 +72,35 @@ export function PatternsSurface() {
     );
   }
 
+  const unread = patterns as PatternsInsights & {
+    settled_without_reactions?: number;
+    settled_without_reactions_from_archive?: number;
+  };
   const clean = patterns.patterns.filter((p) => !p.different_period);
   const confounded = patterns.patterns.filter((p) => p.different_period);
 
   return (
-    <article className="mx-auto max-w-[80ch] px-8 py-8">
+    // Focusable, because nothing else on this screen is: the page scrolls in
+    // the shell's main region, and with no focusable element inside it a
+    // keyboard could not scroll it at all (axe scrollable-region-focusable).
+    <article className="mx-auto max-w-[80ch] px-8 py-8" tabIndex={0} aria-labelledby="patterns-title">
       <p className="studio-label">Patterns</p>
-      <h1 className="studio-title mt-2">What your own posts suggest</h1>
+      <h1 id="patterns-title" className="studio-title mt-2">What your own posts suggest</h1>
       <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
         Each line compares your posts that have a form with those that do not, by median reactions, across your{" "}
-        {patterns.posts_compared} posts at least a week old. These are differences between your posts, not causes: treat
-        a large one as something to try, not a rule.
+        {patterns.posts_compared} posts at least a week old with reactions recorded. These are differences between your
+        posts, not causes: treat a large one as something to try, not a rule.
       </p>
+      {/* Posts with no reactions recorded are left out because of that, not
+          because of their age, and the screen says which. */}
+      {(unread.settled_without_reactions ?? 0) > 0 && (
+        <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
+          {unread.settled_without_reactions} MORE {unread.settled_without_reactions === 1 ? "POST IS" : "POSTS ARE"} LEFT
+          OUT: NO REACTIONS ARE RECORDED FOR {unread.settled_without_reactions === 1 ? "IT" : "THEM"}
+          {(unread.settled_without_reactions_from_archive ?? 0) > 0 ? ", AS LINKEDIN\u2019S ARCHIVE DOES NOT INCLUDE THEM" : ""}.
+          RUN &ldquo;POSTS YOU WROTE&rdquo; IN SETUP SO THE BRIDGE READS THEM.
+        </p>
+      )}
 
       <section className="mt-6">
         <p className="studio-label mb-2">Went with more or fewer reactions</p>
@@ -80,8 +110,10 @@ export function PatternsSurface() {
               <PatternRow key={p.key} pattern={p} />
             ))}
           </ul>
-        ) : (
+        ) : confounded.length ? (
           <Note>NO PATTERN YET HAS POSTS FROM THE SAME PERIOD ON BOTH SIDES. THE LINES BELOW MAY BE ABOUT WHEN YOU POSTED.</Note>
+        ) : (
+          <Note>NO FORM HAS ENOUGH POSTS WITH REACTIONS RECORDED ON BOTH SIDES YET.</Note>
         )}
       </section>
 
@@ -151,11 +183,12 @@ export function PatternsSurface() {
           <p className="studio-label">Feature Contrasts</p>
           <h2 className="studio-title mt-2 text-[15px]">Binary feature comparisons</h2>
           <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
-            Compares settled posts older than 7 days across structural forms.
-            Requires at least {contrasts.min_arm_size} posts per arm before concluding.
+            Compares settled posts older than 7 days across structural forms. A difference counts only with at least{" "}
+            {contrasts.min_arm_size} posts on each side, from the same period; one whose sides come from different years
+            is shown muted and is not passed to the copilot.
           </p>
           <ul className="mt-4 flex flex-col divide-y divide-edge border-y border-edge">
-            {contrasts.contrasts.map((c) => (
+            {(contrasts.contrasts as Contrast[]).map((c) => (
               <ContrastRow key={c.key} contrast={c} />
             ))}
           </ul>
@@ -193,8 +226,11 @@ function PatternRow({ pattern, muted = false }: { pattern: PatternFinding; muted
   );
 }
 
-function ContrastRow({ contrast }: { contrast: ContrastFinding }) {
+function ContrastRow({ contrast }: { contrast: Contrast }) {
   const isConclusive = contrast.status === "conclusive";
+  // Enough posts on both sides, but from different years, as under "Mixed up
+  // with when you posted" above. It was coloured as a finding here.
+  const isMixed = contrast.status === "different_period";
   const ratio = contrast.ratio ?? null;
 
   return (
@@ -212,14 +248,18 @@ function ContrastRow({ contrast }: { contrast: ContrastFinding }) {
           >
             {ratio.toFixed(2)}x
           </p>
+        ) : isMixed && ratio !== null ? (
+          <p className="studio-meta shrink-0 text-[11px] tabular-nums text-ink-muted">{ratio.toFixed(2)}x</p>
         ) : (
           <span className="studio-meta shrink-0 text-[10px] text-ink-muted">ABSTAIN (N &lt; 8)</span>
         )}
       </div>
       <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
-        {isConclusive
+        {isConclusive || isMixed
           ? `MEDIAN ${contrast.median_with} REACTIONS ON ${contrast.n_with} POSTS WITH IT, ${contrast.median_without} ON ${contrast.n_without} WITHOUT`
           : `CURRENT: ${contrast.n_with} WITH, ${contrast.n_without} WITHOUT (NEEDS AT LEAST ${contrast.min_required} PER ARM)`}
+        {isMixed &&
+          ` · MOSTLY ${contrast.typical_year_with} AGAINST MOSTLY ${contrast.typical_year_without}: MIXED UP WITH WHEN YOU POSTED, NOT A FINDING`}
       </p>
     </li>
   );
@@ -243,31 +283,43 @@ function TopicAttributionSection({ attribution }: { attribution: TopicAttributio
       <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
         {attribution.summary_sentence}
       </p>
-      <div className="mt-4 overflow-x-auto border-y border-edge">
+      {/* The topics are words, not meanings, and the reader is told so. They
+          were four fixed software buckets, so a bakery's posts all landed in
+          one of them. */}
+      <p className="mt-1 text-[12px] leading-snug text-ink-muted">
+        Topics are the {(attribution as { grouping?: string }).grouping ?? "words that recur across your own posts"}.
+        A post goes under the first of them it mentions, and one that mentions none goes under Other posts. This is a
+        keyword grouping, not a reading of what a post means.
+      </p>
+      {/* Scrolls sideways at phone width, so it takes focus to scroll by keyboard. */}
+      <div className="mt-4 overflow-x-auto border-y border-edge" tabIndex={0} role="region" aria-label="Topics">
         <table className="w-full text-left text-[12px]">
           <thead>
             <tr className="border-b border-edge text-[10px] text-ink-muted uppercase">
               <th className="py-2 pr-4 font-normal">Topic</th>
               <th className="py-2 px-3 text-right font-normal">Posts</th>
               <th className="py-2 px-3 text-right font-normal">Reactions</th>
-              <th className="py-2 px-3 text-right font-normal">Qualified Leads</th>
-              <th className="py-2 pl-3 text-right font-normal">Conversion Rate</th>
+              <th className="py-2 px-3 text-right font-normal">People captured</th>
+              <th className="py-2 px-3 text-right font-normal">Qualified</th>
+              <th className="py-2 pl-3 text-right font-normal">Share qualified</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-edge">
-            {attribution.topics.map((t) => {
+            {(attribution.topics as TopicRow[]).map((t) => {
               const count = t.post_count ?? t.posts_count ?? 0;
-              const rate = t.lead_conversion_rate != null
-                ? (t.lead_conversion_rate * 100).toFixed(1)
-                : ((t.qualified_leads / Math.max(1, count)) * 100).toFixed(1);
+              // Qualified people over the people captured on the topic's posts,
+              // so it cannot pass 100%. It was qualified leads over posts, which
+              // read 600% for three people who each commented and reacted.
+              const rate = t.lead_conversion_rate;
               return (
                 <tr key={t.topic} className="py-2">
                   <td className="py-2.5 pr-4 text-ink-primary font-medium">{t.topic}</td>
                   <td className="py-2.5 px-3 text-right tabular-nums text-ink-secondary">{count}</td>
                   <td className="py-2.5 px-3 text-right tabular-nums text-ink-secondary">{t.total_reactions}</td>
+                  <td className="py-2.5 px-3 text-right tabular-nums text-ink-secondary">{t.people_engaged ?? 0}</td>
                   <td className="py-2.5 px-3 text-right tabular-nums text-ink-primary font-semibold">{t.qualified_leads}</td>
-                  <td className="py-2.5 pl-3 text-right tabular-nums text-signal-green-text font-medium">
-                    {rate}%
+                  <td className="py-2.5 pl-3 text-right tabular-nums text-ink-secondary">
+                    {rate == null ? <span className="text-ink-muted">not measured</span> : `${(rate * 100).toFixed(0)}%`}
                   </td>
                 </tr>
               );
@@ -285,7 +337,7 @@ function MonthStrip({ months }: { months: { month: string; posts: number }[] }) 
   return (
     <div className="mt-6">
       <p className="studio-meta mb-1.5 text-[10px] text-ink-muted">POSTS BY MONTH, {months[0].month} TO {months[months.length - 1].month}</p>
-      <div className="flex h-16 items-end gap-px overflow-x-auto" role="img" aria-label="Posts per month">
+      <div className="flex h-16 items-end gap-px overflow-x-auto" role="img" aria-label="Posts per month" tabIndex={0}>
         {months.map((m) => (
           <div
             key={m.month}

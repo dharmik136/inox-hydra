@@ -18,13 +18,20 @@ from studio.backend.database import get_db
 
 
 def test_classify_post_topic():
-    """Verifies deterministic regex classification of post topics."""
-    assert classify_post_topic("How we scaled our Postgres and SQLite WAL architecture") == "Architecture & Systems"
-    assert classify_post_topic("Deploying local LLMs and multi-agent swarms") == "AI & Machine Learning"
-    assert classify_post_topic("Why engineering culture and senior hiring matter") == "Leadership & Hiring"
-    assert classify_post_topic("B2B SaaS product pricing and retention metrics") == "Product & Strategy"
-    assert classify_post_topic("A brief thought on daily notes") == "Practitioner Insights"
-    assert classify_post_topic(None) == "General Practitioner"
+    """A post goes under the first of the creator's own recurring words it mentions."""
+    from studio.backend.evidence_briefing import derive_topic_vocabulary
+    history = [
+        "How we scaled our Postgres setup",
+        "Postgres vacuum, explained",
+        "Hiring a senior engineer",
+        "What our hiring loop asks",
+        "A brief thought on daily notes",
+    ]
+    vocabulary = derive_topic_vocabulary(history)
+    assert classify_post_topic("Postgres on a laptop", vocabulary) == "Postgres"
+    assert classify_post_topic("Hiring in a downturn", vocabulary) == "Hiring"
+    assert classify_post_topic("A brief thought on daily notes", vocabulary) == "Other posts"
+    assert classify_post_topic(None, vocabulary) == "Other posts"
 
 
 def test_topic_attribution_cold_start():

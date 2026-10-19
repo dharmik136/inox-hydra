@@ -124,7 +124,8 @@ def test_posts_people_and_topics_link_to_each_other(creator, tmp_path):
     assert "[[People/Grace Hopper|Grace Hopper]] comment" in post
     assert "This matches what we saw." in post
     assert "[[People/Alan Turing|Alan Turing]] like" in post
-    assert "[[Topics/AI & Machine Learning|AI & Machine Learning]]" in post
+    # Two posts share no recurring word, so both are under "Other posts".
+    assert "[[Topics/Other posts|Other posts]]" in post
 
     grace = _read(root, "People/Grace Hopper.md")
     assert "Our AI agent pipeline" in grace, "a person's note does not link the post they engaged with"
@@ -132,7 +133,7 @@ def test_posts_people_and_topics_link_to_each_other(creator, tmp_path):
     assert "Hiring" in grace, "an interaction recorded against a ugcPost URN lost its post"
     assert "New Lead to Connected" in grace
 
-    topic = _read(root, "Topics/AI & Machine Learning.md")
+    topic = _read(root, "Topics/Other posts.md")
     assert "[[Posts/2026-09-30 Our AI agent pipeline" in topic
 
     outbound = _read(root, "Outbound/Grace Hopper.md")

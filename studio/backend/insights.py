@@ -25,9 +25,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import onboarding
+    from . import contrast_engine, onboarding
     from .database import get_db
 except ImportError:
+    import contrast_engine
     import onboarding
     from database import get_db
 
@@ -51,7 +52,7 @@ def posts_overview() -> Dict[str, Any]:
     conn = get_db()
     try:
         posts = [dict(r) for r in conn.execute(
-            "SELECT activity_urn, text, published_at, reactions, comments, reposts, impressions "
+            "SELECT activity_urn, text, published_at, published_at_source, reactions, comments, reposts, impressions "
             "FROM own_posts ORDER BY published_at DESC")]
 
         # Who engaged with each post: leads whose interactions name it.
@@ -72,6 +73,11 @@ def posts_overview() -> Dict[str, Any]:
         return (statistics.median(values), len(values)) if len(values) >= MIN_FOR_MEDIAN else (None, len(values))
 
     usual = {m: median_of(m) for m in ("reactions", "comments", "impressions")}
+
+    # Settled posts with no figures at all, usually from LinkedIn's archive,
+    # which carries none. Counted so the screen can say why there is no
+    # usual, rather than blaming the age of posts that are years old.
+    unmeasured = [p for p in settled if all(p[m] is None for m in ("reactions", "comments", "impressions"))]
 
     out = []
     for post in posts:
@@ -119,6 +125,8 @@ def posts_overview() -> Dict[str, Any]:
         "usual": {m: {"median": v[0], "posts": v[1]} for m, v in usual.items()},
         "best": [p["activity_urn"] for p in ranked[:2]],
         "settled_after_days": SETTLED_AFTER_HOURS // 24,
+        "settled_without_figures": len(unmeasured),
+        "settled_without_figures_from_archive": sum(1 for p in unmeasured if p["published_at_source"] == "archive"),
     }
 
 
@@ -132,14 +140,15 @@ def outbound_overview() -> Dict[str, Any]:
         rows = [dict(r) for r in conn.execute(
             "SELECT target_author, kind, reaction_kind, my_text, last_seen_at FROM outbound_engagements")]
         own_ids = onboarding._own_activity_ids(conn)
-        # People who engaged with your posts, by display name.
-        engaged_back: Dict[str, int] = {}
+        # People who engaged with your posts, by display name, and on how
+        # many of them: a comment and a like on one post is one post, not two.
+        engaged_back: Dict[str, set] = {}
         for row in conn.execute(
             "SELECT COALESCE(l.full_name, l.name) AS name, i.post_urn FROM lead_interactions i "
             "JOIN leads l ON l.id = i.lead_id WHERE i.post_urn IS NOT NULL"):
-            if onboarding._activity_id(row["post_urn"]) in own_ids:
-                key = _name_key(row["name"])
-                engaged_back[key] = engaged_back.get(key, 0) + 1
+            post = onboarding._activity_id(row["post_urn"])
+            if post in own_ids:
+                engaged_back.setdefault(_name_key(row["name"]), set()).add(post)
     finally:
         conn.close()
 
@@ -158,7 +167,7 @@ def outbound_overview() -> Dict[str, Any]:
 
     for key, entry in authors.items():
         entry["total"] = entry["reactions"] + entry["comments"]
-        entry["engaged_back"] = engaged_back.get(key, 0)
+        entry["engaged_back"] = len(engaged_back.get(key, ()))
 
     ranked = sorted(authors.values(), key=lambda a: (a["total"], a["comments"]), reverse=True)
 
@@ -261,9 +270,14 @@ def patterns_overview() -> Dict[str, Any]:
     try:
         posts = [dict(r) for r in conn.execute(
             "SELECT text, published_at, reactions FROM own_posts WHERE reactions IS NOT NULL AND text IS NOT NULL")]
+        # Left out because no reactions were ever read for them, as for every
+        # post imported from LinkedIn's archive. Not because of their age.
+        unread = [dict(r) for r in conn.execute(
+            "SELECT published_at, published_at_source FROM own_posts WHERE reactions IS NULL")]
     finally:
         conn.close()
     settled = [p for p in posts if (_age_hours(p["published_at"]) or 0) >= SETTLED_AFTER_HOURS]
+    unread = [p for p in unread if (_age_hours(p["published_at"]) or 0) >= SETTLED_AFTER_HOURS]
 
     found, too_few = [], []
     for key, label, test in PATTERNS:
@@ -283,16 +297,15 @@ def patterns_overview() -> Dict[str, Any]:
         # hashtags went with 2.7x the reactions, and the hashtag posts were
         # mostly from two years earlier, when the account and its audience
         # were different. Flagged rather than hidden.
-        gap_days = abs(statistics.median(with_dates) - statistics.median(without_dates)) / 86400.0
-        entry["different_period"] = gap_days > 270
-        entry["typical_year_with"] = datetime.fromtimestamp(statistics.median(with_dates)).year
-        entry["typical_year_without"] = datetime.fromtimestamp(statistics.median(without_dates)).year
+        entry.update(contrast_engine.different_periods(with_dates, without_dates))
         found.append(entry)
 
     found.sort(key=lambda e: abs((e["ratio"] or 1) - 1), reverse=True)
     return {
         "status": "success",
         "posts_compared": len(settled),
+        "settled_without_reactions": len(unread),
+        "settled_without_reactions_from_archive": sum(1 for p in unread if p["published_at_source"] == "archive"),
         "metric": "reactions",
         "patterns": found,
         "not_enough_posts": too_few,
