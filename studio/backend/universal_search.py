@@ -12,8 +12,9 @@ This module answers the part that lives in SQLite. It is deliberately plain:
 
 - Every query runs locally, against this machine's database, with bound
   parameters. Nothing here makes a request anywhere.
-- Matching is a case insensitive substring test on every word of the query,
-  all of which must appear. The data is one creator's, measured in hundreds
+- Matching is a substring test on every word of the query, all of which must
+  appear, with case and accents folded on both sides, so Émile, ÉMILE and
+  emile are one word. The data is one creator's, measured in hundreds
   of rows, and a LIKE over that is fast enough that an index would be
   machinery for its own sake.
 - A result says where it opens. The interface decides what opening means for
@@ -26,6 +27,7 @@ what those surfaces render.
 """
 
 import re
+import unicodedata
 from typing import Any, Dict, List, Optional
 
 try:
@@ -38,11 +40,44 @@ MAX_TERMS = 8
 SNIPPET_RADIUS = 70
 
 
+# Quotes around a word are how people type a name, not part of it. "Asha"
+# found nothing, because no lead's name contains a quotation mark.
+QUOTES = "\"'`\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f\u00ab\u00bb"
+
+
+def fold(text: Any) -> str:
+    """
+    Text with case and accents folded, for comparing and nothing else.
+
+    SQLite's LOWER folds ASCII only, while the query was lowercased by Python,
+    so "Émile" could never match a stored "Émile": one side said "émile" and
+    the other still "Émile". Both sides now go through this, and accents are
+    dropped too, so a creator who types "Olander" finds Ölander.
+    """
+    decomposed = unicodedata.normalize("NFKD", str(text or ""))
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch)).casefold()
+
+
+def _folded_with_offsets(text: str):
+    """fold(text), and for each folded character the index it came from in text."""
+    folded, offsets = [], []
+    for index, ch in enumerate(text):
+        piece = fold(ch)
+        folded.append(piece)
+        offsets.extend([index] * len(piece))
+    return "".join(folded), offsets
+
+
 def terms_of(query: Any) -> List[str]:
-    """The words of a query, lowercased, bounded in count and length."""
-    text = str(query or "")[:MAX_QUERY_LENGTH].strip().lower()
-    words = [word for word in re.split(r"\s+", text) if word]
-    return words[:MAX_TERMS]
+    """The words of a query, lowercased and unquoted, bounded in count and length."""
+    text = str(query or "")[:MAX_QUERY_LENGTH].strip().casefold()
+    words = [word.strip(QUOTES) for word in re.split(r"\s+", text)]
+    return [word for word in words if word][:MAX_TERMS]
+
+
+def _register_fold(conn) -> None:
+    """Makes fold available to SQL on this connection as inox_fold()."""
+    conn.create_function("inox_fold", 1, fold, deterministic=True)
 
 
 def _like(term: str) -> str:
@@ -62,8 +97,8 @@ def _all_terms_in(columns: List[str], terms: List[str]):
     clauses, params = [], []
     haystack = " || ' ' || ".join(f"COALESCE({column}, '')" for column in columns)
     for term in terms:
-        clauses.append(f"LOWER({haystack}) LIKE ? ESCAPE '\\'")
-        params.append(_like(term))
+        clauses.append(f"inox_fold({haystack}) LIKE ? ESCAPE '\\'")
+        params.append(_like(fold(term)))
     return " AND ".join(clauses), params
 
 
@@ -77,8 +112,9 @@ def snippet_around(text: str, terms: List[str], radius: int = SNIPPET_RADIUS) ->
     flat = re.sub(r"\s+", " ", str(text or "")).strip()
     if not flat:
         return ""
-    lower = flat.lower()
-    positions = [lower.find(term) for term in terms if lower.find(term) != -1]
+    folded, offsets = _folded_with_offsets(flat)
+    found = [folded.find(fold(term)) for term in terms]
+    positions = [offsets[at] for at in found if at != -1]
     if not positions:
         return flat[: radius * 2] + ("..." if len(flat) > radius * 2 else "")
     start = max(0, min(positions) - radius)
@@ -117,6 +153,7 @@ def search_posts(terms: List[str], limit: int = 6, conn=None) -> List[Dict[str, 
     own = conn is None
     conn = conn or get_db()
     try:
+        _register_fold(conn)
         where, params = _all_terms_in(["content", "tags"], terms)
         rows = conn.execute(
             f"""
@@ -164,6 +201,7 @@ def search_leads(terms: List[str], limit: int = 6, conn=None) -> List[Dict[str, 
     own = conn is None
     conn = conn or get_db()
     try:
+        _register_fold(conn)
         where, params = _all_terms_in(
             ["l.full_name", "l.name", "l.company", "l.headline", "l.notes", "i.comment_text"], terms
         )
@@ -184,7 +222,7 @@ def search_leads(terms: List[str], limit: int = 6, conn=None) -> List[Dict[str, 
         for row in rows:
             who = row["full_name"] or row["name"] or "Unnamed lead"
             about = " ".join(part for part in (row["headline"], row["company"]) if part)
-            profile_hit = all(term in f"{who} {about}".lower() for term in terms)
+            profile_hit = all(fold(term) in fold(f"{who} {about}") for term in terms)
             said = row["comments"] or ""
             results.append({
                 "kind": "lead",

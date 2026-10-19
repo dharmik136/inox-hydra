@@ -303,7 +303,10 @@ def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connecti
     if query is None or not isinstance(query, str):
         return []
 
-    clean_q = re.sub(r'[^a-zA-Z0-9_\s]', ' ', query).strip()[:MAX_DOCS_SEARCH_QUERY_LENGTH]
+    # Letters are letters in any alphabet. This kept ASCII only, so "Émile"
+    # was searched as "mile" and the palette offered whatever mentioned a
+    # mile. The index's unicode61 tokenizer already folds case and accents.
+    clean_q = re.sub(r'[^\w\s]', ' ', query).strip()[:MAX_DOCS_SEARCH_QUERY_LENGTH]
     if not clean_q:
         return []
 
