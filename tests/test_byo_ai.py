@@ -53,6 +53,27 @@ from studio.backend.agno_agentos.contracts import (
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def offline(monkeypatch):
+    """
+    Name resolution is refused for every host that is not loopback.
+
+    The rejection tests below verified fake keys against the real Gemini and
+    OpenAI endpoints. They fail the same way offline, and nothing here may
+    contact a provider.
+    """
+    import socket
+
+    real_getaddrinfo = socket.getaddrinfo
+
+    def refuse(host, *args, **kwargs):
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return real_getaddrinfo(host, *args, **kwargs)
+        raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+
+    monkeypatch.setattr(socket, "getaddrinfo", refuse)
+
+
 def test_supported_providers_registry():
     """Validates that all key providers are registered with valid configurations."""
     expected_providers = [
@@ -107,7 +128,7 @@ def test_verify_ai_connection_rejection():
     # Test invalid key against Gemini
     success, msg, latency = verify_ai_connection("gemini", api_key="AIzaSy_fake_test_key_12345", timeout=2.0)
     assert success is False
-    assert ("HTTP" in msg or "error" in msg.lower() or "unreachable" in msg.lower())
+    assert ("HTTP" in msg or "error" in msg.lower() or "could not be reached" in msg.lower())
 
     # Test invalid key against OpenAI
     success_oa, msg_oa, _ = verify_ai_connection("openai", api_key="sk-fake-openai-test-key", timeout=2.0)

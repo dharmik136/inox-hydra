@@ -47,7 +47,7 @@ Once connected, this is what reaches the provider:
 
 The **Prompt** tab also lists Repurposing and Tailored DMs, but no control in this interface repurposes text, and message drafts never use the model.
 
-If a provider call fails, Re-Hook and Command fall back to local output. Your text is not passed to any other provider.
+If a provider call fails, Re-Hook and Command say so and give the provider's reason, such as a refused key or an account out of credit, and the **Prompt** tab shows the last failure until a request succeeds. Nothing is replaced with local templates, and your text is not passed to any other provider. A request that has not finished after 40 seconds is stopped. While one Re-Hook is running, pressing it again does nothing.
 
 If no key is saved in the studio, which is always the case for `ollama`, it uses `OPENAI_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, or `GROQ_API_KEY` from your environment, in that order, and that provider replaces the one you chose. Starting the studio with `INOX_ALLOW_MODEL_EGRESS=0` or `INOX_NO_EGRESS=1` refuses all model traffic.
 
@@ -73,7 +73,7 @@ The interface has no model or base URL field. Use the command line:
 
 `python studio_cli.py ai configure --provider ollama --model mistral:latest --base-url http://localhost:11434/v1`
 
-A saved base URL applies only to `ollama` and `custom_openai`. It must use https unless the host is `localhost` or a loopback or private IP address; otherwise the default address is saved in its place, with no warning. For other providers the saved setup ignores it. The test request always goes to the address you typed, with your key, even when the saved setup then ignores or replaces it. `ai list-providers`, `ai status` and `ai test` show the options, the saved setup, and a live check of the saved setup.
+A saved base URL applies only to `ollama` and `custom_openai`. It must use https unless the host is `localhost` or a loopback or private IP address; otherwise the default address is saved in its place, with no warning. For other providers the saved setup ignores it. The test request goes to the same address the saved setup will use, so a passing test is a test of what is saved. `ai list-providers`, `ai status` and `ai test` show the options, the saved setup, and a live check of the saved setup.
 
 ## If it does not work
 

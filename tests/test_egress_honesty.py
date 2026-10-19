@@ -107,18 +107,26 @@ def test_the_agent_records_a_refusal_in_provenance(monkeypatch):
     )
 
 
-def test_an_ordinary_provider_error_is_still_swallowed(monkeypatch):
+def test_an_ordinary_provider_error_is_a_readable_error_not_a_refusal(monkeypatch):
     """
-    Only the refusal changed. A network failure still degrades to the
-    deterministic path rather than raising, because that was never dishonest:
-    the model genuinely produced nothing.
+    A network failure used to be swallowed into "", and every caller then
+    served its templates as the provider's answer. It is now a ProviderError
+    saying what happened, still distinct from an egress refusal. [WRITE-12]
+
+    A closed loopback port, so the failure is real and nothing leaves the
+    machine.
     """
+    from agno_agentos.model_gateway import ProviderError
+
     monkeypatch.delenv("INOX_NO_EGRESS", raising=False)
     config = AIProviderConfig(
-        provider="gemini", api_key="notarealkey", model="gemini-2.5-flash",
+        provider="custom_openai", api_key="notarealkey", model="m",
         base_url="http://127.0.0.1:59998/v1", status="connected",
     )
-    assert execute_llm_completion(config, "write me a hook") == ""
+    with pytest.raises(ProviderError) as caught:
+        execute_llm_completion(config, "write me a hook")
+    assert not isinstance(caught.value, egress_module.EgressRefused)
+    assert "could not be reached" in caught.value.message
 
 
 # ---------------------------------------------------------------------------
@@ -148,10 +156,24 @@ def test_a_configured_provider_is_the_only_one_consulted(monkeypatch):
     With a Gemini key present in the environment and a different provider
     configured, the Gemini key must not be reached for.
     """
+    import socket
+
     import repurposer
+    from agno_agentos.model_gateway import ProviderError
 
     monkeypatch.setenv("GEMINI_API_KEY", "notarealkey_but_long_enough_to_pass")
     monkeypatch.delenv("INOX_NO_EGRESS", raising=False)
+
+    # A named provider ignores the base URL below and dials its own host, so
+    # name resolution is refused instead: the call fails as it would offline.
+    real_getaddrinfo = socket.getaddrinfo
+
+    def offline(host, *args, **kwargs):
+        if host in ("127.0.0.1", "localhost", "::1"):
+            return real_getaddrinfo(host, *args, **kwargs)
+        raise socket.gaierror(socket.EAI_NONAME, "Name or service not known")
+
+    monkeypatch.setattr(socket, "getaddrinfo", offline)
 
     reached = []
     monkeypatch.setattr(repurposer, "call_gemini_api",
@@ -163,15 +185,14 @@ def test_a_configured_provider_is_the_only_one_consulted(monkeypatch):
         base_url="http://127.0.0.1:59997/v1", status="connected",
     ))
 
-    result = repurposer.repurpose_content("a thought worth posting")
+    # The failure is the creator's to read now, not a list of templates.
+    with pytest.raises(ProviderError):
+        repurposer.repurpose_content("a thought worth posting")
 
     assert reached == [], (
         "an Anthropic user's content was sent to Google because a Gemini key "
         "was in the environment"
     )
-    # repurpose_content returns a list of frameworks, so the assertion is on
-    # the call never happening rather than on a returned engine label.
-    assert isinstance(result, list)
 
 
 # ---------------------------------------------------------------------------

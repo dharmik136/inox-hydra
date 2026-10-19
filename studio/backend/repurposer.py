@@ -13,15 +13,40 @@ try:
     from .database import get_db
     from .formatters import to_sans_bold, clean_text_formatting
     from .agno_agentos.model_gateway import get_current_ai_config, execute_llm_completion, AIProviderConfig
+    from .agno_agentos.model_gateway import ProviderError, last_provider_failure
 except ImportError:
     try:
         from database import get_db
         from formatters import to_sans_bold, clean_text_formatting
         from agno_agentos.model_gateway import get_current_ai_config, execute_llm_completion, AIProviderConfig
+        from agno_agentos.model_gateway import ProviderError, last_provider_failure
     except ImportError:
         get_current_ai_config = None
         execute_llm_completion = None
         AIProviderConfig = None
+        ProviderError = RuntimeError
+        last_provider_failure = None
+
+
+def _ask_provider(cfg, prompt: str, system_prompt: str, max_tokens: int) -> str:
+    """
+    The configured provider's answer.
+
+    A failure is raised for the creator to read, as a ProviderError the route
+    answers with. It used to be printed and swallowed, and the caller then
+    served its templates as a success under a banner that said the text had
+    gone to the provider. A refusal by egress policy is said the same way.
+    """
+    try:
+        return execute_llm_completion(cfg, prompt, system_prompt=system_prompt, max_tokens=max_tokens) or ""
+    except _egress.EgressRefused as refused:
+        raise ProviderError(f"Model requests are off on this machine. {refused}", status_code=503) from None
+
+
+def _unreadable(cfg, what: str):
+    return ProviderError(
+        f"{cfg.provider} ({cfg.model}) answered, but not with {what} the studio could read. Nothing was changed."
+    )
 
 
 def _voice() -> str:
@@ -151,11 +176,17 @@ def get_ai_status() -> Dict[str, Any]:
         model_name = "gemini-2.5-flash" if has_key else "antigravity-local"
         active_mode = "Gemini 2.5 Flash (Cloud Native)" if has_key else "Antigravity Local Engine (Deterministic Zero-Egress)"
 
+    # The last provider request that failed, until one succeeds. Read by the
+    # Prompt tab, so a key that stopped working is visible there too.
+    failure = last_provider_failure() if (has_key and last_provider_failure) else {}
+
     return {
         "provider": provider_name,
         "has_api_key": has_key,
         "model": model_name,
         "active_mode": active_mode,
+        "last_error": failure.get("message"),
+        "last_error_at": failure.get("at"),
         "byo_ai_enabled": True,
         "antigravity_pair_programming": True,
         "capabilities": [
@@ -213,12 +244,10 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
     if get_current_ai_config and execute_llm_completion:
         cfg = get_current_ai_config()
         if cfg.is_configured:
-            try:
-                ai_out = execute_llm_completion(cfg, full_prompt, system_prompt=system_prompt, max_tokens=1500)
-                if ai_out:
-                    engine_name = f"{cfg.provider.capitalize()} ({cfg.model})"
-            except Exception as e:
-                print(f"[BYO-AI] Completion failed on {cfg.provider}: {_egress.redact(e)}")
+            ai_out = _ask_provider(cfg, full_prompt, system_prompt, 1500)
+            if not ai_out.strip():
+                raise _unreadable(cfg, "an answer")
+            engine_name = f"{cfg.provider.capitalize()} ({cfg.model})"
 
     # No silent fallback to Google.
     #
@@ -230,10 +259,9 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
     # left in settings from an earlier experiment. They were never asked, and
     # the response was labelled "Gemini 2.5 Flash" only after the fact.
     #
-    # A provider that fails now falls through to the deterministic engine
-    # below, which is the honest answer: this studio could not reach the model
-    # you chose, so here is output that needed no model. Choosing a provider
-    # has to mean something.
+    # A provider that fails is now an error the creator reads, raised above.
+    # Falling through to the deterministic engine below served a template as
+    # the provider's answer, under a banner saying it had been sent.
 
     if ai_out:
         cleaned = clean_text_formatting(ai_out.strip())
@@ -286,9 +314,11 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
 
     # Attempt AI generation if provider configured
     resp = None
+    configured = None
     if get_current_ai_config and execute_llm_completion:
         cfg = get_current_ai_config()
         if cfg.is_configured:
+            configured = cfg
             prompt = (
                 f"Generate exactly 10 distinct, high-converting LinkedIn hooks for the topic: '{subject_clean}'.\n"
                 "Archetypes required: Pattern Interrupt, Concrete Metric, Hard Lesson, Counter-Intuitive, "
@@ -298,10 +328,7 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
                 "- First line must be under 120 characters so it does not truncate before the 'see more' button on mobile.\n"
                 "- Return strictly a valid JSON array of objects with keys: 'archetype', 'hook'. Do not enclose in markdown code blocks."
             ) + _voice()
-            try:
-                resp = execute_llm_completion(cfg, prompt, system_prompt="You output ONLY raw JSON.", max_tokens=1000)
-            except Exception as e:
-                print(f"[BYO-AI Hooks] Failed on {cfg.provider}: {_egress.redact(e)}")
+            resp = _ask_provider(cfg, prompt, "You output ONLY raw JSON.", 1000)
 
     # No silent fallback to Google. See the note in repurpose_content: the
     # Gemini key is read from the environment and from a settings row
@@ -336,7 +363,11 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
                     })
                 return out
         except Exception as e:
-            print(f"[BYO-AI Hooks] Fallback to deterministic: {e}")
+            print(f"[BYO-AI Hooks] Unreadable answer: {_egress.redact(e)}")
+    if configured is not None:
+        # The provider was asked and gave nothing usable. Saying so, rather
+        # than serving the templates below as though it had written them.
+        raise _unreadable(configured, "hooks")
 
     # Deterministic Archetype Templates
     templates = [
@@ -521,13 +552,12 @@ def repurpose_content(raw_text: Optional[str]) -> List[Dict[str, str]]:
         "- Return strictly a valid JSON array of objects with keys: 'framework', 'content'. No markdown code blocks."
     ) + _voice()
 
+    configured = None
     if get_current_ai_config and execute_llm_completion:
         cfg = get_current_ai_config()
         if cfg.is_configured:
-            try:
-                resp = execute_llm_completion(cfg, prompt, system_prompt="You output ONLY raw JSON.", max_tokens=1500)
-            except Exception as e:
-                print(f"[BYO-AI Repurpose] Failed on {cfg.provider}: {_egress.redact(e)}")
+            configured = cfg
+            resp = _ask_provider(cfg, prompt, "You output ONLY raw JSON.", 1500)
 
     # No silent fallback to Google. See the note in repurpose_content: the
     # Gemini key is read from the environment and from settings regardless of
@@ -550,7 +580,9 @@ def repurpose_content(raw_text: Optional[str]) -> List[Dict[str, str]]:
                     for item in parsed
                 ]
         except Exception as e:
-            print(f"[BYO-AI Repurpose] Fallback to deterministic: {e}")
+            print(f"[BYO-AI Repurpose] Unreadable answer: {_egress.redact(e)}")
+    if configured is not None:
+        raise _unreadable(configured, "posts")
 
     # Deterministic Fallback Templates
     words = clean_input.split()

@@ -13,6 +13,12 @@ const CAPABILITY_LABELS: Record<string, string> = {
 };
 
 /**
+ * What /api/ai/status adds once a provider is configured: the last request
+ * that failed, until one succeeds.
+ */
+type StatusWithFailure = AiStatus & { last_error?: string | null; last_error_at?: string | null };
+
+/**
  * The prompt inspector (blueprint section 10).
  *
  * Which engine is answering, and whether anything leaves this machine to do
@@ -20,7 +26,7 @@ const CAPABILITY_LABELS: Record<string, string> = {
  * with the colour on it.
  */
 export function PromptPanel() {
-  const [status, setStatus] = useState<AiStatus | null>(null);
+  const [status, setStatus] = useState<StatusWithFailure | null>(null);
   const [failed, setFailed] = useState(false);
 
   const [providers, setProviders] = useState<string[]>([]);
@@ -84,6 +90,14 @@ export function PromptPanel() {
             tone={local ? "text-signal-green-text" : "text-signal-orange-text"}
           />
         </dl>
+        {/* A key that stopped working used to be invisible: every feature
+            kept answering from templates. */}
+        {!local && status.last_error && (
+          <p role="status" className="mt-2 text-[12px] leading-snug text-signal-orange-text">
+            The last request failed{status.last_error_at ? ` at ${status.last_error_at.replace("T", " ")}` : ""}:{" "}
+            {status.last_error}
+          </p>
+        )}
       </section>
 
       <section>
