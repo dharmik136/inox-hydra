@@ -43,7 +43,7 @@ Press **Queue it**. The strip shows the time, for example SCHEDULED FOR MONDAY 0
 1. Press **Publish**.
 2. Check **NEXT SLOT**. The request asks LinkedIn to publish at that time.
 3. Press **Send to LinkedIn**, below the line.
-4. Read the orange text: "This sends the post to LinkedIn for <day> <time>. It cannot be undone from here: after this, changing it means going to LinkedIn."
+4. Read the orange text: "This sends the post's text to LinkedIn, signed in with your saved LinkedIn session, for <day> <time>. It cannot be undone from here: after this, changing it means going to LinkedIn."
 5. Press **Yes, send it to LinkedIn**, or **Keep it here** to back out.
 
 ## What happens

@@ -264,7 +264,8 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
                 <div className="mt-5 border-t border-edge pt-4">
                   <p className="studio-meta leading-snug text-ink-muted">
                     OR HAND IT TO LINKEDIN&apos;S OWN SCHEDULER, WHICH PUBLISHES IT EVEN IF
-                    THIS MACHINE IS ASLEEP. THIS ONE REALLY SENDS.
+                    THIS MACHINE IS ASLEEP. THIS ONE REALLY SENDS: THE POST&apos;S TEXT LEAVES
+                    THIS MACHINE FOR LINKEDIN, SIGNED IN WITH YOUR SAVED LINKEDIN SESSION.
                   </p>
                   {resendOffered ? (
                     <button
@@ -279,7 +280,8 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
                   ) : confirmingSend ? (
                     <div className="mt-3">
                       <p className="text-[13px] leading-relaxed text-signal-orange-text">
-                        This sends the post to LinkedIn for{" "}
+                        This sends the post&apos;s text to LinkedIn, signed in with your saved
+                        LinkedIn session, for{" "}
                         {slot ? `${slot.day_name} ${slot.time_slot}` : "the selected slot"}.
                         It cannot be undone from here: after this, changing it means going
                         to LinkedIn.
