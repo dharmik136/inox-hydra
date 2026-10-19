@@ -969,7 +969,11 @@ def describe(conn: Optional[sqlite3.Connection] = None) -> Dict[str, Any]:
     """Schema status for the diagnostics bundle and the status endpoint."""
     should_close = False
     if conn is None:
-        conn = sqlite3.connect(get_db_path())
+        # A database that does not exist yet is at version 0. Connecting to
+        # the path to find that out created an empty file there, which every
+        # read-only command (doctor, migrate) left behind.
+        db_path = get_db_path()
+        conn = sqlite3.connect(db_path if os.path.exists(db_path) else ":memory:")
         should_close = True
     try:
         current = get_schema_version(conn)

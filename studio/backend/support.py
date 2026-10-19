@@ -84,7 +84,26 @@ EXPORTABLE_TABLES = ("drafts", "posts", "leads", "lead_interactions",
 EXPORT_FORMATS = ("json", "csv", "obsidian")
 
 
+def _has_database() -> bool:
+    db_path = paths.get_db_path()
+    return os.path.exists(db_path) and os.path.getsize(db_path) > 0
+
+
+def _no_database_message(doing: str) -> str:
+    return (f"There is no studio database at {paths.get_db_path()} yet, so there is nothing to {doing}. "
+            f"It is created the first time the studio starts. If your data is somewhere else, run "
+            f"`paths` to see why this location was chosen.")
+
+
 def _connect() -> sqlite3.Connection:
+    """
+    The active profile's database. ValueError when there is none yet.
+
+    sqlite3.connect creates a missing file, so every command run before the
+    first start used to leave an empty database behind and then report on it.
+    """
+    if not os.path.exists(paths.get_db_path()):
+        raise ValueError(_no_database_message("read"))
     conn = sqlite3.connect(paths.get_db_path())
     conn.row_factory = sqlite3.Row
     return conn
@@ -146,9 +165,10 @@ def collect_diagnostics() -> Dict[str, Any]:
         report["errors"].append(f"schema status unavailable: {exc}")
 
     try:
-        conn = _connect()
+        # A fresh install has no database yet, which is not a problem to report.
+        conn = _connect() if os.path.exists(paths.get_db_path()) else None
         try:
-            for name in _table_names(conn):
+            for name in (_table_names(conn) if conn else []):
                 try:
                     count = conn.execute(f"SELECT COUNT(*) FROM [{name}]").fetchone()[0]
                     report["tables"][name] = count
@@ -158,7 +178,8 @@ def collect_diagnostics() -> Dict[str, Any]:
                 rows = conn.execute("SELECT key, value FROM settings ORDER BY key").fetchall()
                 report["settings"] = redact_settings(rows)
         finally:
-            conn.close()
+            if conn:
+                conn.close()
     except Exception as exc:
         report["errors"].append(f"database unreadable: {exc}")
 
@@ -196,13 +217,20 @@ def write_diagnostics_bundle(destination: Optional[str] = None) -> str:
     return destination
 
 
-def create_backup(label: str = "manual") -> str:
+def create_backup(label: str = "manual", require_database: bool = True) -> str:
     """
     Full state snapshot: database plus user media, in one ZIP.
 
     The database is copied through the SQLite backup API first so the captured
     file is internally consistent under WAL, rather than a torn file copy.
+
+    With no database yet this is refused: it used to write an archive of a few
+    hundred bytes, call it a backup and print the command to restore it. Only
+    the safety copy before a restore passes require_database=False, to keep any
+    media files a database-less install already has.
     """
+    if require_database and not _has_database():
+        raise ValueError(_no_database_message("back up"))
     clean_label = re.sub(r"[^a-zA-Z0-9_-]", "_", str(label))[:40] or "manual"
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive = os.path.join(paths.get_backups_dir(), f"inox_backup_{clean_label}_{stamp}.zip")
@@ -400,6 +428,11 @@ def _safety_snapshot() -> tuple:
     it was protecting. Then the safety copy keeps the database files byte for
     byte under damaged/, where restore will not pick them up by mistake.
     """
+    if not _has_database():
+        # Restoring onto a new computer: there is nothing to keep but media.
+        if not any(files for _, _, files in os.walk(paths.get_assets_dir())):
+            return None, "There was no database here yet, so there was nothing to keep a copy of."
+        return create_backup("pre_restore", require_database=False), ""
     try:
         return create_backup("pre_restore"), ""
     except sqlite3.DatabaseError as error:

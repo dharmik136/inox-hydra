@@ -107,7 +107,11 @@ def cmd_paths(args) -> int:
 
 
 def cmd_backup(args) -> int:
-    archive = support.create_backup(args.label)
+    try:
+        archive = support.create_backup(args.label)
+    except ValueError as refused:
+        print(f"No backup written. {refused}")
+        return 1
     size = os.path.getsize(archive)
     print(f"Backup written:\n  {archive}\n  {size:,} bytes")
     print()
@@ -201,7 +205,11 @@ def cmd_reset(args) -> int:
         print("Re-run with --yes to proceed.")
         return 1
 
-    result = support.reset_configuration(keep_data=True)
+    try:
+        result = support.reset_configuration(keep_data=True)
+    except ValueError as refused:
+        print(f"Nothing was reset. {refused}")
+        return 1
     for table, count in result["cleared"].items():
         print(f"  cleared {count} rows from {table}")
     print(f"  safety snapshot  {result['safety_backup']}")
@@ -211,6 +219,10 @@ def cmd_reset(args) -> int:
 
 
 def cmd_migrate(args) -> int:
+    if not os.path.exists(paths.get_db_path()):
+        print(f"There is no studio database at {paths.get_db_path()} yet.")
+        print("It is created, already at this build's schema, the first time the studio starts.")
+        return 0
     status = migration_ledger.describe()
     print(f"Schema version {status['current_version']}, this build targets "
           f"{status['target_version']}.")
@@ -252,6 +264,11 @@ def cmd_migrate(args) -> int:
 
 
 def cmd_update(args) -> int:
+    if args.action in ("enable", "disable") and not os.path.exists(paths.get_db_path()):
+        print(f"No studio database at {paths.get_db_path()} yet, so one is created there to hold")
+        print("this choice, as the first start would. If your data is somewhere else, run `paths`.")
+        print()
+
     if args.action == "enable":
         updates.set_enabled(True)
         print("Update checks ENABLED.")

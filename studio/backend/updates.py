@@ -71,6 +71,10 @@ def _connect() -> sqlite3.Connection:
 
 
 def _get_setting(key: str) -> Optional[str]:
+    # Before the first start there is no database, and so no stored answer.
+    # Connecting anyway would create an empty file in its place.
+    if not os.path.exists(paths.get_db_path()):
+        return None
     try:
         conn = _connect()
     except Exception:
@@ -85,6 +89,18 @@ def _get_setting(key: str) -> Optional[str]:
 
 
 def _set_setting(key: str, value: str) -> None:
+    """
+    Stores one preference, creating the database as the first start would.
+
+    `update enable` is a documented first step, and before the studio had ever
+    run it failed with "no such table: settings".
+    """
+    if not os.path.exists(paths.get_db_path()) or os.path.getsize(paths.get_db_path()) == 0:
+        try:
+            from .database import init_db
+        except ImportError:
+            from database import init_db
+        init_db()
     conn = _connect()
     try:
         conn.execute(
