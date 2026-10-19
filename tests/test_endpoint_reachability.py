@@ -157,8 +157,8 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # it (pingStudio in api.ts). No route added.
 # Reached moves 95 -> 96, unreachable drops 84 -> 83, total stays at 179.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 179
-REACHED_BY_INTERFACE = 96
+TOTAL_API_PATHS = 181
+REACHED_BY_INTERFACE = 98
 UNREACHABLE = 83
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
