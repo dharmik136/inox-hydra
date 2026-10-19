@@ -484,3 +484,51 @@ def test_the_tray_holds_focus_and_escape_closes_one_layer_at_a_time(studio):
     page.keyboard.press("Escape")
     tray.wait_for(state="detached")
     assert _is_focused(page, handle), "focus did not go back to the tray's toggle"
+
+
+# ---------------------------------------------------------------------------
+# UX-27: Add Creator Profile is offered only when the licence has room
+# ---------------------------------------------------------------------------
+
+def _open_switcher(page):
+    page.locator("nav[aria-label='Studio sections']").get_by_role("button", name="Current profile", exact=False).click()
+    dialog = page.get_by_role("dialog", name="Manage creator profiles")
+    dialog.wait_for(state="visible")
+    page.wait_for_load_state("networkidle")
+    return dialog
+
+
+def test_a_one_profile_licence_explains_the_limit_instead_of_offering_the_form(studio):
+    page = studio().open("Today")
+    dialog = _open_switcher(page)
+    assert dialog.get_by_role("button", name="Add Creator Profile").count() == 0, (
+        "the switcher invites a profile the licence will refuse after the form is filled"
+    )
+    assert "Agency licence" in dialog.inner_text()
+
+
+def test_a_licence_with_room_offers_add_creator_profile(studio, monkeypatch):
+    import base64
+
+    import ed25519
+    import licensing
+
+    secret = bytes(range(32))
+    monkeypatch.setattr(licensing, "PUBLIC_KEYS", [base64.b64encode(ed25519.public_key(secret)).decode()])
+    key = licensing.encode(
+        {"v": 1, "id": "qc-f7", "email": "buyer@example.com", "tier": "agency", "kind": "annual",
+         "profiles": 3, "issued_at": "2026-10-19", "expires_at": "2099-01-01", "updates_until": "2099-01-01"},
+        lambda message: ed25519.sign(secret, message),
+    )
+    page = studio().open("Today")
+    # Entered while the studio is already open, as from another tab: the
+    # switcher has to read the licence again when it opens.
+    status = page.evaluate(
+        "async (key) => (await fetch('/api/v1/licence', {method: 'POST', credentials: 'same-origin',"
+        " headers: {'Content-Type': 'application/json'}, body: JSON.stringify({key})})).status", key)
+    assert status == 200
+    try:
+        dialog = _open_switcher(page)
+        dialog.get_by_role("button", name="Add Creator Profile").wait_for(state="visible", timeout=3000)
+    finally:
+        page.evaluate("async () => fetch('/api/v1/licence', {method: 'DELETE', credentials: 'same-origin'})")

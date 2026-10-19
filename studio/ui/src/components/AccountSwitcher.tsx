@@ -84,7 +84,14 @@ export function AccountSwitcher({
     return () => window.removeEventListener(LICENCE_CHANGED, onLicence);
   }, [loadAccounts]);
 
+  // Read again on every open, so a licence entered in another tab, or straight
+  // through the API, is reflected in whether a profile can be added.
+  useEffect(() => {
+    if (open) void loadAccounts();
+  }, [open, loadAccounts]);
+
   const activeAccount = accounts.find((a) => a.id === activeId) ?? accounts[0];
+  const atLimit = accounts.length >= limit;
 
   const handleSwitch = async (account: CreatorAccount) => {
     if (account.id === activeId) {
@@ -387,12 +394,14 @@ export function AccountSwitcher({
                 })}
               </div>
 
-              {/* Add account section */}
-              {!creating && accounts.length >= limit && (
+              {/* Add account section. At the licence's limit the form is not
+                  offered: it used to take a name, headline and vanity and only
+                  then refuse, so the limit is explained up front instead. */}
+              {!creating && atLimit && (
                 <p className="mt-1 text-[11px] leading-snug text-ink-muted">
                   {limit === 1
-                    ? "More than one creator profile needs the Agency licence (Brand Studio, Licence)."
-                    : `Your licence covers ${limit} creator profiles.`}
+                    ? "Your licence covers one creator profile. More than one needs the Agency licence, entered in Brand Studio, Licence."
+                    : `Your licence covers ${limit} creator profiles, and all ${limit} are in use.`}
                 </p>
               )}
               {creating ? (
@@ -460,7 +469,7 @@ export function AccountSwitcher({
                     </div>
                   </div>
                 </form>
-              ) : (
+              ) : atLimit ? null : (
                 <button
                   type="button"
                   onClick={() => setCreating(true)}

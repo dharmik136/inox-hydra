@@ -17,7 +17,7 @@ The licence, the logs and the bridge browser belong to the machine, so they are 
 
 The new profile opens straight away, empty. To fill it, go through **Setup** in it, with that creator's own LinkedIn in the bridge browser.
 
-More than one profile needs the Agency licence. Without it, **Add Profile** shows "Your licence covers 1 creator profile."
+More than one profile needs the Agency licence. Without it, the switcher does not offer **Add Creator Profile**, and says instead "Your licence covers one creator profile. More than one needs the Agency licence, entered in Brand Studio, Licence." When an Agency licence's profiles are all in use, it says that in the same place.
 
 ## Delete a profile
 
