@@ -29,7 +29,7 @@ if BACKEND not in sys.path:
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-PLANTED = "AIzaSyPLANTED-qc-f2-0123456789abcdef"
+PLANTED = "AIzaSyNOTAREALKEY-qc-f2-0123456789abcdef"
 
 _real_getaddrinfo = socket.getaddrinfo
 
@@ -171,8 +171,8 @@ def test_the_redactor_removes_every_credential_shape():
     samples = [
         f"Max retries exceeded with url: /v1beta/models/x:predict?key={PLANTED} (Caused by ...)",
         f"headers={{'x-goog-api-key': '{PLANTED}'}}",
-        "Authorization: Bearer sk-proj-abcdefghijklmnop0123",
-        "{'x-api-key': 'sk-ant-api03-abcdefghijklmnop'}",
+        "Authorization: Bearer sk-proj-notarealkey-abcdefghijklmnop0123",
+        "{'x-api-key': 'sk-ant-api03-notarealkey-abcdefghijklmnop'}",
         "gsk_abcdefghijklmnopqrstuvwx rejected",
     ]
     for sample in samples:
