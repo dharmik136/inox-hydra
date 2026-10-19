@@ -303,9 +303,45 @@ class LinkedInClient:
                     break
 
         if offending:
+            # The follower and connection totals are counts at one moment, not
+            # figures over the window, so they are kept whatever range the page
+            # was showing, as the network reading already does. Refusing them
+            # with the windowed figures left Followers "not measured" for every
+            # creator who keeps LinkedIn's range on its usual multi-day setting.
+            # Only those two columns are written; a daily figure stored for the
+            # day keeps its own period and precision.
+            followers_saved = 0
+            conn = get_db()
+            try:
+                with conn:
+                    for _b in (raw_data.get("series") or raw_data.get("data", {}).get("series") or []):
+                        if not isinstance(_b, dict):
+                            continue
+                        _m = _b.get("metrics") or _b
+                        _day = _b.get("bucket") or _b.get("date")
+                        _fl, _cn = _m.get("followers"), _m.get("connections")
+                        if not _day or (_fl is None and _cn is None):
+                            continue
+                        conn.execute(
+                            """
+                            INSERT INTO analytics_daily (
+                                date, followers, connections, precision, period_label, source,
+                                impressions, unique_members_reached, reactions, comments, shares, engagement_rate
+                            )
+                            VALUES (?, ?, ?, ?, '1d', 'observed', NULL, NULL, NULL, NULL, NULL, NULL)
+                            ON CONFLICT(date) DO UPDATE SET
+                                followers = COALESCE(excluded.followers, analytics_daily.followers),
+                                connections = COALESCE(excluded.connections, analytics_daily.connections)
+                            """,
+                            (_day, _fl, _cn, _b.get("precision") or raw_data.get("precision")),
+                        )
+                        followers_saved += 1
+            finally:
+                conn.close()
             return {
                 "status": "window_mismatch",
                 "saved": 0,
+                "followers_saved": followers_saved,
                 "period_label": offending,
                 "message": (
                     f"These figures cover {offending}, not a single day. "
