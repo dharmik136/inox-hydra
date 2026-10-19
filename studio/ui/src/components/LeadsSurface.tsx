@@ -340,7 +340,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
             lead scored zero, so it is reported as unscored rather than as a
             number the reader would compare against other leads. */}
         <Field label="ICP score" value={lead.icp_score > 0 ? lead.icp_score.toFixed(0) : "Not scored"} />
-        <Field label="First seen" value={lead.created_at?.slice(0, 10) ?? null} />
+        <Field label="First seen" value={lead.created_at ? localDate(lead.created_at) : null} />
       </dl>
 
       <section className="mt-6">
@@ -362,7 +362,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
               <p className="studio-meta text-[10px]">
                 {lead.engagement_type.toUpperCase()}
                 <span className="mx-1.5 text-ink-muted">·</span>
-                CAPTURED {lead.created_at?.slice(0, 10)}
+                CAPTURED {lead.created_at ? localDate(lead.created_at).toUpperCase() : ""}
               </p>
               <p className="studio-meta mt-1 text-[10px] text-ink-muted">
                 THE ENGAGEMENT THAT CAPTURED THIS LEAD. NO TIMELINE ENTRIES BEYOND IT.
@@ -378,7 +378,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
                 <p className="studio-meta text-[10px]">
                   {(entry.interaction_type ?? "INTERACTION").toUpperCase()}
                   <span className="mx-1.5 text-ink-muted">·</span>
-                  {entry.interacted_at?.slice(0, 16)}
+                  {entry.interacted_at ? localDateTime(entry.interacted_at).toUpperCase() : ""}
                 </p>
                 {entry.comment_text && (
                   <p className="mt-1 text-[13px] leading-snug text-ink-secondary">{entry.comment_text}</p>
@@ -456,7 +456,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
           <ol className="mt-2 flex flex-col gap-0.5">
             {(data.stage_history ?? []).map((event) => (
               <li key={event.changed_at} className="studio-meta text-[10px] text-ink-muted">
-                {event.changed_at.slice(0, 10)}: {event.from_status ?? "NEW"} TO {event.to_status.toUpperCase()}
+                {localDate(event.changed_at).toUpperCase()}: {event.from_status ?? "NEW"} TO {event.to_status.toUpperCase()}
               </li>
             ))}
           </ol>
@@ -621,6 +621,40 @@ function DraftButton({
       {label}
     </button>
   );
+}
+
+/**
+ * A stored time, read as the moment it was.
+ *
+ * SQLite writes UTC with no zone ("2026-10-19 04:43:00"). Sliced and printed
+ * as it was, a comment made at 10:13 in India read 04:43, and a stage change
+ * after 18:30 was dated the next day, while Today showed the same event in
+ * local time. A stamp without a zone is UTC; the reader sees their own clock.
+ */
+function storedTime(stamp: string): Date {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(stamp)) return new Date(`${stamp}T00:00:00`);
+  const iso = stamp.includes("T") ? stamp : stamp.replace(" ", "T");
+  return new Date(/(Z|[+-]\d{2}:?\d{2})$/i.test(iso) ? iso : `${iso}Z`);
+}
+
+function localDate(stamp: string): string {
+  const when = storedTime(stamp);
+  return Number.isNaN(when.getTime())
+    ? stamp.slice(0, 10)
+    : when.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function localDateTime(stamp: string): string {
+  const when = storedTime(stamp);
+  return Number.isNaN(when.getTime())
+    ? stamp.slice(0, 16)
+    : when.toLocaleString(undefined, {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
 }
 
 /** A link to the person's LinkedIn profile, from whichever column holds it. */

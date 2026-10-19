@@ -31,7 +31,7 @@ The right side is a sheet on one person. Under their name, **OPEN THEIR PROFILE 
 
 The ICP score is calculated on this machine by fixed rules: seniority words in the headline, how they engaged and how long their comment was, whether a company is known and what it is called, and whether the comment contains a question mark. It is worked out again at every capture, from their current headline and their best recorded engagement, so it can fall as well as rise.
 
-**Recent interactions** lists up to 8 engagements with any comment text. Each comment appears once, however often you reopened the post, with the time it was first recorded. A reaction carries no text. Under each one, the studio says where it happened:
+**Recent interactions** lists up to 8 engagements with any comment text. Each comment appears once, however often you reopened the post, with the time it was first recorded. Times and dates on the dossier are in this computer's time zone, as on **Today**. A reaction carries no text. Under each one, the studio says where it happened:
 
 - **ON YOUR POST**, followed by the opening of that post when the studio has it.
 - **ON SOMEONE ELSE'S POST, CAPTURED BEFORE THE STUDIO KNEW WHICH POSTS WERE YOURS**, in orange, for an engagement recorded before you set up the studio. See the next section.

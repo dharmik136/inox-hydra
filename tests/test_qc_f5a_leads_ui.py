@@ -143,6 +143,19 @@ def _open(page, name):
     expect(page.locator("article h2")).to_have_text(name)
 
 
+def test_times_are_the_creators_own(browser, studio_url):
+    ctx, page = _leads_page(browser, studio_url, timezone_id="Asia/Kolkata", locale="en-GB")
+    try:
+        _open(page, "Asha Rao")
+        dossier = page.locator("article").inner_text()
+        assert "10:13" in dossier and "04:43" not in dossier, dossier
+        # 19:30 UTC on the 18th is 01:00 on the 19th in India.
+        stages = page.locator("article ol").inner_text().lower()
+        assert "19 oct 2026" in stages and "18 oct" not in stages and "2026-10-18" not in stages, stages
+    finally:
+        ctx.close()
+
+
 def test_the_stream_can_be_searched_and_filtered(browser, studio_url):
     ctx, page = _leads_page(browser, studio_url)
     try:
