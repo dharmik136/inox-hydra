@@ -163,3 +163,12 @@ COUNTED = """
    <span class="social-details-social-counts__reactions-count">12</span>
  </div>
 </main>"""
+
+
+def test_a_number_in_the_posts_own_words_is_not_its_figures(pages):
+    _, posts = _posts(pages, COUNTED)
+    by_urn = {p["activity_urn"]: p for p in posts}
+    first = by_urn["urn:li:activity:7386000000000000041"]
+    assert (first["reactions"], first["comments"], first["reposts"], first["impressions"]) == (57, 9, 2, 1912)
+    second = by_urn["urn:li:activity:7386000000000000042"]
+    assert (second["reactions"], second["comments"], second["reposts"], second["impressions"]) == (12, None, None, None)

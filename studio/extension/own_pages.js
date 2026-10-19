@@ -827,13 +827,21 @@
       const match = named ? / and (\d[\d,]*) others?$/i.exec(named.getAttribute("aria-label") || "") : null;
       if (match) counts.reactions = parseCount(match[1]) + 1;
     }
+    // The post's own words are not its figures. A short post such as "We just
+    // crossed 10,000 impressions!" sits before the real counts, and the first
+    // element naming impressions was taken, so 10,000 was stored as measured.
+    // So the post's text is skipped, and a count is a figure directly followed
+    // by its word ("9 comments"), never a figure somewhere in a sentence.
+    const textEl = cardTextElement(card);
+    const counted = (text, word) => new RegExp("^\\d[\\d.,'\\s]*[km]?\\s*(?:" + word + ")\\b", "i").test(text);
     card.querySelectorAll("button, span, a").forEach((el) => {
+      if (textEl && textEl.contains(el)) return;
       const text = clean(el.getAttribute("aria-label") || el.innerText || "");
       if (text.length > 60) return;
-      if (counts.reactions === null && /\b(\d[\d,]*)\s+(?:reactions?|likes?)\b/i.test(text)) counts.reactions = parseCount(text);
-      if (counts.comments === null && /\bcomments?\b/i.test(text)) counts.comments = parseCount(text);
-      if (counts.reposts === null && /\breposts?\b/i.test(text)) counts.reposts = parseCount(text);
-      if (counts.impressions === null && /\bimpressions?\b/i.test(text)) counts.impressions = parseCount(text);
+      if (counts.reactions === null && counted(text, "reactions?|likes?")) counts.reactions = parseCount(text);
+      if (counts.comments === null && counted(text, "comments?")) counts.comments = parseCount(text);
+      if (counts.reposts === null && counted(text, "reposts?")) counts.reposts = parseCount(text);
+      if (counts.impressions === null && counted(text, "impressions?")) counts.impressions = parseCount(text);
     });
     return counts;
   }
