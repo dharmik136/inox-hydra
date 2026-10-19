@@ -104,3 +104,57 @@ def test_an_import_already_scrolling_is_not_expired_under_it():
     client.post("/api/v1/self/imports/event", json={"id": request_id, "event": "finished",
                                                     "items_seen": 30, "outcome": "end_of_list"})
     assert _imports()[request_id]["outcome"] == "end_of_list"
+
+
+# ---------------------------------------------------------------------------
+# SETUP-16
+# ---------------------------------------------------------------------------
+
+def _take(kind):
+    request = client.post("/api/v1/self/imports/pending", json={"kind": kind}).json()["request"]
+    assert request is not None, f"no {kind} import is waiting"
+    client.post("/api/v1/self/imports/event", json={"id": request["id"], "event": "started"})
+    return request["id"]
+
+
+def _finish(request_id, outcome="end_of_list"):
+    return client.post("/api/v1/self/imports/event", json={
+        "id": request_id, "event": "finished", "items_seen": 20, "outcome": outcome}).json()
+
+
+def test_the_chain_carries_on_after_the_studio_restarts():
+    _confirm()
+    onboarding.start_sync_chain()
+    posts_id = _take("posts")
+
+    importlib.reload(onboarding)  # the studio restarts while posts are scrolling
+
+    finished = _finish(posts_id)
+    assert finished.get("next_kind") == "comments", finished
+    assert "recent-activity/comments" in finished["next_url"]
+    assert client.get("/api/v1/onboarding/state").json()["sync_chain"]["current_kind"] == "comments"
+
+    importlib.reload(onboarding)
+    assert _finish(_take("comments")).get("next_kind") == "reactions"
+    assert _finish(_take("reactions")).get("all_completed") is True
+    assert onboarding.get_active_sync_chain() is None
+    assert client.get("/api/v1/onboarding/state").json()["sync_chain"] is None
+
+
+def test_stopping_or_a_single_import_ends_the_chain():
+    _confirm()
+    onboarding.start_sync_chain()
+    _finish(_take("posts"), outcome="stopped")
+    assert onboarding.get_active_sync_chain() is None
+
+    onboarding.start_sync_chain()
+    client.post("/api/v1/self/imports", json={"kind": "reactions"})
+    assert onboarding.get_active_sync_chain() is None
+
+
+def test_a_chain_whose_request_expired_is_over():
+    _confirm()
+    onboarding.start_sync_chain()
+    request_id = client.get("/api/v1/onboarding/state").json()["imports"][0]["id"]
+    _age(request_id, 31)
+    assert client.get("/api/v1/onboarding/state").json()["sync_chain"] is None

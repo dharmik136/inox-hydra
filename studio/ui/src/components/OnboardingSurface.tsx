@@ -36,8 +36,14 @@ import { ArchiveImport, archiveStatus } from "./ArchiveImport";
  */
 const POLL_MS = 3000;
 
+/** What this screen reads from the onboarding state beyond the shared type. */
+type SetupState = OnboardingState & {
+  /** Import all three, while one is under way. Kept by the studio, so it survives a restart. */
+  sync_chain?: { sequence: SelfImportKind[]; current_kind: SelfImportKind } | null;
+};
+
 export function OnboardingSurface() {
-  const [state, setState] = useState<OnboardingState | null>(null);
+  const [state, setState] = useState<SetupState | null>(null);
   const [bridge, setBridge] = useState<BrowserBridge | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -254,6 +260,9 @@ export function OnboardingSurface() {
                   Sync All Activity
                 </button>
               </div>
+              {state.sync_chain && (
+                <p className="studio-meta mb-3 text-[10px] text-ink-muted">{chainLine(state.sync_chain)}</p>
+              )}
               <div className="flex flex-col divide-y divide-edge border-y border-edge">
                 {IMPORTS.map((entry) => (
                   <ImportRow
@@ -564,6 +573,13 @@ function ImportRow({
       </Secondary>
     </div>
   );
+}
+
+function chainLine(chain: { sequence: SelfImportKind[]; current_kind: SelfImportKind }): string {
+  const after = chain.sequence.slice(chain.sequence.indexOf(chain.current_kind) + 1);
+  return `IMPORTING ONE AFTER ANOTHER: ${chain.current_kind.toUpperCase()} NOW${
+    after.length ? `, THEN ${after.join(" AND ").toUpperCase()}` : ", THE LAST ONE"
+  }`;
 }
 
 // Only "end_of_list" is the whole list. The others read part of it, and say so,

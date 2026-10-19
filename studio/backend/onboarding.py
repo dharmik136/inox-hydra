@@ -1300,16 +1300,34 @@ def remove_leads_not_on_your_posts(lead_ids: Any) -> Dict[str, Any]:
 # History imports: the creator asks, the extension scrolls
 # ---------------------------------------------------------------------------
 
-_active_sync_chain: Optional[Dict[str, Any]] = None
+# Import all three, one after another: the chain Sync All starts. It is kept in
+# the profile's own database, not in server memory, where a studio restart
+# halfway through the posts dropped the comments and reactions without a word,
+# and where one chain was shared by every creator profile.
+SYNC_CHAIN_KEY = "history_sync_chain"
+
+
+def _load_chain(conn) -> Optional[Dict[str, Any]]:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (SYNC_CHAIN_KEY,)).fetchone()
+    try:
+        chain = json.loads(row["value"]) if row and row["value"] else None
+    except ValueError:
+        return None
+    return chain if isinstance(chain, dict) and chain.get("sequence") else None
+
+
+def _save_chain(conn, chain: Optional[Dict[str, Any]]) -> None:
+    if chain is None:
+        conn.execute("DELETE FROM settings WHERE key = ?", (SYNC_CHAIN_KEY,))
+    else:
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (SYNC_CHAIN_KEY, json.dumps(chain)))
 
 
 def start_sync_chain(sequence: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Initiates an autonomous sequential sync session across activity streams
-    (posts, comments, reactions). Pushes multi-stream orchestration entirely
-    to the backend so the user has a single-click action.
+    Sync All: imports posts, then comments, then reactions, each one asked
+    for when the one before it finishes.
     """
-    global _active_sync_chain
     vanity = confirmed_vanity()
     if not vanity:
         raise RefusedCapture("confirm your profile before importing history")
@@ -1318,15 +1336,15 @@ def start_sync_chain(sequence: Optional[List[str]] = None) -> Dict[str, Any]:
     if not seq:
         seq = ["posts", "comments", "reactions"]
 
-    _active_sync_chain = {
-        "sequence": seq,
-        "current_index": 0,
-        "active": True,
-        "started_at": _now(),
-        "vanity": vanity,
-    }
     first_kind = seq[0]
     res = request_import(first_kind, is_chain=True)
+    conn = get_db()
+    try:
+        with conn:
+            _save_chain(conn, {"sequence": seq, "current_index": 0, "active": True, "started_at": _now(),
+                               "vanity": vanity, "request_id": res["id"]})
+    finally:
+        conn.close()
     return {
         "status": "started",
         "current_kind": first_kind,
@@ -1337,12 +1355,34 @@ def start_sync_chain(sequence: Optional[List[str]] = None) -> Dict[str, Any]:
 
 
 def cancel_sync_chain() -> None:
-    global _active_sync_chain
-    _active_sync_chain = None
+    conn = get_db()
+    try:
+        with conn:
+            _save_chain(conn, None)
+    finally:
+        conn.close()
 
 
 def get_active_sync_chain() -> Optional[Dict[str, Any]]:
-    return _active_sync_chain
+    """
+    The chain under way, or None. A chain whose current request is closed
+    (expired, replaced, or finished without a next step) is over.
+    """
+    conn = get_db()
+    try:
+        with conn:
+            chain = _load_chain(conn)
+            if chain is None:
+                return None
+            row = conn.execute("SELECT finished_at FROM self_import_requests WHERE id = ?",
+                               (chain.get("request_id"),)).fetchone()
+            if not row or row["finished_at"]:
+                _save_chain(conn, None)
+                return None
+    finally:
+        conn.close()
+    chain["current_kind"] = chain["sequence"][min(chain.get("current_index", 0), len(chain["sequence"]) - 1)]
+    return chain
 
 
 def request_import(kind: Any, is_chain: bool = False) -> Dict[str, Any]:
@@ -1352,9 +1392,8 @@ def request_import(kind: Any, is_chain: bool = False) -> Dict[str, Any]:
     The extension scrolls an activity page only when a request like this is
     pending, so scrolling always traces back to a click in the studio.
     """
-    global _active_sync_chain
-    if not is_chain and _active_sync_chain:
-        _active_sync_chain = None
+    if not is_chain:
+        cancel_sync_chain()
 
     if kind not in IMPORT_KINDS:
         raise RefusedCapture(f"unknown import: {kind}")
@@ -1416,7 +1455,6 @@ def pending_import(kind: Any) -> Optional[Dict[str, Any]]:
 
 
 def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: Any = None) -> Dict[str, Any]:
-    global _active_sync_chain
     try:
         request_id = int(request_id)
     except (TypeError, ValueError):
@@ -1424,13 +1462,10 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
     if event not in ("started", "finished"):
         raise RefusedCapture("event must be started or finished")
     conn = get_db()
-    req_kind = None
+    chain = None
     try:
         with conn:
-            cur = conn.execute("SELECT kind FROM self_import_requests WHERE id = ?", (request_id,))
-            row = cur.fetchone()
-            if row:
-                req_kind = row[0]
+            chain = _load_chain(conn)
             if event == "started":
                 conn.execute(
                     "UPDATE self_import_requests SET started_at = COALESCE(started_at, ?) "
@@ -1446,31 +1481,31 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
         conn.close()
 
     res: Dict[str, Any] = {"status": "success"}
-    if event == "finished":
+    # The chain moves on only when the request it is waiting for finishes.
+    if event == "finished" and chain and chain.get("request_id") == request_id:
         norm_outcome = (outcome or "").strip().lower()
+        seq = chain["sequence"]
+        next_idx = chain.get("current_index", 0) + 1
         if norm_outcome in ("stopped", "left_page"):
-            _active_sync_chain = None
-        elif _active_sync_chain and _active_sync_chain.get("active"):
-            seq = _active_sync_chain.get("sequence", ["posts", "comments", "reactions"])
+            cancel_sync_chain()
+        elif next_idx < len(seq):
+            next_kind = seq[next_idx]
+            next_req = request_import(next_kind, is_chain=True)
+            chain.update(current_index=next_idx, request_id=next_req["id"])
+            conn = get_db()
             try:
-                curr_idx = seq.index(req_kind)
-            except (ValueError, TypeError):
-                curr_idx = _active_sync_chain.get("current_index", 0)
-
-            next_idx = curr_idx + 1
-            if next_idx < len(seq):
-                next_kind = seq[next_idx]
-                _active_sync_chain["current_index"] = next_idx
-                next_req = request_import(next_kind, is_chain=True)
-                res["next_kind"] = next_kind
-                res["next_url"] = next_req["open_url"]
-                res["next_id"] = next_req["id"]
-                res["is_chain"] = True
-            else:
-                _active_sync_chain["active"] = False
-                _active_sync_chain = None
-                res["all_completed"] = True
-                res["is_chain"] = True
+                with conn:
+                    _save_chain(conn, chain)
+            finally:
+                conn.close()
+            res["next_kind"] = next_kind
+            res["next_url"] = next_req["open_url"]
+            res["next_id"] = next_req["id"]
+            res["is_chain"] = True
+        else:
+            cancel_sync_chain()
+            res["all_completed"] = True
+            res["is_chain"] = True
 
     return res
 
@@ -1541,6 +1576,7 @@ def onboarding_state() -> Dict[str, Any]:
     except ImportError:
         from archive_import import archive_state
     archive = archive_state(look=False)
+    chain = get_active_sync_chain()
     return {
         "archive": archive,
         "health": capture_health(),
@@ -1555,6 +1591,8 @@ def onboarding_state() -> Dict[str, Any]:
             "reactions": outbound.get("reaction", 0),
         },
         "imports": imports,
+        # Import all three, while one is under way: which, and what comes next.
+        "sync_chain": {"sequence": chain["sequence"], "current_kind": chain["current_kind"]} if chain else None,
         "steps": {
             "bridge": bool(bridge["last_seen_at"]),
             "identity": confirmed,
