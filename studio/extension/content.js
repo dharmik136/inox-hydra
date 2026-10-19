@@ -839,12 +839,31 @@ function readNewLayoutComments() {
   return found;
 }
 
+/**
+ * Runs the engager read at most every 4 s, and always once more after the
+ * last change.
+ *
+ * The read used to run on the first mutation and drop every call inside the
+ * next 4 s. A reactions list that arrived just after its modal shell fell into
+ * that window and was not read until some unrelated change happened later, if
+ * it ever did. One pending read is kept instead: it runs 600 ms after the
+ * change that scheduled it, or when the 4 s since the last read are up.
+ */
+let engagerReadTimer = null;
+
+function scheduleEngagerRead() {
+  if (engagerReadTimer || !isPostEngagementSurface()) return;
+  const wait = Math.max(600, 4000 - (Date.now() - lastCommentScrapeTime));
+  engagerReadTimer = setTimeout(() => {
+    engagerReadTimer = null;
+    observeAndCaptureEngagers();
+  }, wait);
+}
+
 function observeAndCaptureEngagers() {
   if (!isPostEngagementSurface()) return;
 
-  const now = Date.now();
-  if (now - lastCommentScrapeTime < 4000) return; // Debounce 4s
-  lastCommentScrapeTime = now;
+  lastCommentScrapeTime = Date.now();
 
   const leads = [];
 
@@ -889,6 +908,7 @@ function observeAndCaptureEngagers() {
       knownEngagersSet.add(dedupeKey);
 
       leads.push({
+        _key: dedupeKey,
         name,
         headline,
         company: headline.includes(" at ") ? headline.split(" at ")[1].split("|")[0].trim() : (headline.includes(" @ ") ? headline.split(" @ ")[1].split("|")[0].trim() : ""),
@@ -918,6 +938,7 @@ function observeAndCaptureEngagers() {
       const isNew = !knownEngagersSet.has(dedupeKey);
       knownEngagersSet.add(dedupeKey);
       leads.push({
+        _key: dedupeKey,
         name: c.name,
         headline: c.headline,
         company: c.headline.includes(" at ") ? c.headline.split(" at ")[1].split("|")[0].trim() : "",
@@ -974,6 +995,7 @@ function observeAndCaptureEngagers() {
         knownEngagersSet.add(dedupeKey);
 
         leads.push({
+          _key: dedupeKey,
           name,
           headline,
           company: headline.includes(" at ") ? headline.split(" at ")[1].split("|")[0].trim() : (headline.includes(" @ ") ? headline.split(" @ ")[1].split("|")[0].trim() : ""),
@@ -1071,6 +1093,18 @@ function observeAndCaptureEngagers() {
     // the creator learns to ignore.
     Promise.allSettled(writes).then(results => {
       const answers = results.map(r => (r.status === "fulfilled" ? r.value : null));
+      // A person counts as seen on this post only once the studio has decided
+      // about them: kept, or deliberately skipped by its rule. Marking them
+      // seen before the write meant that everyone read while the studio was
+      // down or restarting was skipped on every later read of the page. They
+      // are offered again after 30 s, not on the next read, so a studio that
+      // is down is not asked every 4 s.
+      const undecided = identified
+        .filter((lead, i) => !answers[i] || (answers[i].status !== "success" && answers[i].status !== "skipped"))
+        .map((lead) => lead._key);
+      if (undecided.length) {
+        setTimeout(() => undecided.forEach((key) => knownEngagersSet.delete(key)), 30000);
+      }
       const stored = answers.filter(a => a && a.status === "success").length;
       const unreachable = answers.filter(a => a === null).length;
       const needsSetup = answers.some(a => a && a.status === "skipped" && /Setup/.test(a.reason || ""));
@@ -1093,7 +1127,7 @@ function observeAndCaptureEngagers() {
 
 // Observe DOM mutations for opened comments sections and reaction modals
 const commentObserver = new MutationObserver(() => {
-  observeAndCaptureEngagers();
+  scheduleEngagerRead();
 });
 commentObserver.observe(document.body, { childList: true, subtree: true });
 

@@ -180,3 +180,48 @@ def test_each_rebuilt_comment_list_is_filed_under_its_own_post(pages):
     assert sent["Alice Fan"]["post_urn"] == "urn:li:activity:7385000000000000001"
     assert sent["Bob Stranger"]["post_author"] == "other-creator"
     assert sent["Bob Stranger"]["post_urn"] == "urn:li:activity:7385000000000000099"
+
+
+# ---------------------------------------------------------------------------
+# BRIDGE-20 and BRIDGE-21: when a read happens, and when it is repeated
+# ---------------------------------------------------------------------------
+
+def test_a_list_that_loads_just_after_its_modal_is_read_without_another_change(pages):
+    page = pages.open("/feed/update/urn:li:activity:7385000000000000001/", FEED)
+    page.clock.run_for(5000)
+    shell = MODAL.split('<div class="social-details-reactors-tab">')[0] + "</div>"
+    page.evaluate(OPEN_MODAL, shell)
+    page.clock.run_for(800)
+    page.evaluate(OPEN_MODAL, MODAL)
+    page.clock.run_for(12000)
+
+    names = {body["full_name"] for body in pages.sent(page, INGEST)}
+    assert names == {"Reactor One", "Reactor Two"}
+
+
+def test_engagers_seen_while_the_studio_was_down_are_sent_again(pages):
+    page = pages.open("/feed/update/urn:li:activity:7385000000000000001/", FEED)
+    page.evaluate("() => { window.__answers['%s'] = 'unreachable'; }" % INGEST)
+    page.clock.run_for(5000)
+    page.evaluate(OPEN_MODAL, MODAL)
+    page.clock.run_for(6000)
+    first = [body["full_name"] for body in pages.sent(page, INGEST)]
+    assert sorted(first) == ["Reactor One", "Reactor Two"]
+
+    # The studio is back, and LinkedIn re-renders the list.
+    page.evaluate("() => { delete window.__answers['%s']; }" % INGEST)
+    page.clock.run_for(31000)
+    page.evaluate(OPEN_MODAL, MODAL)
+    page.clock.run_for(6000)
+    every = [body["full_name"] for body in pages.sent(page, INGEST)]
+    assert sorted(every) == ["Reactor One", "Reactor One", "Reactor Two", "Reactor Two"]
+
+
+def test_engagers_the_studio_kept_are_not_sent_twice(pages):
+    page = pages.open("/feed/update/urn:li:activity:7385000000000000001/", FEED)
+    page.clock.run_for(5000)
+    page.evaluate(OPEN_MODAL, MODAL)
+    page.clock.run_for(6000)
+    page.evaluate(OPEN_MODAL, MODAL)
+    page.clock.run_for(6000)
+    assert sorted(body["full_name"] for body in pages.sent(page, INGEST)) == ["Reactor One", "Reactor Two"]
