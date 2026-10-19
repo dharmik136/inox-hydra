@@ -504,7 +504,8 @@ function YourData() {
       </div>
       <p className="mt-2 text-[12px] leading-relaxed text-ink-muted">
         Obsidian gets a folder of linked notes: each post, the people who engaged with it, and
-        your topics. Its graph view shows who keeps coming back.
+        your topics. Its graph view shows who keeps coming back. Press it again to refresh the same
+        vault; what you write in it is kept.
       </p>
 
       {note && (

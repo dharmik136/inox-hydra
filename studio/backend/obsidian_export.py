@@ -58,6 +58,7 @@ except ImportError:
     from evidence_briefing import classify_post_topic
 
 MANIFEST = ".inox-hydra-export.json"
+VAULT_FOLDER = "obsidian_vault"
 YOUR_NOTES = "## Your notes"
 FOLDERS = ("Posts", "People", "Topics", "Outbound", "Drafts")
 
@@ -730,8 +731,10 @@ def write_vault(notes: Dict[str, str], destination: str, ids: Optional[Dict[str,
 def export_obsidian_vault(destination: Optional[str] = None) -> Dict[str, Any]:
     """Reads the local record and writes it as an Obsidian vault. Returns where, and how much."""
     if destination is None:
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        destination = os.path.join(paths.get_exports_dir(), f"obsidian_vault_{stamp}")
+        # One vault per profile, in the same place every time, so exporting
+        # again refreshes the vault the creator opened in Obsidian. A new
+        # timestamped folder per export meant that vault never changed.
+        destination = os.path.join(paths.get_exports_dir(), VAULT_FOLDER)
     root = os.path.abspath(destination)
     plan = _plan(root)
     notes, ids, renamed = _build(read_record(), plan["keep"], plan["reserved"])
