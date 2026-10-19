@@ -23,8 +23,10 @@ except ImportError:
 
 try:
     from .database import get_db
+    from .support import _cell as csv_cell
 except ImportError:
     from database import get_db
+    from support import _cell as csv_cell
 
 
 # -- Validation constants --------------------------------------------------
@@ -385,7 +387,11 @@ def export_leads_csv(status: Optional[str] = None, search: Optional[str] = None)
         score = float(l.get("icp_score") or 0.0)
         tier = qualification_tier(score)
 
-        writer.writerow([
+        # Every cell through the support export's sanitiser. Names, headlines
+        # and notes are written by other people, and one starting with = or @
+        # ran as a formula in the creator's spreadsheet. The status is the one
+        # the Leads screen shows, not the machine vocabulary behind it.
+        writer.writerow([csv_cell(value) for value in (
             l.get("id", ""),
             l.get("full_name") or l.get("name", ""),
             l.get("headline", ""),
@@ -393,10 +399,10 @@ def export_leads_csv(status: Optional[str] = None, search: Optional[str] = None)
             l.get("seniority_level", "Unknown"),
             f"{score:.1f}",
             tier,
-            l.get("lead_status") or l.get("status", "NEW"),
+            l.get("status") or l.get("lead_status") or "New Lead",
             l.get("profile_url", ""),
             l.get("engagement_type", ""),
             l.get("notes", ""),
             l.get("created_at", "")
-        ])
+        )])
     return output.getvalue()
