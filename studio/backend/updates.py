@@ -45,10 +45,12 @@ except ImportError:
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     from __version__ import __version__
 
-DEFAULT_MANIFEST_URL = os.environ.get(
-    "INOX_UPDATE_MANIFEST_URL",
-    "https://raw.githubusercontent.com/dharmik136/inox-hydra/main/release/latest.json",
-)
+# The manifest attached to the newest published release, not the copy on the
+# main branch. main declares the next version as soon as work on it starts
+# (CI requires the copy there to match the source), so reading it told every
+# installed copy about a release that did not exist yet.
+RELEASE_MANIFEST_URL = "https://github.com/dharmik136/inox-hydra/releases/latest/download/latest.json"
+DEFAULT_MANIFEST_URL = os.environ.get("INOX_UPDATE_MANIFEST_URL", RELEASE_MANIFEST_URL)
 
 ALLOWED_UPDATE_SCHEMES = ("https",)
 
