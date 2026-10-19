@@ -99,6 +99,8 @@ The extension reads LinkedIn's pages, and LinkedIn changes how they are built wi
 | Creator analytics | The figures in **Analytics** |
 | Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends. Only your recorded posts are read |
 
+Network reading is off unless you turn it on in the extension's popup. If you do, two more parts appear here once they have run: **Network reading: your posts' figures** and **Network reading: creator analytics**. They are not listed while network reading has not run, because opening a page cannot start them.
+
 Each part shows one of three states:
 
 - **NOT SEEN YET**, with a grey dot: the extension has not run that part in the last week. Open the matching LinkedIn page in the bridge browser.

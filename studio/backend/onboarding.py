@@ -240,9 +240,15 @@ EXTRACTORS = {
     "activity_reactions": "Your reactions",
     "analytics": "Creator analytics",
     "post_analytics": "Your posts' analytics pages",
-    "voyager_feed_updates": "Voyager feed updates interception",
-    "voyager_creator_analytics": "Voyager creator analytics interception",
+    "voyager_feed_updates": "Network reading: your posts' figures",
+    "voyager_creator_analytics": "Network reading: creator analytics",
 }
+
+# Network reading is off unless the creator switches it on in the extension's
+# popup, so these parts never run for most people. Setup lists them only once
+# they have: listed always, they read NOT SEEN YET for everyone, and the help's
+# advice for that, open the matching page, does nothing for them.
+OPT_IN_EXTRACTORS = ("voyager_feed_updates", "voyager_creator_analytics")
 
 CAPTURE_RETENTION = timedelta(days=7)
 DRIFT_RETENTION = timedelta(days=30)
@@ -1594,7 +1600,8 @@ def onboarding_state() -> Dict[str, Any]:
     chain = get_active_sync_chain()
     return {
         "archive": archive,
-        "health": capture_health(),
+        "health": [h for h in capture_health()
+                   if h["extractor"] not in OPT_IN_EXTRACTORS or h["state"] != "never_run"],
         "session": session,
         "status": "success",
         "bridge": bridge,

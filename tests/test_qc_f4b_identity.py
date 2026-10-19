@@ -186,6 +186,57 @@ def test_what_you_typed_in_brand_studio_survives_forgetting():
 
 
 # ---------------------------------------------------------------------------
+# SETUP-17. Capture health listed two "Voyager ... interception" rows that stay
+# NOT SEEN YET for everyone, because network reading is off unless switched on
+# in the extension, while the help said seven parts and to open the page.
+# ---------------------------------------------------------------------------
+
+HELP = os.path.join(REPO_ROOT, "docs", "help", "set-up-the-studio-from-your-linkedin.md")
+
+
+def _health_labels():
+    return [entry["label"] for entry in client.get("/api/v1/onboarding/state").json()["health"]]
+
+
+def _help_parts():
+    with open(HELP, encoding="utf-8") as handle:
+        section = handle.read().split("## Check the capture is still working")[1].split("\n## ")[0]
+    rows = [line for line in section.splitlines()
+            if line.startswith("| ") and not line.startswith(("| Part", "| ---"))]
+    return [row.split("|")[1].strip() for row in rows]
+
+
+def test_capture_health_shows_what_the_help_describes():
+    conn = get_db()
+    with conn:
+        conn.execute("DELETE FROM captures")
+    conn.close()
+    labels = _health_labels()
+    assert not any("voyager" in label.lower() for label in labels)
+    assert labels == _help_parts()
+
+
+def test_a_network_reading_part_appears_once_it_has_run():
+    conn = get_db()
+    with conn:
+        conn.execute("DELETE FROM captures")
+    conn.close()
+    client.post("/api/v1/bridge/voyager-ingest", json={"schema_name": "feed_updates", "data": []})
+    try:
+        labels = _health_labels()
+        added = [label for label in labels if label not in _help_parts()]
+        assert len(added) == 1 and "network reading" in added[0].lower()
+        assert "voyager" not in added[0].lower()
+        with open(HELP, encoding="utf-8") as handle:
+            assert added[0] in handle.read(), "the help does not name the part the screen shows"
+    finally:
+        conn = get_db()
+        with conn:
+            conn.execute("DELETE FROM captures")
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
 # SETUP-09 [BRIDGE-08]. The profile page shows the first few roles and two or
 # three skills, with "Show all". Reading it replaced the full lists the
 # details pages or the archive had brought, so 40 skills became 2 every time
