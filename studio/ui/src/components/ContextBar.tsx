@@ -1,4 +1,5 @@
 import { Check, Loader2 } from "lucide-react";
+import { POST_LIMIT_CHARS } from "@/lib/text";
 import { cn } from "@/lib/utils";
 
 /**
@@ -14,7 +15,8 @@ interface ContextBarProps {
   kind: string;
   draftRef: string;
   title: string;
-  chars: number;
+  /** Every character as stored, the count LinkedIn's limit and Gate 2 apply. */
+  storedChars: number;
   foldLabel: string;
   pastFold: boolean;
   readSeconds: number;
@@ -36,7 +38,7 @@ export function ContextBar({
   kind,
   draftRef,
   title,
-  chars,
+  storedChars,
   foldLabel,
   pastFold,
   readSeconds,
@@ -61,7 +63,11 @@ export function ContextBar({
       {/* Centre telemetry. tabular-nums comes from .studio-meta so the numbers
           do not jitter sideways while typing. */}
       <p className="studio-meta mx-auto hidden shrink-0 md:block" aria-live="off">
-        {chars.toLocaleString()} chars
+        {/* Against the limit, so the strip and the Audit's Gate 2 give the
+            same answer. It used to show a bare count with no limit at all. */}
+        <span className={storedChars > POST_LIMIT_CHARS ? "text-signal-orange-text" : undefined}>
+          {storedChars.toLocaleString()} / {POST_LIMIT_CHARS.toLocaleString()} chars
+        </span>
         <span className="mx-1.5 text-ink-muted">·</span>
         <span className={pastFold ? "text-signal-orange-text" : undefined}>{foldLabel}</span>
         <span className="mx-1.5 text-ink-muted">·</span>~{readSeconds}s read

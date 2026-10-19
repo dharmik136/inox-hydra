@@ -36,7 +36,7 @@ import {
   type SearchResult,
 } from "@/lib/api";
 import type { SearchFocus } from "@/lib/search";
-import { measurableLength, measurableWordCount } from "@/lib/text";
+import { measurableLength, measurableWordCount, storedLength } from "@/lib/text";
 import { DOCKED_INSPECTOR_QUERY, useMediaQuery } from "@/lib/viewport";
 import { setUnsavedCheck } from "@/lib/unsaved";
 
@@ -181,6 +181,9 @@ export default function App() {
     const words = measurableWordCount(draft);
     return {
       chars,
+      // A length limit counts what is stored, not what a reader sees, so the
+      // strip's count against 3,000 is a different measure from the fold's.
+      stored: storedLength(draft),
       // Two different readings, because one number cannot serve both cases.
       // Under the fold the useful quantity is how much budget is left, so a
       // percentage. Past it, the percentage is meaningless (a 352 character
@@ -356,7 +359,7 @@ export default function App() {
             kind="POST"
             draftRef="DRAFT 01"
             title={draft.trim().split("\n")[0]?.slice(0, 72) || "Untitled draft"}
-            chars={telemetry.chars}
+            storedChars={telemetry.stored}
             foldLabel={telemetry.foldLabel}
             pastFold={telemetry.pastFold}
             readSeconds={telemetry.readSeconds}

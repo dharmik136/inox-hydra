@@ -37,11 +37,16 @@ def _measurable_text(text: Any) -> str:
 
     Only the combining-mark formatters cause this. Mathematical bold maps each
     letter to a single code point, and measures correctly without help.
+
+    Every mark goes, by Unicode category, which is the rule the editor applies
+    (\p{M} in studio/ui/src/lib/text.ts). unicodedata.combining() was narrower:
+    it kept the vowel signs of Hindi and Gujarati, so the editor and the
+    server put the fold of the same post in different places.
     """
     normalized = _normalize_text(text)
     if not normalized:
         return ""
-    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return "".join(ch for ch in normalized if not unicodedata.category(ch).startswith("M"))
 
 
 def to_sans_bold(text: Any) -> str:

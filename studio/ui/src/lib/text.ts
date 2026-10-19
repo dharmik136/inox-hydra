@@ -25,9 +25,10 @@
 /** Strips decoration marks, leaving what a reader actually perceives. */
 export function measurableText(text: string): string {
   if (!text) return "";
-  // \p{M} is the Unicode Mark category. The backend tests unicodedata.combining
-  // instead, which is very slightly narrower, but both cover the two marks the
-  // formatters actually emit and \p{M} is the closest thing JavaScript exposes.
+  // \p{M} is the Unicode Mark category, and the backend strips by the same
+  // category. It used to test unicodedata.combining, which kept the vowel
+  // signs of Hindi and Gujarati, so the two sides put the fold of one post in
+  // different places. tests/test_qc_f1a_counts.py holds them together.
   return Array.from(text)
     .filter((ch) => !/\p{M}/u.test(ch))
     .join("");
@@ -43,6 +44,24 @@ export function measurableLength(text: string): number {
 export function measurableWordCount(text: string): number {
   const stripped = measurableText(text).trim();
   return stripped ? stripped.split(/\s+/).length : 0;
+}
+
+/** LinkedIn's limit on the length of a post, as the Audit's Gate 2 checks it. */
+export const POST_LIMIT_CHARS = 3000;
+
+/**
+ * How long the post is against a length limit: every character as stored.
+ *
+ * Not measurableLength. A limit counts what is saved and sent, and a struck
+ * letter is stored as two characters even though a reader sees one. Stripping
+ * marks also dropped the vowel signs of Hindi and Gujarati, so a Hindi post
+ * the Composer's strip called 2,964 characters was 4,332 to Gate 2, which blocked it at
+ * 3,000. Code points, the same as len() on the server, which is what Gate 2
+ * and the 5,000 character save limit count. Which count LinkedIn itself
+ * applies is not something this product has measured.
+ */
+export function storedLength(text: string): number {
+  return Array.from(text).length;
 }
 
 /**

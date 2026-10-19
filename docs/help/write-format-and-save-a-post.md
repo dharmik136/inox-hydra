@@ -13,10 +13,10 @@ Open **Composer** from the rail. The editor is the large writing area in the mid
 On a phone, LinkedIn hides a long post behind "see more". The studio draws that cut at 140 characters.
 
 - Once your post passes 140 characters, a dashed orange line appears in the editor at the point where the cut falls, labelled **LINKEDIN FOLD 140 CHARS**.
-- The status strip in the top bar reads, for example, `126 chars · 90% of fold · ~6s read` while you are under the fold, and `352 chars · 212 past fold · ~25s read` once you are over it. The strip is hidden when the window is narrow.
+- The status strip in the top bar reads, for example, `126 / 3,000 chars · 90% of fold · ~6s read` while you are under the fold, and `352 / 3,000 chars · 212 past fold · ~25s read` once you are over it. The count turns orange past 3,000, the length the Audit's Gate 2 blocks at. The strip is hidden when the window is narrow.
 - The read time assumes 200 words per minute. It is an estimate.
 
-Characters are counted as a reader sees them, so bold letters and struck-through letters count once each, not twice.
+The fold is measured as a reader sees the text, so bold letters and struck-through letters count once each, not twice. The count against 3,000 is every character as it is stored, which is what a length limit counts and the same count the Audit uses: underlined and struck-through letters count twice there, and so do the vowel signs of scripts such as Hindi and Gujarati. Which count LinkedIn itself applies has not been measured.
 
 The 140 figure is the product's own approximation, and the studio's server-side checks use the same number. It is not a number LinkedIn publishes, so treat it as a guide.
 
