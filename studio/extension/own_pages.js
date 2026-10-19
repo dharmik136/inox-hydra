@@ -591,10 +591,17 @@
   // Activity: posts, comments, reactions
   // ---------------------------------------------------------------
 
+  // The post's id as LinkedIn names it. A share or ugcPost id is a different
+  // number from the post's activity id (card_urns.js says the same), and it
+  // was relabelled urn:li:activity:<same digits>, an id LinkedIn never issued,
+  // which the post's analytics page, the network readings and the studio's
+  // binding then looked for in vain. An activity id wins when a text has both.
   function extractActivityUrn(text) {
     if (!text) return null;
-    const direct = /urn:li:(?:activity|share|ugcPost):(\d+)/.exec(text);
-    if (direct) return `urn:li:activity:${direct[1]}`;
+    const activity = /urn:li:activity:(\d+)/.exec(text);
+    if (activity) return `urn:li:activity:${activity[1]}`;
+    const other = /urn:li:(share|ugcPost):(\d+)/.exec(text);
+    if (other) return `urn:li:${other[1]}:${other[2]}`;
     const slug = /-activity-(\d{6,})/.exec(text);
     if (slug) return `urn:li:activity:${slug[1]}`;
     const bareUrn = /urn:li:activity:\d+/.exec(text);
@@ -604,24 +611,32 @@
     return null;
   }
 
+  // A card's activity id wherever it carries one, before a share or ugcPost
+  // id it may carry elsewhere: a document card can name its ugcPost on the
+  // card and its activity id only in a link.
   function cardUrn(card) {
     if (!card) return null;
+    let other = null;
+    const take = (value) => {
+      const urn = extractActivityUrn(value);
+      if (urn && urn.startsWith("urn:li:activity:")) return urn;
+      if (urn && !other) other = urn;
+      return null;
+    };
     for (const attr of ["data-urn", "data-id", "data-activity-urn", "data-chameleon-urn"]) {
-      const val = card.getAttribute && card.getAttribute(attr);
-      const urn = extractActivityUrn(val);
+      const urn = take(card.getAttribute && card.getAttribute(attr));
       if (urn) return urn;
     }
     const inners = card.querySelectorAll("[data-urn], [data-id], [data-activity-urn], [data-chameleon-urn]");
     for (const inner of inners) {
       for (const attr of ["data-urn", "data-id", "data-activity-urn", "data-chameleon-urn"]) {
-        const val = inner.getAttribute(attr);
-        const urn = extractActivityUrn(val);
+        const urn = take(inner.getAttribute(attr));
         if (urn) return urn;
       }
     }
     const links = card.querySelectorAll("a[href*='/feed/update/urn:li:'], a[href*='-activity-'], a[href*='urn:li:activity:'], a[href*='urn:li:share:'], a[href*='urn:li:ugcPost:']");
     for (const link of links) {
-      const urn = extractActivityUrn(link.getAttribute("href"));
+      const urn = take(link.getAttribute("href"));
       if (urn) return urn;
     }
     const els = [card, ...Array.from(card.querySelectorAll("*"))];
@@ -630,13 +645,13 @@
       for (const k in el) {
         if (k.startsWith("__reactProps")) {
           try {
-            const urn = extractActivityUrn(JSON.stringify(el[k]));
+            const urn = take(JSON.stringify(el[k]));
             if (urn) return urn;
           } catch (e) {}
         }
       }
     }
-    return null;
+    return other;
   }
 
   const CARD_CONTAINERS = [

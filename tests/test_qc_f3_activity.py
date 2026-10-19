@@ -129,6 +129,24 @@ def test_cards_whose_author_cannot_be_read_report_drift(pages):
     assert captures and captures[0]["drift"] == ["post_author"]
 
 
+def test_a_ugcpost_id_is_kept_as_linkedin_names_it(pages):
+    _, posts = _posts(pages)
+    urns = {p["activity_urn"] for p in posts}
+    assert "urn:li:activity:7386000000000000777" not in urns
+    assert "urn:li:ugcPost:7386000000000000777" in urns
+
+
+def test_a_cards_activity_id_is_preferred_to_its_ugcpost_id(pages):
+    body = POSTS.replace(
+        '<div data-testid="expandable-text-box">A document post',
+        '<a href="https://www.linkedin.com/feed/update/urn:li:activity:7386000000000000900/">1w</a>'
+        '<div data-testid="expandable-text-box">A document post')
+    _, posts = _posts(pages, body)
+    urns = {p["activity_urn"] for p in posts}
+    assert "urn:li:activity:7386000000000000900" in urns
+    assert not [u for u in urns if u.endswith("7386000000000000777")]
+
+
 COUNTED = """
 <main>
  <div class="feed-shared-update-v2" data-urn="urn:li:activity:7386000000000000041">
