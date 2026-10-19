@@ -674,6 +674,8 @@ HELP_SECTIONS = [
             "FIRST_RUN.md",
             "PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md",
             "DEEP_QA_BRIEF.md",
+            "quality/QUALITY_CYCLE_2026-10_PRD.md",
+            "quality/BUG_REGISTER_2026-10.md",
             "UI_CONVENTIONS.md",
             "ICON_SYSTEM.md",
             "UI_AGENT_WORKFLOW.md",
