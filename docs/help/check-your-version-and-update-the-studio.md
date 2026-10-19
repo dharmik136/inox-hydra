@@ -21,9 +21,9 @@ The studio never checks for updates on its own. There is no update control in th
 | `python -m studio.cli update status` | `InoxHydra-CLI.bat update status` | Shows `current_version`, `enabled`, `asked`, `last_checked`, `last_seen_version`, `manifest_url` and `releases_url`. No network request. |
 | `python -m studio.cli update` | `InoxHydra-CLI.bat update` | Checks once. Add `--force` to ignore the cached ETag. |
 
-By default, a check is one HTTPS request for `release/latest.json` on `raw.githubusercontent.com` (the `INOX_UPDATE_MANIFEST_URL` environment variable changes the address). It sends a User-Agent of `InoxHydra/<version>`, so GitHub sees your IP address and version, and nothing about your content. The studio records when it checked and the latest version it saw. It never downloads, installs or runs anything. For how `INOX_NO_EGRESS` and `INOX_ALLOW_UPDATE_EGRESS` affect this, see [What leaves this machine, and when](what-leaves-this-machine.md).
+By default, a check is one HTTPS request to `github.com` for the `latest.json` file attached to the newest published release, which GitHub hands over from its download server (the `INOX_UPDATE_MANIFEST_URL` environment variable changes the address). So a check only ever names a version you can actually download. It sends a User-Agent of `InoxHydra/<version>`, so GitHub sees your IP address and version, and nothing about your content. The studio records when it checked and the latest version it saw. It never downloads, installs or runs anything. For how `INOX_NO_EGRESS` and `INOX_ALLOW_UPDATE_EGRESS` affect this, see [What leaves this machine, and when](what-leaves-this-machine.md).
 
-A check prints `Installed:` and `Latest:`, then either "You are up to date." or "An update is available." with a download link to the releases page.
+A check prints `Installed:` and `Latest:`, then either "You are up to date." or "An update is available." with a download link to the releases page. With an update, it also says where your data is: outside the Inox Hydra folder, so the folder can be replaced, or "Your data is INSIDE the Inox Hydra folder", in which case do not delete the folder; follow the source checkout steps below.
 
 ## Upgrade a portable copy
 
@@ -41,7 +41,7 @@ A portable copy keeps your data in `%LOCALAPPDATA%\InoxHydra`, outside the folde
 
 Do not delete the checkout. When `studio\data` exists, your database and media live inside the `studio` folder.
 
-1. Take a backup. A backup holds the open creator profile only, so take one in each profile.
+1. Take a backup. A backup holds one creator profile, so take one of each: `python -m studio.cli backup --all`.
 2. Stop the studio.
 3. Replace the checkout's source files with the newer version, keeping `studio\data`, `studio\assets`, `studio\backups`, `studio\vault`, `studio\logs`, and, if you have them, `studio\profiles` (every creator profile after your first) and `studio\exports`.
 4. Run `pip install -r requirements.txt`.

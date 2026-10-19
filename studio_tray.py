@@ -9,9 +9,9 @@ Provides:
 - Context menu:
   1. Open Inox Hydra Studio (Borderless Chrome App Window).
   2. Open Chrome Sidepanel.
-  3. Run Automated QA Tests.
-  4. Restart Local Server.
-  5. Exit.
+  3. Restart Local Server.
+  4. Exit, which also stops the server this tray started.
+  (run_tests remains for maintainers, and is no longer on the creator's menu.)
 - Server health supervision (auto-launches uvicorn if offline).
 """
 
@@ -219,9 +219,25 @@ class InoxHydraTray:
         self.start_server_if_needed()
 
     def exit_app(self):
-        """Removes tray icon and terminates background processes."""
+        """
+        Removes the tray icon and stops the server this tray started.
+
+        It used to leave that server running with nothing on screen, still
+        dispatching the queue, and the only way to stop it was Task Manager.
+        A server something else started is left alone, as Restart does.
+        """
         print("[Tray] Exiting Inox Hydra Tray...")
         self.running = False
+        server, self.server_process = self.server_process, None
+        if server is not None and server.poll() is None:
+            try:
+                server.terminate()
+                server.wait(timeout=5)
+            except Exception:
+                try:
+                    server.kill()
+                except Exception:
+                    pass
         if self.nid and self.hwnd:
             self.shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(self.nid))
         if self.hwnd:
@@ -242,7 +258,6 @@ class InoxHydraTray:
                 hmenu = self.user32.CreatePopupMenu()
                 self.user32.AppendMenuW(hmenu, MF_STRING, ID_OPEN_STUDIO, "🚀 Open Inox Hydra Studio")
                 self.user32.AppendMenuW(hmenu, MF_STRING, ID_OPEN_SIDEPANEL, "📱 Open Inbound CRM")
-                self.user32.AppendMenuW(hmenu, MF_STRING, ID_RUN_TESTS, "🧪 Run Automated QA Tests")
                 self.user32.AppendMenuW(hmenu, MF_STRING, ID_RESTART_SERVER, "🔄 Restart Local Server")
                 self.user32.AppendMenuW(hmenu, MF_SEPARATOR, ID_SEPARATOR, "")
                 self.user32.AppendMenuW(hmenu, MF_STRING, ID_EXIT, "❌ Exit Inox Hydra")

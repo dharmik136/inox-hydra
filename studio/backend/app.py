@@ -602,6 +602,26 @@ async def publish_post_now(post_id: str):
 # -------------------------------------------------------------
 # Module 3: Media Studio & Unified Drag-and-Drop Dropzone
 # -------------------------------------------------------------
+# The largest file each kind of upload accepts. Documents and video match what
+# LinkedIn itself takes (100 MB per document, 5 GB per video); images are
+# capped well above what a post image needs. There was no limit at all, and
+# the whole file was read into memory, so a large video could take the studio
+# down mid-session.
+MEDIA_UPLOAD_CAPS = {
+    "image": 50 * 1024 * 1024,
+    "carousel": 100 * 1024 * 1024,
+    "video": 5 * 1024 * 1024 * 1024,
+}
+MEDIA_UPLOAD_CHUNK = 1024 * 1024
+
+
+def _readable_size(size: int) -> str:
+    for unit, step in (("GB", 1024 ** 3), ("MB", 1024 ** 2), ("KB", 1024)):
+        if size >= step:
+            return f"{size / step:.0f} {unit}" if size % step == 0 else f"{size / step:.1f} {unit}"
+    return f"{size} bytes"
+
+
 @app.post("/api/media/upload", tags=["Media Studio & Dropzone"])
 async def upload_media_file(file: UploadFile = File(...)):
     """
@@ -635,7 +655,18 @@ async def upload_media_file(file: UploadFile = File(...)):
     safe_name = f"{uuid.uuid4().hex[:8]}_{clean_name}"
     file_path = os.path.join(uploads_dir, safe_name)
 
-    content = await file.read()
+    cap = MEDIA_UPLOAD_CAPS[media_type]
+    too_big = HTTPException(
+        status_code=413,
+        detail=f"That file is larger than the {_readable_size(cap)} the studio accepts for a {media_type}.",
+    )
+    declared = getattr(file, "size", None)
+    if isinstance(declared, int) and declared > cap:
+        raise too_big
+
+    # The signature checks below need only the start of the file; the rest is
+    # copied to disk in chunks, so memory stays bounded whatever the size.
+    content = await file.read(64 * 1024)
     size_bytes = len(content)
 
     if size_bytes == 0:
@@ -676,8 +707,24 @@ async def upload_media_file(file: UploadFile = File(...)):
                 detail="Invalid MP4 format. The file content does not match the .mp4 extension."
             )
 
-    with open(file_path, "wb") as f:
-        f.write(content)
+    try:
+        with open(file_path, "wb") as f:
+            f.write(content)
+            while True:
+                chunk = await file.read(MEDIA_UPLOAD_CHUNK)
+                if not chunk:
+                    break
+                size_bytes += len(chunk)
+                if size_bytes > cap:
+                    raise too_big
+                f.write(chunk)
+    except BaseException:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        raise
+    if size_bytes > cap:
+        os.remove(file_path)
+        raise too_big
 
     relative_url = f"/assets/uploads/{safe_name}"
     page_count = None
@@ -2231,12 +2278,30 @@ def create_support_backup(payload: Optional[Dict[str, Any]] = None):
 
 @app.get("/api/v1/support/backups", tags=["Support & Maintenance"])
 def list_support_backups():
+    """
+    The backups folder: full backups first, then pre-upgrade database copies,
+    then anything else, each newest first.
+
+    This was reverse file name order, so the automatic pre-upgrade copies
+    always came first and the five the interface shows were rarely the newest,
+    or ones the creator had made.
+    """
     directory = get_backups_dir()
     entries = []
-    for name in sorted(os.listdir(directory), reverse=True):
+    for name in os.listdir(directory):
         full = os.path.join(directory, name)
+        if not os.path.isfile(full):
+            continue
+        info = support_tools.inspect_backup(full)
+        kind = info.get("kind") if info.get("has_database") else "other"
         entries.append({"name": name, "bytes": os.path.getsize(full),
-                        "modified": datetime.fromtimestamp(os.path.getmtime(full)).isoformat()})
+                        "modified": datetime.fromtimestamp(os.path.getmtime(full)).isoformat(),
+                        "kind": kind, "restorable": kind in ("backup", "database"),
+                        "_mtime": os.path.getmtime(full)})
+    order = {"backup": 0, "database": 1}
+    entries.sort(key=lambda entry: (order.get(entry["kind"], 2), -entry["_mtime"]))
+    for entry in entries:
+        del entry["_mtime"]
     return {"directory": directory, "count": len(entries), "backups": entries}
 
 
@@ -2659,7 +2724,11 @@ def post_switch_account(payload: SwitchAccountPayload):
     """
     res = accounts.switch_account(payload.account_id)
     if res.get("status") == "error":
-        raise HTTPException(status_code=404, detail=res.get("message", "Account not found"))
+        # 402 when the licence no longer covers the profile, 409 when a newer
+        # build wrote its database, so the switcher can say why rather than
+        # claim it does not exist or show a bare server error.
+        status = {"licence": 402, "schema": 409}.get(res.get("code"), 404)
+        raise HTTPException(status_code=status, detail=res.get("message", "Account not found"))
     return res
 
 

@@ -11,7 +11,7 @@ The window you work in is only a view. The server behind it keeps running, and k
 | --- | --- |
 | `launch_studio.bat` (source checkout) | Close the minimized window titled **Inox Hydra Backend** in the taskbar |
 | `InoxHydra.bat` (portable folder) | Close the minimized window titled **Inox Hydra Engine** |
-| `launch_studio.bat --tray` | See "The tray icon" below. **Exit Inox Hydra** does not stop the server |
+| `launch_studio.bat --tray` | Right-click the tray icon and choose **Exit Inox Hydra**. It stops the server the tray started |
 | The Inox Hydra desktop app | Right-click its tray icon and choose **Quit** |
 
 To confirm it has stopped, open `http://127.0.0.1:8000/api/v1/health` in your browser. If the studio is still running you see a short JSON reply whose `status` is `ok`. If it has stopped, the browser cannot connect.
@@ -28,12 +28,8 @@ Double-click the icon to open the studio. Right-click it for the menu.
 | --- | --- |
 | **Open Inox Hydra Studio** | Starts the server if needed, then opens the studio in a Chrome app window, or in your default browser if Chrome is not installed in the usual places |
 | **Open Inbound CRM** | Opens the studio in your default browser. It lands on the Composer, not on Leads; use **Leads** in the rail from there |
-| **Run Automated QA Tests** | A developer action. It runs the project's test suite in the background, needs the test tools installed, and shows no result anywhere. You can ignore it |
 | **Restart Local Server** | Stops the server only if this tray started it, then starts one if port 8000 is free. A server started by `launch_studio.bat` is left alone |
-| **Exit Inox Hydra** | Removes the tray icon. A server the tray started keeps running, with no window |
-
-> [!WARNING]
-> After **Exit Inox Hydra**, the server the tray started is still running with nothing on screen to close. To stop it, open Task Manager, go to **Details**, and end the `pythonw.exe` process that belongs to the studio, or sign out of Windows or restart. Do not end every Python process, since that also closes any other Python program you are running.
+| **Exit Inox Hydra** | Removes the tray icon and stops the server the tray started. A server started another way, for example by `launch_studio.bat`, is left running; stop it the way it was started |
 
 ## The desktop app's tray
 
@@ -55,7 +51,7 @@ Stopping the studio does not delete anything. Your drafts, leads and settings st
 
 | What you see | Why, and what to do |
 | --- | --- |
-| **Exit Inox Hydra** left the studio running | Expected. End the process as described above |
+| **Exit Inox Hydra** left the studio running | The server was not started by this tray, for example by `launch_studio.bat` or by an earlier tray. Stop it the way it was started |
 | **Restart Local Server** did nothing | The server was not started by this tray, for example by `launch_studio.bat` or by an earlier tray you exited. Stop it the way it was started, then choose **Restart Local Server** again |
 | **Open Inbound CRM** opened the Composer | Expected. Click **Leads** in the rail |
 | Starting the tray a second time opened the studio in your browser but added no icon | A tray is already running, so the second launch opens the studio and exits. Use the existing icon; it may be in the hidden icons area of the taskbar |

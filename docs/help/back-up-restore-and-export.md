@@ -21,11 +21,11 @@ To see the exact paths, open a terminal in the checkout folder, the one that hol
 3. Scroll to **Your data**.
 4. Click **Back up now**.
 
-When it finishes, a note reads "Saved *size* to *archive path*". Below the buttons the studio lists how many files the backups folder holds, five of them with their size and time, and the folder path. The five are the first by file name in reverse order, not necessarily the newest. The file itself is not downloaded through the browser; it stays where the note says.
+When it finishes, a note reads "Saved *size* to *archive path*". Below the buttons the studio lists how many files the backups folder holds, five of them with their size and time, and the folder path. Your ZIP backups come first, newest first, then the automatic database copies. The file itself is not downloaded through the browser; it stays where the note says.
 
 **What happens:** the studio writes `inox_backup_manual_<date>_<time>.zip`. It contains `data/linkedin_studio.db` (copied through SQLite's backup API, so it is consistent even while the studio is running), every file under `assets/`, and a `backup_manifest.json` with the date and version.
 
-The studio also saves a timestamped copy of the database in the same folder before any schema upgrade, named `linkedin_studio_premigration_<date>_<time>.db`. Those appear in the list too, and because of the name order they are listed before your ZIP backups.
+The studio also saves a timestamped copy of the database in the same folder before any schema upgrade, named `linkedin_studio_premigration_<date>_<time>.db`. Those appear in the list too, after your ZIP backups.
 
 > [!WARNING]
 > A backup contains your whole database, including your leads' names and comments, so store backup files carefully. Your AI key, and your LinkedIn session if one is stored, are in it only in sealed form, locked to this computer and your account on it. Restore the backup somewhere else and they read as not set: enter the AI key again there, and reconnect LinkedIn if you use it.
@@ -79,9 +79,17 @@ The interface has no restore button. Use a terminal opened in the checkout folde
 3. Restore it: `python -m studio.cli restore "<path to zip>" --yes`.
 4. Start the studio again. The command ends with "Restart Inox Hydra for the restored data to take effect."
 
-**What happens:** the studio first takes a `pre_restore` safety backup of your current state, then replaces the database and writes the media files back, and prints the safety backup's path. If you restored the wrong archive, restore the safety backup the same way.
+**What happens:** the studio unpacks the backup beside your data and checks its database first. Then it takes a `pre_restore` safety backup of your current state, swaps the database and the media files in, and prints the safety backup's path. If anything fails part way, everything it had changed is put back, the message starts "Not restored", and it names the safety backup. If you restored the wrong archive, restore the safety backup the same way.
+
+If the studio will not start because its database is damaged, restore your latest backup the same way. The restore still runs: the current database cannot be copied normally, so the safety backup (`inox_backup_pre_restore_damaged_<date>_<time>.zip`) keeps its files exactly as they were, in a `damaged` folder inside the ZIP, and the command says so.
+
+To go back to the state from before an upgrade, restore its automatic copy the same way: `python -m studio.cli restore "<path to linkedin_studio_premigration_<date>_<time>.db>" --yes`. It replaces the database only and leaves your media files as they are. The next start brings it up to the current layout again.
 
 In the portable build, use `InoxHydra-CLI.bat backup`, `InoxHydra-CLI.bat restore <zip>` and `InoxHydra-CLI.bat export`.
+
+### More than one creator profile
+
+Each command acts on the open creator profile and starts by naming it, for example `Profile: Client A (client-a)`. Add `--profile <profile id>` to choose another, or, for `backup` and `export`, `--all` to make one per profile, each in that profile's own folder: `python -m studio.cli backup --all`. Run a restore once per profile, with `--profile` naming the one the backup belongs to.
 
 ## Moving to another computer
 
@@ -99,3 +107,4 @@ Restoring on a new PC brings back drafts, posts, leads, analytics, queue items, 
 | The note shows a server message or a status code instead of "Saved" | The backup or export did not complete | Read the message. If unclear, run `python -m studio.cli doctor` |
 | `No such backup` | The path you typed is wrong | Copy the file name from the list in **Your data** and the folder path shown below it |
 | `contains no database and cannot be restored` | The file is an export or another ZIP, not a backup | Choose an `inox_backup_` file |
+| `This backup was made by a newer version of Inox Hydra` | The backup comes from a newer studio, for example on another computer, and this one could not open it after restoring | Update this studio to the version the message names, or newer, then restore again. Nothing was changed |

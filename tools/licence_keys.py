@@ -31,6 +31,7 @@ import stat
 import sys
 import uuid
 from datetime import date, timedelta
+from typing import Optional
 
 REPO = os.path.realpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
 sys.path.insert(0, os.path.join(REPO, "studio", "backend"))
@@ -75,7 +76,7 @@ def new_keypair(out: str) -> int:
 DEFAULT_DAYS = {"annual": 365, "monthly": 31, "lifetime": 365}
 
 
-def build_payload(email: str, tier: str, kind: str, profiles: int = 0, days: int = 0, name: str = "",
+def build_payload(email: str, tier: str, kind: str, profiles: int = 0, days: Optional[int] = None, name: str = "",
                   today: date = None) -> dict:
     """
     The payload for one licence, or ValueError for one the price list does not sell.
@@ -97,7 +98,9 @@ def build_payload(email: str, tier: str, kind: str, profiles: int = 0, days: int
     profiles = profiles or limit
     if not 1 <= profiles <= limit:
         raise ValueError(f"{licensing.TIERS[tier]['label']} covers 1 to {limit} profiles")
-    days = days or DEFAULT_DAYS[kind]
+    # None means "the length this kind is sold for". An explicit 0 is a
+    # mistake, not a request for the default.
+    days = DEFAULT_DAYS[kind] if days is None else days
     if days <= 0:
         raise ValueError("--days must be positive")
     if not email or "@" not in email:
@@ -118,7 +121,7 @@ def build_payload(email: str, tier: str, kind: str, profiles: int = 0, days: int
     }
 
 
-def issue(key: str, email: str, tier: str, kind: str, profiles: int, days: int, name: str) -> int:
+def issue(key: str, email: str, tier: str, kind: str, profiles: int, days: Optional[int], name: str) -> int:
     try:
         payload = build_payload(email, tier, kind, profiles, days, name)
     except ValueError as error:
@@ -126,6 +129,9 @@ def issue(key: str, email: str, tier: str, kind: str, profiles: int, days: int, 
         return 2
     with open(os.path.expanduser(key), "r", encoding="ascii") as handle:
         secret = bytes.fromhex(handle.read().strip())
+    ends = payload["expires_at"] or f"never (updates until {payload['updates_until']})"
+    print(f"Signing a {tier} {kind} licence for {email}: {payload['profiles']} profile(s), "
+          f"from {payload['issued_at']}, ends {ends}.", file=sys.stderr)
     licence = licensing.encode(payload, lambda message: ed25519.sign(secret, message))
     read = licensing.read_licence_text(licence)
     if not read["valid"]:
@@ -145,9 +151,13 @@ def main(argv=None) -> int:
     cut.add_argument("--email", required=True)
     cut.add_argument("--name", default="")
     cut.add_argument("--tier", required=True, choices=list(licensing.PAID_TIERS))
-    cut.add_argument("--kind", default="annual", choices=list(licensing.KINDS))
+    cut.add_argument("--kind", required=True, choices=list(licensing.KINDS),
+                     help="monthly or annual (or lifetime, for Creator). Required: it sets how long the licence lasts")
     cut.add_argument("--profiles", type=int, default=0)
-    cut.add_argument("--days", type=int, default=365)
+    # No default here: DEFAULT_DAYS decides per kind. A default of 365 made
+    # every monthly licence run for a year unless --days was typed.
+    cut.add_argument("--days", type=int, default=None,
+                     help="Override the length (default: 31 for monthly, 365 otherwise)")
     args = parser.parse_args(argv)
     if args.command == "new-keypair":
         return new_keypair(args.out)

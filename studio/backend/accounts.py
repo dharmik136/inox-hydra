@@ -36,10 +36,12 @@ from typing import Any, Dict, List, Optional
 try:
     from . import paths
     from .database import get_db, init_db, seed_initial_data
+    from .migrations import SchemaTooNewError, SchemaTooOldError
     from . import licensing
 except ImportError:
     import paths
     from database import get_db, init_db, seed_initial_data
+    from migrations import SchemaTooNewError, SchemaTooOldError
     import licensing
 
 
@@ -107,7 +109,7 @@ def _adopt_legacy_accounts() -> None:
         # The old code made ids with \w, so underscores and accented letters
         # are possible. Their data never was separate, so the id can change.
         pid = re.sub(r"[^a-z0-9-]+", "-", raw).strip("-")[:48] or f"acc-{uuid.uuid4().hex[:8]}"
-        while pid in taken or not paths.is_valid_profile_id(pid):
+        while pid in taken or not paths.is_valid_profile_id(pid) or paths.is_reserved_profile_id(pid):
             pid = f"acc-{uuid.uuid4().hex[:8]}"
         taken.add(pid)
         entries.append({
@@ -165,9 +167,14 @@ def _counts(profile_id: str) -> Dict[str, int]:
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         try:
-            for table, key in (("posts", "posts_count"), ("drafts", "drafts_count"), ("leads", "leads_count")):
+            # A Composer draft is a post with status 'draft'. The legacy drafts
+            # table is not what the Composer writes, so counting it said a
+            # profile with drafts had none, and counted each draft as a post.
+            for query, key in (("SELECT COUNT(*) FROM posts WHERE status IS NOT 'draft'", "posts_count"),
+                               ("SELECT COUNT(*) FROM posts WHERE status = 'draft'", "drafts_count"),
+                               ("SELECT COUNT(*) FROM leads", "leads_count")):
                 try:
-                    counts[key] = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    counts[key] = conn.execute(query).fetchone()[0]
                 except sqlite3.Error:
                     pass
         finally:
@@ -177,8 +184,36 @@ def _counts(profile_id: str) -> Dict[str, int]:
     return counts
 
 
-def _describe(entry: Dict[str, Any], active_id: str) -> Dict[str, Any]:
+def _locked_message(entry: Dict[str, Any]) -> str:
+    """
+    Why a profile beyond the licence stays closed, naming the licence and how to renew.
+
+    Nothing is deleted or hidden when a licence ends, so the message says what
+    can still be done with the profile as well as what cannot.
+    """
+    state = licensing.current()
+    licence = state.get("licence") or {}
+    limit = state["profile_limit"]
+    if state["status"] == "expired":
+        label = licensing.TIERS.get(licence.get("tier"), {}).get("label", "")
+        why = f"Your {label} licence ended on {licence.get('expires_at')}"
+    elif state["status"] == "none":
+        why = "There is no licence on this machine"
+    elif state["status"] == "invalid":
+        why = "The licence on this machine could not be read"
+    else:
+        why = f"Your {state['tier_label']} licence covers {limit} creator profile{'s' if limit != 1 else ''}"
+    return (
+        f"{why}, so {entry['name']} stays closed. To open it again, renew the Agency licence and paste "
+        f"the new key in Brand Studio, Licence. Nothing in it was deleted: you can still back it up or "
+        f"export it from the command line (backup --profile {entry['id']}, export --profile {entry['id']}), "
+        f"or delete it."
+    )
+
+
+def _describe(entry: Dict[str, Any], active_id: str, locked: Optional[List[str]] = None) -> Dict[str, Any]:
     is_default = entry["id"] == paths.DEFAULT_PROFILE_ID
+    is_locked = entry["id"] in (locked if locked is not None else paths.locked_profile_ids())
     return {
         "id": entry["id"],
         "name": entry["name"],
@@ -188,6 +223,9 @@ def _describe(entry: Dict[str, Any], active_id: str) -> Dict[str, Any]:
         "is_default": is_default,
         "is_active": entry["id"] == active_id,
         "created_at": entry.get("created_at"),
+        # Beyond what the licence covers: kept, listed, not opened.
+        "locked": is_locked,
+        "locked_reason": _locked_message(entry) if is_locked else "",
         **_counts(entry["id"]),
     }
 
@@ -219,7 +257,8 @@ def get_active_account_id(conn=None) -> str:
 def list_accounts(conn=None) -> Dict[str, Any]:
     """Every profile with its own counts, the active one, and the licence's allowance."""
     active_id = paths.get_active_profile_id()
-    accounts = [_describe(entry, active_id) for entry in _entries()]
+    locked = paths.locked_profile_ids()
+    accounts = [_describe(entry, active_id, locked) for entry in _entries()]
     return {
         "status": "success",
         "accounts": accounts,
@@ -271,6 +310,10 @@ def _create_account(data: Dict[str, Any], conn=None) -> Dict[str, Any]:
         acc_id = f"{slug}-{uuid.uuid4().hex[:6]}" if slug else f"acc-{uuid.uuid4().hex[:8]}"
     if not paths.is_valid_profile_id(acc_id) or acc_id == paths.DEFAULT_PROFILE_ID:
         return {"status": "error", "message": f"'{acc_id}' cannot be used as a profile ID"}
+    if paths.is_reserved_profile_id(acc_id):
+        return {"status": "error", "message": (
+            f"'{acc_id}' cannot be used as a profile ID: Windows reserves it for a device, so it "
+            f"cannot be a folder name there. Add a letter or two, for example '{acc_id}-1'.")}
     if any(e["id"] == acc_id for e in existing):
         return {"status": "error", "message": f"Account ID '{acc_id}' already exists"}
 
@@ -286,10 +329,19 @@ def _create_account(data: Dict[str, Any], conn=None) -> Dict[str, Any]:
     if os.path.exists(home):
         return {"status": "error", "message": f"A folder for '{acc_id}' already exists at {home}"}
 
-    _open_profile(acc_id)
+    # Registered first: paths refuses to create folders for a profile that is
+    # not in the registry, which is what keeps a deleted one from coming back.
     registry = _registry()
     registry["profiles"].append(entry)
     paths.write_profiles(registry)
+    try:
+        _open_profile(acc_id)
+    except Exception:
+        registry = _registry()
+        registry["profiles"] = [p for p in registry["profiles"] if p["id"] != acc_id]
+        paths.write_profiles(registry)
+        shutil.rmtree(home, ignore_errors=True)
+        raise
     return {"status": "success", "account": _describe(entry, paths.get_active_profile_id())}
 
 
@@ -303,8 +355,16 @@ def _switch_account(account_id: str, conn=None) -> Dict[str, Any]:
     entry = next((e for e in _entries() if e["id"] == account_id), None)
     if not entry:
         return {"status": "error", "message": f"Account '{account_id}' does not exist"}
+    if account_id in paths.locked_profile_ids():
+        return {"status": "error", "code": "licence", "message": _locked_message(entry)}
 
-    _open_profile(account_id)
+    try:
+        _open_profile(account_id)
+    except (SchemaTooNewError, SchemaTooOldError) as refused:
+        # A database a newer (or far older) build wrote. This answered a bare
+        # 500, and the reason, which names the backups folder, reached only
+        # the server console.
+        return {"status": "error", "code": "schema", "message": f"{entry['name']} cannot be opened. {refused}"}
     registry = _registry()
     registry["active"] = account_id
     paths.write_profiles(registry)

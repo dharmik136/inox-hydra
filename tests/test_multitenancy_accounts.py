@@ -131,7 +131,8 @@ def test_the_api_reads_and_writes_only_the_active_profile(agency):
     assert "default-post" in ids
     assert not any("Client A" in str(i) for i in ids)
     listing = {a["id"]: a for a in agency.get("/api/v1/accounts").json()["accounts"]}
-    assert listing["client-a"]["posts_count"] == 1 and listing["default"]["posts_count"] == 1
+    # Both posts are drafts, which the switcher counts as drafts (WRITE-28).
+    assert listing["client-a"]["drafts_count"] == 1 and listing["default"]["drafts_count"] == 1
 
 
 def test_media_is_served_from_the_active_profile(agency):

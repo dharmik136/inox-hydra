@@ -130,7 +130,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/portable/*.zip
+          # latest.json is what installed copies read to learn of a release,
+          # from releases/latest/download, so it is published with it.
+          files: |
+            dist/portable/*.zip
+            release/latest.json
           generate_release_notes: true
           body: |
             ## Inox Hydra ${{ github.ref_name }}

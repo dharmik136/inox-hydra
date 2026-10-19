@@ -235,10 +235,25 @@ def _launcher_target() -> Optional[str]:
         if found and os.path.isfile(found):
             return found
 
-    if not is_windows():
-        return sys.executable
-
+    # No launcher: say so, on every platform. Off Windows this used to return
+    # the bare interpreter, so an installed copy reported autostart enabled
+    # with an entry that ran python with no arguments and started nothing.
     return None
+
+
+def desktop_exec_arg(arg: str) -> str:
+    """
+    One argument of a desktop entry's Exec line, quoted as the spec requires.
+
+    Unquoted, a path with a space is split into several arguments, so an
+    install under "My Apps", or the desktop shell's own "Inox Hydra" binary,
+    produced an entry that started nothing while Settings reported it on.
+    Inside double quotes, ", `, $ and \\ take a backslash; then the value as a
+    whole escapes each backslash again, and % is doubled so it is not read as
+    a field code.
+    """
+    quoted = '"' + "".join("\\" + ch if ch in '"`$\\' else ch for ch in arg) + '"'
+    return quoted.replace("\\", "\\\\").replace("%", "%%")
 
 
 def enable_autostart() -> Dict[str, Any]:
@@ -330,7 +345,8 @@ def enable_autostart() -> Dict[str, Any]:
         return {"enabled": False, "reason": "the LaunchAgent plist was not created"}
 
     if is_linux():
-        exec_line = target if not target.endswith(".py") else f"{sys.executable} {target}"
+        argv = [target] if not target.endswith(".py") else [sys.executable, target]
+        exec_line = " ".join(desktop_exec_arg(arg) for arg in argv)
         icon = get_app_icon_path()
         desktop_entry = "\n".join([
             "[Desktop Entry]",
@@ -342,7 +358,8 @@ def enable_autostart() -> Dict[str, Any]:
             f"Icon={icon}",
             "Terminal=false",
             "StartupNotify=false",
-            "Categories=Office;Productivity;",
+            # Registered categories only: desktop-file-validate rejects others.
+            "Categories=Office;",
             "",
         ])
         try:

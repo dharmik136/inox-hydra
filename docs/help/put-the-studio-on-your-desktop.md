@@ -50,7 +50,7 @@ The studio can add an `Inox Hydra.lnk` entry (`LinkedIn Studio.lnk` if you turne
 > [!NOTE]
 > For maintainers: these routes need the studio token and have no interface control.
 >
-> - `POST /api/v1/desktop/autostart` with `{"enabled": true}` creates the Startup entry, and `{"enabled": false}` removes it. On macOS it writes a LaunchAgent, `com.inoxhydra.linkedinstudio.plist`, in `~/Library/LaunchAgents`; on Linux, `~/.config/autostart/inox-hydra.desktop`. It reports the state it achieved. `GET /api/v1/desktop/integration` reports the current state.
+> - `POST /api/v1/desktop/autostart` with `{"enabled": true}` creates the Startup entry, and `{"enabled": false}` removes it. On macOS it writes a LaunchAgent, `com.inoxhydra.linkedinstudio.plist`, in `~/Library/LaunchAgents`; on Linux, `~/.config/autostart/inox-hydra.desktop`. It reports the state it achieved. A copy with no launcher next to its code, such as one installed with pip, cannot start itself at sign-in: there it answers `"enabled": false` with the reason, and `GET /api/v1/desktop/integration` reports `autostart_available` as false. `GET /api/v1/desktop/integration` reports the current state.
 > - `POST /api/v1/browser/create-shortcuts` writes one launcher per detected browser: `Inox Hydra (<browser>).lnk` on Windows, `Inox Hydra (<browser>).command` on macOS, `inox-hydra-<id>.desktop` on Linux. Each opens LinkedIn in the bridge browser profile with the extension loaded; it does not open the studio, so it does not pair the browser by itself. It also makes one for Chrome, which ignores the extension flag. The macOS and Linux launchers are tested with fake browsers only.
 
 ## If it does not work

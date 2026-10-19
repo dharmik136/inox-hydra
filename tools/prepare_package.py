@@ -39,6 +39,31 @@ TOP_LEVEL_DOCS = [
     "GETTING_STARTED.md",
 ]
 MODULE_DOCS_DIR = "modules"
+HELP_DOCS_DIR = "help"
+
+
+def served_help_paths() -> list:
+    """
+    Every document the Docs screen files under a help section.
+
+    Read from docs_engine.HELP_SECTIONS, the table the screen itself is built
+    from, so the build cannot drift from what the screen lists. The help
+    articles were never staged, so every built copy showed each help section
+    with 0 documents.
+    """
+    if REPO_ROOT not in sys.path:
+        sys.path.insert(0, REPO_ROOT)
+    from studio.backend import docs_engine
+
+    return [path for section in docs_engine.HELP_SECTIONS
+            if docs_engine.section_kind(section["id"]) == "help"
+            for path in section["paths"]]
+
+
+def missing_help(destination: str) -> list:
+    """The help documents absent from a staged tree. Empty means it is complete."""
+    return [path for path in served_help_paths()
+            if not os.path.isfile(os.path.join(destination, *path.split("/")))]
 
 
 def stage_docs(destination: str = STAGED_DOCS) -> dict:
@@ -81,12 +106,34 @@ def stage_docs(destination: str = STAGED_DOCS) -> dict:
                              os.path.join(destination, MODULE_DOCS_DIR, name))
                 modules.append(name)
 
+    # The help articles, written for the person using the studio, and any
+    # other document a help section lists (strategy_playbook.md).
+    help_docs = []
+    src_help = os.path.join(SOURCE_DOCS, HELP_DOCS_DIR)
+    if os.path.isdir(src_help):
+        os.makedirs(os.path.join(destination, HELP_DOCS_DIR), exist_ok=True)
+        for name in sorted(os.listdir(src_help)):
+            if name.endswith(".md"):
+                shutil.copy2(os.path.join(src_help, name), os.path.join(destination, HELP_DOCS_DIR, name))
+                help_docs.append(f"{HELP_DOCS_DIR}/{name}")
+    for path in served_help_paths():
+        if path in help_docs:
+            continue
+        src = os.path.join(SOURCE_DOCS, *path.split("/"))
+        if os.path.isfile(src):
+            os.makedirs(os.path.dirname(os.path.join(destination, *path.split("/"))), exist_ok=True)
+            shutil.copy2(src, os.path.join(destination, *path.split("/")))
+            help_docs.append(path)
+        else:
+            missing.append(path)
+
     return {
         "destination": destination,
         "top_level": top_level,
         "modules": modules,
+        "help": help_docs,
         "missing": missing,
-        "copied": len(top_level) + len(modules),
+        "copied": len(top_level) + len(modules) + len(help_docs),
     }
 
 
@@ -121,6 +168,14 @@ def main() -> int:
               f"{', '.join(result['missing'])}")
         print("Either restore the files or remove them from TOP_LEVEL_DOCS. "
               "Shipping without them leaves the Docs tab pointing at nothing.")
+        return 1
+
+    # Checked on the staged tree itself, not on the list above: what ships is
+    # what is on disk there.
+    absent = missing_help(result["destination"])
+    if absent:
+        print(f"ERROR: {len(absent)} help document(s) did not reach the staged docs: {', '.join(absent[:5])}")
+        print("A copy built from this would show those help sections empty.")
         return 1
 
     # Propagate the single version source before anything is packaged, so a

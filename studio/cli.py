@@ -19,6 +19,9 @@ Commands:
     migrate     Show or apply pending database schema migrations
     update      Check for a newer release, opt in, or opt out
 
+doctor, backup, restore and export act on the active creator profile unless
+--profile <id> names another; backup and export also take --all.
+
 Strict Invariants:
 - Zero em-dashes.
 - Destructive commands require explicit confirmation.
@@ -47,11 +50,46 @@ def _print_kv(title, mapping, indent="  "):
         print(f"{indent}{key:26s} {value}")
 
 
+def _profile_label(profile_id=None) -> str:
+    """'Name (id)' for a creator profile, the active one by default."""
+    pid = profile_id or paths.get_active_profile_id()
+    try:
+        try:
+            from .backend import accounts
+        except ImportError:
+            from studio.backend import accounts
+        entry = accounts.get_account(pid)
+        if entry and entry.get("name"):
+            return f"{entry['name']} ({pid})"
+    except Exception:
+        pass
+    return pid
+
+
+def _chosen_profiles(args):
+    """
+    The profiles a command runs in: None for the active one, or a list.
+
+    A backup, export or diagnosis covers one creator profile. With several,
+    the CLI used to act on the active one alone, and never said which.
+    """
+    if getattr(args, "all_profiles", False):
+        return paths.registered_profile_ids()
+    chosen = getattr(args, "profile", None)
+    if not chosen:
+        return None
+    known = paths.registered_profile_ids()
+    if chosen not in known:
+        raise ValueError(f"There is no creator profile '{chosen}'. Profiles on this machine: {', '.join(known)}.")
+    return [chosen]
+
+
 def cmd_doctor(args) -> int:
     report = support.collect_diagnostics()
 
     print(f"Inox Hydra {report['app_version']} on {report['platform']['system']} "
           f"{report['platform']['release']} (Python {report['platform']['python']})")
+    print(f"Profile: {_profile_label()}")
     print()
 
     p = report["paths"]
@@ -107,7 +145,12 @@ def cmd_paths(args) -> int:
 
 
 def cmd_backup(args) -> int:
-    archive = support.create_backup(args.label)
+    print(f"Profile: {_profile_label()}")
+    try:
+        archive = support.create_backup(args.label)
+    except ValueError as refused:
+        print(f"No backup written. {refused}")
+        return 1
     size = os.path.getsize(archive)
     print(f"Backup written:\n  {archive}\n  {size:,} bytes")
     print()
@@ -124,12 +167,20 @@ def cmd_restore(args) -> int:
     info = support.inspect_backup(args.archive)
     manifest = info.get("manifest") or {}
     print(f"Backup: {args.archive}")
-    print(f"  created      {manifest.get('created_at', 'unknown')}")
-    print(f"  app version  {manifest.get('app_version', 'unknown')}")
-    print(f"  database     {'yes' if info['has_database'] else 'NO'}")
-    print(f"  media files  {info['asset_count']}")
-    print(f"  profile      {manifest.get('profile', 'not recorded (made before profiles were separate)')}")
-    print(f"  restoring into the active profile: {support.paths.get_active_profile_id()}")
+    if info.get("kind") == "database":
+        # A pre-upgrade copy: the database alone, with no manifest to read.
+        print("  kind         a copy of the database alone, taken before an upgrade")
+        print(f"  created      {info.get('created_at') or 'unknown'}")
+        print(f"  schema       {info.get('schema_version')}")
+        print(f"  database     {'yes' if info['has_database'] else 'NO'}")
+        print("  media files  none (your current media files are left as they are)")
+    else:
+        print(f"  created      {manifest.get('created_at', 'unknown')}")
+        print(f"  app version  {manifest.get('app_version', 'unknown')}")
+        print(f"  database     {'yes' if info['has_database'] else 'NO'}")
+        print(f"  media files  {info['asset_count']}")
+        print(f"  profile      {manifest.get('profile', 'not recorded (made before profiles were separate)')}")
+    print(f"  restoring into the profile: {_profile_label()}")
     print()
 
     if not args.yes:
@@ -140,19 +191,35 @@ def cmd_restore(args) -> int:
 
     try:
         result = support.restore_backup(args.archive, into_active_profile=args.into_active_profile)
-    except ValueError as error:
+    except support.RestoreFailed as failed:
+        print(f"Not restored: {failed}")
+        if failed.safety_backup:
+            print(f"  safety snapshot       {failed.safety_backup}")
+            print("  It holds your state from just before this restore.")
+        return 1
+    except support.ProfileMismatch as error:
         print(str(error))
         print("Pass --into-active-profile to restore it into the active profile anyway.")
         return 1
+    except ValueError as error:
+        print(f"Not restored: {error}")
+        return 1
     print(f"Restored from {result['restored_from']}")
     print(f"  media files restored  {result['assets_restored']}")
-    print(f"  safety snapshot       {result['safety_backup']}")
+    print(f"  safety snapshot       {result['safety_backup'] or 'none'}")
+    if result.get("safety_note"):
+        print(f"  {result['safety_note']}")
     print()
     print("Restart Inox Hydra for the restored data to take effect.")
     return 0
 
 
 def cmd_export(args) -> int:
+    print(f"Profile: {_profile_label()}")
+    if getattr(args, "all_profiles", False) and args.output:
+        print("Not exported: --all writes one export per profile, each into its own exports folder,")
+        print("so it cannot share one --output. Leave --output out, or name one --profile.")
+        return 1
     try:
         destination = support.export_data(args.output, fmt=args.format)
     except ValueError as refused:
@@ -176,15 +243,19 @@ def cmd_export(args) -> int:
 def cmd_reset(args) -> int:
     if not args.yes:
         print("This clears configuration: AI provider settings and the stored LinkedIn")
-        print("session. Your drafts, leads and analytics are NOT touched, and a safety")
-        print("snapshot is taken first.")
+        print("session. Your drafts, leads, analytics, queue and Brand Studio profile are")
+        print("NOT touched, and a safety snapshot is taken first.")
         print()
         print("Re-run with --yes to proceed.")
         return 1
 
-    result = support.reset_configuration(keep_data=True)
-    for table, count in result["cleared"].items():
-        print(f"  cleared {count} rows from {table}")
+    try:
+        result = support.reset_configuration(keep_data=True)
+    except ValueError as refused:
+        print(f"Nothing was reset. {refused}")
+        return 1
+    cleared = result.get("cleared_keys") or []
+    print(f"  cleared {len(cleared)} settings: {', '.join(cleared) if cleared else 'none were set'}")
     print(f"  safety snapshot  {result['safety_backup']}")
     print()
     print("Reconfigure your AI provider with: python studio_cli.py ai configure")
@@ -192,6 +263,10 @@ def cmd_reset(args) -> int:
 
 
 def cmd_migrate(args) -> int:
+    if not os.path.exists(paths.get_db_path()):
+        print(f"There is no studio database at {paths.get_db_path()} yet.")
+        print("It is created, already at this build's schema, the first time the studio starts.")
+        return 0
     status = migration_ledger.describe()
     print(f"Schema version {status['current_version']}, this build targets "
           f"{status['target_version']}.")
@@ -233,6 +308,11 @@ def cmd_migrate(args) -> int:
 
 
 def cmd_update(args) -> int:
+    if args.action in ("enable", "disable") and not os.path.exists(paths.get_db_path()):
+        print(f"No studio database at {paths.get_db_path()} yet, so one is created there to hold")
+        print("this choice, as the first start would. If your data is somewhere else, run `paths`.")
+        print()
+
     if args.action == "enable":
         updates.set_enabled(True)
         print("Update checks ENABLED.")
@@ -273,8 +353,23 @@ def cmd_update(args) -> int:
             print(f"\n{status['notes']}\n")
         print(f"Download it from: {status['releases_url']}")
         print()
-        print("To upgrade: delete your Inox Hydra folder and extract the new one.")
-        print("Your data lives outside that folder, so it is not affected.")
+        # In true portable mode, and in a source checkout, the data is inside
+        # the folder. This used to tell everyone to delete that folder.
+        data_home = paths.get_app_home()
+        program_folder = os.path.dirname(os.path.abspath(paths._STUDIO_DIR))
+        try:
+            inside = os.path.commonpath([os.path.abspath(data_home), program_folder]) == program_folder
+        except ValueError:
+            inside = False
+        if paths.is_portable() or inside:
+            print(f"Your data is INSIDE the Inox Hydra folder, at {data_home}.")
+            print("Do not delete that folder. First back up every profile with `backup --all`.")
+            print("Then replace only the program files, and keep data, assets, backups, vault,")
+            print("logs, profiles and exports where they are. The help article \"Check your")
+            print("version and update the studio\" walks through it.")
+        else:
+            print("To upgrade: delete your Inox Hydra folder and extract the new one.")
+            print(f"Your data lives outside that folder, in {data_home}, so it is not affected.")
     else:
         print("You are up to date.")
     return 0
@@ -307,6 +402,15 @@ def cmd_token(args) -> int:
     return 0
 
 
+def _profile_options(parser, allow_all: bool) -> None:
+    parser.add_argument("--profile", metavar="ID",
+                        help="The creator profile to act on (default: the active one). "
+                             "Works for a profile the licence no longer opens, too")
+    if allow_all:
+        parser.add_argument("--all", dest="all_profiles", action="store_true",
+                            help="Every creator profile on this machine, one after another")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="studio.cli",
@@ -319,6 +423,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("doctor", help="Health summary and diagnostics bundle")
     p.add_argument("--bundle", action="store_true", help="Write a redacted report to a file")
     p.add_argument("--output", help="Where to write the bundle")
+    _profile_options(p, allow_all=False)
     p.set_defaults(func=cmd_doctor)
 
     p = sub.add_parser("paths", help="Show where this installation keeps its data")
@@ -326,6 +431,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("backup", help="Snapshot database and media into a ZIP")
     p.add_argument("--label", default="manual", help="Label included in the filename")
+    _profile_options(p, allow_all=True)
     p.set_defaults(func=cmd_backup)
 
     p = sub.add_parser("restore", help="Replace current state with a backup")
@@ -333,11 +439,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--yes", action="store_true", help="Confirm this destructive action")
     p.add_argument("--into-active-profile", action="store_true",
                    help="Restore a backup of another creator profile into the active one")
+    _profile_options(p, allow_all=False)
     p.set_defaults(func=cmd_restore)
 
     p = sub.add_parser("export", help="Write your content to JSON, CSV, or an Obsidian vault")
     p.add_argument("--format", choices=list(support.EXPORT_FORMATS), default="json")
     p.add_argument("--output", help="Destination file, or folder for --format obsidian")
+    _profile_options(p, allow_all=True)
     p.set_defaults(func=cmd_export)
 
     p = sub.add_parser("reset", help="Clear configuration, keep all content")
@@ -380,7 +488,20 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        return args.func(args)
+        try:
+            profiles = _chosen_profiles(args)
+        except ValueError as refused:
+            print(str(refused))
+            return 1
+        if profiles is None:
+            return args.func(args)
+        code = 0
+        for index, profile_id in enumerate(profiles):
+            if index:
+                print()
+            with paths.using_profile(profile_id):
+                code = max(code, args.func(args))
+        return code
     except KeyboardInterrupt:
         print("\nCancelled.")
         return 130

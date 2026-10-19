@@ -254,11 +254,10 @@ def test_a_missing_document_fails_the_build(monkeypatch, staging_dir):
 
 def test_a_complete_tree_still_succeeds(monkeypatch, staging_dir):
     """Guard against the new check failing a healthy build."""
-    monkeypatch.setattr(
-        prepare_package, "stage_docs",
-        lambda *a, **k: {"destination": staging_dir, "top_level": [], "modules": [],
-                         "missing": [], "copied": 13},
-    )
+    # A real tree, staged into the temporary folder: the build now also checks
+    # that every help article is on disk there (UX-12).
+    real_stage = prepare_package.stage_docs
+    monkeypatch.setattr(prepare_package, "stage_docs", lambda *a, **k: real_stage(staging_dir))
     monkeypatch.setattr(
         prepare_package.subprocess, "run",
         lambda *a, **k: type("R", (), {"returncode": 0})(),

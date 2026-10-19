@@ -149,6 +149,18 @@ def is_valid_profile_id(profile_id: Any) -> bool:
     return isinstance(profile_id, str) and bool(_PROFILE_ID.match(profile_id))
 
 
+# Names Windows reserves for devices: a folder cannot be called any of them.
+# Refused for new profiles on every platform, so a profile made on Linux can
+# still move to Windows. Existing ones are left readable, never hidden.
+_WINDOWS_DEVICE_NAMES = frozenset(
+    {"con", "prn", "aux", "nul"} | {f"com{n}" for n in range(10)} | {f"lpt{n}" for n in range(10)}
+)
+
+
+def is_reserved_profile_id(profile_id: Any) -> bool:
+    return isinstance(profile_id, str) and profile_id.lower() in _WINDOWS_DEVICE_NAMES
+
+
 def get_profiles_root() -> str:
     """Where every profile other than the default one keeps its folder."""
     return os.path.join(get_app_home(), PROFILES_DIRNAME)
@@ -206,13 +218,47 @@ def write_profiles(registry: Dict[str, Any]) -> None:
     _registry_cache.update(path=None, mtime=None, value=None)
 
 
-def profile_ids() -> List[str]:
-    """Every profile, the default first."""
+def registered_profile_ids() -> List[str]:
+    """Every profile on this machine, the default first, whatever the licence covers."""
     ids = [DEFAULT_PROFILE_ID]
     for entry in read_profiles()["profiles"]:
         if entry["id"] not in ids:
             ids.append(entry["id"])
     return ids
+
+
+def _licensed_profile_count() -> int:
+    try:
+        from . import licensing
+    except ImportError:
+        import licensing
+    try:
+        return max(1, int(licensing.profile_limit()))
+    except Exception:
+        # A licence that cannot be read is the free tier. See licensing.py.
+        return 1
+
+
+def profile_ids() -> List[str]:
+    """
+    Every profile the licence lets the studio open, the default first.
+
+    The profiles beyond the licence's count, in the order they were made, stay
+    on disk and in the registry: they can be backed up, exported and deleted,
+    but they are not opened, made active, or worked by the scheduler. The
+    limit used to be asked only when a profile was created, so an Agency
+    licence that ended kept all five profiles working.
+    """
+    ids = registered_profile_ids()
+    if len(ids) == 1:
+        return ids
+    return ids[:_licensed_profile_count()]
+
+
+def locked_profile_ids() -> List[str]:
+    """The profiles beyond what the licence covers."""
+    usable = profile_ids()
+    return [pid for pid in registered_profile_ids() if pid not in usable]
 
 
 def get_active_profile_id() -> str:
@@ -255,14 +301,34 @@ def _ensure(path: str) -> str:
     return path
 
 
+class ProfileGone(RuntimeError):
+    """The creator profile this work is pinned to has been deleted."""
+
+
+def _profile_dir(name: str) -> str:
+    """
+    One of the active profile's folders, created if missing, unless the profile is gone.
+
+    Work pinned to a profile (an image generation, an import, a telemetry
+    batch) can outlive the profile being deleted. Resolving its paths used to
+    create the folders again, so the deleted client's folder came back with
+    whatever that work wrote, outside every backup, and the id could never be
+    used again.
+    """
+    pid = get_active_profile_id()
+    if pid != DEFAULT_PROFILE_ID and pid not in registered_profile_ids():
+        raise ProfileGone(f"Creator profile '{pid}' was deleted, so nothing more is written for it.")
+    return _ensure(os.path.join(get_profile_home(pid), name))
+
+
 def get_data_dir() -> str:
     """Database, ETag caches, and other small structured state. Per profile."""
-    return _ensure(os.path.join(get_profile_home(), "data"))
+    return _profile_dir("data")
 
 
 def get_assets_dir() -> str:
     """Root of user media. Mounted at /assets by the web layer. Per profile."""
-    return _ensure(os.path.join(get_profile_home(), "assets"))
+    return _profile_dir("assets")
 
 
 def get_uploads_dir() -> str:
@@ -292,12 +358,12 @@ def get_backups_dir() -> str:
     This is the user's undo button. It is the only recovery path available when
     an upgrade goes wrong on a machine nobody can reach.
     """
-    return _ensure(os.path.join(get_profile_home(), "backups"))
+    return _profile_dir("backups")
 
 
 def get_exports_dir() -> str:
     """Where an export lands when the caller names no destination. Per profile."""
-    return _ensure(os.path.join(get_profile_home(), "exports"))
+    return _profile_dir("exports")
 
 
 def get_db_path() -> str:
@@ -340,10 +406,19 @@ def get_docs_dir() -> str:
     development takes effect immediately without a repackaging step. An
     installed build has no repo-root docs/, so it falls through to the copy
     staged inside the package by tools/prepare_package.py.
+
+    The repo-root folder counts only when it holds the help articles. Beside an
+    installed package, ../docs is site-packages/docs, which any other package
+    may have created, and taking it would show that package's files and none
+    of the help.
     """
-    if os.path.isdir(_REPO_DOCS_DIR):
+    if _is_our_docs(_REPO_DOCS_DIR):
         return _REPO_DOCS_DIR
     return _PACKAGED_DOCS_DIR
+
+
+def _is_our_docs(folder: str) -> bool:
+    return os.path.isdir(os.path.join(folder, "help"))
 
 
 def get_modules_docs_dir() -> str:
@@ -380,5 +455,5 @@ def describe() -> dict:
         "db_size_bytes": os.path.getsize(db) if os.path.exists(db) else 0,
         "frontend_dir": get_frontend_dir(),
         "docs_dir": get_docs_dir(),
-        "docs_source": "source checkout" if os.path.isdir(_REPO_DOCS_DIR) else "packaged",
+        "docs_source": "source checkout" if _is_our_docs(_REPO_DOCS_DIR) else "packaged",
     }

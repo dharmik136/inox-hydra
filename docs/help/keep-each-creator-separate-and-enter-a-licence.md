@@ -43,4 +43,8 @@ The key is checked on this machine, against the key the studio ships with. Nothi
 
 During the beta every Creator feature is open on every install, licensed or not. A licence changes one thing today: the number of profiles.
 
-A licence has an end date, apart from a lifetime one. Each renewal sends a new key with a new end date; paste it the same way. When a licence ends, the studio returns to the free tier. Nothing is deleted, and everything stays readable and exportable. **Remove licence** takes the key off this machine, for example before you hand the computer on.
+A licence has an end date, apart from a lifetime one. Each renewal sends a new key with a new end date; paste it the same way. The studio remembers the latest date it has seen, so setting the computer's clock back does not bring an ended licence back. When the clock reads earlier than that date, **This machine** names the date the licence is checked against. When a licence ends, the studio returns to the free tier. Nothing is deleted, and everything stays readable and exportable. **Remove licence** takes the key off this machine, for example before you hand the computer on.
+
+### When an Agency licence ends
+
+Your first profile always works. The profiles beyond what the licence now covers, counted in the order you made them, stay closed: the studio opens your first profile instead, their scheduled posts wait, and clicking one in the switcher shows why and how to renew. They are still listed, and nothing in them is deleted. You can still back one up or export it from the command line, for example `python -m studio.cli backup --profile <profile id>` (portable copy: `InoxHydra-CLI.bat backup --profile <profile id>`), or delete it. Paste a renewed key and they open again.

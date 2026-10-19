@@ -69,4 +69,7 @@ studio = [
     "extension/icons/*.png",
     "docs/*.md",
     "docs/modules/*.md",
+    # The help articles. Left out, every installed copy showed each help
+    # section with 0 documents.
+    "docs/help/*.md",
 ]
