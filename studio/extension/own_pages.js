@@ -188,7 +188,9 @@
     if (parts.length === 2 && !/^\d+$/.test(fraction)) return null;
     if (!/^\d+$/.test(whole)) {
       const grouped = new RegExp("^\\d{1,3}(?:[" + groupMark + " ']\\d{3})+$");
-      if (!grouped.test(whole) || new Set(whole.replace(/\d/g, "")).size > 1) return null;
+      // Indian lakh and crore grouping, "12,34,567", wherever the comma groups.
+      const lakh = groupMark === "," && /^\d{1,2}(?:,\d{2})+,\d{3}$/.test(whole);
+      if (!(grouped.test(whole) || lakh) || new Set(whole.replace(/\d/g, "")).size > 1) return null;
     }
     if (fraction && !suffix) return null;
     const value = parseFloat(whole.replace(/\D/g, "") + (fraction ? "." + fraction : ""));

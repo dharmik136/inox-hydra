@@ -136,3 +136,27 @@ def test_the_profile_top_card_refuses_a_dotted_count_of_unknown_language(pages):
     observed = pages.sent(page, "/api/v1/identity/observe")
     assert observed
     assert observed[0]["follower_count"] is None
+
+
+# Review of BRIDGE-05: Indian lakh and crore grouping ("12,34,567") was read
+# correctly before the locale parser and refused by it.
+
+def test_indian_grouping_is_read_as_before(pages):
+    for lang in ("en", "en-IN", "hi", None):
+        got = _parse(pages, lang, ["12,34,567", "1,23,456", "1,00,00,000", "12,345"])
+        assert got["12,34,567"] == (1234567, "exact"), lang
+        assert got["1,23,456"] == (123456, "exact"), lang
+        assert got["1,00,00,000"] == (10000000, "exact"), lang
+        assert got["12,345"] == (12345, "exact"), lang
+    # Where the comma is the decimal mark it is still not a thousands grouping.
+    german = _parse(pages, "de", ["12,34,567", "1.234.567"])
+    assert german["12,34,567"] is None and german["1.234.567"] == (1234567, "exact")
+
+
+def test_the_profile_top_card_reads_an_indian_follower_count(pages):
+    body = PROFILE.replace("8.210 Follower", "1,23,456 followers").replace("1.204 connections", "500+ connections")
+    page = pages.open("/in/test-creator/", page_html(body, title="Test Creator | LinkedIn", lang="en-IN"),
+                      scripts=("voyager_schema.js", "content.js", "own_pages.js"))
+    page.clock.run_for(4000)
+    observed = pages.sent(page, "/api/v1/identity/observe")
+    assert observed and observed[0]["follower_count"] == 123456
