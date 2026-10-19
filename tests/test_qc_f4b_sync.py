@@ -214,6 +214,37 @@ def test_sync_all_says_what_it_opened_and_in_which_order(monkeypatch):
     assert "starts when the bridge reports in" in message
 
 
+@pytest.fixture
+def launcher(monkeypatch, tmp_path, no_real_browser):
+    import browser_launcher
+    monkeypatch.setattr(browser_launcher, "get_browser_profile_dir", lambda *a, **k: str(tmp_path))
+    monkeypatch.setattr(browser_launcher, "_try_open_in_running_browser", lambda *a, **k: None)
+    return browser_launcher
+
+
+def test_with_no_browser_the_launcher_says_what_to_install(launcher, monkeypatch, no_real_browser):
+    monkeypatch.setattr(launcher, "detect_installed_browsers", lambda: {})
+    result = launcher.launch_browser_with_extension("auto", "https://www.linkedin.com/feed/")
+    assert result["status"] == "error"
+    message = result["message"]
+    assert "this PC" not in message and "this computer" in message
+    assert "nothing opened" in message.lower()
+    assert "Chrome, Edge" not in message, "Chrome was named as a supported browser, and it cannot load the bridge"
+    assert "Edge" in message and "Brave" in message
+    assert no_real_browser.launched == []
+
+
+def test_with_only_chrome_the_launcher_names_the_folder_to_load(launcher, monkeypatch, no_real_browser):
+    monkeypatch.setattr(launcher, "detect_installed_browsers", lambda: {
+        "chrome": {"id": "chrome", "name": "Google Chrome", "path": "/nonexistent/chrome",
+                   "is_available": True, "carries_extension": False}})
+    result = launcher.launch_browser_with_extension("auto", "https://www.linkedin.com/feed/")
+    assert result["carries_extension"] is False
+    assert "path below" not in result["message"], "Setup shows no path below the message"
+    assert launcher.get_extension_dir() in result["message"]
+    assert len(no_real_browser.launched) == 1  # recorded by the stand-in, nothing started
+
+
 def test_a_chain_whose_request_expired_is_over():
     _confirm()
     onboarding.start_sync_chain()

@@ -696,9 +696,15 @@ def launch_browser_with_extension(
     """
     browsers = detect_installed_browsers()
     if not browsers:
+        # Chrome is not named as supported: it is found by detection, but it
+        # cannot load the bridge, so recommending it sends people to the one
+        # browser that will not work.
         return {
             "status": "error",
-            "message": "No supported Chromium browser (Chrome, Edge, Brave, Opera) detected on this PC."
+            "message": (
+                "No Chromium browser was found on this computer, so nothing opened. Install "
+                "Microsoft Edge or Brave, which can load the bridge, then try again."
+            ),
         }
 
     selected = None
@@ -790,10 +796,12 @@ def launch_browser_with_extension(
         if carries is True:
             message = f"Launched {selected['name']} with the bridge loaded."
         elif carries is False:
+            # The folder is in the message, because not every screen that shows
+            # this message shows the path beside it.
             message = (
                 f"Launched {selected['name']}, but it ignores --load-extension, so the "
                 "bridge is not attached and no leads will be captured. Use Edge or Brave, "
-                "or load the extension by hand from the path below."
+                f"or load the extension by hand: Load unpacked, from {ext_path}"
             )
         else:
             message = (

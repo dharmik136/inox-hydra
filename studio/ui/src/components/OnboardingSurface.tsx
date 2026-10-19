@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { Check, ExternalLink, Loader2 } from "lucide-react";
+import { Check, Copy, ExternalLink, Loader2 } from "lucide-react";
 import {
   OWN_PROFILE_URL,
   confirmIdentity,
+  copyExtensionPath,
   deleteLinkedInSession,
   fetchBrowserBridge,
   fetchOnboardingState,
@@ -120,6 +121,9 @@ export function OnboardingSurface() {
                 SIGN IN THERE IF IT ASKS. THIS STEP TICKS BY ITSELF.
               </p>
             </div>
+          )}
+          {!state.bridge.connected && bridge && !bridge.browsers.some((b) => b.carries_extension === true) && (
+            <LoadByHand bridge={bridge} />
           )}
         </Step>
 
@@ -540,6 +544,51 @@ function ProfileCard({
       >
         NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU
       </button>
+    </div>
+  );
+}
+
+/**
+ * What to do when no browser here loads the bridge by itself: most Mac and
+ * many Windows machines have only Chrome, which ignores --load-extension. The
+ * launch message pointed at a folder this screen never showed.
+ */
+function LoadByHand({ bridge }: { bridge: BrowserBridge }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const none = bridge.browsers.length === 0;
+  return (
+    <div className="mt-4 rounded-md border border-edge p-3">
+      <p className="text-[13px] leading-relaxed text-ink-secondary">
+        {none
+          ? "No Chromium browser was found on this computer. Install Microsoft Edge or Brave, which load the bridge by themselves, then click the button above."
+          : `${bridge.browsers.map((b) => b.name).join(", ")} cannot load the bridge by itself. Install Microsoft Edge or Brave and click the button above, or load it by hand.`}
+      </p>
+      {!none && (
+        <>
+          <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
+            To load it by hand, open your browser&rsquo;s extensions page, turn on developer mode, choose Load
+            unpacked, and point it at this folder. Help has the steps, under Install the browser extension.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Secondary
+              onPress={() =>
+                void copyExtensionPath()
+                  .then(() => setCopied("COPIED TO THE CLIPBOARD"))
+                  .catch(() => setCopied("COULD NOT REACH THE CLIPBOARD. COPY IT FROM BELOW."))
+              }
+            >
+              <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              Copy the folder path
+            </Secondary>
+            {copied && (
+              <p role="status" className="studio-meta text-[10px] text-ink-muted">
+                {copied}
+              </p>
+            )}
+          </div>
+          <p className="studio-meta mt-2 break-all text-[10px] text-ink-muted">{bridge.extension_path}</p>
+        </>
+      )}
     </div>
   );
 }
