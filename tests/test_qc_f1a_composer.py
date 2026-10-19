@@ -166,6 +166,39 @@ def test_reload_with_unsaved_text_asks_before_it_is_lost(new_page, studio_url, a
     assert dialogs == ["beforeunload"], "a reload with nothing unsaved still asked"
 
 
+def test_each_screen_has_an_address_that_survives_a_reload(new_page, studio_url):
+    page = new_page()
+    page.goto(studio_url + "/", wait_until="networkidle")
+    page.get_by_role("button", name="Leads", exact=True).first.click()
+    expect(page).to_have_url(re.compile(r"#/leads$"))
+
+    page.reload(wait_until="networkidle")
+    expect(page.get_by_role("button", name="Leads", exact=True).first).to_have_attribute("aria-current", "page")
+
+
+def test_back_moves_between_screens_instead_of_leaving_the_studio(new_page, studio_url):
+    page = new_page()
+    page.goto(studio_url + "/", wait_until="networkidle")
+    page.get_by_role("button", name="Leads", exact=True).first.click()
+    page.get_by_role("button", name="Docs", exact=True).first.click()
+    expect(page).to_have_url(re.compile(r"#/docs$"))
+
+    page.go_back()
+    expect(page).to_have_url(re.compile(r"#/leads$"))
+    expect(page.get_by_role("button", name="Leads", exact=True).first).to_have_attribute("aria-current", "page")
+
+    page.go_forward()
+    expect(page.get_by_role("button", name="Docs", exact=True).first).to_have_attribute("aria-current", "page")
+
+
+def test_a_link_to_a_screen_opens_that_screen(new_page, studio_url):
+    """A help article or a teammate can point at a screen, and Setup does not pull it back."""
+    page = new_page()
+    page.goto(studio_url + "/#/queue", wait_until="networkidle")
+    page.wait_for_timeout(300)
+    expect(page.get_by_role("button", name="Queue", exact=True).first).to_have_attribute("aria-current", "page")
+
+
 def test_a_hook_replaces_only_the_opening_when_the_blank_line_holds_a_space(new_page, studio_url, api):
     """
     Text pasted from LinkedIn keeps blank lines that are not empty: a space,

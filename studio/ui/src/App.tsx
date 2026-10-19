@@ -44,8 +44,32 @@ import { confirmLeaving, registerUnsavedWork } from "@/lib/unsaved";
 /** Average adult reading speed. Used for an estimate that is labelled as one. */
 const WORDS_PER_MINUTE = 200;
 
+/**
+ * The screen an address names: "#/leads" is Leads.
+ *
+ * Every screen has one, so a reload stays where it was, a help article or a
+ * teammate can link to a screen, and Back moves between screens instead of
+ * leaving the studio. The section is all an address holds. Devtools is never
+ * linked to, because in a consumer build every route behind it answers 404.
+ */
+function sectionFromAddress(hash: string): SectionId | null {
+  const id = hash.replace(/^#\/?/, "");
+  return STUDIO_SECTIONS.some((section) => section.id === id && id !== "devtools") ? (id as SectionId) : null;
+}
+
+/** Puts a screen's address in the location bar, as a new history entry unless `replace`. */
+function writeAddress(section: SectionId, replace: boolean): void {
+  const address = `#/${section}`;
+  if (window.location.hash === address) return;
+  if (replace) window.history.replaceState(null, "", address);
+  else window.history.pushState(null, "", address);
+}
+
 export default function App() {
-  const [active, setActive] = useState<SectionId>("composer");
+  // Opened on an address, the studio starts on that screen and Setup's first
+  // run redirect leaves it alone.
+  const linked = useRef(sectionFromAddress(window.location.hash));
+  const [active, setActive] = useState<SectionId>(linked.current ?? "composer");
   const activeRef = useRef(active);
   activeRef.current = active;
 
@@ -60,7 +84,26 @@ export default function App() {
     if (next === activeRef.current) return true;
     if (!confirmed && !confirmLeaving(activeRef.current)) return false;
     setActive(next);
+    writeAddress(next, false);
     return true;
+  }, []);
+
+  // Back and Forward, and an address typed into the location bar. Leaving a
+  // screen whose edits would be lost asks first; staying puts that screen's
+  // address back, since the browser has already moved off it.
+  useEffect(() => {
+    if (!linked.current) writeAddress(activeRef.current, true);
+    const onPop = () => {
+      const target = sectionFromAddress(window.location.hash) ?? "composer";
+      if (target === activeRef.current) return;
+      if (!confirmLeaving(activeRef.current)) {
+        writeAddress(activeRef.current, false);
+        return;
+      }
+      setActive(target);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
   }, []);
   const [trayOpen, setTrayOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -132,9 +175,14 @@ export default function App() {
     let live = true;
     fetchOnboardingState()
       .then((state) => {
-        // Setup until the studio knows who you are, Today afterwards.
-        if (live) {
-          setActive((current) => (current === "composer" ? (state.steps.identity ? "today" : "setup") : current));
+        // Setup until the studio knows who you are, Today afterwards. Not
+        // when the studio was opened on a screen's address, and replacing
+        // the address rather than adding one, so Back does not return to a
+        // Composer the creator never chose.
+        if (live && !linked.current && activeRef.current === "composer") {
+          const home = state.steps.identity ? "today" : "setup";
+          setActive(home);
+          writeAddress(home, true);
         }
       })
       .catch(() => undefined);
