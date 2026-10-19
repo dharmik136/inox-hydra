@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useState as useLocalState } from "react";
 import { Archive, Check, Loader2, Network, ShieldCheck } from "lucide-react";
 import {
@@ -19,6 +19,7 @@ import {
   type ProfileResponse,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { registerUnsavedWork } from "@/lib/unsaved";
 import { GroundingWorkspace } from "./GroundingWorkspace";
 import { LicenceWorkspace } from "./LicenceWorkspace";
 
@@ -54,6 +55,21 @@ export function BrandStudioSurface() {
   const [workspace, setWorkspace] = useState<Workspace>("Identity");
   const [state, setState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  // Edits not yet saved are unsaved work like the Composer's, so switching
+  // profile, reloading, or leaving this screen asks before they are thrown
+  // away. Only the Composer used to count, and these went without a word.
+  const unsaved = useRef(false);
+  unsaved.current = state === "dirty" || state === "failed";
+  useEffect(
+    () =>
+      registerUnsavedWork("brand-studio", {
+        label: "Your Brand Studio edits",
+        section: "settings",
+        check: () => unsaved.current,
+      }),
+    [],
+  );
 
   useEffect(() => {
     let live = true;

@@ -507,7 +507,8 @@ def test_a_one_profile_licence_explains_the_limit_instead_of_offering_the_form(s
     assert "Agency licence" in dialog.inner_text()
 
 
-def test_a_licence_with_room_offers_add_creator_profile(studio, monkeypatch):
+def _agency_key(monkeypatch):
+    """An Agency licence for three profiles, signed by a key this test installs."""
     import base64
 
     import ed25519
@@ -515,11 +516,15 @@ def test_a_licence_with_room_offers_add_creator_profile(studio, monkeypatch):
 
     secret = bytes(range(32))
     monkeypatch.setattr(licensing, "PUBLIC_KEYS", [base64.b64encode(ed25519.public_key(secret)).decode()])
-    key = licensing.encode(
+    return licensing.encode(
         {"v": 1, "id": "qc-f7", "email": "buyer@example.com", "tier": "agency", "kind": "annual",
          "profiles": 3, "issued_at": "2026-10-19", "expires_at": "2099-01-01", "updates_until": "2099-01-01"},
         lambda message: ed25519.sign(secret, message),
     )
+
+
+def test_a_licence_with_room_offers_add_creator_profile(studio, monkeypatch):
+    key = _agency_key(monkeypatch)
     page = studio().open("Today")
     # Entered while the studio is already open, as from another tab: the
     # switcher has to read the licence again when it opens.
@@ -545,3 +550,39 @@ def test_the_command_banner_names_no_internal_engine(studio):
     text = page.locator("main").inner_text().upper()
     assert "ANTIGRAVITY" not in text, "the Command screen opens with an internal codename"
     assert "BUILT-IN" in text, "the banner no longer says what answers when no provider is connected"
+
+
+# ---------------------------------------------------------------------------
+# WRITE-05 / UX-13, Brand Studio's part: its unsaved edits count as unsaved
+# work, so whatever reloads the studio asks first
+# ---------------------------------------------------------------------------
+
+FETCH = ("async ([method, path, body]) => { const r = await fetch(path, {method, credentials: 'same-origin',"
+         " headers: {'Content-Type': 'application/json'}, body: body ? JSON.stringify(body) : undefined});"
+         " return {status: r.status, body: await r.json().catch(() => null)} }")
+
+
+def test_switching_profile_asks_before_discarding_brand_studio_edits(studio, monkeypatch):
+    session = studio()
+    page = session.open()
+    assert page.evaluate(FETCH, ["POST", "/api/v1/licence", {"key": _agency_key(monkeypatch)}])["status"] == 200
+    created = page.evaluate(FETCH, ["POST", "/api/v1/accounts", {"name": "Second Creator"}])["body"]["account"]
+    try:
+        session.go("Brand Studio")
+        headline = page.get_by_label("Headline")
+        headline.fill("An edit not saved yet")
+        page.get_by_text("UNSAVED").wait_for(state="visible")
+
+        asked = []
+        page.on("dialog", lambda dialog: (asked.append(dialog.message), dialog.dismiss()))
+        switcher = _open_switcher(page)
+        switcher.locator("div.group", has_text="Second Creator").locator("button").first.click()
+        page.wait_for_timeout(600)
+
+        assert asked, "the studio reloaded into another profile and threw the Brand Studio edits away"
+        assert "Brand Studio" in asked[0], f"the question does not say what would be lost: {asked[0]!r}"
+        assert headline.input_value() == "An edit not saved yet"
+    finally:
+        page.evaluate(FETCH, ["POST", "/api/v1/accounts/switch", {"account_id": "default"}])
+        page.evaluate(FETCH, ["DELETE", f"/api/v1/accounts/{created['id']}", {"confirm": "Second Creator"}])
+        page.evaluate(FETCH, ["DELETE", "/api/v1/licence", None])

@@ -11,6 +11,7 @@ The **Save** button at the top right saves **Identity** and **Watermark** only, 
 
 - It is greyed out until you first change something, and while a save is running. After a save it stays available.
 - The mark beside it reads UNSAVED, SAVING, SAVED or SAVE FAILED. Hover over SAVE FAILED to read the reason.
+- While it reads UNSAVED or SAVE FAILED, switching profile asks first, naming "Your Brand Studio edits", because the switch reloads the studio and the edits would be lost.
 
 The controls on **Grounding** and **Local security** act as soon as you use them and do not need **Save**.
 

@@ -9,17 +9,22 @@ import {
   type CreatorAccount,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { hasUnsavedWork } from "@/lib/unsaved";
+import { unsavedWorkLabels } from "@/lib/unsaved";
 import { useModalFocus } from "@/lib/modalFocus";
 
 const LICENCE_CHANGED = "inox:licence-changed";
 
-/** Each profile is its own database, so switching reloads the studio. Asks first if that would lose work. */
+/**
+ * Each profile is its own database, so switching reloads the studio. Asks
+ * first if that would lose work, naming whose: the Composer was the only one
+ * it knew of, so Brand Studio edits went without a question.
+ */
 function mayReload(): boolean {
+  const lost = unsavedWorkLabels();
   return (
-    !hasUnsavedWork() ||
+    lost.length === 0 ||
     window.confirm(
-      "The post in the Composer has unsaved changes. Switching profile reloads the studio and discards them. Switch anyway?",
+      `${lost.join(" and ")} ${lost.length === 1 ? "has" : "have"} unsaved changes. Switching profile reloads the studio and discards them. Switch anyway?`,
     )
   );
 }
