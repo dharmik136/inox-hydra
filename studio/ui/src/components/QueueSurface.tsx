@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCheck, Copy, Pause, Play, Zap } from "lucide-react";
+import { CheckCheck, Copy, Pause, Play, Undo2, Zap } from "lucide-react";
 import {
   dispatchQueueNow,
   fetchCadenceHealth,
   fetchDuePosts,
   fetchSmartSlots,
   publishNow,
+  returnToDrafts,
   toggleQueuePause,
   type CadenceHealth,
   type QueueSlot,
@@ -98,6 +99,22 @@ export function QueueSurface() {
       setDueNote("Copied. Paste it into LinkedIn, post it, then press I posted it.");
     } catch {
       setDueNote("This browser did not allow copying to the clipboard.");
+    }
+  }
+
+  async function onBackToDrafts(post: ScheduledPost) {
+    setBusy(true);
+    setDueNote(null);
+    try {
+      // For a post the creator has decided not to post: off the Queue, text
+      // kept, and nothing recorded as published.
+      await returnToDrafts(post.id);
+      setDueNote("Moved back to your drafts. Search for it with Ctrl K to open it in the Composer.");
+      await load();
+    } catch (error) {
+      setDueNote(error instanceof Error ? error.message : "The studio refused to move it.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -204,6 +221,15 @@ export function QueueSurface() {
                   >
                     <Copy className="size-3" strokeWidth={1.75} aria-hidden="true" />
                     Copy text
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onBackToDrafts(post)}
+                    className="flex items-center gap-1.5 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                  >
+                    <Undo2 className="size-3" strokeWidth={1.75} aria-hidden="true" />
+                    Back to drafts
                   </button>
                   <button
                     type="button"
