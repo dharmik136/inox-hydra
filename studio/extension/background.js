@@ -241,15 +241,48 @@ function getCookie(name) {
 
 // The LinkedIn account this browser is signed in to (signedInVanity, noted by
 // own_pages.js on the creator's own profile) holds only until the sign-in
-// changes. Signing out, or in as someone else, rewrites li_at, and the
-// analytics read after that must not be filed as the previous account's. The
-// next visit to your own profile notes it again.
+// changes. Signing out, or in as someone else, removes or replaces li_at, and
+// the analytics read after that must not be filed as the previous account's.
+// The next visit to your own profile notes it again.
+//
+// A rewrite of the same value is not a change. LinkedIn refreshes the cookie,
+// and forgetting on every write locked the creator out of their analytics
+// each time. So the worker keeps a digest of li_at as it was when the account
+// was noted (never the cookie itself) and forgets only when the cookie is
+// removed or its value differs from that.
+const LI_AT_DIGEST_KEY = "signedInCookieDigest";
+
+async function liAtDigest(value) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value || ""));
+  return Array.from(new Uint8Array(bytes)).slice(0, 16).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function forgetSignedInMember() {
+  chrome.storage.local.remove(["signedInVanity", LI_AT_DIGEST_KEY]);
+}
+
 try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local" || !changes.signedInVanity || !changes.signedInVanity.newValue) return;
+    chrome.cookies.get({ url: "https://www.linkedin.com", name: "li_at" }, async (cookie) => {
+      if (!cookie || !cookie.value) return;
+      chrome.storage.local.set({ [LI_AT_DIGEST_KEY]: await liAtDigest(cookie.value) });
+    });
+  });
   chrome.cookies.onChanged.addListener((change) => {
     const cookie = change && change.cookie;
-    if (cookie && cookie.name === "li_at" && /(^|\.)linkedin\.com$/.test(cookie.domain || "")) {
-      chrome.storage.local.remove("signedInVanity");
+    if (!cookie || cookie.name !== "li_at" || !/(^|\.)linkedin\.com$/.test(cookie.domain || "")) return;
+    // An overwrite arrives as a removal followed by the new cookie; the new
+    // cookie decides.
+    if (change.removed && change.cause === "overwrite") return;
+    if (change.removed) {
+      forgetSignedInMember();
+      return;
     }
+    chrome.storage.local.get(LI_AT_DIGEST_KEY, async (items) => {
+      const known = items && items[LI_AT_DIGEST_KEY];
+      if (!known || known !== await liAtDigest(cookie.value)) forgetSignedInMember();
+    });
   });
 } catch (err) {
   // No cookies API (an old browser): the studio still refuses a mismatch.
