@@ -45,6 +45,14 @@ Once connected, this is what reaches the provider:
 | **Media** tab **Generate**, with `openai` or `gemini` | The image prompt, to DALL-E 3 or Imagen 3 |
 | **Audit** tab, and message drafts on **Leads** | Nothing. These always run locally. |
 
+Re-Hook and Command also send what the studio knows about how you write, so the model matches your voice rather than a generic one. It is read from your own profile and posts, and only the parts the studio has go:
+
+- once you have confirmed your profile: your headline, your current role and up to two earlier roles, the skills on your profile, and the first 400 characters of your About section
+- once at least three of your posts are imported: how your posts are usually shaped (length, paragraphs, opening questions, emoji and hashtags)
+- the opening lines of your 3 most-reacted posts
+
+The **Prompt** tab lists exactly which of these the studio holds for you, under **What a provider would receive**, and each Command answer ends with what was sent with it. The model is told not to mention your title or employer unless your text does. There is no setting that leaves this out while a provider is connected.
+
 The **Prompt** tab also lists Repurposing and Tailored DMs, but no control in this interface repurposes text, and message drafts never use the model.
 
 If a provider call fails, Re-Hook and Command say so and give the provider's reason, such as a refused key or an account out of credit, and the **Prompt** tab shows the last failure until a request succeeds. Nothing is replaced with local templates, and your text is not passed to any other provider. A request that has not finished after 40 seconds is stopped. While one Re-Hook is running, pressing it again does nothing.

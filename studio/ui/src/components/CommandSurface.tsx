@@ -8,6 +8,8 @@ interface Entry {
   failed: boolean;
   /** Who wrote the response, as the engine reports it. */
   engine: string | null;
+  /** What went to the provider with the instruction, when one was used. */
+  sent: string[];
 }
 
 /**
@@ -60,7 +62,8 @@ export function CommandSurface({ draft = "" }: { draft?: string }) {
             ? result.message
             : JSON.stringify(result, null, 2);
       const engine = typeof result.engine === "string" ? result.engine : null;
-      setLog((entries) => [{ command: text, response: readable, failed: false, engine }, ...entries]);
+      const sent = Array.isArray(result.sent) ? result.sent.map(String) : [];
+      setLog((entries) => [{ command: text, response: readable, failed: false, engine, sent }, ...entries]);
       setCommand("");
     } catch (error) {
       setLog((entries) => [
@@ -69,6 +72,7 @@ export function CommandSurface({ draft = "" }: { draft?: string }) {
           response: error instanceof Error ? error.message : "The command was refused.",
           failed: true,
           engine: null,
+          sent: [],
         },
         ...entries,
       ]);
@@ -156,6 +160,9 @@ export function CommandSurface({ draft = "" }: { draft?: string }) {
                 <pre className="mt-2 font-editorial text-[13px] leading-relaxed whitespace-pre-wrap text-ink-secondary">
                   {entry.response}
                 </pre>
+                {entry.sent.length > 0 && (
+                  <p className="mt-2 text-[11px] leading-snug text-ink-muted">Sent with it: {entry.sent.join("; ")}.</p>
+                )}
               </li>
             ))}
           </ul>

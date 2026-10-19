@@ -242,3 +242,25 @@ def test_the_command_console_shows_the_answer_and_sends_the_draft_only_when_aske
     page.click('button[aria-label="Run the command"]')
     page.wait_for_function("document.querySelectorAll('section li pre').length >= 2")
     assert "Our bakery" not in provider.requests[-1]["messages"][-1]["content"], "the draft was sent unasked"
+
+
+def _open_prompt_tab(page):
+    page.click('button[aria-label="Composer"]')
+    opener = page.locator('button[aria-label="Open inspector"]')
+    if opener.count() and opener.is_visible():
+        opener.click()
+    page.click('aside[aria-label="Inspector"] button:has-text("Prompt")')
+    page.wait_for_selector("text=What a provider would receive")
+    return page.locator('aside[aria-label="Inspector"]')
+
+
+def test_the_prompt_tab_says_what_each_feature_sends(page):
+    """[WRITE-11]"""
+    from agno_agentos import model_gateway
+
+    model_gateway.save_ai_config(provider="local_deterministic")
+    panel = _open_prompt_tab(page).inner_text()
+    assert "the first line of your selection" in panel
+    assert "your Composer draft when you tick the box to include it" in panel
+    assert "Nothing from your profile or posts goes with them yet." in panel
+    assert "PROMPT TEXT LEAVES" not in panel.upper()

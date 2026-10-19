@@ -13,10 +13,26 @@ const CAPABILITY_LABELS: Record<string, string> = {
 };
 
 /**
- * What /api/ai/status adds once a provider is configured: the last request
- * that failed, until one succeeds.
+ * What /api/ai/status adds to AiStatus: the last request that failed, until
+ * one succeeds, and what from the creator's own profile and posts goes with
+ * every Re-Hook and Command request.
  */
-type StatusWithFailure = AiStatus & { last_error?: string | null; last_error_at?: string | null };
+type StatusWithFailure = AiStatus & {
+  last_error?: string | null;
+  last_error_at?: string | null;
+  voice_pack_sent?: string[];
+};
+
+/**
+ * What each feature sends, in the order the creator meets them. The voice
+ * pack goes with the first two and is listed under them from the server,
+ * because it depends on what the studio knows about this creator.
+ */
+const SENT_BY_FEATURE: { feature: string; what: string }[] = [
+  { feature: "Re-Hook", what: "the first line of your selection" },
+  { feature: "Command", what: "your instruction, and your Composer draft when you tick the box to include it" },
+  { feature: "Media", what: "your image description" },
+];
 
 /**
  * The prompt inspector (blueprint section 10).
@@ -100,6 +116,25 @@ export function PromptPanel() {
         )}
       </section>
 
+      {/* Said where the choice is made. The pack went with every request
+          while this tab said only that "prompt text" leaves. */}
+      <section>
+        <p className="studio-label mb-2">{local ? "What a provider would receive" : "What the provider receives"}</p>
+        <dl className="flex flex-col gap-1.5">
+          {SENT_BY_FEATURE.map(({ feature, what }) => (
+            <div key={feature} className="flex gap-3">
+              <dt className="w-16 shrink-0 text-[11px] text-ink-muted">{feature}</dt>
+              <dd className="text-[12px] leading-snug text-ink-secondary">{what}</dd>
+            </div>
+          ))}
+        </dl>
+        <p className="mt-2 text-[12px] leading-snug text-ink-secondary">
+          {status.voice_pack_sent?.length
+            ? `With every Re-Hook and Command request, from your own profile and posts: ${status.voice_pack_sent.join("; ")}.`
+            : "Nothing from your profile or posts goes with them yet."}
+        </p>
+      </section>
+
       <section>
         <p className="studio-label mb-2">Available here</p>
         <ul className="flex flex-wrap gap-1">
@@ -164,8 +199,8 @@ export function PromptPanel() {
           )}
 
           <p className="studio-meta leading-relaxed text-ink-muted">
-            THE KEY IS STORED IN THIS MACHINE&apos;S ENCRYPTED VAULT. CONFIGURING ONE MEANS PROMPT
-            TEXT LEAVES THIS MACHINE FOR THAT PROVIDER.
+            THE KEY IS STORED IN THIS MACHINE&apos;S ENCRYPTED VAULT. CONFIGURING ONE MEANS WHAT IS
+            LISTED ABOVE LEAVES THIS MACHINE FOR THAT PROVIDER.
           </p>
         </div>
       </section>

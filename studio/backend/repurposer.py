@@ -61,6 +61,18 @@ def _voice() -> str:
         return ""
 
 
+def _voice_sent() -> List[str]:
+    """What _voice() appends, in the creator's terms, or [] if it cannot be read."""
+    try:
+        try:
+            from .voice_pack import disclosure
+        except ImportError:
+            from voice_pack import disclosure
+        return disclosure()
+    except Exception:
+        return []
+
+
 # -- Validation & Boundary Constants ----------------------------------------
 MAX_COMMAND_LENGTH = 5000
 MAX_CONTEXT_LENGTH = 10000
@@ -187,6 +199,9 @@ def get_ai_status() -> Dict[str, Any]:
         "active_mode": active_mode,
         "last_error": failure.get("message"),
         "last_error_at": failure.get("at"),
+        # What goes with every Re-Hook and Command request once a provider is
+        # connected, from the creator's own profile and posts.
+        "voice_pack_sent": _voice_sent(),
         "byo_ai_enabled": True,
         "antigravity_pair_programming": True,
         "capabilities": [
@@ -268,7 +283,10 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
         return {
             "status": "success",
             "engine": engine_name,
-            "output": cleaned
+            "output": cleaned,
+            # What went to the provider with this instruction, so the answer
+            # carries its own record of what left the machine.
+            "sent": ["your instruction"] + (["your Composer draft"] if context_clean else []) + _voice_sent(),
         }
 
     # No model, so nothing is written.
