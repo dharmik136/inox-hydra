@@ -92,7 +92,7 @@ def test_same_text_a_week_apart_imports_as_separate_posts(client):
     days = [datetime(2024, 1, d, 11, 0, tzinfo=timezone.utc) for d in (4, 11, 18)]
     shares = SHARES_HEADER + "".join(_share_row(day, i, OFFICE_HOURS) for i, day in enumerate(days))
     source = _upload(client, {"Shares.csv": shares})["source"]
-    summary = _import(client, source, include=["posts"]).json()["summary"]
+    summary = _import(client, source, include=["posts"], confirm_owner=True).json()["summary"]
     assert summary["posts"] == {"added": 3, "already_there": 0, "skipped": 0}, summary
     dates = [r[0] for r in _db().execute("SELECT published_at FROM own_posts ORDER BY published_at")]
     assert dates == [d.isoformat() for d in days]
@@ -108,7 +108,7 @@ def test_same_text_as_a_bridge_post_on_another_day_is_not_that_post(client):
     conn.close()
     later = datetime(2024, 1, 11, 11, 0, tzinfo=timezone.utc)
     source = _upload(client, {"Shares.csv": SHARES_HEADER + _share_row(later, 1, OFFICE_HOURS)})["source"]
-    summary = _import(client, source, include=["posts"]).json()["summary"]
+    summary = _import(client, source, include=["posts"], confirm_owner=True).json()["summary"]
     assert summary["posts"]["added"] == 1, "a post a week later was merged into the bridge's row"
     assert _db().execute("SELECT COUNT(*) FROM own_posts").fetchone()[0] == 2
 
@@ -119,7 +119,7 @@ def test_a_post_with_media_and_no_caption_is_imported(client):
     repost = _share_row(datetime(2024, 2, 2, 9, 0, tzinfo=timezone.utc), 78,
                         shared="https://www.linkedin.com/feed/update/urn:li:activity:7100000000000000000")
     source = _upload(client, {"Shares.csv": SHARES_HEADER + media + repost})["source"]
-    summary = _import(client, source, include=["posts"]).json()["summary"]
+    summary = _import(client, source, include=["posts"], confirm_owner=True).json()["summary"]
     assert summary["posts"] == {"added": 1, "already_there": 0, "skipped": 1}, summary
     row = _db().execute("SELECT activity_urn, published_at FROM own_posts").fetchone()
     assert row["activity_urn"] == f"urn:li:ugcPost:{_snow(day, 77)}" and row["published_at"] == day.isoformat()
@@ -136,6 +136,83 @@ def test_a_captionless_post_matches_the_bridge_row_by_id_and_time(client):
     conn.close()
     media = _share_row(day, 77, media="https://media.licdn.com/dms/image/sample/1", kind="ugcPost")
     source = _upload(client, {"Shares.csv": SHARES_HEADER + media})["source"]
-    summary = _import(client, source, include=["posts"]).json()["summary"]
+    summary = _import(client, source, include=["posts"], confirm_owner=True).json()["summary"]
     assert summary["posts"] == {"added": 0, "already_there": 1, "skipped": 0}, summary
     assert _db().execute("SELECT reactions FROM own_posts").fetchone()[0] == 3
+
+
+# ---------------------------------------------------------------------------
+# SETUP-01: the preview says whose archive it is, and another member's
+# archive is not imported as the creator's without their word
+# ---------------------------------------------------------------------------
+
+PROFILE_HEADER = ("First Name,Last Name,Maiden Name,Address,Birth Date,Headline,Summary,Industry,Zip Code,"
+                  "Geo Location,Twitter Handles,Websites,Instant Messengers\n")
+
+
+def _profile(first, last, headline="Synthetic headline", about="Synthetic about.", where="Synthetic City"):
+    return PROFILE_HEADER + f"{first},{last},,,,{headline},{about},Software,,{where},,,\n"
+
+
+def _person_archive(first, last):
+    shares = SHARES_HEADER + _share_row(datetime(2024, 3, 5, 10, 0, tzinfo=timezone.utc), 1,
+                                        f"A synthetic post written by {first} {last} about compilers.")
+    return {"Profile.csv": _profile(first, last), "Shares.csv": shares,
+            "Skills.csv": "Name\nSynthetic Skill\n",
+            "Connections.csv": "First Name,Last Name,URL,Email Address,Company,Position,Connected On\n"
+                               "Ada,Example,https://www.linkedin.com/in/ada-example,,Co,Role,05 Mar 2024\n"}
+
+
+def _confirm(client, vanity, name):
+    res = client.post("/api/v1/identity/observe", json={
+        "vanity": vanity, "display_name": name, "headline": f"{name}'s synthetic headline",
+        "self_evidence": ["owner_edit_controls"]})
+    assert res.status_code == 200, res.text
+    res = client.post("/api/v1/identity/confirm", json={"vanity": vanity})
+    assert res.status_code == 200, res.text
+
+
+def _nothing_imported():
+    conn = _db()
+    return all(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+               for table in ("own_posts", "creator_skills", "connections", "archive_imports"))
+
+
+def test_the_preview_says_whose_archive_it_is(client):
+    _confirm(client, "sample-bob", "Sample Bob")
+    preview = _upload(client, _person_archive("Sample", "Alice"))
+    assert preview["owner"]["name"] == "Sample Alice"
+    assert preview["creator"]["name"] == "Sample Bob" and preview["creator"]["vanity"] == "sample-bob"
+    assert "Sample Alice" in preview["needs_confirmation"] and "Sample Bob" in preview["needs_confirmation"]
+
+
+def test_another_members_archive_is_refused_without_a_word_naming_both(client):
+    _confirm(client, "sample-bob", "Sample Bob")
+    source = _upload(client, _person_archive("Sample", "Alice"))["source"]
+    res = _import(client, source)
+    assert res.status_code == 409, res.text
+    assert "Sample Alice" in res.json()["detail"] and "Sample Bob" in res.json()["detail"]
+    assert _nothing_imported(), "another member's archive was written into the creator's studio"
+    identity = _db().execute("SELECT about, location FROM creator_identity").fetchone()
+    assert identity["about"] is None and identity["location"] is None
+
+    res = _import(client, source, confirm_owner=True)
+    assert res.status_code == 200, res.text
+    assert res.json()["summary"]["posts"]["added"] == 1
+
+
+def test_your_own_archive_imports_without_a_question(client):
+    _confirm(client, "sample-bob", "Sample Bob")
+    preview = _upload(client, _person_archive("Sámple", "BOB"))
+    assert preview["owner"]["name"] == "Sámple BOB" and preview["needs_confirmation"] == ""
+    assert _import(client, preview["source"]).status_code == 200
+
+
+def test_with_no_profile_confirmed_the_import_asks_first(client):
+    preview = _upload(client, _person_archive("Sample", "Alice"))
+    assert preview["creator"] is None
+    assert "Sample Alice" in preview["needs_confirmation"]
+    res = _import(client, preview["source"])
+    assert res.status_code == 409 and "Sample Alice" in res.json()["detail"]
+    assert _nothing_imported()
+    assert _import(client, preview["source"], confirm_owner=True).status_code == 200

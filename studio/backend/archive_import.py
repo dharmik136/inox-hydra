@@ -56,6 +56,7 @@ import json
 import os
 import re
 import time
+import unicodedata
 import uuid
 import zipfile
 import zlib
@@ -121,7 +122,8 @@ FILES: Dict[str, Dict[str, Any]] = {
     "profile": {
         "file": "profile.csv", "label": "Your name, headline and about", "default": True,
         "columns": {"first": ["first name"], "last": ["last name"], "headline": ["headline"]},
-        "optional": {"summary": ["summary", "about"], "location": ["geo location", "location"]},
+        "optional": {"summary": ["summary", "about"], "location": ["geo location", "location"],
+                     "profile_url": ["profile url", "public profile url"]},
     },
     "positions": {
         "file": "positions.csv", "label": "Your roles", "default": True,
@@ -152,6 +154,10 @@ NEVER_IMPORTED = {
 
 class ArchiveError(ValueError):
     """The archive cannot be read, or a source is not one the studio offered."""
+
+
+class OwnerUnconfirmed(ArchiveError):
+    """The archive may be another member's, and the creator has not said to import it as theirs."""
 
 
 # ---------------------------------------------------------------------------
@@ -443,8 +449,92 @@ def _parse(path: str) -> Dict[str, Any]:
     return {"parsed": parsed, "others": others, "bytes": os.path.getsize(path)}
 
 
+# ---------------------------------------------------------------------------
+# Whose archive it is
+# ---------------------------------------------------------------------------
+
+def _words(name: str) -> List[str]:
+    """A name as compared: accents, case and punctuation set aside."""
+    plain = "".join(c for c in unicodedata.normalize("NFKD", name or "") if not unicodedata.combining(c))
+    return re.findall(r"[^\W_]+", plain.casefold())
+
+
+def _owner(parsed: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """The member LinkedIn made the archive for, from its Profile.csv, or None when it does not say."""
+    rows = (parsed.get("profile") or {}).get("rows")
+    if not rows:
+        return None
+    row = rows[0]
+    name = " ".join(p for p in (row.get("first", ""), row.get("last", "")) if p).strip()
+    if not name:
+        return None
+    return {"name": name, "headline": row.get("headline") or None, "profile_url": row.get("profile_url") or None}
+
+
+def _creator() -> Optional[Dict[str, Any]]:
+    """The creator the studio knows: the profile they confirmed is theirs, or None before they have."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT vanity, display_name FROM creator_identity "
+                           "WHERE id = 1 AND confirmed_at IS NOT NULL").fetchone()
+    finally:
+        conn.close()
+    if not row or not row["vanity"]:
+        return None
+    return {"name": row["display_name"] or None, "vanity": row["vanity"]}
+
+
+def _same_person(owner: Dict[str, Any], creator: Dict[str, Any]) -> bool:
+    """
+    Whether the archive's member is the confirmed creator.
+
+    The profile address decides when the archive gives one. Otherwise the
+    names are compared word by word, so "Dr. Sample Bob" is Sample Bob; and
+    when the studio holds no name for the creator, their profile address
+    stands in for it ("sample-bob", "samplebob42").
+    """
+    match = re.search(r"linkedin\.com/in/([^/?#]+)", owner.get("profile_url") or "")
+    if match:
+        return _words(unquote(match.group(1))) == _words(creator["vanity"])
+    theirs = set(_words(owner["name"]))
+    if not theirs:
+        return False
+    if creator["name"]:
+        mine = set(_words(creator["name"]))
+        return bool(mine) and (theirs <= mine or mine <= theirs)
+    vanity = _words(creator["vanity"])
+    return theirs <= set(vanity) or set(vanity) <= theirs or "".join(vanity).startswith("".join(_words(owner["name"])))
+
+
+def _ownership(parsed: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Whose archive it is, who the studio knows the creator as, and, when they
+    are not plainly one person, what the creator must agree to before it is
+    imported: everything in an archive fills the creator's own record.
+    """
+    owner, creator = _owner(parsed), _creator()
+    statement = label = ""
+    if creator:
+        known = creator["name"] or f"linkedin.com/in/{creator['vanity']}"
+        known_as = f"{creator['name']} (linkedin.com/in/{creator['vanity']})" if creator["name"] else known
+        if owner is None:
+            statement = f"This archive does not say whose it is, and the studio knows you as {known_as}."
+            label = f"Import this archive as {known}'s own record"
+        elif not _same_person(owner, creator):
+            statement = f"This archive belongs to {owner['name']}, but the studio knows you as {known_as}."
+            label = f"Import {owner['name']}'s archive as {known}'s own record"
+    elif owner:
+        statement = (f"This archive belongs to {owner['name']}. No profile is confirmed in the studio yet, "
+                     "so it cannot check that this is you.")
+        label = f"This is my archive: import {owner['name']}'s archive as my own record"
+    else:
+        statement = "This archive does not say whose it is, and no profile is confirmed in the studio yet."
+        label = "This is my archive: import it as my own record"
+    return {"owner": owner, "creator": creator, "needs_confirmation": statement, "confirm_label": label}
+
+
 def preview(source: str) -> Dict[str, Any]:
-    """What the archive holds and what would be imported. Writes nothing."""
+    """What the archive holds, whose it is, and what would be imported. Writes nothing."""
     path, name = _resolve(source)
     result = _parse(path)
     files = []
@@ -474,6 +564,7 @@ def preview(source: str) -> Dict[str, Any]:
         "files": files,
         "not_imported": not_imported,
         "recognised": bool(files),
+        **_ownership(result["parsed"]),
     }
 
 
@@ -906,12 +997,14 @@ _IMPORTERS = {
 }
 
 
-def import_archive(source: str, include: Optional[List[str]] = None) -> Dict[str, Any]:
+def import_archive(source: str, include: Optional[List[str]] = None, confirm_owner: bool = False) -> Dict[str, Any]:
     """
     Imports the kinds the creator kept ticked, in short batches (_Batches).
 
-    `include` defaults to every kind marked default. An uploaded copy of the
-    archive is deleted once it has been imported.
+    `include` defaults to every kind marked default. An archive that may be
+    another member's is imported only with `confirm_owner`, the creator's
+    word that it is theirs. An uploaded copy of the archive is deleted once
+    it has been imported.
     """
     path, name = _resolve(source)
     result = _parse(path)
@@ -919,6 +1012,10 @@ def import_archive(source: str, include: Optional[List[str]] = None) -> Dict[str
     unknown = wanted - set(FILES)
     if unknown:
         raise ArchiveError("Not something the archive import reads: " + ", ".join(sorted(unknown)))
+    ownership = _ownership(result["parsed"])
+    if ownership["needs_confirmation"] and not confirm_owner:
+        raise OwnerUnconfirmed(ownership["needs_confirmation"] + " Nothing was imported. Say that it is yours "
+                               "to import it.")
 
     summary: Dict[str, Any] = {}
     conn = get_db()

@@ -91,7 +91,7 @@ def test_three_thousand_posts_import_in_seconds_and_match_what_the_bridge_read(c
     _seed_bridge_posts()
     source = _upload(client)
     started = time.monotonic()
-    res = client.post("/api/v1/archive/import", json={"source": source, "include": ["posts"]})
+    res = client.post("/api/v1/archive/import", json={"source": source, "include": ["posts"], "confirm_owner": True})
     took = time.monotonic() - started
     assert res.status_code == 200, res.text
     assert res.json()["summary"]["posts"] == {"added": POSTS // 2, "already_there": POSTS // 2, "skipped": 0}
@@ -138,7 +138,7 @@ def test_a_draft_saved_during_a_large_import_is_saved(client, monkeypatch):
     outcome = {}
 
     def run():
-        outcome["import"] = client.post("/api/v1/archive/import", json={"source": source, "include": ["posts"]})
+        outcome["import"] = client.post("/api/v1/archive/import", json={"source": source, "include": ["posts"], "confirm_owner": True})
 
     worker = threading.Thread(target=run)
     worker.start()

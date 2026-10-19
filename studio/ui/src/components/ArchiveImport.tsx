@@ -16,6 +16,19 @@ import {
 const LOOK_MS = 4000;
 
 /**
+ * The preview also says whose archive it is: the member LinkedIn made it for,
+ * from its Profile.csv, and the creator the studio knows. When they are not
+ * plainly one person, or no profile is confirmed yet, `needs_confirmation`
+ * says so and nothing is imported until the creator ticks `confirm_label`.
+ */
+type OwnedPreview = ArchivePreview & {
+  owner?: { name: string; headline: string | null; profile_url: string | null } | null;
+  creator?: { name: string | null; vanity: string } | null;
+  needs_confirmation?: string;
+  confirm_label?: string;
+};
+
+/**
  * Setup, LinkedIn's data archive.
  *
  * The creator's own record, handed over by LinkedIn: years of posts, comments
@@ -38,7 +51,8 @@ export function ArchiveImport({
 }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [preview, setPreview] = useState<ArchivePreview | null>(null);
+  const [preview, setPreview] = useState<OwnedPreview | null>(null);
+  const [ownerAgreed, setOwnerAgreed] = useState(false);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<Record<string, ArchiveKindTally> | null>(null);
   const [found, setFound] = useState<FoundArchive[]>([]);
@@ -100,9 +114,10 @@ export function ArchiveImport({
     }
   }
 
-  function show(found: ArchivePreview) {
+  function show(found: OwnedPreview) {
     setPreview(found);
     setResult(null);
+    setOwnerAgreed(false);
     setTicked(new Set(found.files.filter((f) => f.importable && f.default).map((f) => f.kind)));
     if (!found.recognised) setNote("This file does not look like LinkedIn's data archive.");
   }
@@ -225,7 +240,7 @@ export function ArchiveImport({
           onSubmit={(event) => {
             event.preventDefault();
             void run("import", async () => {
-              const done = await importArchive(preview.source, [...ticked]);
+              const done = await importArchive(preview.source, [...ticked], ownerAgreed);
               setResult(done.summary);
               onChanged();
             });
@@ -239,6 +254,27 @@ export function ArchiveImport({
           <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
             {readable(preview.archive.bytes)} · NOTHING IS IMPORTED UNTIL YOU SAY SO
           </p>
+          {preview.needs_confirmation ? (
+            <div className="mt-3 rounded-md border border-signal-orange/40 bg-signal-orange-subtle p-3">
+              <p className="text-[13px] leading-relaxed text-signal-orange-text">{preview.needs_confirmation}</p>
+              <label className="mt-2 flex items-start gap-2 text-[13px] text-ink-primary">
+                <input
+                  type="checkbox"
+                  className="mt-0.5"
+                  checked={ownerAgreed}
+                  onChange={(event) => setOwnerAgreed(event.target.checked)}
+                />
+                <span>{preview.confirm_label}</span>
+              </label>
+            </div>
+          ) : (
+            preview.owner && (
+              <p className="mt-2 text-[13px] text-ink-secondary">
+                This archive belongs to <span className="text-ink-primary">{preview.owner.name}</span>, the
+                profile you confirmed.
+              </p>
+            )
+          )}
           <fieldset className="mt-3 flex flex-col gap-2">
             <legend className="sr-only">Files to import</legend>
             {preview.files.map((file) => (
@@ -287,7 +323,7 @@ export function ArchiveImport({
           <div className="mt-3 flex gap-2">
             <button
               type="submit"
-              disabled={busy !== null || ticked.size === 0}
+              disabled={busy !== null || ticked.size === 0 || (!!preview.needs_confirmation && !ownerAgreed)}
               className="flex items-center gap-1.5 rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
             >
               {busy === "import" && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}

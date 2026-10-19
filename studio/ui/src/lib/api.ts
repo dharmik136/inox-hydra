@@ -1666,11 +1666,20 @@ export async function uploadArchive(file: File): Promise<ArchivePreview> {
   return (await response.json()) as ArchivePreview;
 }
 
+/**
+ * Imports what is ticked. `confirmOwner` is the creator's word that the
+ * archive is theirs, which the studio needs when the archive names someone
+ * else or no profile is confirmed yet (409 without it).
+ */
 export async function importArchive(
   source: string,
   include: string[],
+  confirmOwner = false,
 ): Promise<{ status: string; archive: { name: string; bytes: number }; summary: Record<string, ArchiveKindTally> }> {
-  return call("/api/v1/archive/import", { method: "POST", body: JSON.stringify({ source, include }) });
+  return call("/api/v1/archive/import", {
+    method: "POST",
+    body: JSON.stringify({ source, include, confirm_owner: confirmOwner }),
+  });
 }
 
 export interface OnboardingState {
