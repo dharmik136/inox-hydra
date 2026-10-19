@@ -30,6 +30,10 @@ function studioApiFromPanel(path, options) {
 // -------------------------------------------------------------
 // Inox Hydra - Side Panel Controller
 // -------------------------------------------------------------
+
+/** The studio post whose text the panel was filled with, or null. */
+let panelPostId = null;
+
 /**
  * A GET against the studio, made by the service worker so it carries the
  * studio token. This page used to fetch the studio directly, which carries
@@ -73,6 +77,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const posts = result.ok ? result.data.posts || [] : [];
     if (posts.length && !textarea.value) {
       textarea.value = posts[0].content;
+      panelPostId = posts[0].id || null;
       updateStats();
     }
   });
@@ -173,7 +178,9 @@ document.addEventListener("DOMContentLoaded", () => {
           studioApiFromPanel("/api/v1/posts/injected", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: content })
+            // Which queued post this text came from, so the studio arms that
+            // post rather than recording a second copy of it beside it.
+            body: JSON.stringify({ content: content, post_id: panelPostId })
           }).then((res) => res.json()).then((data) => {
             if (data && data.status === "recorded") {
               showToast("✅ Inserted into the composer. Open the post once after publishing and the studio will link it.");
@@ -330,6 +337,7 @@ async function loadSideQueue() {
       `;
       item.addEventListener("click", () => {
         document.getElementById("sp-text").value = p.content;
+        panelPostId = p.id || null;
         document.getElementById("tab-composer-btn").click();
       });
       container.appendChild(item);

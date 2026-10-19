@@ -106,6 +106,8 @@ class StagePostRequest(BaseModel):
 class InjectedPostRequest(BaseModel):
     content: str
     draft_id: Optional[int] = None
+    # The studio post the side panel was filled from, when it was one.
+    post_id: Optional[str] = None
 
 
 class BindUrnRequest(BaseModel):
@@ -359,31 +361,68 @@ def record_injected_post(req: InjectedPostRequest):
             ),
         }
 
+    # Inserting is not publishing. The creator may close LinkedIn's composer,
+    # edit, or post next week, so the row is armed (it carries the
+    # fingerprint) and keeps its status. It becomes published when the creator
+    # opens the post on LinkedIn and bind-urn sees it, or when they mark it.
+    # This used to write status 'published' stamped with the moment of
+    # insertion, so a post nobody posted showed in Analytics and the cadence,
+    # and an insert of a queued post made a second row that left the queued
+    # one to come due again.
     conn = get_db()
     try:
         with conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT id FROM posts WHERE content_fingerprint = ? AND activity_urn IS NULL",
-                (fingerprint,),
-            )
-            existing = cursor.fetchone()
-            now = datetime.now(timezone.utc).isoformat()
+            existing = None
+            if req.post_id:
+                # The side panel names the queued post it was filled from. It
+                # is that post only while its opening is still what is being
+                # inserted; an edited text is a different post.
+                row = cursor.execute(
+                    "SELECT id, content FROM posts WHERE id = ? AND activity_urn IS NULL",
+                    (req.post_id,),
+                ).fetchone()
+                if row and post_identity.fingerprint_matches(row["content"] or "", fingerprint):
+                    existing = row
+            if existing is None:
+                # The Composer's own draft or queued post of the same text, so
+                # the post does not exist twice.
+                rows = cursor.execute(
+                    "SELECT id, content, content_fingerprint FROM posts WHERE activity_urn IS NULL"
+                ).fetchall()
+                found = [
+                    r for r in rows
+                    if r["content_fingerprint"] == fingerprint
+                    or post_identity.content_fingerprint(r["content"] or "") == fingerprint
+                ]
+                existing = found[0] if len(found) == 1 else None
+                if len(found) > 1:
+                    # More than one post opens this way. Arming one at random
+                    # would bind the wrong one; recording another would make
+                    # the binding ambiguous anyway.
+                    return {
+                        "status": "ambiguous",
+                        "message": (
+                            "More than one post in the studio opens with this text, so the "
+                            "studio cannot tell which one this is. Mark it as published in "
+                            "the Composer once it is posted."
+                        ),
+                    }
 
             if existing:
                 post_id = existing["id"]
                 cursor.execute(
-                    "UPDATE posts SET published_at = ?, status = 'published' WHERE id = ?",
-                    (now, post_id),
+                    "UPDATE posts SET content_fingerprint = ? WHERE id = ?",
+                    (fingerprint, post_id),
                 )
             else:
                 post_id = f"post-{uuid.uuid4().hex[:12]}"
                 cursor.execute(
                     """
-                    INSERT INTO posts (id, content, status, published_at, content_fingerprint, draft_id)
-                    VALUES (?, ?, 'published', ?, ?, ?)
+                    INSERT INTO posts (id, content, status, content_fingerprint, draft_id)
+                    VALUES (?, ?, 'injected', ?, ?)
                     """,
-                    (post_id, req.content, now, fingerprint, req.draft_id),
+                    (post_id, req.content, fingerprint, req.draft_id),
                 )
     finally:
         conn.close()

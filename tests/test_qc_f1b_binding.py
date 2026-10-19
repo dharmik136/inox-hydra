@@ -107,3 +107,52 @@ def test_two_matching_posts_bind_neither():
     assert _bind()["bound"] is False
     assert _row(first)["activity_urn"] is None and _row(second)["activity_urn"] is None
 
+# ---------------------------------------------------------------------------
+# BRIDGE-03 / WRITE-19
+# ---------------------------------------------------------------------------
+
+def test_an_insert_is_not_recorded_as_published():
+    injected = client.post("/api/v1/posts/injected", json={"content": TEXT}).json()
+    assert injected["status"] == "recorded"
+    row = _row(injected["post_id"])
+    assert row["status"] != "published"
+    assert row["published_at"] is None
+    listed = client.get("/api/posts?status=published").json()["posts"]
+    assert injected["post_id"] not in [p["id"] for p in listed]
+
+
+def test_an_insert_of_a_queued_post_arms_that_post_instead_of_copying_it():
+    post_id = _draft()
+    when = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
+    client.post(f"/api/posts/{post_id}/reschedule", json={"scheduled_for": when})
+
+    injected = client.post("/api/v1/posts/injected", json={"content": TEXT, "post_id": post_id}).json()
+    assert injected["post_id"] == post_id
+    rows = _rows_with(TEXT)
+    assert len(rows) == 1, rows
+    assert rows[0]["status"] == "scheduled"
+
+    # Without the id the text alone still finds it.
+    again = client.post("/api/v1/posts/injected", json={"content": TEXT}).json()
+    assert again["post_id"] == post_id
+    assert len(_rows_with(TEXT)) == 1
+
+
+def test_an_inserted_post_is_published_once_linkedin_shows_it():
+    injected = client.post("/api/v1/posts/injected", json={"content": TEXT}).json()
+    bound = _bind()
+    assert bound["status"] == "bound"
+    row = _row(injected["post_id"])
+    assert row["status"] == "published"
+    # The time LinkedIn's own id carries, not the moment of insertion.
+    assert row["published_at"].startswith("2025-")
+
+
+def test_an_insert_does_not_count_against_the_cadence():
+    client.post("/api/v1/posts/injected", json={"content": TEXT})
+    when = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
+    verdict = client.post("/api/queue/validate-cadence", json={"scheduled_for": when}).json()["validation"]
+    conflict = verdict.get("nearest_conflict") or {}
+    assert not (verdict["has_collision"] and conflict.get("status") == "injected")
+    ids = [r["id"] for r in _rows_with(TEXT)]
+    assert conflict.get("id") not in ids

@@ -127,3 +127,18 @@ def test_a_recorded_insert_still_promises_the_link(panel):
     page = panel()
     _insert(page, "A post long enough to be identified again when it is opened on LinkedIn.")
     assert "will link it" in page.inner_text("#sp-toast")
+
+
+# ---------------------------------------------------------------------------
+# BRIDGE-03: an insert of a queued post names that post
+# ---------------------------------------------------------------------------
+
+def test_an_insert_of_the_prefilled_queued_post_names_it(panel):
+    queued = {"id": "post_q1", "status": "scheduled", "scheduled_for": "2026-10-25T03:30:00+00:00",
+              "content": "The queued post the panel opens with, long enough to identify again."}
+    page = panel(posts=[queued])
+    assert page.input_value("#sp-text") == queued["content"]
+    page.click("#btn-inject-composer")
+    page.wait_for_timeout(200)
+    writes = [m for m in page.evaluate("window.__msgs") if m.get("action") == "PANEL_WRITE"]
+    assert writes and writes[0]["body"]["post_id"] == "post_q1"
