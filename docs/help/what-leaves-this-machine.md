@@ -7,7 +7,7 @@ See exactly which actions send data off your computer, where it goes, and the sw
 Your drafts, posts, leads, analytics, settings and media are one SQLite database file and one media folder on this computer. The server listens on `127.0.0.1` only, so other computers on your network cannot reach it. The interface's fonts are bundled with the studio, so opening it makes no request to Google Fonts.
 
 > [!IMPORTANT]
-> Brand Studio's **Local security** tab lists the three actions that send your work: **Send to LinkedIn** sends your post text and session cookies to LinkedIn, **Re-Hook** or **Command** with a provider configured sends your text to that provider, and **Generate** sends a prompt built from your image description to an image service. The rail tooltip still says "All processing is local to this machine", which is not fully true for the same reasons. The table below is the full picture.
+> Brand Studio's **Local security** tab lists the three actions that send your work: **Send to LinkedIn** sends your post text and session cookies to LinkedIn, **Re-Hook** or **Command** with a provider configured sends your text to that provider, and **Generate** sends a prompt built from your image description to an image service. The **LOCAL** shield at the foot of the rail says the same in its tooltip. The table below is the full picture.
 
 ## Everything that can leave
 
