@@ -201,3 +201,78 @@ def test_a_forgotten_persons_note_keeps_only_what_the_creator_wrote(home, tmp_pa
     assert "Founder at Crumb Co" not in text and "A comment from" not in text, text
     manifest = json.loads(_read(root, obsidian_export.MANIFEST))
     assert "People/Asha Rao.md" not in manifest["files"], "the export still claims a note that is now the creator's"
+
+
+# ---------------------------------------------------------------------------
+# Review send-back: a stable id must not freeze the name
+# ---------------------------------------------------------------------------
+
+def _sql(sql, args=()):
+    conn = sqlite3.connect(paths.get_db_path())
+    conn.execute(sql, args)
+    conn.commit()
+    conn.close()
+
+
+def test_a_renamed_lead_moves_to_the_new_name_with_your_notes(home, tmp_path):
+    """A 'LinkedIn Member' later resolved to a real name used to keep the old name forever."""
+    _lead("lead-member", "LinkedIn Member", "Owner at Lin Bakes", "2026-10-01 09:00:00")
+    root = obsidian_export.export_obsidian_vault(str(tmp_path / "vault"))["path"]
+    _add_your_notes(root, "People/LinkedIn Member.md", "Owes me a sourdough starter.")
+
+    _sql("UPDATE leads SET name = 'Mei Lin', full_name = 'Mei Lin' WHERE id = 'lead-member'")
+    obsidian_export.export_obsidian_vault(root)
+
+    assert sorted(os.listdir(os.path.join(root, "People"))) == ["Mei Lin.md"]
+    text = _read(root, "People/Mei Lin.md")
+    assert "# Mei Lin" in text and "Owes me a sourdough starter." in text, text
+    post = next(n for n in os.listdir(os.path.join(root, "Posts")))
+    assert "[[People/Mei Lin|Mei Lin]]" in _read(root, f"Posts/{post}")
+
+    # And the name holds on the export after that.
+    obsidian_export.export_obsidian_vault(root)
+    assert sorted(os.listdir(os.path.join(root, "People"))) == ["Mei Lin.md"]
+
+
+def test_a_retitled_draft_follows_its_title(home, tmp_path):
+    _sql("INSERT INTO drafts (title, raw_content, status) VALUES ('Old title', 'Body', 'DRAFT')")
+    root = obsidian_export.export_obsidian_vault(str(tmp_path / "vault"))["path"]
+    _sql("UPDATE drafts SET title = 'Launch post'")
+    obsidian_export.export_obsidian_vault(root)
+    assert os.listdir(os.path.join(root, "Drafts")) == ["Launch post.md"]
+    assert _read(root, "Drafts/Launch post.md").splitlines()[0:1] != [] and "# Launch post" in _read(root, "Drafts/Launch post.md")
+
+
+def test_a_rename_never_takes_a_note_that_already_has_the_new_name(home, tmp_path):
+    _lead("lead-member", "LinkedIn Member", "Owner at Lin Bakes", "2026-10-01 09:00:00")
+    root = obsidian_export.export_obsidian_vault(str(tmp_path / "vault"))["path"]
+    _add_your_notes(root, "People/LinkedIn Member.md", "Owes me a sourdough starter.")
+    mine = os.path.join(root, "People", "Mei Lin.md")
+    with open(mine, "w", encoding="utf-8") as handle:
+        handle.write("A different Mei, from school.\n")
+
+    _sql("UPDATE leads SET name = 'Mei Lin', full_name = 'Mei Lin' WHERE id = 'lead-member'")
+    obsidian_export.export_obsidian_vault(root)
+
+    assert _read(root, "People/Mei Lin.md") == "A different Mei, from school.\n"
+    assert sorted(os.listdir(os.path.join(root, "People"))) == ["Mei Lin (2).md", "Mei Lin.md"]
+    assert "Owes me a sourdough starter." in _read(root, "People/Mei Lin (2).md")
+
+
+def test_a_note_of_yours_in_decomposed_unicode_is_reserved_too(home, tmp_path):
+    """On Linux two look-alike files appeared; on macOS the export was refused instead of renaming."""
+    import unicodedata
+
+    root = obsidian_export.export_obsidian_vault(str(tmp_path / "vault"))["path"]
+    os.makedirs(os.path.join(root, "People"), exist_ok=True)
+    mine = unicodedata.normalize("NFD", "Zoë Ångström")
+    with open(os.path.join(root, "People", mine + ".md"), "w", encoding="utf-8") as handle:
+        handle.write("met at a bakery fair\n")
+    _lead("lead-zoe", "Zoë Ångström", "Baker", "2026-10-02 09:00:00")
+
+    result = obsidian_export.export_obsidian_vault(root)
+
+    names = {unicodedata.normalize("NFC", n) for n in os.listdir(os.path.join(root, "People"))}
+    assert names == {"Zoë Ångström.md", "Zoë Ångström (2).md"}, names
+    assert result["renamed"] and result["renamed"][0]["written"].endswith("(2).md"), result["renamed"]
+    assert _read(root, f"People/{mine}.md") == "met at a bakery fair\n"

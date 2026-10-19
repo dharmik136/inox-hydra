@@ -166,6 +166,23 @@ def safe_name(text: Any, limit: int = 80) -> str:
     return name
 
 
+def _fold(name: str) -> str:
+    """
+    A note name as a filesystem compares it: composed Unicode, case folded.
+
+    macOS treats "Zoe\u0308" and "Zo\u00eb" as one file and Linux as two, so a
+    creator's note saved in decomposed form was either refused on (macOS) or
+    shadowed by a look-alike (Linux). Comparing folded names makes both rename.
+    """
+    return unicodedata.normalize("NFC", name).casefold()
+
+
+def _same_base(name: str, base: str) -> bool:
+    """Whether `name` is `base`, or `base` with the " (2)" a namesake or a note of yours gave it."""
+    name, base = _fold(name), _fold(base)
+    return name == base or re.fullmatch(re.escape(base) + r" \(\d+\)", name) is not None
+
+
 def _name_in(folder: str, path: str) -> Optional[str]:
     """The note name when `path` is a note directly inside `folder`, else None."""
     prefix = f"{folder.lower()}/" if folder else ""
@@ -181,9 +198,12 @@ class _Names:
 
     A note keeps the name it had in the last export, found by its stable id in
     `previous`, so deleting one namesake or capturing another never moves a
-    person's note onto someone else. A name a note in `reserved` already uses,
-    one the creator owns, is never handed out; each time that forced another
-    name is recorded in `collisions`, so the export can say so.
+    person's note onto someone else. It keeps it only while the record's own
+    name is unchanged: a lead resolved from "LinkedIn Member" to "Mei Lin", or
+    a retitled draft, gets the new name, and `moved` records the old one so the
+    creator's notes go with it. A name a note in `reserved` already uses, one
+    the creator owns, is never handed out; each time that forced another name
+    is recorded in `collisions`, so the export can say so.
     """
 
     def __init__(self, folder: str = "", previous: Optional[Dict[str, str]] = None,
@@ -194,20 +214,23 @@ class _Names:
             name = _name_in(folder, path)
             if name:
                 self.kept[key] = name
-        self.reserved = {n.lower() for n in (_name_in(folder, p) for p in reserved) if n}
-        self.taken: set = self.reserved | {n.lower() for n in self.kept.values()}
+        self.reserved = {_fold(n) for n in (_name_in(folder, p) for p in reserved) if n}
+        self.taken: set = self.reserved | {_fold(n) for n in self.kept.values()}
         self.collisions: List[Dict[str, str]] = []
+        self.moved: Dict[str, str] = {}
 
     def claim(self, wanted: str, fallback: str, key: Optional[str] = None) -> str:
-        if key in self.kept:
-            return self.kept[key]
         base = safe_name(wanted) or safe_name(fallback) or "Untitled"
+        if key in self.kept:
+            if _same_base(self.kept[key], base):
+                return self.kept[key]
+            self.moved[key] = self.kept[key]
         name, n = base, 2
-        while name.lower() in self.taken:
+        while _fold(name) in self.taken:
             name = f"{base} ({n})"
             n += 1
-        self.taken.add(name.lower())
-        if base.lower() in self.reserved:
+        self.taken.add(_fold(name))
+        if _fold(base) in self.reserved:
             where = f"{self.folder}/" if self.folder else ""
             self.collisions.append({"wanted": f"{where}{base}.md", "written": f"{where}{name}.md"})
         return name
@@ -294,8 +317,11 @@ def build_notes(record: Dict[str, Any], previous: Optional[Dict[str, str]] = Non
 
 
 def _build(record: Dict[str, Any], previous: Optional[Dict[str, str]] = None,
-           reserved: Iterable[str] = ()) -> Tuple[Dict[str, str], Dict[str, str], List[Dict[str, str]]]:
-    """The notes, the stable id of each path, and every name a creator's note forced to change."""
+           reserved: Iterable[str] = ()) -> Tuple[Dict[str, str], Dict[str, str], List[Dict[str, str]], Dict[str, str]]:
+    """
+    The notes, the stable id of each path, every name a creator's note forced
+    to change, and each note that moved to a new name (new path to old path).
+    """
     notes: Dict[str, str] = {}
     ids: Dict[str, str] = {}
     reserved = list(reserved)
@@ -563,7 +589,12 @@ def _build(record: Dict[str, Any], previous: Optional[Dict[str, str]] = None,
     for path in list(notes):
         notes[path] = notes[path].rstrip("\n") + f"\n\n{YOUR_NOTES}\n\n"
     collisions = [c for namer in namers.values() for c in namer.collisions]
-    return notes, ids, collisions
+    path_of = {key: path for path, key in ids.items()}
+    moves = {
+        path_of[key]: (f"{folder}/{old}.md" if folder else f"{old}.md")
+        for folder, namer in namers.items() for key, old in namer.moved.items() if key in path_of
+    }
+    return notes, ids, collisions, moves
 
 
 # ---------------------------------------------------------------------------
@@ -658,10 +689,13 @@ def _plan(root: str) -> Dict[str, Any]:
 
 def write_vault(notes: Dict[str, str], destination: str, ids: Optional[Dict[str, str]] = None,
                 plan: Optional[Dict[str, Any]] = None,
-                renamed: Iterable[Dict[str, str]] = ()) -> Dict[str, Any]:
+                renamed: Iterable[Dict[str, str]] = (),
+                moves: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     root = os.path.abspath(destination)
     plan = plan if plan is not None else _plan(root)
     owned = plan["owned"]
+    # A note whose record was renamed: new path to the old one it replaces.
+    moves = {new: old for new, old in (moves or {}).items() if old in owned and old not in notes}
     targets = {relative: _inside(root, relative) for relative in notes}
     # Never open a note this export did not write. export_obsidian_vault names
     # around them, so this is the last line of defence rather than the rule.
@@ -676,7 +710,10 @@ def write_vault(notes: Dict[str, str], destination: str, ids: Optional[Dict[str,
         target = targets[relative]
         os.makedirs(os.path.dirname(target), exist_ok=True)
         hashes[relative] = _digest(text)
-        own = _kept_notes(target) if relative in owned else ""
+        if relative in moves:
+            own = _kept_notes(_inside(root, moves[relative]))
+        else:
+            own = _kept_notes(target) if relative in owned else ""
         if own:
             kept += 1
             text = text.rstrip("\n") + "\n\n" + own + "\n"
@@ -685,9 +722,13 @@ def write_vault(notes: Dict[str, str], destination: str, ids: Optional[Dict[str,
 
     removed = 0
     released = []
+    moved_from = set(moves.values())
     for relative in sorted(owned - set(notes)):
         target = _inside(root, relative)
         if not os.path.isfile(target):
+            continue
+        if relative in moved_from:
+            os.remove(target)  # its notes now live at the new name
             continue
         own = _kept_notes(target)
         if not own:
@@ -725,7 +766,8 @@ def write_vault(notes: Dict[str, str], destination: str, ids: Optional[Dict[str,
 
     counts = {folder: sum(1 for p in notes if p.startswith(folder + "/")) for folder in FOLDERS}
     return {"path": root, "notes": len(notes), "counts": counts, "kept_your_notes": kept, "removed": removed,
-            "renamed": list(renamed), "kept_edited": list(plan["edited"]), "released": released}
+            "renamed": list(renamed), "kept_edited": list(plan["edited"]), "released": released,
+            "moved": [{"from": old, "to": new} for new, old in sorted(moves.items())]}
 
 
 def export_obsidian_vault(destination: Optional[str] = None) -> Dict[str, Any]:
@@ -737,5 +779,5 @@ def export_obsidian_vault(destination: Optional[str] = None) -> Dict[str, Any]:
         destination = os.path.join(paths.get_exports_dir(), VAULT_FOLDER)
     root = os.path.abspath(destination)
     plan = _plan(root)
-    notes, ids, renamed = _build(read_record(), plan["keep"], plan["reserved"])
-    return write_vault(notes, root, ids=ids, plan=plan, renamed=renamed)
+    notes, ids, renamed, moves = _build(read_record(), plan["keep"], plan["reserved"])
+    return write_vault(notes, root, ids=ids, plan=plan, renamed=renamed, moves=moves)
