@@ -104,3 +104,69 @@ def test_doctor_reports_no_problem_on_a_fresh_install(empty_home, capsys):
     out = capsys.readouterr().out
     assert "no problems found" in out
     assert "not created yet" in out
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM-22: choose the profile, or all of them, and say which was used
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def two_profiles(studio_home):
+    """The default profile and Client A, each with its own database."""
+    from studio.backend import database
+
+    paths.write_profiles({"active": "default", "profiles": [
+        {"id": "client-a", "name": "Client A", "vanity": "", "headline": "", "created_at": "2026-10-19"}]})
+    with paths.using_profile("client-a"):
+        database.init_db()
+        conn = sqlite3.connect(paths.get_db_path())
+        conn.execute("INSERT INTO posts (id, content, status) VALUES ('only-in-a', 'x', 'draft')")
+        conn.commit()
+        conn.close()
+    return studio_home
+
+
+def _manifest_profile(archive):
+    import json
+    import zipfile
+
+    with zipfile.ZipFile(archive) as z:
+        return json.loads(z.read("backup_manifest.json"))["profile"]
+
+
+def test_backup_names_the_profile_it_backed_up(two_profiles, capsys):
+    assert cli.main(["backup"]) == 0
+    out = capsys.readouterr().out
+    assert "My studio (default)" in out
+
+
+def test_backup_all_writes_one_archive_per_profile(two_profiles, capsys):
+    assert cli.main(["backup", "--all"]) == 0
+    out = capsys.readouterr().out
+    assert "(default)" in out and "Client A (client-a)" in out
+    with paths.using_profile("default"):
+        mine = [n for n in os.listdir(paths.get_backups_dir()) if n.endswith(".zip")]
+    with paths.using_profile("client-a"):
+        theirs = [os.path.join(paths.get_backups_dir(), n) for n in os.listdir(paths.get_backups_dir())
+                  if n.endswith(".zip")]
+    assert len(mine) == 1 and len(theirs) == 1
+    assert _manifest_profile(theirs[0]) == "client-a"
+
+
+def test_a_profile_can_be_chosen_by_id(two_profiles, capsys):
+    # Client A is beyond the free licence, so it is closed in the studio, and
+    # can still be backed up and exported here.
+    assert "client-a" in paths.locked_profile_ids()
+    assert cli.main(["backup", "--profile", "client-a"]) == 0
+    assert "Client A (client-a)" in capsys.readouterr().out
+    assert cli.main(["export", "--profile", "client-a"]) == 0
+    out = capsys.readouterr().out
+    assert os.path.join("profiles", "client-a", "exports") in out
+    assert cli.main(["doctor", "--profile", "client-a"]) == 0
+    assert "Client A (client-a)" in capsys.readouterr().out
+
+
+def test_an_unknown_profile_is_refused(two_profiles, capsys):
+    assert cli.main(["backup", "--profile", "nobody"]) == 1
+    out = capsys.readouterr().out
+    assert "nobody" in out and "client-a" in out

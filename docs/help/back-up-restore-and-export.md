@@ -87,6 +87,10 @@ To go back to the state from before an upgrade, restore its automatic copy the s
 
 In the portable build, use `InoxHydra-CLI.bat backup`, `InoxHydra-CLI.bat restore <zip>` and `InoxHydra-CLI.bat export`.
 
+### More than one creator profile
+
+Each command acts on the open creator profile and starts by naming it, for example `Profile: Client A (client-a)`. Add `--profile <profile id>` to choose another, or, for `backup` and `export`, `--all` to make one per profile, each in that profile's own folder: `python -m studio.cli backup --all`. Run a restore once per profile, with `--profile` naming the one the backup belongs to.
+
 ## Moving to another computer
 
 Restoring on a new PC brings back drafts, posts, leads, analytics, queue items, settings and media. Two things do not come with it:

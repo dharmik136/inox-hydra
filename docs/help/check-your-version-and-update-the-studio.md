@@ -41,7 +41,7 @@ A portable copy keeps your data in `%LOCALAPPDATA%\InoxHydra`, outside the folde
 
 Do not delete the checkout. When `studio\data` exists, your database and media live inside the `studio` folder.
 
-1. Take a backup. A backup holds the open creator profile only, so take one in each profile.
+1. Take a backup. A backup holds one creator profile, so take one of each: `python -m studio.cli backup --all`.
 2. Stop the studio.
 3. Replace the checkout's source files with the newer version, keeping `studio\data`, `studio\assets`, `studio\backups`, `studio\vault`, `studio\logs`, and, if you have them, `studio\profiles` (every creator profile after your first) and `studio\exports`.
 4. Run `pip install -r requirements.txt`.
