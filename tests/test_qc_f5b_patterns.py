@@ -240,3 +240,36 @@ def test_the_obsidian_topics_follow_the_same_grouping():
     assert classify_post_topic("Croissant Friday, part two", vocabulary) == "Croissant"
     assert classify_post_topic("Something else entirely", vocabulary) == "Other posts"
     assert classify_post_topic(None, vocabulary) == "Other posts"
+
+
+# ---------------------------------------------------------------------------
+# SETUP-23: posts from the archive have no figures, and the screens say that,
+# not that the posts are too young
+# ---------------------------------------------------------------------------
+
+def _archive_posts(n):
+    conn = _db()
+    with conn:
+        for i in range(n):
+            when = dt.datetime(2021, 2, 4, 9, tzinfo=dt.timezone.utc) + dt.timedelta(days=i)
+            conn.execute("INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, "
+                         "first_seen_at, last_seen_at) VALUES (?, ?, ?, 'archive', '2026-10-01', '2026-10-01')",
+                         (_urn(when, i), f"Synthetic sample post {i}", when.isoformat()))
+    conn.close()
+
+
+def test_patterns_count_the_posts_left_out_for_having_no_figures(studio):
+    _archive_posts(30)
+    patterns = _get(studio, "/api/v1/insights/patterns")
+    assert patterns["posts_compared"] == 0
+    assert patterns["settled_without_reactions"] == 30, "the screen can only blame the posts' age"
+    assert patterns["settled_without_reactions_from_archive"] == 30
+
+
+def test_posts_count_the_settled_posts_with_no_figures(studio):
+    _archive_posts(30)
+    _post("A post the bridge read", 40)
+    overview = _get(studio, "/api/v1/insights/posts")
+    assert overview["usual"]["reactions"]["median"] is None
+    assert overview["settled_without_figures"] == 30
+    assert overview["settled_without_figures_from_archive"] == 30

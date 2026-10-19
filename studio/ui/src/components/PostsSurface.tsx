@@ -4,6 +4,9 @@ import { fetchPostsInsights, launchBridge, type PostInsight, type PostsInsights 
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 
+/** Settled posts with no figures at all, and how many of those came from LinkedIn's archive. */
+type Unmeasured = { settled_without_figures?: number; settled_without_figures_from_archive?: number };
+
 /**
  * Posts: which of your posts worked, and whom each one brought.
  *
@@ -65,7 +68,7 @@ export function PostsSurface({
       <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
         {usualLine
           ? `Your usual, the median of your posts older than ${data.settled_after_days} days: ${usualLine}.`
-          : "Not enough settled posts yet to know your usual."}{" "}
+          : noUsualReason(data as PostsInsights & Unmeasured)}{" "}
         A post is compared with it only once it is {data.settled_after_days} days old.
       </p>
 
@@ -82,6 +85,22 @@ export function PostsSurface({
         ))}
       </ul>
     </article>
+  );
+}
+
+/**
+ * Why there is no usual yet. Posts imported from LinkedIn's archive carry no
+ * figures, and the screen used to say they were not old enough, next to a
+ * list of posts from years ago.
+ */
+function noUsualReason(data: PostsInsights & Unmeasured): string {
+  const unmeasured = data.settled_without_figures ?? 0;
+  if (!unmeasured) return "Not enough settled posts yet to know your usual.";
+  const archive = (data.settled_without_figures_from_archive ?? 0) > 0;
+  return (
+    `No usual yet: ${unmeasured} of your posts older than ${data.settled_after_days} days have no reactions, ` +
+    `comments or impressions recorded${archive ? ", because LinkedIn's archive does not include them" : ""}. ` +
+    `Run "Posts you wrote" in Setup so the bridge reads their figures.`
   );
 }
 

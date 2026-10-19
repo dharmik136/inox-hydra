@@ -52,7 +52,7 @@ def posts_overview() -> Dict[str, Any]:
     conn = get_db()
     try:
         posts = [dict(r) for r in conn.execute(
-            "SELECT activity_urn, text, published_at, reactions, comments, reposts, impressions "
+            "SELECT activity_urn, text, published_at, published_at_source, reactions, comments, reposts, impressions "
             "FROM own_posts ORDER BY published_at DESC")]
 
         # Who engaged with each post: leads whose interactions name it.
@@ -73,6 +73,11 @@ def posts_overview() -> Dict[str, Any]:
         return (statistics.median(values), len(values)) if len(values) >= MIN_FOR_MEDIAN else (None, len(values))
 
     usual = {m: median_of(m) for m in ("reactions", "comments", "impressions")}
+
+    # Settled posts with no figures at all, usually from LinkedIn's archive,
+    # which carries none. Counted so the screen can say why there is no
+    # usual, rather than blaming the age of posts that are years old.
+    unmeasured = [p for p in settled if all(p[m] is None for m in ("reactions", "comments", "impressions"))]
 
     out = []
     for post in posts:
@@ -120,6 +125,8 @@ def posts_overview() -> Dict[str, Any]:
         "usual": {m: {"median": v[0], "posts": v[1]} for m, v in usual.items()},
         "best": [p["activity_urn"] for p in ranked[:2]],
         "settled_after_days": SETTLED_AFTER_HOURS // 24,
+        "settled_without_figures": len(unmeasured),
+        "settled_without_figures_from_archive": sum(1 for p in unmeasured if p["published_at_source"] == "archive"),
     }
 
 
@@ -263,9 +270,14 @@ def patterns_overview() -> Dict[str, Any]:
     try:
         posts = [dict(r) for r in conn.execute(
             "SELECT text, published_at, reactions FROM own_posts WHERE reactions IS NOT NULL AND text IS NOT NULL")]
+        # Left out because no reactions were ever read for them, as for every
+        # post imported from LinkedIn's archive. Not because of their age.
+        unread = [dict(r) for r in conn.execute(
+            "SELECT published_at, published_at_source FROM own_posts WHERE reactions IS NULL")]
     finally:
         conn.close()
     settled = [p for p in posts if (_age_hours(p["published_at"]) or 0) >= SETTLED_AFTER_HOURS]
+    unread = [p for p in unread if (_age_hours(p["published_at"]) or 0) >= SETTLED_AFTER_HOURS]
 
     found, too_few = [], []
     for key, label, test in PATTERNS:
@@ -292,6 +304,8 @@ def patterns_overview() -> Dict[str, Any]:
     return {
         "status": "success",
         "posts_compared": len(settled),
+        "settled_without_reactions": len(unread),
+        "settled_without_reactions_from_archive": sum(1 for p in unread if p["published_at_source"] == "archive"),
         "metric": "reactions",
         "patterns": found,
         "not_enough_posts": too_few,

@@ -278,3 +278,36 @@ def test_topics_are_the_creators_own_words_and_say_so(studio):
     assert "keywords and hashtags that recur across your own posts" in section.inner_text()
     assert "keyword grouping, not a reading of what a post means" in section.inner_text()
     assert not studio["errors"], studio["errors"]
+
+
+def _archive_posts(n):
+    """Posts as the archive import writes them: dated, with text, and no figures at all."""
+    import datetime as _dt
+    from database import get_db
+    conn = get_db()
+    with conn:
+        for i in range(n):
+            when = _dt.datetime(2021, 2, 4, 9, tzinfo=_dt.timezone.utc) + _dt.timedelta(days=i)
+            conn.execute("INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, "
+                         "first_seen_at, last_seen_at) VALUES (?, ?, ?, 'archive', '2026-10-01', '2026-10-01')",
+                         (f"urn:li:activity:{(int(when.timestamp() * 1000) << 22) + i}",
+                          f"Synthetic sample post {i}", when.isoformat()))
+    conn.close()
+
+
+def test_posts_and_patterns_name_missing_figures_not_post_age(studio):
+    """SETUP-23"""
+    _archive_posts(30)
+    page = _open(studio, "Posts")
+    page.wait_for_selector("text=What worked, and who it brought")
+    body = page.inner_text("body")
+    assert "Not enough settled posts yet" not in body
+    assert ("No usual yet: 30 of your posts older than 7 days have no reactions, comments or impressions "
+            "recorded, because LinkedIn's archive does not include them.") in body
+    page.locator("nav[aria-label='Studio sections'] button[aria-label='Patterns']").first.click()
+    page.wait_for_selector("text=What your own posts suggest")
+    body = page.inner_text("body")
+    assert "across your 0 posts at least a week old." not in body
+    assert "30 MORE POSTS ARE LEFT OUT: NO REACTIONS ARE RECORDED FOR THEM, AS LINKEDIN’S ARCHIVE DOES NOT" in body
+    assert "SAME PERIOD ON BOTH SIDES" not in body, "the period was blamed for a lack of figures"
+    assert not studio["errors"], studio["errors"]

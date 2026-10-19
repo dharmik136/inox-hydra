@@ -72,6 +72,10 @@ export function PatternsSurface() {
     );
   }
 
+  const unread = patterns as PatternsInsights & {
+    settled_without_reactions?: number;
+    settled_without_reactions_from_archive?: number;
+  };
   const clean = patterns.patterns.filter((p) => !p.different_period);
   const confounded = patterns.patterns.filter((p) => p.different_period);
 
@@ -81,9 +85,19 @@ export function PatternsSurface() {
       <h1 className="studio-title mt-2">What your own posts suggest</h1>
       <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
         Each line compares your posts that have a form with those that do not, by median reactions, across your{" "}
-        {patterns.posts_compared} posts at least a week old. These are differences between your posts, not causes: treat
-        a large one as something to try, not a rule.
+        {patterns.posts_compared} posts at least a week old with reactions recorded. These are differences between your
+        posts, not causes: treat a large one as something to try, not a rule.
       </p>
+      {/* Posts with no reactions recorded are left out because of that, not
+          because of their age, and the screen says which. */}
+      {(unread.settled_without_reactions ?? 0) > 0 && (
+        <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
+          {unread.settled_without_reactions} MORE {unread.settled_without_reactions === 1 ? "POST IS" : "POSTS ARE"} LEFT
+          OUT: NO REACTIONS ARE RECORDED FOR {unread.settled_without_reactions === 1 ? "IT" : "THEM"}
+          {(unread.settled_without_reactions_from_archive ?? 0) > 0 ? ", AS LINKEDIN\u2019S ARCHIVE DOES NOT INCLUDE THEM" : ""}.
+          RUN &ldquo;POSTS YOU WROTE&rdquo; IN SETUP SO THE BRIDGE READS THEM.
+        </p>
+      )}
 
       <section className="mt-6">
         <p className="studio-label mb-2">Went with more or fewer reactions</p>
@@ -93,8 +107,10 @@ export function PatternsSurface() {
               <PatternRow key={p.key} pattern={p} />
             ))}
           </ul>
-        ) : (
+        ) : confounded.length ? (
           <Note>NO PATTERN YET HAS POSTS FROM THE SAME PERIOD ON BOTH SIDES. THE LINES BELOW MAY BE ABOUT WHEN YOU POSTED.</Note>
+        ) : (
+          <Note>NO FORM HAS ENOUGH POSTS WITH REACTIONS RECORDED ON BOTH SIDES YET.</Note>
         )}
       </section>
 

@@ -6,7 +6,7 @@ All three screens are built from your own imported history. Import your posts, c
 
 ## Posts
 
-The line under the title gives your usual: the median reactions, comments and impressions of your posts that are at least a week old.
+The line under the title gives your usual: the median reactions, comments and impressions of your posts that are at least a week old. If your week-old posts have no figures, as posts imported from LinkedIn's archive do not, the line says how many and asks you to run **Posts you wrote** in **Setup**, so the bridge reads them.
 
 Each post shows its date, opening, and the reactions, comments and impressions last read on it. For a post at least a week old, each figure is followed by how it compares with your usual, for example "55 REACTIONS (1.8x)". Green is at least 1.2 times your usual, orange is 0.8 times or less. A post under a week old is marked **STILL GROWING** and not compared, because its numbers are still arriving.
 
@@ -16,7 +16,7 @@ Click a post to see the people the studio captured engaging with it. Click a nam
 
 ## Patterns
 
-**Patterns** compares your posts that have a form with those that do not, by median reactions, across your posts at least a week old. Each line gives both medians and both counts, for example "MEDIAN 38 REACTIONS ON 7 POSTS WITH IT, 25 ON 11 WITHOUT".
+**Patterns** compares your posts that have a form with those that do not, by median reactions, across your posts at least a week old with reactions recorded. Posts with none recorded, such as those from LinkedIn's archive, are left out, and a note under the introduction says how many. Each line gives both medians and both counts, for example "MEDIAN 38 REACTIONS ON 7 POSTS WITH IT, 25 ON 11 WITHOUT".
 
 The forms compared are: a short opening line (60 characters or fewer), an opening that asks a question, an opening that starts with an emoji or symbol, an announcement ("excited", "thrilled", "happy to share", a new position), bold or styled Unicode letters, hashtags, and a post over 1,500 characters. A form is compared only when at least three posts have it and three do not; the others are listed as not enough posts.
 
