@@ -36,6 +36,20 @@
     // Voyager API responses for feed scrolling can sometimes be enormous
     const MAX_BODY_SIZE = 2 * 1024 * 1024;
 
+    // The responses the bridge reads: the endpoints in voyager_schema.js,
+    // which lives in the extension's isolated world and cannot be reached
+    // from here. Anything else (messaging, notifications, the rest of the
+    // feed's calls) is neither copied nor counted against the cap above. It
+    // was counted first, so on a busy page the creator analytics response
+    // was dropped without a trace.
+    const READ_ENDPOINTS = [
+        /\/voyager\/api\/feed\/updatesV2/i,
+        /\/(voyager\/api\/identity\/profiles|identity\/dash\/profiles)/i,
+        /\/voyager\/api\/identity\/dash\/creatorAnalytics/i,
+        /\/voyager\/api\/socialActions/i,
+        /\/voyager\/api\/feed\/comments/i
+    ];
+
     function isRateLimited() {
         const now = Date.now();
         // Prune timestamps older than 60 seconds
@@ -68,9 +82,6 @@
                     // Filter: Only intercept Voyager API calls to minimize overhead
                     if (!response.url.includes('/voyager/api/')) return;
 
-                    // Apply rate limit guard
-                    if (isRateLimited()) return;
-
                     // Extract URL without query parameters for cleaner telemetry
                     let pathOnly = response.url;
                     try {
@@ -79,6 +90,12 @@
                     } catch (e) {
                         // fallback to raw URL if parsing fails
                     }
+
+                    // Only the responses the bridge reads, and only they count.
+                    if (!READ_ENDPOINTS.some((pattern) => pattern.test(pathOnly))) return;
+
+                    // Apply rate limit guard
+                    if (isRateLimited()) return;
 
                     // Pre-check size guard via Content-Length header if available
                     const contentLength = response.headers.get('content-length');
