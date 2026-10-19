@@ -37,14 +37,22 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // Open Side Panel
+  //
+  // The browser window is `win`: naming it `window` hid the popup's own
+  // window, so closing the popup threw, and the catch then reported the side
+  // panel as opened, which it also did when the side panel failed to open.
   document.getElementById("btn-open-sidepanel").addEventListener("click", async () => {
+    let opened = false;
     try {
-      const window = await chrome.windows.getCurrent();
-      await chrome.sidePanel.open({ windowId: window.id });
+      const win = await chrome.windows.getCurrent();
+      await chrome.sidePanel.open({ windowId: win.id });
+      opened = true;
       window.close(); // close popup once side panel opens
     } catch (err) {
-      console.error(err);
-      document.getElementById("status-text").innerText = "Side panel opened in active tab!";
+      if (!opened) {
+        document.getElementById("status-text").innerText =
+          "Could not open the side panel: " + ((err && err.message) || "the browser refused.");
+      }
     }
   });
 
@@ -104,13 +112,18 @@ async function checkServerAndSession() {
     paint(crmEl, "Offline", "#94a3b8");
   }
 
+  // Whether the studio holds a session, which is what the live send needs,
+  // from the studio itself. The browser's own li_at cookie only says this
+  // browser is signed in to LinkedIn; it was shown as "Active" while the
+  // studio held nothing and the live send refused.
   const li_at = await getCookie("li_at");
-  if (li_at) {
-    sessionEl.innerText = "Active";
-    sessionEl.style.color = "#34d399";
+  const session = state.ok ? state.data.session : null;
+  if (session && session.stored) {
+    paint(sessionEl, "Saved in the studio" + (session.saved_at ? " " + String(session.saved_at).slice(0, 10) : ""), "#34d399");
+  } else if (session) {
+    paint(sessionEl, li_at ? "Not saved in the studio. Press Sync." : "Not saved in the studio. Sign in to LinkedIn.", "#f59e0b");
   } else {
-    sessionEl.innerText = "Log into LinkedIn";
-    sessionEl.style.color = "#94a3b8";
+    paint(sessionEl, li_at ? "Signed in to LinkedIn" : "Log into LinkedIn", "#94a3b8");
   }
 }
 
