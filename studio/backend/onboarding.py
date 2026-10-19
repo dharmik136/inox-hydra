@@ -1381,6 +1381,21 @@ def _activity_tab(kind: str) -> str:
     return {"posts": "all", "comments": "comments", "reactions": "reactions"}[kind]
 
 
+def _expire_requests(conn) -> None:
+    """
+    Closes requests the extension will no longer take, as "expired".
+
+    Left open, Setup went on saying WAITING FOR THE PAGE TO OPEN for a request
+    nothing would ever pick up. Only requests that never started: an import
+    that is scrolling, paused in a hidden tab, still finishes.
+    """
+    cutoff = (datetime.now(timezone.utc) - IMPORT_REQUEST_TTL).isoformat()
+    conn.execute(
+        "UPDATE self_import_requests SET finished_at = ?, outcome = 'expired' "
+        "WHERE finished_at IS NULL AND started_at IS NULL AND requested_at < ?", (_now(), cutoff),
+    )
+
+
 def pending_import(kind: Any) -> Optional[Dict[str, Any]]:
     """The live request for this kind, if the creator made one recently."""
     if kind not in IMPORT_KINDS:
@@ -1388,6 +1403,8 @@ def pending_import(kind: Any) -> Optional[Dict[str, Any]]:
     cutoff = (datetime.now(timezone.utc) - IMPORT_REQUEST_TTL).isoformat()
     conn = get_db()
     try:
+        with conn:
+            _expire_requests(conn)
         row = conn.execute(
             "SELECT id, kind, requested_at, started_at FROM self_import_requests "
             "WHERE kind = ? AND finished_at IS NULL AND requested_at >= ? ORDER BY id DESC LIMIT 1",
@@ -1474,6 +1491,8 @@ def onboarding_state() -> Dict[str, Any]:
         post_count = conn.execute("SELECT COUNT(*) FROM own_posts").fetchone()[0]
         outbound = {r["kind"]: r["n"] for r in conn.execute(
             "SELECT kind, COUNT(*) AS n FROM outbound_engagements GROUP BY kind")}
+        with conn:
+            _expire_requests(conn)
         imports = [dict(r) for r in conn.execute(
             "SELECT id, kind, requested_at, started_at, finished_at, items_seen, outcome "
             "FROM self_import_requests ORDER BY id DESC LIMIT 6")]

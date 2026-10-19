@@ -76,7 +76,7 @@ Click **Import**. The bridge browser opens that activity page, and the extension
 - If the page still offers more (a **Show more** button, or a list still loading), the list stalled rather than ended. The banner says so, and the row reads **THE LIST STOPPED LOADING AT N. IMPORT AGAIN**. One import also reads at most 250 rounds of the list; past that the row reads **THE MOST ONE IMPORT READS**.
 - **Stop** ends it early. What was read so far is kept.
 - Only an import of your posts that read to the end counts as your whole post history. Until one has, **Leads** never calls anyone "engaged only with other people's posts", and never offers to remove them on that ground. Posts from your archive count as yours too.
-- An import you asked for is picked up only within 30 minutes. After that, click **Import** again.
+- An import you asked for is picked up only within 30 minutes. After that its row reads **EXPIRED, CLICK IMPORT AGAIN**; click **Import** again.
 
 Your comments and reactions are kept as your own activity. They never become leads.
 
