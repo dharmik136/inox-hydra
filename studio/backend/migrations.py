@@ -871,6 +871,12 @@ def backup_database(reason: str = "migration") -> Optional[str]:
             source.backup(destination)
         finally:
             destination.close()
+    except Exception:
+        # A damaged source leaves a half written copy that would be listed,
+        # and offered for restore, as if it were a backup.
+        if os.path.exists(target):
+            os.remove(target)
+        raise
     finally:
         source.close()
     return target

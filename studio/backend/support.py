@@ -209,26 +209,32 @@ def create_backup(label: str = "manual") -> str:
 
     consistent_db = backup_database(reason=f"snapshot_{clean_label}")
 
-    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+    try:
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+            if consistent_db and os.path.exists(consistent_db):
+                z.write(consistent_db, "data/linkedin_studio.db")
+            assets = paths.get_assets_dir()
+            for dirpath, _, filenames in os.walk(assets):
+                for name in filenames:
+                    full = os.path.join(dirpath, name)
+                    z.write(full, os.path.join("assets", os.path.relpath(full, assets)))
+            z.writestr("backup_manifest.json", json.dumps({
+                "created_at": datetime.now().isoformat(timespec="seconds"),
+                "app_version": __version__,
+                "schema": describe_schema(),
+                "label": clean_label,
+                # Which creator profile this is. A backup holds one profile only.
+                "profile": paths.get_active_profile_id(),
+            }, indent=2, default=str))
+    except Exception:
+        # Half an archive is worse than none: it is listed as a backup.
+        if os.path.exists(archive):
+            os.remove(archive)
+        raise
+    finally:
+        # The intermediate consistent copy is now inside the archive, or useless.
         if consistent_db and os.path.exists(consistent_db):
-            z.write(consistent_db, "data/linkedin_studio.db")
-        assets = paths.get_assets_dir()
-        for dirpath, _, filenames in os.walk(assets):
-            for name in filenames:
-                full = os.path.join(dirpath, name)
-                z.write(full, os.path.join("assets", os.path.relpath(full, assets)))
-        z.writestr("backup_manifest.json", json.dumps({
-            "created_at": datetime.now().isoformat(timespec="seconds"),
-            "app_version": __version__,
-            "schema": describe_schema(),
-            "label": clean_label,
-            # Which creator profile this is. A backup holds one profile only.
-            "profile": paths.get_active_profile_id(),
-        }, indent=2, default=str))
-
-    # The intermediate consistent copy is now inside the archive.
-    if consistent_db and os.path.exists(consistent_db):
-        os.remove(consistent_db)
+            os.remove(consistent_db)
     return archive
 
 
@@ -346,6 +352,41 @@ def _stage_archive(archive: str, staging: str, assets_root: str) -> List[tuple]:
     return plan
 
 
+def _safety_snapshot() -> tuple:
+    """
+    (archive, note): a backup of the current state, taken before a restore.
+
+    A live database too damaged to read is the commonest reason to restore,
+    and the SQLite backup API cannot copy it, which used to stop the restore
+    it was protecting. Then the safety copy keeps the database files byte for
+    byte under damaged/, where restore will not pick them up by mistake.
+    """
+    try:
+        return create_backup("pre_restore"), ""
+    except sqlite3.DatabaseError as error:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive = os.path.join(paths.get_backups_dir(), f"inox_backup_pre_restore_damaged_{stamp}.zip")
+        db = paths.get_db_path()
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+            for path in (db, db + "-wal", db + "-shm"):
+                if os.path.exists(path):
+                    z.write(path, "damaged/" + os.path.basename(path))
+            assets = paths.get_assets_dir()
+            for dirpath, _, filenames in os.walk(assets):
+                for name in filenames:
+                    full = os.path.join(dirpath, name)
+                    z.write(full, os.path.join("assets", os.path.relpath(full, assets)))
+            z.writestr("backup_manifest.json", json.dumps({
+                "created_at": datetime.now().isoformat(timespec="seconds"),
+                "app_version": __version__,
+                "label": "pre_restore_damaged",
+                "profile": paths.get_active_profile_id(),
+                "damaged_database": str(error),
+            }, indent=2))
+        return archive, (f"The current database could not be read ({error}), so the safety copy keeps "
+                         f"its files exactly as they were, under damaged/ in that archive.")
+
+
 def _verify_staged_database(staged_db: str, archive: str) -> None:
     """The extracted database opens and passes SQLite's own check, or ValueError."""
     try:
@@ -448,13 +489,13 @@ def restore_backup(archive: str, take_safety_backup: bool = True, into_active_pr
                     f"Move or rename that folder, then restore again. Nothing was changed."
                 )
 
-        safety = create_backup("pre_restore") if take_safety_backup else None
+        safety, safety_note = _safety_snapshot() if take_safety_backup else (None, "")
 
         try:
             _swap(plan, staging)
         except RestoreFailed as failed:
             keep_staging = "could not be put back" in str(failed)
-            raise RestoreFailed(str(failed), safety_backup=safety) from failed.__cause__
+            raise RestoreFailed(str(failed), safety_backup=safety, safety_note=safety_note) from failed.__cause__
     finally:
         if not keep_staging:
             shutil.rmtree(staging, ignore_errors=True)
@@ -462,6 +503,7 @@ def restore_backup(archive: str, take_safety_backup: bool = True, into_active_pr
     return {
         "restored_from": archive,
         "safety_backup": safety,
+        "safety_note": safety_note,
         "assets_restored": len([1 for staged, _ in plan[3:] if staged is not None]),
         "manifest": info["manifest"],
     }

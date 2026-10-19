@@ -81,6 +81,8 @@ The interface has no restore button. Use a terminal opened in the checkout folde
 
 **What happens:** the studio unpacks the backup beside your data and checks its database first. Then it takes a `pre_restore` safety backup of your current state, swaps the database and the media files in, and prints the safety backup's path. If anything fails part way, everything it had changed is put back, the message starts "Not restored", and it names the safety backup. If you restored the wrong archive, restore the safety backup the same way.
 
+If the studio will not start because its database is damaged, restore your latest backup the same way. The restore still runs: the current database cannot be copied normally, so the safety backup (`inox_backup_pre_restore_damaged_<date>_<time>.zip`) keeps its files exactly as they were, in a `damaged` folder inside the ZIP, and the command says so.
+
 In the portable build, use `InoxHydra-CLI.bat backup`, `InoxHydra-CLI.bat restore <zip>` and `InoxHydra-CLI.bat export`.
 
 ## Moving to another computer

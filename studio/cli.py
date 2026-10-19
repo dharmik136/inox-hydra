@@ -155,7 +155,9 @@ def cmd_restore(args) -> int:
         return 1
     print(f"Restored from {result['restored_from']}")
     print(f"  media files restored  {result['assets_restored']}")
-    print(f"  safety snapshot       {result['safety_backup']}")
+    print(f"  safety snapshot       {result['safety_backup'] or 'none'}")
+    if result.get("safety_note"):
+        print(f"  {result['safety_note']}")
     print()
     print("Restart Inox Hydra for the restored data to take effect.")
     return 0

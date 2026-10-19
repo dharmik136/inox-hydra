@@ -191,3 +191,45 @@ def test_a_backup_from_a_newer_build_is_refused_and_nothing_changes(home, capsys
     assert "9.9.0" in out and "--into-active-profile" not in out
     # The studio still starts: the live database is still this build's.
     database.init_db()
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM-01: a damaged live database does not block the restore
+# ---------------------------------------------------------------------------
+
+def _damage_header(db):
+    with open(db, "r+b") as handle:
+        handle.write(b"\x00garbage" * 12)
+    with pytest.raises(sqlite3.DatabaseError):
+        conn = sqlite3.connect(db)
+        try:
+            conn.execute("SELECT COUNT(*) FROM posts").fetchone()
+        finally:
+            conn.close()
+
+
+def test_a_good_backup_restores_over_a_damaged_database(home, capsys):
+    _add_post("good-1")
+    archive = support.create_backup("good")
+    db = paths.get_db_path()
+    _damage_header(db)
+    with open(db, "rb") as handle:
+        damaged_bytes = handle.read()
+
+    assert cli.main(["restore", archive, "--yes"]) == 0, capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "could not be read" in out
+
+    conn = sqlite3.connect(db)
+    assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    conn.close()
+    assert _post_ids() == {"good-1"}
+
+    # The damaged original is kept, byte for byte, and cannot be restored by mistake.
+    safety = [n for n in os.listdir(paths.get_backups_dir()) if n.startswith("inox_backup_pre_restore")]
+    assert len(safety) == 1, safety
+    with zipfile.ZipFile(os.path.join(paths.get_backups_dir(), safety[0])) as z:
+        assert z.read("damaged/linkedin_studio.db") == damaged_bytes
+        assert "data/linkedin_studio.db" not in z.namelist()
+    stray = [n for n in os.listdir(paths.get_backups_dir()) if n.startswith("linkedin_studio_snapshot_")]
+    assert stray == [], f"a failed snapshot left a file behind: {stray}"
