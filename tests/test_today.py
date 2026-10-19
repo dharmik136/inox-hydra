@@ -214,8 +214,8 @@ def test_a_fresh_post_sends_you_to_its_analytics_page():
     client.post("/api/v1/bridge/heartbeat", json={"extension_version": "test"})
     conn = get_db()
     with conn:
-        conn.execute("INSERT INTO self_import_requests (kind, requested_at, finished_at, outcome) "
-                     "VALUES ('posts', ?, ?, 'completed')", (datetime.now(timezone.utc).isoformat(),) * 2)
+        conn.execute("INSERT INTO self_import_requests (kind, requested_at, finished_at, items_seen, outcome) "
+                     "VALUES ('posts', ?, ?, 5, 'end_of_list')", (datetime.now(timezone.utc).isoformat(),) * 2)
     conn.close()
 
     step = _today()["open_next"]

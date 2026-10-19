@@ -1013,16 +1013,36 @@
     while (document.visibilityState !== "visible" && !stopRequested) await pause(1000);
   }
 
+  const LOAD_MORE_WORDS = /^(show more results|see more|load more|show more)/i;
+  const LOADER_SELECTOR = ".artdeco-loader, .scaffold-finite-scroll__loader, [role='progressbar']";
+
+  // The control that loads more of the list. Found by its words, its class, or
+  // where it sits (inside the scroller, below the list), because the words are
+  // in the creator's language and only English ones were recognised.
+  function showMoreButton() {
+    return Array.from(document.querySelectorAll("button")).find((b) =>
+      LOAD_MORE_WORDS.test(clean(b.innerText || b.getAttribute("aria-label") || "")) ||
+      (b.classList && b.classList.contains("scaffold-finite-scroll__load-button")) ||
+      (b.closest && b.closest(".scaffold-finite-scroll") && !b.closest(".scaffold-finite-scroll__content"))
+    ) || null;
+  }
+
   function clickShowMore() {
-    const button = Array.from(document.querySelectorAll("button")).find((b) =>
-      /^(show more results|see more|load more|show more)/i.test(clean(b.innerText || b.getAttribute("aria-label") || "")) ||
-      (b.classList && b.classList.contains("scaffold-finite-scroll__load-button"))
-    );
+    const button = showMoreButton();
     if (button && !button.disabled) {
       button.click();
       return true;
     }
     return false;
+  }
+
+  // Whether the page still offers more of the list: a load control, or a
+  // loader in view. A list that stopped growing while either is there stalled;
+  // it did not end.
+  function moreOffered() {
+    if (showMoreButton()) return true;
+    return Array.from(document.querySelectorAll(LOADER_SELECTOR))
+      .some((el) => el.getClientRects && el.getClientRects().length > 0);
   }
 
   async function runImport(kind, me, request) {
@@ -1035,7 +1055,10 @@
     const noun = { posts: "posts", comments: "comments", reactions: "reactions" }[IMPORT_KIND[kind]];
     let total = 0;
     let stalled = 0;
-    let outcome = "completed";
+    // How it ended, which the studio needs: only "end_of_list" means the whole
+    // history was read, and leads are judged "not on your posts" on that alone.
+    // Running out of rounds is not the end.
+    let outcome = "round_limit";
 
     for (let round = 0; round < MAX_ROUNDS; round += 1) {
       if (stopRequested) { outcome = "stopped"; break; }
@@ -1047,7 +1070,11 @@
       banner(`Studio is importing your ${noun}: ${total} so far.`, true);
 
       stalled = added === 0 ? stalled + 1 : 0;
-      if (stalled >= STALL_ROUNDS) break; // the list stopped growing: the end
+      if (stalled >= STALL_ROUNDS) {
+        // The list stopped growing. It ended only if the page offers no more.
+        outcome = moreOffered() ? "stalled" : "end_of_list";
+        break;
+      }
 
       if (!clickShowMore()) {
         const cards = activityCards();
@@ -1068,21 +1095,30 @@
       return;
     }
 
+    // What happened, in words: a list that stalled or ran out of rounds was
+    // not read to its end, and saying "Done" for it is how that got missed.
+    const said = {
+      end_of_list: `Done. ${total} ${noun} imported.`,
+      stalled: `The list stopped loading after ${total} ${noun}. Click Import again in the studio to read the rest.`,
+      round_limit: `Stopped after ${total} ${noun}, the most one import reads. Older ones were not read.`,
+      left_page: `Left the page after ${total} ${noun}.`,
+    }[outcome] || `${total} ${noun} imported.`;
+
     if (finishRes && finishRes.next_url) {
-      banner(`Done importing ${noun} (${total} imported). Advancing to ${finishRes.next_kind}...`, false);
+      banner(`${said} Moving on to your ${finishRes.next_kind}...`, false);
       await pause(1800);
       window.location.href = finishRes.next_url;
       return;
     }
 
     if (finishRes && finishRes.all_completed) {
-      banner("All activity streams synced successfully!", false);
+      banner(`${said} That was the last of the three; Setup shows what each one read.`, false);
       clearBanner(8000);
       return;
     }
 
-    banner(outcome === "stopped" ? `Stopped. ${total} ${noun} imported.` : `Done. ${total} ${noun} imported.`, false);
-    clearBanner(6000);
+    banner(said, false);
+    clearBanner(outcome === "end_of_list" ? 6000 : 12000);
   }
 
   async function onActivityPage(kind) {

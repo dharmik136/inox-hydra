@@ -72,8 +72,10 @@ If you imported your archive in step 4, this step only adds what has happened si
 Click **Import**. The bridge browser opens that activity page, and the extension scrolls it for you. A banner at the bottom of the page reads "Studio is importing your posts: N so far." with a **Stop** button.
 
 - Keep the tab in view. The import pauses while the tab is hidden.
-- It stops by itself when the list stops growing, and the banner reads "Done. N posts imported."
+- It stops by itself when the list stops growing. If the page has nothing more to load, that is the end of the list: the banner reads "Done. N posts imported." and the row in Setup reads **READ TO THE END**.
+- If the page still offers more (a **Show more** button, or a list still loading), the list stalled rather than ended. The banner says so, and the row reads **THE LIST STOPPED LOADING AT N. IMPORT AGAIN**. One import also reads at most 250 rounds of the list; past that the row reads **THE MOST ONE IMPORT READS**.
 - **Stop** ends it early. What was read so far is kept.
+- Only an import of your posts that read to the end counts as your whole post history. Until one has, **Leads** never calls anyone "engaged only with other people's posts", and never offers to remove them on that ground. Posts from your archive count as yours too.
 - An import you asked for is picked up only within 30 minutes. After that, click **Import** again.
 
 Your comments and reactions are kept as your own activity. They never become leads.
@@ -123,4 +125,4 @@ Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE 
 | Step 1 never ticks | Check the extension is loaded in the bridge browser, and open `http://127.0.0.1:8000` once in that browser so it has the studio's access key. Reload the extension after an update. |
 | Step 2 never asks "Is this you?" | Open your profile from the bridge browser, not another one, and wait for the page to finish loading. If it still does not ask, LinkedIn may have changed its page; the studio refuses to guess. |
 | A field reads "Not read" | Open the page that holds it with the buttons above. If it still does not fill, the extension did not recognise that part of the page. |
-| The import stops early | The list may have stopped loading, or the tab was left. Click **Import again**; posts already read are not duplicated. |
+| The import stops early | The list may have stopped loading, or the tab was left. Click **Import again**; posts already read are not duplicated. If an import still reads **NOT TO THE END**, reload the extension after an update; an older extension cannot tell the end of the list from a stall. |

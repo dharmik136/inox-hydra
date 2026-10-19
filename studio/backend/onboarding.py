@@ -30,6 +30,7 @@ Strict Invariants:
   has open; this module only decides what to keep.
 """
 
+import bisect
 import hashlib
 import json
 import re
@@ -1056,18 +1057,79 @@ def engagement_gate(engager_profile: Any, post_urn: Any, post_author: Any) -> Op
 # may simply be older than what was imported, so the answer is "unknown", and
 # nothing is ever offered for removal on an unknown.
 
+# A post known only from LinkedIn's archive is named by its share or ugcPost id,
+# and engagement on it is captured under its activity id, so comparing the bare
+# numbers never matched it: the people who commented on an archive post were
+# called strangers and offered for deletion. Both ids carry the moment the post
+# was made in their high bits, and for one post those moments are a heartbeat
+# apart. Two minutes, as archive_import.find_twin allows two ids without text.
+SAME_POST_WINDOW_MS = 2 * 60 * 1000
+
+
+class _OwnPostIds(set):
+    """
+    The numeric ids of the creator's posts. Membership also holds for an
+    activity id made within SAME_POST_WINDOW_MS of a post the studio knows only
+    from the archive, which is the same post under its other name.
+    """
+
+    def __init__(self, ids, archive_moments):
+        super().__init__(ids)
+        self.archive_moments = sorted(archive_moments)
+
+    def __contains__(self, post_id) -> bool:
+        if set.__contains__(self, post_id):
+            return True
+        if not self.archive_moments or not str(post_id or "").isdigit():
+            return False
+        moment = int(post_id) >> 22
+        i = bisect.bisect_left(self.archive_moments, moment - SAME_POST_WINDOW_MS)
+        return i < len(self.archive_moments) and self.archive_moments[i] <= moment + SAME_POST_WINDOW_MS
+
+
 def _own_activity_ids(conn) -> set:
-    ids = {_activity_id(r["activity_urn"]) for r in conn.execute("SELECT activity_urn FROM own_posts")}
+    rows = [r["activity_urn"] for r in conn.execute("SELECT activity_urn FROM own_posts")]
+    ids = {_activity_id(urn) for urn in rows}
     ids |= {_activity_id(r["activity_urn"]) for r in conn.execute(
         "SELECT activity_urn FROM posts WHERE activity_urn IS NOT NULL")}
     ids.discard("")
-    return ids
+    # Rows still under an archive id: the bridge has not read these posts, so
+    # nothing has given them their activity id yet.
+    archive_moments = [int(_activity_id(urn)) >> 22 for urn in rows
+                       if _activity_id(urn) and not (urn or "").startswith("urn:li:activity:")]
+    return _OwnPostIds(ids, archive_moments)
+
+
+# How a posts import ended, as the extension reports it. Only the first is the
+# end of the list; the others read part of it.
+IMPORT_OUTCOMES = ("end_of_list", "stalled", "round_limit", "stopped", "left_page")
+
+
+def _import_outcome(outcome: Any, items_seen: Optional[int]) -> str:
+    """
+    The outcome to record for a finished import.
+
+    An older extension said "completed" whenever the list stopped growing for
+    twenty seconds, which a slow "Show more", a button in another language or
+    the round cap all produce, and said it even after reading nothing. That
+    cannot be told apart from the end, so it is recorded as "partial". A list
+    that ended with nothing read is "nothing_read", not a history.
+    """
+    said = (_text(outcome, 40) or "").lower()
+    if said == "end_of_list":
+        return "end_of_list" if items_seen else "nothing_read"
+    return said if said in IMPORT_OUTCOMES else "partial"
 
 
 def post_history_complete(conn) -> bool:
-    """True once an import of the creator's posts has run to the end of the list."""
+    """
+    True once an import of the creator's posts has read something and run to
+    the end of the list. Only then can a lead be called "not on your posts",
+    and offered for deletion on that strength.
+    """
     return conn.execute(
-        "SELECT 1 FROM self_import_requests WHERE kind = 'posts' AND outcome = 'completed' LIMIT 1"
+        "SELECT 1 FROM self_import_requests WHERE kind = 'posts' AND outcome = 'end_of_list' "
+        "AND COALESCE(items_seen, 0) > 0 LIMIT 1"
     ).fetchone() is not None
 
 
@@ -1296,7 +1358,7 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
                 conn.execute(
                     "UPDATE self_import_requests SET finished_at = ?, items_seen = ?, outcome = ? "
                     "WHERE id = ? AND finished_at IS NULL",
-                    (_now(), _count(items_seen), _text(outcome, 40) or "completed", request_id),
+                    (_now(), _count(items_seen), _import_outcome(outcome, _count(items_seen)), request_id),
                 )
     finally:
         conn.close()

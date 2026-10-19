@@ -566,12 +566,20 @@ function ImportRow({
   );
 }
 
+// Only "end_of_list" is the whole list. The others read part of it, and say so,
+// because a partial history taken for a whole one is how real leads were
+// offered for deletion as strangers.
 function importLine(entry: SelfImport): string {
+  const read = entry.items_seen ?? 0;
   if (!entry.finished_at) return entry.started_at ? "SCROLLING NOW" : "WAITING FOR THE PAGE TO OPEN";
-  if (entry.outcome === "stopped") return `STOPPED AT ${entry.items_seen ?? 0}`;
-  if (entry.outcome === "left_page") return `LEFT THE PAGE AT ${entry.items_seen ?? 0}`;
+  if (entry.outcome === "end_of_list") return `READ TO THE END: ${read}`;
+  if (entry.outcome === "stopped") return `STOPPED AT ${read}`;
+  if (entry.outcome === "left_page") return `LEFT THE PAGE AT ${read}`;
   if (entry.outcome === "superseded") return "REPLACED BY A NEWER IMPORT";
-  return `LAST IMPORT READ ${entry.items_seen ?? 0}`;
+  if (entry.outcome === "nothing_read") return "NOTHING READ. OPEN THE PAGE AND IMPORT AGAIN";
+  if (entry.outcome === "stalled") return `THE LIST STOPPED LOADING AT ${read}. IMPORT AGAIN`;
+  if (entry.outcome === "round_limit") return `READ ${read}, THE MOST ONE IMPORT READS`;
+  return `READ ${read}, NOT TO THE END. IMPORT AGAIN`;
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {

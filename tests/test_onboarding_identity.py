@@ -593,7 +593,8 @@ def _history_imported():
     _confirm()
     client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [{"activity_urn": URN_2024, "actor": ME}]})
     request_id = client.post("/api/v1/self/imports", json={"kind": "posts"}).json()["id"]
-    client.post("/api/v1/self/imports/event", json={"id": request_id, "event": "finished", "items_seen": 1})
+    client.post("/api/v1/self/imports/event", json={"id": request_id, "event": "finished", "items_seen": 1,
+                                                    "outcome": "end_of_list"})
 
 
 def test_nothing_is_called_a_stranger_before_your_history_is_read(legacy_leads):
