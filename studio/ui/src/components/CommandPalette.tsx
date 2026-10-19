@@ -19,6 +19,7 @@ import { searchEverything, type SearchResponse, type SearchResult, type SearchOp
 import { highlightRuns, matchesAll, termsOf } from "@/lib/search";
 import { readableSnippet } from "@/lib/snippet";
 import { InlineText } from "@/components/DocumentView";
+import { useModalFocus } from "@/lib/modalFocus";
 import { cn } from "@/lib/utils";
 
 /**
@@ -93,6 +94,11 @@ export function CommandPalette({
   const [error, setError] = useState<string | null>(null);
   /** Responses can arrive out of order; only the latest request may land. */
   const sequence = useRef(0);
+
+  // A modal in fact, not only in looks: Tab stays in the palette, and closing
+  // it gives focus back to whatever opened it instead of to the page body.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalFocus(dialogRef, open, () => onOpenChange(false));
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -203,6 +209,10 @@ export function CommandPalette({
           onClick={() => onOpenChange(false)}
         >
           <motion.div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Search the studio"
             initial={{ opacity: 0, y: -8, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
@@ -217,8 +227,9 @@ export function CommandPalette({
             <Command label="Search the studio" loop shouldFilter={false}>
               <div className="flex items-center gap-2.5 border-b border-edge px-4">
                 <Search className="size-4 shrink-0 text-ink-muted" strokeWidth={1.75} aria-hidden="true" />
+                {/* Focused by useModalFocus rather than autoFocus, which ran
+                    first and left the hook no record of what opened it. */}
                 <Command.Input
-                  autoFocus
                   value={query}
                   onValueChange={setQuery}
                   placeholder="Search posts, leads, the Swipe File and help"

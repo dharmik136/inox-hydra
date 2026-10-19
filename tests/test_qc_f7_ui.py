@@ -406,3 +406,81 @@ def test_brand_studio_tabs_are_all_on_a_phone_screen(studio, scheme):
     for index in range(tabs.count()):
         tab = tabs.nth(index)
         assert _inside(tab.bounding_box(), 375, 812), f"{tab.inner_text()} is off screen at 375 pixels"
+
+
+# ---------------------------------------------------------------------------
+# UX-18: a modal takes focus, keeps Tab inside, closes on Escape and gives
+# focus back to whatever opened it
+# ---------------------------------------------------------------------------
+
+FOCUS_IN = "(name) => { const e = document.activeElement; const d = e && e.closest('[role=dialog]');" \
+           " return !!d && d.getAttribute('aria-label') === name }"
+
+
+def _is_focused(page, handle):
+    return page.evaluate("(el) => document.activeElement === el", handle)
+
+
+def _tab_stays_in(page, dialog_name, presses=20):
+    for step in range(presses):
+        page.keyboard.press("Tab" if step % 4 else "Shift+Tab")
+        where = page.evaluate("() => { const e = document.activeElement; return e ? (e.getAttribute('aria-label')"
+                              " || e.innerText || e.tagName).slice(0, 40) : null }")
+        assert page.evaluate(FOCUS_IN, dialog_name), f"Tab left the {dialog_name} dialog for {where!r}"
+
+
+def test_the_palette_is_a_dialog_that_holds_and_returns_focus(studio):
+    page = studio().open("Today")
+    opener = page.locator("header").get_by_role("button", name="Search everything")
+    opener.focus()
+    handle = opener.element_handle()
+    page.keyboard.press("Enter")
+    dialog = page.get_by_role("dialog", name="Search the studio")
+    dialog.wait_for(state="visible")
+    assert dialog.get_attribute("aria-modal") == "true"
+    assert page.evaluate(FOCUS_IN, "Search the studio"), "the palette opened without taking focus"
+    _tab_stays_in(page, "Search the studio")
+    page.keyboard.press("Escape")
+    dialog.wait_for(state="detached")
+    assert _is_focused(page, handle), "Escape left focus on the page body, not on what opened the palette"
+
+
+def test_the_profile_switcher_holds_and_returns_focus(studio):
+    page = studio().open("Today")
+    trigger = page.locator("nav[aria-label='Studio sections']").get_by_role("button", name="Current profile", exact=False)
+    trigger.focus()
+    handle = trigger.element_handle()
+    page.keyboard.press("Enter")
+    page.get_by_role("dialog", name="Manage creator profiles").wait_for(state="visible")
+    assert page.evaluate(FOCUS_IN, "Manage creator profiles"), "the switcher opened without taking focus"
+    _tab_stays_in(page, "Manage creator profiles")
+    page.keyboard.press("Escape")
+    page.get_by_role("dialog", name="Manage creator profiles").wait_for(state="detached")
+    assert _is_focused(page, handle)
+
+
+def test_the_tray_holds_focus_and_escape_closes_one_layer_at_a_time(studio):
+    page = studio().open("Today")
+    toggle = page.get_by_role("button", name="Open navigation tray")
+    toggle.focus()
+    handle = toggle.element_handle()
+    page.keyboard.press("Enter")
+    tray = page.get_by_role("dialog", name="Studio navigation")
+    tray.wait_for(state="visible")
+    assert page.evaluate(FOCUS_IN, "Studio navigation"), "the tray opened without taking focus"
+    _tab_stays_in(page, "Studio navigation", presses=30)
+
+    card = tray.get_by_role("button", name="Current profile", exact=False)
+    card.focus()
+    card_handle = card.element_handle()
+    page.keyboard.press("Enter")
+    page.get_by_role("dialog", name="Manage creator profiles").wait_for(state="visible")
+    _tab_stays_in(page, "Manage creator profiles")
+    page.keyboard.press("Escape")
+    page.get_by_role("dialog", name="Manage creator profiles").wait_for(state="detached")
+    assert tray.is_visible(), "Escape in the profile panel closed the tray under it too"
+    assert _is_focused(page, card_handle), "focus did not go back to the profile card"
+
+    page.keyboard.press("Escape")
+    tray.wait_for(state="detached")
+    assert _is_focused(page, handle), "focus did not go back to the tray's toggle"

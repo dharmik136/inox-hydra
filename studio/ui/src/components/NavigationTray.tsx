@@ -1,7 +1,8 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AccountSwitcher } from "@/components/AccountSwitcher";
 import { type SectionId, type StudioSection } from "@/lib/navigation";
+import { useModalFocus } from "@/lib/modalFocus";
 import { cn } from "@/lib/utils";
 
 interface NavigationTrayProps {
@@ -22,31 +23,10 @@ interface NavigationTrayProps {
  */
 export function NavigationTray({ sections, open, active, onSelect, onClose }: NavigationTrayProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const restoreFocusTo = useRef<Element | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      restoreFocusTo.current = document.activeElement;
-      panelRef.current?.focus();
-      return;
-    }
-    if (restoreFocusTo.current instanceof HTMLElement) {
-      restoreFocusTo.current.focus();
-      restoreFocusTo.current = null;
-    }
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+  // Takes focus, keeps Tab inside the tray, closes on Escape and hands focus
+  // back. Tab used to walk out into the page behind the scrim.
+  useModalFocus(panelRef, open, onClose, "self");
 
   return (
     <AnimatePresence>

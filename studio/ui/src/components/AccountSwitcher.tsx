@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { hasUnsavedWork } from "@/lib/unsaved";
+import { useModalFocus } from "@/lib/modalFocus";
 
 const LICENCE_CHANGED = "inox:licence-changed";
 
@@ -165,19 +166,14 @@ export function AccountSwitcher({
     }
   };
 
-  // Keyboard escape listener
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        setOpen(false);
-        triggerRef.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  // Focus moves into the panel, Tab stays in it, and Escape closes it and
+  // returns focus to the trigger. Tab used to walk out into the page.
+  useModalFocus(panelRef, open, () => setOpen(false));
+
+  const cancelCreate = () => {
+    setCreating(false);
+    closeRef.current?.focus();
+  };
 
   return (
     <div className={cn("relative", className)}>
@@ -405,7 +401,7 @@ export function AccountSwitcher({
                     <span className="text-xs font-medium text-ink-primary">New Creator Profile</span>
                     <button
                       type="button"
-                      onClick={() => setCreating(false)}
+                      onClick={cancelCreate}
                       aria-label="Cancel new profile creation"
                       className="text-ink-muted hover:text-ink-primary"
                     >
@@ -418,6 +414,9 @@ export function AccountSwitcher({
                       <input
                         type="text"
                         placeholder="Profile Name (e.g. Elena Rostova)"
+                        // The button that opened the form is gone, so focus
+                        // goes to the first field rather than to the page.
+                        autoFocus
                         value={newName}
                         onChange={(e) => setNewName(e.target.value)}
                         required
@@ -446,7 +445,7 @@ export function AccountSwitcher({
                     <div className="flex justify-end gap-2 pt-1">
                       <button
                         type="button"
-                        onClick={() => setCreating(false)}
+                        onClick={cancelCreate}
                         className="rounded px-2 py-1 text-xs text-ink-muted hover:text-ink-primary"
                       >
                         Cancel
