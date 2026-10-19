@@ -1007,12 +1007,16 @@ def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: 
         fingerprint = stored_fingerprint or post_identity.content_fingerprint(content or "")
         return bool(fingerprint) and post_identity.fingerprint_matches(text, fingerprint)
 
-    # A studio record can only be where a LinkedIn post came from if it existed
-    # by the time the post went out. Without this, a new draft that reused an
-    # old hit's opening was taken over by a history import: marked published,
-    # with the old post's date and figures, and gone from the drafts. A post
-    # marked published or scheduled is judged by that date, since it may be
-    # entered after the fact; anything else by when it was written.
+    # A draft can only be where a LinkedIn post came from if it was written by
+    # the time the post went out. Without this, a new draft that reused an old
+    # hit's opening was taken over by a history import: marked published, with
+    # the old post's date and figures, and gone from the drafts.
+    #
+    # A row the creator marked published is exempt: they said it is out, and
+    # it is often marked, or pasted in, after posting on LinkedIn ("Mark as
+    # published" stamps the click time), so any date on it can be later than
+    # the post. A scheduled row counts from the earlier of when it was written
+    # and when it was due.
     posted = _parse_moment(published_at)
 
     def existed_by_then(row) -> bool:
@@ -1020,13 +1024,10 @@ def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: 
             return True
         status = (row["status"] or "").lower() if "status" in row.keys() else ""
         if status == "published":
-            when = row["published_at"]
-        elif status == "scheduled":
-            when = row["scheduled_for"]
-        else:
-            when = row["created_at"]
-        moment = _parse_moment(when)
-        return moment is None or moment <= posted + BIND_CLOCK_SKEW
+            return True
+        times = [row["created_at"]] + ([row["scheduled_for"]] if status == "scheduled" else [])
+        moments = [m for m in (_parse_moment(t) for t in times) if m]
+        return not moments or min(moments) <= posted + BIND_CLOCK_SKEW
 
     posts = [r for r in conn.execute(
         "SELECT id, content, content_fingerprint, status, published_at, scheduled_for, created_at FROM posts "

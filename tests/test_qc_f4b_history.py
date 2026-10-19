@@ -316,6 +316,22 @@ def test_an_old_post_does_not_bind_to_a_draft_written_after_it(studio_rows):
     assert _ingest_old_post()["bound_to_drafts"] == 0
 
 
+def test_a_post_marked_published_after_it_went_out_still_binds(studio_rows):
+    """
+    Review of WRITE-18: 'Mark as published' stamps the click time, and a
+    creator who posts on LinkedIn first and marks it in the studio later, or
+    pastes it in afterwards, must still get the two linked.
+    """
+    _confirm()
+    created = client.post("/api/posts", json={"content": OLD_POST, "status": "draft"}).json()
+    post_id = created.get("id") or created.get("post", {}).get("id")
+    studio_rows["posts"].append(post_id)
+    assert client.post(f"/api/posts/{post_id}/publish-now").status_code == 200
+
+    assert _ingest_old_post()["bound_to_posts"] == 1
+    assert _row(post_id)["activity_urn"] == ACTIVITY_URN
+
+
 def test_a_draft_written_before_the_post_still_binds(studio_rows):
     _confirm()
     conn = get_db()
