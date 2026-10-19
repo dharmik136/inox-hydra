@@ -70,3 +70,24 @@ def test_the_newest_restorable_backups_come_first(client):
     assert kinds["linkedin_studio_premigration_20261019_101548.db"] == ("database", True)
     assert kinds["inox_backup_pre_restore_damaged_20261019_101000.zip"] == ("other", False)
     assert listing["count"] == 5
+
+
+def test_one_unreadable_archive_does_not_hide_the_rest(client):
+    base = 1_800_000_000
+    _file("inox_backup_manual_20261019_103323.zip", base + 50, "backup")
+    broken = os.path.join(paths.get_backups_dir(), "inox_backup_broken_20261019_100000.zip")
+    with zipfile.ZipFile(broken, "w") as z:
+        z.writestr("data/linkedin_studio.db", b"SQLite format 3\x00" + b"\x00" * 84)
+        z.writestr("backup_manifest.json", "{not json")
+    truncated = os.path.join(paths.get_backups_dir(), "inox_backup_cut_20261019_090000.zip")
+    with open(truncated, "wb") as handle:
+        handle.write(b"PK\x03\x04 cut short")
+
+    res = client.get("/api/v1/support/backups")
+    assert res.status_code == 200, res.text
+    entries = {entry["name"]: entry for entry in res.json()["backups"]}
+    assert entries["inox_backup_manual_20261019_103323.zip"]["restorable"] is True
+    assert entries["inox_backup_broken_20261019_100000.zip"]["kind"] == "unreadable"
+    assert entries["inox_backup_broken_20261019_100000.zip"]["restorable"] is False
+    assert entries["inox_backup_cut_20261019_090000.zip"]["restorable"] is False
+    assert res.json()["backups"][0]["name"] == "inox_backup_manual_20261019_103323.zip"
