@@ -1616,6 +1616,147 @@ DEMO_POST_IDS = (
 )
 
 
+# The four invented people the demo seeder writes, defined once for both
+# seeding blocks and for the purge. Each says in its notes that it is a sample,
+# so a demo never presents an invented person as someone real, and each writes
+# lead_status beside status: written apart, the booked meeting below read as
+# a 0% conversion rate.
+_SAMPLE = "Sample lead (demo data), not a real person. "
+DEMO_LEADS = (
+    ("lead-1", "Aravind Subramanian", "VP of Engineering at CloudScale", "CloudScale", "https://linkedin.com/in/example-lead-aravind", "Commented", "post-enterprise-scheduled", "New Lead", _SAMPLE + "Interested in ERP observability architecture", "VP/Director", 85.0, "NEW"),
+    ("lead-2", "Sarah Jenkins", "Director of Product Architecture", "Fintech Nexus", "https://linkedin.com/in/example-lead-sarah", "Liked", "urn:li:activity:7390000000000000102", "Connected", _SAMPLE + "Engaged with content strategy breakdown", "VP/Director", 65.0, "ENGAGED"),
+    ("lead-3", "Rohan Mehta", "Principal Enterprise Architect", "Global Tech Systems", "https://linkedin.com/in/example-lead-rohan", "Commented", "post-enterprise-scheduled", "Outreach Sent", _SAMPLE + "Exchanged notes on clean data boundaries", "Senior Practitioner", 55.0, "DM_SENT"),
+    ("lead-4", "Elena Rostova", "Head of Content & DevRel", "SaaS Matrix", "https://linkedin.com/in/example-lead-elena", "Reposted", "urn:li:activity:7390000000000000101", "Meeting Booked", _SAMPLE + "Invited to discuss agentic AI workflows", "VP/Director", 82.0, "CONVERTED"),
+)
+
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (name,)).fetchone() is not None
+
+
+def purge_seeded_leads(
+    conn: Optional[sqlite3.Connection] = None,
+    dry_run: bool = True,
+) -> Dict[str, Any]:
+    """
+    Remove the four invented people, with everything recorded about them.
+
+    Matched on the seeder's id and its example profile address together, so a
+    real lead is never at risk even if some import handed it the same id.
+    """
+    owns = conn is None
+    conn = conn or get_db()
+    try:
+        wanted = {(lead[0], lead[4]) for lead in DEMO_LEADS}
+        marks = ",".join("?" for _ in DEMO_LEADS)
+        rows = conn.execute(
+            f"SELECT id, profile_url FROM leads WHERE id IN ({marks})", [lead[0] for lead in DEMO_LEADS]
+        ).fetchall()
+        found = [r["id"] for r in rows if (r["id"], r["profile_url"]) in wanted]
+
+        report = {"seeded": found, "dry_run": dry_run, "deleted": 0}
+        if dry_run or not found:
+            return report
+
+        marks = ",".join("?" for _ in found)
+        with conn:
+            for table in ("lead_enrichments", "lead_interactions", "lead_stage_events"):
+                if _has_table(conn, table):
+                    conn.execute(f"DELETE FROM {table} WHERE lead_id IN ({marks})", found)
+            report["deleted"] = conn.execute(f"DELETE FROM leads WHERE id IN ({marks})", found).rowcount
+        return report
+    finally:
+        if owns:
+            conn.close()
+
+
+_DEMO_DRAFT_SEEDERS = (
+    seed_day02_draft, seed_day03_draft, seed_day04_draft, seed_day05_draft,
+    seed_day06_draft, seed_day07_draft, seed_day08_draft, seed_day09_draft,
+    seed_day10_draft, seed_day11_draft, seed_day12_draft, seed_day13_draft,
+    seed_day14_draft, seed_day15_draft, seed_day16_draft, seed_day17_draft,
+)
+
+
+def demo_draft_rows() -> List[Dict[str, str]]:
+    """
+    The drafts the demo seeder writes: title, text, and the prefix of the post
+    row it writes beside each.
+
+    Read by running the seeders themselves against a scratch database, for the
+    same reason as demo_analytics_rows: the purge and the seeder then share one
+    definition and cannot drift apart.
+    """
+    scratch = sqlite3.connect(":memory:")
+    scratch.row_factory = sqlite3.Row
+    try:
+        scratch.execute(
+            "CREATE TABLE drafts (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT, raw_content TEXT, "
+            "formatted_content TEXT, char_count INTEGER, lines_above_fold INTEGER, pre_fold_chars INTEGER, "
+            "is_pre_fold_safe INTEGER, archetype TEXT, tags TEXT, status TEXT, updated_at TIMESTAMP)"
+        )
+        scratch.execute("CREATE TABLE posts (id TEXT PRIMARY KEY, content TEXT, status TEXT, tags TEXT, created_at TIMESTAMP)")
+        for seed in _DEMO_DRAFT_SEEDERS:
+            seed(scratch)
+        prefix = {
+            int(r["id"].rsplit("-", 1)[1]): r["id"].rsplit("-", 1)[0] + "-"
+            for r in scratch.execute("SELECT id FROM posts")
+        }
+        return [
+            {"title": r["title"], "raw_content": r["raw_content"], "post_prefix": prefix.get(r["id"], "")}
+            for r in scratch.execute("SELECT id, title, raw_content FROM drafts ORDER BY id")
+        ]
+    finally:
+        scratch.close()
+
+
+def purge_seeded_drafts(
+    conn: Optional[sqlite3.Connection] = None,
+    dry_run: bool = True,
+) -> Dict[str, Any]:
+    """
+    Remove the original author's demo drafts, and the post rows written beside them.
+
+    A draft counts only while its title and text are exactly what the seeder
+    wrote. One the creator has edited is theirs now and stays.
+    """
+    owns = conn is None
+    conn = conn or get_db()
+    try:
+        drafts: List[int] = []
+        posts: List[str] = []
+        for seeded in demo_draft_rows():
+            for row in conn.execute(
+                "SELECT id FROM drafts WHERE title = ? AND raw_content = ?", (seeded["title"], seeded["raw_content"])
+            ):
+                drafts.append(row["id"])
+                if seeded["post_prefix"]:
+                    posts.append(f"{seeded['post_prefix']}{row['id']}")
+            # A post row whose draft is already gone, still holding the seeded text.
+            if seeded["post_prefix"]:
+                posts += [r["id"] for r in conn.execute(
+                    "SELECT id FROM posts WHERE id LIKE ? AND content = ?",
+                    (seeded["post_prefix"] + "%", seeded["raw_content"]),
+                )]
+        posts = sorted(set(posts))
+
+        report = {"seeded": drafts, "posts": posts, "dry_run": dry_run, "deleted": 0}
+        if dry_run or not (drafts or posts):
+            return report
+
+        with conn:
+            if posts:
+                conn.execute(f"DELETE FROM posts WHERE id IN ({','.join('?' for _ in posts)})", posts)
+            if drafts:
+                report["deleted"] = conn.execute(
+                    f"DELETE FROM drafts WHERE id IN ({','.join('?' for _ in drafts)})", drafts
+                ).rowcount
+        return report
+    finally:
+        if owns:
+            conn.close()
+
+
 def demo_demographics_rows() -> List[tuple]:
     """
     The 18 hand-typed audience rows the demo seeder writes.
@@ -1739,6 +1880,8 @@ def purge_all_seeded_data(
             "analytics": purge_seeded_analytics(conn, dry_run=dry_run),
             "demographics": purge_seeded_demographics(conn, dry_run=dry_run),
             "posts": purge_seeded_posts(conn, dry_run=dry_run),
+            "leads": purge_seeded_leads(conn, dry_run=dry_run),
+            "drafts": purge_seeded_drafts(conn, dry_run=dry_run),
             "dry_run": dry_run,
         }
     finally:
@@ -1749,6 +1892,13 @@ def purge_all_seeded_data(
 def seed_initial_data():
     conn = get_db()
     cursor = conn.cursor()
+
+    # Demo data lasts as long as demo mode. Started once with INOX_DEMO_DATA,
+    # the studio used to keep the invented people, drafts, posts and figures
+    # for good, shown beside real ones as if they were. Every start without the
+    # flag removes what the seeder provably wrote, and nothing else.
+    if not demo_data_enabled():
+        purge_all_seeded_data(conn, dry_run=False)
 
     # Seed Days 02 through 17 Launch Kit drafts. Demo content, same reason as
     # the Days 02 to 08 block in init_db. Both call sites are gated: gating one
@@ -1780,16 +1930,10 @@ def seed_initial_data():
     else:
         seed_sample_leads = False
     if seed_sample_leads:
-        sample_leads = [
-            ("lead-1", "Aravind Subramanian", "VP of Engineering at CloudScale", "CloudScale", "https://linkedin.com/in/example-lead-aravind", "Commented", "post-enterprise-scheduled", "New Lead", "Interested in ERP observability architecture", "VP/Director", 85.0),
-            ("lead-2", "Sarah Jenkins", "Director of Product Architecture", "Fintech Nexus", "https://linkedin.com/in/example-lead-sarah", "Liked", "urn:li:activity:7390000000000000102", "Connected", "Engaged with content strategy breakdown", "VP/Director", 65.0),
-            ("lead-3", "Rohan Mehta", "Principal Enterprise Architect", "Global Tech Systems", "https://linkedin.com/in/example-lead-rohan", "Commented", "post-enterprise-scheduled", "Outreach Sent", "Exchanged notes on clean data boundaries", "Senior Practitioner", 55.0),
-            ("lead-4", "Elena Rostova", "Head of Content & DevRel", "SaaS Matrix", "https://linkedin.com/in/example-lead-elena", "Reposted", "urn:li:activity:7390000000000000101", "Meeting Booked", "Invited to discuss agentic AI workflows", "VP/Director", 82.0)
-        ]
-        for l in sample_leads:
+        for l in DEMO_LEADS:
             cursor.execute("""
-            INSERT OR REPLACE INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes, seniority_level, icp_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes, seniority_level, icp_score, lead_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, l)
         conn.commit()
 
@@ -1984,16 +2128,10 @@ What is your team's biggest bottleneck when decoupling legacy services?""",
     else:
         needs_leads = False
     if needs_leads:
-        sample_leads = [
-            ("lead-1", "Aravind Subramanian", "VP of Engineering at CloudScale", "CloudScale", "https://linkedin.com/in/example-lead-aravind", "Commented", "post-enterprise-scheduled", "New Lead", "Interested in ERP observability architecture", "VP/Director", 85.0),
-            ("lead-2", "Sarah Jenkins", "Director of Product Architecture", "Fintech Nexus", "https://linkedin.com/in/example-lead-sarah", "Liked", "urn:li:activity:7390000000000000102", "Connected", "Engaged with content strategy breakdown", "VP/Director", 65.0),
-            ("lead-3", "Rohan Mehta", "Principal Enterprise Architect", "Global Tech Systems", "https://linkedin.com/in/example-lead-rohan", "Commented", "post-enterprise-scheduled", "Outreach Sent", "Exchanged notes on clean data boundaries", "Senior Practitioner", 55.0),
-            ("lead-4", "Elena Rostova", "Head of Content & DevRel", "SaaS Matrix", "https://linkedin.com/in/example-lead-elena", "Reposted", "urn:li:activity:7390000000000000101", "Meeting Booked", "Invited to discuss agentic AI workflows", "VP/Director", 82.0)
-        ]
-        for l in sample_leads:
+        for l in DEMO_LEADS:
             cursor.execute("""
-            INSERT OR REPLACE INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes, seniority_level, icp_score)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO leads (id, name, headline, company, profile_url, engagement_type, post_id, status, notes, seniority_level, icp_score, lead_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, l)
 
     # Seed Sample Lead Enrichment if empty. Describes one of the invented
