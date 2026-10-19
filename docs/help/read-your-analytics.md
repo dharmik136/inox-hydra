@@ -16,12 +16,14 @@ One visit records one day. A second visit the same day updates that day. Days yo
 | Notice on LinkedIn | Meaning |
 | --- | --- |
 | "Inox Hydra: creator analytics synced to your local studio." | The studio saved today's figures. |
-| "...so they were not saved as today's numbers. Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses. Change the range; the extension reads again. |
+| "...so they were not saved as today's numbers. Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses. "Your follower count was saved." follows when the page showed one: followers are a count at one moment, so they are kept whatever the range. Change the range; the extension reads again. |
 | "Inox Hydra: could not reach your studio, so these analytics were not saved." | The studio is not running. Start it and reload the analytics page. |
 | "Inox Hydra: the studio refused this browser, so these analytics were not saved. ..." | This browser was never paired. Open the studio once in it, then reload the analytics page. |
 | "Inox Hydra: the studio did not save these analytics: ..." | The studio answered and refused; the rest of the notice says why. "these analytics are from linkedin.com/in/..." means the browser is signed in to a different LinkedIn account from the profile open in the studio. "the bridge could not tell which LinkedIn account is signed in" means open your own profile once, then reload. |
 
-If the extension cannot tell which range is selected, it still saves the figures, labelled as an unknown period. The chart still plots that day, but the totals under **What changed** leave it out and say how many days they left out. Check the selector before you visit. Abbreviated figures such as 1.2K are stored as the rounded number, 1200, and marked as rounded.
+The extension reads the range selector in English and in the other languages LinkedIn offers, for example "Past 365 days", "Past 12 months" or "Letzte 7 Tage". If it finds a range it cannot read, such as a custom date range, the notice says it "could not tell which period these figures cover", and only the follower count is saved. If the page shows no range selector at all, it still saves the figures, labelled as an unknown period. The chart still plots that day, but the totals under **What changed** leave it out and say how many days they left out. Check the selector before you visit.
+
+Figures are read in the page's language: on a German or Italian page 8.210 is 8210, and 1,2K is 1200. Abbreviated figures such as 1.2K or 1,2 Mio. are stored as the rounded number and marked as rounded. A figure the extension cannot read with certainty, such as 8.210 on a page that does not say its language, is not saved at all, rather than saved as 8.
 
 ## Read the page
 
