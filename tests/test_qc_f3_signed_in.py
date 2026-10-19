@@ -56,6 +56,16 @@ def test_a_german_own_profile_opened_from_a_link_teaches_the_account(pages):
     assert page.evaluate(REMEMBERED) == "test-creator"
 
 
+def test_a_german_own_profile_with_its_private_analytics_teaches_the_account(pages):
+    # Only the owner is shown their profile views and dashboard, whatever the
+    # language, even where the edit control is a button with a German label.
+    controls = ('<button aria-label="Profil bearbeiten"></button>'
+                '<a href="https://www.linkedin.com/me/profile-views/">42 Profilbesuche</a>')
+    page = pages.open("/in/test-creator/", profile(controls=controls), scripts=SCRIPTS, me=None)
+    page.clock.run_for(4000)
+    assert page.evaluate(REMEMBERED) == "test-creator"
+
+
 def test_a_german_own_profile_reached_through_in_me_teaches_the_account(pages):
     page = pages.open("/in/me/", profile(), scripts=SCRIPTS, me=None)
     page.clock.run_for(3000)

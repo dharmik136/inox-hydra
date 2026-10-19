@@ -273,9 +273,16 @@
     // count in every language. The labels above are English only, so a
     // German creator's "Profil bearbeiten" was no evidence at all, and their
     // own profile, opened from a link, taught the bridge nothing.
+    // So do the links only an owner's profile carries: its private
+    // analytics and dashboard (profile views, search appearances, creator
+    // analytics), which no visitor is shown.
     const pageVanity = vanityOf(window.location.href);
-    const ownerLink = !!pageVanity && Array.from(mainElement().querySelectorAll("a[href*='/edit/'], a[href*='/add-edit/']"))
-      .some((a) => vanityOf(a.getAttribute("href")) === pageVanity);
+    const ownerLink = !!pageVanity && (
+      Array.from(mainElement().querySelectorAll("a[href*='/edit/'], a[href*='/add-edit/']"))
+        .some((a) => vanityOf(a.getAttribute("href")) === pageVanity) ||
+      !!mainElement().querySelector(
+        "a[href*='/me/profile-views'], a[href*='/analytics/search-appearances'], a[href*='/analytics/creator'], a[href*='/dashboard/']"
+      ));
     const ownerSeen = ownerLink || labels(mainElement()).some((label) => OWNER_CONTROL.test(label));
     const card = topCard();
     const visitorInCard = card ? labels(card).some((label) => VISITOR_CONTROL.test(label)) : false;
