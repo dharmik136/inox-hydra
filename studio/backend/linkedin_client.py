@@ -421,7 +421,10 @@ class LinkedInClient:
                         COALESCE(?, (SELECT shares FROM analytics_daily WHERE date = ?)),
                         COALESCE(?, (SELECT engagement_rate FROM analytics_daily WHERE date = ?)),
                         'observed', ?, ?,
-                        COALESCE((SELECT unique_members_reached FROM analytics_daily WHERE date = ?), 0),
+                        -- Reach is carried forward, never invented: the page
+                        -- does not show it, and a default 0 was exported as a
+                        -- measured zero reach for every captured day.
+                        (SELECT unique_members_reached FROM analytics_daily WHERE date = ?),
                         COALESCE((SELECT created_at FROM analytics_daily WHERE date = ?), CURRENT_TIMESTAMP))
                 """, (dt, fl, dt, cn, dt, pv, dt,
                       imp, dt, lk, dt, cm, dt, sh, dt, eng_rate, dt,
@@ -497,7 +500,7 @@ class LinkedInClient:
                         'observed',
                         (SELECT period_label FROM analytics_daily WHERE date = ?),
                         (SELECT precision FROM analytics_daily WHERE date = ?),
-                        COALESCE((SELECT unique_members_reached FROM analytics_daily WHERE date = ?), 0))
+                        (SELECT unique_members_reached FROM analytics_daily WHERE date = ?))
                 """, (today_str, today_str, today_str, int(top_pv), today_str, today_str,
                       today_str, today_str, today_str, today_str, today_str, today_str))
                 saved_count += 1

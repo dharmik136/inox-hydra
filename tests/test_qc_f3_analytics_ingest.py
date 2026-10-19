@@ -7,6 +7,8 @@ AUDIENCE-11 / BRIDGE-14  The follower total is a count at one moment, not a
     refused whole, follower count included. Followers stayed "not measured"
     for everyone who leaves LinkedIn's range on its usual multi-day setting.
     The windowed figures are still refused; the follower count is kept.
+AUDIENCE-26  Every captured day stored "members reached" as 0 although
+    nothing ever reads it, so exports reported a measured-looking zero reach.
 """
 
 import pytest
@@ -76,3 +78,15 @@ def test_a_windowed_read_with_no_follower_count_saves_nothing():
     assert result["followers_saved"] == 0
     assert _row() is None
 
+
+def test_members_reached_is_not_recorded_when_nobody_read_it():
+    linkedin_client.ingest_analytics_payload({"series": [{
+        "date": DAY, "period_label": "1d", "precision": "exact", "impressions": 410}]})
+    assert _row()["unique_members_reached"] is None
+    linkedin_client.ingest_analytics_payload({"profile_views": 42})
+    conn = get_db()
+    try:
+        today = conn.execute("SELECT unique_members_reached FROM analytics_daily WHERE profile_views = 42").fetchone()
+    finally:
+        conn.close()
+    assert today["unique_members_reached"] is None
