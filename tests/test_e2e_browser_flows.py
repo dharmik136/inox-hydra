@@ -248,8 +248,9 @@ def test_e2e_multi_tenant_account_switching(page, monkeypatch):
         )
         assert written in (200, 201)
         open_switcher()
+        # A draft is counted as a draft, not a post (WRITE-28), so both count.
         counts = {
-            row["id"]: row["posts_count"]
+            row["id"]: row["posts_count"] + row["drafts_count"]
             for row in page.evaluate(
                 "async () => (await (await fetch('/api/v1/accounts', {credentials: 'same-origin'})).json()).accounts"
             )
