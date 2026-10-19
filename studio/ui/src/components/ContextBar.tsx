@@ -102,8 +102,12 @@ export function ContextBar({
             </span>
           )}
           {saveState === "failed" && (
-            <span className="text-signal-orange-text" title={saveError ?? undefined}>
+            <span className="text-signal-orange-text">
               SAVE FAILED
+              {/* The reason, announced with the mark. It used to be a title
+                  attribute, which keyboard, touch and screen reader users
+                  never get. */}
+              {saveError && <span className="sr-only">. {saveError}</span>}
             </span>
           )}
           {saveState === "dirty" && <span className="text-signal-orange-text">UNSAVED</span>}
@@ -140,5 +144,23 @@ export function ContextBar({
         </button>
       </div>
     </header>
+  );
+}
+
+/**
+ * Why the last save failed, in words under the bar.
+ *
+ * The bar has room for the mark, not the sentence, and the sentence is the
+ * part the author has to act on: the 5,000 character limit, an empty editor,
+ * a draft changed in another window. Hidden from assistive technology only
+ * because the status in the bar already announces it.
+ */
+export function SaveReason({ reason }: { reason: string }) {
+  return (
+    <div className="flex shrink-0 items-center gap-3 border-b border-edge bg-ink px-3 py-1.5 sm:px-4">
+      <p className="min-w-0 flex-1 text-[12px] leading-snug text-signal-orange-text" aria-hidden="true">
+        {reason}
+      </p>
+    </div>
   );
 }

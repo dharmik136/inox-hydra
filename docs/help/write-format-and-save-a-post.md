@@ -51,7 +51,7 @@ Saving is manual. Press **Save** in the top bar. The mark beside it tells you wh
 | UNSAVED | You have changes that are not on disk |
 | SAVING | The save is in progress |
 | SAVED 14:02:37 | Written to the database at that time |
-| SAVE FAILED | The save did not happen. Your text is still in the editor |
+| SAVE FAILED | The save did not happen. Your text is still in the editor, and the reason is written in orange under the bar |
 | MARKED AS PUBLISHED | You used **Mark as published** on this post. After **Queue it** or **Send to LinkedIn**, that action's own message shows here instead, for example SCHEDULED FOR followed by the slot |
 
 ## What happens
@@ -66,7 +66,7 @@ After you use **Mark as published**, **Queue it** or **Send to LinkedIn**, the C
 
 ## If it does not work
 
-- **SAVE FAILED**: hover over the mark to read the reason. It is only shown as a tooltip.
+- **SAVE FAILED**: the reason is written in orange under the top bar, and a screen reader announces it with the mark.
 - "There is nothing written to save.": the editor is empty. Type something first.
 - "Post content exceeds maximum 5,000 character limit.": the server refuses posts over 5,000 characters. Shorten the post and save again. Underlined and struck-through text store an extra mark for every character, so they count double toward this limit and a heavily decorated post reaches it sooner.
 - Any other failure usually means the server stopped. See [The studio will not open or shows an error](the-studio-will-not-open.md).

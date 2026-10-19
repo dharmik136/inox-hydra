@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, PanelRight, Search } from "lucide-react";
 import { StudioRail } from "@/components/StudioRail";
 import { NavigationTray } from "@/components/NavigationTray";
-import { ContextBar, type SaveState } from "@/components/ContextBar";
+import { ContextBar, SaveReason, type SaveState } from "@/components/ContextBar";
 import { ComposerCanvas, FOLD_CHARS } from "@/components/ComposerCanvas";
 import { HookFilmstrip } from "@/components/HookFilmstrip";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -384,6 +384,7 @@ export default function App() {
             Save button with nothing to save, which is telemetry about nothing.
             Those surfaces get a plain heading instead. */}
         {active === "composer" ? (
+          <>
           <ContextBar
             kind="POST"
             draftRef="DRAFT 01"
@@ -404,6 +405,8 @@ export default function App() {
             setPublishOpen(true);
           }}
           />
+          {saveState === "failed" && saveError && <SaveReason reason={saveError} />}
+          </>
         ) : (
           <header className="flex h-12 shrink-0 items-center gap-3 border-b border-edge bg-ink px-4">
             <span className="studio-meta uppercase">{section.label}</span>

@@ -255,6 +255,28 @@ def test_words_typed_while_a_save_runs_are_not_called_saved(new_page, studio_url
     expect(_status(page)).to_contain_text("UNSAVED")
 
 
+def test_a_failed_save_shows_its_reason_on_screen(new_page, studio_url, api):
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    editor.fill("")
+    page.get_by_role("button", name="Save", exact=True).click()
+    expect(_status(page)).to_contain_text("SAVE FAILED")
+    # On screen, not in a hover tooltip, and in the status region a screen
+    # reader announces.
+    expect(page.get_by_text("There is nothing written to save.", exact=True)).to_be_visible()
+    expect(_status(page)).to_contain_text("There is nothing written to save.")
+    assert page.locator("header [title]").count() == 0, "the reason is still in a tooltip"
+
+    editor.fill("x" * 6000)
+    page.get_by_role("button", name="Save", exact=True).click()
+    expect(page.get_by_text("Post content exceeds maximum 5,000 character limit.", exact=True)).to_be_visible()
+
+    # Editing again clears the old reason.
+    editor.fill("short")
+    expect(page.get_by_text("Post content exceeds maximum 5,000 character limit.", exact=True)).to_have_count(0)
+
+
 def test_the_strip_shows_the_count_against_linkedins_limit(new_page, studio_url, api):
     _clear_posts(api)
     page = new_page()
