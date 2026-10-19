@@ -222,7 +222,8 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
                   </p>
                 )}
                 <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
-                  Mark this as published in your record, or put it in the local queue.
+                  Mark this as published in your record, or put it in the local queue, which lists
+                  it as due at the slot for you to post on LinkedIn yourself.
                 </p>
                 <p className="studio-meta mt-2 leading-snug text-ink-muted">
                   NEITHER OF THOSE TWO SENDS ANYTHING. BOTH WRITE TO THIS MACHINE ONLY,

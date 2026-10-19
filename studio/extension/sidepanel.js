@@ -95,9 +95,9 @@ document.addEventListener("DOMContentLoaded", () => {
   const foldStatus = document.getElementById("sp-fold-status");
   const toast = document.getElementById("sp-toast");
 
-  // Load scheduled post by default
-  panelApi("/api/posts?status=scheduled").then(result => {
-    const posts = result.ok ? result.data.posts || [] : [];
+  // Open on the post to make next: one that is due, else the next queued.
+  loadQueuedPosts().then(result => {
+    const posts = result.ok ? result.posts : [];
     if (posts.length && !textarea.value) {
       textarea.value = posts[0].content;
       panelPostId = posts[0].id || null;
@@ -328,12 +328,29 @@ function cleanDashes(text) {
   return text.replace(/\u2014/g, ", ").replace(/\u2013/g, ", ").replace(/(?<=\w)--+(?=\w)/g, ", ").replace(/[ \t]+/g, " ");
 }
 
+/**
+ * Due posts, then queued ones, earliest first.
+ *
+ * The studio's queue posts nothing: at a post's time it marks it due, for the
+ * creator to post. Those are the posts this panel exists to insert, so they
+ * come first.
+ */
+async function loadQueuedPosts() {
+  const [due, queued] = await Promise.all([
+    panelApi("/api/posts?status=due"),
+    panelApi("/api/posts?status=scheduled"),
+  ]);
+  if (!queued.ok) return { ok: false, result: queued, posts: [] };
+  return { ok: true, posts: [...(due.ok ? due.data.posts || [] : []), ...(queued.data.posts || [])] };
+}
+
 async function loadSideQueue() {
   const container = document.getElementById("queue-mini-list");
   container.innerHTML = "<p style='color: var(--text-dim);'>Loading queue...</p>";
   try {
-    const result = await panelApi("/api/posts?status=scheduled");
-    if (!result.ok) {
+    const loaded = await loadQueuedPosts();
+    const result = loaded.ok ? loaded : loaded.result;
+    if (!loaded.ok) {
       container.innerHTML = "";
       const p = document.createElement("p");
       p.style.color = "var(--text-dim)";
@@ -341,7 +358,7 @@ async function loadSideQueue() {
       container.appendChild(p);
       return;
     }
-    const posts = result.data.posts || [];
+    const posts = loaded.posts;
     container.innerHTML = "";
 
     if (!posts.length) {
@@ -358,7 +375,7 @@ async function loadSideQueue() {
       const schedTime = p.scheduled_for ? new Date(p.scheduled_for).toLocaleString() : "No time set";
       const time = document.createElement("div");
       time.className = "queue-item-time";
-      time.textContent = `⏰ ${schedTime}`;
+      time.textContent = p.status === "due" ? `Due now, post it: ${schedTime}` : `⏰ ${schedTime}`;
       const text = document.createElement("div");
       text.className = "queue-item-text";
       text.textContent = (p.content || "").split("\n")[0];

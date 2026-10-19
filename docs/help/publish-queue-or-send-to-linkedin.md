@@ -18,9 +18,9 @@ Learn what Mark as published, Queue it and Send to LinkedIn each do, and which o
 
 | | Mark as published | Queue it | Send to LinkedIn |
 | --- | --- | --- | --- |
-| What it writes on this machine | Status published, with the current time | Status scheduled, at the NEXT SLOT time | Status scheduled at the NEXT SLOT time, only after LinkedIn accepts |
+| What it writes on this machine | Status published, with the current time | Status scheduled, at the NEXT SLOT time; due when that time comes | Status scheduled at the NEXT SLOT time, only after LinkedIn accepts; published when that time comes |
 | What leaves the machine | Nothing | Nothing | The post text and your stored session cookies, sent to LinkedIn |
-| Can you undo it here? | No | No unschedule control; **Pause publishing** on the Queue holds it | No. Change or cancel it on LinkedIn |
+| Can you undo it here? | No | No unschedule control; **Pause the queue** on the Queue holds it | No. Change or cancel it on LinkedIn |
 
 The dialog itself says of the first two: NEITHER OF THOSE TWO SENDS ANYTHING. BOTH WRITE TO THIS MACHINE ONLY.
 
@@ -33,7 +33,7 @@ The strip shows MARKED AS PUBLISHED. The post now counts toward the 12-hour spac
 
 ## Queue it
 
-Press **Queue it**. The strip shows the time, for example SCHEDULED FOR MONDAY 08:30. At that time the local queue marks the post as published on this machine. It does not post it. See [Use the Queue to plan your posting times](how-the-queue-works.md).
+Press **Queue it**. The strip shows the time, for example SCHEDULED FOR MONDAY 08:30. At that time the post moves to **Due, waiting for you to post it** on the Queue, for you to post yourself; it is recorded as published only when you press **I posted it** there. The queue does not post it. See [Use the Queue to plan your posting times](how-the-queue-works.md).
 
 ## Send to LinkedIn
 
@@ -59,7 +59,7 @@ After any of the three, the Composer lets go of the post and clears, so the next
 | The dialog shows | What to do |
 | --- | --- |
 | SAVE FAILED in the strip, and no dialog opens | The save before publishing was refused. Hover over SAVE FAILED for the reason, for example "There is nothing written to publish." or the 5,000 character limit, fix it, and press **Publish** again. |
-| Post is already published | This post was marked as published earlier, by you or by the Queue at its scheduled time. Nothing more to do. |
+| Post is already published | This post was marked as published earlier, by you or, for a post sent to LinkedIn, at its scheduled time. Nothing more to do. |
 | Nothing was sent. This studio has no saved LinkedIn session... | Store a session, then try again. See [Connect your LinkedIn session](connect-your-linkedin-session.md). |
 | LinkedIn will not hold a post for a time that has passed. | The dialog was open past the slot time. Close it and open it again. |
 | This post has no content to send. | The saved post is empty. Write, **Save**, and try again. |

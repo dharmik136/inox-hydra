@@ -60,7 +60,7 @@ try:
     from . import egress as egress_policy
     from .scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                             parse_datetime_flexible, normalize_datetime_to_utc_iso,
-                            is_queue_paused, set_queue_paused)
+                            is_queue_paused, set_queue_paused, LINKEDIN_HOLDS_KEY)
     from .agno_agent import agno_orchestrator
     from .agno_agentos import orchestrator
     from .image_studio import image_studio_manager
@@ -131,7 +131,7 @@ except ImportError:
     import egress as egress_policy
     from scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                            parse_datetime_flexible, normalize_datetime_to_utc_iso,
-                           is_queue_paused, set_queue_paused)
+                           is_queue_paused, set_queue_paused, LINKEDIN_HOLDS_KEY)
     from agno_agent import agno_orchestrator
     from agno_agentos import orchestrator
     from image_studio import image_studio_manager
@@ -1995,6 +1995,13 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
             (scheduled, post_id),
         )
         conn.execute("DELETE FROM settings WHERE key = ?", (UNANSWERED_SEND_KEY + post_id,))
+        # LinkedIn holds it, so at its time the queue records it as published
+        # rather than as due for the creator to post again.
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+            (LINKEDIN_HOLDS_KEY + post_id, result.get("scheduled_urn") or "held"),
+        )
         conn.commit()
     finally:
         conn.close()

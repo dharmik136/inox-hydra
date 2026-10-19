@@ -269,6 +269,41 @@ def test_the_queue_lists_a_post_at_its_local_time(browser, studio_url, api):
 
 
 # ---------------------------------------------------------------------------
+# WRITE-15 / UX-04: the Queue names a due post, and says it posts nothing
+# ---------------------------------------------------------------------------
+
+def test_a_due_post_waits_on_the_queue_until_the_creator_posts_it(context, studio_url):
+    from datetime import datetime, timedelta, timezone
+
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM settings WHERE key = 'queue_status'")
+        conn.execute(
+            "INSERT INTO posts (id, content, status, scheduled_for) VALUES (?, ?, 'scheduled', ?)",
+            ("qcf1b-due", "QC F1B a queued post whose time has come.",
+             (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    page = _open(context, studio_url, "Queue")
+    page.get_by_text("does not post anything", exact=False).wait_for()
+    body = page.inner_text("body")
+    assert "Pause publishing" not in body and "WILL NOT GO OUT" not in body
+
+    page.get_by_role("button", name="Check for due posts").click()
+    row = page.locator("section[aria-labelledby=queue-due] li", has_text="QC F1B a queued post whose time has come.")
+    row.wait_for()
+    assert "DUE" in row.inner_text()
+    assert [r["status"] for r in _rows() if r["id"] == "qcf1b-due"] == ["due"]
+
+    row.get_by_role("button", name="I posted it").click()
+    row.wait_for(state="detached")
+    assert [r["status"] for r in _rows() if r["id"] == "qcf1b-due"] == ["published"]
+
+
+# ---------------------------------------------------------------------------
 # WRITE-01: a window left on another profile cannot save into the new one
 # ---------------------------------------------------------------------------
 

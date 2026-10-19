@@ -668,6 +668,18 @@ export async function fetchSmartSlots(): Promise<{ slots: QueueSlot[]; scheduled
   return { slots: data.slots ?? [], scheduled: data.scheduled_posts ?? [] };
 }
 
+/**
+ * Queued posts whose time has come, waiting for the creator to post them.
+ *
+ * The queue posts nothing. At a post's time it marks it due, and the post is
+ * published only when the creator says they posted it (publishNow) or the
+ * bridge sees it on LinkedIn.
+ */
+export async function fetchDuePosts(): Promise<ScheduledPost[]> {
+  const data = await call<{ posts?: ScheduledPost[] }>("/api/posts?status=due");
+  return data.posts ?? [];
+}
+
 export async function fetchCadenceHealth(): Promise<CadenceHealth> {
   return call<CadenceHealth>("/api/queue/cadence-health");
 }

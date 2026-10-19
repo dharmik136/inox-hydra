@@ -101,7 +101,7 @@ def test_two_cycles_publish_a_due_post_once_between_them():
         f"{len(published)} cycles each reported dispatching the same post, so "
         f"it goes to LinkedIn once per cycle that saw it"
     )
-    assert _status(post_id)[0] == "published"
+    assert _status(post_id)[0] == "due"
 
 
 def test_a_second_pass_over_a_published_post_reports_nothing():
@@ -171,7 +171,7 @@ def test_a_single_cycle_still_dispatches_normally():
     actions = native_scheduler.check_scheduled_queue()
 
     assert any(a.get("post_id") == post_id for a in actions)
-    assert _status(post_id)[0] == "published"
+    assert _status(post_id)[0] == "due"
 
 
 def test_a_paused_queue_dispatches_nothing():

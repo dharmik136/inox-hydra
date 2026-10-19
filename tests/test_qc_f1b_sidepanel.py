@@ -26,7 +26,8 @@ window.chrome = {
     window.__msgs.push(m);
     let resp = { ok: true, httpStatus: 200, data: {} };
     if (m.action === 'PANEL_API' && m.path.startsWith('/api/posts')) {
-      resp = { ok: true, httpStatus: 200, data: { posts: window.__posts } };
+      const status = new URLSearchParams(m.path.split('?')[1] || '').get('status');
+      resp = { ok: true, httpStatus: 200, data: { posts: window.__posts.filter((p) => !status || p.status === status) } };
     }
     if (m.action === 'PANEL_WRITE') resp = { ok: true, httpStatus: 200, data: window.__injected };
     setTimeout(() => cb && cb(resp), 5);
@@ -160,6 +161,24 @@ def test_the_queue_tab_shows_no_invented_time_and_literal_text(panel):
     assert item.query_selector(".queue-item-text").inner_text() == (
         "Why <b>every</b> founder should read <Thinking in Systems> before hiring"
     )
+
+
+# ---------------------------------------------------------------------------
+# WRITE-15: a due post is the one the panel offers first
+# ---------------------------------------------------------------------------
+
+def test_a_due_post_comes_first_and_says_it_is_due(panel):
+    queued = {"id": "post_later", "status": "scheduled", "scheduled_for": "2026-10-30T03:30:00+00:00",
+              "content": "Queued for later in the month."}
+    due = {"id": "post_now", "status": "due", "scheduled_for": "2026-10-19T03:00:00+00:00",
+           "content": "Due now: the post the queue is waiting for you to make."}
+    page = panel(posts=[queued, due])
+    assert page.input_value("#sp-text") == due["content"]
+    page.click("#tab-queue-btn")
+    page.wait_for_selector(".queue-item-mini")
+    items = page.query_selector_all(".queue-item-mini")
+    assert "Due now" in items[0].inner_text()
+    assert "Queued for later" in items[1].inner_text()
 
 
 # ---------------------------------------------------------------------------
