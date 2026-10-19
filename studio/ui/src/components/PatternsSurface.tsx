@@ -80,9 +80,12 @@ export function PatternsSurface() {
   const confounded = patterns.patterns.filter((p) => p.different_period);
 
   return (
-    <article className="mx-auto max-w-[80ch] px-8 py-8">
+    // Focusable, because nothing else on this screen is: the page scrolls in
+    // the shell's main region, and with no focusable element inside it a
+    // keyboard could not scroll it at all (axe scrollable-region-focusable).
+    <article className="mx-auto max-w-[80ch] px-8 py-8" tabIndex={0} aria-labelledby="patterns-title">
       <p className="studio-label">Patterns</p>
-      <h1 className="studio-title mt-2">What your own posts suggest</h1>
+      <h1 id="patterns-title" className="studio-title mt-2">What your own posts suggest</h1>
       <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
         Each line compares your posts that have a form with those that do not, by median reactions, across your{" "}
         {patterns.posts_compared} posts at least a week old with reactions recorded. These are differences between your
@@ -288,7 +291,8 @@ function TopicAttributionSection({ attribution }: { attribution: TopicAttributio
         A post goes under the first of them it mentions, and one that mentions none goes under Other posts. This is a
         keyword grouping, not a reading of what a post means.
       </p>
-      <div className="mt-4 overflow-x-auto border-y border-edge">
+      {/* Scrolls sideways at phone width, so it takes focus to scroll by keyboard. */}
+      <div className="mt-4 overflow-x-auto border-y border-edge" tabIndex={0} role="region" aria-label="Topics">
         <table className="w-full text-left text-[12px]">
           <thead>
             <tr className="border-b border-edge text-[10px] text-ink-muted uppercase">
@@ -333,7 +337,7 @@ function MonthStrip({ months }: { months: { month: string; posts: number }[] }) 
   return (
     <div className="mt-6">
       <p className="studio-meta mb-1.5 text-[10px] text-ink-muted">POSTS BY MONTH, {months[0].month} TO {months[months.length - 1].month}</p>
-      <div className="flex h-16 items-end gap-px overflow-x-auto" role="img" aria-label="Posts per month">
+      <div className="flex h-16 items-end gap-px overflow-x-auto" role="img" aria-label="Posts per month" tabIndex={0}>
         {months.map((m) => (
           <div
             key={m.month}

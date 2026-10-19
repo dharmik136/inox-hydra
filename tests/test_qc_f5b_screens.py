@@ -299,13 +299,13 @@ def test_posts_and_patterns_name_missing_figures_not_post_age(studio):
     """SETUP-23"""
     _archive_posts(30)
     page = _open(studio, "Posts")
-    page.wait_for_selector("text=What worked, and who it brought")
+    page.wait_for_selector("h1:has-text('What worked, and who it brought')")
     body = page.inner_text("body")
     assert "Not enough settled posts yet" not in body
     assert ("No usual yet: 30 of your posts older than 7 days have no reactions, comments or impressions "
             "recorded, because LinkedIn's archive does not include them.") in body
     page.locator("nav[aria-label='Studio sections'] button[aria-label='Patterns']").first.click()
-    page.wait_for_selector("text=What your own posts suggest")
+    page.wait_for_selector("h1:has-text('What your own posts suggest')")
     body = page.inner_text("body")
     assert "across your 0 posts at least a week old." not in body
     assert "30 MORE POSTS ARE LEFT OUT: NO REACTIONS ARE RECORDED FOR THEM, AS LINKEDIN’S ARCHIVE DOES NOT" in body
@@ -356,4 +356,28 @@ def test_outbound_counts_the_rows_it_cannot_rank_yet(studio):
     page = _open(studio, "Outbound")
     page.wait_for_selector("text=Most engaged with")
     assert "40 more, from LinkedIn’s archive or without an author recorded, are not ranked" in page.inner_text("body")
+    assert not studio["errors"], studio["errors"]
+
+
+AXE_JS = os.path.join(REPO_ROOT, "studio", "ui", "node_modules", "axe-core", "axe.min.js")
+
+
+@pytest.mark.parametrize("width", [1440, 390])
+def test_patterns_can_be_scrolled_from_the_keyboard(studio, width):
+    """AUDIENCE-25"""
+    if not os.path.exists(AXE_JS):
+        pytest.skip("axe-core is not installed with the UI dependencies")
+    urns = _own_posts(studio["client"], [{"text": f"Croissant notes {i}\n" + "A longer line. " * 40, "reactions": 10 + i}
+                                         for i in range(12)])
+    _engaged("lead-founder-0", "Founder 0", urns[0], "COMMENT")
+    page = studio["page"]
+    page.set_viewport_size({"width": width, "height": 844})
+    page = _open(studio, "Patterns")
+    page.wait_for_selector("text=Which topics bring qualified pipeline")
+    page.add_script_tag(path=AXE_JS)
+    flagged = page.evaluate("""async () => {
+        const r = await axe.run(document, { runOnly: ['scrollable-region-focusable'] });
+        return r.violations.flatMap(v => v.nodes.map(n => n.target.join(' ')));
+    }""")
+    assert flagged == [], f"regions a keyboard cannot scroll: {flagged}"
     assert not studio["errors"], studio["errors"]
