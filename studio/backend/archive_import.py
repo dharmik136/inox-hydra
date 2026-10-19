@@ -48,12 +48,14 @@ Strict Invariants:
 - Bridge-captured data is never overwritten by the archive.
 """
 
+import bisect
 import csv
 import hashlib
 import io
 import json
 import os
 import re
+import time
 import uuid
 import zipfile
 import zlib
@@ -89,6 +91,11 @@ csv.field_size_limit(max(csv.field_size_limit(), 1_000_000))
 # and whose text agrees, are the same post seen two ways: LinkedIn's archive
 # names a post by its share or ugcPost id, the page by its activity id.
 TWIN_WINDOW = timedelta(minutes=10)
+# An import writes in batches of about this long, and pauses between them for
+# longer than SQLite's longest sleep between retries (100 ms), so a draft saved
+# or a capture read meanwhile waits a fraction of a second, not the whole import.
+BATCH_SECONDS = 0.25
+BATCH_PAUSE = 0.12
 # The words the bridge uses for reaction types, for LinkedIn's internal ones.
 REACTION_WORDS = {"LIKE": "like", "PRAISE": "celebrate", "APPRECIATION": "support", "EMPATHY": "love",
                   "INTEREST": "insightful", "ENTERTAINMENT": "funny", "MAYBE": "curious"}
@@ -548,6 +555,104 @@ def _texts_agree(a: str, b: str) -> bool:
     return a[:shorter] == b[:shorter]
 
 
+# A row the archive brought that no bridge reading has joined yet: it still
+# carries the archive's share or ugcPost id.
+_ARCHIVE_ROW = "(COALESCE(published_at_source, '') = 'archive' AND activity_urn NOT LIKE 'urn:li:activity:%')"
+
+
+class _Twins:
+    """
+    The posts a twin is looked for among, read once and kept in time order.
+
+    A post can only be another reading of one created within TWIN_WINDOW of
+    it, so each lookup bisects to that window instead of comparing every post
+    the studio holds: an archive of thousands of posts, imported into a studio
+    the bridge has filled, is matched in n log n rather than n squared.
+    """
+
+    def __init__(self, conn, archive_only: bool = False, from_archive: bool = False,
+                 near: Optional[List[float]] = None):
+        self._where, self._params = "", []
+        if archive_only:
+            self._where += " AND published_at_source = 'archive' AND activity_urn NOT LIKE 'urn:li:activity:%'"
+        if from_archive:
+            self._where += f" AND NOT {_ARCHIVE_ROW}"
+        if near:
+            # For one lookup, only the posts whose stored date or whose id's
+            # moment falls near it are read, and those with no date at all.
+            low, high = near[0] - TWIN_WINDOW.total_seconds(), near[-1] + TWIN_WINDOW.total_seconds()
+            self._where += (" AND (published_at IS NULL OR substr(published_at, 1, 19) BETWEEN ? AND ?"
+                            " OR CAST(substr(activity_urn, length(rtrim(activity_urn, '0123456789')) + 1)"
+                            " AS INTEGER) BETWEEN ? AND ?)")
+            self._params = [datetime.fromtimestamp(low, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+                            datetime.fromtimestamp(high, timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+                            int(low * 1000) << 22, (int(high * 1000) + 1) << 22]
+        self._times: List[Tuple[float, str]] = []
+        self._moments: Dict[str, List[float]] = {}
+        self._texts: Dict[str, str] = {}
+        self._by_text: Dict[str, List[str]] = {}
+        self._last = 0
+        self.refresh(conn)
+
+    def refresh(self, conn) -> None:
+        """Adds the posts written since the last read, by the bridge or anyone else."""
+        added = False
+        for rowid, urn, text, published_at in conn.execute(
+                "SELECT rowid, activity_urn, text, published_at FROM own_posts WHERE rowid > ?" + self._where,
+                (self._last, *self._params)):
+            self._last = max(self._last, rowid)
+            # Either reading of its time: the date it was stored with, or the
+            # moment its own id carries.
+            moments = sorted({m.timestamp() for m in (_parse_iso(published_at), _moment(urn)) if m})
+            self._moments[urn] = moments
+            self._texts[urn] = text or ""
+            self._times.extend((at, urn) for at in moments)
+            self._by_text.setdefault(_fingerprint(text or ""), []).append(urn)
+            added = True
+        if added:
+            self._times.sort()
+        self._last = max(self._last, conn.execute("SELECT COALESCE(MAX(rowid), 0) FROM own_posts").fetchone()[0])
+
+    def find(self, urn: str, text: str, when: Optional[str] = None) -> Optional[str]:
+        mine_at = _times_of(urn, when)
+        mine = _fingerprint(text)
+        best: Optional[Tuple[float, str]] = None
+        window = TWIN_WINDOW.total_seconds()
+        if mine_at:
+            for index in range(bisect.bisect_left(self._times, (mine_at[0] - window, "")), len(self._times)):
+                at, other = self._times[index]
+                if at > mine_at[-1] + window:
+                    break
+                if other == urn or other not in self._moments:
+                    continue
+                gap = min(abs(a - b) for a in mine_at for b in self._moments[other])
+                if gap > window or (best and best[0] <= gap):
+                    continue
+                theirs = self._texts[other]
+                # A post with no words to compare (an image, a video, a
+                # document with no caption) is matched on its id's moment
+                # alone, so it must be close.
+                if (not mine or not _fingerprint(theirs)) and gap > 120:
+                    continue
+                if _texts_agree(text, theirs):
+                    best = (gap, other)
+        if best:
+            return best[1]
+        # With no time on one side, only the same words in full, long enough
+        # not to be a one-liner anyone might post twice, can say it is the
+        # same post.
+        if len(mine) >= 30:
+            for other in self._by_text.get(mine, []):
+                if other != urn and (not mine_at or not self._moments.get(other)):
+                    return other
+        return None
+
+
+def _times_of(urn: str, when: Optional[str]) -> List[float]:
+    """A post's moments, as timestamps: the date given for it (or its id's), and its id's own."""
+    return sorted({m.timestamp() for m in (_parse_iso(when) or _moment(urn), _moment(urn)) if m})
+
+
 def find_twin(conn, urn: str, text: str, when: Optional[str] = None, archive_only: bool = False,
               from_archive: bool = False) -> Optional[str]:
     """
@@ -560,35 +665,38 @@ def find_twin(conn, urn: str, text: str, when: Optional[str] = None, archive_onl
     archive gives each post its own id, so a creator who posts the same words
     every week has that many posts.
     """
-    moment = _parse_iso(when) or _moment(urn)
-    mine = _fingerprint(text)
-    query = "SELECT activity_urn, text, published_at FROM own_posts WHERE activity_urn != ?"
-    if archive_only:
-        query += " AND published_at_source = 'archive' AND activity_urn NOT LIKE 'urn:li:activity:%'"
-    if from_archive:
-        query += (" AND NOT (COALESCE(published_at_source, '') = 'archive'"
-                  " AND activity_urn NOT LIKE 'urn:li:activity:%')")
-    for row in conn.execute(query, (urn,)):
-        # Either reading of the other row's time: the date it was stored with,
-        # or the moment its own id carries.
-        gaps = [abs(other - mine_at) for other in (_parse_iso(row[2]), _moment(row[0])) if other
-                for mine_at in (moment, _moment(urn)) if mine_at]
-        if not gaps:
-            # With no time on one side, only the same words in full, long
-            # enough not to be a one-liner anyone might post twice, can say
-            # it is the same post.
-            if len(mine) >= 30 and _fingerprint(row[1] or "") == mine:
-                return row[0]
-            continue
-        if min(gaps) > TWIN_WINDOW:
-            continue
-        # A post with no words to compare (an image, a video, a document with
-        # no caption) is matched on its id's moment alone, so it must be close.
-        if (not mine or not _fingerprint(row[1] or "")) and min(gaps) > timedelta(minutes=2):
-            continue
-        if _texts_agree(text, row[1] or ""):
-            return row[0]
-    return None
+    near = _times_of(urn, when)
+    return _Twins(conn, archive_only=archive_only, from_archive=from_archive, near=near).find(urn, text, when)
+
+
+class _Batches:
+    """
+    Writes an import in short transactions, with a pause between them.
+
+    SQLite lets one connection write at a time, and a writer kept waiting gives
+    up after the busy timeout. An import that held the lock for all its rows
+    made a draft saved meanwhile, or a capture from the bridge, fail. Each
+    batch here holds the lock for at most BATCH_SECONDS, and the pause after
+    it outlasts SQLite's longest sleep between retries, so a waiting writer
+    always gets its turn.
+    """
+
+    def __init__(self, conn):
+        self.conn = conn
+        self._begin()
+
+    def _begin(self) -> None:
+        self.conn.execute("BEGIN IMMEDIATE")
+        self._started = time.monotonic()
+
+    def row(self) -> bool:
+        """Called after each row written. True when a new batch has begun, so what was read may be stale."""
+        if time.monotonic() - self._started < BATCH_SECONDS:
+            return False
+        self.conn.commit()
+        time.sleep(BATCH_PAUSE)
+        self._begin()
+        return True
 
 
 def _text_key(text: str) -> str:
@@ -600,10 +708,13 @@ def _counter() -> Dict[str, int]:
     return {"added": 0, "already_there": 0, "skipped": 0}
 
 
-def _import_posts(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
+def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Dict[str, int]:
     tally = _counter()
     now = _now()
+    twins = _Twins(conn, from_archive=True)
     for row in rows:
+        if batches.row():
+            twins.refresh(conn)
         text, urn = row.get("text", ""), _urn(row.get("link", ""))
         if not urn or (not text.strip() and row.get("shared") and not row.get("media")):
             # A row with no post link, or a repost with nothing written. A
@@ -613,7 +724,7 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
             continue
         when = _when(row.get("date", "")) or (_moment(urn).isoformat() if _moment(urn) else None)
         existing = conn.execute("SELECT published_at FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone()
-        same = urn if existing else find_twin(conn, urn, text, when, from_archive=True)
+        same = urn if existing else twins.find(urn, text, when)
         if same:
             # The bridge's row stays, with its figures. The archive adds what
             # it alone has: the date, and the text in full where the page cut it.
@@ -636,10 +747,11 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
     return tally
 
 
-def _import_comments(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
+def _import_comments(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Dict[str, int]:
     """One row per comment on a post, keyed as the bridge keys it: the post and the text."""
     tally = _counter()
     for row in rows:
+        batches.row()
         message, urn, when = row.get("message", ""), _urn(row.get("link", "")), _when(row.get("date", ""))
         if not message.strip() or not urn or not when:
             # No text, no post, or no date the studio can read: a comment
@@ -656,9 +768,10 @@ def _import_comments(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
     return tally
 
 
-def _import_reactions(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
+def _import_reactions(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Dict[str, int]:
     tally = _counter()
     for row in rows:
+        batches.row()
         urn, when = _urn(row.get("link", "")), _when(row.get("date", ""))
         if not urn or not when:
             tally["skipped"] += 1
@@ -674,7 +787,7 @@ def _import_reactions(conn, rows: Iterable[Dict[str, str]]) -> Dict[str, int]:
     return tally
 
 
-def _import_profile(conn, rows: List[Dict[str, str]]) -> Dict[str, Any]:
+def _import_profile(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict[str, Any]:
     if not rows:
         return {"filled": []}
     row = rows[0]
@@ -709,7 +822,7 @@ def _span(start: str, end: str) -> str:
     return end
 
 
-def _import_positions(conn, rows: List[Dict[str, str]]) -> Dict[str, int]:
+def _import_positions(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict[str, int]:
     tally = _counter()
     if conn.execute("SELECT COUNT(*) FROM creator_positions").fetchone()[0]:
         tally["already_there"] = len(rows)
@@ -727,7 +840,7 @@ def _import_positions(conn, rows: List[Dict[str, str]]) -> Dict[str, int]:
     return tally
 
 
-def _import_education(conn, rows: List[Dict[str, str]]) -> Dict[str, int]:
+def _import_education(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict[str, int]:
     tally = _counter()
     if conn.execute("SELECT COUNT(*) FROM creator_education").fetchone()[0]:
         tally["already_there"] = len(rows)
@@ -743,10 +856,11 @@ def _import_education(conn, rows: List[Dict[str, str]]) -> Dict[str, int]:
     return tally
 
 
-def _import_skills(conn, rows: List[Dict[str, str]]) -> Dict[str, int]:
+def _import_skills(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict[str, int]:
     tally = _counter()
     now = _now()
     for row in rows:
+        batches.row()
         skill = (row.get("name") or "").strip()[:200]
         if not skill:
             tally["skipped"] += 1
@@ -756,10 +870,11 @@ def _import_skills(conn, rows: List[Dict[str, str]]) -> Dict[str, int]:
     return tally
 
 
-def _import_connections(conn, rows: List[Dict[str, str]]) -> Dict[str, int]:
+def _import_connections(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict[str, int]:
     tally = _counter()
     now = _now()
     for row in rows:
+        batches.row()
         url = (row.get("url") or "").strip()
         if not url.lower().startswith("https://www.linkedin.com/in/"):
             # LinkedIn leaves the URL empty for members who restrict it.
@@ -793,7 +908,7 @@ _IMPORTERS = {
 
 def import_archive(source: str, include: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Imports the kinds the creator kept ticked, in one transaction.
+    Imports the kinds the creator kept ticked, in short batches (_Batches).
 
     `include` defaults to every kind marked default. An uploaded copy of the
     archive is deleted once it has been imported.
@@ -808,7 +923,8 @@ def import_archive(source: str, include: Optional[List[str]] = None) -> Dict[str
     summary: Dict[str, Any] = {}
     conn = get_db()
     try:
-        with conn:
+        batches = _Batches(conn)
+        try:
             for kind, entry in result["parsed"].items():
                 if kind not in wanted:
                     summary[kind] = {"left_out": True}
@@ -816,11 +932,15 @@ def import_archive(source: str, include: Optional[List[str]] = None) -> Dict[str
                 if entry["rows"] is None:
                     summary[kind] = {"not_understood": True, "columns": entry["header"][:12]}
                     continue
-                summary[kind] = _IMPORTERS[kind](conn, entry["rows"])
+                summary[kind] = _IMPORTERS[kind](conn, entry["rows"], batches)
             conn.execute(
                 "INSERT INTO archive_imports (archive_name, archive_bytes, imported_at, summary) VALUES (?, ?, ?, ?)",
                 (name[:200], result["bytes"], _now(), json.dumps(summary, sort_keys=True)),
             )
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
     finally:
         conn.close()
     _discard(source)
