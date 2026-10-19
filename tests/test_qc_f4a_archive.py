@@ -517,3 +517,36 @@ def test_elsewhere_the_registry_is_not_read(client, monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     archive_import.downloads_dirs()
     assert fake.seen == []
+
+
+# ---------------------------------------------------------------------------
+# Review follow-ups
+# ---------------------------------------------------------------------------
+
+def _confirm_bob(client, **extra):
+    res = client.post("/api/v1/identity/observe", json={
+        "vanity": "sample-bob", "display_name": "Sample Bob", "self_evidence": ["owner_edit_controls"], **extra})
+    assert res.status_code == 200, res.text
+    assert client.post("/api/v1/identity/confirm", json={"vanity": "sample-bob"}).status_code == 200
+
+
+def test_an_unpacked_folder_on_windows_is_not_still_downloading(client, home, monkeypatch):
+    """SETUP-12: NTFS reports 0 bytes for a folder."""
+    import stat as stat_module
+    _unpack(home / "user" / "Downloads" / UNPACKED, _person_archive("Sample", "Bob"))
+    real = os.stat
+
+    class Folder:
+        def __init__(self, st):
+            self._st = st
+
+        def __getattr__(self, name):
+            return 0 if name == "st_size" else getattr(self._st, name)
+
+    def windows_stat(path, *args, **kwargs):
+        st = real(path, *args, **kwargs)
+        return Folder(st) if stat_module.S_ISDIR(st.st_mode) else st
+
+    monkeypatch.setattr(archive_import.os, "stat", windows_stat)
+    [hit] = client.post("/api/v1/archive/requested").json()["found"]
+    assert hit["folder"] is True and hit["downloading"] is False

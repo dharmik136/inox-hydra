@@ -298,7 +298,9 @@ def find_archives(limit: int = 5) -> List[Dict[str, Any]]:
                 "folder": folder_bytes is not None,
                 "bytes": folder_bytes if folder_bytes is not None else stat.st_size if is_file else 0,
                 "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
-                "downloading": partial or stat.st_size == 0 or any(final + s in listed for s in PARTIAL_SUFFIXES),
+                # Only a file can be an empty placeholder: Windows reports every folder as 0 bytes.
+                "downloading": partial or (is_file and stat.st_size == 0)
+                               or any(final + s in listed for s in PARTIAL_SUFFIXES),
             })
     hits.sort(key=lambda h: h["modified"], reverse=True)
     return hits[:limit]
