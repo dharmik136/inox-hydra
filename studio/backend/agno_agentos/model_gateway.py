@@ -4,7 +4,7 @@ Agno AgentOS Multi-Model Gateway (BYO-AI / Provider-Agnostic Engine)
 Unified interface enabling Inox Hydra to orchestrate across any LLM provider:
 - Google Gemini (Gemini 2.5 Flash, Gemini 1.5 Pro, Imagen 3)
 - OpenAI (GPT-4o, GPT-4o-mini, DALL-E 3)
-- Anthropic Claude (Claude 3.5 Sonnet, Claude 3 Haiku)
+- Anthropic Claude (Claude Sonnet 5.5, Opus 5.5, Haiku 5.5)
 - Local LLMs via Ollama / vLLM / LocalAI (Llama 3, Mistral, DeepSeek)
 - Groq / DeepSeek Cloud APIs (OpenAI-compatible)
 - Local Deterministic Intelligence Engine (Zero-egress fallback)
@@ -60,8 +60,8 @@ SUPPORTED_PROVIDERS = {
     },
     "anthropic": {
         "name": "Anthropic Claude",
-        "default_model": "claude-3-5-sonnet-20241022",
-        "supported_models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
+        "default_model": "claude-sonnet-5-5",
+        "supported_models": ["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"],
         "requires_key": True,
         "default_base_url": "https://api.anthropic.com/v1",
         "supports_images": False
@@ -290,7 +290,7 @@ def get_current_ai_config() -> AIProviderConfig:
         elif env_anthropic:
             provider = "anthropic"
             api_key = env_anthropic
-            model = "claude-3-5-sonnet-20241022"
+            model = SUPPORTED_PROVIDERS["anthropic"]["default_model"]
         elif env_groq:
             provider = "groq"
             api_key = env_groq

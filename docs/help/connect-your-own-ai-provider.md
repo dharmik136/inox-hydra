@@ -11,7 +11,7 @@ Without a key, nothing writes for you. **Re-Hook** offers fill-in templates buil
 | --- | --- | --- | --- |
 | `gemini` | `gemini-2.5-flash` | Required | Google |
 | `openai` | `gpt-4o` | Required | OpenAI |
-| `anthropic` | `claude-3-5-sonnet-20241022` | Required | Anthropic |
+| `anthropic` | `claude-sonnet-5-5` (also `claude-opus-5-5`, `claude-haiku-5-5`) | Required | Anthropic |
 | `groq` | `llama-3.3-70b-versatile` | Required | Groq |
 | `ollama` | `llama3:latest` | None | `http://localhost:11434/v1` |
 | `custom_openai` | `default` | Optional | `http://localhost:8080/v1` |
@@ -24,9 +24,10 @@ Without a key, nothing writes for you. **Re-Hook** offers fill-in templates buil
 1. Open **Composer** from the rail.
 2. If the inspector is closed, click **Open inspector** at the top right, or press Ctrl+K and choose **Show or hide the inspector**.
 3. Choose the **Prompt** tab.
-4. Under **Connect a provider**, pick the provider id from the list.
-5. Paste your key into the **API key** field. Leave it empty for `ollama`.
-6. Click **Verify and save**. The note reads "Connected." and the **Egress** row changes to SENDS TO PROVIDER. For `custom_openai` without a key it stays NONE, RUNS LOCALLY.
+4. Under **Connect a provider**, pick the provider id from the list. The **Model** field fills with that provider's default.
+5. To use another model, type its name in **Model** or pick one of the suggestions.
+6. Paste your key into the **API key** field. Leave it empty for `ollama`.
+7. Click **Verify and save**. The note reads "Connected." and the **Egress** row changes to SENDS TO PROVIDER. For `custom_openai` without a key it stays NONE, RUNS LOCALLY.
 
 ## What happens
 
@@ -76,9 +77,9 @@ Choose `local_deterministic` in the **Prompt** tab, leave the key field empty an
 
 Both save an empty key. If you had connected `gemini`, a second copy of that key stays in the settings table under `gemini_api_key`, and neither route removes it. If one of the environment variables above is set, the studio will pick that key up instead, so remove it too.
 
-## Set a model or a base URL
+## Set a base URL
 
-The interface has no model or base URL field. Use the command line:
+The **Prompt** tab sets the model but has no base URL field. Use the command line:
 
 `python studio_cli.py ai configure --provider ollama --model mistral:latest --base-url http://localhost:11434/v1`
 

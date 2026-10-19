@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { configureAi, fetchAiConfig, fetchAiStatus, type AiStatus } from "@/lib/api";
+import { configureAi, fetchAiProviders, fetchAiStatus, type AiProviderOption, type AiStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /** The capability keys the backend returns, in words rather than identifiers. */
@@ -45,21 +45,33 @@ export function PromptPanel() {
   const [status, setStatus] = useState<StatusWithFailure | null>(null);
   const [failed, setFailed] = useState(false);
 
-  const [providers, setProviders] = useState<string[]>([]);
+  const [providers, setProviders] = useState<AiProviderOption[]>([]);
   const [provider, setProvider] = useState("");
+  // The model is chosen here. There was no field, so the ping always named the
+  // provider's default, and when Anthropic retired that one no Claude key
+  // could be connected from the interface.
+  const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [current, config] = await Promise.all([
+    const [current, setup] = await Promise.all([
       fetchAiStatus(),
-      fetchAiConfig().catch(() => ({ config: null, providers: [] as string[] })),
+      fetchAiProviders().catch(() => ({ config: null, providers: [] as AiProviderOption[] })),
     ]);
     setStatus(current);
-    setProviders(config.providers);
-    setProvider((existing) => existing || config.config?.provider || config.providers[0] || "");
+    setProviders(setup.providers);
+    setProvider((existing) => existing || setup.config?.provider || setup.providers[0]?.id || "");
+    setModel((typed) => typed || setup.config?.model || "");
   }, []);
+
+  function onChooseProvider(id: string) {
+    setProvider(id);
+    setModel(providers.find((option) => option.id === id)?.defaultModel ?? "");
+  }
+
+  const suggestions = providers.find((option) => option.id === provider)?.models ?? [];
 
   useEffect(() => {
     load().catch(() => setFailed(true));
@@ -73,7 +85,7 @@ export function PromptPanel() {
       // The endpoint pings the provider before saving, and answers 400 without
       // writing anything when it cannot reach it, so a failure here leaves the
       // previous configuration intact.
-      await configureAi(provider, apiKey);
+      await configureAi(provider, apiKey, model.trim());
       setApiKey("");
       setNote("Connected.");
       await load();
@@ -161,17 +173,35 @@ export function PromptPanel() {
         <div className="flex flex-col gap-2">
           <select
             value={provider}
-            onChange={(event) => setProvider(event.target.value)}
+            onChange={(event) => onChooseProvider(event.target.value)}
             aria-label="Model provider"
             className="rounded-md border border-edge bg-ink px-2 py-1.5 text-[12px] text-ink-primary outline-none focus-visible:border-edge-strong"
           >
             {providers.length === 0 && <option value="">No providers reported</option>}
-            {providers.map((name) => (
-              <option key={name} value={name}>
-                {name}
+            {providers.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.id}
               </option>
             ))}
           </select>
+
+          {/* Free text with suggestions, because an endpoint of your own takes
+              whatever model names it serves. */}
+          <input
+            type="text"
+            value={model}
+            onChange={(event) => setModel(event.target.value)}
+            list="prompt-model-options"
+            placeholder="Model"
+            aria-label="Model"
+            spellCheck={false}
+            className="rounded-md border border-edge bg-ink px-2 py-1.5 text-[12px] text-ink-primary outline-none placeholder:text-ink-muted focus-visible:border-edge-strong"
+          />
+          <datalist id="prompt-model-options">
+            {suggestions.map((name) => (
+              <option key={name} value={name} />
+            ))}
+          </datalist>
 
           <input
             type="password"

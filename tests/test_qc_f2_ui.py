@@ -264,3 +264,33 @@ def test_the_prompt_tab_says_what_each_feature_sends(page):
     assert "your Composer draft when you tick the box to include it" in panel
     assert "Nothing from your profile or posts goes with them yet." in panel
     assert "PROMPT TEXT LEAVES" not in panel.upper()
+
+
+def test_the_prompt_tab_lets_you_choose_the_model_and_sends_it(page):
+    """[WRITE-14]"""
+    from agno_agentos import model_gateway
+
+    model_gateway.save_ai_config(provider="local_deterministic")
+    sent = []
+
+    def capture(route):
+        sent.append(json.loads(route.request.post_data or "{}"))
+        route.fulfill(status=200, content_type="application/json", body=json.dumps({
+            "status": "success", "message": "Connected.", "latency_ms": 1.0, "config": {},
+        }))
+
+    page.route("**/api/ai/configure", capture)
+    panel = _open_prompt_tab(page)
+    panel.locator('select[aria-label="Model provider"]').select_option("anthropic")
+    model = panel.locator('input[aria-label="Model"]')
+    assert model.input_value() == "claude-sonnet-5-5", "the default is not a current Claude model"
+    suggestions = page.eval_on_selector_all(
+        f"datalist#{model.get_attribute('list')} option", "nodes => nodes.map(n => n.value)"
+    )
+    assert set(suggestions) == {"claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"}, suggestions
+
+    model.fill("claude-opus-5-5")
+    panel.locator('input[aria-label="Provider API key"]').fill("sk-ant-notarealkey-000")
+    panel.locator('button:has-text("Verify and save")').click()
+    page.wait_for_function("() => document.body.innerText.includes('Connected.')")
+    assert sent and sent[-1]["provider"] == "anthropic" and sent[-1]["model"] == "claude-opus-5-5", sent
