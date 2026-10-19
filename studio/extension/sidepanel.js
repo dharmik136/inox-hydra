@@ -330,11 +330,17 @@ async function loadSideQueue() {
     posts.forEach(p => {
       const item = document.createElement("div");
       item.className = "queue-item-mini";
-      const schedTime = p.scheduled_for ? new Date(p.scheduled_for).toLocaleString() : "Today at 5:30 PM";
-      item.innerHTML = `
-        <div class="queue-item-time">⏰ ${schedTime}</div>
-        <div class="queue-item-text">${p.content.split("\n")[0]}</div>
-      `;
+      // A post queued without a time says so. This used to print "Today at
+      // 5:30 PM", a time nobody set. Both lines are text, not markup, so a
+      // post that mentions <Thinking in Systems> shows it.
+      const schedTime = p.scheduled_for ? new Date(p.scheduled_for).toLocaleString() : "No time set";
+      const time = document.createElement("div");
+      time.className = "queue-item-time";
+      time.textContent = `⏰ ${schedTime}`;
+      const text = document.createElement("div");
+      text.className = "queue-item-text";
+      text.textContent = (p.content || "").split("\n")[0];
+      item.append(time, text);
       item.addEventListener("click", () => {
         document.getElementById("sp-text").value = p.content;
         panelPostId = p.id || null;

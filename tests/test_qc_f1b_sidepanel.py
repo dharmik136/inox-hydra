@@ -142,3 +142,21 @@ def test_an_insert_of_the_prefilled_queued_post_names_it(panel):
     page.wait_for_timeout(200)
     writes = [m for m in page.evaluate("window.__msgs") if m.get("action") == "PANEL_WRITE"]
     assert writes and writes[0]["body"]["post_id"] == "post_q1"
+
+
+# ---------------------------------------------------------------------------
+# BRIDGE-18: the Queued tab invents no time and renders text as text
+# ---------------------------------------------------------------------------
+
+def test_the_queue_tab_shows_no_invented_time_and_literal_text(panel):
+    post = {"id": "post_a", "status": "scheduled", "scheduled_for": None,
+            "content": "Why <b>every</b> founder should read <Thinking in Systems> before hiring\n\nPart two."}
+    page = panel(posts=[post])
+    page.click("#tab-queue-btn")
+    page.wait_for_selector(".queue-item-mini")
+    item = page.query_selector(".queue-item-mini")
+    assert "No time set" in item.query_selector(".queue-item-time").inner_text()
+    assert "5:30" not in item.inner_text()
+    assert item.query_selector(".queue-item-text").inner_text() == (
+        "Why <b>every</b> founder should read <Thinking in Systems> before hiring"
+    )
