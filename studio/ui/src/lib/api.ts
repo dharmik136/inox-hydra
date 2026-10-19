@@ -2216,3 +2216,8 @@ export async function undoArchiveImport(): Promise<{
 }> {
   return call("/api/v1/archive/undo", { method: "POST" });
 }
+
+/** The creator says their LinkedIn account has no posts, so the archive step is done without any. */
+export async function markArchiveNoPosts(): Promise<ArchiveState> {
+  return call<ArchiveState>("/api/v1/archive/no-posts", { method: "POST" });
+}

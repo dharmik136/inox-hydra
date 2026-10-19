@@ -74,6 +74,8 @@ except ImportError:
 DOWNLOAD_PAGE = "https://www.linkedin.com/mypreferences/d/download-my-data"
 ARCHIVE_NAME = re.compile(r"linkedin.*data.*export.*\.zip$|linkedindataexport.*\.zip$", re.IGNORECASE)
 REQUESTED_KEY = "archive_requested_at"
+# When the creator said their account has no posts, so no archive will bring any.
+NO_POSTS_KEY = "archive_no_posts_at"
 # settings key + archive_imports.id -> what that import brought, so it can be
 # removed again on its own (remove_last_import).
 BROUGHT_KEY = "archive_import_brought:"
@@ -1055,6 +1057,11 @@ def import_archive(source: str, include: Optional[List[str]] = None, confirm_own
         batches = _Batches(conn)
         try:
             for kind, entry in result["parsed"].items():
+                if kind == "posts" and entry["rows"] == []:
+                    # A Shares.csv with no rows is LinkedIn saying the account
+                    # has no posts, which the step needs to know as much as posts.
+                    summary[kind] = _counter()
+                    continue
                 if kind not in wanted:
                     summary[kind] = {"left_out": True}
                     continue
@@ -1165,34 +1172,74 @@ def mark_requested() -> Dict[str, Any]:
     return archive_state(look=True)
 
 
+def mark_no_posts() -> Dict[str, Any]:
+    """The creator says their account has no posts, so the archive step is done without any."""
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (NO_POSTS_KEY, _now()))
+    finally:
+        conn.close()
+    return archive_state(look=True)
+
+
+def _held_posts(archive_name: str, summary: Dict[str, Any]) -> bool:
+    """
+    Whether an import brought the creator's posts, or showed there are none.
+
+    LinkedIn sends the archive in two parts: a basic one within minutes
+    (profile, connections, no Shares.csv) and the complete one within a day.
+    An import held the posts when its Shares.csv was read, or when it was the
+    complete archive and had no Shares.csv at all.
+    """
+    posts = summary.get("posts")
+    if isinstance(posts, dict) and "added" in posts:
+        return True
+    return posts is None and (archive_name or "").lower().startswith("complete")
+
+
 def archive_state(look: bool = False) -> Dict[str, Any]:
     """
     When it was asked for, what is waiting in Downloads, and the last import.
 
     Downloads is looked in only when the caller asks (the Setup step, while it
     is open), only once the creator has said they asked LinkedIn for the
-    archive, only until an archive has been imported since, and only for
-    LinkedIn's export names.
+    archive, only until an archive with their posts has been imported since
+    (LinkedIn's first, basic part has none), and only for LinkedIn's export
+    names. `complete` is when the step is done: an import brought the posts,
+    or the creator said their account has none.
     """
     conn = get_db()
     try:
-        row = conn.execute("SELECT value FROM settings WHERE key = ?", (REQUESTED_KEY,)).fetchone()
-        last = conn.execute(
-            "SELECT archive_name, imported_at, summary FROM archive_imports ORDER BY id DESC LIMIT 1").fetchone()
+        held = {r["key"]: r["value"] for r in conn.execute(
+            "SELECT key, value FROM settings WHERE key IN (?, ?)", (REQUESTED_KEY, NO_POSTS_KEY))}
+        imports = conn.execute(
+            "SELECT archive_name, imported_at, summary FROM archive_imports ORDER BY id").fetchall()
     finally:
         conn.close()
     _sweep_uploads()
-    requested_at = row["value"] if row else None
-    waiting = bool(requested_at) and (last is None or last["imported_at"] < requested_at)
+    requested_at, no_posts_at = held.get(REQUESTED_KEY), held.get(NO_POSTS_KEY)
+    readings = [(r["archive_name"], r["imported_at"], json.loads(r["summary"])) for r in imports]
+    with_posts = [at for name, at, summary in readings if _held_posts(name, summary)]
+    covered = with_posts + ([no_posts_at] if no_posts_at else [])
+    waiting = bool(requested_at) and not any(at >= requested_at for at in covered)
+    found = find_archives() if look and waiting else []
+    imported_names = {name for name, _at, _summary in readings}
+    for hit in found:
+        hit["imported"] = hit["name"] in imported_names
+    last = readings[-1] if readings else None
     return {
         "download_page": DOWNLOAD_PAGE,
         "requested_at": requested_at,
         "waiting": waiting,
-        "found": find_archives() if look and waiting else [],
+        "found": found,
+        "complete": bool(covered),
+        "no_posts_at": no_posts_at,
         "last_import": {
-            "archive_name": last["archive_name"],
-            "imported_at": last["imported_at"],
-            "summary": json.loads(last["summary"]),
+            "archive_name": last[0],
+            "imported_at": last[1],
+            "summary": last[2],
+            "held_posts": _held_posts(last[0], last[2]),
         } if last else None,
     }
 
@@ -1201,7 +1248,7 @@ def forget(conn) -> None:
     """Everything the archive brought, for when the creator deletes what the studio holds about them."""
     for table in ("connections", "archive_imports"):
         conn.execute(f"DELETE FROM {table}")
-    conn.execute("DELETE FROM settings WHERE key = ? OR key LIKE ?", (REQUESTED_KEY, BROUGHT_KEY + "%"))
+    conn.execute("DELETE FROM settings WHERE key IN (?, ?) OR key LIKE ?", (REQUESTED_KEY, NO_POSTS_KEY, BROUGHT_KEY + "%"))
     for name in os.listdir(_uploads_dir()):
         try:
             os.remove(os.path.join(_uploads_dir(), name))

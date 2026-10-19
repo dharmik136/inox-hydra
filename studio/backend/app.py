@@ -2717,6 +2717,12 @@ def post_archive_requested():
     return archive_import.mark_requested()
 
 
+@app.post("/api/v1/archive/no-posts", tags=["Onboarding"])
+def post_archive_no_posts():
+    """The creator says their LinkedIn account has no posts, so the archive step is done without any."""
+    return archive_import.mark_no_posts()
+
+
 @app.post("/api/v1/archive/upload", tags=["Onboarding"])
 async def post_archive_upload(request: Request):
     """

@@ -139,11 +139,11 @@ def test_another_members_archive_waits_for_a_tick_naming_them(setup_page, studio
     expect(page.get_by_text("Imported from Complete_LinkedInDataExport_10-19-2026.zip")).to_be_visible()
 
 
-def _import_by_hand(page, studio, members):
-    _choose(page, studio, members)
+def _import_by_hand(page, studio, members, name="Complete_LinkedInDataExport_10-19-2026.zip"):
+    _choose(page, studio, members, name)
     page.get_by_label("This is my archive: import Sample Alice's archive as my own record").check()
     page.get_by_role("button", name="Import what is ticked").click()
-    expect(page.get_by_text("Imported from Complete_LinkedInDataExport_10-19-2026.zip")).to_be_visible()
+    expect(page.get_by_text(f"Imported from {name}")).to_be_visible()
     page.get_by_role("button", name="Done").click()
 
 
@@ -159,3 +159,14 @@ def test_an_import_can_be_removed_before_any_profile_is_confirmed(setup_page, st
     conn = sqlite3.connect(paths.get_db_path())
     assert conn.execute("SELECT COUNT(*) FROM own_posts").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM connections").fetchone()[0] == 0
+
+
+def test_the_basic_archive_says_the_posts_are_still_to_come(setup_page, studio):
+    page = setup_page
+    _import_by_hand(page, studio, {"Profile.csv": PROFILE, "Connections.csv": CONNECTIONS},
+                    name="Basic_LinkedInDataExport_10-19-2026.zip")
+    expect(page.get_by_text("That was LinkedIn's first part, which has no posts.", exact=False)).to_be_visible()
+    expect(page.get_by_text("without your posts", exact=False)).to_be_visible()
+    page.get_by_role("button", name="My account has no posts").click()
+    expect(page.get_by_text("That was LinkedIn's first part", exact=False)).to_have_count(0)
+    expect(page.get_by_text("For a newer copy, ask LinkedIn again", exact=False)).to_be_visible()

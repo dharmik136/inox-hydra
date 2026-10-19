@@ -283,3 +283,70 @@ def test_an_import_that_fails_part_way_leaves_nothing_behind(client, monkeypatch
     assert _nothing_imported(), "a failed import left part of itself in the studio"
     identity = _db().execute("SELECT about, location FROM creator_identity").fetchone()
     assert identity is None or (identity["about"], identity["location"]) == (None, None)
+
+
+# ---------------------------------------------------------------------------
+# SETUP-04: LinkedIn's first, basic archive does not end the step; the
+# complete one, with the posts, is still looked for and offered
+# ---------------------------------------------------------------------------
+
+BASIC = "Basic_LinkedInDataExport_10-19-2026.zip"
+
+
+def _basic_members():
+    members = _person_archive("Sample", "Alice")
+    members.pop("Shares.csv")
+    return members
+
+
+def test_after_the_basic_archive_the_complete_one_is_still_looked_for(client, home):
+    downloads = home / "user" / "Downloads"
+    (downloads / BASIC).write_bytes(_archive(_basic_members()))
+    state = client.post("/api/v1/archive/requested").json()
+    assert [f["name"] for f in state["found"]] == [BASIC]
+    assert _import(client, "downloads:" + state["found"][0]["path"], confirm_owner=True).status_code == 200
+
+    (downloads / COMPLETE).write_bytes(_archive(_person_archive("Sample", "Alice")))
+    after = client.get("/api/v1/archive").json()
+    assert after["waiting"] is True, "the studio stopped looking once the basic archive was in"
+    assert COMPLETE in [f["name"] for f in after["found"]]
+    assert after["complete"] is False and after["last_import"]["held_posts"] is False
+    onboarding = client.get("/api/v1/onboarding/state").json()
+    assert onboarding["steps"]["archive"] is False, "the step ticked with no post imported"
+
+    complete = next(f for f in after["found"] if f["name"] == COMPLETE)
+    assert _import(client, "downloads:" + complete["path"], confirm_owner=True).status_code == 200
+    done = client.get("/api/v1/archive").json()
+    assert done["waiting"] is False and done["complete"] is True
+    assert client.get("/api/v1/onboarding/state").json()["steps"]["archive"] is True
+
+
+def test_an_account_with_no_posts_can_say_so(client):
+    source = _upload(client, _basic_members(), name=BASIC)["source"]
+    assert _import(client, source, confirm_owner=True).status_code == 200
+    assert client.get("/api/v1/onboarding/state").json()["steps"]["archive"] is False
+    state = client.post("/api/v1/archive/no-posts").json()
+    assert state["complete"] is True and state["waiting"] is False
+    assert client.get("/api/v1/onboarding/state").json()["steps"]["archive"] is True
+
+
+def test_an_archive_whose_posts_file_is_empty_says_the_account_has_none(client):
+    members = _person_archive("Sample", "Alice")
+    members["Shares.csv"] = SHARES_HEADER
+    preview = _upload(client, members)
+    ticked = [f["kind"] for f in preview["files"] if f["importable"]]
+    assert "posts" not in ticked
+    assert _import(client, preview["source"], include=ticked, confirm_owner=True).status_code == 200
+    assert client.get("/api/v1/onboarding/state").json()["steps"]["archive"] is True
+
+
+def test_the_complete_archive_of_an_account_that_never_posted_ends_the_step(client):
+    source = _upload(client, _basic_members(), name=COMPLETE)["source"]
+    assert _import(client, source, confirm_owner=True).status_code == 200
+    assert client.get("/api/v1/archive").json()["complete"] is True
+
+
+def test_posts_left_unticked_do_not_end_the_step(client):
+    source = _upload(client, _person_archive("Sample", "Alice"))["source"]
+    assert _import(client, source, include=["skills"], confirm_owner=True).status_code == 200
+    assert client.get("/api/v1/archive").json()["complete"] is False

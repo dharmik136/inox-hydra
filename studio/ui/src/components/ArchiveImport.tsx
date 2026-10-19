@@ -4,6 +4,7 @@ import {
   discardArchive,
   fetchArchiveState,
   importArchive,
+  markArchiveNoPosts,
   markArchiveRequested,
   previewArchive,
   undoArchiveImport,
@@ -27,6 +28,18 @@ type OwnedPreview = ArchivePreview & {
   creator?: { name: string | null; vanity: string } | null;
   needs_confirmation?: string;
   confirm_label?: string;
+};
+
+/**
+ * Where the step stands. LinkedIn sends its archive in two parts, and only
+ * the complete one has the posts, so the step is `complete` once an import
+ * brought them (`held_posts`) or the creator said the account has none.
+ */
+type ArchiveProgress = Omit<ArchiveState, "found" | "last_import"> & {
+  complete?: boolean;
+  no_posts_at?: string | null;
+  found: (FoundArchive & { imported?: boolean })[];
+  last_import: (NonNullable<ArchiveState["last_import"]> & { held_posts?: boolean }) | null;
 };
 
 /**
@@ -57,12 +70,13 @@ export function ArchiveImport({
   const [removing, setRemoving] = useState(false);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<Record<string, ArchiveKindTally> | null>(null);
-  const [found, setFound] = useState<FoundArchive[]>([]);
+  const [found, setFound] = useState<ArchiveProgress["found"]>([]);
   const [waiting, setWaiting] = useState(state.waiting);
   const picker = useRef<HTMLInputElement>(null);
   const chooser = useRef<HTMLButtonElement>(null);
   const previewTitle = useRef<HTMLParagraphElement>(null);
   const resultTitle = useRef<HTMLParagraphElement>(null);
+  const progress = state as ArchiveProgress;
 
   useEffect(() => setWaiting(state.waiting), [state.waiting]);
 
@@ -129,7 +143,34 @@ export function ArchiveImport({
     <div className="flex flex-col gap-3">
       {!preview && (
         <>
-          {state.last_import ? (
+          {progress.last_import && !progress.complete ? (
+            <div className="flex flex-col items-start gap-2">
+              <p className="text-[13px] leading-relaxed text-ink-secondary">
+                {"posts" in progress.last_import.summary
+                  ? "Your posts were not imported from that archive. To bring them in, import it again with " +
+                    "Posts you wrote ticked."
+                  : "That was LinkedIn's first part, which has no posts. The complete archive, with your posts, " +
+                    "comments and reactions, usually follows within a day. " +
+                    (waiting
+                      ? "This step keeps looking for it in your Downloads folder."
+                      : "When it arrives, choose it here, or click I have asked for it and this step will look " +
+                        "for it in your Downloads folder.")}
+              </p>
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() =>
+                  void run("no-posts", async () => {
+                    await markArchiveNoPosts();
+                    onChanged();
+                  })
+                }
+                className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+              >
+                My account has no posts
+              </button>
+            </div>
+          ) : state.last_import ? (
             <p className="text-[13px] leading-relaxed text-ink-secondary">
               For a newer copy, ask LinkedIn again on the same page. Importing it again adds only
               what is new.
@@ -216,6 +257,7 @@ export function ArchiveImport({
                         {hit.name}
                         <span className="studio-meta ml-2 text-[10px] text-ink-muted">
                           {readable(hit.bytes)} · {localDate(hit.modified)}
+                          {hit.imported ? " · ALREADY IMPORTED" : ""}
                         </span>
                       </span>
                       <button
@@ -421,6 +463,10 @@ export function ArchiveImport({
 }
 
 export function archiveStatus(state: ArchiveState): string {
+  const progress = state as ArchiveProgress;
+  if (progress.last_import && progress.complete === false) {
+    return `Imported ${localDate(progress.last_import.imported_at)} from ${progress.last_import.archive_name}, without your posts`;
+  }
   if (state.last_import) {
     const posts = state.last_import.summary.posts;
     const added = posts && "added" in posts ? `, ${posts.added} new post${posts.added === 1 ? "" : "s"}` : "";
