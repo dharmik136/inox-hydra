@@ -1703,8 +1703,9 @@ def demo_draft_rows() -> List[Dict[str, str]]:
             for r in scratch.execute("SELECT id FROM posts")
         }
         return [
-            {"title": r["title"], "raw_content": r["raw_content"], "post_prefix": prefix.get(r["id"], "")}
-            for r in scratch.execute("SELECT id, title, raw_content FROM drafts ORDER BY id")
+            {"title": r["title"], "raw_content": r["raw_content"], "formatted_content": r["formatted_content"],
+             "post_prefix": prefix.get(r["id"], "")}
+            for r in scratch.execute("SELECT id, title, raw_content, formatted_content FROM drafts ORDER BY id")
         ]
     finally:
         scratch.close()
@@ -1717,8 +1718,12 @@ def purge_seeded_drafts(
     """
     Remove the original author's demo drafts, and the post rows written beside them.
 
-    A draft counts only while its title and text are exactly what the seeder
-    wrote. One the creator has edited is theirs now and stays.
+    Only what is provably untouched demo data. 2.5.1 seeded these drafts into
+    every install, flag or not, so a creator may have queued or published one
+    unchanged; deleting it took the queue row (cascade) and the post row with
+    it. A draft goes only while it is still a DRAFT, identical to the seed, with
+    no queue row, no post bound to it, and its own seeded post row (if any)
+    still unpublished, unread and unbound. Anything else stays.
     """
     owns = conn is None
     conn = conn or get_db()
@@ -1726,18 +1731,29 @@ def purge_seeded_drafts(
         drafts: List[int] = []
         posts: List[str] = []
         for seeded in demo_draft_rows():
+            prefix = seeded["post_prefix"]
             for row in conn.execute(
-                "SELECT id FROM drafts WHERE title = ? AND raw_content = ?", (seeded["title"], seeded["raw_content"])
-            ):
-                drafts.append(row["id"])
-                if seeded["post_prefix"]:
-                    posts.append(f"{seeded['post_prefix']}{row['id']}")
-            # A post row whose draft is already gone, still holding the seeded text.
-            if seeded["post_prefix"]:
-                posts += [r["id"] for r in conn.execute(
-                    "SELECT id FROM posts WHERE id LIKE ? AND content = ?",
-                    (seeded["post_prefix"] + "%", seeded["raw_content"]),
-                )]
+                "SELECT id, status, formatted_content FROM drafts WHERE title = ? AND raw_content = ?",
+                (seeded["title"], seeded["raw_content"]),
+            ).fetchall():
+                beside = _seeded_post_row(conn, f"{prefix}{row['id']}") if prefix else None
+                if (
+                    row["status"] == "DRAFT"
+                    and row["formatted_content"] == seeded["formatted_content"]
+                    and not _draft_has_history(conn, row["id"])
+                    and (beside is None or _untouched_seed_post(beside, seeded["raw_content"]))
+                ):
+                    drafts.append(row["id"])
+                    if beside is not None:
+                        posts.append(beside["id"])
+            # A seeded post row whose draft is already gone, still untouched.
+            if prefix:
+                for r in conn.execute("SELECT * FROM posts WHERE id LIKE ?", (prefix + "%",)).fetchall():
+                    suffix = r["id"][len(prefix):]
+                    gone = suffix.isdigit() and conn.execute(
+                        "SELECT 1 FROM drafts WHERE id = ?", (int(suffix),)).fetchone() is None
+                    if gone and _untouched_seed_post(r, seeded["raw_content"]):
+                        posts.append(r["id"])
         posts = sorted(set(posts))
 
         report = {"seeded": drafts, "posts": posts, "dry_run": dry_run, "deleted": 0}
@@ -1755,6 +1771,34 @@ def purge_seeded_drafts(
     finally:
         if owns:
             conn.close()
+
+
+def _seeded_post_row(conn: sqlite3.Connection, post_id: str) -> Optional[sqlite3.Row]:
+    return conn.execute("SELECT * FROM posts WHERE id = ?", (post_id,)).fetchone()
+
+
+def _untouched_seed_post(row: sqlite3.Row, content: str) -> bool:
+    """The post row a seeded draft wrote beside itself, exactly as written: scheduled, never published, read or bound."""
+    columns = row.keys()
+    figures = [row[c] for c in ("impressions", "reactions", "comments", "shares") if c in columns]
+    return (
+        row["content"] == content
+        and row["status"] == "scheduled"
+        and not row["published_at"]
+        and all(not value for value in figures)
+        and not (row["activity_urn"] if "activity_urn" in columns else None)
+        and (row["draft_id"] if "draft_id" in columns else None) is None
+    )
+
+
+def _draft_has_history(conn: sqlite3.Connection, draft_id: int) -> bool:
+    """Queued, scheduled or published from the studio, or bound to a post."""
+    if _has_table(conn, "queue_items") and conn.execute(
+            "SELECT 1 FROM queue_items WHERE draft_id = ?", (draft_id,)).fetchone():
+        return True
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(posts)")}
+    return "draft_id" in columns and conn.execute(
+        "SELECT 1 FROM posts WHERE draft_id = ?", (draft_id,)).fetchone() is not None
 
 
 def demo_demographics_rows() -> List[tuple]:
@@ -1828,6 +1872,94 @@ def purge_seeded_demographics(
             conn.close()
 
 
+def demo_post_rows() -> List[tuple]:
+    """
+    The five posts the demo seeder writes, as (id, content, media_urls, status,
+    scheduled_for, published_at, impressions, reactions, comments, shares, tags).
+
+    Shared with purge_seeded_posts so that a post is purged only while it still
+    holds exactly what was seeded.
+    """
+    posts_data = [
+        (
+            SEEDED_DEMO_POST_IDS[0],
+            """Sample scheduled post. Replace with your own words.""",
+            # No media. This previously referenced a bare filename, which the
+            # browser resolved against the site root and served a 404. The image
+            # lives in the repository's assets/ directory, which is not the
+            # directory mounted at /assets (that one holds user media), and it is
+            # not shipped in the distributable. A seeded demo post showing a
+            # broken image is worse than one showing none.
+            json.dumps([]),
+            "scheduled",
+            "2026-09-14T12:00:00.000Z",
+            None,
+            0, 0, 0, 0,
+            json.dumps(["Enterprise", "ERP", "Observability", "SystemsArchitecture"])
+        ),
+        (
+            "urn:li:activity:7390000000000000103",
+            """Sample published post (demo seed).""",
+            json.dumps(["https://example.com/sample-media.jpg"]),
+            "published",
+            None,
+            "2026-09-11T11:30:53.996Z",
+            28, 3, 0, 0,
+            json.dumps(["AI", "Automation", "Workflows"])
+        ),
+        (
+            "urn:li:activity:7390000000000000102",
+            """Sample published post (demo seed).""",
+            json.dumps([]),
+            "published",
+            None,
+            "2026-09-09T04:47:17.923Z",
+            262, 9, 1, 0,
+            json.dumps(["Career", "B2B", "ProductMarketing", "Systems"])
+        ),
+        (
+            "urn:li:activity:7390000000000000101",
+            """Sample published post (demo seed).""",
+            json.dumps([]),
+            "published",
+            None,
+            "2026-07-10T12:13:46.007Z",
+            517, 21, 6, 1,
+            json.dumps(["AI", "AgenticAI", "SoftwareEngineering", "Building"])
+        ),
+        (
+            "post-enterprise-decoupling-scheduled",
+            """𝗠𝗼𝘀𝘁 𝗲𝗻𝘁𝗲𝗿𝗽𝗿𝗶𝘀𝗲 𝗺𝗶𝗰𝗿𝗼𝘀𝗲𝗿𝘃𝗶𝗰𝗲𝘀 𝗮𝗿𝗲 𝗷𝘂𝘀𝘁 𝗱𝗶𝘀𝘁𝗿𝗶𝗯𝘂𝘁𝗲𝗱 𝗺𝗼𝗻𝗼𝗹𝗶𝘁𝗵𝘀 𝗶𝗻 𝗱𝗶𝘀𝗴𝘂𝗶𝘀𝗲.
+
+If one database table change cascades failures across 4 downstream services, you do not have decoupled systems. You have distributed tight coupling with network latency added on top.
+
+Lately, as I dive deeper into enterprise architectures and modern ERP platforms, one realization keeps surfacing:
+
+True decoupling is not about breaking code into separate repositories.
+It is about establishing pure event-driven boundaries.
+
+Here is the 3-step blueprint for genuine enterprise decoupling:
+
+1. 𝗣𝘂𝗿𝗲 𝗜𝗺𝗺𝘂𝘁𝗮𝗯𝗹𝗲 𝗘𝘃𝗲𝗻𝘁 𝗦𝘁𝗿𝗲𝗮𝗺𝘀: Treat state transitions as append-only immutable events, never shared database schemas.
+2. 𝗖𝗼𝗻𝘀𝘂𝗺𝗲𝗿-𝗢𝘄𝗻𝗲𝗱 𝗣𝗿𝗼𝗷𝗲𝗰𝘁𝗶𝗼𝗻𝘀: Each service builds and owns its isolated read models tailored specifically to its query patterns.
+3. 𝗩𝗲𝗿𝗶𝗳𝗶𝗰𝗮𝘁𝗶𝗼𝗻 𝗢𝘃𝗲𝗿 𝗔𝘀𝘀𝘂𝗺𝗽𝘁𝗶𝗼𝗻: Validate data boundary contracts programmatically before deploying changes to production.
+
+When you decouple domain state from operational execution, system resilience compounds automatically.
+
+Swipe through the companion 3-slide visual architecture guide below.
+
+What is your team's biggest bottleneck when decoupling legacy services?""",
+            json.dumps([]),
+            "scheduled",
+            "2026-09-16T12:00:00.000Z",
+            None,
+            0, 0, 0, 0,
+            json.dumps(["Enterprise", "Architecture", "DistributedSystems", "EventDriven"])
+        )
+    ]
+    return posts_data
+
+
 def purge_seeded_posts(
     conn: Optional[sqlite3.Connection] = None,
     dry_run: bool = True,
@@ -1835,25 +1967,34 @@ def purge_seeded_posts(
     """
     Remove the demo posts, which carry invented impression and reaction counts.
 
-    Matched by id rather than by content: these ids are the seeder's own, and a
-    post the creator actually wrote never has one.
+    Matched by the seeder's own id, and only while the row still holds exactly
+    what was seeded: the same text and figures, and never bound to a draft. A
+    seeded post the creator rewrote, or that has since been read, is theirs.
     """
     owns = conn is None
     conn = conn or get_db()
     try:
-        placeholders = ",".join("?" for _ in DEMO_POST_IDS)
-        rows = conn.execute(
-            f"SELECT id FROM posts WHERE id IN ({placeholders})", DEMO_POST_IDS
-        ).fetchall()
-        found = [r["id"] for r in rows]
+        seeded = {row[0]: row for row in demo_post_rows()}
+        placeholders = ",".join("?" for _ in seeded)
+        found, kept = [], []
+        for r in conn.execute(f"SELECT * FROM posts WHERE id IN ({placeholders})", list(seeded)).fetchall():
+            want = seeded[r["id"]]
+            columns = r.keys()
+            untouched = (
+                r["content"] == want[1] and r["status"] == want[3]
+                and (r["impressions"], r["reactions"], r["comments"], r["shares"]) == tuple(want[6:10])
+                and ("draft_id" not in columns or r["draft_id"] is None)
+                and ("activity_urn" not in columns or r["activity_urn"] in (None, "", r["id"]))
+            )
+            (found if untouched else kept).append(r["id"])
 
-        report = {"seeded": found, "dry_run": dry_run, "deleted": 0}
+        report = {"seeded": found, "kept": kept, "dry_run": dry_run, "deleted": 0}
         if dry_run or not found:
             return report
 
         with conn:
             cur = conn.execute(
-                f"DELETE FROM posts WHERE id IN ({placeholders})", DEMO_POST_IDS
+                f"DELETE FROM posts WHERE id IN ({','.join('?' for _ in found)})", found
             )
             report["deleted"] = cur.rowcount
         return report
@@ -1989,84 +2130,8 @@ def seed_initial_data():
         VALUES (:date, :followers, :connections, :profile_views, :impressions, :reactions, :comments, :shares, :engagement_rate, 'seed')
         """, demo_analytics_rows())
 
-    # Seed Posts
-    posts_data = [
-        (
-            SEEDED_DEMO_POST_IDS[0],
-            """Sample scheduled post. Replace with your own words.""",
-            # No media. This previously referenced a bare filename, which the
-            # browser resolved against the site root and served a 404. The image
-            # lives in the repository's assets/ directory, which is not the
-            # directory mounted at /assets (that one holds user media), and it is
-            # not shipped in the distributable. A seeded demo post showing a
-            # broken image is worse than one showing none.
-            json.dumps([]),
-            "scheduled",
-            "2026-09-14T12:00:00.000Z",
-            None,
-            0, 0, 0, 0,
-            json.dumps(["Enterprise", "ERP", "Observability", "SystemsArchitecture"])
-        ),
-        (
-            "urn:li:activity:7390000000000000103",
-            """Sample published post (demo seed).""",
-            json.dumps(["https://example.com/sample-media.jpg"]),
-            "published",
-            None,
-            "2026-09-11T11:30:53.996Z",
-            28, 3, 0, 0,
-            json.dumps(["AI", "Automation", "Workflows"])
-        ),
-        (
-            "urn:li:activity:7390000000000000102",
-            """Sample published post (demo seed).""",
-            json.dumps([]),
-            "published",
-            None,
-            "2026-09-09T04:47:17.923Z",
-            262, 9, 1, 0,
-            json.dumps(["Career", "B2B", "ProductMarketing", "Systems"])
-        ),
-        (
-            "urn:li:activity:7390000000000000101",
-            """Sample published post (demo seed).""",
-            json.dumps([]),
-            "published",
-            None,
-            "2026-07-10T12:13:46.007Z",
-            517, 21, 6, 1,
-            json.dumps(["AI", "AgenticAI", "SoftwareEngineering", "Building"])
-        ),
-        (
-            "post-enterprise-decoupling-scheduled",
-            """𝗠𝗼𝘀𝘁 𝗲𝗻𝘁𝗲𝗿𝗽𝗿𝗶𝘀𝗲 𝗺𝗶𝗰𝗿𝗼𝘀𝗲𝗿𝘃𝗶𝗰𝗲𝘀 𝗮𝗿𝗲 𝗷𝘂𝘀𝘁 𝗱𝗶𝘀𝘁𝗿𝗶𝗯𝘂𝘁𝗲𝗱 𝗺𝗼𝗻𝗼𝗹𝗶𝘁𝗵𝘀 𝗶𝗻 𝗱𝗶𝘀𝗴𝘂𝗶𝘀𝗲.
-
-If one database table change cascades failures across 4 downstream services, you do not have decoupled systems. You have distributed tight coupling with network latency added on top.
-
-Lately, as I dive deeper into enterprise architectures and modern ERP platforms, one realization keeps surfacing:
-
-True decoupling is not about breaking code into separate repositories.
-It is about establishing pure event-driven boundaries.
-
-Here is the 3-step blueprint for genuine enterprise decoupling:
-
-1. 𝗣𝘂𝗿𝗲 𝗜𝗺𝗺𝘂𝘁𝗮𝗯𝗹𝗲 𝗘𝘃𝗲𝗻𝘁 𝗦𝘁𝗿𝗲𝗮𝗺𝘀: Treat state transitions as append-only immutable events, never shared database schemas.
-2. 𝗖𝗼𝗻𝘀𝘂𝗺𝗲𝗿-𝗢𝘄𝗻𝗲𝗱 𝗣𝗿𝗼𝗷𝗲𝗰𝘁𝗶𝗼𝗻𝘀: Each service builds and owns its isolated read models tailored specifically to its query patterns.
-3. 𝗩𝗲𝗿𝗶𝗳𝗶𝗰𝗮𝘁𝗶𝗼𝗻 𝗢𝘃𝗲𝗿 𝗔𝘀𝘀𝘂𝗺𝗽𝘁𝗶𝗼𝗻: Validate data boundary contracts programmatically before deploying changes to production.
-
-When you decouple domain state from operational execution, system resilience compounds automatically.
-
-Swipe through the companion 3-slide visual architecture guide below.
-
-What is your team's biggest bottleneck when decoupling legacy services?""",
-            json.dumps([]),
-            "scheduled",
-            "2026-09-16T12:00:00.000Z",
-            None,
-            0, 0, 0, 0,
-            json.dumps(["Enterprise", "Architecture", "DistributedSystems", "EventDriven"])
-        )
-    ]
+    # Seed Posts, from the definition the purge shares.
+    posts_data = demo_post_rows()
 
     # These carry hardcoded impression and reaction counts, so they are
     # fabricated observations exactly like the analytics rows and belong behind
