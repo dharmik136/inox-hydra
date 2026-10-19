@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "motion/react";
-import { Copy, Download, ExternalLink, Loader2 } from "lucide-react";
+import { ArrowLeft, Copy, Download, ExternalLink, Loader2 } from "lucide-react";
 import {
   DM_STYLES,
   LEADS_CSV_URL,
@@ -35,6 +35,11 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
   const [leads, setLeads] = useState<Lead[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [selected, setSelected] = useState<string | null>(focus?.id ?? null);
+  // Below the md breakpoint there is room for one pane. A fixed 340 pixel
+  // stream beside the rail left the dossier 0 pixels wide on a phone, so
+  // choosing a lead changed nothing visible. There the stream and the dossier
+  // take turns; from md up both are always shown and this has no effect.
+  const [pane, setPane] = useState<"stream" | "dossier">(focus ? "dossier" : "stream");
 
   // Re-read after an action so the row and the dossier cannot disagree about
   // a lead's status. The stream shows the status on every row, so a change
@@ -62,6 +67,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
     if (!focus || !leads) return;
     if (!leads.some((lead) => lead.id === focus.id)) return;
     setSelected(focus.id);
+    setPane("dossier");
     window.requestAnimationFrame(() => {
       document.querySelector(`[data-lead-id="${CSS.escape(focus.id)}"]`)?.scrollIntoView({ block: "nearest" });
     });
@@ -75,7 +81,13 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
 
   return (
     <div className="flex h-full min-h-0">
-      <section aria-label="Lead stream" className="flex w-[340px] shrink-0 flex-col border-r border-edge">
+      <section
+        aria-label="Lead stream"
+        className={cn(
+          "w-full shrink-0 flex-col border-edge md:flex md:w-[340px] md:border-r",
+          pane === "stream" ? "flex" : "hidden",
+        )}
+      >
         <div className="flex items-baseline justify-between gap-2 px-4 pt-4 pb-2">
           <h1 className="studio-label">Lead stream</h1>
           <div className="flex items-baseline gap-2">
@@ -98,7 +110,10 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
               <button
                 type="button"
                 data-lead-id={lead.id}
-                onClick={() => setSelected(lead.id)}
+                onClick={() => {
+                  setSelected(lead.id);
+                  setPane("dossier");
+                }}
                 aria-current={selected === lead.id ? "true" : undefined}
                 className={cn(
                   "relative w-full border-b border-edge px-4 py-3 text-left",
@@ -128,7 +143,15 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
         </ul>
       </section>
 
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      <div className={cn("min-w-0 flex-1 overflow-y-auto md:block", pane === "dossier" ? "block" : "hidden")}>
+        <button
+          type="button"
+          onClick={() => setPane("stream")}
+          className="studio-meta flex items-center gap-1 px-4 pt-4 text-[10px] text-ink-muted transition-colors hover:text-ink-primary md:hidden"
+        >
+          <ArrowLeft className="size-3" strokeWidth={2} aria-hidden="true" />
+          Back to the lead stream
+        </button>
         {selected ? <Dossier leadId={selected} onChanged={reload} /> : null}
       </div>
     </div>
@@ -213,7 +236,7 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
   // which on a wide window opens a gap between the two halves and makes the
   // split read as two unrelated panels.
   return (
-    <article className="max-w-[70ch] px-8 py-8">
+    <article className="max-w-[70ch] px-4 py-6 md:px-8 md:py-8">
       <p className="studio-label">{lead.status}</p>
       {/* A section of the Leads page, whose heading is the stream's label. */}
       <h2 className="studio-title mt-2">{lead.name}</h2>
