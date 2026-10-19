@@ -2207,3 +2207,12 @@ export async function installLicence(key: string): Promise<{ status: string; lic
 export async function removeLicence(): Promise<{ status: string; licence: LicenceState }> {
   return call("/api/v1/licence", { method: "DELETE" });
 }
+
+/** Removes what the last archive import added, and the record of it. Counts per kind. */
+export async function undoArchiveImport(): Promise<{
+  status: string;
+  archive: { name: string };
+  removed: Record<string, number>;
+}> {
+  return call("/api/v1/archive/undo", { method: "POST" });
+}

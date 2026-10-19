@@ -2761,6 +2761,12 @@ def post_archive_preview(payload: ArchiveSourcePayload):
     return _archive_call(lambda: archive_import.preview(payload.source))
 
 
+@app.post("/api/v1/archive/undo", tags=["Onboarding"])
+def post_archive_undo():
+    """Removes what the last archive import added: its posts, activity, profile fields and connections."""
+    return _archive_call(archive_import.remove_last_import)
+
+
 @app.post("/api/v1/archive/import", tags=["Onboarding"])
 def post_archive_import(payload: ArchiveImportPayload):
     """

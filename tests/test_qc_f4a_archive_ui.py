@@ -12,6 +12,7 @@ import io
 import os
 import shutil
 import socket
+import sqlite3
 import sys
 import tempfile
 import threading
@@ -136,3 +137,25 @@ def test_another_members_archive_waits_for_a_tick_naming_them(setup_page, studio
     expect(submit).to_be_enabled()
     submit.click()
     expect(page.get_by_text("Imported from Complete_LinkedInDataExport_10-19-2026.zip")).to_be_visible()
+
+
+def _import_by_hand(page, studio, members):
+    _choose(page, studio, members)
+    page.get_by_label("This is my archive: import Sample Alice's archive as my own record").check()
+    page.get_by_role("button", name="Import what is ticked").click()
+    expect(page.get_by_text("Imported from Complete_LinkedInDataExport_10-19-2026.zip")).to_be_visible()
+    page.get_by_role("button", name="Done").click()
+
+
+def test_an_import_can_be_removed_before_any_profile_is_confirmed(setup_page, studio):
+    page = setup_page
+    _import_by_hand(page, studio, {"Profile.csv": PROFILE, "Shares.csv": SHARES, "Connections.csv": CONNECTIONS})
+    expect(page.get_by_text("Fills in once you have confirmed it is you")).to_be_visible()
+    page.get_by_role("button", name="Remove what this import added").click()
+    page.get_by_role("button", name="Remove it").click()
+    expect(page.get_by_text("Removed what that import added: 1 post, 1 connection and 4 profile details.")
+           ).to_be_visible()
+    expect(page.get_by_role("button", name="Remove what this import added")).to_have_count(0)
+    conn = sqlite3.connect(paths.get_db_path())
+    assert conn.execute("SELECT COUNT(*) FROM own_posts").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM connections").fetchone()[0] == 0

@@ -216,3 +216,70 @@ def test_with_no_profile_confirmed_the_import_asks_first(client):
     assert res.status_code == 409 and "Sample Alice" in res.json()["detail"]
     assert _nothing_imported()
     assert _import(client, preview["source"], confirm_owner=True).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# SETUP-19: what an import brought can be removed from the archive step, with
+# or without a confirmed profile
+# ---------------------------------------------------------------------------
+
+def test_what_an_import_brought_can_be_removed_without_a_confirmed_profile(client):
+    members = _person_archive("Sample", "Alice")
+    members["Comments.csv"] = ("Date,Link,Message\n2024-06-01 12:00:00,"
+                               "https://www.linkedin.com/feed/update/urn:li:activity:7200000000000000004,Nice.\n")
+    members["Positions.csv"] = "Company Name,Title\nSample Co,Sample Role\n"
+    source = _upload(client, members)["source"]
+    assert _import(client, source, confirm_owner=True).status_code == 200
+    assert client.get("/api/v1/onboarding/state").json()["identity"] is None
+
+    res = client.post("/api/v1/archive/undo")
+    assert res.status_code == 200, res.text
+    assert res.json()["removed"]["posts"] == 1 and res.json()["removed"]["connections"] == 1
+    conn = _db()
+    for table in ("own_posts", "outbound_engagements", "creator_positions", "creator_skills", "connections",
+                  "archive_imports"):
+        assert conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0, table
+    identity = conn.execute("SELECT display_name, headline, about, location, profile_observed_at "
+                            "FROM creator_identity").fetchone()
+    assert identity is None or all(v is None for v in identity), "the archive's profile fields stayed"
+    state = client.get("/api/v1/onboarding/state").json()
+    assert state["archive"]["last_import"] is None and state["steps"]["archive"] is False
+
+
+def test_removing_an_import_keeps_what_was_there_before_it(client):
+    conn = _db()
+    conn.execute("INSERT INTO own_posts (activity_urn, text, published_at, reactions, first_seen_at, last_seen_at) "
+                 "VALUES ('urn:li:activity:7000000000000000001', 'Read by the bridge, long before.', NULL, 4, 'x', 'x')")
+    conn.execute("INSERT INTO creator_identity (id, display_name, headline) VALUES (1, 'Sample Bob', 'Mine')")
+    conn.execute("INSERT INTO creator_skills (skill, observed_at) VALUES ('Synthetic Skill', 'x')")
+    conn.commit()
+    conn.close()
+    source = _upload(client, _person_archive("Sample", "Alice"))["source"]
+    assert _import(client, source, confirm_owner=True).status_code == 200
+    assert client.post("/api/v1/archive/undo").status_code == 200
+    conn = _db()
+    assert [r[0] for r in conn.execute("SELECT activity_urn FROM own_posts")] == ["urn:li:activity:7000000000000000001"]
+    assert [r[0] for r in conn.execute("SELECT skill FROM creator_skills")] == ["Synthetic Skill"]
+    identity = conn.execute("SELECT display_name, headline, about FROM creator_identity").fetchone()
+    assert tuple(identity) == ("Sample Bob", "Mine", None)
+
+
+def test_there_is_nothing_to_remove_before_an_import(client):
+    assert client.post("/api/v1/archive/undo").status_code == 400
+
+
+def test_an_import_that_fails_part_way_leaves_nothing_behind(client, monkeypatch):
+    # Every row its own batch, so the posts are committed before the failure.
+    monkeypatch.setattr(archive_import, "BATCH_SECONDS", 0)
+    monkeypatch.setattr(archive_import, "BATCH_PAUSE", 0)
+
+    def broken(conn, rows, batches):
+        raise RuntimeError("the disk is full")
+
+    monkeypatch.setitem(archive_import._IMPORTERS, "connections", broken)
+    source = _upload(client, _person_archive("Sample", "Alice"))["source"]
+    with pytest.raises(RuntimeError):
+        archive_import.import_archive(source, confirm_owner=True)
+    assert _nothing_imported(), "a failed import left part of itself in the studio"
+    identity = _db().execute("SELECT about, location FROM creator_identity").fetchone()
+    assert identity is None or (identity["about"], identity["location"]) == (None, None)

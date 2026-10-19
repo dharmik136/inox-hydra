@@ -152,8 +152,12 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # archive at once (surfaced in ArchiveImport and api.ts).
 # Reached moves 94 -> 95, unreachable stays at 84, total moves 178 -> 179.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 179
-REACHED_BY_INTERFACE = 95
+# Then 179 -> 180: /api/v1/archive/undo, so what an archive import added can
+# be removed from the archive step (surfaced in ArchiveImport and api.ts).
+# Reached moves 95 -> 96, unreachable stays at 84, total moves 179 -> 180.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 180
+REACHED_BY_INTERFACE = 96
 UNREACHABLE = 84
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

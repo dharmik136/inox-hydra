@@ -6,6 +6,7 @@ import {
   importArchive,
   markArchiveRequested,
   previewArchive,
+  undoArchiveImport,
   uploadArchive,
   type ArchiveKindTally,
   type ArchivePreview,
@@ -53,6 +54,7 @@ export function ArchiveImport({
   const [note, setNote] = useState<string | null>(null);
   const [preview, setPreview] = useState<OwnedPreview | null>(null);
   const [ownerAgreed, setOwnerAgreed] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<Record<string, ArchiveKindTally> | null>(null);
   const [found, setFound] = useState<FoundArchive[]>([]);
@@ -232,6 +234,52 @@ export function ArchiveImport({
               )}
             </div>
           )}
+
+          {state.last_import &&
+            (removing ? (
+              <div className="rounded-md border border-edge p-3" role="group" aria-label="Remove the last import">
+                <p className="text-[13px] leading-relaxed text-ink-secondary">
+                  Remove the posts, comments, reactions, roles, skills, connections and profile details that{" "}
+                  {state.last_import.archive_name} added? What was in the studio before it, and what the bridge
+                  has read since, is kept.
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() =>
+                      void run("remove", async () => {
+                        const done = await undoArchiveImport();
+                        setRemoving(false);
+                        setNote(removedLine(done.removed));
+                        onChanged();
+                      })
+                    }
+                    className="flex items-center gap-1.5 rounded-md border border-edge-strong px-2.5 py-1 text-[12px] text-ink-primary transition-colors hover:bg-soft disabled:opacity-40"
+                  >
+                    {busy === "remove" && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
+                    Remove it
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy !== null}
+                    onClick={() => setRemoving(false)}
+                    className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                  >
+                    Keep it
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                disabled={busy !== null}
+                onClick={() => setRemoving(true)}
+                className="self-start text-[12px] text-ink-muted underline-offset-2 transition-colors hover:text-ink-primary hover:underline disabled:opacity-40"
+              >
+                Remove what this import added
+              </button>
+            ))}
         </>
       )}
 
@@ -400,6 +448,26 @@ function tallyLine(tally: ArchiveKindTally): string {
   if (tally.already_there) parts.push(`${tally.already_there} already here`);
   if (tally.skipped) parts.push(`${tally.skipped} skipped`);
   return parts.join(", ");
+}
+
+const REMOVED_WORDS: Record<string, [string, string]> = {
+  posts: ["post", "posts"],
+  comments: ["comment", "comments"],
+  reactions: ["reaction", "reactions"],
+  positions: ["role", "roles"],
+  education: ["school", "schools"],
+  skills: ["skill", "skills"],
+  connections: ["connection", "connections"],
+  profile: ["profile detail", "profile details"],
+};
+
+function removedLine(removed: Record<string, number>): string {
+  const parts = Object.entries(REMOVED_WORDS)
+    .filter(([kind]) => (removed[kind] ?? 0) > 0)
+    .map(([kind, [one, many]]) => `${removed[kind]} ${removed[kind] === 1 ? one : many}`);
+  if (parts.length === 0) return "Removed the record of that import. Nothing it added was still in the studio.";
+  const list = parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}` : parts[0];
+  return `Removed what that import added: ${list}.`;
 }
 
 function readable(bytes: number): string {

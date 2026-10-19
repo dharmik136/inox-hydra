@@ -61,6 +61,8 @@ Your messages stay in the archive and are never imported, and the list under **o
 
 Importing the same archive again adds nothing twice. When the bridge later reads a post the archive brought in, the two become one: the archive's date and full text, and the figures LinkedIn shows on the page. A comment or reaction whose date the studio cannot read is skipped and counted, never given today's date. A file you chose by hand is kept by the studio only until it is imported or you click **Not now**, or for a day; a file in your Downloads folder is never moved or deleted.
 
+To take out what an import added, for example an archive that was not yours, click **Remove what this import added** in this step, then **Remove it**. The posts, comments, reactions, roles, skills and connections it added are deleted, and the profile details it filled are emptied again. What was in the studio before the import stays, and so does a post the bridge has read since. This works before you have confirmed your profile, too.
+
 ## 5. Your history
 
 If you imported your archive in step 4, this step only adds what has happened since and the counts LinkedIn shows on your posts. Three imports read your activity pages:

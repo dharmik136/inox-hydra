@@ -74,6 +74,10 @@ except ImportError:
 DOWNLOAD_PAGE = "https://www.linkedin.com/mypreferences/d/download-my-data"
 ARCHIVE_NAME = re.compile(r"linkedin.*data.*export.*\.zip$|linkedindataexport.*\.zip$", re.IGNORECASE)
 REQUESTED_KEY = "archive_requested_at"
+# settings key + archive_imports.id -> what that import brought, so it can be
+# removed again on its own (remove_last_import).
+BROUGHT_KEY = "archive_import_brought:"
+PROFILE_COLUMNS = ("display_name", "headline", "about", "location")
 
 MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
 # LinkedIn's CSVs are small: years of posts are a few megabytes. These bound
@@ -770,24 +774,38 @@ class _Batches:
     batch here holds the lock for at most BATCH_SECONDS, and the pause after
     it outlasts SQLite's longest sleep between retries, so a waiting writer
     always gets its turn.
+
+    It also keeps what the import brought (`brought`: kind -> the keys of the
+    rows it added), so the import can be removed again, and so a failed one
+    takes back what its earlier batches committed.
     """
 
     def __init__(self, conn):
         self.conn = conn
+        self.brought: Dict[str, Any] = {}
+        self._kept: Dict[str, Any] = {}
         self._begin()
 
     def _begin(self) -> None:
         self.conn.execute("BEGIN IMMEDIATE")
         self._started = time.monotonic()
 
+    def add(self, kind: str, key: Any) -> None:
+        self.brought.setdefault(kind, []).append(key)
+
     def row(self) -> bool:
         """Called after each row written. True when a new batch has begun, so what was read may be stale."""
         if time.monotonic() - self._started < BATCH_SECONDS:
             return False
         self.conn.commit()
+        self._kept = {k: len(v) if isinstance(v, list) else v for k, v in self.brought.items()}
         time.sleep(BATCH_PAUSE)
         self._begin()
         return True
+
+    def committed(self) -> Dict[str, Any]:
+        """What the batches committed so far brought, leaving out the one in progress."""
+        return {k: self.brought[k][:kept] if isinstance(kept, int) else kept for k, kept in self._kept.items()}
 
 
 def _text_key(text: str) -> str:
@@ -834,6 +852,7 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Di
             "reposts, impressions, first_seen_at, last_seen_at) VALUES (?, ?, ?, 'archive', NULL, NULL, NULL, NULL, ?, ?)",
             (urn, text[:10000] or None, when, now, now),
         )
+        batches.add("posts", urn)
         tally["added"] += 1
     return tally
 
@@ -855,6 +874,8 @@ def _import_comments(conn, rows: Iterable[Dict[str, str]], batches: _Batches) ->
             "VALUES (?, NULL, NULL, 'comment', NULL, ?, ?, ?, ?)",
             (urn, message[:4000], _text_key(message), when, when),
         )
+        if cursor.rowcount:
+            batches.add("comments", cursor.lastrowid)
         tally["added" if cursor.rowcount else "already_there"] += 1
     return tally
 
@@ -874,6 +895,8 @@ def _import_reactions(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -
             "VALUES (?, NULL, NULL, 'reaction', ?, NULL, '', ?, ?)",
             (urn, REACTION_WORDS.get(kind, kind.lower()[:40] or None), when, when),
         )
+        if cursor.rowcount:
+            batches.add("reactions", cursor.lastrowid)
         tally["added" if cursor.rowcount else "already_there"] += 1
     return tally
 
@@ -889,18 +912,21 @@ def _import_profile(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict
         "location": row.get("location", ""),
     }
     current = conn.execute(
-        "SELECT display_name, headline, about, location FROM creator_identity WHERE id = 1").fetchone()
+        "SELECT display_name, headline, about, location, profile_observed_at FROM creator_identity WHERE id = 1"
+    ).fetchone()
     if current is None:
         conn.execute("INSERT INTO creator_identity (id) VALUES (1)")
-        current = {k: None for k in values}
+        current = {k: None for k in (*values, "profile_observed_at")}
     filled = []
     for column, value in values.items():
         if value and not (current[column] or "").strip():
             conn.execute(f"UPDATE creator_identity SET {column} = ? WHERE id = 1", (value[:4000],))
             filled.append(column)
-    if filled:
-        conn.execute("UPDATE creator_identity SET profile_observed_at = COALESCE(profile_observed_at, ?) WHERE id = 1",
-                     (_now(),))
+            batches.brought.setdefault("profile", {})[column] = value[:4000]
+    if filled and not current["profile_observed_at"]:
+        observed = _now()
+        conn.execute("UPDATE creator_identity SET profile_observed_at = ? WHERE id = 1", (observed,))
+        batches.brought["observed_at"] = observed
     return {"filled": filled}
 
 
@@ -920,13 +946,14 @@ def _import_positions(conn, rows: List[Dict[str, str]], batches: _Batches) -> Di
         return tally
     now = _now()
     for ordinal, row in enumerate(rows):
-        conn.execute(
+        cursor = conn.execute(
             "INSERT INTO creator_positions (ordinal, title, company, date_range, location, description, observed_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (ordinal, row.get("title") or None, row.get("company") or None,
              _span(row.get("started", ""), row.get("finished", "")) or None,
              row.get("location") or None, (row.get("description") or "")[:4000] or None, now),
         )
+        batches.add("positions", cursor.lastrowid)
         tally["added"] += 1
     return tally
 
@@ -938,11 +965,12 @@ def _import_education(conn, rows: List[Dict[str, str]], batches: _Batches) -> Di
         return tally
     now = _now()
     for ordinal, row in enumerate(rows):
-        conn.execute(
+        cursor = conn.execute(
             "INSERT INTO creator_education (ordinal, school, degree, date_range, observed_at) VALUES (?, ?, ?, ?, ?)",
             (ordinal, row.get("school") or None, row.get("degree") or None,
              _span(row.get("start", ""), row.get("end", "")) or None, now),
         )
+        batches.add("education", cursor.lastrowid)
         tally["added"] += 1
     return tally
 
@@ -957,6 +985,8 @@ def _import_skills(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict[
             tally["skipped"] += 1
             continue
         cursor = conn.execute("INSERT OR IGNORE INTO creator_skills (skill, observed_at) VALUES (?, ?)", (skill, now))
+        if cursor.rowcount:
+            batches.add("skills", skill)
         tally["added" if cursor.rowcount else "already_there"] += 1
     return tally
 
@@ -981,6 +1011,8 @@ def _import_connections(conn, rows: List[Dict[str, str]], batches: _Batches) -> 
             (url, row.get("first") or None, row.get("last") or None, row.get("company") or None,
              row.get("position") or None, row.get("connected") or None, now),
         )
+        if not exists:
+            batches.add("connections", url)
         tally["already_there" if exists else "added"] += 1
     return tally
 
@@ -1030,18 +1062,93 @@ def import_archive(source: str, include: Optional[List[str]] = None, confirm_own
                     summary[kind] = {"not_understood": True, "columns": entry["header"][:12]}
                     continue
                 summary[kind] = _IMPORTERS[kind](conn, entry["rows"], batches)
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO archive_imports (archive_name, archive_bytes, imported_at, summary) VALUES (?, ?, ?, ?)",
                 (name[:200], result["bytes"], _now(), json.dumps(summary, sort_keys=True)),
             )
+            if ownership["owner"]:
+                batches.brought["owner"] = ownership["owner"]["name"]
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                         (f"{BROUGHT_KEY}{cursor.lastrowid}", json.dumps(batches.brought)))
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            # What the earlier batches committed is taken out again, so an
+            # import that fails leaves nothing of itself behind.
+            try:
+                _remove(conn, batches.committed())
+                conn.commit()
+            except Exception:
+                conn.rollback()
+            raise
+    finally:
+        conn.close()
+    _discard(source)
+    return {"status": "success", "archive": {"name": name, "bytes": result["bytes"]}, "summary": summary}
+
+
+def _remove(conn, brought: Dict[str, Any], batches: Optional[_Batches] = None) -> Dict[str, int]:
+    """Deletes the rows an import added, by the keys it kept. Returns how many of each went."""
+    removed: Dict[str, int] = {}
+    deletes = {
+        # A post the bridge has since joined carries its activity id, so it is not in this list any more.
+        "posts": "DELETE FROM own_posts WHERE activity_urn = ? AND published_at_source = 'archive'",
+        "comments": "DELETE FROM outbound_engagements WHERE id = ? AND kind = 'comment'",
+        "reactions": "DELETE FROM outbound_engagements WHERE id = ? AND kind = 'reaction'",
+        "positions": "DELETE FROM creator_positions WHERE id = ?",
+        "education": "DELETE FROM creator_education WHERE id = ?",
+        "skills": "DELETE FROM creator_skills WHERE skill = ?",
+        "connections": "DELETE FROM connections WHERE profile_url = ?",
+    }
+    for kind, sql in deletes.items():
+        removed[kind] = 0
+        for key in brought.get(kind) or []:
+            if batches:
+                batches.row()
+            removed[kind] += conn.execute(sql, (key,)).rowcount
+    # A profile field is emptied again only if it still holds what the archive put there.
+    removed["profile"] = 0
+    for column, value in (brought.get("profile") or {}).items():
+        if column in PROFILE_COLUMNS:
+            removed["profile"] += conn.execute(
+                f"UPDATE creator_identity SET {column} = NULL WHERE id = 1 AND {column} = ?", (value,)).rowcount
+    if brought.get("observed_at"):
+        conn.execute("UPDATE creator_identity SET profile_observed_at = NULL WHERE id = 1 AND profile_observed_at = ?",
+                     (brought["observed_at"],))
+    return removed
+
+
+def remove_last_import() -> Dict[str, Any]:
+    """
+    Deletes what the last import added, and the record of it.
+
+    For an archive that turns out not to be the creator's, or not the one
+    they meant, whether or not a profile has been confirmed. What the import
+    found already there is left as it was, and so is a post the bridge has
+    since read as the creator's own.
+    """
+    conn = get_db()
+    try:
+        last = conn.execute("SELECT id, archive_name FROM archive_imports ORDER BY id DESC LIMIT 1").fetchone()
+        if last is None:
+            raise ArchiveError("No archive has been imported, so there is nothing to remove.")
+        key = f"{BROUGHT_KEY}{last['id']}"
+        held = conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        if held is None:
+            raise ArchiveError("This import was made before the studio kept a list of what each import added, "
+                               "so it cannot be removed on its own.")
+        batches = _Batches(conn)
+        try:
+            removed = _remove(conn, json.loads(held["value"]), batches)
+            conn.execute("DELETE FROM archive_imports WHERE id = ?", (last["id"],))
+            conn.execute("DELETE FROM settings WHERE key = ?", (key,))
             conn.commit()
         except BaseException:
             conn.rollback()
             raise
     finally:
         conn.close()
-    _discard(source)
-    return {"status": "success", "archive": {"name": name, "bytes": result["bytes"]}, "summary": summary}
+    return {"status": "success", "archive": {"name": last["archive_name"]}, "removed": removed}
 
 
 # ---------------------------------------------------------------------------
@@ -1094,7 +1201,7 @@ def forget(conn) -> None:
     """Everything the archive brought, for when the creator deletes what the studio holds about them."""
     for table in ("connections", "archive_imports"):
         conn.execute(f"DELETE FROM {table}")
-    conn.execute("DELETE FROM settings WHERE key = ?", (REQUESTED_KEY,))
+    conn.execute("DELETE FROM settings WHERE key = ? OR key LIKE ?", (REQUESTED_KEY, BROUGHT_KEY + "%"))
     for name in os.listdir(_uploads_dir()):
         try:
             os.remove(os.path.join(_uploads_dir(), name))
