@@ -5,7 +5,7 @@ Today: what to do in the next hour.
 The screen a creator opens first once the studio knows who they are. It
 answers one question, and every section is something they can act on now:
 
-  who to reply to   people who engaged with your posts and have not heard
+  who to reply to   people who commented on your posts and have not heard
                     from you, repeat engagers first, then the most recent
   your latest post  how it is doing against your usual, at the same age
   the queue         what goes out next, and the next open slot
@@ -132,9 +132,13 @@ def _reply_to(conn) -> List[Dict[str, Any]]:
     if not own_ids:
         return []
     since = (datetime.now(timezone.utc) - REPLY_WINDOW).strftime("%Y-%m-%d %H:%M:%S")
+    # When an engagement happened is when the studio first saw it. last_seen_at
+    # moves every time the post is reopened and the same comment read again,
+    # which made a comment from 13 days ago read "JUST NOW" and jump the queue.
     rows = conn.execute(
         """
         SELECT i.lead_id, i.post_urn, i.comment_text, i.interaction_type,
+               COALESCE(i.first_seen_at, i.interacted_at) AS engaged_at,
                COALESCE(i.last_seen_at, i.interacted_at) AS seen_at,
                COALESCE(l.full_name, l.name) AS name, l.headline, l.lead_status
         FROM lead_interactions i JOIN leads l ON l.id = i.lead_id
@@ -149,21 +153,24 @@ def _reply_to(conn) -> List[Dict[str, Any]]:
             continue
         person = people.setdefault(str(row["lead_id"]), {
             "lead_id": str(row["lead_id"]), "name": row["name"], "headline": row["headline"],
-            "posts_engaged": set(), "last_seen_at": row["seen_at"], "latest_comment": None,
+            "posts_engaged": set(), "engaged_at": None, "last_seen_at": None, "latest_comment": None,
             "commented": False,
         })
         person["posts_engaged"].add(onboarding._activity_id(row["post_urn"]))
-        if row["interaction_type"] == "COMMENT":
-            person["commented"] = True
-        if (row["seen_at"] or "") >= (person["last_seen_at"] or ""):
-            person["last_seen_at"] = row["seen_at"]
+        person["last_seen_at"] = max(person["last_seen_at"] or "", row["seen_at"] or "") or None
+        if row["interaction_type"] != "COMMENT":
+            continue
+        person["commented"] = True
+        if (row["engaged_at"] or "") >= (person["engaged_at"] or ""):
+            person["engaged_at"] = row["engaged_at"]
             if row["comment_text"]:
                 person["latest_comment"] = row["comment_text"][:200]
 
-    # Repeat engagement first, then a comment over a reaction, then recency.
+    # Only people who commented: a reaction leaves nothing to reply to. Repeat
+    # engagement first, then the most recent comment.
     ranked = sorted(
-        people.values(),
-        key=lambda p: (len(p["posts_engaged"]), p["commented"], p["last_seen_at"] or ""),
+        (p for p in people.values() if p["commented"]),
+        key=lambda p: (len(p["posts_engaged"]), p["engaged_at"] or ""),
         reverse=True,
     )[:REPLY_LIMIT]
     for person in ranked:
@@ -205,8 +212,13 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
     drifting = [h["label"] for h in state["health"] if h["state"] == "drifting"]
     if drifting:
         return {"action": "setup", "reason": f"{drifting[0]} has stopped reading LinkedIn's pages. See Capture health in Setup."}
-    if not onboarding.post_history_complete(conn):
-        return {"action": "setup", "reason": "Your post history has not been imported, so your usual is not known yet."}
+    if not state["steps"]["history"]:
+        # The same test as Setup's step 5, so Today never sends the creator
+        # to a Setup screen where that step is ticked.
+        return {"action": "setup", "reason": (
+            "Your posts have not been read to the end of the list yet, so your usual is not known. "
+            "Run Posts you wrote in Setup's step 5."
+        )}
     if latest and latest["age_hours"] <= COMPARE_WINDOW[1]:
         recent = conn.execute(
             "SELECT 1 FROM post_metric_observations WHERE activity_urn = ? AND source = 'post_analytics' "

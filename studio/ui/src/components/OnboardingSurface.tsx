@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
-import { Check, ExternalLink, Loader2 } from "lucide-react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { Check, Copy, ExternalLink, Loader2 } from "lucide-react";
 import {
   OWN_PROFILE_URL,
   confirmIdentity,
+  copyExtensionPath,
+  createBackup,
   deleteLinkedInSession,
+  fetchBackups,
   fetchBrowserBridge,
   fetchOnboardingState,
   forgetIdentity,
@@ -36,12 +39,23 @@ import { ArchiveImport, archiveStatus } from "./ArchiveImport";
  */
 const POLL_MS = 3000;
 
+/** What this screen reads from the onboarding state beyond the shared type. */
+type SetupState = OnboardingState & {
+  /** Import all three, while one is under way. Kept by the studio, so it survives a restart. */
+  sync_chain?: { sequence: SelfImportKind[]; current_kind: SelfImportKind } | null;
+  /** Readings of your posts' figures and archive connections: what deleting everything also removes. */
+  counts: { readings?: number; connections?: number };
+  /** history: your posts read to the end of the list, which is what Today needs. */
+  steps: { history?: boolean };
+};
+
 export function OnboardingSurface() {
-  const [state, setState] = useState<OnboardingState | null>(null);
+  const [state, setState] = useState<SetupState | null>(null);
   const [bridge, setBridge] = useState<BrowserBridge | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<Note | null>(null);
+  const [sessionConfirm, setSessionConfirm] = useState(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -63,21 +77,24 @@ export function OnboardingSurface() {
   // pick, which it does by the same measured rule the Leads screen uses.
   const carrier = bridge?.browsers.find((b) => b.carries_extension === true)?.id ?? "auto";
 
-  async function act(key: string, work: () => Promise<string | void>) {
+  // `at` is the step whose button was pressed: what happened is shown there.
+  async function act(key: string, work: () => Promise<string | void>, at: Note["at"]) {
     setBusy(key);
     setNote(null);
     try {
       const message = await work();
-      if (message) setNote(message);
+      if (message) setNote({ text: message, at, error: false });
       await refresh();
     } catch (caught) {
-      setNote(caught instanceof Error ? caught.message : "That did not work.");
+      setNote({ text: caught instanceof Error ? caught.message : "That did not work.", at, error: true });
     } finally {
       setBusy(null);
     }
   }
 
-  const open = (url: string) => act(url, async () => (await launchBridge(carrier, url)).message);
+  // Step 4's block, the archive, opens LinkedIn's download page with the URL alone.
+  const open = (url: string, at: Note["at"] = 4) =>
+    act(url, async () => (await launchBridge(carrier, url)).message, at);
 
   if (failed && !state) return <Centered>SETUP UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!state) return <Centered>LOADING SETUP</Centered>;
@@ -85,6 +102,7 @@ export function OnboardingSurface() {
   const { steps, identity, candidate } = state;
 
   return (
+    <NoteContext.Provider value={note}>
     <article className="mx-auto max-w-[72ch] px-8 py-8">
       <p className="studio-label">Setup</p>
       <h1 className="studio-title mt-2">Teach the studio who you are</h1>
@@ -106,7 +124,7 @@ export function OnboardingSurface() {
               <Primary
                 pending={busy === "https://www.linkedin.com/feed/"}
                 disabled={busy !== null}
-                onPress={() => void open("https://www.linkedin.com/feed/")}
+                onPress={() => void open("https://www.linkedin.com/feed/", 1)}
               >
                 Open LinkedIn with the bridge
               </Primary>
@@ -114,6 +132,9 @@ export function OnboardingSurface() {
                 SIGN IN THERE IF IT ASKS. THIS STEP TICKS BY ITSELF.
               </p>
             </div>
+          )}
+          {!state.bridge.connected && bridge && !bridge.browsers.some((b) => b.carries_extension === true) && (
+            <LoadByHand bridge={bridge} />
           )}
         </Step>
 
@@ -134,7 +155,7 @@ export function OnboardingSurface() {
             <Primary
               pending={busy === OWN_PROFILE_URL}
               disabled={busy !== null}
-              onPress={() => void open(OWN_PROFILE_URL)}
+              onPress={() => void open(OWN_PROFILE_URL, 2)}
             >
               Open my profile
             </Primary>
@@ -161,11 +182,11 @@ export function OnboardingSurface() {
                   pending={busy === "confirm"}
                   disabled={busy !== null}
                   opensBrowser={false}
-                  onPress={() => void act("confirm", () => confirmIdentity(candidate.vanity))}
+                  onPress={() => void act("confirm", () => confirmIdentity(candidate.vanity), 2)}
                 >
                   Yes, that&rsquo;s me
                 </Primary>
-                <Secondary disabled={busy !== null} onPress={() => void act("reject", rejectIdentityCandidate)}>
+                <Secondary disabled={busy !== null} onPress={() => void act("reject", rejectIdentityCandidate, 2)}>
                   No
                 </Secondary>
               </div>
@@ -183,13 +204,18 @@ export function OnboardingSurface() {
           {identity && (
             <ProfileCard
               identity={identity}
+              counts={state.counts}
               busy={busy}
-              onOpen={(url) => void open(url)}
+              onOpen={(url) => void open(url, 3)}
               onForget={() =>
-                void act("forget", async () => {
-                  await forgetIdentity();
-                  return "Everything the studio held about you is deleted.";
-                })
+                void act(
+                  "forget",
+                  async () => {
+                    await forgetIdentity();
+                    return "Everything the studio held about you is deleted.";
+                  },
+                  3,
+                )
               }
             />
           )}
@@ -213,12 +239,16 @@ export function OnboardingSurface() {
         <Step
           n={5}
           title="Your history"
-          done={steps.posts && steps.activity}
+          done={!!steps.history}
           current={steps.identity}
           last
           status={
             steps.identity
-              ? `${state.counts.posts} posts, ${state.counts.comments} comments, ${state.counts.reactions} reactions`
+              ? `${state.counts.posts} posts, ${state.counts.comments} comments, ${state.counts.reactions} reactions${
+                  steps.history
+                    ? ""
+                    : `. ${state.counts.posts ? "Your posts are in, but the" : "The"} list of your posts has not been read to its end yet: run Posts you wrote`
+                }`
               : "Your posts, and what you have liked and commented on"
           }
         >
@@ -228,32 +258,40 @@ export function OnboardingSurface() {
                 Each import opens one of your activity pages and scrolls it for you at a steady pace until the list
                 ends. Keep that tab in view; it pauses while hidden, and the Stop button on the page ends it.
               </p>
-              <div className="mb-4 flex items-center justify-between rounded-md border border-edge bg-soft/40 p-3">
-                <div>
-                  <p className="text-[13px] font-medium text-ink-primary">One-Click Complete History Sync</p>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-edge bg-soft/40 p-3">
+                <div className="min-w-0 flex-1 basis-64">
+                  <p className="text-[13px] font-medium text-ink-primary">All three, one after another</p>
                   <p className="text-[11px] text-ink-muted">
-                    Automates sequential ingestion across your posts, comments, and reactions via the bridge.
+                    Opens your posts page, then your comments, then your reactions. The bridge scrolls each one to
+                    the end and moves to the next page by itself.
                   </p>
                 </div>
                 <button
                   type="button"
                   disabled={busy !== null}
                   onClick={() =>
-                    void act("all", async () => {
-                      const res = await syncAllActivity();
-                      return res.message;
-                    })
+                    void act(
+                      "all",
+                      async () => {
+                        const res = await syncAllActivity();
+                        return res.message;
+                      },
+                      5,
+                    )
                   }
-                  className="flex items-center gap-1.5 rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+                  className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
                 >
                   {busy === "all" ? (
                     <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                   ) : (
                     <Check className="size-3.5" strokeWidth={2} aria-hidden="true" />
                   )}
-                  Sync All Activity
+                  Import all three
                 </button>
               </div>
+              {state.sync_chain && (
+                <p className="studio-meta mb-3 text-[10px] text-ink-muted">{chainLine(state.sync_chain)}</p>
+              )}
               <div className="flex flex-col divide-y divide-edge border-y border-edge">
                 {IMPORTS.map((entry) => (
                   <ImportRow
@@ -264,10 +302,14 @@ export function OnboardingSurface() {
                     pending={busy === entry.kind}
                     disabled={busy !== null}
                     onImport={() =>
-                      void act(entry.kind, async () => {
-                        const url = await requestSelfImport(entry.kind);
-                        return (await launchBridge(carrier, url)).message;
-                      })
+                      void act(
+                        entry.kind,
+                        async () => {
+                          const url = await requestSelfImport(entry.kind);
+                          return (await launchBridge(carrier, url)).message;
+                        },
+                        5,
+                      )
                     }
                   />
                 ))}
@@ -328,28 +370,75 @@ export function OnboardingSurface() {
               ? `Stored${state.session.saved_at ? ` since ${state.session.saved_at.slice(0, 10)}` : ""}, used only to hand a post to LinkedIn's scheduler.`
               : "Not stored. Only needed to schedule posts on LinkedIn itself; the extension's Sync button captures it."}
           </p>
-          {state.session.stored && (
-            <Secondary
-              disabled={busy !== null}
-              onPress={() =>
-                void act("session", async () => {
-                  await deleteLinkedInSession();
-                  return "The LinkedIn session is deleted.";
-                })
-              }
-            >
+          {state.session.stored && !sessionConfirm && (
+            <Secondary disabled={busy !== null} onPress={() => setSessionConfirm(true)}>
               Delete
             </Secondary>
           )}
+          {state.session.stored && sessionConfirm && (
+            <div className="flex shrink-0 items-center gap-2">
+              <Secondary
+                disabled={busy !== null}
+                onPress={() =>
+                  void act(
+                    "session",
+                    async () => {
+                      await deleteLinkedInSession();
+                      setSessionConfirm(false);
+                      return "The LinkedIn session is deleted. The extension's Sync button captures it again.";
+                    },
+                    "session",
+                  )
+                }
+              >
+                Yes, delete the session
+              </Secondary>
+              <Secondary disabled={busy !== null} onPress={() => setSessionConfirm(false)}>
+                Keep it
+              </Secondary>
+            </div>
+          )}
         </div>
+        {note?.at === "session" && <NoteView note={note} />}
       </section>
-
-      {note && (
-        <p role="status" className="studio-meta mt-6 leading-snug text-ink-secondary">
-          {note}
-        </p>
-      )}
     </article>
+    </NoteContext.Provider>
+  );
+}
+
+/**
+ * What happened after a click, and where it was clicked. The note used to be
+ * written at the foot of the page, below Capture health and the session, a
+ * screen away from "Open LinkedIn with the bridge", so an error such as "No
+ * supported browser" was never seen and people clicked again or gave up.
+ */
+interface Note {
+  text: string;
+  /** The step number whose button produced it, or the session section. */
+  at: number | "session";
+  error: boolean;
+}
+
+const NoteContext = createContext<Note | null>(null);
+
+function NoteView({ note }: { note: Note }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: "nearest" });
+    if (note.error) ref.current?.focus();
+  }, [note]);
+  return (
+    <p
+      ref={ref}
+      tabIndex={-1}
+      role={note.error ? "alert" : "status"}
+      className={cn(
+        "studio-meta mt-3 leading-snug outline-none",
+        note.error ? "text-signal-orange-text" : "text-ink-secondary",
+      )}
+    >
+      {note.text}
+    </p>
   );
 }
 
@@ -430,22 +519,31 @@ function Step({
         <p className={cn("text-[14px] font-medium", done || current ? "text-ink-primary" : "text-ink-muted")}>{title}</p>
         <p className="studio-meta mt-0.5 text-[11px] text-ink-muted">{status}</p>
         {children && <div className="mt-3">{children}</div>}
+        <StepNote n={n} />
       </div>
     </li>
   );
 }
 
+function StepNote({ n }: { n: number }) {
+  const note = useContext(NoteContext);
+  return note?.at === n ? <NoteView note={note} /> : null;
+}
+
 function ProfileCard({
   identity,
+  counts,
   busy,
   onOpen,
   onForget,
 }: {
   identity: CreatorIdentity;
+  counts: SetupState["counts"];
   busy: string | null;
   onOpen: (url: string) => void;
   onForget: () => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
   const base = identity.profile_url ?? `https://www.linkedin.com/in/${identity.vanity}/`;
   return (
     <div className="flex flex-col gap-4">
@@ -525,12 +623,194 @@ function ProfileCard({
 
       <button
         type="button"
-        onClick={onForget}
-        disabled={busy !== null}
+        onClick={() => setConfirming(true)}
+        disabled={busy !== null || confirming}
+        aria-expanded={confirming}
         className="studio-meta self-start text-[10px] text-ink-muted transition-colors hover:text-signal-orange-text disabled:opacity-40"
       >
         NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU
       </button>
+      {confirming && (
+        <ForgetPanel
+          identity={identity}
+          counts={counts}
+          busy={busy}
+          onCancel={() => setConfirming(false)}
+          onConfirm={onForget}
+        />
+      )}
+    </div>
+  );
+}
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+
+/**
+ * The second, deliberate step before deleting everything. This used to be one
+ * click on a 10 px line, with no confirmation, no list of what goes and no
+ * backup; deleting a creator profile, which destroys less, asks you to type
+ * its name. It says what will be deleted, whether a backup exists, offers one,
+ * and waits for a typed word.
+ */
+function ForgetPanel({
+  identity,
+  counts,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  identity: CreatorIdentity;
+  counts: SetupState["counts"];
+  busy: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const [backup, setBackup] = useState<string | null>(null);
+  const [backingUp, setBackingUp] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    fetchBackups()
+      .then((listing) => {
+        if (!live) return;
+        // The listing is sorted by name, so the newest is found by its time.
+        const latest = [...listing.backups].sort((a, b) => b.modified.localeCompare(a.modified))[0];
+        setBackup(
+          latest
+            ? `The latest backup of the studio is from ${latest.modified.slice(0, 16).replace("T", " ")}, ${latest.name}.`
+            : "There is no backup of the studio yet, so this could not be brought back.",
+        );
+      })
+      .catch(() => live && setBackup("Whether a backup exists could not be checked."));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  async function backUp() {
+    setBackingUp(true);
+    try {
+      const made = await createBackup("before-forget");
+      setBackup(`Backed up just now, to ${made.archive}.`);
+    } catch (caught) {
+      setBackup(`The backup did not work: ${caught instanceof Error ? caught.message : "unknown error"}.`);
+    } finally {
+      setBackingUp(false);
+    }
+  }
+
+  const profileParts = [
+    identity.positions.length ? plural(identity.positions.length, "role") : null,
+    identity.education.length ? plural(identity.education.length, "school") : null,
+    identity.skills.length ? plural(identity.skills.length, "skill") : null,
+    identity.contact_observed_at ? "contact info" : null,
+  ].filter(Boolean);
+  const ready = typed.trim().toLowerCase() === "delete";
+
+  return (
+    <section
+      aria-label="Delete everything the studio holds about you"
+      className="rounded-md border border-signal-orange p-4"
+    >
+      <p className="text-[13px] font-medium text-ink-primary">This deletes, from this computer, and cannot be undone:</p>
+      <ul className="mt-2 flex list-disc flex-col gap-0.5 pl-5 text-[13px] text-ink-secondary">
+        <li>
+          Your confirmed profile, linkedin.com/in/{identity.vanity}
+          {profileParts.length ? `: ${profileParts.join(", ")}` : ""}
+        </li>
+        <li>
+          {plural(counts.posts, "of your posts", "of your posts")}
+          {counts.readings !== undefined ? ` and ${plural(counts.readings, "reading")} of their figures` : ""}
+        </li>
+        <li>
+          {plural(counts.comments, "comment")} and {plural(counts.reactions, "reaction")} of yours on other posts
+        </li>
+        <li>
+          {counts.connections !== undefined ? `${plural(counts.connections, "connection")} and ` : ""}the record of your
+          archive and history imports
+        </li>
+        <li>The name, headline and company Setup filled in Brand Studio, unless you changed them</li>
+      </ul>
+      <p className="mt-2 text-[12px] text-ink-muted">Your leads, drafts and the posts you wrote in the studio are kept.</p>
+
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <p role="status" className="min-w-0 break-words text-[12px] text-ink-secondary">
+          {backup ?? "Looking for a backup."}
+        </p>
+        <Secondary disabled={backingUp || busy !== null} onPress={() => void backUp()}>
+          {backingUp && <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />}
+          Back up first
+        </Secondary>
+      </div>
+
+      <label className="mt-3 flex flex-col gap-1 text-[12px] text-ink-secondary">
+        Type delete to confirm
+        <input
+          value={typed}
+          onChange={(event) => setTyped(event.target.value)}
+          autoFocus
+          className="w-48 rounded-md border border-edge bg-ink px-2 py-1 text-[13px] text-ink-primary outline-none focus-visible:border-edge-strong"
+        />
+      </label>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          disabled={!ready || busy !== null}
+          onClick={onConfirm}
+          className="rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+        >
+          Delete everything
+        </button>
+        <Secondary disabled={busy !== null} onPress={onCancel}>
+          Keep it
+        </Secondary>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * What to do when no browser here loads the bridge by itself: most Mac and
+ * many Windows machines have only Chrome, which ignores --load-extension. The
+ * launch message pointed at a folder this screen never showed.
+ */
+function LoadByHand({ bridge }: { bridge: BrowserBridge }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const none = bridge.browsers.length === 0;
+  return (
+    <div className="mt-4 rounded-md border border-edge p-3">
+      <p className="text-[13px] leading-relaxed text-ink-secondary">
+        {none
+          ? "No Chromium browser was found on this computer. Install Microsoft Edge or Brave, which load the bridge by themselves, then click the button above."
+          : `${bridge.browsers.map((b) => b.name).join(", ")} cannot load the bridge by itself. Install Microsoft Edge or Brave and click the button above, or load it by hand.`}
+      </p>
+      {!none && (
+        <>
+          <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
+            To load it by hand, open your browser&rsquo;s extensions page, turn on developer mode, choose Load
+            unpacked, and point it at this folder. Help has the steps, under Install the browser extension.
+          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Secondary
+              onPress={() =>
+                void copyExtensionPath()
+                  .then(() => setCopied("COPIED TO THE CLIPBOARD"))
+                  .catch(() => setCopied("COULD NOT REACH THE CLIPBOARD. COPY IT FROM BELOW."))
+              }
+            >
+              <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              Copy the folder path
+            </Secondary>
+            {copied && (
+              <p role="status" className="studio-meta text-[10px] text-ink-muted">
+                {copied}
+              </p>
+            )}
+          </div>
+          <p className="studio-meta mt-2 break-all text-[10px] text-ink-muted">{bridge.extension_path}</p>
+        </>
+      )}
     </div>
   );
 }
@@ -566,12 +846,29 @@ function ImportRow({
   );
 }
 
+function chainLine(chain: { sequence: SelfImportKind[]; current_kind: SelfImportKind }): string {
+  const after = chain.sequence.slice(chain.sequence.indexOf(chain.current_kind) + 1);
+  return `IMPORTING ONE AFTER ANOTHER: ${chain.current_kind.toUpperCase()} NOW${
+    after.length ? `, THEN ${after.join(" AND ").toUpperCase()}` : ", THE LAST ONE"
+  }`;
+}
+
+// Only "end_of_list" is the whole list. The others read part of it, and say so,
+// because a partial history taken for a whole one is how real leads were
+// offered for deletion as strangers.
 function importLine(entry: SelfImport): string {
+  const read = entry.items_seen ?? 0;
   if (!entry.finished_at) return entry.started_at ? "SCROLLING NOW" : "WAITING FOR THE PAGE TO OPEN";
-  if (entry.outcome === "stopped") return `STOPPED AT ${entry.items_seen ?? 0}`;
-  if (entry.outcome === "left_page") return `LEFT THE PAGE AT ${entry.items_seen ?? 0}`;
+  if (entry.outcome === "end_of_list") return `READ TO THE END: ${read}`;
+  if (entry.outcome === "stopped") return `STOPPED AT ${read}`;
+  if (entry.outcome === "left_page") return `LEFT THE PAGE AT ${read}`;
   if (entry.outcome === "superseded") return "REPLACED BY A NEWER IMPORT";
-  return `LAST IMPORT READ ${entry.items_seen ?? 0}`;
+  if (entry.outcome === "expired") return "EXPIRED, CLICK IMPORT AGAIN";
+  if (entry.outcome === "not_opened") return "NOT STARTED, NO BROWSER WITH THE BRIDGE OPENED";
+  if (entry.outcome === "nothing_read") return "NOTHING READ. OPEN THE PAGE AND IMPORT AGAIN";
+  if (entry.outcome === "stalled") return `THE LIST STOPPED LOADING AT ${read}. IMPORT AGAIN`;
+  if (entry.outcome === "round_limit") return `READ ${read}, THE MOST ONE IMPORT READS`;
+  return `READ ${read}, NOT TO THE END. IMPORT AGAIN`;
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {

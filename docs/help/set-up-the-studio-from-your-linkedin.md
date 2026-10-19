@@ -12,6 +12,8 @@ You need the studio running and a browser that can carry the extension. Edge and
 
 Click **Open LinkedIn with the bridge**. The studio starts Edge or Brave with the extension loaded, on your LinkedIn feed, with the studio in a second tab so the extension can reach it. It opens in its own browser profile, so it works even when that browser is already open, and your usual windows are left alone. The first time, sign in to LinkedIn there.
 
+If no browser on this computer can load the extension by itself, for example when Chrome is the only one, the step says so and shows the extension's folder with **Copy the folder path**, for loading it by hand with **Load unpacked**. If no Chromium browser is found at all, nothing opens and the step asks you to install Edge or Brave.
+
 The step ticks when the extension reports in, which it does every minute while a LinkedIn tab is in view. The status line reads "Connected" with the extension's version. If it later reads "Last heard from ...", no LinkedIn tab is open in the bridge browser.
 
 ## 2. Show it your profile
@@ -34,9 +36,9 @@ The profile page does not show everything, so three buttons open the pages that 
 - **Read all skills** opens your full skills list. The profile itself shows only a few.
 - **Read profile again** reads it afresh, for example after you change your headline.
 
-Anything the page did not show is left as it was, so a section that had not loaded yet does not erase what was read before. A field reading "Not read" is one the studio has not found yet.
+Anything the page did not show is left as it was, so a section that had not loaded yet does not erase what was read before. Your profile page shows only your first few roles, schools and skills, so what it shows is added to the lists already read, from your archive or the full lists, and never shortens them. A full list replaces the stored one only when it is read from its own page, such as **Read all skills**. A field reading "Not read" is one the studio has not found yet.
 
-Confirming also fills your name, headline and company in **Brand Studio**, but only where those are empty. What you typed there is never replaced.
+Confirming also fills your name, headline and company in **Brand Studio**, but only where those are empty. What you typed there is never replaced. If you later delete what the studio holds about you, the fields it filled are cleared again, unless you have changed them since.
 
 ## 4. Your LinkedIn archive
 
@@ -67,7 +69,7 @@ To take out what an import added, for example an archive that was not yours, cli
 
 ## 5. Your history
 
-If you imported your archive in step 4, this step only adds what has happened since and the counts LinkedIn shows on your posts. Three imports read your activity pages:
+If you imported your archive in step 4, this step only adds what has happened since and the counts LinkedIn shows on your posts. The step ticks once an import of **Posts you wrote** has read your posts to the end of the list, which is what **Today** needs to know your usual; posts from the archive alone do not tick it. Three imports read your activity pages:
 
 | Import | What it reads |
 | --- | --- |
@@ -78,14 +80,18 @@ If you imported your archive in step 4, this step only adds what has happened si
 Click **Import**. The bridge browser opens that activity page, and the extension scrolls it for you. A banner at the bottom of the page reads "Studio is importing your posts: N so far." with a **Stop** button.
 
 - Keep the tab in view. The import pauses while the tab is hidden.
-- It stops by itself when the list stops growing, and the banner reads "Done. N posts imported."
+- It stops by itself when the list stops growing. If the page has nothing more to load, that is the end of the list: the banner reads "Done. N posts imported." and the row in Setup reads **READ TO THE END**.
+- If the page still offers more (a **Show more** button, or a list still loading), the list stalled rather than ended. The banner says so, and the row reads **THE LIST STOPPED LOADING AT N. IMPORT AGAIN**. One import also reads at most 250 rounds of the list; past that the row reads **THE MOST ONE IMPORT READS**.
 - **Stop** ends it early. What was read so far is kept.
-- An import you asked for is picked up only within 30 minutes. After that, click **Import** again.
+- Only an import of your posts that read to the end counts as your whole post history. Until one has, **Leads** never calls anyone "engaged only with other people's posts", and never offers to remove them on that ground. Posts from your archive count as yours too.
+- An import you asked for is picked up only within 30 minutes. After that its row reads **EXPIRED, CLICK IMPORT AGAIN**; click **Import** again.
+
+**Import all three** does the three imports one after another. It opens your posts page; when that import ends, the bridge moves to your comments page by itself, then to your reactions page, and scrolls each one the same way. The line under it reads, for example, "IMPORTING ONE AFTER ANOTHER: POSTS NOW, THEN COMMENTS AND REACTIONS", and the studio remembers where it is if it restarts. **Stop** on any page, leaving the page, or clicking one of the single **Import** buttons ends it. If no browser that can carry the bridge opens, nothing is imported and the step says why.
 
 Your comments and reactions are kept as your own activity. They never become leads.
 
 > [!NOTE]
-> Scrolling is the one thing the studio does on LinkedIn on your behalf, and only on your own activity pages, only after you click **Import**. It reads what the page shows. The extension makes no requests to LinkedIn of its own.
+> Scrolling is the one thing the studio does on LinkedIn on your behalf, and only on your own activity pages, only after you click **Import** or **Import all three**. With **Import all three**, the bridge also moves from one of your activity pages to the next by itself. It reads what the page shows. The extension makes no requests to LinkedIn of its own.
 
 ## Check the capture is still working
 
@@ -100,6 +106,8 @@ The extension reads LinkedIn's pages, and LinkedIn changes how they are built wi
 | Your reactions | The **Posts you reacted to** import |
 | Creator analytics | The figures in **Analytics** |
 | Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends. Only your recorded posts are read |
+
+Network reading is off unless you turn it on in the extension's popup. If you do, two more parts appear here once they have run: **Network reading: your posts' figures** and **Network reading: creator analytics**. They are not listed while network reading has not run, because opening a page cannot start them.
 
 Each part shows one of three states:
 
@@ -118,9 +126,11 @@ The extension reports at most once a minute per part per page, and the studio ke
 
 ## Delete it
 
-Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU**. Your identity, profile, imported posts, comments, reactions and import history are deleted. The next time you open your profile, Setup asks again.
+Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU**. Nothing is deleted yet. Setup lists what would go, with counts: your identity and profile, your imported posts and every reading of their figures, your comments and reactions, your connections, the record of your archive and history imports, and the Brand Studio fields Setup filled. Your leads and drafts are kept.
 
-**LINKEDIN SESSION** at the bottom of Setup is separate. It shows whether a session is stored for sending posts to LinkedIn, with its own **Delete**. See [Connect your LinkedIn session](connect-your-linkedin-session.md).
+It also says whether a backup of the studio exists, and **Back up first** takes one. Type `delete` and click **Delete everything** to go ahead, or **Keep it** to leave everything as it is. It cannot be undone except from a backup. The next time you open your profile, Setup asks again.
+
+**LINKEDIN SESSION** at the bottom of Setup is separate. It shows whether a session is stored for sending posts to LinkedIn, with its own **Delete**, which asks once more before it deletes. See [Connect your LinkedIn session](connect-your-linkedin-session.md).
 
 ## If it does not work
 
@@ -129,4 +139,4 @@ Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE 
 | Step 1 never ticks | Check the extension is loaded in the bridge browser, and open `http://127.0.0.1:8000` once in that browser so it has the studio's access key. Reload the extension after an update. |
 | Step 2 never asks "Is this you?" | Open your profile from the bridge browser, not another one, and wait for the page to finish loading. If it still does not ask, LinkedIn may have changed its page; the studio refuses to guess. |
 | A field reads "Not read" | Open the page that holds it with the buttons above. If it still does not fill, the extension did not recognise that part of the page. |
-| The import stops early | The list may have stopped loading, or the tab was left. Click **Import again**; posts already read are not duplicated. |
+| The import stops early | The list may have stopped loading, or the tab was left. Click **Import again**; posts already read are not duplicated. If an import still reads **NOT TO THE END**, reload the extension after an update; an older extension cannot tell the end of the list from a stall. |

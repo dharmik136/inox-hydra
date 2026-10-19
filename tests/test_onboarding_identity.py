@@ -535,8 +535,9 @@ def test_a_draft_retyped_on_linkedin_finds_its_post(studio_records):
     _confirm()
     conn = get_db()
     with conn:
-        draft_id = conn.execute("INSERT INTO drafts (title, raw_content) VALUES (?, ?)",
-                                ("Rollback", OPENING)).lastrowid
+        # Written before the post went out, as a draft that became a post is.
+        draft_id = conn.execute("INSERT INTO drafts (title, raw_content, created_at) VALUES (?, ?, ?)",
+                                ("Rollback", OPENING, "2024-03-04 09:00:00")).lastrowid
     conn.close()
     studio_records["drafts"].append(draft_id)
 
@@ -593,7 +594,8 @@ def _history_imported():
     _confirm()
     client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [{"activity_urn": URN_2024, "actor": ME}]})
     request_id = client.post("/api/v1/self/imports", json={"kind": "posts"}).json()["id"]
-    client.post("/api/v1/self/imports/event", json={"id": request_id, "event": "finished", "items_seen": 1})
+    client.post("/api/v1/self/imports/event", json={"id": request_id, "event": "finished", "items_seen": 1,
+                                                    "outcome": "end_of_list"})
 
 
 def test_nothing_is_called_a_stranger_before_your_history_is_read(legacy_leads):
@@ -682,11 +684,17 @@ def test_the_extension_reports_what_it_could_not_read():
     assert 'reportCapture("profile"' in own and '"post_author"' in own
 
 
-def test_sync_all_activity_sequential_chain():
+def test_sync_all_activity_sequential_chain(monkeypatch):
     """
     A single click on sync-all begins an autonomous sequential chain
     (posts -> comments -> reactions) that advances automatically on event completion.
     """
+    # Sync All now reports what the launcher did, so the result no longer
+    # depends on whichever browsers this machine has installed.
+    monkeypatch.setattr(app_module.browser_router_module, "launch_browser_with_extension",
+                        lambda browser_id="auto", target_url="": {
+                            "status": "success", "browser": "Brave Browser", "carries_extension": True,
+                            "message": "Launched Brave Browser with the bridge loaded."})
     _confirm()
 
     res = client.post("/api/v1/self/sync-all").json()

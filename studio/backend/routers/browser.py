@@ -121,6 +121,34 @@ def sync_all_activity(payload: Optional[Dict[str, Any]] = None):
     # Launch or switch the browser tab to the first activity page via CDP
     launch_res = launch_browser_with_extension("auto", target_url=target_url)
 
+    # What actually happened. This said "Autonomous activity sync started"
+    # whatever the launcher reported: with no browser installed, with only
+    # Chrome (which cannot load the bridge), and with the bridge not running.
+    connected = bool(onboarding.bridge_status().get("connected"))
+    name = launch_res.get("browser") or "the browser"
+    order = ", then ".join(chain_res["sequence"])
+    if launch_res.get("status") != "success" or launch_res.get("carries_extension") is False:
+        reason = launch_res.get("message") or "The browser could not be opened."
+        if not connected:
+            onboarding.cancel_sync_chain(withdraw=True)
+            raise HTTPException(status_code=409, detail=f"{reason} Nothing was imported.")
+        message = (
+            f"{name} cannot load the bridge. " if launch_res.get("status") == "success"
+            else "No browser could be opened from here. "
+        ) + (
+            f"The bridge is running in another browser: open your {first_kind} activity page there and "
+            f"the import starts ({order})."
+        )
+    else:
+        message = f"Opened your {first_kind} activity page in {name}. "
+        if connected:
+            message += f"The bridge imports your {order}, one after another; keep that tab in view."
+        else:
+            message += (f"The import starts when the bridge reports in, within a minute, and goes on to "
+                        f"your {order} one after another; keep that tab in view.")
+        if launch_res.get("carries_extension") is None:
+            message += f" Whether {name} loads the bridge has not been checked on this computer; if nothing starts, use Edge or Brave."
+
     return {
         "status": "success",
         "current_kind": first_kind,
@@ -132,7 +160,9 @@ def sync_all_activity(payload: Optional[Dict[str, Any]] = None):
             "reactions": reactions_count,
         },
         "browser": launch_res.get("browser", "Browser Bridge"),
-        "message": f"Autonomous activity sync started ({first_kind} -> comments -> reactions). Extension will automatically progress across all streams.",
+        "carries_extension": launch_res.get("carries_extension"),
+        "bridge_connected": connected,
+        "message": message,
     }
 
 
@@ -226,12 +256,17 @@ def get_activity_stream(limit: int = 25):
             for r in cursor.fetchall()
         ]
 
-        # Recent leads
+        # Recent leads, by when the bridge last captured a new engagement from
+        # them. This was ORDER BY id, and a captured lead's id is a hash, so
+        # the list was in no order and the people just captured could be
+        # missing from it. Re-reading a comment does not move anyone up.
         cursor.execute(
             """
-            SELECT id, name, headline, company, engagement_type, icp_score, status, created_at
-            FROM leads
-            ORDER BY id DESC
+            SELECT l.id, l.name, l.headline, l.company, l.engagement_type, l.icp_score, l.status, l.created_at
+            FROM leads l
+            ORDER BY COALESCE(
+                (SELECT MAX(COALESCE(i.first_seen_at, i.interacted_at)) FROM lead_interactions i WHERE i.lead_id = l.id),
+                l.created_at) DESC, l.created_at DESC
             LIMIT ?
             """,
             (limit,),
@@ -242,7 +277,8 @@ def get_activity_stream(limit: int = 25):
                 "name": r[1] or "Unknown",
                 "headline": r[2] or "",
                 "company": r[3] or "",
-                "engagement_type": r[4] or "Commented",
+                # As stored; not read is not "Commented".
+                "engagement_type": r[4],
                 "icp_score": r[5] or 0.0,
                 "status": r[6] or "NEW",
                 "created_at": r[7],

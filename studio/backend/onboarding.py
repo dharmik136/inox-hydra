@@ -30,11 +30,14 @@ Strict Invariants:
   has open; this module only decides what to keep.
 """
 
+import bisect
 import hashlib
 import json
 import re
+import unicodedata
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote, unquote
 
 try:
     from .database import get_db
@@ -55,7 +58,6 @@ HEARTBEAT_RETENTION = timedelta(days=7)
 
 IMPORT_KINDS = ("posts", "comments", "reactions")
 
-_VANITY = re.compile(r"^[a-z0-9][a-z0-9\-_%]{1,99}$")
 _ACTIVITY_URN = re.compile(r"^urn:li:activity:(\d{10,25})$")
 
 # Evidence a profile page belongs to the person viewing it. Named so the
@@ -77,12 +79,29 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _is_vanity(value: str) -> bool:
+    """
+    Letters, marks and digits of any script, '-' and '_', starting with a
+    letter or digit, 2 to 100 long.
+
+    The pattern was a-z and 0-9 only, so a creator whose address carries an
+    e-acute, a u-umlaut, or Chinese, Cyrillic, Arabic or Devanagari letters had
+    every profile capture refused and could never pass step 2. Marks are
+    allowed because Devanagari and other scripts write vowels with them.
+    """
+    if not 2 <= len(value) <= 100 or unicodedata.category(value[0])[0] not in "LN":
+        return False
+    return all(ch in "-_" or unicodedata.category(ch)[0] in "LMN" for ch in value)
+
+
 def normalise_vanity(raw: Any) -> str:
     """
     The public identifier from `/in/<vanity>/`, in one canonical spelling.
 
-    Accepts a bare vanity or any LinkedIn profile URL. Lowercased, without
-    query string or trailing slash. Returns "" for anything that is not one.
+    Accepts a bare vanity or any LinkedIn profile URL. Percent-decoded, in NFC,
+    lowercased, without query string or trailing slash, so `jos%C3%A9-x` and
+    `josé-x` are one person, which is how the extension reads them. Returns ""
+    for anything that is not one.
     """
     if not isinstance(raw, str):
         return ""
@@ -90,8 +109,17 @@ def normalise_vanity(raw: Any) -> str:
     match = re.search(r"linkedin\.com/in/([^/?#]+)", value, re.IGNORECASE)
     if match:
         value = match.group(1)
-    value = value.strip("/").lower()
-    return value if _VANITY.match(value) else ""
+    try:
+        value = unquote(value, errors="strict")
+    except UnicodeDecodeError:
+        return ""
+    value = unicodedata.normalize("NFC", value.strip("/")).lower()
+    return value if _is_vanity(value) else ""
+
+
+def profile_url_for(vanity: str) -> str:
+    """The profile address for a vanity, percent-encoded so a browser can be handed it."""
+    return f"https://www.linkedin.com/in/{quote(vanity, safe='-_')}/"
 
 
 def _text(value: Any, limit: int) -> Optional[str]:
@@ -212,9 +240,15 @@ EXTRACTORS = {
     "activity_reactions": "Your reactions",
     "analytics": "Creator analytics",
     "post_analytics": "Your posts' analytics pages",
-    "voyager_feed_updates": "Voyager feed updates interception",
-    "voyager_creator_analytics": "Voyager creator analytics interception",
+    "voyager_feed_updates": "Network reading: your posts' figures",
+    "voyager_creator_analytics": "Network reading: creator analytics",
 }
+
+# Network reading is off unless the creator switches it on in the extension's
+# popup, so these parts never run for most people. Setup lists them only once
+# they have: listed always, they read NOT SEEN YET for everyone, and the help's
+# advice for that, open the matching page, does nothing for them.
+OPT_IN_EXTRACTORS = ("voyager_feed_updates", "voyager_creator_analytics")
 
 CAPTURE_RETENTION = timedelta(days=7)
 DRIFT_RETENTION = timedelta(days=30)
@@ -474,6 +508,10 @@ def confirmed_vanity() -> str:
     return ""
 
 
+# Fields the extension sends only from /in/<you>/, never from a details page.
+PROFILE_PAGE_FIELDS = ("display_name", "headline", "location", "about", "follower_count", "connection_count")
+
+
 def _clean_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
     """The fields of a profile capture this module keeps, cleaned and bounded."""
     contact = payload.get("contact") if isinstance(payload.get("contact"), dict) else None
@@ -500,6 +538,10 @@ def _clean_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
         skills = None
 
     return {
+        # A read of the profile page itself, which always carries the top
+        # card. Its roles, schools and skills are the first few of each, so
+        # they add to the stored lists; only a details page replaces one.
+        "lists_partial": any(key in payload for key in PROFILE_PAGE_FIELDS),
         "display_name": _text(payload.get("display_name"), 200),
         "headline": _text(payload.get("headline"), 400),
         "location": _text(payload.get("location"), 200),
@@ -546,27 +588,51 @@ def _write_profile(conn, vanity: str, profile_url: Optional[str], clean: Dict[st
     assignments = ", ".join(f"{k} = ?" for k in updates)
     conn.execute(f"UPDATE creator_identity SET {assignments} WHERE id = 1", tuple(updates.values()))
 
+    # A details page holds the whole list and replaces it. The profile page
+    # shows the first few with "Show all", and replacing from it turned 40
+    # skills into 2 and 6 roles into 2 each time the creator opened their own
+    # profile, so its entries are merged in: matched ones refreshed, new ones
+    # added ahead of the rest, nothing removed.
+    partial = bool(clean.get("lists_partial"))
     if clean.get("positions") is not None:
-        conn.execute("DELETE FROM creator_positions")
-        for i, p in enumerate(clean["positions"]):
-            conn.execute(
-                "INSERT INTO creator_positions (ordinal, title, company, date_range, location, description, observed_at) "
-                "VALUES (?,?,?,?,?,?,?)",
-                (i, p["title"], p["company"], p["date_range"], p["location"], p["description"], now),
-            )
+        _write_entries(conn, "creator_positions", ("title", "company"), ("date_range", "location", "description"),
+                       clean["positions"], partial, now)
     if clean.get("education") is not None:
-        conn.execute("DELETE FROM creator_education")
-        for i, e in enumerate(clean["education"]):
-            conn.execute(
-                "INSERT INTO creator_education (ordinal, school, degree, date_range, observed_at) VALUES (?,?,?,?,?)",
-                (i, e["school"], e["degree"], e["date_range"], now),
-            )
+        _write_entries(conn, "creator_education", ("school", "degree"), ("date_range",),
+                       clean["education"], partial, now)
     if clean.get("skills") is not None:
-        conn.execute("DELETE FROM creator_skills")
+        if not partial:
+            conn.execute("DELETE FROM creator_skills")
         conn.executemany(
-            "INSERT INTO creator_skills (skill, observed_at) VALUES (?,?)",
+            "INSERT OR REPLACE INTO creator_skills (skill, observed_at) VALUES (?,?)",
             [(s, now) for s in clean["skills"]],
         )
+
+
+def _write_entries(conn, table: str, key: tuple, rest: tuple, entries: List[Dict[str, Any]],
+                   partial: bool, now: str) -> None:
+    """Writes roles or schools: replacing the list from a full read, merging into it from a partial one."""
+    columns = key + rest
+    insert = (f"INSERT INTO {table} (ordinal, {', '.join(columns)}, observed_at) "
+              f"VALUES (?, {', '.join('?' for _ in columns)}, ?)")
+    if not partial:
+        conn.execute(f"DELETE FROM {table}")
+        for i, entry in enumerate(entries):
+            conn.execute(insert, (i, *[entry[c] for c in columns], now))
+        return
+    match = " AND ".join(f"COALESCE({c}, '') = ?" for c in key)
+    first = conn.execute(f"SELECT COALESCE(MIN(ordinal), 0) FROM {table}").fetchone()[0]
+    new = [e for e in entries
+           if not conn.execute(f"SELECT 1 FROM {table} WHERE {match}", [e[c] or "" for c in key]).fetchone()]
+    for entry in entries:
+        if entry in new:
+            continue
+        conn.execute(
+            f"UPDATE {table} SET {', '.join(f'{c} = COALESCE(?, {c})' for c in rest)}, observed_at = ? WHERE {match}",
+            (*[entry[c] for c in rest], now, *[entry[c] or "" for c in key]),
+        )
+    for i, entry in enumerate(new):
+        conn.execute(insert, (first - len(new) + i, *[entry[c] for c in columns], now))
 
 
 def observe_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -586,7 +652,7 @@ def observe_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     evidence = [e for e in (payload.get("self_evidence") or []) if e in KNOWN_SELF_EVIDENCE]
     clean = _clean_profile(payload)
-    profile_url = f"https://www.linkedin.com/in/{vanity}/"
+    profile_url = profile_url_for(vanity)
 
     conn = get_db()
     try:
@@ -629,13 +695,45 @@ def _fill_creator_settings(conn, clean: Dict[str, Any]) -> None:
     """
     row = conn.execute("SELECT value FROM settings WHERE key = 'creator_profile'").fetchone()
     profile = json.loads(row["value"]) if row and row["value"] else {}
+    filled = {}
     for key, source in (("name", "display_name"), ("headline", "headline"), ("company", "current_company")):
         if not (profile.get(key) or "").strip() and clean.get(source):
-            profile[key] = clean[source]
+            profile[key] = filled[key] = clean[source]
     conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('creator_profile', ?)",
         (json.dumps(profile),),
     )
+    # What was filled, kept apart from the profile, which Brand Studio rewrites
+    # whole on every save. Forgetting takes back exactly these.
+    conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+        (FILLED_PROFILE_KEY, json.dumps(filled)),
+    )
+
+
+FILLED_PROFILE_KEY = "identity_filled_profile"
+
+
+def _unfill_creator_settings(conn) -> None:
+    """
+    Clears the Brand Studio fields confirming filled, where they still hold
+    the value it put there.
+
+    Forgetting the wrong account used to leave its name, headline and company
+    in Brand Studio, and the next confirmation fills only blanks, so carousel
+    bylines and the watermark went on signing as the forgotten person. A field
+    the creator has since changed is theirs and stays.
+    """
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (FILLED_PROFILE_KEY,)).fetchone()
+    filled = json.loads(row["value"]) if row and row["value"] else {}
+    stored = conn.execute("SELECT value FROM settings WHERE key = 'creator_profile'").fetchone()
+    if filled and stored and stored["value"]:
+        profile = json.loads(stored["value"])
+        for key, value in filled.items():
+            if profile.get(key) == value:
+                profile[key] = ""
+        conn.execute("UPDATE settings SET value = ? WHERE key = 'creator_profile'", (json.dumps(profile),))
+    conn.execute("DELETE FROM settings WHERE key = ?", (FILLED_PROFILE_KEY,))
 
 
 def confirm_identity(vanity: Any) -> Dict[str, Any]:
@@ -656,7 +754,7 @@ def confirm_identity(vanity: Any) -> Dict[str, Any]:
                 "candidate_evidence = NULL, candidate_observed_at = NULL WHERE id = 1",
                 (wanted, _now()),
             )
-            _write_profile(conn, wanted, f"https://www.linkedin.com/in/{wanted}/", clean)
+            _write_profile(conn, wanted, profile_url_for(wanted), clean)
             _fill_creator_settings(conn, clean)
     finally:
         conn.close()
@@ -693,6 +791,7 @@ def forget_identity() -> Dict[str, Any]:
                 conn.execute(f"DELETE FROM {table}")
             # And what LinkedIn's archive brought: connections and the record of each import.
             forget_archive(conn)
+            _unfill_creator_settings(conn)
     finally:
         conn.close()
     return {"status": "forgotten"}
@@ -856,6 +955,22 @@ def post_readings(activity_urn: str) -> List[Dict[str, Any]]:
         conn.close()
 
 
+# How far a studio record's time may run past a post's publish time and still
+# be its source: the machine's clock and LinkedIn's can disagree a little.
+BIND_CLOCK_SKEW = timedelta(minutes=10)
+
+
+def _parse_moment(value: Any) -> Optional[datetime]:
+    """A stored time, ISO or SQLite's "YYYY-MM-DD HH:MM:SS" (UTC), or None."""
+    if not value or not isinstance(value, str):
+        return None
+    try:
+        moment = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
 def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: Optional[str]) -> Optional[str]:
     """
     Connects one of the creator's LinkedIn posts to the studio record it came
@@ -892,10 +1007,31 @@ def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: 
         fingerprint = stored_fingerprint or post_identity.content_fingerprint(content or "")
         return bool(fingerprint) and post_identity.fingerprint_matches(text, fingerprint)
 
+    # A studio record can only be where a LinkedIn post came from if it existed
+    # by the time the post went out. Without this, a new draft that reused an
+    # old hit's opening was taken over by a history import: marked published,
+    # with the old post's date and figures, and gone from the drafts. A post
+    # marked published or scheduled is judged by that date, since it may be
+    # entered after the fact; anything else by when it was written.
+    posted = _parse_moment(published_at)
+
+    def existed_by_then(row) -> bool:
+        if posted is None:
+            return True
+        status = (row["status"] or "").lower() if "status" in row.keys() else ""
+        if status == "published":
+            when = row["published_at"]
+        elif status == "scheduled":
+            when = row["scheduled_for"]
+        else:
+            when = row["created_at"]
+        moment = _parse_moment(when)
+        return moment is None or moment <= posted + BIND_CLOCK_SKEW
+
     posts = [r for r in conn.execute(
-        "SELECT id, content, content_fingerprint, status, published_at FROM posts "
+        "SELECT id, content, content_fingerprint, status, published_at, scheduled_for, created_at FROM posts "
         "WHERE activity_urn IS NULL AND COALESCE(content, '') != ''")
-        if matches(r["content_fingerprint"], r["content"])]
+        if matches(r["content_fingerprint"], r["content"]) and existed_by_then(r)]
     if len(posts) == 1:
         row = posts[0]
         conn.execute(
@@ -909,9 +1045,9 @@ def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: 
         return None
 
     drafts = [r for r in conn.execute(
-        "SELECT id, raw_content FROM drafts WHERE COALESCE(raw_content, '') != '' "
+        "SELECT id, raw_content, created_at FROM drafts WHERE COALESCE(raw_content, '') != '' "
         "AND id NOT IN (SELECT draft_id FROM posts WHERE draft_id IS NOT NULL)")
-        if matches(None, r["raw_content"])]
+        if matches(None, r["raw_content"]) and existed_by_then(r)]
     if len(drafts) == 1:
         conn.execute(
             "INSERT INTO posts (id, content, status, published_at, content_fingerprint, draft_id, activity_urn) "
@@ -1029,18 +1165,79 @@ def engagement_gate(engager_profile: Any, post_urn: Any, post_author: Any) -> Op
 # may simply be older than what was imported, so the answer is "unknown", and
 # nothing is ever offered for removal on an unknown.
 
+# A post known only from LinkedIn's archive is named by its share or ugcPost id,
+# and engagement on it is captured under its activity id, so comparing the bare
+# numbers never matched it: the people who commented on an archive post were
+# called strangers and offered for deletion. Both ids carry the moment the post
+# was made in their high bits, and for one post those moments are a heartbeat
+# apart. Two minutes, as archive_import.find_twin allows two ids without text.
+SAME_POST_WINDOW_MS = 2 * 60 * 1000
+
+
+class _OwnPostIds(set):
+    """
+    The numeric ids of the creator's posts. Membership also holds for an
+    activity id made within SAME_POST_WINDOW_MS of a post the studio knows only
+    from the archive, which is the same post under its other name.
+    """
+
+    def __init__(self, ids, archive_moments):
+        super().__init__(ids)
+        self.archive_moments = sorted(archive_moments)
+
+    def __contains__(self, post_id) -> bool:
+        if set.__contains__(self, post_id):
+            return True
+        if not self.archive_moments or not str(post_id or "").isdigit():
+            return False
+        moment = int(post_id) >> 22
+        i = bisect.bisect_left(self.archive_moments, moment - SAME_POST_WINDOW_MS)
+        return i < len(self.archive_moments) and self.archive_moments[i] <= moment + SAME_POST_WINDOW_MS
+
+
 def _own_activity_ids(conn) -> set:
-    ids = {_activity_id(r["activity_urn"]) for r in conn.execute("SELECT activity_urn FROM own_posts")}
+    rows = [r["activity_urn"] for r in conn.execute("SELECT activity_urn FROM own_posts")]
+    ids = {_activity_id(urn) for urn in rows}
     ids |= {_activity_id(r["activity_urn"]) for r in conn.execute(
         "SELECT activity_urn FROM posts WHERE activity_urn IS NOT NULL")}
     ids.discard("")
-    return ids
+    # Rows still under an archive id: the bridge has not read these posts, so
+    # nothing has given them their activity id yet.
+    archive_moments = [int(_activity_id(urn)) >> 22 for urn in rows
+                       if _activity_id(urn) and not (urn or "").startswith("urn:li:activity:")]
+    return _OwnPostIds(ids, archive_moments)
+
+
+# How a posts import ended, as the extension reports it. Only the first is the
+# end of the list; the others read part of it.
+IMPORT_OUTCOMES = ("end_of_list", "stalled", "round_limit", "stopped", "left_page")
+
+
+def _import_outcome(outcome: Any, items_seen: Optional[int]) -> str:
+    """
+    The outcome to record for a finished import.
+
+    An older extension said "completed" whenever the list stopped growing for
+    twenty seconds, which a slow "Show more", a button in another language or
+    the round cap all produce, and said it even after reading nothing. That
+    cannot be told apart from the end, so it is recorded as "partial". A list
+    that ended with nothing read is "nothing_read", not a history.
+    """
+    said = (_text(outcome, 40) or "").lower()
+    if said == "end_of_list":
+        return "end_of_list" if items_seen else "nothing_read"
+    return said if said in IMPORT_OUTCOMES else "partial"
 
 
 def post_history_complete(conn) -> bool:
-    """True once an import of the creator's posts has run to the end of the list."""
+    """
+    True once an import of the creator's posts has read something and run to
+    the end of the list. Only then can a lead be called "not on your posts",
+    and offered for deletion on that strength.
+    """
     return conn.execute(
-        "SELECT 1 FROM self_import_requests WHERE kind = 'posts' AND outcome = 'completed' LIMIT 1"
+        "SELECT 1 FROM self_import_requests WHERE kind = 'posts' AND outcome = 'end_of_list' "
+        "AND COALESCE(items_seen, 0) > 0 LIMIT 1"
     ).fetchone() is not None
 
 
@@ -1146,16 +1343,34 @@ def remove_leads_not_on_your_posts(lead_ids: Any) -> Dict[str, Any]:
 # History imports: the creator asks, the extension scrolls
 # ---------------------------------------------------------------------------
 
-_active_sync_chain: Optional[Dict[str, Any]] = None
+# Import all three, one after another: the chain Sync All starts. It is kept in
+# the profile's own database, not in server memory, where a studio restart
+# halfway through the posts dropped the comments and reactions without a word,
+# and where one chain was shared by every creator profile.
+SYNC_CHAIN_KEY = "history_sync_chain"
+
+
+def _load_chain(conn) -> Optional[Dict[str, Any]]:
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (SYNC_CHAIN_KEY,)).fetchone()
+    try:
+        chain = json.loads(row["value"]) if row and row["value"] else None
+    except ValueError:
+        return None
+    return chain if isinstance(chain, dict) and chain.get("sequence") else None
+
+
+def _save_chain(conn, chain: Optional[Dict[str, Any]]) -> None:
+    if chain is None:
+        conn.execute("DELETE FROM settings WHERE key = ?", (SYNC_CHAIN_KEY,))
+    else:
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (SYNC_CHAIN_KEY, json.dumps(chain)))
 
 
 def start_sync_chain(sequence: Optional[List[str]] = None) -> Dict[str, Any]:
     """
-    Initiates an autonomous sequential sync session across activity streams
-    (posts, comments, reactions). Pushes multi-stream orchestration entirely
-    to the backend so the user has a single-click action.
+    Sync All: imports posts, then comments, then reactions, each one asked
+    for when the one before it finishes.
     """
-    global _active_sync_chain
     vanity = confirmed_vanity()
     if not vanity:
         raise RefusedCapture("confirm your profile before importing history")
@@ -1164,15 +1379,15 @@ def start_sync_chain(sequence: Optional[List[str]] = None) -> Dict[str, Any]:
     if not seq:
         seq = ["posts", "comments", "reactions"]
 
-    _active_sync_chain = {
-        "sequence": seq,
-        "current_index": 0,
-        "active": True,
-        "started_at": _now(),
-        "vanity": vanity,
-    }
     first_kind = seq[0]
     res = request_import(first_kind, is_chain=True)
+    conn = get_db()
+    try:
+        with conn:
+            _save_chain(conn, {"sequence": seq, "current_index": 0, "active": True, "started_at": _now(),
+                               "vanity": vanity, "request_id": res["id"]})
+    finally:
+        conn.close()
     return {
         "status": "started",
         "current_kind": first_kind,
@@ -1182,13 +1397,46 @@ def start_sync_chain(sequence: Optional[List[str]] = None) -> Dict[str, Any]:
     }
 
 
-def cancel_sync_chain() -> None:
-    global _active_sync_chain
-    _active_sync_chain = None
+def cancel_sync_chain(withdraw: bool = False) -> None:
+    """
+    Ends the chain. With withdraw, also closes the request it was waiting on,
+    as "not_opened", for when Sync All could not open a page that would carry
+    it out, so Setup does not show it waiting.
+    """
+    conn = get_db()
+    try:
+        with conn:
+            chain = _load_chain(conn)
+            if withdraw and chain:
+                conn.execute(
+                    "UPDATE self_import_requests SET finished_at = ?, outcome = 'not_opened' "
+                    "WHERE id = ? AND finished_at IS NULL", (_now(), chain.get("request_id")),
+                )
+            _save_chain(conn, None)
+    finally:
+        conn.close()
 
 
 def get_active_sync_chain() -> Optional[Dict[str, Any]]:
-    return _active_sync_chain
+    """
+    The chain under way, or None. A chain whose current request is closed
+    (expired, replaced, or finished without a next step) is over.
+    """
+    conn = get_db()
+    try:
+        with conn:
+            chain = _load_chain(conn)
+            if chain is None:
+                return None
+            row = conn.execute("SELECT finished_at FROM self_import_requests WHERE id = ?",
+                               (chain.get("request_id"),)).fetchone()
+            if not row or row["finished_at"]:
+                _save_chain(conn, None)
+                return None
+    finally:
+        conn.close()
+    chain["current_kind"] = chain["sequence"][min(chain.get("current_index", 0), len(chain["sequence"]) - 1)]
+    return chain
 
 
 def request_import(kind: Any, is_chain: bool = False) -> Dict[str, Any]:
@@ -1198,9 +1446,8 @@ def request_import(kind: Any, is_chain: bool = False) -> Dict[str, Any]:
     The extension scrolls an activity page only when a request like this is
     pending, so scrolling always traces back to a click in the studio.
     """
-    global _active_sync_chain
-    if not is_chain and _active_sync_chain:
-        _active_sync_chain = None
+    if not is_chain:
+        cancel_sync_chain()
 
     if kind not in IMPORT_KINDS:
         raise RefusedCapture(f"unknown import: {kind}")
@@ -1220,11 +1467,26 @@ def request_import(kind: Any, is_chain: bool = False) -> Dict[str, Any]:
     finally:
         conn.close()
     return {"status": "requested", "id": request_id, "kind": kind,
-            "open_url": f"https://www.linkedin.com/in/{confirmed_vanity()}/recent-activity/{_activity_tab(kind)}/"}
+            "open_url": f"{profile_url_for(confirmed_vanity())}recent-activity/{_activity_tab(kind)}/"}
 
 
 def _activity_tab(kind: str) -> str:
     return {"posts": "all", "comments": "comments", "reactions": "reactions"}[kind]
+
+
+def _expire_requests(conn) -> None:
+    """
+    Closes requests the extension will no longer take, as "expired".
+
+    Left open, Setup went on saying WAITING FOR THE PAGE TO OPEN for a request
+    nothing would ever pick up. Only requests that never started: an import
+    that is scrolling, paused in a hidden tab, still finishes.
+    """
+    cutoff = (datetime.now(timezone.utc) - IMPORT_REQUEST_TTL).isoformat()
+    conn.execute(
+        "UPDATE self_import_requests SET finished_at = ?, outcome = 'expired' "
+        "WHERE finished_at IS NULL AND started_at IS NULL AND requested_at < ?", (_now(), cutoff),
+    )
 
 
 def pending_import(kind: Any) -> Optional[Dict[str, Any]]:
@@ -1234,6 +1496,8 @@ def pending_import(kind: Any) -> Optional[Dict[str, Any]]:
     cutoff = (datetime.now(timezone.utc) - IMPORT_REQUEST_TTL).isoformat()
     conn = get_db()
     try:
+        with conn:
+            _expire_requests(conn)
         row = conn.execute(
             "SELECT id, kind, requested_at, started_at FROM self_import_requests "
             "WHERE kind = ? AND finished_at IS NULL AND requested_at >= ? ORDER BY id DESC LIMIT 1",
@@ -1245,7 +1509,6 @@ def pending_import(kind: Any) -> Optional[Dict[str, Any]]:
 
 
 def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: Any = None) -> Dict[str, Any]:
-    global _active_sync_chain
     try:
         request_id = int(request_id)
     except (TypeError, ValueError):
@@ -1253,13 +1516,10 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
     if event not in ("started", "finished"):
         raise RefusedCapture("event must be started or finished")
     conn = get_db()
-    req_kind = None
+    chain = None
     try:
         with conn:
-            cur = conn.execute("SELECT kind FROM self_import_requests WHERE id = ?", (request_id,))
-            row = cur.fetchone()
-            if row:
-                req_kind = row[0]
+            chain = _load_chain(conn)
             if event == "started":
                 conn.execute(
                     "UPDATE self_import_requests SET started_at = COALESCE(started_at, ?) "
@@ -1269,37 +1529,37 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
                 conn.execute(
                     "UPDATE self_import_requests SET finished_at = ?, items_seen = ?, outcome = ? "
                     "WHERE id = ? AND finished_at IS NULL",
-                    (_now(), _count(items_seen), _text(outcome, 40) or "completed", request_id),
+                    (_now(), _count(items_seen), _import_outcome(outcome, _count(items_seen)), request_id),
                 )
     finally:
         conn.close()
 
     res: Dict[str, Any] = {"status": "success"}
-    if event == "finished":
+    # The chain moves on only when the request it is waiting for finishes.
+    if event == "finished" and chain and chain.get("request_id") == request_id:
         norm_outcome = (outcome or "").strip().lower()
+        seq = chain["sequence"]
+        next_idx = chain.get("current_index", 0) + 1
         if norm_outcome in ("stopped", "left_page"):
-            _active_sync_chain = None
-        elif _active_sync_chain and _active_sync_chain.get("active"):
-            seq = _active_sync_chain.get("sequence", ["posts", "comments", "reactions"])
+            cancel_sync_chain()
+        elif next_idx < len(seq):
+            next_kind = seq[next_idx]
+            next_req = request_import(next_kind, is_chain=True)
+            chain.update(current_index=next_idx, request_id=next_req["id"])
+            conn = get_db()
             try:
-                curr_idx = seq.index(req_kind)
-            except (ValueError, TypeError):
-                curr_idx = _active_sync_chain.get("current_index", 0)
-
-            next_idx = curr_idx + 1
-            if next_idx < len(seq):
-                next_kind = seq[next_idx]
-                _active_sync_chain["current_index"] = next_idx
-                next_req = request_import(next_kind, is_chain=True)
-                res["next_kind"] = next_kind
-                res["next_url"] = next_req["open_url"]
-                res["next_id"] = next_req["id"]
-                res["is_chain"] = True
-            else:
-                _active_sync_chain["active"] = False
-                _active_sync_chain = None
-                res["all_completed"] = True
-                res["is_chain"] = True
+                with conn:
+                    _save_chain(conn, chain)
+            finally:
+                conn.close()
+            res["next_kind"] = next_kind
+            res["next_url"] = next_req["open_url"]
+            res["next_id"] = next_req["id"]
+            res["is_chain"] = True
+        else:
+            cancel_sync_chain()
+            res["all_completed"] = True
+            res["is_chain"] = True
 
     return res
 
@@ -1320,6 +1580,12 @@ def onboarding_state() -> Dict[str, Any]:
         post_count = conn.execute("SELECT COUNT(*) FROM own_posts").fetchone()[0]
         outbound = {r["kind"]: r["n"] for r in conn.execute(
             "SELECT kind, COUNT(*) AS n FROM outbound_engagements GROUP BY kind")}
+        # What deleting everything would also remove, so Setup can say so first.
+        readings = conn.execute("SELECT COUNT(*) FROM post_metric_observations").fetchone()[0]
+        connections = conn.execute("SELECT COUNT(*) FROM connections").fetchone()[0]
+        history_read = post_history_complete(conn)
+        with conn:
+            _expire_requests(conn)
         imports = [dict(r) for r in conn.execute(
             "SELECT id, kind, requested_at, started_at, finished_at, items_seen, outcome "
             "FROM self_import_requests ORDER BY id DESC LIMIT 6")]
@@ -1368,9 +1634,11 @@ def onboarding_state() -> Dict[str, Any]:
     except ImportError:
         from archive_import import archive_state
     archive = archive_state(look=False)
+    chain = get_active_sync_chain()
     return {
         "archive": archive,
-        "health": capture_health(),
+        "health": [h for h in capture_health()
+                   if h["extractor"] not in OPT_IN_EXTRACTORS or h["state"] != "never_run"],
         "session": session,
         "status": "success",
         "bridge": bridge,
@@ -1380,11 +1648,18 @@ def onboarding_state() -> Dict[str, Any]:
             "posts": post_count,
             "comments": outbound.get("comment", 0),
             "reactions": outbound.get("reaction", 0),
+            "readings": readings,
+            "connections": connections,
         },
         "imports": imports,
+        # Import all three, while one is under way: which, and what comes next.
+        "sync_chain": {"sequence": chain["sequence"], "current_kind": chain["current_kind"]} if chain else None,
         "steps": {
             "bridge": bool(bridge["last_seen_at"]),
             "identity": confirmed,
+            # Step 5 is done when Today can use it: your posts read to the end
+            # of the list. Rows from the archive alone are not that.
+            "history": confirmed and history_read,
             "posts": post_count > 0,
             "activity": sum(outbound.values()) > 0,
             # Done when the posts are in, not at LinkedIn's first, basic part.
