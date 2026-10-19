@@ -9,6 +9,7 @@ Zero cloud egress.
 import csv
 import io
 import json
+import math
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Response
@@ -32,6 +33,33 @@ except ImportError:
         telemetry_buffer = None
 
 router = APIRouter()
+
+# A period is compared with the one before it only when each has at least this
+# share of its days captured, and then by the level per captured day, not by
+# the sum. The sums were compared whatever was captured: two weeks after
+# install the previous 30 days held 4 captured days, and a flat 1,000
+# impressions a day was reported as +650%.
+MIN_CAPTURED_SHARE_TO_COMPARE = 0.8
+
+
+def rounding_half_width(value, precision) -> float:
+    """
+    How far a stored figure can be from the true one, given how LinkedIn wrote it.
+
+    A row marked 'rounded' holds at least one figure LinkedIn abbreviated,
+    such as 1.2K stored as 1200, without saying which. An abbreviation only
+    ever produces a multiple of 100 from 1,000 up, so any other value in that
+    row was written out in full and is exact. For the rest, the last non-zero
+    digit is the one LinkedIn rounded to: 1.2K is 1,150 to 1,249, 50 either
+    way, and a bare 2K is taken as 500 either way, the wider of what it can
+    mean.
+    """
+    if precision != "rounded" or value is None or value < 1000 or value % 100:
+        return 0.0
+    step = 100
+    while value % (step * 10) == 0 and step * 10 <= value:
+        step *= 10
+    return step / 2.0
 
 
 def get_range_days(range_str: str) -> int:
@@ -75,16 +103,21 @@ def get_kpis(range: str = "30d"):
         daily_only = "(period_label IN ('1d', 'day', 'daily') OR (period_label IS NULL AND source = 'seed'))"
 
         def window_totals(start, end):
+            """Days counted, impressions and engagements summed, and how far rounding can move each sum."""
             cursor.execute(f"""
-            SELECT COUNT(*), SUM(impressions), SUM(reactions), SUM(comments), SUM(shares)
+            SELECT impressions, reactions, comments, shares, precision
             FROM analytics_daily
             WHERE date >= ? AND date <= ? AND {daily_only}
             """, (start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d")))
-            return cursor.fetchone()
+            rows = cursor.fetchall()
+            imp = sum(r["impressions"] or 0 for r in rows)
+            eng = sum((r["reactions"] or 0) + (r["comments"] or 0) + (r["shares"] or 0) for r in rows)
+            imp_slack = sum(rounding_half_width(r["impressions"], r["precision"]) for r in rows)
+            eng_slack = sum(rounding_half_width(r[k], r["precision"]) for r in rows
+                            for k in ("reactions", "comments", "shares"))
+            return len(rows), imp, eng, imp_slack, eng_slack
 
-        cur_days, cur_imp, cur_rxn, cur_comm, cur_shr = window_totals(start_cur, end_date)
-        cur_imp = cur_imp or 0
-        cur_eng = (cur_rxn or 0) + (cur_comm or 0) + (cur_shr or 0)
+        cur_days, cur_imp, cur_eng, cur_imp_slack, cur_eng_slack = window_totals(start_cur, end_date)
         cur_eng_rate = round((cur_eng / cur_imp * 100), 2) if cur_imp > 0 else None
 
         cursor.execute(f"""
@@ -93,34 +126,88 @@ def get_kpis(range: str = "30d"):
         """, (start_cur.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
         excluded_days = cursor.fetchone()[0]
 
-        prev_days, prev_imp, prev_rxn, prev_comm, prev_shr = window_totals(start_prev, end_prev)
-        prev_imp = prev_imp or 0
-        prev_eng = (prev_rxn or 0) + (prev_comm or 0) + (prev_shr or 0)
+        prev_days, prev_imp, prev_eng, prev_imp_slack, prev_eng_slack = window_totals(start_prev, end_prev)
         prev_eng_rate = round((prev_eng / prev_imp * 100), 2) if prev_imp > 0 else None
 
-        def calc_delta(cur, prev):
-            if not prev_days or prev == 0:
+        days_needed = math.ceil(days * MIN_CAPTURED_SHARE_TO_COMPARE)
+        comparable = (cur_days or 0) >= days_needed and (prev_days or 0) >= days_needed
+
+        # Every figure built from one LinkedIn rounded is named in
+        # "approximate", and a change smaller than the rounding could hide is
+        # not reported at all: it is named in "within_rounding" instead. The
+        # rounded column was stored and read by nothing, so a 2.4K reading
+        # became "Followers +396" against an exact 2,004.
+        approximate: List[str] = []
+        within_rounding: List[str] = []
+
+        def judged(key, value, slack, change):
+            """value when the change clears the rounding, else None; records which."""
+            if value is None or not slack:
+                return value
+            if abs(change) <= slack:
+                within_rounding.append(key)
                 return None
-            return round(((cur - prev) / prev) * 100.0, 1)
+            approximate.append(key)
+            return value
 
-        imp_delta = calc_delta(cur_imp, prev_imp)
-        eng_delta = calc_delta(cur_eng, prev_eng)
-        eng_rate_delta = (round(cur_eng_rate - prev_eng_rate, 2)
-                          if cur_eng_rate is not None and prev_eng_rate is not None else None)
+        def calc_delta(key, cur, cur_slack, prev, prev_slack):
+            if not comparable or prev == 0:
+                return None
+            cur_level, prev_level = cur / cur_days, prev / prev_days
+            pct = round(((cur_level - prev_level) / prev_level) * 100.0, 1)
+            return judged(key, pct, cur_slack / cur_days + prev_slack / prev_days, cur_level - prev_level)
 
-        cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (end_date.strftime("%Y-%m-%d"),))
+        imp_delta = calc_delta("impressions_delta_pct", cur_imp, cur_imp_slack, prev_imp, prev_imp_slack)
+        eng_delta = calc_delta("engagements_delta_pct", cur_eng, cur_eng_slack, prev_eng, prev_eng_slack)
+
+        def rate_bounds(eng, eng_slack, imp, imp_slack):
+            return ((eng - eng_slack) / (imp + imp_slack) * 100,
+                    (eng + eng_slack) / max(imp - imp_slack, 1) * 100)
+
+        eng_rate_delta = None
+        if comparable and cur_eng_rate is not None and prev_eng_rate is not None:
+            eng_rate_delta = round(cur_eng_rate - prev_eng_rate, 2)
+            if cur_imp_slack or cur_eng_slack or prev_imp_slack or prev_eng_slack:
+                cur_lo, cur_hi = rate_bounds(cur_eng, cur_eng_slack, cur_imp, cur_imp_slack)
+                prev_lo, prev_hi = rate_bounds(prev_eng, prev_eng_slack, prev_imp, prev_imp_slack)
+                overlap = cur_lo <= prev_hi and prev_lo <= cur_hi
+                (within_rounding if overlap else approximate).append("engagement_rate_delta")
+                if overlap:
+                    eng_rate_delta = None
+
+        cursor.execute("SELECT followers, profile_views, precision FROM analytics_daily WHERE date = ?", (end_date.strftime("%Y-%m-%d"),))
         latest_stat = cursor.fetchone()
         cur_followers = latest_stat["followers"] if (latest_stat and latest_stat["followers"] is not None) else None
         cur_pviews = latest_stat["profile_views"] if (latest_stat and latest_stat["profile_views"] is not None) else None
 
-        cursor.execute("SELECT followers, profile_views FROM analytics_daily WHERE date = ?", (start_cur.strftime("%Y-%m-%d"),))
+        cursor.execute("SELECT followers, profile_views, precision FROM analytics_daily WHERE date = ?", (start_cur.strftime("%Y-%m-%d"),))
         start_stat = cursor.fetchone()
         start_followers = start_stat["followers"] if (start_stat and start_stat["followers"] is not None) else None
         start_pviews = start_stat["profile_views"] if (start_stat and start_stat["profile_views"] is not None) else None
 
+        def slack_of(row, key):
+            return rounding_half_width(row[key], row["precision"]) if row else 0.0
+
         follower_growth = (cur_followers - start_followers) if (cur_followers is not None and start_followers is not None) else None
+        follower_growth = judged("follower_growth", follower_growth,
+                                 slack_of(latest_stat, "followers") + slack_of(start_stat, "followers"),
+                                 follower_growth or 0)
         pviews_delta = (round(((cur_pviews - start_pviews) / start_pviews) * 100.0, 1)
                         if (cur_pviews is not None and start_pviews) else None)
+        pviews_delta = judged("profile_views_delta_pct", pviews_delta,
+                              slack_of(latest_stat, "profile_views") + slack_of(start_stat, "profile_views"),
+                              (cur_pviews or 0) - (start_pviews or 0))
+
+        if cur_imp_slack:
+            approximate.append("impressions")
+        if cur_eng_slack:
+            approximate.append("total_engagements")
+        if cur_eng_rate is not None and (cur_imp_slack or cur_eng_slack):
+            approximate.append("avg_engagement_rate")
+        if cur_followers is not None and slack_of(latest_stat, "followers"):
+            approximate.append("total_followers")
+        if cur_pviews is not None and slack_of(latest_stat, "profile_views"):
+            approximate.append("profile_views")
 
         cursor.execute("SELECT COUNT(*) FROM posts WHERE status = 'scheduled'")
         scheduled_count = cursor.fetchone()[0]
@@ -133,6 +220,8 @@ def get_kpis(range: str = "30d"):
         return {
             "range": f"{days}d",
             "days_counted": cur_days,
+            "previous_days_counted": prev_days,
+            "days_needed_to_compare": days_needed,
             "days_excluded_unknown_window": excluded_days,
             "impressions": cur_imp,
             "impressions_delta_pct": imp_delta,
@@ -144,6 +233,8 @@ def get_kpis(range: str = "30d"):
             "follower_growth": follower_growth,
             "profile_views": cur_pviews,
             "profile_views_delta_pct": pviews_delta,
+            "approximate": approximate,
+            "within_rounding": within_rounding,
             "scheduled_posts_count": scheduled_count
         }
     finally:
