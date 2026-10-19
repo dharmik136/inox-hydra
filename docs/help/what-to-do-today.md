@@ -23,9 +23,9 @@ A single suggestion, with its reason. The studio picks it by a fixed order, beca
 
 ## Reply to
 
-Up to five people who engaged with your own posts in the last two weeks and have not heard from you. Someone whose lead status is **Outreach Sent**, **Connected** or **Meeting Booked** is left off.
+Up to five people who commented on your own posts in the last two weeks and have not heard from you. People who only reacted are left off, because there is nothing to reply to, and so is someone whose lead status is **Outreach Sent**, **Connected** or **Meeting Booked**.
 
-They are ordered by what they did: people who engaged with more than one of your posts first, then a comment ahead of a reaction, then the most recent. The ICP score plays no part. Click a person to open their dossier in **Leads**.
+They are ordered by what they did: people who engaged with more than one of your posts first, then the most recent comment. The time beside each person is when the studio first saw that comment, which does not change when you open the post again. The ICP score plays no part. Click a person to open their dossier in **Leads**.
 
 ## Your latest post
 
