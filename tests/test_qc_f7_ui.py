@@ -638,3 +638,21 @@ def test_typing_a_search_on_the_docs_home_keeps_every_letter(studio, width, heig
     assert page.evaluate("() => document.activeElement && document.activeElement.getAttribute('aria-label')") == (
         "Search the playbook"
     )
+
+
+@pytest.mark.parametrize("width,height", [(1024, 768), (375, 812)])
+def test_clearing_a_docs_search_and_typing_again_keeps_every_letter(studio, width, height):
+    """At phone width, clearing the search hid the topics strip with the focused box in it."""
+    page = studio(width, height).open("Docs")
+    page.get_by_label("Search the documentation").click()
+    page.keyboard.type("backup", delay=40)
+    page.wait_for_timeout(300)
+    for _ in range(6):
+        page.keyboard.press("Backspace")
+    page.wait_for_timeout(300)
+    page.keyboard.type("restore", delay=40)
+    page.wait_for_timeout(400)
+    focused = page.evaluate("() => document.activeElement && document.activeElement.tagName")
+    assert focused == "INPUT", f"focus fell to {focused} after the search was cleared"
+    typed = page.evaluate("() => document.activeElement.value")
+    assert typed == "restore", f"after clearing, only {typed!r} was typed"
