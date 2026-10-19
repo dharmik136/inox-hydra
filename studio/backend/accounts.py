@@ -36,10 +36,12 @@ from typing import Any, Dict, List, Optional
 try:
     from . import paths
     from .database import get_db, init_db, seed_initial_data
+    from .migrations import SchemaTooNewError, SchemaTooOldError
     from . import licensing
 except ImportError:
     import paths
     from database import get_db, init_db, seed_initial_data
+    from migrations import SchemaTooNewError, SchemaTooOldError
     import licensing
 
 
@@ -347,7 +349,13 @@ def _switch_account(account_id: str, conn=None) -> Dict[str, Any]:
     if account_id in paths.locked_profile_ids():
         return {"status": "error", "code": "licence", "message": _locked_message(entry)}
 
-    _open_profile(account_id)
+    try:
+        _open_profile(account_id)
+    except (SchemaTooNewError, SchemaTooOldError) as refused:
+        # A database a newer (or far older) build wrote. This answered a bare
+        # 500, and the reason, which names the backups folder, reached only
+        # the server console.
+        return {"status": "error", "code": "schema", "message": f"{entry['name']} cannot be opened. {refused}"}
     registry = _registry()
     registry["active"] = account_id
     paths.write_profiles(registry)

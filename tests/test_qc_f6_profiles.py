@@ -95,3 +95,21 @@ def test_a_deleted_profile_has_no_database_path(agency):
         assert accounts.delete_account("client-c", confirm="Client C")["status"] == "success"
         with pytest.raises(paths.ProfileGone):
             paths.get_db_path()
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM-16: a profile a newer build wrote is refused with the reason
+# ---------------------------------------------------------------------------
+
+def test_switching_to_a_profile_from_a_newer_build_says_why(agency, tmp_path):
+    agency.post("/api/v1/accounts", json={"name": "Client B", "id": "client-b"})
+    db = os.path.join(str(tmp_path), "profiles", "client-b", "data", paths.DB_FILENAME)
+    conn = sqlite3.connect(db)
+    conn.execute(f"PRAGMA user_version = {migrations.SCHEMA_VERSION + 1}")
+    conn.commit()
+    conn.close()
+
+    res = agency.post("/api/v1/accounts/switch", json={"account_id": "client-b"})
+    assert res.status_code == 409, res.text
+    assert "newer" in res.json()["detail"]
+    assert agency.get("/api/v1/accounts").json()["active_account_id"] == "default"
