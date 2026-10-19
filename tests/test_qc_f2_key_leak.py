@@ -179,3 +179,23 @@ def test_the_redactor_removes_every_credential_shape():
         cleaned = egress.redact(sample)
         assert PLANTED not in cleaned, cleaned
         assert "abcdefghijklmnop" not in cleaned, cleaned
+
+
+def test_a_configured_key_of_any_shape_is_removed_by_value():
+    """
+    The patterns know the providers' formats. A custom endpoint's key can have
+    any shape, so a key the gateway was given is also removed by value, raw
+    and URL-encoded. [WRITE-04, review send-back]
+    """
+    from urllib.parse import quote, quote_plus
+
+    import egress
+    from agno_agentos.model_gateway import AIProviderConfig
+
+    odd = "notarealkey.qcf2+Shape/9xQ=v7"
+    AIProviderConfig(provider="custom_openai", api_key=odd)
+    text = f"Received API Key = {odd}; encoded {quote(odd, safe='')}; form {quote_plus(odd)}"
+    cleaned = egress.redact(text)
+    for form in (odd, quote(odd, safe=""), quote_plus(odd)):
+        assert form not in cleaned, cleaned
+    assert "Shape" not in cleaned, cleaned

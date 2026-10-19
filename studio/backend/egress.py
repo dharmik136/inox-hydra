@@ -71,7 +71,7 @@ import os
 import re
 import threading
 from typing import Any, Dict, Optional
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, quote_plus, urlsplit, urlunsplit
 
 # Categories, their env override, and the default when no override is set.
 #
@@ -162,9 +162,32 @@ _SECRET_PATTERNS = (
 )
 
 
+# Every key this process has been handed, so redact() can replace it by value.
+# The patterns above know the providers' key formats; a custom endpoint's or
+# Ollama proxy's key can have any shape, and an endpoint that quotes it back in
+# its error put it in a response, the Prompt tab and the log.
+_known_secrets: set = set()
+_MAX_KNOWN_SECRETS = 64
+
+
+def remember_secret(value: Any) -> None:
+    """Registers a key so redact() removes it wherever it appears."""
+    secret = str(value or "").strip()
+    if len(secret) < 8:
+        return
+    with _lock:
+        if secret not in _known_secrets and len(_known_secrets) < _MAX_KNOWN_SECRETS:
+            _known_secrets.add(secret)
+
+
 def redact(text: Any) -> str:
     """Text with every API key, bearer token and key= value replaced."""
     cleaned = str(text if text is not None else "")
+    with _lock:
+        known = sorted(_known_secrets, key=len, reverse=True)
+    for secret in known:
+        for form in {secret, quote(secret, safe=""), quote_plus(secret)}:
+            cleaned = cleaned.replace(form, "[redacted]")
     for pattern, replacement in _SECRET_PATTERNS:
         cleaned = pattern.sub(replacement, cleaned)
     return cleaned

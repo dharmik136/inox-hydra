@@ -65,6 +65,32 @@ class _FakeProvider:
                 length = int(self.headers.get("Content-Length") or 0)
                 body = json.loads(self.rfile.read(length) or b"{}")
                 fake.requests.append(body)
+                if fake.mode == "echo_key":
+                    # A gateway that quotes the key back, raw and URL-encoded.
+                    from urllib.parse import quote
+
+                    key = self.headers.get("Authorization", "").replace("Bearer ", "")
+                    message = f"Invalid proxy server token passed. Received API Key = {key} ({quote(key, safe='')})"
+                    out = json.dumps({"error": {"message": message}}).encode()
+                    self.send_response(401)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(out)))
+                    self.end_headers()
+                    self.wfile.write(out)
+                    return
+                if fake.mode == "tricklehead":
+                    # The status line, then a header that never ends, one byte
+                    # at a time: urlopen is still parsing headers throughout.
+                    try:
+                        self.wfile.write(b"HTTP/1.1 200 OK\r\nX-Slow: ")
+                        self.wfile.flush()
+                        for _ in range(400):
+                            time.sleep(0.3)
+                            self.wfile.write(b"x")
+                            self.wfile.flush()
+                    except Exception:
+                        pass
+                    return
                 if fake.mode == "unauthorized":
                     out = json.dumps({"error": {"message": "Incorrect API key provided."}}).encode()
                     self.send_response(401)
@@ -236,3 +262,107 @@ def test_repeated_presses_against_a_stalled_provider_leave_the_studio_responsive
     # were told the provider is still busy, at once.
     assert set(results) <= {503, 504}, results
     assert results.count(503) >= 30, results
+
+
+# A key in no shape the redactor knows, with characters that change when
+# URL-encoded. [WRITE-04, review send-back]
+ODD_KEY = "notarealkey.qcf2+ZQ8vW3/xY7pL2mN4=bQQ"
+
+
+def test_a_key_quoted_back_by_the_endpoint_is_never_repeated(studio, provider, capfd):
+    from urllib.parse import quote
+
+    from agno_agentos import model_gateway
+
+    base, token = studio
+    model_gateway.save_ai_config(
+        provider="custom_openai", api_key=ODD_KEY, model="fake",
+        base_url=f"http://127.0.0.1:{provider.port}/v1",
+    )
+    provider.mode = "echo_key"
+
+    seen = {
+        "re-hook": _call(base, token, "POST", "/api/format/re-hook", {"text": "Pricing"}),
+        "command": _call(base, token, "POST", "/api/ai/command", {"command": "Rewrite this"}),
+        "status": _call(base, token, "GET", "/api/ai/status"),
+        "configure": _call(base, token, "POST", "/api/ai/configure", {
+            "provider": "custom_openai", "api_key": ODD_KEY + "-typed", "model": "fake",
+            "base_url": f"http://127.0.0.1:{provider.port}/v1",
+        }),
+    }
+    assert seen["re-hook"][0] == 502 and "refused the key" in seen["re-hook"][1]["detail"], seen["re-hook"]
+    assert seen["status"][1]["last_error"], seen["status"]
+    out, err = capfd.readouterr()
+    seen["stdout"] = out + err
+
+    import paths
+    import support
+
+    with open(os.path.join(paths.get_logs_dir(), "engine.log"), "w", encoding="utf-8") as fh:
+        fh.write(seen["stdout"])
+    seen["bundle"] = support.collect_diagnostics()
+
+    for label, blob in seen.items():
+        text = json.dumps(blob, default=str)
+        for secret in (ODD_KEY, ODD_KEY + "-typed"):
+            assert secret not in text and quote(secret, safe="") not in text, f"{label} repeats the key: {text[:300]}"
+        assert "ZQ8vW3" not in text, f"{label} carries part of the key: {text[:300]}"
+
+
+def test_a_provider_that_trickles_its_headers_frees_its_slot_at_the_deadline(studio, provider):
+    """
+    The deadline covers the whole exchange. A status line followed by a header
+    arriving a byte at a time kept urlopen parsing within every read timeout,
+    so each such request held its slot for as long as the trickle lasted, and
+    three of them answered every later request, Verify and save included,
+    with 503. [WRITE-13, review send-back]
+    """
+    base, token = studio
+    provider.mode = "tricklehead"
+    results = []
+
+    def press():
+        results.append(_call(base, token, "POST", "/api/format/re-hook", {"text": "Pricing"}, timeout=DEADLINE + 15))
+
+    presses = [threading.Thread(target=press, daemon=True) for _ in range(3)]
+    for thread in presses:
+        thread.start()
+    time.sleep(0.5)
+
+    # Verify and save does not queue behind stalled completions.
+    healthy = _FakeProvider()
+    try:
+        status, body = _call(base, token, "POST", "/api/ai/configure", {
+            "provider": "custom_openai", "api_key": FAKE_KEY, "model": "fake",
+            "base_url": f"http://127.0.0.1:{healthy.port}/v1",
+        }, timeout=10)
+        assert status == 200, body
+    finally:
+        healthy.close()
+
+    for thread in presses:
+        thread.join(timeout=DEADLINE + 15)
+    assert [status for status, _ in results] == [504, 504, 504], results
+
+    # The slots are free again: the next request is answered, not refused as busy.
+    from agno_agentos import model_gateway
+
+    model_gateway.save_ai_config(
+        provider="custom_openai", api_key=FAKE_KEY, model="fake",
+        base_url=f"http://127.0.0.1:{provider.port}/v1",
+    )
+    provider.mode = "ok"
+    time.sleep(1.0)
+    status, body = _call(base, token, "POST", "/api/format/re-hook", {"text": "Pricing"}, timeout=10)
+    assert status == 200, body
+
+
+def test_a_silent_provider_is_described_as_silent(studio, provider, monkeypatch):
+    """The read timeout is not the deadline, and the message says which ran out."""
+    base, token = studio
+    for gateway in _gateways():
+        monkeypatch.setattr(gateway, "_READ_TIMEOUT_SECONDS", 0.2, raising=False)
+    provider.mode = "trickle"  # a byte every 0.5 s: silent past a 0.2 s read timeout
+    status, body = _call(base, token, "POST", "/api/format/re-hook", {"text": "Pricing"}, timeout=15)
+    assert status == 504, body
+    assert "stopped answering" in body["detail"], body
