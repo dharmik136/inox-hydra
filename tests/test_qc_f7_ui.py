@@ -532,3 +532,16 @@ def test_a_licence_with_room_offers_add_creator_profile(studio, monkeypatch):
         dialog.get_by_role("button", name="Add Creator Profile").wait_for(state="visible", timeout=3000)
     finally:
         page.evaluate("async () => fetch('/api/v1/licence', {method: 'DELETE', credentials: 'same-origin'})")
+
+
+# ---------------------------------------------------------------------------
+# UX-24: the Command screen opens without an internal codename
+# ---------------------------------------------------------------------------
+
+def test_the_command_banner_names_no_internal_engine(studio):
+    page = studio().open("Command")
+    banner = page.locator("main").get_by_text("STAYS ON THIS MACHINE")
+    banner.wait_for(state="visible")
+    text = page.locator("main").inner_text().upper()
+    assert "ANTIGRAVITY" not in text, "the Command screen opens with an internal codename"
+    assert "BUILT-IN" in text, "the banner no longer says what answers when no provider is connected"

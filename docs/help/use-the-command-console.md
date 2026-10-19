@@ -8,7 +8,7 @@ Under the **Command** heading is a line showing which engine will answer:
 
 | Banner | Meaning |
 | --- | --- |
-| `ANTIGRAVITY LOCAL ENGINE (DETERMINISTIC ZERO-EGRESS)` · **STAYS ON THIS MACHINE** | No provider is configured. Nothing is sent anywhere. |
+| `BUILT-IN TEMPLATES, NO MODEL` · **STAYS ON THIS MACHINE** | No provider is configured. Nothing is sent anywhere. |
 | `<PROVIDER> (<MODEL>)` · **SENT TO THE PROVIDER** | A provider is configured. Your instruction goes to it. |
 
 If there is no banner at all, the studio could not read its AI status. It does not guess, so check the server is running before typing anything you would not want sent.

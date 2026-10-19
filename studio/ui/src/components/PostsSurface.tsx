@@ -58,7 +58,7 @@ export function PostsSurface({
             className="flex items-center gap-1.5 rounded-md border border-edge bg-soft px-3 py-1.5 text-[12px] font-medium text-ink-primary transition-[filter] hover:brightness-110"
           >
             <Activity className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-            Live Ingestion Stream
+            Open Activity
           </button>
         )}
       </div>

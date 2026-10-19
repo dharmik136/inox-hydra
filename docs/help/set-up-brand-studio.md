@@ -74,4 +74,3 @@ Below the rows, a short list says what stays and what leaves: your drafts, posts
 | LOADING BRAND STUDIO stays on screen | The profile has not arrived. Reload the page |
 | THE PROFILE COULD NOT BE READ. | The request failed, usually because the server stopped. See [The studio will not open](the-studio-will-not-open.md) |
 | SAVE FAILED | Hover over it for the server's reason. Your edits are still in the form, so press **Save** again once it is fixed |
-| The inspector's **Brand** tab says EDITED IN BRAND STUDIO, WHICH IS NOT BUILT YET | That note is out of date. Brand Studio is built, and this is where you edit the profile |

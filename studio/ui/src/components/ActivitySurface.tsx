@@ -149,7 +149,7 @@ export function ActivitySurface({
       <div className="grid h-full place-items-center px-8">
         <div className="flex items-center gap-2 text-ink-muted">
           <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-          <span className="studio-meta text-[11px]">LOADING LIVE ACTIVITY STREAM</span>
+          <span className="studio-meta text-[11px]">LOADING ACTIVITY</span>
         </div>
       </div>
     );

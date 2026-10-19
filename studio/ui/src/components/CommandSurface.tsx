@@ -77,7 +77,9 @@ export function CommandSurface() {
 
       {status && (
         <p className="studio-meta mt-3">
-          {status.active_mode.toUpperCase()}
+          {/* The local engine's own name is an internal codename, so it is
+              described rather than named. A provider is named, with its model. */}
+          {local ? "BUILT-IN TEMPLATES, NO MODEL" : status.active_mode.toUpperCase()}
           <span className="mx-2 text-ink-muted">·</span>
           <span className={local ? "text-signal-green-text" : "text-signal-orange-text"}>
             {local ? "STAYS ON THIS MACHINE" : "SENT TO THE PROVIDER"}

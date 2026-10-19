@@ -46,3 +46,21 @@ def test_local_security_names_each_action_that_sends_and_what_it_sends():
     ):
         assert action in rendered, f"Local security does not say that {action} sends anything"
         assert what in rendered, f"Local security does not say what {action} sends"
+
+
+# ---------------------------------------------------------------------------
+# UX-24: no dead ends, no codenames, one name per screen
+# ---------------------------------------------------------------------------
+
+def test_the_brand_inspector_does_not_call_brand_studio_unbuilt():
+    rendered = _rendered("BrandPanel.tsx")
+    assert "NOT BUILT YET" not in rendered.upper(), "the inspector says Brand Studio does not exist"
+    assert "BRAND STUDIO" in rendered.upper(), "the inspector no longer says where these are edited"
+
+
+def test_the_activity_screen_goes_by_one_name():
+    """It was 'Live Activity', 'Live Activity Stream' and 'Live Ingestion Stream'."""
+    for name in ("TodaySurface.tsx", "PostsSurface.tsx", "ActivitySurface.tsx"):
+        rendered = _rendered(name)
+        for other in ("Live Activity Stream", "Live Ingestion Stream", "LIVE ACTIVITY STREAM"):
+            assert other not in rendered, f"{name} calls the Activity screen {other!r}"
