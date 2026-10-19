@@ -187,6 +187,122 @@ def test_a_demo_post_whose_figures_changed_stays(demo_home, monkeypatch):
     assert _count(demo_home, "SELECT COUNT(*) FROM posts WHERE id = ?", (post,)) == 1
 
 
+def test_a_seed_draft_whose_post_was_scheduled_stays(demo_home, monkeypatch):
+    """
+    Rescheduling, and LinkedIn's native schedule, keep status "scheduled" and
+    set only scheduled_for, which the seeder leaves empty. Comparing status
+    and text alone purged a post the creator had put on the calendar.
+    """
+    draft = _seeded_draft_ids(demo_home)[0]
+    conn = demo_home.get_db()
+    try:
+        conn.execute(
+            "UPDATE posts SET scheduled_for = '2026-10-28T09:00:00+00:00' WHERE id LIKE 'post-day%' AND id LIKE ?",
+            (f"%-{draft}",))
+        conn.commit()
+    finally:
+        conn.close()
+    _restart_without_the_flag(monkeypatch, demo_home)
+    assert _count(demo_home, "SELECT COUNT(*) FROM drafts WHERE id = ?", (draft,)) == 1
+    assert _count(demo_home, "SELECT COUNT(*) FROM posts WHERE id LIKE 'post-day%' AND id LIKE ?", (f"%-{draft}",)) == 1
+
+
+def test_a_seed_draft_the_product_has_touched_stays(demo_home, monkeypatch):
+    """Queueing, saving and editing all move updated_at; the seeder writes it equal to created_at."""
+    draft = _seeded_draft_ids(demo_home)[0]
+    conn = demo_home.get_db()
+    try:
+        conn.execute("UPDATE drafts SET updated_at = '2026-10-20 08:00:00' WHERE id = ?", (draft,))
+        conn.commit()
+    finally:
+        conn.close()
+    _restart_without_the_flag(monkeypatch, demo_home)
+    assert _count(demo_home, "SELECT COUNT(*) FROM drafts WHERE id = ?", (draft,)) == 1
+
+
+@pytest.mark.parametrize("change", [
+    "scheduled_for = '2026-12-01T09:00:00Z'",
+    "published_at = '2026-10-02T09:00:00Z'",
+    "activity_urn = 'urn:li:activity:7385000000000000001'",
+    "draft_id = 1",
+])
+def test_a_demo_post_the_product_has_since_touched_stays(demo_home, monkeypatch, change):
+    post = demo_home.SEEDED_DEMO_POST_IDS[0]
+    conn = demo_home.get_db()
+    try:
+        conn.execute(f"UPDATE posts SET {change} WHERE id = ?", (post,))
+        conn.commit()
+    finally:
+        conn.close()
+    _restart_without_the_flag(monkeypatch, demo_home)
+    assert _count(demo_home, "SELECT COUNT(*) FROM posts WHERE id = ?", (post,)) == 1, change
+
+
+# ---------------------------------------------------------------------------
+# Coordinator check: never delete rows a user can see without a backup
+# ---------------------------------------------------------------------------
+
+def _cleanup_backups(database):
+    import paths
+
+    folder = paths.get_backups_dir()
+    return sorted(os.path.join(folder, n) for n in os.listdir(folder) if "pre_demo_cleanup" in n)
+
+
+def test_a_backup_is_taken_before_any_demo_row_is_removed(demo_home, monkeypatch):
+    import json
+    import sqlite3
+
+    real = demo_home.backup_database
+    seen = {}
+
+    def backup_then_check(reason="migration"):
+        seen["leads_before"] = _count(demo_home, "SELECT COUNT(*) FROM leads")
+        seen["path"] = real(reason)
+        return seen["path"]
+
+    monkeypatch.setattr(demo_home, "backup_database", backup_then_check)
+    _restart_without_the_flag(monkeypatch, demo_home)
+
+    assert seen.get("leads_before") == 4, "the backup was not taken while the demo rows were still there"
+    assert "pre_demo_cleanup" in os.path.basename(seen["path"]) and os.path.isfile(seen["path"])
+    copy = sqlite3.connect(seen["path"])
+    try:
+        assert copy.execute("SELECT COUNT(*) FROM drafts").fetchone()[0] == 16, "the backup does not hold what was removed"
+    finally:
+        copy.close()
+    assert _count(demo_home, "SELECT COUNT(*) FROM drafts") == 0
+
+    conn = demo_home.get_db()
+    try:
+        notice = json.loads(conn.execute("SELECT value FROM settings WHERE key = 'demo_cleanup_notice'").fetchone()[0])
+    finally:
+        conn.close()
+    assert notice["backup"] == seen["path"]
+    assert notice["removed"]["drafts"] == 16 and notice["removed"]["leads"] == 4, notice
+
+
+def test_a_failed_backup_leaves_every_row_in_place(demo_home, monkeypatch):
+    def no_backup(reason="migration"):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(demo_home, "backup_database", no_backup)
+    _restart_without_the_flag(monkeypatch, demo_home)
+
+    assert _count(demo_home, "SELECT COUNT(*) FROM drafts") == 16
+    assert _count(demo_home, "SELECT COUNT(*) FROM leads") == 4
+    assert _count(demo_home, "SELECT COUNT(*) FROM analytics_daily WHERE source = 'seed'") == 90
+    assert _count(demo_home, "SELECT COUNT(*) FROM settings WHERE key = 'demo_cleanup_notice'") == 0
+
+
+def test_nothing_to_remove_takes_no_backup(demo_home, monkeypatch):
+    _restart_without_the_flag(monkeypatch, demo_home)
+    first = _cleanup_backups(demo_home)
+    assert len(first) == 1
+    _restart_without_the_flag(monkeypatch, demo_home)
+    assert _cleanup_backups(demo_home) == first, "a start with nothing to remove took another backup"
+
+
 def test_the_purge_is_idempotent(demo_home, monkeypatch):
     queued = _seeded_draft_ids(demo_home)[0]
     conn = demo_home.get_db()

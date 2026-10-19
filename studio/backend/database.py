@@ -19,16 +19,17 @@ import sys
 import sqlite3
 import os
 import json
+import logging
 import threading
 from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
 
 try:
     from .paths import get_db_path, _STUDIO_DIR, DB_FILENAME
-    from .migrations import ensure_schema, check_compatibility
+    from .migrations import ensure_schema, check_compatibility, backup_database
 except ImportError:
     from paths import get_db_path, _STUDIO_DIR, DB_FILENAME
-    from migrations import ensure_schema, check_compatibility
+    from migrations import ensure_schema, check_compatibility, backup_database
 
 # Retained as a module constant for backwards compatibility. Live resolution
 # happens in get_db() so that INOX_HYDRA_HOME can be redirected at runtime.
@@ -1678,7 +1679,41 @@ _DEMO_DRAFT_SEEDERS = (
 )
 
 
-def demo_draft_rows() -> List[Dict[str, str]]:
+# Columns that record when a row was written, not anything the creator did.
+# The id is the row's own key. Everything else is compared.
+_WRITE_TIMES = ("id", "created_at", "updated_at")
+
+
+def _as_seeded(conn: sqlite3.Connection, table: str, row: sqlite3.Row, seeded: Dict[str, Any]) -> bool:
+    """
+    Whether a stored row still holds exactly what the seeder wrote.
+
+    Every column the seeder set must hold its seeded value, and every other
+    column must still be empty or at its schema default, as the seeder left
+    it. That covers what the product can set later without changing the text
+    or the status: a schedule (rescheduling and LinkedIn's native schedule set
+    only scheduled_for), a publish time, an activity URN, a bound draft,
+    figures. Comparing status and text alone purged a post the creator had put
+    on the calendar. Write times are not state and are not compared.
+    """
+    for _cid, name, _type, _notnull, default, _pk in conn.execute(f"PRAGMA table_info({table})").fetchall():
+        if name in _WRITE_TIMES:
+            continue
+        value = row[name]
+        if name in seeded:
+            if value != seeded[name]:
+                return False
+            continue
+        if value is None:
+            continue
+        if default is None or "CURRENT_" in str(default).upper():
+            return False
+        if not conn.execute(f"SELECT ? IS ({default})", (value,)).fetchone()[0]:
+            return False
+    return True
+
+
+def demo_draft_rows() -> List[Dict[str, Any]]:
     """
     The drafts the demo seeder writes: title, text, and the prefix of the post
     row it writes beside each.
@@ -1702,11 +1737,17 @@ def demo_draft_rows() -> List[Dict[str, str]]:
             int(r["id"].rsplit("-", 1)[1]): r["id"].rsplit("-", 1)[0] + "-"
             for r in scratch.execute("SELECT id FROM posts")
         }
-        return [
-            {"title": r["title"], "raw_content": r["raw_content"], "formatted_content": r["formatted_content"],
-             "post_prefix": prefix.get(r["id"], "")}
-            for r in scratch.execute("SELECT id, title, raw_content, formatted_content FROM drafts ORDER BY id")
-        ]
+        posts = {int(r["id"].rsplit("-", 1)[1]): dict(r) for r in scratch.execute("SELECT * FROM posts")}
+        rows = []
+        for r in scratch.execute("SELECT * FROM drafts ORDER BY id"):
+            draft = {k: r[k] for k in r.keys() if k not in _WRITE_TIMES}
+            post = {k: v for k, v in posts.get(r["id"], {}).items() if k not in _WRITE_TIMES}
+            rows.append({
+                "title": r["title"], "raw_content": r["raw_content"], "formatted_content": r["formatted_content"],
+                "post_prefix": prefix.get(r["id"], ""),
+                "draft_row": draft, "post_row": post,
+            })
+        return rows
     finally:
         scratch.close()
 
@@ -1733,15 +1774,19 @@ def purge_seeded_drafts(
         for seeded in demo_draft_rows():
             prefix = seeded["post_prefix"]
             for row in conn.execute(
-                "SELECT id, status, formatted_content FROM drafts WHERE title = ? AND raw_content = ?",
+                "SELECT * FROM drafts WHERE title = ? AND raw_content = ?",
                 (seeded["title"], seeded["raw_content"]),
             ).fetchall():
                 beside = _seeded_post_row(conn, f"{prefix}{row['id']}") if prefix else None
+                # The seeder writes created_at and updated_at in one statement,
+                # so they are equal until something in the product touches the
+                # draft (queueing, saving and editing all move updated_at).
+                touched = "created_at" in row.keys() and row["updated_at"] != row["created_at"]
                 if (
-                    row["status"] == "DRAFT"
-                    and row["formatted_content"] == seeded["formatted_content"]
+                    not touched
+                    and _as_seeded(conn, "drafts", row, seeded["draft_row"])
                     and not _draft_has_history(conn, row["id"])
-                    and (beside is None or _untouched_seed_post(beside, seeded["raw_content"]))
+                    and (beside is None or _as_seeded(conn, "posts", beside, seeded["post_row"]))
                 ):
                     drafts.append(row["id"])
                     if beside is not None:
@@ -1752,7 +1797,7 @@ def purge_seeded_drafts(
                     suffix = r["id"][len(prefix):]
                     gone = suffix.isdigit() and conn.execute(
                         "SELECT 1 FROM drafts WHERE id = ?", (int(suffix),)).fetchone() is None
-                    if gone and _untouched_seed_post(r, seeded["raw_content"]):
+                    if gone and _as_seeded(conn, "posts", r, seeded["post_row"]):
                         posts.append(r["id"])
         posts = sorted(set(posts))
 
@@ -1775,20 +1820,6 @@ def purge_seeded_drafts(
 
 def _seeded_post_row(conn: sqlite3.Connection, post_id: str) -> Optional[sqlite3.Row]:
     return conn.execute("SELECT * FROM posts WHERE id = ?", (post_id,)).fetchone()
-
-
-def _untouched_seed_post(row: sqlite3.Row, content: str) -> bool:
-    """The post row a seeded draft wrote beside itself, exactly as written: scheduled, never published, read or bound."""
-    columns = row.keys()
-    figures = [row[c] for c in ("impressions", "reactions", "comments", "shares") if c in columns]
-    return (
-        row["content"] == content
-        and row["status"] == "scheduled"
-        and not row["published_at"]
-        and all(not value for value in figures)
-        and not (row["activity_urn"] if "activity_urn" in columns else None)
-        and (row["draft_id"] if "draft_id" in columns else None) is None
-    )
 
 
 def _draft_has_history(conn: sqlite3.Connection, draft_id: int) -> bool:
@@ -1967,26 +1998,20 @@ def purge_seeded_posts(
     """
     Remove the demo posts, which carry invented impression and reaction counts.
 
-    Matched by the seeder's own id, and only while the row still holds exactly
-    what was seeded: the same text and figures, and never bound to a draft. A
-    seeded post the creator rewrote, or that has since been read, is theirs.
+    Matched by the seeder's own id, and only while every column still holds
+    what was seeded or is empty as it was left (see _as_seeded). A seeded post
+    the creator rewrote, scheduled, published, bound or read is theirs.
     """
     owns = conn is None
     conn = conn or get_db()
     try:
-        seeded = {row[0]: row for row in demo_post_rows()}
+        names = ("id", "content", "media_urls", "status", "scheduled_for", "published_at",
+                 "impressions", "reactions", "comments", "shares", "tags")
+        seeded = {row[0]: dict(zip(names, row)) for row in demo_post_rows()}
         placeholders = ",".join("?" for _ in seeded)
         found, kept = [], []
         for r in conn.execute(f"SELECT * FROM posts WHERE id IN ({placeholders})", list(seeded)).fetchall():
-            want = seeded[r["id"]]
-            columns = r.keys()
-            untouched = (
-                r["content"] == want[1] and r["status"] == want[3]
-                and (r["impressions"], r["reactions"], r["comments"], r["shares"]) == tuple(want[6:10])
-                and ("draft_id" not in columns or r["draft_id"] is None)
-                and ("activity_urn" not in columns or r["activity_urn"] in (None, "", r["id"]))
-            )
-            (found if untouched else kept).append(r["id"])
+            (found if _as_seeded(conn, "posts", r, seeded[r["id"]]) else kept).append(r["id"])
 
         report = {"seeded": found, "kept": kept, "dry_run": dry_run, "deleted": 0}
         if dry_run or not found:
@@ -2030,6 +2055,68 @@ def purge_all_seeded_data(
             conn.close()
 
 
+DEMO_CLEANUP_NOTICE_KEY = "demo_cleanup_notice"
+
+
+def _demo_rows_found(report: Dict[str, Any]) -> Dict[str, int]:
+    """How many rows of each kind a purge report names."""
+    def n(value: Any) -> int:
+        return len(value) if isinstance(value, list) else int(value or 0)
+
+    return {
+        "leads": n(report["leads"]["seeded"]),
+        "drafts": n(report["drafts"]["seeded"]),
+        "posts": n(report["posts"]["seeded"]) + n(report["drafts"]["posts"]),
+        "analytics_days": n(report["analytics"]["seeded"]),
+        "audience_rows": n(report["demographics"]["seeded"]),
+    }
+
+
+def clean_up_demo_data(conn: sqlite3.Connection) -> Optional[Dict[str, Any]]:
+    """
+    Removes untouched demo data on a start without INOX_DEMO_DATA, safely.
+
+    The rows are ones a creator can see (2.5.1 seeded the Launch Kit drafts
+    into every install), so nothing goes silently or without a way back: when
+    the dry run finds anything, the database is copied aside first with the
+    same helper the migration runner uses before an upgrade, and if that copy
+    fails nothing is deleted. What was removed, and where the copy is, is kept
+    under DEMO_CLEANUP_NOTICE_KEY in settings for a screen to show once, and
+    logged. Returns that notice, or None when there was nothing to remove.
+    """
+    log = logging.getLogger("studio.demo")
+    found = _demo_rows_found(purge_all_seeded_data(conn, dry_run=True))
+    if not any(found.values()):
+        return None
+    try:
+        backup = backup_database("pre_demo_cleanup")
+    except Exception:
+        log.warning("Demo data was found but not removed: the safety copy could not be written.", exc_info=True)
+        return None
+    if not backup:
+        log.warning("Demo data was found but not removed: there was no database to copy aside.")
+        return None
+
+    purge_all_seeded_data(conn, dry_run=False)
+    notice = {
+        "removed": found,
+        "backup": backup,
+        "removed_at": datetime.now().isoformat(timespec="seconds"),
+        "shown": False,
+    }
+    with conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+            (DEMO_CLEANUP_NOTICE_KEY, json.dumps(notice)),
+        )
+    log.warning(
+        "Removed demo data the studio had seeded (%s). A copy of the database from before is at %s.",
+        ", ".join(f"{count} {kind.replace('_', ' ')}" for kind, count in found.items() if count),
+        backup,
+    )
+    return notice
+
+
 def seed_initial_data():
     conn = get_db()
     cursor = conn.cursor()
@@ -2039,7 +2126,7 @@ def seed_initial_data():
     # for good, shown beside real ones as if they were. Every start without the
     # flag removes what the seeder provably wrote, and nothing else.
     if not demo_data_enabled():
-        purge_all_seeded_data(conn, dry_run=False)
+        clean_up_demo_data(conn)
 
     # Seed Days 02 through 17 Launch Kit drafts. Demo content, same reason as
     # the Days 02 to 08 block in init_db. Both call sites are gated: gating one
