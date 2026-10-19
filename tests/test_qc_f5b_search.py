@@ -97,8 +97,14 @@ def test_what_someone_said_is_found_with_its_accents(studio):
     assert "très utile" in leads[0]["snippet"], leads[0]["snippet"]
 
 
-def test_a_name_no_help_article_contains_finds_no_help(studio):
-    assert _search(studio, "Émile")["groups"]["help"] == [], "the help search dropped the É and matched 'mile'"
+def test_help_found_for_an_accented_name_contains_that_name(studio):
+    # The palette article names Émile as its own example; anything else that
+    # came back would have matched "mile", what was left once the É was dropped.
+    import universal_search
+    hits = _search(studio, "Émile")["groups"]["help"]
+    assert all("emile" in universal_search.fold(hit["snippet"]) for hit in hits), \
+        "the help search dropped the É and matched 'mile'"
+    assert _search(studio, "Zoë Ölander")["groups"]["help"] == []
 
 
 def test_sql_shaped_input_is_only_text(studio):
