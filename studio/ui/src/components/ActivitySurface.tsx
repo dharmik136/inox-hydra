@@ -84,13 +84,20 @@ export function ActivitySurface({
     }
   }
 
+  // The outcome is shown under the row, success or failure. Discarding the
+  // error left a click that changed nothing on screen when no browser opened.
   async function openBridgePost(activityUrn: string) {
     setOpeningPost(activityUrn);
+    setRowNote(null);
     try {
       const postUrl = `https://www.linkedin.com/feed/update/${activityUrn}/`;
-      await launchBridge("auto", postUrl);
-    } catch {
-      // Ignored if browser bridge cannot focus
+      const launched = await launchBridge("auto", postUrl);
+      setRowNote({ urn: activityUrn, text: launched.message || "Opened in the bridge browser." });
+    } catch (caught) {
+      setRowNote({
+        urn: activityUrn,
+        text: caught instanceof Error ? caught.message : "The browser could not be opened.",
+      });
     } finally {
       setOpeningPost(null);
     }

@@ -254,10 +254,16 @@ def test_dossier_copy_says_copied_only_after_the_copy(studio):
     )
 
 
+_SEEDED = set()
+
+
 def _seed_own_posts(studio_url):
     """A confirmed identity and a few of your own posts, as the extension would record them."""
     from datetime import datetime, timedelta, timezone
 
+    if studio_url in _SEEDED:
+        return
+    _SEEDED.add(studio_url)
     me = "sample-creator"
     _api(studio_url, "POST", "/api/v1/identity/observe", {
         "vanity": me, "self_evidence": ["owner_edit_controls"],
@@ -271,3 +277,60 @@ def _seed_own_posts(studio_url):
     posts = [{"activity_urn": urn(days, days), "actor": me, "text": f"Sample own post {days} days ago",
               "reactions": 10 + days, "comments": days} for days in (3, 9, 15)]
     _api(studio_url, "POST", "/api/v1/self/posts/ingest", {"author": me, "posts": posts})
+
+
+# ---------------------------------------------------------------------------
+# UX-14: opening a post in the bridge browser says what happened
+# ---------------------------------------------------------------------------
+
+NO_BROWSER = (500, {"detail": "No supported browser was found on this machine."})
+LAUNCHED = (200, {"status": "success", "browser": "Brave", "carries_extension": True,
+                  "message": "Launched Brave with the bridge loaded.", "extension_path": "/opt/inox"})
+
+
+def _open_the_post(studio, studio_url, answer):
+    _seed_own_posts(studio_url)
+    session = studio()
+    session.answer("/api/v1/browser/launch", *answer)
+    page = session.open("Posts")
+    page.locator("article ul li button[aria-expanded]").first.click()
+    page.get_by_role("button", name="Open the post").click()
+    return session, page
+
+
+def test_open_the_post_shows_why_it_failed(studio, studio_url):
+    session, page = _open_the_post(studio, studio_url, NO_BROWSER)
+    note = page.locator("article ul li [role=status]")
+    note.wait_for(state="visible", timeout=3000)
+    assert "No supported browser was found" in note.inner_text()
+    assert not session.errors, f"the failure escaped as an uncaught error: {session.errors}"
+
+
+def test_open_the_post_says_which_browser_opened(studio, studio_url):
+    _, page = _open_the_post(studio, studio_url, LAUNCHED)
+    note = page.locator("article ul li [role=status]")
+    note.wait_for(state="visible", timeout=3000)
+    assert "Launched Brave" in note.inner_text()
+
+
+def _open_in_bridge(studio, studio_url, answer):
+    _seed_own_posts(studio_url)
+    session = studio()
+    session.answer("/api/v1/browser/launch", *answer)
+    page = session.open("Activity")
+    page.get_by_role("button", name="Live updates on").click()
+    page.get_by_role("button", name="Open in Bridge Browser").first.click()
+    return session, page
+
+
+def test_open_in_bridge_browser_shows_why_it_failed(studio, studio_url):
+    session, page = _open_in_bridge(studio, studio_url, NO_BROWSER)
+    page.locator("article [role=status]").filter(has_text="No supported browser").wait_for(
+        state="visible", timeout=3000)
+    assert not session.errors
+
+
+def test_open_in_bridge_browser_says_which_browser_opened(studio, studio_url):
+    _, page = _open_in_bridge(studio, studio_url, LAUNCHED)
+    page.locator("article [role=status]").filter(has_text="Launched Brave").wait_for(
+        state="visible", timeout=3000)
