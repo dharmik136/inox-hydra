@@ -74,6 +74,13 @@ except ImportError:
 DOWNLOAD_PAGE = "https://www.linkedin.com/mypreferences/d/download-my-data"
 ARCHIVE_NAME = re.compile(r"linkedin.*data.*export.*\.zip$|linkedindataexport.*\.zip$", re.IGNORECASE)
 REQUESTED_KEY = "archive_requested_at"
+# What browsers write while a download is still arriving, beside or instead of
+# the final file: Firefox (.part, next to an empty file with the final name),
+# Chrome and Edge (.crdownload), Safari (.download), Opera (.opdownload).
+PARTIAL_SUFFIXES = (".part", ".crdownload", ".download", ".opdownload", ".partial")
+STILL_DOWNLOADING = "That file is still downloading. Wait for the download to finish, then try again."
+# A file in Downloads that changed this recently and does not open may still be arriving.
+FRESH_FOR = timedelta(minutes=2)
 # When the creator said their account has no posts, so no archive will bring any.
 NO_POSTS_KEY = "archive_no_posts_at"
 # settings key + archive_imports.id -> what that import brought, so it can be
@@ -162,6 +169,10 @@ class ArchiveError(ValueError):
     """The archive cannot be read, or a source is not one the studio offered."""
 
 
+class _Unreadable(ArchiveError):
+    """The file does not open as a ZIP, or a file in it is cut short: damaged, or not finished downloading."""
+
+
 class OwnerUnconfirmed(ArchiveError):
     """The archive may be another member's, and the creator has not said to import it as theirs."""
 
@@ -186,29 +197,47 @@ def downloads_dirs() -> List[str]:
     return [d for d in found if os.path.isdir(d)]
 
 
+def _partial(name: str) -> Tuple[str, bool]:
+    """(the final name, whether this is a browser's file for a download still arriving)."""
+    for suffix in PARTIAL_SUFFIXES:
+        if name.lower().endswith(suffix):
+            return name[: -len(suffix)], True
+    return name, False
+
+
 def find_archives(limit: int = 5) -> List[Dict[str, Any]]:
-    """LinkedIn export files in Downloads, newest first. Names and sizes only."""
+    """
+    LinkedIn export files in Downloads, newest first. Names and sizes only.
+
+    A download still arriving is listed under its final name with
+    `downloading`, so it is shown as such rather than offered and then
+    refused as a broken archive.
+    """
     hits = []
     for directory in downloads_dirs():
         try:
             names = os.listdir(directory)
         except OSError:
             continue
+        listed = set(names)
         for name in names:
-            if not ARCHIVE_NAME.search(name):
+            final, partial = _partial(name)
+            if not ARCHIVE_NAME.search(final) or (partial and final in listed):
                 continue
             full = os.path.join(directory, name)
             try:
                 stat = os.stat(full)
             except OSError:
                 continue
-            if not os.path.isfile(full):
+            is_file = os.path.isfile(full)
+            if not partial and not is_file:
                 continue
             hits.append({
-                "name": name,
+                "name": final,
                 "path": full,
-                "bytes": stat.st_size,
+                "bytes": stat.st_size if is_file else 0,
                 "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
+                "downloading": partial or stat.st_size == 0 or any(final + s in listed for s in PARTIAL_SUFFIXES),
             })
     hits.sort(key=lambda h: h["modified"], reverse=True)
     return hits[:limit]
@@ -301,6 +330,8 @@ def _resolve(source: str) -> Tuple[str, str]:
         wanted = source.split(":", 1)[1]
         for hit in find_archives(limit=50):
             if hit["path"] == wanted:
+                if hit["downloading"]:
+                    raise ArchiveError(STILL_DOWNLOADING)
                 return hit["path"], hit["name"]
         raise ArchiveError("That file is no longer in your Downloads folder.")
     raise ArchiveError("Choose an archive from your Downloads folder, or upload one.")
@@ -348,7 +379,7 @@ def _members(path: str) -> Dict[str, zipfile.ZipInfo]:
     try:
         archive = zipfile.ZipFile(path)
     except (zipfile.BadZipFile, OSError, ValueError) as error:
-        raise ArchiveError("That file is not a ZIP archive LinkedIn produced.") from error
+        raise _Unreadable("That file is not a ZIP archive LinkedIn produced.") from error
     with archive:
         infos = archive.infolist()
     if len(infos) > MAX_MEMBERS:
@@ -379,7 +410,7 @@ def _read_text(path: str, info: zipfile.ZipInfo) -> str:
             with archive.open(info) as handle:
                 raw = handle.read(MAX_MEMBER_BYTES + 1)
     except (zipfile.BadZipFile, zlib.error, RuntimeError, OSError, EOFError, NotImplementedError, ValueError) as error:
-        raise ArchiveError(f"{info.filename} is damaged and cannot be read. Download the archive again.") from error
+        raise _Unreadable(f"{info.filename} is damaged and cannot be read. Download the archive again.") from error
     if len(raw) > MAX_MEMBER_BYTES:
         raise ArchiveError(f"{info.filename} is larger than any file in LinkedIn's archive.")
     return raw.decode("utf-8-sig", errors="replace")
@@ -437,6 +468,27 @@ def _table(text: str, spec: Dict[str, Any]) -> Tuple[Optional[List[Dict[str, str
                        "read and the rest of the file was not.")
         return rows, header, problem
     return None, first, ""
+
+
+def _read_source(source: str) -> Tuple[str, str, Dict[str, Any]]:
+    """
+    (path, display name, what the archive holds) for a source the studio offered.
+
+    A file in Downloads that changed moments ago and does not open is more
+    likely still arriving than broken, so it is called that.
+    """
+    path, name = _resolve(source)
+    try:
+        return path, name, _parse(path)
+    except _Unreadable:
+        try:
+            fresh = datetime.now().timestamp() - os.path.getmtime(path) < FRESH_FOR.total_seconds()
+        except OSError:
+            fresh = False
+        if source.startswith("downloads:") and fresh:
+            raise ArchiveError("This file may still be downloading. Wait for the download to finish, "
+                               "then try again.") from None
+        raise
 
 
 def _parse(path: str) -> Dict[str, Any]:
@@ -541,8 +593,7 @@ def _ownership(parsed: Dict[str, Any]) -> Dict[str, Any]:
 
 def preview(source: str) -> Dict[str, Any]:
     """What the archive holds, whose it is, and what would be imported. Writes nothing."""
-    path, name = _resolve(source)
-    result = _parse(path)
+    path, name, result = _read_source(source)
     files = []
     for kind, spec in FILES.items():
         entry = result["parsed"].get(kind)
@@ -1040,8 +1091,7 @@ def import_archive(source: str, include: Optional[List[str]] = None, confirm_own
     word that it is theirs. An uploaded copy of the archive is deleted once
     it has been imported.
     """
-    path, name = _resolve(source)
-    result = _parse(path)
+    path, name, result = _read_source(source)
     wanted = set(include) if include is not None else {k for k, s in FILES.items() if s["default"]}
     unknown = wanted - set(FILES)
     if unknown:

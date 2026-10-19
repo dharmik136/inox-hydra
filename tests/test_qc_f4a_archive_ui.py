@@ -170,3 +170,13 @@ def test_the_basic_archive_says_the_posts_are_still_to_come(setup_page, studio):
     page.get_by_role("button", name="My account has no posts").click()
     expect(page.get_by_text("That was LinkedIn's first part", exact=False)).to_have_count(0)
     expect(page.get_by_text("For a newer copy, ask LinkedIn again", exact=False)).to_be_visible()
+
+
+def test_a_download_still_arriving_is_shown_as_one(setup_page, studio):
+    page = setup_page
+    downloads = studio["tmp"] / "user" / "Downloads"
+    (downloads / "Complete_LinkedInDataExport_10-19-2026.zip.crdownload").write_bytes(b"PK\x03\x04partial")
+    page.get_by_role("button", name="I have asked for it").click()
+    item = page.get_by_role("listitem").filter(has_text="Complete_LinkedInDataExport_10-19-2026.zip").last
+    expect(item).to_contain_text("STILL DOWNLOADING")
+    expect(item.get_by_role("button", name="See what is in it")).to_be_disabled()

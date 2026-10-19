@@ -350,3 +350,42 @@ def test_posts_left_unticked_do_not_end_the_step(client):
     source = _upload(client, _person_archive("Sample", "Alice"))["source"]
     assert _import(client, source, include=["skills"], confirm_owner=True).status_code == 200
     assert client.get("/api/v1/archive").json()["complete"] is False
+
+
+# ---------------------------------------------------------------------------
+# SETUP-21: a download still being written is shown as one, not offered as a
+# broken archive
+# ---------------------------------------------------------------------------
+
+def test_a_firefox_download_in_progress_is_marked_still_downloading(client, home):
+    downloads = home / "user" / "Downloads"
+    (downloads / BASIC).write_bytes(b"")
+    (downloads / (BASIC + ".part")).write_bytes(b"PK\x03\x04partial")
+    [hit] = client.post("/api/v1/archive/requested").json()["found"]
+    assert hit["name"] == BASIC and hit["downloading"] is True
+    res = client.post("/api/v1/archive/preview", json={"source": "downloads:" + hit["path"]})
+    assert res.status_code == 400 and "still downloading" in res.json()["detail"]
+
+
+def test_a_chrome_download_in_progress_is_listed_under_its_final_name(client, home):
+    downloads = home / "user" / "Downloads"
+    (downloads / (COMPLETE + ".crdownload")).write_bytes(b"PK\x03\x04partial")
+    [hit] = client.post("/api/v1/archive/requested").json()["found"]
+    assert hit["name"] == COMPLETE and hit["downloading"] is True
+
+
+def test_a_file_written_moments_ago_that_does_not_open_may_still_be_downloading(client, home):
+    downloads = home / "user" / "Downloads"
+    (downloads / COMPLETE).write_bytes(_archive(_person_archive("Sample", "Alice"))[:200])
+    [hit] = client.post("/api/v1/archive/requested").json()["found"]
+    assert hit["downloading"] is False
+    res = client.post("/api/v1/archive/preview", json={"source": "downloads:" + hit["path"]})
+    assert res.status_code == 400 and "may still be downloading" in res.json()["detail"]
+
+
+def test_a_finished_download_is_offered_as_before(client, home):
+    downloads = home / "user" / "Downloads"
+    (downloads / COMPLETE).write_bytes(_archive(_person_archive("Sample", "Alice")))
+    [hit] = client.post("/api/v1/archive/requested").json()["found"]
+    assert hit["downloading"] is False
+    assert client.post("/api/v1/archive/preview", json={"source": "downloads:" + hit["path"]}).status_code == 200

@@ -38,7 +38,7 @@ type OwnedPreview = ArchivePreview & {
 type ArchiveProgress = Omit<ArchiveState, "found" | "last_import"> & {
   complete?: boolean;
   no_posts_at?: string | null;
-  found: (FoundArchive & { imported?: boolean })[];
+  found: (FoundArchive & { imported?: boolean; downloading?: boolean })[];
   last_import: (NonNullable<ArchiveState["last_import"]> & { held_posts?: boolean }) | null;
 };
 
@@ -258,11 +258,12 @@ export function ArchiveImport({
                         <span className="studio-meta ml-2 text-[10px] text-ink-muted">
                           {readable(hit.bytes)} · {localDate(hit.modified)}
                           {hit.imported ? " · ALREADY IMPORTED" : ""}
+                          {hit.downloading ? " · STILL DOWNLOADING" : ""}
                         </span>
                       </span>
                       <button
                         type="button"
-                        disabled={busy !== null}
+                        disabled={busy !== null || hit.downloading}
                         onClick={() =>
                           void run(hit.path, async () => show(await previewArchive(`downloads:${hit.path}`)))
                         }
