@@ -56,6 +56,49 @@ def test_read_only_commands_do_not_create_an_empty_database(empty_home, capsys, 
     assert not os.path.exists(paths.get_db_path()), f"{command} left a database file behind"
 
 
+@pytest.fixture
+def studio_home(empty_home):
+    from studio.backend import database
+
+    database.init_db()
+    return empty_home
+
+
+def _settings():
+    conn = sqlite3.connect(paths.get_db_path())
+    try:
+        return dict(conn.execute("SELECT key, value FROM settings").fetchall())
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM-15: reset clears the AI setup and LinkedIn session, nothing else
+# ---------------------------------------------------------------------------
+
+def test_reset_keeps_the_paused_queue_and_the_brand_profile(studio_home, capsys):
+    conn = sqlite3.connect(paths.get_db_path())
+    for key, value in (("queue_status", "paused"), ("creator_profile", '{"name": "Jane Creator"}'),
+                       ("ai_provider", "openai"), ("ai_api_key", "sealed"), ("ai_model", "gpt-4o"),
+                       ("gemini_api_key", "sealed"), ("li_at", "sealed"), ("JSESSIONID", "sealed"),
+                       ("session_status", "connected"), ("update_check_enabled", "true")):
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+    conn.commit()
+    conn.close()
+
+    assert cli.main(["reset", "--yes"]) == 0
+    out = capsys.readouterr().out
+
+    left = _settings()
+    assert left.get("queue_status") == "paused", "reset resumed a paused queue"
+    assert left.get("creator_profile") == '{"name": "Jane Creator"}', "reset erased the Brand Studio identity"
+    assert left.get("update_check_enabled") == "true"
+    for gone in ("ai_provider", "ai_api_key", "ai_model", "gemini_api_key", "li_at", "JSESSIONID", "session_status"):
+        assert gone not in left, f"{gone} survived the reset"
+        assert gone in out, f"the output does not say {gone} was cleared"
+    assert "queue_status" not in out
+
+
 def test_doctor_reports_no_problem_on_a_fresh_install(empty_home, capsys):
     assert cli.main(["doctor"]) == 0
     out = capsys.readouterr().out

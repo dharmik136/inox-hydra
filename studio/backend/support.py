@@ -64,8 +64,21 @@ SAFE_SETTING_KEYS = frozenset({
     "update_last_seen_version",
 })
 
-# Cleared by `reset --keep-data`. Content tables are never touched.
+# Cleared by `reset --keep-data`: the AI provider setup and the stored
+# LinkedIn session, which are what tends to be wrong. Content tables are never
+# touched, and neither is the rest of the settings table.
+#
+# It used to empty the whole table, which also resumed a paused queue (a
+# missing queue_status reads as running, so due posts went out within 30
+# seconds) and erased the Brand Studio identity bylines are made from.
 CONFIG_TABLES = ("settings",)
+RESET_SETTING_KEYS = (
+    "ai_provider", "ai_api_key", "ai_model", "ai_base_url", "ai_verified_at", "ai_status",
+    "gemini_api_key",
+    "li_at", "JSESSIONID", "last_token_update", "session_status",
+)
+# Any later provider setting is named ai_<something>, and goes with the rest.
+RESET_SETTING_PREFIX = "ai_"
 
 # Included in a data export. Content the user authored or accumulated, which
 # they must be able to take elsewhere.
@@ -674,9 +687,10 @@ def reset_configuration(keep_data: bool = True) -> Dict[str, Any]:
     Clears configuration so a broken setup can be recovered without data loss.
 
     Content tables are never touched when keep_data is true, which is the
-    default and the only mode the CLI exposes. Clearing settings also clears the
-    stored session cookies and AI key, which is the point: those are exactly
-    what tends to be wrong.
+    default and the only mode the CLI exposes. It clears the settings named in
+    RESET_SETTING_KEYS: the AI provider setup and the stored session cookies,
+    which is the point, since those are exactly what tends to be wrong. The
+    queue's pause, the Brand Studio profile and every other preference stay.
     """
     if not keep_data:
         raise NotImplementedError(
@@ -689,12 +703,13 @@ def reset_configuration(keep_data: bool = True) -> Dict[str, Any]:
     try:
         available = set(_table_names(conn))
         cleared = {}
-        for table in CONFIG_TABLES:
-            if table in available:
-                before = conn.execute(f"SELECT COUNT(*) FROM [{table}]").fetchone()[0]
-                conn.execute(f"DELETE FROM [{table}]")
-                cleared[table] = before
+        cleared_keys: List[str] = []
+        if "settings" in available:
+            keys = [row[0] for row in conn.execute("SELECT key FROM settings ORDER BY key")]
+            cleared_keys = [k for k in keys if k in RESET_SETTING_KEYS or k.startswith(RESET_SETTING_PREFIX)]
+            conn.executemany("DELETE FROM settings WHERE key = ?", [(k,) for k in cleared_keys])
+            cleared["settings"] = len(cleared_keys)
         conn.commit()
     finally:
         conn.close()
-    return {"cleared": cleared, "safety_backup": safety, "data_preserved": True}
+    return {"cleared": cleared, "cleared_keys": cleared_keys, "safety_backup": safety, "data_preserved": True}

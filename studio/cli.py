@@ -199,8 +199,8 @@ def cmd_export(args) -> int:
 def cmd_reset(args) -> int:
     if not args.yes:
         print("This clears configuration: AI provider settings and the stored LinkedIn")
-        print("session. Your drafts, leads and analytics are NOT touched, and a safety")
-        print("snapshot is taken first.")
+        print("session. Your drafts, leads, analytics, queue and Brand Studio profile are")
+        print("NOT touched, and a safety snapshot is taken first.")
         print()
         print("Re-run with --yes to proceed.")
         return 1
@@ -210,8 +210,8 @@ def cmd_reset(args) -> int:
     except ValueError as refused:
         print(f"Nothing was reset. {refused}")
         return 1
-    for table, count in result["cleared"].items():
-        print(f"  cleared {count} rows from {table}")
+    cleared = result.get("cleared_keys") or []
+    print(f"  cleared {len(cleared)} settings: {', '.join(cleared) if cleared else 'none were set'}")
     print(f"  safety snapshot  {result['safety_backup']}")
     print()
     print("Reconfigure your AI provider with: python studio_cli.py ai configure")
