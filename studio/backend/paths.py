@@ -406,10 +406,19 @@ def get_docs_dir() -> str:
     development takes effect immediately without a repackaging step. An
     installed build has no repo-root docs/, so it falls through to the copy
     staged inside the package by tools/prepare_package.py.
+
+    The repo-root folder counts only when it holds the help articles. Beside an
+    installed package, ../docs is site-packages/docs, which any other package
+    may have created, and taking it would show that package's files and none
+    of the help.
     """
-    if os.path.isdir(_REPO_DOCS_DIR):
+    if _is_our_docs(_REPO_DOCS_DIR):
         return _REPO_DOCS_DIR
     return _PACKAGED_DOCS_DIR
+
+
+def _is_our_docs(folder: str) -> bool:
+    return os.path.isdir(os.path.join(folder, "help"))
 
 
 def get_modules_docs_dir() -> str:
@@ -446,5 +455,5 @@ def describe() -> dict:
         "db_size_bytes": os.path.getsize(db) if os.path.exists(db) else 0,
         "frontend_dir": get_frontend_dir(),
         "docs_dir": get_docs_dir(),
-        "docs_source": "source checkout" if os.path.isdir(_REPO_DOCS_DIR) else "packaged",
+        "docs_source": "source checkout" if _is_our_docs(_REPO_DOCS_DIR) else "packaged",
     }

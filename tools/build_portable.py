@@ -714,6 +714,25 @@ def vendor_dependencies(lib_dir):
     log("deps", f"vendored {len(os.listdir(lib_dir))} entries")
 
 
+def assert_help_shipped(studio_dir):
+    """
+    Refuses an artifact whose Docs screen would show its help sections empty.
+
+    The help articles were never staged, and nothing checked, so every portable
+    copy shipped with 0 documents in each help section.
+    """
+    sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
+    import prepare_package
+
+    absent = prepare_package.missing_help(os.path.join(studio_dir, "docs"))
+    if absent:
+        raise SystemExit(
+            f"REFUSING TO BUILD. {len(absent)} help document(s) are missing from the artifact's docs: "
+            + ", ".join(absent[:5])
+            + ". Run tools/prepare_package.py, which stages them into studio/docs."
+        )
+
+
 def copy_application(app_dir):
     """Copies the studio package, excluding user state, tests, caches and secrets."""
     target = os.path.join(app_dir, "studio")
@@ -735,6 +754,7 @@ def copy_application(app_dir):
         "user state inside the install directory, so an update would destroy it."
     )
     assert_no_secrets(target)
+    assert_help_shipped(target)
     log("app", f"copied studio package, {sum(len(f) for _, _, f in os.walk(target))} files")
     return target
 

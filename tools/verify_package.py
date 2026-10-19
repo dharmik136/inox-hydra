@@ -71,6 +71,18 @@ with TestClient(
         body = rr.json().get("content", "") if rr.status_code == 200 else ""
         check(f"serves doc {mod['id']}", len(body) > 500, f"({len(body)} bytes)")
 
+    # Every help section has every document it lists. The help articles were
+    # never packaged, and this gate checked only the seven modules, so every
+    # built copy shipped its help sections empty while the release stayed green.
+    from studio.backend.docs_engine import HELP_SECTIONS
+    expected = {s["id"]: len(s["paths"]) for s in HELP_SECTIONS}
+    shown = {s["id"]: s for s in (r.json().get("sections", []) if r.status_code == 200 else [])}
+    help_ids = [sid for sid, s in shown.items() if s.get("kind") == "help"]
+    check("help sections are listed", len(help_ids) >= 6, f"({len(help_ids)} help sections)")
+    for sid in help_ids:
+        check(f"help section {sid}", shown[sid]["count"] == expected.get(sid, -1),
+              f"({shown[sid]['count']} of {expected.get(sid)} documents)")
+
     for ep in ("/api/analytics/kpis", "/api/posts", "/api/leads", "/api/queue/smart-slots"):
         rr = c.get(ep)
         check(f"GET {ep}", rr.status_code == 200)
