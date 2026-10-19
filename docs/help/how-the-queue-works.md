@@ -63,7 +63,7 @@ While paused, the 30-second check skips every post and **Run due posts** reports
 
 ## What the Queue cannot do
 
-The Queue page has no controls to add, edit or remove slots, or to reschedule or unschedule a post. The rows are not clickable. The only way to move a queued post is to open it on the Composer and press **Publish** then **Queue it** again, which puts it at the NEXT SLOT shown then.
+The Queue page has no controls to add, edit or remove slots, or to reschedule or unschedule a post. To fix the text of a queued post, press **Edit text** on its row. The post opens in the Composer with a line under the bar saying you are editing a queued post; **Save** asks before it changes that post's text, and the post stays at its time in the queue. **Save as a new draft** keeps the queued post as it was and saves your text as a separate draft.
 
 ## If it does not work
 

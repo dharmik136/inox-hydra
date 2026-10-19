@@ -538,3 +538,115 @@ def test_the_media_tab_and_preview_promise_nothing_the_composer_cannot_do(new_pa
     page.get_by_role("button", name="Preview", exact=True).click()
     expect(page.get_by_role("tab", name="Mobile")).to_be_visible()
     assert page.get_by_role("tab", name="Carousel").count() == 0, "the Carousel tab offers slides nothing makes"
+
+
+def _queue(api, content):
+    from database import get_db
+
+    post_id = api.post("/api/posts", json={"content": content, "status": "draft"}).json()["id"]
+    conn = get_db()
+    try:
+        conn.execute(
+            "UPDATE posts SET status = 'scheduled', scheduled_for = '2099-01-05T09:00:00+00:00' WHERE id = ?",
+            (post_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return post_id
+
+
+def _row(api, post_id):
+    return next(row for row in api.get("/api/posts").json()["posts"] if row["id"] == post_id)
+
+
+def test_a_typo_in_a_queued_post_is_fixed_from_the_queue(new_page, studio_url, api):
+    """
+    The server keeps a queued post's text from being overwritten by accident,
+    so the interface needs a deliberate way in: Edit text on the Queue row,
+    then Save, which asks first and saves that post's text on purpose.
+    """
+    _clear_posts(api)
+    post_id = _queue(api, "A queued post with a tpyo.\n\nSecond paragraph.")
+    page = new_page()
+    page.goto(studio_url + "/#/queue", wait_until="networkidle")
+    page.locator("li", has_text="A queued post with a tpyo.").get_by_role("button", name="Edit text").click()
+
+    editor = page.get_by_label("Post body")
+    expect(editor).to_have_value("A queued post with a tpyo.\n\nSecond paragraph.")
+    expect(page).to_have_url(re.compile(r"#/composer$"))
+    expect(page.get_by_text(re.compile("editing the text of a post that is already queued", re.I))).to_be_visible()
+
+    asked = []
+    page.on("dialog", lambda dialog: (asked.append(dialog.message), dialog.accept()))
+    editor.fill("A queued post with a typo.\n\nSecond paragraph.")
+    page.get_by_role("button", name="Save", exact=True).click()
+    expect(_status(page)).to_contain_text("SAVED")
+    assert asked and "queued" in asked[0], asked
+    row = _row(api, post_id)
+    assert row["content"] == "A queued post with a typo.\n\nSecond paragraph."
+    assert row["status"] == "scheduled", "correcting the text took the post out of the queue"
+
+
+def test_saving_over_a_post_queued_meanwhile_offers_both_ways_out(new_page, studio_url, api):
+    """
+    A Composer still holding a post that was queued meanwhile is refused, and
+    is offered Correct the queued post (asked first) or Save as a new draft,
+    never Keep this version, which could not get past this refusal.
+    """
+    _clear_posts(api)
+    page = new_page()
+    editor = _open_composer(page, studio_url)
+    editor.fill("First words of the post.")
+    page.get_by_role("button", name="Save", exact=True).click()
+    expect(_status(page)).to_contain_text("SAVED")
+    post_id = api.get("/api/posts").json()["posts"][0]["id"]
+    from database import get_db
+
+    conn = get_db()
+    try:
+        conn.execute("UPDATE posts SET status = 'scheduled' WHERE id = ?", (post_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+    editor.fill("First words of the post, corrected.")
+    page.get_by_role("button", name="Save", exact=True).click()
+    expect(_status(page)).to_contain_text("SAVE FAILED")
+    expect(page.locator("p", has_text="already queued")).to_be_visible()
+    assert page.get_by_role("button", name="Keep this version").count() == 0
+    expect(page.get_by_role("button", name="Save as a new draft")).to_be_visible()
+
+    page.once("dialog", lambda dialog: dialog.dismiss())
+    page.get_by_role("button", name="Correct the queued post").click()
+    page.wait_for_timeout(300)
+    assert _row(api, post_id)["content"] == "First words of the post.", "answering Cancel still saved"
+
+    page.once("dialog", lambda dialog: dialog.accept())
+    page.get_by_role("button", name="Correct the queued post").click()
+    expect(_status(page)).to_contain_text("SAVED")
+    assert _row(api, post_id)["content"] == "First words of the post, corrected."
+    assert _row(api, post_id)["status"] == "scheduled"
+
+
+def test_save_as_a_new_draft_keeps_the_queued_post_and_the_new_text(new_page, studio_url, api):
+    _clear_posts(api)
+    post_id = _queue(api, "The queued text.")
+    page = new_page()
+    page.goto(studio_url + "/#/queue", wait_until="networkidle")
+    page.locator("li", has_text="The queued text.").get_by_role("button", name="Edit text").click()
+    editor = page.get_by_label("Post body")
+    expect(editor).to_have_value("The queued text.")
+    editor.fill("A different post, really.")
+    page.get_by_role("button", name="Save as a new draft").click()
+    expect(_status(page)).to_contain_text("SAVED")
+    assert _row(api, post_id)["content"] == "The queued text."
+    drafts = [row for row in api.get("/api/posts?status=draft").json()["posts"] if row["content"] == "A different post, really."]
+    assert len(drafts) == 1
+
+    # The Composer now holds the new draft: a further save goes there.
+    editor.fill("A different post, really. Edited.")
+    page.get_by_role("button", name="Save", exact=True).click()
+    expect(_status(page)).to_contain_text("SAVED")
+    assert _row(api, drafts[0]["id"])["content"] == "A different post, really. Edited."
+    assert _row(api, post_id)["content"] == "The queued text."

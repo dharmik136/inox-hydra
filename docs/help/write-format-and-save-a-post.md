@@ -65,6 +65,7 @@ After you use **Mark as published**, **Queue it** or **Send to LinkedIn**, the C
 
 - **SAVE FAILED**: the reason is written in orange under the top bar, and a screen reader announces it with the mark.
 - "There is nothing written to save.": the editor is empty. Type something first.
+- "This post is already queued, so its text was not changed...": the Composer still holds a post that has been queued, published or sent, and the studio will not write new text over it by accident. Press **Correct the queued post** (or the published or sent post) to change that post's text after confirming, or **Save as a new draft** to keep the post as it was and save your text as a new draft. A post that has already gone to LinkedIn changes only in the studio; correct it on LinkedIn as well.
 - "This draft was changed in another window after this one opened it...": the same draft is open in another window or tab, and it was saved there after this one loaded it. Nothing was written, so the other window's text is safe. Press **Keep this version** to save this window's text over it, or copy your text, reload, and compare.
 - "Post content exceeds maximum 5,000 character limit.": the server refuses posts over 5,000 characters. Shorten the post and save again. Underlined and struck-through text store an extra mark for every character, so they count double toward this limit and a heavily decorated post reaches it sooner.
 - Any other failure usually means the server stopped. See [The studio will not open or shows an error](the-studio-will-not-open.md).

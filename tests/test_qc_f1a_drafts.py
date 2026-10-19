@@ -102,7 +102,13 @@ def test_new_text_over_a_published_or_queued_post_is_refused(status):
     post_id = _with_status(status)
     refused = client.put(f"/api/posts/{post_id}", json={"content": "Next post, typed in a stale tab."})
     assert refused.status_code == 409, refused.text
-    assert "already" in refused.json()["detail"]
+    detail = refused.json()["detail"]
+    # A code the interface acts on, distinct from the stale-draft refusal, and
+    # words that name the two actions the Composer offers for it.
+    assert detail["code"] == "posted_text_locked", detail
+    assert detail["status"] == status
+    assert "Correct the" in detail["message"] and "Save as a new draft" in detail["message"], detail
+    assert "changed in another window" not in detail["message"]
     assert _stored(post_id) == f"The {status} text."
 
 
@@ -120,3 +126,47 @@ def test_changes_that_leave_the_text_alone_are_not_refused():
     assert client.put(f"/api/posts/{post_id}", json={"tags": ["x"]}).status_code == 200
     draft_id = _create("A draft")
     assert client.put(f"/api/posts/{draft_id}", json={"content": "Still a draft"}).status_code == 200
+
+
+def _run_api_probe(probe_source):
+    """Compiles studio/ui/src/lib/api.ts and runs a probe against it in node."""
+    import json
+    import shutil
+    import subprocess
+    import tempfile
+
+    node = shutil.which("node") or shutil.which("node.exe")
+    ui_dir = os.path.join(REPO_ROOT, "studio", "ui")
+    esbuild = next((os.path.join(ui_dir, "node_modules", ".bin", n) for n in ("esbuild.cmd", "esbuild")
+                    if os.path.exists(os.path.join(ui_dir, "node_modules", ".bin", n))), None)
+    if not node or not esbuild:
+        pytest.skip("node or the UI's esbuild is not installed")
+    with tempfile.TemporaryDirectory() as work:
+        build = subprocess.run([esbuild, API_TS, "--format=esm", f"--outfile={os.path.join(work, 'api.js')}"],
+                               capture_output=True, text=True)
+        assert build.returncode == 0, build.stderr
+        with open(os.path.join(work, "probe.mjs"), "w", encoding="utf-8") as handle:
+            handle.write(probe_source)
+        run = subprocess.run([node, "probe.mjs"], capture_output=True, text=True, cwd=work)
+        assert run.returncode == 0, run.stderr
+        return json.loads(run.stdout)
+
+
+def test_only_the_stale_draft_refusal_counts_as_changed_elsewhere():
+    """
+    Other refusals answer 409 too: new text over a queued post, and a write
+    from a window showing another profile. Counting every 409 offered Keep
+    this version for refusals it could never get past.
+    """
+    out = _run_api_probe("""
+import { isDraftChangedElsewhere, isPostedTextLocked } from "./api.js";
+const refusal = (message, status, code = null) => Object.assign(new Error(message), { status, code });
+const stale = refusal("This draft was changed in another window after this one opened it, so saving would replace that version.", 409);
+const locked = refusal("This post is already queued, so its text was not changed.", 409, "posted_text_locked");
+const profile = refusal("This window shows another creator profile.", 409, "profile_mismatch");
+console.log(JSON.stringify({
+  changed: [stale, locked, profile].map(isDraftChangedElsewhere),
+  locked: [stale, locked, profile].map(isPostedTextLocked),
+}));
+""")
+    assert out == {"changed": [True, False, False], "locked": [False, True, False]}

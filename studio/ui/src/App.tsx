@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, Moon, PanelRight, Search, Sun } from "lucide-react";
 import { StudioRail } from "@/components/StudioRail";
 import { NavigationTray } from "@/components/NavigationTray";
-import { ContextBar, SaveReason, type SaveState } from "@/components/ContextBar";
+import { ContextBar, SaveReason, type BarAction, type SaveState } from "@/components/ContextBar";
 import { ComposerCanvas, FOLD_CHARS } from "@/components/ComposerCanvas";
 import { HookFilmstrip } from "@/components/HookFilmstrip";
 import { CommandPalette } from "@/components/CommandPalette";
@@ -31,6 +31,9 @@ import {
   fetchOnboardingState,
   generateHooks,
   isDraftChangedElsewhere,
+  isPostedTextLocked,
+  fetchPostById,
+  POSTED_STATUSES,
   updateDraft,
   fetchDraftById,
   type GeneratedHook,
@@ -70,6 +73,25 @@ function rememberedTheme(): Theme | null {
   } catch {
     return null;
   }
+}
+
+/** A queued, published or sent post, named the way the Composer's buttons name it. */
+function postedWord(status: string): string {
+  return status === "published" || status === "sent" ? status : "queued";
+}
+
+/** Why new text over such a post was not saved, and the two ways on. */
+function postedRefusal(status: string): string {
+  const word = postedWord(status);
+  return `This post is already ${word}, so its text was not changed. Choose Correct the ${word} post to change its text on purpose, or Save as a new draft to keep this text as a separate post.`;
+}
+
+/** The time a save landed, as the SAVED mark shows it. */
+function clockTime(): string {
+  const now = new Date();
+  return [now.getHours(), now.getMinutes(), now.getSeconds()]
+    .map((part) => String(part).padStart(2, "0"))
+    .join(":");
 }
 
 /** Puts a screen's address in the location bar, as a new history entry unless `replace`. */
@@ -155,6 +177,34 @@ export default function App() {
   // other path is never checked against the wrong text.
   const base = useRef<{ id: string; content: string } | null>(null);
   const [changedElsewhere, setChangedElsewhere] = useState(false);
+
+  // The post the Composer holds when it is no longer a draft (queued,
+  // published or sent), and whether the author has agreed to change its
+  // text. The server keeps such a post's text unless a save says it means
+  // to, so a stale window cannot write the next post over it; Correct the
+  // queued post and Save as a new draft are the deliberate ways through.
+  // Tied to the id, like base, so a draft swapped in elsewhere is never
+  // treated as one.
+  const [posted, setPosted] = useState<{ id: string; status: string; agreed: boolean } | null>(null);
+  const [postedRefused, setPostedRefused] = useState(false);
+  const holdsPosted = posted !== null && posted.id === draftId;
+
+  /**
+   * After a refused save, whether the post is one whose text is kept.
+   *
+   * The server says so with the posted_text_locked code. A refusal carrying
+   * some other code is something else; one carrying none comes from a client
+   * that cannot read the code, and the post's own status answers instead.
+   */
+  const noticePosted = useCallback(async (id: string, error: unknown) => {
+    const code = (error as { code?: unknown } | null)?.code;
+    if (!isPostedTextLocked(error) && typeof code === "string") return;
+    const row = await fetchPostById(id).catch(() => null);
+    if (!row || !POSTED_STATUSES.has(row.status)) return;
+    setPosted((current) => ({ id, status: row.status, agreed: current?.id === id ? current.agreed : false }));
+    setPostedRefused(true);
+    setSaveError(postedRefusal(row.status));
+  }, []);
   const [publishOpen, setPublishOpen] = useState(false);
 
   /**
@@ -388,7 +438,7 @@ export default function App() {
    * reason. The 5,000 character limit is enforced server side and arrives as a
    * 400, which the author needs to read rather than have swallowed.
    */
-  const onSave = useCallback(async (keepMine = false) => {
+  const onSave = useCallback(async (keepMine = false, correctPosted = false) => {
     if (saving.current) return;
     if (!draft.trim()) {
       // Refuse rather than create an empty row the queue would later show as
@@ -402,10 +452,11 @@ export default function App() {
     setSaveState("saving");
     setSaveError(null);
     setChangedElsewhere(false);
+    setPostedRefused(false);
     try {
       if (draftId) {
         const known = base.current?.id === draftId ? base.current.content : undefined;
-        await updateDraft(draftId, draft, keepMine ? undefined : known);
+        await updateDraft(draftId, draft, keepMine ? undefined : known, correctPosted);
         base.current = { id: draftId, content: draft };
       } else {
         const created = await createDraft(draft);
@@ -431,10 +482,108 @@ export default function App() {
       setSaveError(error instanceof Error ? error.message : "The save was rejected.");
       setChangedElsewhere(isDraftChangedElsewhere(error));
       setSavedAt(null);
+      if (draftId && !isDraftChangedElsewhere(error)) void noticePosted(draftId, error);
     } finally {
       saving.current = false;
     }
-  }, [draft, draftId]);
+  }, [draft, draftId, noticePosted]);
+
+  /**
+   * Saves over the text of the queued, published or sent post the Composer
+   * holds, asking first the first time. A post that has already gone to
+   * LinkedIn changes only here, which the question says.
+   */
+  const onCorrectPosted = useCallback(() => {
+    if (!posted || posted.id !== draftId) return;
+    if (!posted.agreed) {
+      const word = postedWord(posted.status);
+      const gone =
+        posted.status === "queued" || posted.status === "scheduled" || posted.status === "due"
+          ? " The queue will use the new text."
+          : " It has already gone to LinkedIn, and LinkedIn's copy will not change: correct it there as well.";
+      if (!window.confirm(`Change the text of this ${word} post to what is in the Composer?${gone}`)) return;
+      setPosted({ ...posted, agreed: true });
+    }
+    void onSave(false, true);
+  }, [posted, draftId, onSave]);
+
+  /** Keeps the queued, published or sent post as it is and saves this text as a new draft. */
+  const onSaveAsNew = useCallback(async () => {
+    if (saving.current || !draft.trim()) return;
+    saving.current = true;
+    setSaveState("saving");
+    setSaveError(null);
+    setChangedElsewhere(false);
+    setPostedRefused(false);
+    try {
+      const created = await createDraft(draft);
+      base.current = { id: created, content: draft };
+      setDraftId(created);
+      setPosted(null);
+      const current = latestDraft.current === draft;
+      setSaveState(current ? "saved" : "dirty");
+      setSavedAt(current ? clockTime() : null);
+    } catch (error) {
+      setSaveState("failed");
+      setSaveError(error instanceof Error ? error.message : "The save was rejected.");
+      setSavedAt(null);
+    } finally {
+      saving.current = false;
+    }
+  }, [draft]);
+
+  /**
+   * Opens a queued post from the Queue in the Composer, to correct its text.
+   *
+   * After Publish the Composer lets go of the post, so this is the way back
+   * to a queued post's words. Unsaved work in the Composer is asked about
+   * first, as when opening a draft from search.
+   */
+  const onEditText = useCallback(
+    async (postId: string) => {
+      if (postId === draftId) {
+        navigate("composer");
+        return;
+      }
+      if (!confirmLeaving(activeRef.current)) return;
+      if (
+        composerUnsaved.current &&
+        !window.confirm("The post in the Composer has unsaved changes. Open the queued post and discard them?")
+      ) {
+        return;
+      }
+      const found = await fetchPostById(postId).catch(() => null);
+      if (!found) return;
+      touched.current = true;
+      setDraft(found.content);
+      setDraftId(found.id);
+      base.current = { id: found.id, content: found.content };
+      setPosted(POSTED_STATUSES.has(found.status) ? { id: found.id, status: found.status, agreed: false } : null);
+      setPostedRefused(false);
+      setChangedElsewhere(false);
+      setSaveState("idle");
+      setSavedAt(null);
+      setSaveError(null);
+      setGenerated(null);
+      setHookUndo(null);
+      navigate("composer", true);
+    },
+    [draftId, navigate],
+  );
+
+  const saveActions: BarAction[] = [];
+  if (saveState === "failed" && changedElsewhere) {
+    saveActions.push({
+      label: "Keep this version",
+      onClick: () => void onSave(true, holdsPosted && posted?.agreed === true),
+    });
+  }
+  if (saveState === "failed" && postedRefused && holdsPosted && posted) {
+    saveActions.push({ label: `Correct the ${postedWord(posted.status)} post`, onClick: onCorrectPosted });
+  }
+  if ((saveState === "failed" && postedRefused) || holdsPosted) {
+    saveActions.push({ label: "Save as a new draft", onClick: () => void onSaveAsNew() });
+  }
 
   /**
    * Opens what a search result names.
@@ -492,6 +641,8 @@ export default function App() {
         setSaveError(null);
         setGenerated(null);
         setHookUndo(null);
+        setPosted(null);
+        setPostedRefused(false);
         navigate("composer", true);
         return;
       }
@@ -535,7 +686,7 @@ export default function App() {
             saveState={saveState}
             savedAt={savedAt}
             saveError={saveError}
-            onSave={() => void onSave()}
+            onSave={() => (holdsPosted ? onCorrectPosted() : void onSave())}
             onPublish={async () => {
             // Publishing acts on a stored post. An unsaved draft has no id, so
             // it is written first rather than opening a dialog that can only
@@ -544,8 +695,17 @@ export default function App() {
             setPublishOpen(true);
           }}
           />
-          {saveState === "failed" && saveError && (
-            <SaveReason reason={saveError} onKeepMine={changedElsewhere ? () => void onSave(true) : undefined} />
+          {saveState === "failed" && saveError ? (
+            <SaveReason reason={saveError} actions={saveActions} />
+          ) : (
+            holdsPosted &&
+            posted && (
+              <SaveReason
+                tone="note"
+                reason={`You are editing the text of a post that is already ${postedWord(posted.status)}. Save changes that post, after asking first; Save as a new draft keeps this text as a separate post.`}
+                actions={saveActions}
+              />
+            )
           )}
           </>
         ) : (
@@ -663,7 +823,7 @@ export default function App() {
               {active === "swipe" && <SwipeSurface focus={focusFor("swipe")} />}
               {active === "analytics" && <AnalyticsSurface />}
               {active === "settings" && <BrandStudioSurface />}
-              {active === "queue" && <QueueSurface />}
+              {active === "queue" && <QueueSurface onEditText={(postId) => void onEditText(postId)} />}
               {active === "docs" && <DocsSurface focus={focusFor("docs")} />}
               {active === "command" && <CommandSurface />}
               {active === "devtools" && <DevtoolsSurface />}

@@ -145,31 +145,52 @@ export function ContextBar({
   );
 }
 
+/** A way past what the line under the bar says, such as Keep this version. */
+export interface BarAction {
+  label: string;
+  onClick: () => void;
+}
+
 /**
- * Why the last save failed, in words under the bar.
+ * Why the last save failed, or what the Composer is holding, in words under
+ * the bar.
  *
  * The bar has room for the mark, not the sentence, and the sentence is the
  * part the author has to act on: the 5,000 character limit, an empty editor,
- * a draft changed in another window. Hidden from assistive technology only
- * because the status in the bar already announces it.
+ * a draft changed in another window, a post that is already queued. A failure
+ * is hidden from assistive technology only because the status in the bar
+ * already announces it; a note is not announced anywhere else, so it is read.
  */
-export function SaveReason({ reason, onKeepMine }: { reason: string; onKeepMine?: () => void }) {
+export function SaveReason({
+  reason,
+  actions = [],
+  tone = "failed",
+}: {
+  reason: string;
+  actions?: BarAction[];
+  tone?: "failed" | "note";
+}) {
   return (
-    <div className="flex shrink-0 items-center gap-3 border-b border-edge bg-ink px-3 py-1.5 sm:px-4">
-      <p className="min-w-0 flex-1 text-[12px] leading-snug text-signal-orange-text" aria-hidden="true">
+    <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-edge bg-ink px-3 py-1.5 sm:px-4">
+      <p
+        className={cn(
+          "min-w-0 flex-1 basis-60 text-[12px] leading-snug",
+          tone === "failed" ? "text-signal-orange-text" : "text-ink-secondary",
+        )}
+        aria-hidden={tone === "failed" ? "true" : undefined}
+      >
         {reason}
       </p>
-      {/* Only for a draft saved from another window in between. The author
-          has seen that and chooses to replace it. */}
-      {onKeepMine && (
+      {actions.map((action) => (
         <button
+          key={action.label}
           type="button"
-          onClick={onKeepMine}
+          onClick={action.onClick}
           className="shrink-0 rounded-md border border-edge px-2.5 py-1 text-xs font-medium text-ink-secondary transition-colors hover:border-edge-strong hover:text-ink-primary"
         >
-          Keep this version
+          {action.label}
         </button>
-      )}
+      ))}
     </div>
   );
 }
