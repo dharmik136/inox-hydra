@@ -929,7 +929,9 @@ class ReverseCRMManager:
 
             leads_list = list(deduped_leads.values())
             total_leads = len(leads_list)
-            vip_leads_count = sum(1 for l in leads_list if l["icp_score"] >= 75.0 or l["seniority_level"] in ("C-Suite", "VP / SVP / EVP", "Founder / Owner"))
+            # The one tier rule, as in the CRM and the CSV. This counted from 75,
+            # and from seniority labels classify_seniority never produces.
+            vip_leads_count = sum(1 for l in leads_list if l["qualification_tier"] == "TIER_1_VIP")
             avg_icp = round(sum(l["icp_score"] for l in leads_list) / total_leads, 1) if total_leads > 0 else 0.0
 
             return {

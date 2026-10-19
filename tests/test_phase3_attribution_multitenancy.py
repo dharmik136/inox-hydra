@@ -97,7 +97,8 @@ def test_phase3_post_attribution_calculation():
     summary = attr["attribution_summary"]
 
     assert summary["total_leads_generated"] >= 3
-    assert summary["vip_leads_count"] >= 1  # Elena Rostova is C-level / VP
+    # VIP is the one tier rule (ICP 80 and up), not a C-level title on its own.
+    assert summary["vip_leads_count"] == sum(1 for l in attr["leads"] if l["qualification_tier"] == "TIER_1_VIP")
     assert summary["questions_count"] >= 1  # Elena's comment contained a question mark
     assert summary["avg_icp_score"] > 0.0
     assert summary["comments_count"] >= 2

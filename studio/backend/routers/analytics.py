@@ -15,11 +15,11 @@ from fastapi import APIRouter, HTTPException, Response
 
 try:
     from ..database import get_db
-    from ..crm import reverse_crm
+    from ..crm import reverse_crm, VIP_THRESHOLD
     from ..linkedin_client import linkedin_client
 except (ImportError, ValueError):
     from database import get_db
-    from crm import reverse_crm
+    from crm import reverse_crm, VIP_THRESHOLD
     from linkedin_client import linkedin_client
 
 try:
@@ -258,12 +258,12 @@ def get_posts_leaderboard():
             cursor.execute("""
                 SELECT
                     COUNT(DISTINCT l.id) as total_leads,
-                    COUNT(DISTINCT CASE WHEN l.icp_score >= 75.0 THEN l.id END) as vip_leads,
+                    COUNT(DISTINCT CASE WHEN l.icp_score >= ? THEN l.id END) as vip_leads,
                     ROUND(AVG(l.icp_score), 1) as avg_icp
                 FROM leads l
                 LEFT JOIN lead_interactions li ON l.id = li.lead_id
                 WHERE (li.post_urn != '' AND li.post_urn IN (?, ?)) OR l.post_id = ?
-            """, (post_id_str, post_urn, post_id_str))
+            """, (VIP_THRESHOLD, post_id_str, post_urn, post_id_str))
             attr_row = cursor.fetchone()
             d["attribution"] = {
                 "total_leads": int(attr_row["total_leads"] or 0) if attr_row else 0,
