@@ -1042,7 +1042,7 @@ def _import_comments(conn, rows: Iterable[Dict[str, str]], batches: _Batches) ->
             (urn, message[:4000], _text_key(message), when, when),
         )
         if cursor.rowcount:
-            batches.add("comments", cursor.lastrowid)
+            batches.add("comments", [cursor.lastrowid, when])
         tally["added" if cursor.rowcount else "already_there"] += 1
     return tally
 
@@ -1063,7 +1063,7 @@ def _import_reactions(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -
             (urn, REACTION_WORDS.get(kind, kind.lower()[:40] or None), when, when),
         )
         if cursor.rowcount:
-            batches.add("reactions", cursor.lastrowid)
+            batches.add("reactions", [cursor.lastrowid, when])
         tally["added" if cursor.rowcount else "already_there"] += 1
     return tally
 
@@ -1089,11 +1089,17 @@ def _import_profile(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict
         if value and not (current[column] or "").strip():
             conn.execute(f"UPDATE creator_identity SET {column} = ? WHERE id = 1", (value[:4000],))
             filled.append(column)
-            batches.brought.setdefault("profile", {})[column] = value[:4000]
-    if filled and not current["profile_observed_at"]:
-        observed = _now()
-        conn.execute("UPDATE creator_identity SET profile_observed_at = ? WHERE id = 1", (observed,))
-        batches.brought["observed_at"] = observed
+            # What it held before, to put back on undo.
+            batches.brought.setdefault("profile", {})[column] = [value[:4000], current[column]]
+    if filled:
+        stamp = current["profile_observed_at"]
+        if not stamp:
+            stamp = _now()
+            conn.execute("UPDATE creator_identity SET profile_observed_at = ? WHERE id = 1", (stamp,))
+            batches.brought["observed_at"] = stamp
+        # Every reading of the profile by the bridge moves this, so undo can
+        # tell whether anything has rewritten these fields since.
+        batches.brought["profile_stamp"] = stamp
     return {"filled": filled}
 
 
@@ -1153,7 +1159,7 @@ def _import_skills(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict[
             continue
         cursor = conn.execute("INSERT OR IGNORE INTO creator_skills (skill, observed_at) VALUES (?, ?)", (skill, now))
         if cursor.rowcount:
-            batches.add("skills", skill)
+            batches.add("skills", [skill, now])
         tally["added" if cursor.rowcount else "already_there"] += 1
     return tally
 
@@ -1179,7 +1185,7 @@ def _import_connections(conn, rows: List[Dict[str, str]], batches: _Batches) -> 
              row.get("position") or None, row.get("connected") or None, now),
         )
         if not exists:
-            batches.add("connections", url)
+            batches.add("connections", [url, now])
         tally["already_there" if exists else "added"] += 1
     return tally
 
@@ -1259,33 +1265,54 @@ def import_archive(source: str, include: Optional[List[str]] = None, confirm_own
 
 
 def _remove(conn, brought: Dict[str, Any], batches: Optional[_Batches] = None) -> Dict[str, int]:
-    """Deletes the rows an import added, by the keys it kept. Returns how many of each went."""
+    """
+    Deletes the rows an import added, by the keys it kept. Returns how many of each went.
+
+    Only what the import wrote and nothing has touched since: a row is
+    deleted only while it still carries the stamp the import gave it, so a
+    comment the bridge has read again (last_seen_at), a skill list the
+    bridge has re-read (observed_at) or a connection a later archive
+    refreshed (imported_at) stays. The profile fields go back to what they
+    held before, and only while no reading of the profile has happened
+    since. A post the bridge has since joined carries its activity id, so it
+    is not found by the archive's.
+    """
     removed: Dict[str, int] = {}
     deletes = {
-        # A post the bridge has since joined carries its activity id, so it is not in this list any more.
-        "posts": "DELETE FROM own_posts WHERE activity_urn = ? AND published_at_source = 'archive'",
-        "comments": "DELETE FROM outbound_engagements WHERE id = ? AND kind = 'comment'",
-        "reactions": "DELETE FROM outbound_engagements WHERE id = ? AND kind = 'reaction'",
-        "positions": "DELETE FROM creator_positions WHERE id = ?",
-        "education": "DELETE FROM creator_education WHERE id = ?",
-        "skills": "DELETE FROM creator_skills WHERE skill = ?",
-        "connections": "DELETE FROM connections WHERE profile_url = ?",
+        "posts": ("DELETE FROM own_posts WHERE activity_urn = ? AND published_at_source = 'archive'", None),
+        "comments": ("DELETE FROM outbound_engagements WHERE id = ? AND kind = 'comment'",
+                     "DELETE FROM outbound_engagements WHERE id = ? AND last_seen_at = ? AND kind = 'comment'"),
+        "reactions": ("DELETE FROM outbound_engagements WHERE id = ? AND kind = 'reaction'",
+                      "DELETE FROM outbound_engagements WHERE id = ? AND last_seen_at = ? AND kind = 'reaction'"),
+        # The bridge replaces these lists with new rows, so their ids are never the import's again.
+        "positions": ("DELETE FROM creator_positions WHERE id = ?", None),
+        "education": ("DELETE FROM creator_education WHERE id = ?", None),
+        "skills": ("DELETE FROM creator_skills WHERE skill = ?",
+                   "DELETE FROM creator_skills WHERE skill = ? AND observed_at = ?"),
+        "connections": ("DELETE FROM connections WHERE profile_url = ?",
+                        "DELETE FROM connections WHERE profile_url = ? AND imported_at = ?"),
     }
-    for kind, sql in deletes.items():
+    for kind, (plain, stamped) in deletes.items():
         removed[kind] = 0
         for key in brought.get(kind) or []:
             if batches:
                 batches.row()
-            removed[kind] += conn.execute(sql, (key,)).rowcount
-    # A profile field is emptied again only if it still holds what the archive put there.
+            # A bare key is from a record kept before rows carried their stamp.
+            sql, params = (stamped, tuple(key)) if isinstance(key, list) and stamped else (plain, (key,))
+            removed[kind] += conn.execute(sql, params).rowcount
     removed["profile"] = 0
-    for column, value in (brought.get("profile") or {}).items():
-        if column in PROFILE_COLUMNS:
-            removed["profile"] += conn.execute(
-                f"UPDATE creator_identity SET {column} = NULL WHERE id = 1 AND {column} = ?", (value,)).rowcount
-    if brought.get("observed_at"):
-        conn.execute("UPDATE creator_identity SET profile_observed_at = NULL WHERE id = 1 AND profile_observed_at = ?",
-                     (brought["observed_at"],))
+    stamp = brought.get("profile_stamp")
+    now_stamp = conn.execute("SELECT profile_observed_at FROM creator_identity WHERE id = 1").fetchone()
+    if stamp is None or (now_stamp is not None and now_stamp[0] == stamp):
+        for column, entry in (brought.get("profile") or {}).items():
+            if column in PROFILE_COLUMNS:
+                value, previous = entry if isinstance(entry, list) else (entry, None)
+                removed["profile"] += conn.execute(
+                    f"UPDATE creator_identity SET {column} = ? WHERE id = 1 AND {column} = ?",
+                    (previous, value)).rowcount
+        if brought.get("observed_at"):
+            conn.execute("UPDATE creator_identity SET profile_observed_at = NULL "
+                         "WHERE id = 1 AND profile_observed_at = ?", (brought["observed_at"],))
     return removed
 
 

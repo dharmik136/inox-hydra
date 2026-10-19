@@ -530,6 +530,44 @@ def _confirm_bob(client, **extra):
     assert client.post("/api/v1/identity/confirm", json={"vanity": "sample-bob"}).status_code == 200
 
 
+def test_undo_keeps_what_the_bridge_read_after_the_import(client):
+    """SETUP-19: the profile capture that follows an import writes the same name, headline and skills."""
+    members = _person_archive("Sample", "Bob")
+    members["Profile.csv"] = _profile("Sample", "Bob", headline="Synthetic headline")
+    members["Comments.csv"] = ("Date,Link,Message\n2024-06-01 12:00:00,"
+                               "https://www.linkedin.com/feed/update/urn:li:activity:7200000000000000004,Nice.\n")
+    source = _upload(client, members)["source"]
+    assert _import(client, source, confirm_owner=True).status_code == 200
+    _confirm_bob(client, headline="Synthetic headline", skills=["Synthetic Skill", "Other Skill"])
+    import onboarding
+    # The bridge then reads the same comment on the activity page.
+    onboarding.ingest_outbound("sample-bob", [{"target_activity_urn": "urn:li:activity:7200000000000000004",
+                                                "kind": "comment", "my_text": "Nice.", "target_author": "Someone"}])
+    conn = _db()
+    before = tuple(conn.execute("SELECT display_name, headline FROM creator_identity").fetchone())
+    skills = sorted(r[0] for r in conn.execute("SELECT skill FROM creator_skills"))
+    assert client.post("/api/v1/archive/undo").status_code == 200
+    conn = _db()
+    assert tuple(conn.execute("SELECT display_name, headline FROM creator_identity").fetchone()) == before
+    assert sorted(r[0] for r in conn.execute("SELECT skill FROM creator_skills")) == skills
+    assert conn.execute("SELECT COUNT(*) FROM outbound_engagements").fetchone()[0] == 1, (
+        "undo deleted a comment the bridge has read since")
+
+
+def test_undo_restores_only_fields_nothing_has_touched_since(client):
+    """SETUP-19: with no capture after the import, the fields it filled go back to what they were."""
+    conn = _db()
+    conn.execute("INSERT INTO creator_identity (id, display_name, headline) VALUES (1, 'Sample Bob', '  ')")
+    conn.commit()
+    conn.close()
+    source = _upload(client, _person_archive("Sample", "Bob"))["source"]
+    assert _import(client, source, confirm_owner=True).status_code == 200
+    assert _db().execute("SELECT headline FROM creator_identity").fetchone()[0] == "Synthetic headline"
+    assert client.post("/api/v1/archive/undo").status_code == 200
+    row = _db().execute("SELECT display_name, headline, about FROM creator_identity").fetchone()
+    assert tuple(row) == ("Sample Bob", "  ", None), "a field was not put back as it was before the import"
+
+
 def test_an_unpacked_folder_on_windows_is_not_still_downloading(client, home, monkeypatch):
     """SETUP-12: NTFS reports 0 bytes for a folder."""
     import stat as stat_module
