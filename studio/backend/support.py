@@ -154,9 +154,9 @@ def _account_folders() -> List[tuple]:
     """
     (path, placeholder) pairs for the OS account folder, longest first.
 
-    On most machines the account folder is the person's name
-    (C:\\Users\\Firstname Lastname), and every path in the bundle starts with
-    it. The placeholder still tells us where the state is, relative to it.
+    On most machines the account folder is named after the person, first and
+    last name, and every path in the bundle starts with it. The placeholder
+    still tells us where the state is, relative to it.
     """
     pairs = []
     if sys.platform == "win32" and os.environ.get("LOCALAPPDATA"):
