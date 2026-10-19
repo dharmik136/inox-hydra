@@ -36,6 +36,22 @@ def test_the_capture_table_names_only_pages_the_engager_reader_reads():
         assert "activity page" not in where, row
 
 
+def test_the_article_does_not_undercount_what_the_page_scripts_can_reach():
+    # F3-N1: it said "just three studio functions" while the worker relays
+    # fifteen, including the heartbeat, the own-profile and history routes and
+    # the two network reading routes.
+    background = os.path.join(REPO_ROOT, "studio", "extension", "background.js")
+    with open(background, encoding="utf-8") as handle:
+        relayed = re.findall(r'"(/api/[^"]+)"', handle.read().split("RELAYABLE_PATHS = new Set([")[1].split("]);")[0])
+    assert len(relayed) > 3
+    with open(ARTICLE, encoding="utf-8") as handle:
+        text = handle.read()
+    assert "just three studio functions" not in text
+    paragraph = next(p for p in text.split("\n\n") if "runs inside LinkedIn pages" in p)
+    for words in ("heartbeat", "your own profile", "history imports", "network reading is on"):
+        assert words in paragraph, words
+
+
 def test_the_article_says_activity_pages_are_not_read_for_leads():
     with open(ARTICLE, encoding="utf-8") as handle:
         text = handle.read()

@@ -63,7 +63,7 @@ Everything goes only to the studio at `127.0.0.1:8000`. Lead capture skips profi
 
 It does not post, comment, react, message or follow on your behalf, and it does not load LinkedIn pages. Apart from the session cookies and request addresses above, it reads only what your browser is already showing. The one thing it can do on a LinkedIn page is the side panel's insert button: it opens LinkedIn's post box if needed and types your text into it, but it does not press Post.
 
-The part of the extension that runs inside LinkedIn pages relays to just three studio functions: saving analytics, linking a post, and saving an engagement. Fields named after LinkedIn session credentials are stripped out first.
+The part of the extension that runs inside LinkedIn pages can reach only a fixed list of studio functions: saving analytics, linking a post, saving an engagement, the bridge's heartbeat and capture log, recognising your own profile, saving your own posts, comments and reactions and the history imports that read them, and, only while network reading is on, the network readings. Fields named after LinkedIn session credentials are stripped out first.
 
 > [!NOTE]
 > The toolbar popup and side panel ask the studio through the extension's background worker, which carries the studio token. The popup's server line reads Online, Not paired or Offline, and a side panel list that cannot load names the reason: the studio is not running, has not paired with this browser, or answered with an error status.
