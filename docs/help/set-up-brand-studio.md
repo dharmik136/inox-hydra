@@ -54,7 +54,7 @@ The tab opens with "This install processes your work on this machine." and four 
 | Model engine | RUNS LOCALLY or SENDS TO PROVIDER | SENDS TO PROVIDER when an AI key is saved. UNKNOWN if the status could not be read |
 | LinkedIn session | CONNECTED or NOT CONNECTED | Shown in green either way |
 
-Below the rows, the line YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THIS MACHINE is not the whole story: **Send to LinkedIn** sends the post itself to LinkedIn, using your session. Then come three sections:
+Below the rows, a short list says what stays and what leaves: your drafts, posts, leads, analytics and media stay on this machine, and three actions send something only when you use them. **Send to LinkedIn** sends the post's text to LinkedIn with your session. With an AI provider connected, **Re-Hook**, **Command** and the other writing actions send the draft or instruction text to it; the line says whether one is connected. **Generate** in the Media tab sends a prompt built from your image description to an image service. Then come three sections:
 
 - **What has left this machine**, the egress ledger. See [What leaves this machine, and when](what-leaves-this-machine.md).
 - **LinkedIn session**, where you paste your session. See [Connect your LinkedIn session](connect-your-linkedin-session.md).

@@ -379,16 +379,36 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
       </dl>
 
       {/* This used to end "NOTHING ELSE IN THE STUDIO LEAVES THIS MACHINE",
-          which is not true. Four features reach out, and a blanket sentence a
-          reader cannot verify is worth less than a list they can. What stays
-          is the part that actually matters: the work itself never moves.
+          and then "YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THIS
+          MACHINE". Neither was true: Send to LinkedIn sends the draft with
+          that session, and a connected AI provider receives draft text. So
+          it says what stays, and each action that sends, what it sends and
+          where, matching the help article on what leaves this machine.
 
           tests/test_egress_surface.py holds this list to the code, so adding
           an outbound call without saying so here fails the suite. */}
       <div className="mt-5">
-        <p className="studio-meta leading-relaxed text-ink-muted">
-          YOUR DRAFTS, LEADS AND LINKEDIN SESSION NEVER LEAVE THIS MACHINE.
+        <p className="text-[13px] leading-relaxed text-ink-secondary">
+          Your drafts, posts, leads, analytics and media stay in this profile&apos;s files on this
+          machine. Something leaves it only when you choose an action that sends it:
         </p>
+        <ul className="mt-2 flex list-disc flex-col gap-1 pl-5 text-[13px] leading-relaxed text-ink-secondary">
+          <li>
+            <span className="text-ink-primary">Send to LinkedIn</span> sends the post&apos;s text to
+            LinkedIn, signed in with your stored LinkedIn session.
+          </li>
+          <li>
+            {ai?.has_api_key
+              ? "Re-Hook, Command and the other writing actions send the draft or instruction text to the AI provider you connected."
+              : ai
+                ? "No AI provider is connected, so Re-Hook, Command and the other writing actions run on this machine. Connect one, and they send the draft or instruction text to it."
+                : "With an AI provider connected, Re-Hook, Command and the other writing actions send the draft or instruction text to it."}
+          </li>
+          <li>
+            <span className="text-ink-primary">Generate</span> in the Media tab sends a prompt built
+            from your image description to an image service.
+          </li>
+        </ul>
       </div>
 
       <EgressLedger />
