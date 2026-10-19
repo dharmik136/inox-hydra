@@ -2278,12 +2278,30 @@ def create_support_backup(payload: Optional[Dict[str, Any]] = None):
 
 @app.get("/api/v1/support/backups", tags=["Support & Maintenance"])
 def list_support_backups():
+    """
+    The backups folder: full backups first, then pre-upgrade database copies,
+    then anything else, each newest first.
+
+    This was reverse file name order, so the automatic pre-upgrade copies
+    always came first and the five the interface shows were rarely the newest,
+    or ones the creator had made.
+    """
     directory = get_backups_dir()
     entries = []
-    for name in sorted(os.listdir(directory), reverse=True):
+    for name in os.listdir(directory):
         full = os.path.join(directory, name)
+        if not os.path.isfile(full):
+            continue
+        info = support_tools.inspect_backup(full)
+        kind = info.get("kind") if info.get("has_database") else "other"
         entries.append({"name": name, "bytes": os.path.getsize(full),
-                        "modified": datetime.fromtimestamp(os.path.getmtime(full)).isoformat()})
+                        "modified": datetime.fromtimestamp(os.path.getmtime(full)).isoformat(),
+                        "kind": kind, "restorable": kind in ("backup", "database"),
+                        "_mtime": os.path.getmtime(full)})
+    order = {"backup": 0, "database": 1}
+    entries.sort(key=lambda entry: (order.get(entry["kind"], 2), -entry["_mtime"]))
+    for entry in entries:
+        del entry["_mtime"]
     return {"directory": directory, "count": len(entries), "backups": entries}
 
 

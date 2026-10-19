@@ -21,11 +21,11 @@ To see the exact paths, open a terminal in the checkout folder, the one that hol
 3. Scroll to **Your data**.
 4. Click **Back up now**.
 
-When it finishes, a note reads "Saved *size* to *archive path*". Below the buttons the studio lists how many files the backups folder holds, five of them with their size and time, and the folder path. The five are the first by file name in reverse order, not necessarily the newest. The file itself is not downloaded through the browser; it stays where the note says.
+When it finishes, a note reads "Saved *size* to *archive path*". Below the buttons the studio lists how many files the backups folder holds, five of them with their size and time, and the folder path. Your ZIP backups come first, newest first, then the automatic database copies. The file itself is not downloaded through the browser; it stays where the note says.
 
 **What happens:** the studio writes `inox_backup_manual_<date>_<time>.zip`. It contains `data/linkedin_studio.db` (copied through SQLite's backup API, so it is consistent even while the studio is running), every file under `assets/`, and a `backup_manifest.json` with the date and version.
 
-The studio also saves a timestamped copy of the database in the same folder before any schema upgrade, named `linkedin_studio_premigration_<date>_<time>.db`. Those appear in the list too, and because of the name order they are listed before your ZIP backups.
+The studio also saves a timestamped copy of the database in the same folder before any schema upgrade, named `linkedin_studio_premigration_<date>_<time>.db`. Those appear in the list too, after your ZIP backups.
 
 > [!WARNING]
 > A backup contains your whole database, including your leads' names and comments, so store backup files carefully. Your AI key, and your LinkedIn session if one is stored, are in it only in sealed form, locked to this computer and your account on it. Restore the backup somewhere else and they read as not set: enter the AI key again there, and reconnect LinkedIn if you use it.
