@@ -421,21 +421,36 @@ function parseMetricValue(raw, lang) {
  * the dashboard then summed overlapping windows. Returning null is honest, and
  * the backend refuses the write, which is better than silently recording a
  * number that means something other than what the column says.
+ *
+ * Any "N days" is read, in English and the other languages LinkedIn serves,
+ * so "Past 365 days" is no longer a window nobody recognised. A range control
+ * whose words are not understood (a custom range prints dates) answers
+ * "unrecognised", which the studio refuses as a daily figure. null is kept for
+ * a page with no range control at all.
  */
+function analyticsPeriodOf(text) {
+  const t = (text || "").toLowerCase();
+  if (/\b24\s*(hours?|stunden|ore|heures|horas|uur|timmar|timer|godzin)(?![a-z])|\b(past|last) day\b/.test(t)) return "1d";
+  if (/\b12\s*(months?|monate[n]?|mesi|mois|meses|maanden|månader|miesięcy)(?![a-z])|\b(past|last) year\b/.test(t)) return "365d";
+  // An adjective may sit between the figure and the word: "365 derniers jours".
+  const days = /\b(\d{1,3})\s*(?:[a-zà-ÿ]+\s+)?(days?|tage[n]?|giorni|jours|días|dias|dagen|dagar|dage|dni|dní|gün)(?![a-z])/.exec(t);
+  if (days) return Number(days[1]) === 1 ? "1d" : Number(days[1]) + "d";
+  return null;
+}
+
 function detectAnalyticsPeriod() {
   const candidates = document.querySelectorAll(
     '.artdeco-dropdown__trigger, [data-test-analytics-time-range], .analytics-time-range-selector, button[aria-label*="time range" i]'
   );
+  let unread = false;
   for (const el of candidates) {
-    const t = (el.innerText || "").toLowerCase();
-    if (/past 24 hours|last 24 hours|past day/.test(t)) return "1d";
-    if (/past 7 days|last 7 days/.test(t)) return "7d";
-    if (/past 14 days|last 14 days/.test(t)) return "14d";
-    if (/past 28 days|last 28 days|past 30 days/.test(t)) return "28d";
-    if (/past 90 days|last 90 days/.test(t)) return "90d";
-    if (/past year|last 365/.test(t)) return "365d";
+    const text = el.innerText || "";
+    const period = analyticsPeriodOf(text);
+    if (period) return period;
+    // A generic dropdown without a figure in it is some other control.
+    if (/\d/.test(text) || !el.matches(".artdeco-dropdown__trigger")) unread = unread || !!text.trim();
   }
-  return null;
+  return unread ? "unrecognised" : null;
 }
 
 function extractAndSyncAnalytics() {
