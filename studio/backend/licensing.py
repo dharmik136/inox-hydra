@@ -221,36 +221,75 @@ def _seen_path() -> str:
     return os.path.join(paths.get_vault_dir(), SEEN_FILENAME)
 
 
-def _latest_date_seen(today: date) -> date:
-    """
-    The later of today and the latest date this studio has recorded.
+# How far ahead of the clock a remembered date may be and still count. Beyond
+# this it is taken to be an old clock mistake (a year typed wrong, a virtual
+# machine, a test rig), not a rollback. An honest user then loses at most this
+# many days of licence, never the whole licence, while a short rollback past
+# the end date stays blocked. Longer rollbacks break HTTPS in every browser
+# anyway, and the file can be deleted, so the bound costs nothing real.
+SEEN_MAX_AHEAD_DAYS = 31
+_SET_ASIDE = "set-aside "
 
-    Licence state used to depend on the local date alone, so setting the clock
-    back made an ended licence active again. The latest date seen is kept
-    beside the licence and only ever moves forward; expiry is judged against
-    it. A file that cannot be read or written is ignored, because a licence
-    detail must never stop the studio.
-    """
-    seen = None
-    try:
-        with open(_seen_path(), "r", encoding="ascii") as handle:
-            seen = date.fromisoformat(handle.read().strip()[:10])
-    except (OSError, ValueError, UnicodeError):
-        seen = None
-    if seen is not None and seen >= today:
-        return seen
+
+def _write_seen(today: date, set_aside: Optional[date] = None) -> None:
     try:
         fd, tmp = tempfile.mkstemp(prefix=".seen-", dir=paths.get_vault_dir())
         try:
             with os.fdopen(fd, "w", encoding="ascii") as handle:
                 handle.write(today.isoformat() + "\n")
+                if set_aside:
+                    handle.write(_SET_ASIDE + set_aside.isoformat() + "\n")
             os.replace(tmp, _seen_path())
         finally:
             if os.path.exists(tmp):
                 os.remove(tmp)
     except OSError:
         pass
-    return today
+
+
+def _remembered_date(today: date) -> tuple:
+    """
+    (date to judge expiry against, a far-future date set aside today or None).
+
+    Licence state used to depend on the local date alone, so setting the clock
+    back made an ended licence active again. The latest date seen is kept
+    beside the licence and moves forward; expiry is judged against it. But it
+    is bounded: a date more than SEEN_MAX_AHEAD_DAYS ahead of the clock is set
+    aside and rewritten to today, because an unbounded mark let one far-future
+    clock reading end every licence for good, a fresh one included. A file
+    that cannot be read or written is ignored, because a licence detail must
+    never stop the studio.
+    """
+    seen, set_aside = None, None
+    try:
+        with open(_seen_path(), "r", encoding="ascii") as handle:
+            lines = handle.read().split("\n")
+        seen = date.fromisoformat(lines[0].strip()[:10])
+        if len(lines) > 1 and lines[1].startswith(_SET_ASIDE):
+            set_aside = date.fromisoformat(lines[1][len(_SET_ASIDE):].strip()[:10])
+    except (OSError, ValueError, UnicodeError, IndexError):
+        seen = None
+    if seen is None or seen < today:
+        _write_seen(today)
+        return today, None
+    if (seen - today).days > SEEN_MAX_AHEAD_DAYS:
+        _write_seen(today, set_aside=seen)
+        return today, seen
+    if seen == today and set_aside:
+        # Set aside earlier today: keep saying so until the date moves on.
+        return today, set_aside
+    return seen, None
+
+
+def _latest_date_seen(today: date) -> date:
+    """The date expiry is judged against: see _remembered_date."""
+    return _remembered_date(today)[0]
+
+
+def _set_aside_note(today: date, set_aside: date) -> str:
+    return (f"This studio once saw the date {set_aside.isoformat()}, more than {SEEN_MAX_AHEAD_DAYS} days "
+            f"ahead of this computer's clock ({today.isoformat()}). That was taken as an old clock mistake "
+            f"and set aside, so the licence is checked against today.")
 
 
 def _licence_stamp() -> Optional[tuple]:
@@ -276,8 +315,8 @@ def current(today: Optional[date] = None) -> Dict[str, Any]:
     computer's clock reads earlier than that.
     """
     today = today or date.today()
-    effective = _latest_date_seen(today)
-    key = (paths.get_app_home(), _licence_stamp(), today, effective, tuple(PUBLIC_KEYS), BETA_OPEN)
+    effective, set_aside = _remembered_date(today)
+    key = (paths.get_app_home(), _licence_stamp(), today, effective, set_aside, tuple(PUBLIC_KEYS), BETA_OPEN)
     if _current_cache["key"] == key:
         return json.loads(json.dumps(_current_cache["value"]))
 
@@ -309,6 +348,10 @@ def current(today: Optional[date] = None) -> Dict[str, Any]:
                 state.update(status="expired", reason=reason)
             else:
                 state.update(status="active", tier=payload["tier"])
+    if set_aside:
+        note = _set_aside_note(today, set_aside)
+        state["reason"] = f"{state['reason']} {note}".strip()
+        state["clock_set_aside"] = set_aside.isoformat()
     state["tier_label"] = TIERS[state["tier"]]["label"]
     state["profile_limit"] = _profile_limit(state)
     _current_cache.update(key=key, value=json.loads(json.dumps(state)))
@@ -344,8 +387,16 @@ def install(text: str, today: Optional[date] = None) -> Dict[str, Any]:
     read = read_licence_text(text)
     if not read["valid"]:
         return {"status": "error", "message": read["reason"]}
-    if _expired(read["payload"], _latest_date_seen(today or date.today())):
-        return {"status": "error", "message": f"This licence ended on {read['payload']['expires_at']}. Nothing was changed."}
+    today = today or date.today()
+    # Bounded as in current(): a far-future mark is set aside, so a fresh key
+    # is judged against today.
+    effective = _latest_date_seen(today)
+    if _expired(read["payload"], effective):
+        message = f"This licence ended on {read['payload']['expires_at']}."
+        if effective > today:
+            message += (f" This computer's clock reads {today.isoformat()}, but this studio has already seen "
+                        f"{effective.isoformat()}, so the licence is checked against {effective.isoformat()}.")
+        return {"status": "error", "message": message + " Nothing was changed."}
     clean = "".join(text.split())
     vault = paths.get_vault_dir()
     fd, tmp = tempfile.mkstemp(prefix=".licence-", dir=vault)

@@ -192,3 +192,56 @@ def test_an_ended_key_cannot_be_installed_by_setting_the_clock_back(vault):
     licensing.current(today=date(2026, 11, 25))
     result = licensing.install(_signed(expires_at="2026-11-19"), today=date(2026, 11, 1))
     assert result["status"] == "error" and "2026-11-19" in result["message"]
+    # The refusal relied on the remembered date, so it names it and the clock.
+    assert "2026-11-25" in result["message"] and "2026-11-01" in result["message"]
+    assert "clock" in result["message"]
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM-23 (review): the remembered date is bounded, so one far-future
+# clock reading cannot lock a paying user out for good
+# ---------------------------------------------------------------------------
+
+def _remember(vault, when):
+    os.makedirs(os.path.join(str(vault), "vault"), exist_ok=True)
+    with open(os.path.join(str(vault), "vault", licensing.SEEN_FILENAME), "w", encoding="ascii") as handle:
+        handle.write(when.isoformat() + "\n")
+
+
+def test_a_far_future_date_once_seen_is_set_aside(vault):
+    from datetime import timedelta
+
+    today = date(2026, 10, 21)
+    _remember(vault, date(2062, 1, 1))
+    key = _signed(issued_at="2026-10-21", expires_at="2027-10-21", updates_until="2027-10-21")
+    installed = licensing.install(key, today=today)
+    assert installed["status"] == "success", installed.get("message")
+
+    state = licensing.current(today=today)
+    assert state["status"] == "active" and state["profile_limit"] == 5
+    assert "2062-01-01" in state["reason"] and "clock" in state["reason"], state["reason"]
+    with open(os.path.join(str(vault), "vault", licensing.SEEN_FILENAME), encoding="ascii") as handle:
+        assert handle.read().startswith(today.isoformat()), "the far-future date was kept"
+    # A day later the ordinary rule is back in force, and the note has gone.
+    later = licensing.current(today=today + timedelta(days=1))
+    assert later["status"] == "active" and later["reason"] == ""
+
+
+def test_a_date_seen_within_31_days_is_still_enforced(vault):
+    from datetime import timedelta
+
+    today = date(2026, 10, 21)
+    licensing.install(_signed(expires_at=(today + timedelta(days=5)).isoformat()), today=today)
+    _remember(vault, today + timedelta(days=10))
+    state = licensing.current(today=today)
+    assert state["status"] == "expired", "a short clock rollback past the end revived the licence"
+    assert (today + timedelta(days=10)).isoformat() in state["reason"]
+
+
+def test_a_mark_just_past_the_bound_is_set_aside(vault):
+    from datetime import timedelta
+
+    today = date(2026, 10, 21)
+    licensing.install(_signed(expires_at=(today + timedelta(days=5)).isoformat()), today=today)
+    _remember(vault, today + timedelta(days=32))
+    assert licensing.current(today=today)["status"] == "active"
