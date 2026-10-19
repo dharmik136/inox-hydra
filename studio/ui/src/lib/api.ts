@@ -2220,3 +2220,20 @@ export async function fetchLeadOfferDraft(leadId: string, offer: string, topic?:
   if (!data.dm_script) throw new Error("the server returned no draft");
   return data.dm_script;
 }
+
+/** Writes the creator's own notes on a lead. The pipeline stage is left alone. */
+export async function updateLeadNotes(leadId: string, notes: string): Promise<string> {
+  const data = await call<{ notes?: string }>(`/api/leads/${encodeURIComponent(leadId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ notes }),
+  });
+  return data.notes ?? "";
+}
+
+/**
+ * Forgets a person: the lead, their engagements, their stage history and any
+ * enrichment, in one step on the server. It cannot be undone.
+ */
+export async function forgetLead(leadId: string): Promise<void> {
+  await call(`/api/leads/${encodeURIComponent(leadId)}`, { method: "DELETE" });
+}

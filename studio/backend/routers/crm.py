@@ -17,6 +17,7 @@ try:
         add_lead,
         batch_add_leads,
         update_lead_status,
+        update_lead_notes,
         delete_lead,
         generate_dm_script,
         export_leads_csv,
@@ -30,6 +31,7 @@ except (ImportError, ValueError):
         add_lead,
         batch_add_leads,
         update_lead_status,
+        update_lead_notes,
         delete_lead,
         generate_dm_script,
         export_leads_csv,
@@ -54,6 +56,10 @@ class LeadCreate(BaseModel):
 class LeadStatusUpdate(BaseModel):
     status: str
     notes: Optional[str] = None
+
+
+class LeadNotesUpdate(BaseModel):
+    notes: str
 
 
 class IngestInteractionRequest(BaseModel):
@@ -138,6 +144,15 @@ def update_lead(lead_id: str, payload: LeadStatusUpdate):
         raise HTTPException(status_code=404, detail=f"Lead '{lead_id}' not found")
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result["message"])
+    return result
+
+
+@router.patch("/api/leads/{lead_id}")
+def edit_lead_notes(lead_id: str, payload: LeadNotesUpdate):
+    """The creator's notes on a lead, from the dossier, without touching the stage."""
+    result = update_lead_notes(lead_id, payload.notes)
+    if result.get("status") == "not_found":
+        raise HTTPException(status_code=404, detail=f"Lead '{lead_id}' not found")
     return result
 
 

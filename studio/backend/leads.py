@@ -268,6 +268,22 @@ def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = Non
         conn.close()
 
 
+def update_lead_notes(lead_id: str, notes: str) -> Dict:
+    """The creator's own notes on a lead, written from the dossier. The stage is left alone."""
+    sanitized = (notes or "").strip()[:MAX_NOTES_LENGTH]
+    conn = get_db()
+    try:
+        updated = conn.execute(
+            "UPDATE leads SET notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", (sanitized, lead_id)
+        ).rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    if updated == 0:
+        return {"status": "not_found", "id": lead_id}
+    return {"status": "success", "id": lead_id, "notes": sanitized}
+
+
 def delete_lead(lead_id: str) -> Dict:
     # The same removal as the purge route, so deleting someone here forgets
     # their stage history and engagements too, not only the lead row.

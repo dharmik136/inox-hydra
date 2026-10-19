@@ -12,9 +12,11 @@ import {
   fetchLeadReview,
   fetchLeadTimeline,
   fetchLeads,
+  forgetLead,
   launchBridge,
   generateLeadDm,
   removeLeadsNotOnYourPosts,
+  updateLeadNotes,
   updateLeadStatus,
   type BrowserBridge,
   type Lead,
@@ -64,6 +66,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
   const [query, setQuery] = useState("");
   const [stage, setStage] = useState("All");
   const [limit, setLimit] = useState(STREAM_PAGE);
+  const [notice, setNotice] = useState<string | null>(null);
   const shown = useMemo(() => {
     const words = folded(query).split(/\s+/).filter(Boolean);
     return (leads ?? []).filter(
@@ -173,6 +176,11 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
             ))}
           </select>
         </div>
+        {notice && (
+          <p role="status" className="studio-meta border-b border-edge px-4 py-2 text-[10px] leading-snug text-ink-secondary">
+            {notice}
+          </p>
+        )}
         <LeadReviewPanel onChanged={reload} />
         <ul className="min-h-0 flex-1 overflow-y-auto">
           {shown.length === 0 && (
@@ -239,7 +247,18 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
           <ArrowLeft className="size-3" strokeWidth={2} aria-hidden="true" />
           Back to the lead stream
         </button>
-        {selected ? <Dossier leadId={selected} onChanged={reload} /> : null}
+        {selected ? (
+          <Dossier
+            leadId={selected}
+            onChanged={reload}
+            onForgotten={(name) => {
+              setNotice(`FORGOT ${name.toUpperCase()}, WITH EVERYTHING THE STUDIO HAD RECORDED ABOUT THEM.`);
+              setSelected(null);
+              setPane("stream");
+              reload();
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -248,7 +267,15 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
 /**
  * The person dossier. A research sheet, not a modal.
  */
-function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void }) {
+function Dossier({
+  leadId,
+  onChanged,
+  onForgotten,
+}: {
+  leadId: string;
+  onChanged: () => void;
+  onForgotten: (name: string) => void;
+}) {
   const [data, setData] = useState<{ lead: DossierLead; interactions: LeadInteraction[]; stage_history?: LeadStageEvent[] } | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -420,12 +447,14 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
         )}
       </section>
 
-      {lead.notes && (
-        <section className="mt-6">
-          <p className="studio-label mb-2">Notes</p>
-          <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink-secondary">{lead.notes}</p>
-        </section>
-      )}
+      <LeadNotes
+        leadId={lead.id}
+        notes={lead.notes}
+        onSaved={async () => {
+          await refresh();
+          onChanged();
+        }}
+      />
 
       <section className="mt-6">
         <p className="studio-label mb-2">Pipeline</p>
@@ -599,7 +628,174 @@ function Dossier({ leadId, onChanged }: { leadId: string; onChanged: () => void 
           </p>
         )}
       </section>
+
+      <ForgetLead lead={lead} onForgotten={() => onForgotten(lead.name)} />
     </article>
+  );
+}
+
+/**
+ * The creator's own notes on a lead.
+ *
+ * They were shown and could not be changed here, so a note was only ever what
+ * a capture or an import had written. Saving writes the notes and nothing
+ * else; the stage is the pipeline control's.
+ */
+function LeadNotes({ leadId, notes, onSaved }: { leadId: string; notes: string | null; onSaved: () => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(notes ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setText(notes ?? "");
+    setEditing(false);
+    setError(null);
+  }, [leadId, notes]);
+
+  async function save() {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateLeadNotes(leadId, text);
+      await onSaved();
+      setEditing(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The notes were not saved.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-6">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
+        <p className="studio-label">Notes</p>
+        {!editing && (
+          <button
+            type="button"
+            onClick={() => setEditing(true)}
+            className="studio-meta text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+          >
+            Edit notes
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <>
+          <textarea
+            aria-label="Notes about this lead"
+            value={text}
+            maxLength={2000}
+            rows={4}
+            onChange={(event) => setText(event.target.value)}
+            className="w-full rounded-md border border-edge bg-ink px-2.5 py-1.5 text-[13px] leading-relaxed text-ink-primary focus:border-edge-strong focus:outline-none"
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void save()}
+              className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft disabled:opacity-40"
+            >
+              {busy && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
+              Save notes
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setText(notes ?? "");
+                setEditing(false);
+              }}
+              className="studio-meta text-[10px] text-ink-muted hover:text-ink-primary"
+            >
+              CANCEL
+            </button>
+          </div>
+        </>
+      ) : notes ? (
+        <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-ink-secondary">{notes}</p>
+      ) : (
+        <p className="studio-meta text-ink-muted">NO NOTES YET</p>
+      )}
+      {error && (
+        <p role="status" className="studio-meta mt-2 text-signal-orange-text">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Forgetting a person, from their own dossier.
+ *
+ * The only removal on this screen was the bulk review of other people's
+ * posts, so a creator asked to delete someone's data, or who captured the
+ * wrong person, had to call the API. One press arms it and names the person;
+ * the second removes them, with everything recorded about them, on the server
+ * in one step.
+ */
+function ForgetLead({ lead, onForgotten }: { lead: Lead; onForgotten: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setConfirming(false);
+    setError(null);
+  }, [lead.id]);
+
+  async function forget() {
+    setBusy(true);
+    setError(null);
+    try {
+      await forgetLead(lead.id);
+      onForgotten();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The person was not forgotten.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-8 border-t border-edge pt-4">
+      <p className="mb-2 text-[12px] leading-snug text-ink-muted">
+        Forgetting removes this person, everything they said, their stage history and your notes
+        from this studio. Backups and exports you made earlier still hold them.
+      </p>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => (confirming ? void forget() : setConfirming(true))}
+          className={cn(
+            "rounded-md border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-40",
+            confirming
+              ? "border-signal-orange bg-signal-orange text-on-signal"
+              : "border-edge text-ink-secondary hover:bg-soft",
+          )}
+        >
+          {confirming ? `Forget ${lead.name}, it cannot be undone` : "Forget this person"}
+        </button>
+        {confirming && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setConfirming(false)}
+            className="studio-meta text-[10px] text-ink-muted hover:text-ink-primary"
+          >
+            CANCEL
+          </button>
+        )}
+      </div>
+      {error && (
+        <p role="status" className="studio-meta mt-2 text-signal-orange-text">
+          {error}
+        </p>
+      )}
+    </section>
   );
 }
 

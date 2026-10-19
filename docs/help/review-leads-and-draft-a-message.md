@@ -35,7 +35,9 @@ The ICP score is calculated on this machine by fixed rules: seniority words in t
 
 - **ON YOUR POST**, followed by the opening of that post when the studio has it.
 - **ON SOMEONE ELSE'S POST, CAPTURED BEFORE THE STUDIO KNEW WHICH POSTS WERE YOURS**, in orange, for an engagement recorded before you set up the studio. See the next section.
-- Nothing, when the studio cannot tell. **Notes** appears when the record has notes. Notes cannot be edited here.
+- Nothing, when the studio cannot tell.
+
+**Notes** holds your own notes on the person, or NO NOTES YET. Click **EDIT NOTES**, write up to 2,000 characters, and click **Save notes**; **CANCEL** leaves them as they were. Saving notes does not change the person's stage.
 
 ## Remove leads from other people's posts
 
@@ -53,6 +55,10 @@ A lead counts as someone else's only when every engagement the studio recorded n
 ## Move a lead through the pipeline
 
 Under **Pipeline**, click one of the four stages: **New Lead**, **Outreach Sent**, **Connected** or **Meeting Booked**. The stage updates in the dossier and in the stream. No other stages can be chosen.
+
+## Forget a person
+
+If someone asks you to delete what you hold about them, or the studio captured the wrong person, open their dossier and click **Forget this person** at the bottom. The button turns orange and names them, for example **Forget Asha Rao, it cannot be undone**. Click it again to forget them, or **CANCEL**. The studio removes the person, everything they said, their stage history and your notes on them, and the top of the stream says so. Backups and exports you made earlier still hold them; export to Obsidian again to remove their note from the vault.
 
 ## Draft a message
 

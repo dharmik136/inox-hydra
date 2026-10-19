@@ -190,6 +190,29 @@ def test_the_stream_can_be_searched_and_filtered(browser, studio_url):
         ctx.close()
 
 
+def test_notes_can_be_written_and_a_person_forgotten(browser, studio_url):
+    ctx, page = _leads_page(browser, studio_url)
+    try:
+        _open(page, "Zoë Ångström")
+        page.get_by_role("button", name="Edit notes").click()
+        page.get_by_label("Notes about this lead").fill("Met at the market. Wants rye.")
+        page.get_by_role("button", name="Save notes").click()
+        expect(page.locator("article")).to_contain_text("Met at the market. Wants rye.")
+
+        page.reload(wait_until="networkidle")
+        page.click('button[aria-label="Leads"]')
+        _open(page, "Zoë Ångström")
+        expect(page.locator("article")).to_contain_text("Met at the market. Wants rye.")
+
+        page.get_by_role("button", name="Forget this person").click()
+        page.get_by_role("button", name="Forget Zoë Ångström, it cannot be undone").click()
+        expect(page.locator('[data-lead-id="lead-zoe"]')).to_have_count(0)
+        leads = page.evaluate("fetch('/api/leads').then(r => r.json())")["leads"]
+        assert not any(lead["id"] == "lead-zoe" for lead in leads)
+    finally:
+        ctx.close()
+
+
 def test_at_phone_width_the_dossier_is_on_screen(browser, studio_url):
     ctx, page = _leads_page(browser, studio_url, viewport={"width": 375, "height": 812})
     try:

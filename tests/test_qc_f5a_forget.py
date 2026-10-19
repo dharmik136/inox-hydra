@@ -167,3 +167,18 @@ def test_the_export_holds_nothing_about_a_forgotten_person(client):
         for table, rows in tables.items()
     }
     assert not any(mentions.values()), f"the export still carries the forgotten person: {mentions}"
+
+
+def test_the_dossier_can_write_notes_without_moving_the_stage(client):
+    """AUDIENCE-14: notes were read-only in the dossier; the route writes them alone."""
+    lead_id = _capture()
+    assert client.put(f"/api/leads/{lead_id}/status", json={"status": "Connected"}).status_code == 200
+
+    response = client.patch(f"/api/leads/{lead_id}", json={"notes": "  Wants the flour sheet.  "})
+    assert response.status_code == 200, response.text
+    lead = client.get(f"/api/v1/crm/leads/{lead_id}/timeline").json()["lead"]
+    assert lead["notes"] == "Wants the flour sheet."
+    assert lead["status"] == "Connected"
+    assert _rows_about(lead_id)["lead_stage_events"] == 1, "saving notes recorded a stage change"
+
+    assert client.patch("/api/leads/lead-nobody", json={"notes": "x"}).status_code == 404
