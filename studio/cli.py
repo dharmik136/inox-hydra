@@ -353,8 +353,23 @@ def cmd_update(args) -> int:
             print(f"\n{status['notes']}\n")
         print(f"Download it from: {status['releases_url']}")
         print()
-        print("To upgrade: delete your Inox Hydra folder and extract the new one.")
-        print("Your data lives outside that folder, so it is not affected.")
+        # In true portable mode, and in a source checkout, the data is inside
+        # the folder. This used to tell everyone to delete that folder.
+        data_home = paths.get_app_home()
+        program_folder = os.path.dirname(os.path.abspath(paths._STUDIO_DIR))
+        try:
+            inside = os.path.commonpath([os.path.abspath(data_home), program_folder]) == program_folder
+        except ValueError:
+            inside = False
+        if paths.is_portable() or inside:
+            print(f"Your data is INSIDE the Inox Hydra folder, at {data_home}.")
+            print("Do not delete that folder. First back up every profile with `backup --all`.")
+            print("Then replace only the program files, and keep data, assets, backups, vault,")
+            print("logs, profiles and exports where they are. The help article \"Check your")
+            print("version and update the studio\" walks through it.")
+        else:
+            print("To upgrade: delete your Inox Hydra folder and extract the new one.")
+            print(f"Your data lives outside that folder, in {data_home}, so it is not affected.")
     else:
         print("You are up to date.")
     return 0

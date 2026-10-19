@@ -23,7 +23,7 @@ The studio never checks for updates on its own. There is no update control in th
 
 By default, a check is one HTTPS request for `release/latest.json` on `raw.githubusercontent.com` (the `INOX_UPDATE_MANIFEST_URL` environment variable changes the address). It sends a User-Agent of `InoxHydra/<version>`, so GitHub sees your IP address and version, and nothing about your content. The studio records when it checked and the latest version it saw. It never downloads, installs or runs anything. For how `INOX_NO_EGRESS` and `INOX_ALLOW_UPDATE_EGRESS` affect this, see [What leaves this machine, and when](what-leaves-this-machine.md).
 
-A check prints `Installed:` and `Latest:`, then either "You are up to date." or "An update is available." with a download link to the releases page.
+A check prints `Installed:` and `Latest:`, then either "You are up to date." or "An update is available." with a download link to the releases page. With an update, it also says where your data is: outside the Inox Hydra folder, so the folder can be replaced, or "Your data is INSIDE the Inox Hydra folder", in which case do not delete the folder; follow the source checkout steps below.
 
 ## Upgrade a portable copy
 

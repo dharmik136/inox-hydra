@@ -170,3 +170,31 @@ def test_an_unknown_profile_is_refused(two_profiles, capsys):
     assert cli.main(["backup", "--profile", "nobody"]) == 1
     out = capsys.readouterr().out
     assert "nobody" in out and "client-a" in out
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM-13: the upgrade advice matches where the data really is
+# ---------------------------------------------------------------------------
+
+def _update_available(monkeypatch):
+    monkeypatch.setattr(updates, "check_for_update", lambda force=False: {
+        "checked": True, "enabled": True, "current_version": "2.6.0", "latest_version": "2.7.0",
+        "update_available": True, "releases_url": updates.RELEASES_PAGE, "notes": ""})
+
+
+def test_a_portable_data_folder_is_never_called_safe_to_delete(studio_home, monkeypatch, capsys):
+    _update_available(monkeypatch)
+    monkeypatch.setattr(paths, "is_portable", lambda: True)
+    assert cli.main(["update"]) == 0
+    out = capsys.readouterr().out
+    assert "lives outside that folder" not in out
+    assert "delete your Inox Hydra folder" not in out
+    assert paths.get_app_home() in out, "the advice does not say where the data is"
+
+
+def test_an_installed_copy_is_still_told_its_data_is_outside(studio_home, monkeypatch, capsys):
+    _update_available(monkeypatch)
+    monkeypatch.setattr(paths, "is_portable", lambda: False)
+    assert cli.main(["update"]) == 0
+    out = capsys.readouterr().out
+    assert paths.get_app_home() in out
