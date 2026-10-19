@@ -245,6 +245,59 @@ def test_the_session_delete_asks_once_before_it_deletes(page, studio_url):
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# UX-06. What happened after a click was written at the bottom of a long page,
+# out of sight of the button, so it looked as though nothing had happened.
+# ---------------------------------------------------------------------------
+
+def _in_view(page, locator):
+    box = locator.bounding_box()
+    return box is not None and 0 <= box["y"] and box["y"] + box["height"] <= page.viewport_size["height"]
+
+
+def test_a_launch_error_appears_beside_the_button_that_caused_it(page, studio_url):
+    page.route("**/api/v1/browser/launch",
+               _fulfil({"detail": "No supported browser was found on this machine."}, status=500))
+    _open_setup(page, studio_url)
+    page.get_by_role("button", name="Open LinkedIn with the bridge").click()
+    message = page.get_by_text("No supported browser was found on this machine.")
+    message.wait_for(timeout=5000)
+    assert _in_view(page, message), "the error is out of sight of the button"
+    step = page.locator("li", has_text="Connect the browser")
+    assert step.get_by_text("No supported browser was found on this machine.").count() == 1
+
+
+def test_an_import_result_appears_in_the_history_step(page, studio_url):
+    _confirm()
+    page.route("**/api/v1/self/sync-all", _fulfil({"detail": "Launched Google Chrome. Nothing was imported."},
+                                                   status=409))
+    _open_setup(page, studio_url)
+    step = page.locator("li", has_text="Your history")
+    step.get_by_role("button", name="Sync All Activity").click()
+    step.get_by_text("Nothing was imported.", exact=False).wait_for(timeout=5000)
+
+
+def test_todays_result_appears_where_you_clicked(page, studio_url):
+    _confirm()
+    page.route("**/api/v1/today", _fulfil({
+        "status": "success", "identity": {"known": True, "name": "Sample Gita"},
+        "freshness": {"bridge": {"connected": False, "last_seen_at": None, "seconds_ago": None},
+                      "drifting": [], "last_capture_at": None},
+        "reply_to": [], "latest_post": None,
+        "queue": {"next_scheduled": None, "next_open_slot": None},
+        "open_next": {"action": "open", "url": "https://www.linkedin.com/feed/",
+                      "reason": "The bridge has not been heard from recently, so nothing is being captured."}}))
+    page.route("**/api/v1/browser/launch", _fulfil({
+        "status": "error", "message": "No Chromium browser was found on this computer, so nothing opened."}))
+    page.goto(studio_url, wait_until="networkidle")
+    page.click('button[aria-label="Today"]')
+    section = page.locator("section", has_text="ONE THING TO OPEN")
+    section.get_by_role("button").first.click()
+    message = section.get_by_text("so nothing opened", exact=False)
+    message.wait_for(timeout=5000)
+    assert _in_view(page, message)
+
+
 def test_with_a_browser_that_carries_the_bridge_no_folder_is_needed(page, studio_url):
     page.route("**/api/v1/browser/status", _fulfil({**CHROME_ONLY, "browsers": {
         "brave": {"id": "brave", "name": "Brave Browser", "path": "/x/brave", "is_available": True,

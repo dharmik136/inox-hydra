@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, Check, ExternalLink, Loader2 } from "lucide-react";
 import {
   fetchToday,
@@ -33,7 +33,9 @@ export function TodaySurface({
   const [brief, setBrief] = useState<TodayBrief | null>(null);
   const [failed, setFailed] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  // What happened after a click, shown in the section that was clicked
+  // rather than at the foot of the page, out of sight.
+  const [note, setNote] = useState<{ text: string; at: "top" | "latest"; error: boolean } | null>(null);
 
   const load = useCallback(() => {
     fetchToday()
@@ -51,13 +53,13 @@ export function TodaySurface({
     return () => window.clearInterval(timer);
   }, [load]);
 
-  async function open(url: string) {
+  async function open(url: string, at: "top" | "latest" = "top") {
     setOpening(url);
     setNote(null);
     try {
-      setNote((await launchBridge("auto", url)).message);
+      setNote({ text: (await launchBridge("auto", url)).message, at, error: false });
     } catch (caught) {
-      setNote(caught instanceof Error ? caught.message : "The browser could not be opened.");
+      setNote({ text: caught instanceof Error ? caught.message : "The browser could not be opened.", at, error: true });
     } finally {
       setOpening(null);
     }
@@ -68,10 +70,10 @@ export function TodaySurface({
     setNote(null);
     try {
       const res = await syncAllActivity();
-      setNote(res.message);
+      setNote({ text: res.message, at: "top", error: false });
       load();
     } catch (caught) {
-      setNote(caught instanceof Error ? caught.message : "Sync could not be started.");
+      setNote({ text: caught instanceof Error ? caught.message : "Sync could not be started.", at: "top", error: true });
     } finally {
       setOpening(null);
     }
@@ -137,6 +139,7 @@ export function TodaySurface({
             </button>
           )}
         </div>
+        {note?.at === "top" && <Note text={note.text} error={note.error} />}
       </section>
 
       <Section label="Reply to">
@@ -155,7 +158,7 @@ export function TodaySurface({
 
       <Section label="Your latest post">
         {brief.latest_post ? (
-          <LatestPost post={brief.latest_post} opening={opening} onOpen={(url) => void open(url)} />
+          <LatestPost post={brief.latest_post} opening={opening} onOpen={(url) => void open(url, "latest")} />
         ) : (
           <Empty>
             {brief.identity.known
@@ -163,6 +166,7 @@ export function TodaySurface({
               : "Your posts appear here once the studio knows who you are."}
           </Empty>
         )}
+        {note?.at === "latest" && <Note text={note.text} error={note.error} />}
       </Section>
 
       <Section label="Queue">
@@ -187,12 +191,6 @@ export function TodaySurface({
           />
         </dl>
       </Section>
-
-      {note && (
-        <p role="status" className="studio-meta mt-6 leading-snug text-ink-secondary">
-          {note}
-        </p>
-      )}
     </article>
   );
 }
@@ -350,6 +348,24 @@ function Row({ label, value }: { label: string; value: string }) {
 // to read, and it is the text a new user meets first.
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-[13px] leading-relaxed text-ink-muted">{children}</p>;
+}
+
+function Note({ text, error }: { text: string; error: boolean }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: "nearest" });
+    if (error) ref.current?.focus();
+  }, [text, error]);
+  return (
+    <p
+      ref={ref}
+      tabIndex={-1}
+      role={error ? "alert" : "status"}
+      className={cn("studio-meta mt-3 leading-snug outline-none", error ? "text-signal-orange-text" : "text-ink-secondary")}
+    >
+      {text}
+    </p>
+  );
 }
 
 function Centered({ children }: { children: React.ReactNode }) {

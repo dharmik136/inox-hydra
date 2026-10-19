@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Check, Copy, ExternalLink, Loader2 } from "lucide-react";
 import {
   OWN_PROFILE_URL,
@@ -52,7 +52,7 @@ export function OnboardingSurface() {
   const [bridge, setBridge] = useState<BrowserBridge | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
-  const [note, setNote] = useState<string | null>(null);
+  const [note, setNote] = useState<Note | null>(null);
   const [sessionConfirm, setSessionConfirm] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -75,21 +75,24 @@ export function OnboardingSurface() {
   // pick, which it does by the same measured rule the Leads screen uses.
   const carrier = bridge?.browsers.find((b) => b.carries_extension === true)?.id ?? "auto";
 
-  async function act(key: string, work: () => Promise<string | void>) {
+  // `at` is the step whose button was pressed: what happened is shown there.
+  async function act(key: string, work: () => Promise<string | void>, at: Note["at"]) {
     setBusy(key);
     setNote(null);
     try {
       const message = await work();
-      if (message) setNote(message);
+      if (message) setNote({ text: message, at, error: false });
       await refresh();
     } catch (caught) {
-      setNote(caught instanceof Error ? caught.message : "That did not work.");
+      setNote({ text: caught instanceof Error ? caught.message : "That did not work.", at, error: true });
     } finally {
       setBusy(null);
     }
   }
 
-  const open = (url: string) => act(url, async () => (await launchBridge(carrier, url)).message);
+  // Step 4's block, the archive, opens LinkedIn's download page with the URL alone.
+  const open = (url: string, at: Note["at"] = 4) =>
+    act(url, async () => (await launchBridge(carrier, url)).message, at);
 
   if (failed && !state) return <Centered>SETUP UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!state) return <Centered>LOADING SETUP</Centered>;
@@ -97,6 +100,7 @@ export function OnboardingSurface() {
   const { steps, identity, candidate } = state;
 
   return (
+    <NoteContext.Provider value={note}>
     <article className="mx-auto max-w-[72ch] px-8 py-8">
       <p className="studio-label">Setup</p>
       <h1 className="studio-title mt-2">Teach the studio who you are</h1>
@@ -118,7 +122,7 @@ export function OnboardingSurface() {
               <Primary
                 pending={busy === "https://www.linkedin.com/feed/"}
                 disabled={busy !== null}
-                onPress={() => void open("https://www.linkedin.com/feed/")}
+                onPress={() => void open("https://www.linkedin.com/feed/", 1)}
               >
                 Open LinkedIn with the bridge
               </Primary>
@@ -149,7 +153,7 @@ export function OnboardingSurface() {
             <Primary
               pending={busy === OWN_PROFILE_URL}
               disabled={busy !== null}
-              onPress={() => void open(OWN_PROFILE_URL)}
+              onPress={() => void open(OWN_PROFILE_URL, 2)}
             >
               Open my profile
             </Primary>
@@ -176,11 +180,11 @@ export function OnboardingSurface() {
                   pending={busy === "confirm"}
                   disabled={busy !== null}
                   opensBrowser={false}
-                  onPress={() => void act("confirm", () => confirmIdentity(candidate.vanity))}
+                  onPress={() => void act("confirm", () => confirmIdentity(candidate.vanity), 2)}
                 >
                   Yes, that&rsquo;s me
                 </Primary>
-                <Secondary disabled={busy !== null} onPress={() => void act("reject", rejectIdentityCandidate)}>
+                <Secondary disabled={busy !== null} onPress={() => void act("reject", rejectIdentityCandidate, 2)}>
                   No
                 </Secondary>
               </div>
@@ -200,12 +204,16 @@ export function OnboardingSurface() {
               identity={identity}
               counts={state.counts}
               busy={busy}
-              onOpen={(url) => void open(url)}
+              onOpen={(url) => void open(url, 3)}
               onForget={() =>
-                void act("forget", async () => {
-                  await forgetIdentity();
-                  return "Everything the studio held about you is deleted.";
-                })
+                void act(
+                  "forget",
+                  async () => {
+                    await forgetIdentity();
+                    return "Everything the studio held about you is deleted.";
+                  },
+                  3,
+                )
               }
             />
           )}
@@ -255,10 +263,14 @@ export function OnboardingSurface() {
                   type="button"
                   disabled={busy !== null}
                   onClick={() =>
-                    void act("all", async () => {
-                      const res = await syncAllActivity();
-                      return res.message;
-                    })
+                    void act(
+                      "all",
+                      async () => {
+                        const res = await syncAllActivity();
+                        return res.message;
+                      },
+                      5,
+                    )
                   }
                   className="flex items-center gap-1.5 rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
                 >
@@ -283,10 +295,14 @@ export function OnboardingSurface() {
                     pending={busy === entry.kind}
                     disabled={busy !== null}
                     onImport={() =>
-                      void act(entry.kind, async () => {
-                        const url = await requestSelfImport(entry.kind);
-                        return (await launchBridge(carrier, url)).message;
-                      })
+                      void act(
+                        entry.kind,
+                        async () => {
+                          const url = await requestSelfImport(entry.kind);
+                          return (await launchBridge(carrier, url)).message;
+                        },
+                        5,
+                      )
                     }
                   />
                 ))}
@@ -357,11 +373,15 @@ export function OnboardingSurface() {
               <Secondary
                 disabled={busy !== null}
                 onPress={() =>
-                  void act("session", async () => {
-                    await deleteLinkedInSession();
-                    setSessionConfirm(false);
-                    return "The LinkedIn session is deleted. The extension's Sync button captures it again.";
-                  })
+                  void act(
+                    "session",
+                    async () => {
+                      await deleteLinkedInSession();
+                      setSessionConfirm(false);
+                      return "The LinkedIn session is deleted. The extension's Sync button captures it again.";
+                    },
+                    "session",
+                  )
                 }
               >
                 Yes, delete the session
@@ -372,14 +392,46 @@ export function OnboardingSurface() {
             </div>
           )}
         </div>
+        {note?.at === "session" && <NoteView note={note} />}
       </section>
-
-      {note && (
-        <p role="status" className="studio-meta mt-6 leading-snug text-ink-secondary">
-          {note}
-        </p>
-      )}
     </article>
+    </NoteContext.Provider>
+  );
+}
+
+/**
+ * What happened after a click, and where it was clicked. The note used to be
+ * written at the foot of the page, below Capture health and the session, a
+ * screen away from "Open LinkedIn with the bridge", so an error such as "No
+ * supported browser" was never seen and people clicked again or gave up.
+ */
+interface Note {
+  text: string;
+  /** The step number whose button produced it, or the session section. */
+  at: number | "session";
+  error: boolean;
+}
+
+const NoteContext = createContext<Note | null>(null);
+
+function NoteView({ note }: { note: Note }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: "nearest" });
+    if (note.error) ref.current?.focus();
+  }, [note]);
+  return (
+    <p
+      ref={ref}
+      tabIndex={-1}
+      role={note.error ? "alert" : "status"}
+      className={cn(
+        "studio-meta mt-3 leading-snug outline-none",
+        note.error ? "text-signal-orange-text" : "text-ink-secondary",
+      )}
+    >
+      {note.text}
+    </p>
   );
 }
 
@@ -460,9 +512,15 @@ function Step({
         <p className={cn("text-[14px] font-medium", done || current ? "text-ink-primary" : "text-ink-muted")}>{title}</p>
         <p className="studio-meta mt-0.5 text-[11px] text-ink-muted">{status}</p>
         {children && <div className="mt-3">{children}</div>}
+        <StepNote n={n} />
       </div>
     </li>
   );
+}
+
+function StepNote({ n }: { n: number }) {
+  const note = useContext(NoteContext);
+  return note?.at === n ? <NoteView note={note} /> : null;
 }
 
 function ProfileCard({
