@@ -289,14 +289,34 @@ def _ensure(path: str) -> str:
     return path
 
 
+class ProfileGone(RuntimeError):
+    """The creator profile this work is pinned to has been deleted."""
+
+
+def _profile_dir(name: str) -> str:
+    """
+    One of the active profile's folders, created if missing, unless the profile is gone.
+
+    Work pinned to a profile (an image generation, an import, a telemetry
+    batch) can outlive the profile being deleted. Resolving its paths used to
+    create the folders again, so the deleted client's folder came back with
+    whatever that work wrote, outside every backup, and the id could never be
+    used again.
+    """
+    pid = get_active_profile_id()
+    if pid != DEFAULT_PROFILE_ID and pid not in registered_profile_ids():
+        raise ProfileGone(f"Creator profile '{pid}' was deleted, so nothing more is written for it.")
+    return _ensure(os.path.join(get_profile_home(pid), name))
+
+
 def get_data_dir() -> str:
     """Database, ETag caches, and other small structured state. Per profile."""
-    return _ensure(os.path.join(get_profile_home(), "data"))
+    return _profile_dir("data")
 
 
 def get_assets_dir() -> str:
     """Root of user media. Mounted at /assets by the web layer. Per profile."""
-    return _ensure(os.path.join(get_profile_home(), "assets"))
+    return _profile_dir("assets")
 
 
 def get_uploads_dir() -> str:
@@ -326,12 +346,12 @@ def get_backups_dir() -> str:
     This is the user's undo button. It is the only recovery path available when
     an upgrade goes wrong on a machine nobody can reach.
     """
-    return _ensure(os.path.join(get_profile_home(), "backups"))
+    return _profile_dir("backups")
 
 
 def get_exports_dir() -> str:
     """Where an export lands when the caller names no destination. Per profile."""
-    return _ensure(os.path.join(get_profile_home(), "exports"))
+    return _profile_dir("exports")
 
 
 def get_db_path() -> str:

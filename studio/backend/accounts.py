@@ -318,10 +318,19 @@ def _create_account(data: Dict[str, Any], conn=None) -> Dict[str, Any]:
     if os.path.exists(home):
         return {"status": "error", "message": f"A folder for '{acc_id}' already exists at {home}"}
 
-    _open_profile(acc_id)
+    # Registered first: paths refuses to create folders for a profile that is
+    # not in the registry, which is what keeps a deleted one from coming back.
     registry = _registry()
     registry["profiles"].append(entry)
     paths.write_profiles(registry)
+    try:
+        _open_profile(acc_id)
+    except Exception:
+        registry = _registry()
+        registry["profiles"] = [p for p in registry["profiles"] if p["id"] != acc_id]
+        paths.write_profiles(registry)
+        shutil.rmtree(home, ignore_errors=True)
+        raise
     return {"status": "success", "account": _describe(entry, paths.get_active_profile_id())}
 
 
