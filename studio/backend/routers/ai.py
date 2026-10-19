@@ -44,7 +44,8 @@ router = APIRouter()
 
 class CopilotRequest(BaseModel):
     raw_content: str
-    target_audience: Optional[str] = "Engineering & Product Leaders"
+    # No default: an audience nobody gave is not told to the model (F2-N2).
+    target_audience: Optional[str] = None
     post_format: Optional[str] = "framework_breakdown"
     attached_media_type: Optional[str] = None
 

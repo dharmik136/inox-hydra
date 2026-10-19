@@ -45,7 +45,10 @@ class SynthesizedImagePrompt(BaseModel):
 class CopilotDraftInput(BaseModel):
     """Input payload for LinkedIn post drafting and hook optimization."""
     raw_content: str = Field(..., min_length=10, description="Draft text or brain-dump")
-    target_audience: str = Field(default="Engineering & Product Leaders", description="Target audience persona")
+    # Empty unless the caller names one. This defaulted to "Engineering &
+    # Product Leaders", which briefed every creator's hooks for another
+    # author's readers; Brand Studio has no audience field to read instead.
+    target_audience: Optional[str] = Field(default=None, description="Target audience persona, when the caller gives one")
     post_format: str = Field(default="framework_breakdown", description="Post narrative structure")
     attached_media_type: Optional[str] = Field(default=None, description="Type of attached media: image, carousel, video, or none")
 
