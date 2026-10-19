@@ -457,3 +457,58 @@ def test_a_link_inside_the_folder_is_not_followed(client, home):
     [hit] = client.post("/api/v1/archive/requested").json()["found"]
     preview = client.post("/api/v1/archive/preview", json={"source": "downloads:" + hit["path"]}).json()
     assert [f["kind"] for f in preview["files"]] == ["skills"]
+
+
+# ---------------------------------------------------------------------------
+# SETUP-20: on Windows, a Downloads folder moved to another drive or into
+# OneDrive is the one looked in, and the step says which it is
+# ---------------------------------------------------------------------------
+
+def _fake_winreg(value):
+    import types
+
+    class Key:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    fake = types.ModuleType("winreg")
+    fake.HKEY_CURRENT_USER = object()
+    seen = []
+
+    def open_key(root, path):
+        seen.append(path)
+        return Key()
+
+    def query(key, name):
+        if name != "{374DE290-123F-4565-9164-39C4925E467B}":
+            raise OSError(name)
+        return value, 2
+
+    fake.OpenKey, fake.QueryValueEx, fake.seen = open_key, query, seen
+    return fake
+
+
+def test_a_moved_windows_downloads_folder_is_looked_in(client, home, monkeypatch):
+    moved = home / "D" / "Downloads"
+    moved.mkdir(parents=True)
+    fake = _fake_winreg(str(moved))
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    monkeypatch.setattr(sys, "platform", "win32")
+    assert str(moved) in archive_import.downloads_dirs()
+    assert any("User Shell Folders" in path for path in fake.seen)
+
+    (moved / COMPLETE).write_bytes(_archive(_person_archive("Sample", "Alice")))
+    state = client.post("/api/v1/archive/requested").json()
+    assert [f["name"] for f in state["found"]] == [COMPLETE]
+    assert str(moved) in state["watching"]
+
+
+def test_elsewhere_the_registry_is_not_read(client, monkeypatch):
+    fake = _fake_winreg("/nowhere")
+    monkeypatch.setitem(sys.modules, "winreg", fake)
+    monkeypatch.setattr(sys, "platform", "linux")
+    archive_import.downloads_dirs()
+    assert fake.seen == []

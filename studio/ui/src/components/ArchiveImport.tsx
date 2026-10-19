@@ -39,6 +39,8 @@ type OwnedPreview = ArchivePreview & {
 type ArchiveProgress = Omit<ArchiveState, "found" | "last_import"> & {
   complete?: boolean;
   no_posts_at?: string | null;
+  /** The folders Downloads is looked for in, while the step waits. */
+  watching?: string[];
   found: (FoundArchive & { imported?: boolean; downloading?: boolean })[];
   last_import: (NonNullable<ArchiveState["last_import"]> & { held_posts?: boolean }) | null;
 };
@@ -72,6 +74,7 @@ export function ArchiveImport({
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const [result, setResult] = useState<Record<string, ArchiveKindTally> | null>(null);
   const [found, setFound] = useState<ArchiveProgress["found"]>([]);
+  const [watching, setWatching] = useState<string[]>([]);
   const [waiting, setWaiting] = useState(state.waiting);
   const picker = useRef<HTMLInputElement>(null);
   const folderPicker = useRef<HTMLInputElement | null>(null);
@@ -95,6 +98,7 @@ export function ArchiveImport({
         .then((fresh) => {
           if (!live) return;
           setFound(fresh.found);
+          setWatching((fresh as ArchiveProgress).watching ?? []);
           setWaiting(fresh.waiting);
         })
         .catch(() => undefined);
@@ -208,6 +212,7 @@ export function ArchiveImport({
                   void run("requested", async () => {
                     const fresh = await markArchiveRequested();
                     setFound(fresh.found);
+                    setWatching((fresh as ArchiveProgress).watching ?? []);
                     setWaiting(fresh.waiting);
                     onChanged();
                   })
@@ -281,7 +286,8 @@ export function ArchiveImport({
           {waiting && (
             <div>
               <p className="studio-meta text-[10px] text-ink-muted">
-                IN YOUR DOWNLOADS FOLDER{found.length === 0 ? ": NOTHING FROM LINKEDIN YET" : ""}
+                IN YOUR DOWNLOADS FOLDER{watching.length > 0 ? ` (${watching.join(", ")})` : ""}
+                {found.length === 0 ? ": NOTHING FROM LINKEDIN YET" : ""}
               </p>
               {found.length > 0 && (
                 <ul className="mt-1.5 flex flex-col gap-1.5">

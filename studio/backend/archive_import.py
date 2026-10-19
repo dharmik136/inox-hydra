@@ -55,6 +55,7 @@ import io
 import json
 import os
 import re
+import sys
 import time
 import unicodedata
 import uuid
@@ -184,10 +185,42 @@ class OwnerUnconfirmed(ArchiveError):
 # Finding the archive
 # ---------------------------------------------------------------------------
 
+# Windows' Known Folder id for Downloads, under which Explorer records where the
+# folder is when the creator has moved it (Properties, Location) or OneDrive has.
+WINDOWS_DOWNLOADS = "{374DE290-123F-4565-9164-39C4925E467B}"
+
+
+def _windows_downloads() -> Optional[str]:
+    """Where Windows keeps this user's Downloads folder, from the registry, or None."""
+    try:
+        import winreg
+    except ImportError:
+        return None
+    for path in (r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders",
+                 r"Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as key:
+                value, _kind = winreg.QueryValueEx(key, WINDOWS_DOWNLOADS)
+        except OSError:
+            continue
+        if value:
+            # "User Shell Folders" holds it unexpanded, as %USERPROFILE%\Downloads.
+            return os.path.expandvars(str(value))
+    return None
+
+
 def downloads_dirs() -> List[str]:
-    """The creator's Downloads folder, and the one their desktop says, if different."""
+    """
+    The creator's Downloads folder: where Windows says it is when it has
+    been moved, the one in their home folder, and the one their Linux desktop
+    names, if different.
+    """
     home = os.path.expanduser("~")
     found = [os.path.join(home, "Downloads")]
+    if sys.platform.startswith("win"):
+        moved = _windows_downloads()
+        if moved and os.path.normcase(moved) != os.path.normcase(found[0]):
+            found.insert(0, moved)
     try:
         with open(os.path.join(home, ".config", "user-dirs.dirs"), "r", encoding="utf-8") as handle:
             for line in handle:
@@ -1357,6 +1390,8 @@ def archive_state(look: bool = False) -> Dict[str, Any]:
         "requested_at": requested_at,
         "waiting": waiting,
         "found": found,
+        # The folders looked in, so the step can say where it is looking.
+        "watching": downloads_dirs() if look and waiting else [],
         "complete": bool(covered),
         "no_posts_at": no_posts_at,
         "last_import": {

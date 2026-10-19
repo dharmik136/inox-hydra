@@ -177,6 +177,8 @@ def test_a_download_still_arriving_is_shown_as_one(setup_page, studio):
     downloads = studio["tmp"] / "user" / "Downloads"
     (downloads / "Complete_LinkedInDataExport_10-19-2026.zip.crdownload").write_bytes(b"PK\x03\x04partial")
     page.get_by_role("button", name="I have asked for it").click()
+    # The step says which folder it is looking in (SETUP-20).
+    expect(page.get_by_text(f"IN YOUR DOWNLOADS FOLDER ({downloads})", exact=False)).to_be_visible()
     item = page.get_by_role("listitem").filter(has_text="Complete_LinkedInDataExport_10-19-2026.zip").last
     expect(item).to_contain_text("STILL DOWNLOADING")
     expect(item.get_by_role("button", name="See what is in it")).to_be_disabled()
