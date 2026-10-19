@@ -177,8 +177,36 @@ def _counts(profile_id: str) -> Dict[str, int]:
     return counts
 
 
-def _describe(entry: Dict[str, Any], active_id: str) -> Dict[str, Any]:
+def _locked_message(entry: Dict[str, Any]) -> str:
+    """
+    Why a profile beyond the licence stays closed, naming the licence and how to renew.
+
+    Nothing is deleted or hidden when a licence ends, so the message says what
+    can still be done with the profile as well as what cannot.
+    """
+    state = licensing.current()
+    licence = state.get("licence") or {}
+    limit = state["profile_limit"]
+    if state["status"] == "expired":
+        label = licensing.TIERS.get(licence.get("tier"), {}).get("label", "")
+        why = f"Your {label} licence ended on {licence.get('expires_at')}"
+    elif state["status"] == "none":
+        why = "There is no licence on this machine"
+    elif state["status"] == "invalid":
+        why = "The licence on this machine could not be read"
+    else:
+        why = f"Your {state['tier_label']} licence covers {limit} creator profile{'s' if limit != 1 else ''}"
+    return (
+        f"{why}, so {entry['name']} stays closed. To open it again, renew the Agency licence and paste "
+        f"the new key in Brand Studio, Licence. Nothing in it was deleted: you can still back it up or "
+        f"export it from the command line (backup --profile {entry['id']}, export --profile {entry['id']}), "
+        f"or delete it."
+    )
+
+
+def _describe(entry: Dict[str, Any], active_id: str, locked: Optional[List[str]] = None) -> Dict[str, Any]:
     is_default = entry["id"] == paths.DEFAULT_PROFILE_ID
+    is_locked = entry["id"] in (locked if locked is not None else paths.locked_profile_ids())
     return {
         "id": entry["id"],
         "name": entry["name"],
@@ -188,6 +216,9 @@ def _describe(entry: Dict[str, Any], active_id: str) -> Dict[str, Any]:
         "is_default": is_default,
         "is_active": entry["id"] == active_id,
         "created_at": entry.get("created_at"),
+        # Beyond what the licence covers: kept, listed, not opened.
+        "locked": is_locked,
+        "locked_reason": _locked_message(entry) if is_locked else "",
         **_counts(entry["id"]),
     }
 
@@ -219,7 +250,8 @@ def get_active_account_id(conn=None) -> str:
 def list_accounts(conn=None) -> Dict[str, Any]:
     """Every profile with its own counts, the active one, and the licence's allowance."""
     active_id = paths.get_active_profile_id()
-    accounts = [_describe(entry, active_id) for entry in _entries()]
+    locked = paths.locked_profile_ids()
+    accounts = [_describe(entry, active_id, locked) for entry in _entries()]
     return {
         "status": "success",
         "accounts": accounts,
@@ -303,6 +335,8 @@ def _switch_account(account_id: str, conn=None) -> Dict[str, Any]:
     entry = next((e for e in _entries() if e["id"] == account_id), None)
     if not entry:
         return {"status": "error", "message": f"Account '{account_id}' does not exist"}
+    if account_id in paths.locked_profile_ids():
+        return {"status": "error", "code": "licence", "message": _locked_message(entry)}
 
     _open_profile(account_id)
     registry = _registry()

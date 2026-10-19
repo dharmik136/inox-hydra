@@ -74,6 +74,76 @@ def test_a_renewal_still_works_while_the_clock_is_behind(vault):
     assert licensing.current(today=date(2026, 11, 1))["status"] == "active"
 
 
+@pytest.fixture
+def client(vault):
+    from database import init_db
+    from app import app
+
+    init_db()
+    return TestClient(app)
+
+
+def _profile_db(home, pid):
+    return os.path.join(str(home), "profiles", pid, "data", paths.DB_FILENAME)
+
+
+# ---------------------------------------------------------------------------
+# PLATFORM-05: an ended licence closes the profiles beyond it, and keeps them
+# ---------------------------------------------------------------------------
+
+def test_profiles_beyond_an_ended_licence_close_but_keep_their_data(client, vault):
+    import sqlite3
+
+    assert client.post("/api/v1/licence", json={"key": _signed()}).status_code == 200
+    for name, pid in (("Client B", "client-b"), ("Client C", "client-c")):
+        assert client.post("/api/v1/accounts", json={"name": name, "id": pid}).status_code == 200
+    assert client.post("/api/v1/accounts/switch", json={"account_id": "client-c"}).status_code == 200
+    assert client.post("/api/posts", json={"content": "client c work"}).status_code == 200
+    conn = sqlite3.connect(_profile_db(vault, "client-c"))
+    conn.execute("INSERT INTO posts (id, content, status, scheduled_for) VALUES "
+                 "('due-in-c', 'Due', 'scheduled', '2020-01-01T09:00:00+00:00')")
+    conn.commit()
+    conn.close()
+
+    assert client.delete("/api/v1/licence").status_code == 200
+
+    listing = client.get("/api/v1/accounts").json()
+    assert listing["active_account_id"] == "default", "the open profile kept working after the licence ended"
+    by_id = {a["id"]: a for a in listing["accounts"]}
+    assert set(by_id) == {"default", "client-b", "client-c"}, "a profile was hidden"
+    assert by_id["client-c"]["locked"] is True and by_id["default"]["locked"] is False
+
+    refused = client.post("/api/v1/accounts/switch", json={"account_id": "client-c"})
+    assert refused.status_code == 402
+    detail = refused.json()["detail"]
+    assert "licence" in detail.lower() and "renew" in detail.lower() and "Client C" in detail
+
+    # Nothing in it was deleted, and nothing works in it in the background.
+    from scheduler import NativeScheduler
+
+    NativeScheduler().check_every_profile()
+    conn = sqlite3.connect(_profile_db(vault, "client-c"))
+    rows = dict(conn.execute("SELECT id, status FROM posts").fetchall())
+    conn.close()
+    assert rows.get("due-in-c") == "scheduled", "the queue of a closed profile was worked"
+    assert any(status == "draft" for status in rows.values())
+
+    # It can still be backed up and exported, and deleted.
+    import support
+
+    with paths.using_profile("client-c"):
+        assert os.path.exists(support.create_backup("before_closing"))
+        assert os.path.exists(support.export_data(fmt="json"))
+    assert client.post("/api/v1/accounts/switch", json={"account_id": "default"}).status_code == 200
+
+    # Renewing opens it again.
+    assert client.post("/api/v1/licence", json={"key": _signed()}).status_code == 200
+    assert client.post("/api/v1/accounts/switch", json={"account_id": "client-c"}).status_code == 200
+    client.delete("/api/v1/licence")
+    gone = client.request("DELETE", "/api/v1/accounts/client-c", json={"confirm": "Client C"})
+    assert gone.status_code == 200
+
+
 def test_an_ended_key_cannot_be_installed_by_setting_the_clock_back(vault):
     licensing.current(today=date(2026, 11, 25))
     result = licensing.install(_signed(expires_at="2026-11-19"), today=date(2026, 11, 1))

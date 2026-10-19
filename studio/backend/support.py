@@ -394,7 +394,7 @@ def inspect_backup(archive: str) -> Dict[str, Any]:
 def _profile_whose_backups_hold(path: str) -> Optional[str]:
     """The profile whose backups folder a file sits in, or None."""
     folder = os.path.normcase(os.path.realpath(os.path.dirname(os.path.abspath(path))))
-    for pid in paths.profile_ids():
+    for pid in paths.registered_profile_ids():
         home = os.path.join(paths.get_profile_home(pid), "backups")
         if os.path.normcase(os.path.realpath(home)) == folder:
             return pid

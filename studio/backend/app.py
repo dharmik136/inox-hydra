@@ -2659,7 +2659,10 @@ def post_switch_account(payload: SwitchAccountPayload):
     """
     res = accounts.switch_account(payload.account_id)
     if res.get("status") == "error":
-        raise HTTPException(status_code=404, detail=res.get("message", "Account not found"))
+        # 402 when the licence no longer covers the profile, so the switcher
+        # can say why rather than claim it does not exist.
+        status = 402 if res.get("code") == "licence" else 404
+        raise HTTPException(status_code=status, detail=res.get("message", "Account not found"))
     return res
 
 

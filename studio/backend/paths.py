@@ -206,13 +206,47 @@ def write_profiles(registry: Dict[str, Any]) -> None:
     _registry_cache.update(path=None, mtime=None, value=None)
 
 
-def profile_ids() -> List[str]:
-    """Every profile, the default first."""
+def registered_profile_ids() -> List[str]:
+    """Every profile on this machine, the default first, whatever the licence covers."""
     ids = [DEFAULT_PROFILE_ID]
     for entry in read_profiles()["profiles"]:
         if entry["id"] not in ids:
             ids.append(entry["id"])
     return ids
+
+
+def _licensed_profile_count() -> int:
+    try:
+        from . import licensing
+    except ImportError:
+        import licensing
+    try:
+        return max(1, int(licensing.profile_limit()))
+    except Exception:
+        # A licence that cannot be read is the free tier. See licensing.py.
+        return 1
+
+
+def profile_ids() -> List[str]:
+    """
+    Every profile the licence lets the studio open, the default first.
+
+    The profiles beyond the licence's count, in the order they were made, stay
+    on disk and in the registry: they can be backed up, exported and deleted,
+    but they are not opened, made active, or worked by the scheduler. The
+    limit used to be asked only when a profile was created, so an Agency
+    licence that ended kept all five profiles working.
+    """
+    ids = registered_profile_ids()
+    if len(ids) == 1:
+        return ids
+    return ids[:_licensed_profile_count()]
+
+
+def locked_profile_ids() -> List[str]:
+    """The profiles beyond what the licence covers."""
+    usable = profile_ids()
+    return [pid for pid in registered_profile_ids() if pid not in usable]
 
 
 def get_active_profile_id() -> str:
