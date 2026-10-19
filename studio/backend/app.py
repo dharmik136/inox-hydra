@@ -2442,8 +2442,13 @@ def list_support_backups():
         full = os.path.join(directory, name)
         if not os.path.isfile(full):
             continue
-        info = support_tools.inspect_backup(full)
-        kind = info.get("kind") if info.get("has_database") else "other"
+        # One damaged file (a malformed manifest, a cut-short ZIP) must not
+        # take the whole list down with it: it is listed as unreadable.
+        try:
+            info = support_tools.inspect_backup(full)
+            kind = info.get("kind") if info.get("has_database") else "other"
+        except Exception:
+            kind = "unreadable"
         entries.append({"name": name, "bytes": os.path.getsize(full),
                         "modified": datetime.fromtimestamp(os.path.getmtime(full)).isoformat(),
                         "kind": kind, "restorable": kind in ("backup", "database"),

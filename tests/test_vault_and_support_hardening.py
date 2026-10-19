@@ -132,8 +132,11 @@ def test_support_restore_backup_nonexistent_or_invalid():
             os.remove(bad_file)
 
 
-def test_updates_check_disallowed_scheme_ssrf_rejected(monkeypatch):
+def test_updates_check_disallowed_scheme_ssrf_rejected(monkeypatch, tmp_path):
     """Verify SSRF protection on update check rejects non-HTTPS schemes."""
+    # Its own home: enabling checks in the shared session sandbox made a later
+    # test that relies on the default (checks off) fail whenever it ran after.
+    monkeypatch.setenv("INOX_HYDRA_HOME", str(tmp_path))
     updates.set_enabled(True)
     for bad_scheme_url in [
         "http://insecure.internal/manifest.json",
