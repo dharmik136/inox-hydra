@@ -23,7 +23,21 @@ export function OutboundSurface() {
 
   if (failed) return <Centered>OUTBOUND IS UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!data) return <Centered>LOADING YOUR ACTIVITY</Centered>;
+  const { totals, coverage } = data;
   if (!data.authors.length) {
+    // LinkedIn's archive names the post but not its author, so an archive
+    // import fills the totals and no author. This said "none imported"
+    // right after Setup reported 15 comments and 25 reactions.
+    if (totals.reactions + totals.comments > 0) {
+      return (
+        <EmptySurface label="Outbound" title="Where your attention goes">
+          {totals.reactions.toLocaleString()} reactions and {totals.comments.toLocaleString()} comments are imported,
+          but LinkedIn&rsquo;s archive does not name the author of the posts they were on, so they cannot be ranked by
+          person yet. In Setup, run &ldquo;Posts you reacted to&rdquo; and &ldquo;Comments you left&rdquo;: the bridge
+          reads the authors and adds them to these.
+        </EmptySurface>
+      );
+    }
     return (
       <EmptySurface label="Outbound" title="Where your attention goes">
         None of your reactions or comments have been imported yet. Import them in Setup to see whose
@@ -32,7 +46,6 @@ export function OutboundSurface() {
     );
   }
 
-  const { totals, coverage } = data;
   return (
     <article className="mx-auto max-w-[80ch] px-8 py-8">
       <p className="studio-label">Outbound</p>
@@ -40,6 +53,9 @@ export function OutboundSurface() {
       <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
         {totals.reactions.toLocaleString()} reactions and {totals.comments.toLocaleString()} comments on posts by{" "}
         {totals.authors.toLocaleString()} people and pages.
+        {totals.without_author > 0 &&
+          ` ${totals.without_author.toLocaleString()} more, from LinkedIn\u2019s archive or without an author recorded, ` +
+            "are not ranked: run \u201cPosts you reacted to\u201d and \u201cComments you left\u201d in Setup to add their authors."}
       </p>
 
       <section className="mt-6 grid gap-6 sm:grid-cols-2">

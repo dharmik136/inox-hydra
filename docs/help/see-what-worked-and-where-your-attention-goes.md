@@ -34,6 +34,8 @@ These are differences between your posts, not causes. Treat a large one as somet
 
 The line under the title counts your reactions and comments on other people's posts, and how many people and pages they were on.
 
+LinkedIn's archive names the post you reacted to or commented on, but not its author, so what the archive import brings in cannot be ranked by person. The screen says how many reactions and comments that is. Run **Posts you reacted to** and **Comments you left** in **Setup**: the bridge reads the authors and adds them to the same rows.
+
 | Section | What it shows |
 | --- | --- |
 | **Engaged back** | People you engage with who have also engaged with one of your posts |

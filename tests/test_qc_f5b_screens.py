@@ -311,3 +311,49 @@ def test_posts_and_patterns_name_missing_figures_not_post_age(studio):
     assert "30 MORE POSTS ARE LEFT OUT: NO REACTIONS ARE RECORDED FOR THEM, AS LINKEDIN’S ARCHIVE DOES NOT" in body
     assert "SAME PERIOD ON BOTH SIDES" not in body, "the period was blamed for a lack of figures"
     assert not studio["errors"], studio["errors"]
+
+
+# ---------------------------------------------------------------------------
+# Outbound
+# ---------------------------------------------------------------------------
+
+def _archive_outbound(reactions, comments, authored=0):
+    """Outbound rows as the archive import writes them, with no post author; `authored` more with one."""
+    from database import get_db
+    conn = get_db()
+    with conn:
+        for i in range(reactions):
+            conn.execute("INSERT INTO outbound_engagements (target_activity_urn, kind, reaction_kind, my_text_key, "
+                         "first_seen_at, last_seen_at) VALUES (?, 'reaction', 'like', '', '2025-01-01', '2025-01-01')",
+                         (f"urn:li:activity:73{i:017d}",))
+        for i in range(comments):
+            conn.execute("INSERT INTO outbound_engagements (target_activity_urn, kind, my_text, my_text_key, "
+                         "first_seen_at, last_seen_at) VALUES (?, 'comment', ?, ?, '2025-01-01', '2025-01-01')",
+                         (f"urn:li:activity:74{i:017d}", f"Great point {i}", f"great point {i}"))
+        for i in range(authored):
+            conn.execute("INSERT INTO outbound_engagements (target_activity_urn, target_author, kind, my_text_key, "
+                         "first_seen_at, last_seen_at) VALUES (?, 'Grace Hopper', 'reaction', '', '2026-10-01', "
+                         "'2026-10-01')", (f"urn:li:activity:75{i:017d}",))
+    conn.close()
+
+
+def test_outbound_after_an_archive_import_says_what_was_imported(studio):
+    """SETUP-10"""
+    _archive_outbound(25, 15)
+    page = _open(studio, "Outbound")
+    page.wait_for_selector("text=Where your attention goes")
+    body = page.inner_text("body")
+    assert "None of your reactions or comments have been imported yet" not in body
+    assert "25 reactions and 15 comments are imported" in body, body
+    assert "does not name the author" in body
+    assert "Posts you reacted to" in body and "Comments you left" in body
+    assert not studio["errors"], studio["errors"]
+
+
+def test_outbound_counts_the_rows_it_cannot_rank_yet(studio):
+    """SETUP-10"""
+    _archive_outbound(25, 15, authored=3)
+    page = _open(studio, "Outbound")
+    page.wait_for_selector("text=Most engaged with")
+    assert "40 more, from LinkedIn’s archive or without an author recorded, are not ranked" in page.inner_text("body")
+    assert not studio["errors"], studio["errors"]
