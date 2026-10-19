@@ -163,6 +163,17 @@ try:
 except ImportError:
     from secret_settings import seal as _seal_setting, unseal as _unseal_setting
 
+
+def _gemini_headers(api_key: str) -> Dict[str, str]:
+    """
+    Gemini's key travels in a header, never in the URL.
+
+    It used to be ?key=, and every place that records or prints a URL then
+    held it: the egress ledger the Local security tab reads, and the requests
+    exception printed to the log on any network failure.
+    """
+    return {"Content-Type": "application/json", "x-goog-api-key": api_key}
+
 class AIProviderConfig:
     """Encapsulates active AI provider settings."""
     def __init__(
@@ -194,10 +205,12 @@ class AIProviderConfig:
     def to_dict(self, mask_key: bool = True) -> Dict[str, Any]:
         key_display = ""
         if self.api_key:
-            if mask_key and len(self.api_key) > 8:
-                key_display = f"{self.api_key[:4]}...{self.api_key[-4:]}"
+            # The last four at most. The first four said which provider issued
+            # it and, with the last four, left only the middle to guess.
+            if mask_key and len(self.api_key) > 12:
+                key_display = f"...{self.api_key[-4:]}"
             elif mask_key:
-                key_display = "********"
+                key_display = "set"
             else:
                 key_display = self.api_key
 
@@ -382,13 +395,13 @@ def verify_ai_connection(
     try:
         if provider == "gemini":
             # Test Gemini generateContent
-            endpoint = f"{base_url}/models/{model}:generateContent?key={api_key}"
+            endpoint = f"{base_url}/models/{model}:generateContent"
             payload = json.dumps({
                 "contents": [{"parts": [{"text": "Say 'OK' in one word."}]}],
                 "generationConfig": {"maxOutputTokens": 5, "temperature": 0.1}
             }).encode("utf-8")
 
-            req = urllib.request.Request(endpoint, data=payload, headers={"Content-Type": "application/json"})
+            req = urllib.request.Request(endpoint, data=payload, headers=_gemini_headers(api_key))
             # Refuses rather than connecting when this category is off. See egress.py.
             _egress.require(endpoint, "model")
             with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -459,15 +472,16 @@ def verify_ai_connection(
                 err_msg = f"HTTP {e.code}: {err_detail}"
         except Exception:
             pass
-        return False, err_msg, latency
+        # A provider can quote the key back in its refusal.
+        return False, _egress.redact(err_msg), latency
 
     except urllib.error.URLError as e:
         latency = round((time.time() - start_time) * 1000, 1)
-        return False, f"Network unreachable: {e.reason}", latency
+        return False, _egress.redact(f"Network unreachable: {e.reason}"), latency
 
     except Exception as e:
         latency = round((time.time() - start_time) * 1000, 1)
-        return False, f"Connection error: {str(e)}", latency
+        return False, _egress.redact(f"Connection error: {str(e)}"), latency
 
 
 def execute_llm_completion(
@@ -486,7 +500,7 @@ def execute_llm_completion(
 
     try:
         if config.provider == "gemini":
-            endpoint = f"{config.base_url}/models/{config.model}:generateContent?key={config.api_key}"
+            endpoint = f"{config.base_url}/models/{config.model}:generateContent"
             parts = []
             if system_prompt:
                 parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
@@ -497,7 +511,7 @@ def execute_llm_completion(
                 "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature}
             }).encode("utf-8")
 
-            req = urllib.request.Request(endpoint, data=payload, headers={"Content-Type": "application/json"})
+            req = urllib.request.Request(endpoint, data=payload, headers=_gemini_headers(config.api_key))
             # Refuses rather than connecting when this category is off. See egress.py.
             _egress.require(endpoint, "model")
             with urllib.request.urlopen(req, timeout=15) as resp:
@@ -557,7 +571,7 @@ def execute_llm_completion(
     except _egress.EgressRefused:
         raise
     except Exception as e:
-        print(f"[ModelGateway] Error executing LLM completion ({config.provider}): {e}")
+        print(f"[ModelGateway] Error executing LLM completion ({config.provider}): {_egress.redact(e)}")
 
     return ""
 
@@ -580,7 +594,7 @@ async def execute_llm_completion_async(
 
     try:
         if config.provider == "gemini":
-            endpoint = f"{config.base_url}/models/{config.model}:generateContent?key={config.api_key}"
+            endpoint = f"{config.base_url}/models/{config.model}:generateContent"
             parts = []
             if system_prompt:
                 parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
@@ -592,7 +606,7 @@ async def execute_llm_completion_async(
             }
             _egress.require(endpoint, "model")
             async with httpx.AsyncClient(timeout=20.0) as client:
-                resp = await client.post(endpoint, json=payload, headers={"Content-Type": "application/json"})
+                resp = await client.post(endpoint, json=payload, headers=_gemini_headers(config.api_key))
                 resp.raise_for_status()
                 data = resp.json()
                 return data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -648,7 +662,7 @@ async def execute_llm_completion_async(
     except _egress.EgressRefused:
         raise
     except Exception as e:
-        print(f"[ModelGateway] Error in async LLM completion ({config.provider}): {e}")
+        print(f"[ModelGateway] Error in async LLM completion ({config.provider}): {_egress.redact(e)}")
 
     return ""
 
@@ -706,7 +720,7 @@ async def stream_llm_completion_async(
                         continue
 
     elif config.provider == "gemini":
-        endpoint = f"{config.base_url}/models/{config.model}:streamGenerateContent?alt=sse&key={config.api_key}"
+        endpoint = f"{config.base_url}/models/{config.model}:streamGenerateContent?alt=sse"
         parts = []
         if system_prompt:
             parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
@@ -718,7 +732,7 @@ async def stream_llm_completion_async(
         }
         _egress.require(endpoint, "model")
         async with httpx.AsyncClient(timeout=30.0) as client:
-            async with client.stream("POST", endpoint, json=payload, headers={"Content-Type": "application/json"}) as response:
+            async with client.stream("POST", endpoint, json=payload, headers=_gemini_headers(config.api_key)) as response:
                 async for line in response.aiter_lines():
                     if not line:
                         continue

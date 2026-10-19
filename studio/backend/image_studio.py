@@ -329,7 +329,7 @@ class ImageStudioManager:
                     try:
                         image_bytes = self._call_openai_dalle3(master_prompt, ai_config.api_key, width, height)
                     except Exception as e:
-                        print(f"[ImageStudio] OpenAI DALL-E 3 failed: {e}. Moving to fallback.")
+                        print(f"[ImageStudio] OpenAI DALL-E 3 failed: {_egress.redact(e)}. Moving to fallback.")
 
                 # Provider 2: Gemini Imagen 3 (if Gemini provider configured or gemini key present)
                 if not image_bytes:
@@ -340,7 +340,7 @@ class ImageStudioManager:
                         try:
                             image_bytes = self._call_gemini_imagen(master_prompt, key_to_use, width, height)
                         except Exception as e:
-                            print(f"[ImageStudio] Gemini Imagen failed: {e}. Moving to high-res fallback.")
+                            print(f"[ImageStudio] Gemini Imagen failed: {_egress.redact(e)}. Moving to high-res fallback.")
 
                 # Provider 3: Pollinations High-Res Engine (Open-Access Zero-Key Fallback)
                 if not image_bytes:
@@ -349,7 +349,7 @@ class ImageStudioManager:
                     try:
                         image_bytes = self._call_pollinations(master_prompt, width, height, eliminate_watermark=eliminate_pw)
                     except Exception as e:
-                        print(f"[ImageStudio] Pollinations fallback failed: {e}")
+                        print(f"[ImageStudio] Pollinations fallback failed: {_egress.redact(e)}")
 
             # Provider 4: Deterministic fallback canvas generator (guaranteed test & offline safety)
             if not image_bytes:
@@ -528,8 +528,10 @@ class ImageStudioManager:
             )
 
         except Exception as e:
-            print(f"[ImageStudio] Worker error: {e}")
-            self._update_task(task_id, 100, f"Generation failed: {str(e)}", status="failed", error=str(e))
+            # Redacted on the way to the log and to the progress endpoint.
+            reason = _egress.redact(e)
+            print(f"[ImageStudio] Worker error: {reason}")
+            self._update_task(task_id, 100, f"Generation failed: {reason}", status="failed", error=reason)
         finally:
             self._worker_semaphore.release()
 
@@ -576,8 +578,10 @@ class ImageStudioManager:
 
     def _call_gemini_imagen(self, prompt: str, api_key: str, width: int, height: int) -> Optional[bytes]:
         """Invokes Google Gemini Imagen API."""
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key={api_key}"
-        headers = {"Content-Type": "application/json"}
+        # The key goes in a header. In the URL it was printed with every
+        # connection error and stored in the egress ledger.
+        url = "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict"
+        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
         payload = {
             "instances": [{"prompt": prompt}],
             "parameters": {
@@ -657,7 +661,7 @@ class ImageStudioManager:
             # it.
             raise
         except Exception as e:
-            print(f"[ImageStudio] Pollinations network error: {e}")
+            print(f"[ImageStudio] Pollinations network error: {_egress.redact(e)}")
         return None
 
     def _create_local_canvas_image(self, width: int, height: int, title: Optional[str], style: Optional[str]) -> bytes:

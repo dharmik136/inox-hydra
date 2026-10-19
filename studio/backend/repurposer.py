@@ -92,7 +92,9 @@ def call_gemini_api(prompt: str, system_instruction: str = "") -> Optional[str]:
     if not api_key:
         return None
 
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    # The key goes in a header. In the URL it reached the egress ledger and
+    # every printed connection error.
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
     payload: Dict[str, Any] = {
         "contents": [
             {
@@ -113,7 +115,7 @@ def call_gemini_api(prompt: str, system_instruction: str = "") -> Optional[str]:
     }
 
     try:
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
         # Refuses rather than connecting when this category is off. See egress.py.
         _egress.require(url, "model")
         resp = requests.post(url, json=payload, headers=headers, timeout=12)
@@ -125,9 +127,9 @@ def call_gemini_api(prompt: str, system_instruction: str = "") -> Optional[str]:
                 if parts:
                     return parts[0].get("text", "")
         else:
-            print(f"[Gemini Bridge] Response code {resp.status_code}: {resp.text[:160]}")
+            print(f"[Gemini Bridge] Response code {resp.status_code}: {_egress.redact(resp.text[:160])}")
     except Exception as e:
-        print(f"[Gemini Bridge] Connection issue: {e}")
+        print(f"[Gemini Bridge] Connection issue: {_egress.redact(e)}")
 
     return None
 
@@ -216,7 +218,7 @@ def command_ai_engine(command: Optional[str], context: Optional[str] = None) -> 
                 if ai_out:
                     engine_name = f"{cfg.provider.capitalize()} ({cfg.model})"
             except Exception as e:
-                print(f"[BYO-AI] Completion failed on {cfg.provider}: {e}")
+                print(f"[BYO-AI] Completion failed on {cfg.provider}: {_egress.redact(e)}")
 
     # No silent fallback to Google.
     #
@@ -299,7 +301,7 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
             try:
                 resp = execute_llm_completion(cfg, prompt, system_prompt="You output ONLY raw JSON.", max_tokens=1000)
             except Exception as e:
-                print(f"[BYO-AI Hooks] Failed on {cfg.provider}: {e}")
+                print(f"[BYO-AI Hooks] Failed on {cfg.provider}: {_egress.redact(e)}")
 
     # No silent fallback to Google. See the note in repurpose_content: the
     # Gemini key is read from the environment and from a settings row
@@ -525,7 +527,7 @@ def repurpose_content(raw_text: Optional[str]) -> List[Dict[str, str]]:
             try:
                 resp = execute_llm_completion(cfg, prompt, system_prompt="You output ONLY raw JSON.", max_tokens=1500)
             except Exception as e:
-                print(f"[BYO-AI Repurpose] Failed on {cfg.provider}: {e}")
+                print(f"[BYO-AI Repurpose] Failed on {cfg.provider}: {_egress.redact(e)}")
 
     # No silent fallback to Google. See the note in repurpose_content: the
     # Gemini key is read from the environment and from settings regardless of
