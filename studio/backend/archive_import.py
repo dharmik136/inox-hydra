@@ -658,21 +658,22 @@ def _same_person(owner: Dict[str, Any], creator: Dict[str, Any]) -> bool:
     Whether the archive's member is the confirmed creator.
 
     The profile address decides when the archive gives one. Otherwise the
-    names are compared word by word, so "Dr. Sample Bob" is Sample Bob; and
-    when the studio holds no name for the creator, their profile address
-    stands in for it ("sample-bob", "samplebob42").
+    names must hold the same words, whatever their case, accents or order: a
+    name that only shares a word ("Sample", or "Sample Bob-Jones" for Sample
+    Bob) is another person as far as this check knows, so the creator is
+    asked. When the studio holds no name for the creator, their profile
+    address stands in for it ("sample-bob", "samplebob42").
     """
     match = re.search(r"linkedin\.com/in/([^/?#]+)", owner.get("profile_url") or "")
     if match:
         return _words(unquote(match.group(1))) == _words(creator["vanity"])
-    theirs = set(_words(owner["name"]))
+    theirs = sorted(_words(owner["name"]))
     if not theirs:
         return False
     if creator["name"]:
-        mine = set(_words(creator["name"]))
-        return bool(mine) and (theirs <= mine or mine <= theirs)
-    vanity = _words(creator["vanity"])
-    return theirs <= set(vanity) or set(vanity) <= theirs or "".join(vanity).startswith("".join(_words(owner["name"])))
+        return theirs == sorted(_words(creator["name"]))
+    vanity = [w for w in _words(creator["vanity"]) if not w.isdigit()]
+    return theirs == sorted(vanity) or "".join(vanity).rstrip("0123456789") == "".join(_words(owner["name"]))
 
 
 def _ownership(parsed: Dict[str, Any]) -> Dict[str, Any]:

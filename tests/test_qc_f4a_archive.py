@@ -550,3 +550,16 @@ def test_an_unpacked_folder_on_windows_is_not_still_downloading(client, home, mo
     monkeypatch.setattr(archive_import.os, "stat", windows_stat)
     [hit] = client.post("/api/v1/archive/requested").json()["found"]
     assert hit["folder"] is True and hit["downloading"] is False
+
+
+@pytest.mark.parametrize("first,last", [("Sample", ""), ("Bob", ""), ("Sample", "Bob-Jones"), ("Bob", "Other")])
+def test_a_partial_name_match_asks_first(client, first, last):
+    """SETUP-01: one word, or an extra word, is not the confirmed creator's name."""
+    _confirm_bob(client)
+    preview = _upload(client, _person_archive(first, last))
+    assert preview["needs_confirmation"], f"{first} {last} was taken for Sample Bob"
+
+
+def test_the_same_name_in_another_order_or_case_is_the_creator(client):
+    _confirm_bob(client)
+    assert _upload(client, _person_archive("BOB", "Sámple"))["needs_confirmation"] == ""
