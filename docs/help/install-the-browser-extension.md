@@ -50,13 +50,13 @@ If you used option A, this is already done: the studio tab that opened beside Li
 
 | Where you are | What is read | Where it goes |
 | --- | --- | --- |
-| Feed, post pages and activity pages | Name, headline, profile link and the first 140 characters of comment text of commenters; people in an open reactions list | **Leads** |
+| Feed and post pages | Name, headline, profile link and the first 140 characters of comment text of commenters; people in an open reactions list | **Leads** |
 | A post's own page | The post's ID and text | Offered to the studio to link to a post you wrote. In this build that link does not complete; see [Read your analytics](read-your-analytics.md). |
 | Your creator analytics page, any address starting `/analytics/creator` | Impressions, engagements and followers from the figure cards, about 2 seconds after the page loads or after you click through to it from elsewhere on LinkedIn | **Analytics** |
 | When you press **Sync LinkedIn Session** in the popup | Your LinkedIn session cookies, if both exist | The studio's saved LinkedIn session |
 | Some LinkedIn data requests the page makes (feed updates, profiles, creator analytics) | The address (without its query) and status code | The studio's local telemetry store |
 
-Everything goes only to the studio at `127.0.0.1:8000`. Lead capture skips profile pages. On the feed, the extension reads commenters and reactors on any post you can see, but the studio keeps only people who engaged with your own posts, and only after you have confirmed your profile in **Setup**. See [Why is my lead list empty?](why-is-my-lead-list-empty.md) Nothing copies your session on a timer; see [Connect your LinkedIn session](connect-your-linkedin-session.md).
+Everything goes only to the studio at `127.0.0.1:8000`. Lead capture skips profile pages, and your activity pages (`linkedin.com/in/you/recent-activity/...`) are not read for leads: open the post itself, or find it in your feed, to capture the people who engaged with it. On the feed, the extension reads commenters and reactors on any post you can see, but the studio keeps only people who engaged with your own posts, and only after you have confirmed your profile in **Setup**. See [Why is my lead list empty?](why-is-my-lead-list-empty.md) Nothing copies your session on a timer; see [Connect your LinkedIn session](connect-your-linkedin-session.md).
 
 ## What it never does
 
