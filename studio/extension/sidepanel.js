@@ -30,6 +30,33 @@ function studioApiFromPanel(path, options) {
 // -------------------------------------------------------------
 // Inox Hydra - Side Panel Controller
 // -------------------------------------------------------------
+
+/** The studio post whose text the panel was filled with, or null. */
+let panelPostId = null;
+
+// The studio's fold, the two numbers in studio/backend/fold.py. The panel used
+// to carry its own rule (over 210 characters, or a first line over 140 only
+// once there were three lines), so a 165 character one-line opening was "Fold
+// Safe" here while the studio said it was cut off.
+const MOBILE_FOLD_CHARS = 140;
+const MOBILE_FOLD_LINES = 3;
+
+/** The text as a reader counts it: decoration marks stripped, one per code point. */
+function measurableText(text) {
+  return Array.from(text || "").filter((ch) => !/\p{M}/u.test(ch)).join("");
+}
+
+/** The studio's verdict (formatters.analyze_hook): the first lines, and the first line alone, fit. */
+function isFoldSafe(value) {
+  const text = measurableText(value);
+  // Python's splitlines, which drops the empty line after a final break.
+  const lines = text.split(/\r\n|[\n\v\f\r\x1c-\x1e\x85\u2028\u2029]/);
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  const firstLine = (lines.find((line) => line.trim()) || "").trim();
+  const preFold = Array.from(lines.slice(0, MOBILE_FOLD_LINES).join("\n")).length;
+  return preFold <= MOBILE_FOLD_CHARS && Array.from(firstLine).length <= MOBILE_FOLD_CHARS;
+}
+
 /**
  * A GET against the studio, made by the service worker so it carries the
  * studio token. This page used to fetch the studio directly, which carries
@@ -68,11 +95,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const foldStatus = document.getElementById("sp-fold-status");
   const toast = document.getElementById("sp-toast");
 
-  // Load scheduled post by default
-  panelApi("/api/posts?status=scheduled").then(result => {
-    const posts = result.ok ? result.data.posts || [] : [];
+  // Open on the post to make next: one that is due, else the next queued.
+  loadQueuedPosts().then(result => {
+    const posts = result.ok ? result.posts : [];
     if (posts.length && !textarea.value) {
       textarea.value = posts[0].content;
+      panelPostId = posts[0].id || null;
       updateStats();
     }
   });
@@ -81,9 +109,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   function updateStats() {
     const val = textarea.value;
-    charCount.innerText = val.length;
-    const lines = val.split("\n");
-    if (val.length > 210 || (lines.length >= 3 && lines[0].length > 140)) {
+    charCount.innerText = Array.from(measurableText(val)).length;
+    if (!isFoldSafe(val)) {
       foldStatus.innerText = "Truncated by fold";
       foldStatus.style.color = "#f59e0b";
     } else {
@@ -166,12 +193,27 @@ document.addEventListener("DOMContentLoaded", () => {
           // attach to, and three complete attribution surfaces keep returning
           // zero. It is bookkeeping on an event the studio itself caused, so
           // it contacts nothing but the local backend.
+          //
+          // The toast waits for the studio's answer. It used to promise the
+          // link whatever the studio said, including when it answered that
+          // the text could not be identified again.
           studioApiFromPanel("/api/v1/posts/injected", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: content })
-          }).catch(() => {});
-          showToast("✅ Inserted into the composer. Open the post once after publishing and the studio will link it.");
+            // Which queued post this text came from, so the studio arms that
+            // post rather than recording a second copy of it beside it.
+            body: JSON.stringify({ content: content, post_id: panelPostId })
+          }).then((res) => res.json()).then((data) => {
+            if (data && data.status === "recorded") {
+              showToast("✅ Inserted into the composer. Open the post once after publishing and the studio will link it.");
+            } else if (data && data.message) {
+              showToast("Inserted into the composer. " + data.message);
+            } else {
+              showToast("Inserted into the composer, but the studio did not record it, so it cannot link this post later.");
+            }
+          }).catch(() => {
+            showToast("Inserted into the composer, but the studio did not record it, so it cannot link this post later.");
+          });
         } else {
           showToast("⚠️ Click 'Start a post' on LinkedIn first!");
         }
@@ -286,12 +328,29 @@ function cleanDashes(text) {
   return text.replace(/\u2014/g, ", ").replace(/\u2013/g, ", ").replace(/(?<=\w)--+(?=\w)/g, ", ").replace(/[ \t]+/g, " ");
 }
 
+/**
+ * Due posts, then queued ones, earliest first.
+ *
+ * The studio's queue posts nothing: at a post's time it marks it due, for the
+ * creator to post. Those are the posts this panel exists to insert, so they
+ * come first.
+ */
+async function loadQueuedPosts() {
+  const [due, queued] = await Promise.all([
+    panelApi("/api/posts?status=due"),
+    panelApi("/api/posts?status=scheduled"),
+  ]);
+  if (!queued.ok) return { ok: false, result: queued, posts: [] };
+  return { ok: true, posts: [...(due.ok ? due.data.posts || [] : []), ...(queued.data.posts || [])] };
+}
+
 async function loadSideQueue() {
   const container = document.getElementById("queue-mini-list");
   container.innerHTML = "<p style='color: var(--text-dim);'>Loading queue...</p>";
   try {
-    const result = await panelApi("/api/posts?status=scheduled");
-    if (!result.ok) {
+    const loaded = await loadQueuedPosts();
+    const result = loaded.ok ? loaded : loaded.result;
+    if (!loaded.ok) {
       container.innerHTML = "";
       const p = document.createElement("p");
       p.style.color = "var(--text-dim)";
@@ -299,7 +358,7 @@ async function loadSideQueue() {
       container.appendChild(p);
       return;
     }
-    const posts = result.data.posts || [];
+    const posts = loaded.posts;
     container.innerHTML = "";
 
     if (!posts.length) {
@@ -310,13 +369,20 @@ async function loadSideQueue() {
     posts.forEach(p => {
       const item = document.createElement("div");
       item.className = "queue-item-mini";
-      const schedTime = p.scheduled_for ? new Date(p.scheduled_for).toLocaleString() : "Today at 5:30 PM";
-      item.innerHTML = `
-        <div class="queue-item-time">⏰ ${schedTime}</div>
-        <div class="queue-item-text">${p.content.split("\n")[0]}</div>
-      `;
+      // A post queued without a time says so. This used to print "Today at
+      // 5:30 PM", a time nobody set. Both lines are text, not markup, so a
+      // post that mentions <Thinking in Systems> shows it.
+      const schedTime = p.scheduled_for ? new Date(p.scheduled_for).toLocaleString() : "No time set";
+      const time = document.createElement("div");
+      time.className = "queue-item-time";
+      time.textContent = p.status === "due" ? `Due now, post it: ${schedTime}` : `⏰ ${schedTime}`;
+      const text = document.createElement("div");
+      text.className = "queue-item-text";
+      text.textContent = (p.content || "").split("\n")[0];
+      item.append(time, text);
       item.addEventListener("click", () => {
         document.getElementById("sp-text").value = p.content;
+        panelPostId = p.id || null;
         document.getElementById("tab-composer-btn").click();
       });
       container.appendChild(item);

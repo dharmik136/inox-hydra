@@ -7,8 +7,8 @@ Operationalizes Module 02 enterprise publishing cadence:
 2. Smart Engagement Slot Allocator: Calculates optimal windows based on
    local peak slots (Mon-Fri 08:30 / 17:30).
 3. Self-Healing Morning Grace Window Recovery:
-   - Within 2-hour grace window (<= 120m overdue): Dispatches immediately and
-     notifies via SSE.
+   - Within 2-hour grace window (<= 120m overdue): Marks the post due, for the
+     creator to post it, and notifies via SSE. Nothing is posted from here.
    - Beyond grace window (> 120m overdue): Safely rolls forward to next
      optimal peak engagement window and alerts creator.
 4. Real-time SSE stream integration (schedule_recovery event).
@@ -39,6 +39,11 @@ except ImportError:
 logger = logging.getLogger("studio.scheduler")
 
 MIN_COOLDOWN_HOURS = 12.0
+
+# A settings key, per post, for a post handed to LinkedIn's own scheduler with
+# Send to LinkedIn. LinkedIn publishes that one itself at its time, so it is
+# the one queued post that really is published when its time comes.
+LINKEDIN_HOLDS_KEY = "linkedin_holds:"
 GRACE_WINDOW_MINUTES = 120.0
 ON_TIME_THRESHOLD_MINUTES = 5.0
 
@@ -193,16 +198,17 @@ class NativeScheduler:
         results = []
         try:
             cursor = conn.cursor()
+            # A due post is about to be posted by the creator, at its time.
             cursor.execute(
                 "SELECT id, status, scheduled_for, published_at FROM posts "
-                "WHERE status IN ('scheduled', 'published')"
+                "WHERE status IN ('scheduled', 'due', 'published')"
             )
             rows = cursor.fetchall()
             for r in rows:
                 p_id = r["id"]
                 if exclude_post_id and p_id == exclude_post_id:
                     continue
-                dt_raw = r["scheduled_for"] if r["status"] == "scheduled" else r["published_at"]
+                dt_raw = r["scheduled_for"] if r["status"] in ("scheduled", "due") else r["published_at"]
                 dt = parse_datetime_flexible(dt_raw)
                 if dt:
                     results.append((dt, p_id, r["status"]))
@@ -393,9 +399,18 @@ class NativeScheduler:
         """
         Periodic dispatch and self-healing recovery loop.
         Evaluates scheduled posts against the current timestamp:
-        - On-time (<= 5m overdue): Dispatches as published.
-        - Grace window (5m to 120m overdue): Dispatches as published with recovery alert.
+        - On-time (<= 5m overdue): Marks the post due.
+        - Grace window (5m to 120m overdue): Marks the post due, with a recovery alert.
         - Stale (> 120m overdue): Safely rolls forward to next optimal window to protect reach.
+
+        Due, not published. Nothing here posts anything, and this used to write
+        status 'published' with the slot's time: the post left the Queue,
+        Analytics listed it as one of the creator's published posts, and it
+        was never on LinkedIn. A due post waits on the Queue for the creator to
+        post it and press "I posted it", which is publish-now. The exception
+        is a post handed to LinkedIn's own scheduler with Send to LinkedIn:
+        LinkedIn publishes that one itself, so it is recorded as published at
+        its time.
         """
         if self.is_queue_paused():
             logger.info("Scheduler cycle skipped: Publishing queue is currently paused by creator.")
@@ -424,14 +439,41 @@ class NativeScheduler:
 
                 overdue_minutes = max(0.0, (now - sched_dt).total_seconds() / 60.0)
 
+                # LinkedIn published this one at its time, whether or not this
+                # machine was awake, so it is recorded as published then, and
+                # never rolled forward to a slot it will not be posted in.
+                if cursor.execute(
+                    "SELECT 1 FROM settings WHERE key = ?", (LINKEDIN_HOLDS_KEY + post_id,)
+                ).fetchone():
+                    cursor.execute(
+                        "UPDATE posts SET status = 'published', published_at = ? "
+                        "WHERE id = ? AND status = 'scheduled'",
+                        (sched_dt.isoformat(), post_id)
+                    )
+                    claimed = cursor.rowcount
+                    cursor.execute("DELETE FROM settings WHERE key = ?", (LINKEDIN_HOLDS_KEY + post_id,))
+                    conn.commit()
+                    if claimed == 0:
+                        continue
+                    event_bus.publish_sync("post_published", {
+                        "post_id": post_id,
+                        "published_at": sched_dt.isoformat(),
+                    })
+                    actions.append({
+                        "post_id": post_id,
+                        "action": "published_by_linkedin",
+                        "overdue_minutes": round(overdue_minutes, 1)
+                    })
+                    continue
+
                 # Case 1: On-time or within 2-hour morning grace window
                 if overdue_minutes <= self.grace_window_minutes:
                     # Claim the post, do not just write to it.
                     #
                     # The APScheduler thread and the manual dispatch endpoint
                     # both run this. They each SELECT the same due row, each
-                    # UPDATE it, and each publish a post_published event, so a
-                    # creator's post goes to LinkedIn twice. Neither sees the
+                    # UPDATE it, and each announce it, so a creator is told
+                    # twice. Neither sees the
                     # other's uncommitted write, so nothing upstream catches
                     # it.
                     #
@@ -441,9 +483,8 @@ class NativeScheduler:
                     # learn which one we were. This holds across processes as
                     # well as threads, which a lock in this file would not.
                     cursor.execute(
-                        "UPDATE posts SET status = 'published', published_at = ? "
-                        "WHERE id = ? AND status = 'scheduled'",
-                        (now_iso, post_id)
+                        "UPDATE posts SET status = 'due' WHERE id = ? AND status = 'scheduled'",
+                        (post_id,)
                     )
                     conn.commit()
 
@@ -455,32 +496,35 @@ class NativeScheduler:
                         continue
 
                     if overdue_minutes <= ON_TIME_THRESHOLD_MINUTES:
-                        logger.info("Post %s dispatched on time at %s.", post_id, now_iso)
-                        event_bus.publish_sync("post_published", {
+                        logger.info("Post %s is due, on time, at %s.", post_id, now_iso)
+                        event_bus.publish_sync("post_due", {
                             "post_id": post_id,
-                            "published_at": now_iso
+                            "due_at": now_iso
                         })
                         actions.append({
                             "post_id": post_id,
-                            "action": "published_on_time",
+                            "action": "due_on_time",
                             "overdue_minutes": round(overdue_minutes, 1)
                         })
                     else:
                         # Grace window recovery
                         logger.info(
-                            "Post %s recovered and published within %.1fm grace window at %s.",
+                            "Post %s is due, %.1fm late, inside the grace window, at %s.",
                             post_id, overdue_minutes, now_iso
                         )
                         recovery_payload = {
-                            "type": "grace_dispatched",
+                            "type": "grace_due",
                             "post_id": post_id,
                             "overdue_minutes": round(overdue_minutes, 1),
-                            "message": f"Recovered and published post within {int(overdue_minutes)}m morning grace window."
+                            "message": (
+                                f"This post was due {int(overdue_minutes)}m ago and is waiting on the "
+                                "Queue for you to post it."
+                            )
                         }
                         event_bus.publish_sync("schedule_recovery", recovery_payload)
                         actions.append({
                             "post_id": post_id,
-                            "action": "grace_dispatched",
+                            "action": "due_within_grace",
                             "overdue_minutes": round(overdue_minutes, 1)
                         })
 

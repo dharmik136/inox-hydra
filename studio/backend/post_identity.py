@@ -31,6 +31,7 @@ drafts from another.
 
 import hashlib
 import re
+import unicodedata
 from typing import Optional
 
 # How much of the opening to fingerprint. Long enough that two drafts on the
@@ -40,16 +41,24 @@ FINGERPRINT_CHARS = 140
 # A LinkedIn activity URN as it appears in a post permalink.
 ACTIVITY_URN_PATTERN = re.compile(r"urn:li:(?:activity|share|ugcPost):\d+")
 
-_NON_WORD = re.compile(r"[^0-9a-z]+")
+# Everything that is not a letter or a digit, in any script. This was
+# [^0-9a-z], which reduced a post in Devanagari, Gujarati, Chinese, Arabic or
+# Cyrillic to nothing, so none of those creators' posts could ever be bound.
+# Combining marks (Devanagari vowel signs among them) fall outside \w and are
+# dropped, which loses a little distinctiveness and survives LinkedIn
+# composing or decomposing them differently.
+_NON_WORD = re.compile(r"[\W_]+")
 
 
 def normalize_for_fingerprint(text: str) -> str:
     """
     Reduce post text to what survives a round trip through LinkedIn.
 
-    Case, punctuation, emoji, the bold unicode letterforms this studio's
-    formatter emits, and every kind of whitespace are all discarded. What is
-    left is the lowercase alphanumeric spine of the text.
+    Case, punctuation, emoji, combining marks, the bold unicode letterforms
+    this studio's formatter emits, and every kind of whitespace are all
+    discarded. What is left is the case-folded spine of letters and digits, in
+    whatever script the post is written. For plain English text that is exactly what
+    the ASCII-only version produced, so fingerprints stored before still match.
     """
     if not text:
         return ""
@@ -59,7 +68,10 @@ def normalize_for_fingerprint(text: str) -> str:
     # This studio's own formatter emits those letterforms, so getting the order
     # wrong means a post injected from the studio never matches itself.
     plain = "".join(_unbold(ch) for ch in text)
-    return _NON_WORD.sub("", plain.casefold())
+    # NFKC so that a letter typed precomposed and one LinkedIn hands back
+    # decomposed are the same letter, and full-width forms fold to their
+    # ordinary ones.
+    return _NON_WORD.sub("", unicodedata.normalize("NFKC", plain).casefold())
 
 
 def _unbold(ch: str) -> str:

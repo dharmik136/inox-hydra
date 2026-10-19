@@ -60,7 +60,7 @@ try:
     from . import egress as egress_policy
     from .scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                             parse_datetime_flexible, normalize_datetime_to_utc_iso,
-                            is_queue_paused, set_queue_paused)
+                            is_queue_paused, set_queue_paused, LINKEDIN_HOLDS_KEY)
     from .agno_agent import agno_orchestrator
     from .agno_agentos import orchestrator
     from .image_studio import image_studio_manager
@@ -131,7 +131,7 @@ except ImportError:
     import egress as egress_policy
     from scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                            parse_datetime_flexible, normalize_datetime_to_utc_iso,
-                           is_queue_paused, set_queue_paused)
+                           is_queue_paused, set_queue_paused, LINKEDIN_HOLDS_KEY)
     from agno_agent import agno_orchestrator
     from agno_agentos import orchestrator
     from image_studio import image_studio_manager
@@ -383,6 +383,40 @@ async def enforce_local_access(request: Request, call_next):
     return response
 
 
+# Which creator profile a window is showing. The interface sends it on every
+# request, and every trusted answer carries the profile that served it.
+PROFILE_HEADER = "X-Inox-Profile"
+
+
+def _is_trusted_api_request(request: Request) -> bool:
+    """
+    The checks enforce_local_access makes, asked again here.
+
+    pin_creator_profile is the outer middleware, so it runs before the
+    security one. Without these it would tell an unauthenticated caller which
+    profile is active, and refuse its writes with a different code than the
+    401 it is owed.
+    """
+    path = request.scope.get("path", "")
+    if not path.startswith("/api") or security.request_is_exempt(path):
+        return False
+    host = request.headers.get("host")
+    if not security.is_loopback_host(host):
+        return False
+    if not security.is_allowed_origin(request.headers.get("origin"), security.extract_port(host)):
+        return False
+    supplied = request.headers.get(security.TOKEN_HEADER) or request.cookies.get(security.TOKEN_COOKIE)
+    return security.constant_time_match(supplied, security.get_or_create_token())
+
+
+def _profile_name(profile_id: str) -> str:
+    try:
+        account = accounts.get_account(profile_id)
+    except Exception:
+        account = None
+    return (account or {}).get("name") or profile_id[:64]
+
+
 @app.middleware("http")
 async def pin_creator_profile(request: Request, call_next):
     """
@@ -391,9 +425,48 @@ async def pin_creator_profile(request: Request, call_next):
     Every connection the request opens then goes to the same profile's
     database, even if the creator switches profile while it is running. A
     switch takes effect from the next request.
+
+    A write from a window that still shows another profile is refused. The
+    active profile is one value for the whole studio, so a second window left
+    on profile A went on saving into profile B after another window switched,
+    while still showing A and reporting SAVED: one client's confidential draft
+    landed in another client's profile. The interface names the profile it
+    loaded with in X-Inox-Profile; a write naming one that is no longer active
+    is a 409 the window shows, and changes nothing. Reads still answer, and
+    each answer names the active profile, which is how the window notices.
+    The profile routes themselves are exempt: switching from a stale window is
+    the creator's explicit choice, and it reloads that window.
     """
-    with paths_module.using_profile(paths_module.get_active_profile_id()):
-        return await call_next(request)
+    active = paths_module.get_active_profile_id()
+    trusted = _is_trusted_api_request(request)
+    shown = request.headers.get(PROFILE_HEADER)
+    path = request.scope.get("path", "")
+    if (
+        trusted
+        and shown
+        and shown != active
+        and request.method not in ("GET", "HEAD", "OPTIONS")
+        and not path.startswith("/api/v1/accounts")
+    ):
+        response = JSONResponse(
+            status_code=409,
+            content={
+                "detail": {
+                    "code": "profile_changed",
+                    "message": (
+                        f"This window still shows {_profile_name(shown)}, but the studio has "
+                        f"switched to {_profile_name(active)} in another window. Nothing was "
+                        "changed. Copy anything you have not saved, then reload this window."
+                    ),
+                }
+            },
+        )
+    else:
+        with paths_module.using_profile(active):
+            response = await call_next(request)
+    if trusted:
+        response.headers[PROFILE_HEADER] = active
+    return response
 
 
 # -------------------------------------------------------------
@@ -1786,6 +1859,50 @@ class NativeStageRequest(BaseModel):
 class StagePostRequest(BaseModel):
     scheduled_at: str
     confirm: bool = False
+    # Sends again after an earlier send got no answer, once the creator has
+    # checked LinkedIn and the post is not there.
+    confirm_resend: bool = False
+
+
+# A send LinkedIn never answered, per post: the time it went out.
+UNANSWERED_SEND_KEY = "linkedin_send_unanswered:"
+
+
+def _unanswered_send(post_id: str) -> Optional[str]:
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (UNANSWERED_SEND_KEY + post_id,)).fetchone()
+        return row["value"] if row else None
+    finally:
+        conn.close()
+
+
+def _record_unanswered_send(post_id: str) -> None:
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+            (UNANSWERED_SEND_KEY + post_id, datetime.now(timezone.utc).isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _send_refusal_text(result: Dict[str, Any]) -> str:
+    """Why a send to LinkedIn did not happen, in one sentence the creator can act on."""
+    message = result.get("message")
+    if isinstance(message, str) and message.strip():
+        return message
+    status = result.get("http_status")
+    if status:
+        # LinkedIn's own body is often a page of HTML, which is not a reason.
+        return f"LinkedIn refused the post (HTTP {status}). Nothing was scheduled."
+    error = str(result.get("error") or "").strip()
+    if error:
+        return f"The studio could not reach LinkedIn ({error[:200]}). Nothing was scheduled."
+    return "LinkedIn did not accept the post. Nothing was scheduled."
 
 
 @app.post("/api/v1/posts/{post_id}/stage-to-linkedin", tags=["LinkedIn Native Scheduler"])
@@ -1855,16 +1972,41 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
     if not content.strip():
         raise HTTPException(status_code=400, detail="This post has no content to send.")
 
+    # An earlier send that LinkedIn never answered may have scheduled the post
+    # already, so a second one waits until the creator has looked.
+    unanswered = _unanswered_send(post_id)
+    if unanswered and not req.confirm_resend:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "send_unconfirmed",
+                "message": (
+                    f"An earlier send of this post ({unanswered[:16].replace('T', ' ')} UTC) got no "
+                    "answer from LinkedIn, so LinkedIn may already be holding it. Check your "
+                    "scheduled posts on LinkedIn. Send again only if it is not there."
+                ),
+            },
+        )
+
     result = linkedin_client.schedule_norm_share(
         content=content,
         scheduled_at_ms=int(parsed.timestamp() * 1000),
     )
 
+    if result.get("status") == "unknown":
+        _record_unanswered_send(post_id)
+        raise HTTPException(
+            status_code=504,
+            detail={"code": "send_unknown", "message": _send_refusal_text(result)},
+        )
+
     if result.get("status") != "success":
-        # Returned as-is with a 502. The refusal text names the flag or the
-        # breaker, and rewording it here would lose the one thing the creator
-        # needs in order to act.
-        raise HTTPException(status_code=502, detail=result)
+        # A 502 whose detail is a sentence. The refusal text names the flag or
+        # the breaker, and rewording it here would lose the one thing the
+        # creator needs in order to act, so it is passed through as written.
+        # The detail used to be the whole result dict, which the interface
+        # could not read, so the creator saw "502" and nothing else.
+        raise HTTPException(status_code=502, detail=_send_refusal_text(result))
 
     # A mock result is not a send, and must never be reported as one.
     #
@@ -1898,6 +2040,14 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
         conn.execute(
             "UPDATE posts SET status = 'scheduled', scheduled_for = ? WHERE id = ?",
             (scheduled, post_id),
+        )
+        conn.execute("DELETE FROM settings WHERE key = ?", (UNANSWERED_SEND_KEY + post_id,))
+        # LinkedIn holds it, so at its time the queue records it as published
+        # rather than as due for the creator to post again.
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+            (LINKEDIN_HOLDS_KEY + post_id, result.get("scheduled_urn") or "held"),
         )
         conn.commit()
     finally:

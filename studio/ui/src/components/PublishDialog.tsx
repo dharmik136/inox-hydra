@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { CalendarClock, CheckCheck, Loader2, Send } from "lucide-react";
 import {
@@ -6,15 +6,20 @@ import {
   publishNow,
   schedulePost,
   stageToLinkedIn,
+  StudioError,
   validateCadence,
   type CadenceVerdict,
   type NextSlot,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
+const FOCUSABLE = "button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex='-1'])";
+
 interface PublishDialogProps {
   open: boolean;
   postId: string | null;
+  /** The first line of the stored post, which is what every choice acts on. */
+  opening: string;
   onClose: () => void;
   onDone: (message: string) => void;
 }
@@ -44,7 +49,7 @@ interface PublishDialogProps {
  * write rejects an invalid time with a 400 and a rejection after the click
  * reads as a broken control rather than as the twelve hour rule it is.
  */
-export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogProps) {
+export function PublishDialog({ open, postId, opening, onClose, onDone }: PublishDialogProps) {
   const [slot, setSlot] = useState<NextSlot | null>(null);
   const [verdict, setVerdict] = useState<CadenceVerdict | null>(null);
   const [busy, setBusy] = useState(false);
@@ -53,6 +58,9 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
   // cleared whenever the dialog opens so a previous confirmation cannot carry
   // over into a new post.
   const [confirmingSend, setConfirmingSend] = useState(false);
+  // An earlier send got no answer from LinkedIn. Sending again is offered only
+  // once the studio has said so, and only as its own, named control.
+  const [resendOffered, setResendOffered] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -60,6 +68,7 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
     setError(null);
     setVerdict(null);
     setConfirmingSend(false);
+    setResendOffered(false);
     fetchNextSlot()
       .then(async (next) => {
         if (!live) return;
@@ -76,16 +85,57 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
     };
   }, [open, postId]);
 
+  // The dialog takes the keyboard while it is open. Focus used to stay on the
+  // Publish button behind it, and Tab walked the hook rail under the overlay,
+  // where Enter applied a hook and rewrote the opening. Focus moves into the
+  // dialog on open, Tab and Shift+Tab cycle inside it, and on close it goes
+  // back to whatever opened it.
+  const dialogRef = useRef<HTMLDivElement>(null);
+  // Read through a ref, so a parent that passes a new onClose on every render
+  // does not re-run this and pull focus back to the first control.
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
     if (!open) return;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const frame = window.requestAnimationFrame(() => {
+      const dialog = dialogRef.current;
+      if (!dialog || dialog.contains(document.activeElement)) return;
+      (dialog.querySelector<HTMLElement>(FOCUSABLE) ?? dialog).focus();
+    });
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        closeRef.current();
+        return;
+      }
+      const dialog = dialogRef.current;
+      if (event.key !== "Tab" || !dialog) return;
+      const items = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
+      if (!items.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      const inside = dialog.contains(document.activeElement);
+      if (event.shiftKey && (!inside || document.activeElement === first || document.activeElement === dialog)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (!inside || document.activeElement === last)) {
+        event.preventDefault();
+        first.focus();
+      }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener("keydown", onKey);
+      if (opener && opener.isConnected) opener.focus();
+    };
+  }, [open]);
 
-  async function run(action: "now" | "schedule" | "send") {
+  async function run(action: "now" | "schedule" | "send" | "resend") {
     if (!postId) return;
     setBusy(true);
     setError(null);
@@ -93,9 +143,9 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
       if (action === "now") {
         await publishNow(postId);
         onDone("Marked as published");
-      } else if (action === "send") {
+      } else if (action === "send" || action === "resend") {
         if (!slot) throw new Error("No slot is available to send into.");
-        const staged = await stageToLinkedIn(postId, slot.slot_datetime);
+        const staged = await stageToLinkedIn(postId, slot.slot_datetime, action === "resend");
         // The server's own sentence, not a cheerful rewrite of it. It is the
         // thing that distinguishes "LinkedIn has this" from "a row moved".
         onDone(staged.message);
@@ -113,6 +163,7 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
       // invites a second press at the exact moment the author is least sure
       // what just happened.
       setConfirmingSend(false);
+      setResendOffered(caught instanceof StudioError && caught.code === "send_unconfirmed");
     } finally {
       setBusy(false);
     }
@@ -130,6 +181,8 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
           className="fixed inset-0 z-50 grid place-items-center bg-canvas/70 p-4 backdrop-blur-sm"
         >
           <motion.div
+            ref={dialogRef}
+            tabIndex={-1}
             role="dialog"
             aria-modal="true"
             aria-label="Publish"
@@ -138,19 +191,39 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
             exit={{ opacity: 0, y: -8, scale: 0.98 }}
             transition={{ duration: 0.22, ease: [0.32, 0.72, 0.24, 1] }}
             onClick={(event) => event.stopPropagation()}
-            className="w-full max-w-md rounded-lg border border-edge bg-raised p-5 shadow-2xl"
+            className="w-full max-w-md rounded-lg border border-edge bg-raised p-5 shadow-2xl outline-none"
           >
             <p className="studio-label">Publish</p>
 
             {!postId ? (
-              <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
-                Save the draft first. Publishing acts on a stored post, and this one has not been
-                written to the studio yet.
-              </p>
-            ) : (
               <>
                 <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
-                  Mark this as published in your record, or put it in the local queue.
+                  Save the draft first. Publishing acts on a stored post, and this one has not been
+                  written to the studio yet.
+                </p>
+                <div className="mt-5 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="rounded-md px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* The post every choice below acts on, as stored. Publish
+                    saves what is on screen first, so this is what the author
+                    was looking at. */}
+                {opening && (
+                  <p className="mt-3 truncate rounded-md border border-edge bg-ink px-3 py-2 text-[13px] text-ink-primary">
+                    {opening}
+                  </p>
+                )}
+                <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
+                  Mark this as published in your record, or put it in the local queue, which lists
+                  it as due at the slot for you to post on LinkedIn yourself.
                 </p>
                 <p className="studio-meta mt-2 leading-snug text-ink-muted">
                   NEITHER OF THOSE TWO SENDS ANYTHING. BOTH WRITE TO THIS MACHINE ONLY,
@@ -192,12 +265,24 @@ export function PublishDialog({ open, postId, onClose, onDone }: PublishDialogPr
                 <div className="mt-5 border-t border-edge pt-4">
                   <p className="studio-meta leading-snug text-ink-muted">
                     OR HAND IT TO LINKEDIN&apos;S OWN SCHEDULER, WHICH PUBLISHES IT EVEN IF
-                    THIS MACHINE IS ASLEEP. THIS ONE REALLY SENDS.
+                    THIS MACHINE IS ASLEEP. THIS ONE REALLY SENDS: THE POST&apos;S TEXT LEAVES
+                    THIS MACHINE FOR LINKEDIN, SIGNED IN WITH YOUR SAVED LINKEDIN SESSION.
                   </p>
-                  {confirmingSend ? (
+                  {resendOffered ? (
+                    <button
+                      type="button"
+                      disabled={busy || !slot}
+                      onClick={() => run("resend")}
+                      className="mt-3 flex items-center gap-1.5 rounded-md border border-signal-orange/60 px-2.5 py-1 text-[12px] text-signal-orange-text transition-colors hover:bg-soft disabled:opacity-40"
+                    >
+                      <Send className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                      It is not on LinkedIn, send it again
+                    </button>
+                  ) : confirmingSend ? (
                     <div className="mt-3">
                       <p className="text-[13px] leading-relaxed text-signal-orange-text">
-                        This sends the post to LinkedIn for{" "}
+                        This sends the post&apos;s text to LinkedIn, signed in with your saved
+                        LinkedIn session, for{" "}
                         {slot ? `${slot.day_name} ${slot.time_slot}` : "the selected slot"}.
                         It cannot be undone from here: after this, changing it means going
                         to LinkedIn.

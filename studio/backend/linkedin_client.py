@@ -994,6 +994,19 @@ class LinkedInClient:
                     "http_status": res.status_code,
                     "error": res.text
                 }
+        except requests.exceptions.ReadTimeout:
+            # The post went out and no answer came back. LinkedIn may already
+            # hold it, so this is not "nothing was scheduled": reporting it as
+            # an error invited a second press that scheduled the post twice.
+            # Not a refusal either, so the breaker is left alone.
+            return {
+                "status": "unknown",
+                "message": (
+                    "The post was sent, but LinkedIn did not answer within 10 seconds, so it may "
+                    "already be holding it. Check your scheduled posts on LinkedIn before you send "
+                    "this again."
+                ),
+            }
         except Exception as err:
             self.circuit_breaker.record_failure(reason=str(err))
             return {

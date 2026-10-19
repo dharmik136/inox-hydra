@@ -22,6 +22,7 @@ import { DocsSurface } from "@/components/DocsSurface";
 import { CommandSurface } from "@/components/CommandSurface";
 import { PublishDialog } from "@/components/PublishDialog";
 import { DevtoolsSurface } from "@/components/DevtoolsSurface";
+import { StudioStatusBanner } from "@/components/StudioStatusBanner";
 import { STUDIO_SECTIONS, sectionById, type SectionId } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import {
@@ -251,14 +252,16 @@ export default function App() {
    * returns, and a rejected write says SAVE FAILED and carries the server's
    * reason. The 5,000 character limit is enforced server side and arrives as a
    * 400, which the author needs to read rather than have swallowed.
+   *
+   * Resolves to whether the write landed, which Publish waits on.
    */
-  const onSave = useCallback(async () => {
+  const onSave = useCallback(async (): Promise<boolean> => {
     if (!draft.trim()) {
       // Refuse rather than create an empty row the queue would later show as
       // a post with no content.
       setSaveState("failed");
       setSaveError("There is nothing written to save.");
-      return;
+      return false;
     }
 
     setSaveState("saving");
@@ -276,10 +279,12 @@ export default function App() {
           .join(":"),
       );
       setSaveState("saved");
+      return true;
     } catch (error) {
       setSaveState("failed");
       setSaveError(error instanceof Error ? error.message : "The save was rejected.");
       setSavedAt(null);
+      return false;
     }
   }, [draft, draftId]);
 
@@ -364,6 +369,7 @@ export default function App() {
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
+        <StudioStatusBanner />
         {/* The context bar is about the document being written. On a surface
             that has no document it reported "0 chars, 0% of fold" beside a
             Save button with nothing to save, which is telemetry about nothing.
@@ -382,10 +388,23 @@ export default function App() {
             saveError={saveError}
             onSave={onSave}
             onPublish={async () => {
-            // Publishing acts on a stored post. An unsaved draft has no id, so
-            // it is written first rather than opening a dialog that can only
-            // tell the author to go and save.
-            if (!draftId && draft.trim()) await onSave();
+            // Publishing acts on the stored post, so the stored post has to be
+            // what is on screen. This saved only a post that had never been
+            // saved, so after an edit Queue it and Send to LinkedIn acted on
+            // the older stored text, and the strip then replaced UNSAVED with
+            // the schedule, hiding that the edit was in neither place. Any
+            // unsaved edit is written first now. A save that fails leaves the
+            // dialog closed, with its reason in the strip, rather than opening
+            // a dialog that can only say "save first".
+            if (saveState === "saving") return;
+            if (!draft.trim()) {
+              setSaveState("failed");
+              setSaveError("There is nothing written to publish.");
+              return;
+            }
+            if (!draftId || saveState === "dirty" || saveState === "failed") {
+              if (!(await onSave())) return;
+            }
             setPublishOpen(true);
           }}
           />
@@ -549,6 +568,7 @@ export default function App() {
       <PublishDialog
         open={publishOpen}
         postId={draftId}
+        opening={draft.trim().split("\n")[0] ?? ""}
         onClose={() => setPublishOpen(false)}
         onDone={(message) => {
           // The post left the composer. Reporting it as "saved" would be the
@@ -559,6 +579,16 @@ export default function App() {
           // because that is what occurred: a status written to a local row.
           // Nothing in this product makes an outbound request, so a studio
           // that reported a delivery would be reporting one it cannot make.
+          //
+          // The post has left the draft list, so the editor lets go of it and
+          // clears for the next one. It used to stay attached, and the next
+          // post typed into it and saved was written over the post just
+          // published or queued, with no copy kept. A queued post stays on
+          // the Queue, and a published one in Analytics.
+          touched.current = true;
+          setDraftId(null);
+          setDraft("");
+          setGenerated(null);
           setSaveState("published");
           setSavedAt(message);
           setSaveError(null);

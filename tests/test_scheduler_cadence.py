@@ -131,7 +131,7 @@ def test_12h_cooldown_collision_detection():
 
 
 def test_on_time_publishing():
-    """Verifies that overdue posts within 5 minutes are dispatched as published on time."""
+    """Verifies that overdue posts within 5 minutes are marked due on time (the queue posts nothing)."""
     conn = get_db()
     cursor = conn.cursor()
     test_id = f"test_ontime_{uuid.uuid4().hex[:6]}"
@@ -149,7 +149,7 @@ def test_on_time_publishing():
         actions = native_scheduler.check_scheduled_queue()
         matching = [a for a in actions if a["post_id"] == test_id]
         assert len(matching) == 1
-        assert matching[0]["action"] == "published_on_time"
+        assert matching[0]["action"] == "due_on_time"
 
         # Verify DB status updated
         conn = get_db()
@@ -158,8 +158,10 @@ def test_on_time_publishing():
         row = cursor.fetchone()
         conn.close()
 
-        assert row["status"] == "published"
-        assert row["published_at"] is not None
+        # Due, not published: nothing was posted, so nothing is recorded as
+        # published until the creator says they posted it.
+        assert row["status"] == "due"
+        assert row["published_at"] is None
     finally:
         conn = get_db()
         conn.cursor().execute("DELETE FROM posts WHERE id = ?", (test_id,))
@@ -168,7 +170,7 @@ def test_on_time_publishing():
 
 
 def test_morning_grace_window_recovery():
-    """Verifies that posts overdue by 5 to 120 minutes are recovered and published via morning grace window."""
+    """Verifies that posts overdue by 5 to 120 minutes are recovered and marked due via morning grace window."""
     conn = get_db()
     cursor = conn.cursor()
     test_id = f"test_grace_{uuid.uuid4().hex[:6]}"
@@ -186,7 +188,7 @@ def test_morning_grace_window_recovery():
         actions = native_scheduler.check_scheduled_queue()
         matching = [a for a in actions if a["post_id"] == test_id]
         assert len(matching) == 1
-        assert matching[0]["action"] == "grace_dispatched"
+        assert matching[0]["action"] == "due_within_grace"
         assert matching[0]["overdue_minutes"] >= 40.0
 
         # Verify DB status
@@ -196,8 +198,8 @@ def test_morning_grace_window_recovery():
         row = cursor.fetchone()
         conn.close()
 
-        assert row["status"] == "published"
-        assert row["published_at"] is not None
+        assert row["status"] == "due"
+        assert row["published_at"] is None
     finally:
         conn = get_db()
         conn.cursor().execute("DELETE FROM posts WHERE id = ?", (test_id,))
@@ -430,7 +432,7 @@ def test_queue_status_and_toggle_pause_api():
         actions_after = native_scheduler.check_scheduled_queue()
         matching = [a for a in actions_after if a["post_id"] == test_id]
         assert len(matching) == 1
-        assert matching[0]["action"] == "published_on_time"
+        assert matching[0]["action"] == "due_on_time"
     finally:
         conn = get_db()
         conn.cursor().execute("DELETE FROM posts WHERE id = ?", (test_id,))

@@ -130,14 +130,16 @@ def test_injection_records_a_post_that_can_be_found_again(client, cleanup):
     from studio.backend.database import get_db
     conn = get_db()
     row = conn.execute(
-        "SELECT content_fingerprint, activity_urn, published_at FROM posts WHERE id = ?",
+        "SELECT content_fingerprint, activity_urn, published_at, status FROM posts WHERE id = ?",
         (body["post_id"],),
     ).fetchone()
     conn.close()
 
     assert row["content_fingerprint"] == body["content_fingerprint"]
     assert row["activity_urn"] is None, "the URN is not known until the post is opened"
-    assert row["published_at"] is not None
+    # Inserted is not published: nothing is known to be on LinkedIn yet.
+    assert row["published_at"] is None
+    assert row["status"] == "injected"
 
 
 def test_injecting_the_same_text_twice_does_not_create_a_competitor(client, cleanup):
