@@ -517,3 +517,159 @@ def test_elsewhere_the_registry_is_not_read(client, monkeypatch):
     monkeypatch.setattr(sys, "platform", "linux")
     archive_import.downloads_dirs()
     assert fake.seen == []
+
+
+# ---------------------------------------------------------------------------
+# Review follow-ups
+# ---------------------------------------------------------------------------
+
+def _confirm_bob(client, **extra):
+    res = client.post("/api/v1/identity/observe", json={
+        "vanity": "sample-bob", "display_name": "Sample Bob", "self_evidence": ["owner_edit_controls"], **extra})
+    assert res.status_code == 200, res.text
+    assert client.post("/api/v1/identity/confirm", json={"vanity": "sample-bob"}).status_code == 200
+
+
+def test_undo_keeps_what_the_bridge_read_after_the_import(client):
+    """SETUP-19: the profile capture that follows an import writes the same name, headline and skills."""
+    members = _person_archive("Sample", "Bob")
+    members["Profile.csv"] = _profile("Sample", "Bob", headline="Synthetic headline")
+    members["Comments.csv"] = ("Date,Link,Message\n2024-06-01 12:00:00,"
+                               "https://www.linkedin.com/feed/update/urn:li:activity:7200000000000000004,Nice.\n")
+    source = _upload(client, members)["source"]
+    assert _import(client, source, confirm_owner=True).status_code == 200
+    _confirm_bob(client, headline="Synthetic headline", skills=["Synthetic Skill", "Other Skill"])
+    import onboarding
+    # The bridge then reads the same comment on the activity page.
+    onboarding.ingest_outbound("sample-bob", [{"target_activity_urn": "urn:li:activity:7200000000000000004",
+                                                "kind": "comment", "my_text": "Nice.", "target_author": "Someone"}])
+    conn = _db()
+    before = tuple(conn.execute("SELECT display_name, headline FROM creator_identity").fetchone())
+    skills = sorted(r[0] for r in conn.execute("SELECT skill FROM creator_skills"))
+    assert client.post("/api/v1/archive/undo").status_code == 200
+    conn = _db()
+    assert tuple(conn.execute("SELECT display_name, headline FROM creator_identity").fetchone()) == before
+    assert sorted(r[0] for r in conn.execute("SELECT skill FROM creator_skills")) == skills
+    assert conn.execute("SELECT COUNT(*) FROM outbound_engagements").fetchone()[0] == 1, (
+        "undo deleted a comment the bridge has read since")
+
+
+def test_undo_restores_only_fields_nothing_has_touched_since(client):
+    """SETUP-19: with no capture after the import, the fields it filled go back to what they were."""
+    conn = _db()
+    conn.execute("INSERT INTO creator_identity (id, display_name, headline) VALUES (1, 'Sample Bob', '  ')")
+    conn.commit()
+    conn.close()
+    source = _upload(client, _person_archive("Sample", "Bob"))["source"]
+    assert _import(client, source, confirm_owner=True).status_code == 200
+    assert _db().execute("SELECT headline FROM creator_identity").fetchone()[0] == "Synthetic headline"
+    assert client.post("/api/v1/archive/undo").status_code == 200
+    row = _db().execute("SELECT display_name, headline, about FROM creator_identity").fetchone()
+    assert tuple(row) == ("Sample Bob", "  ", None), "a field was not put back as it was before the import"
+
+
+def test_an_unpacked_folder_on_windows_is_not_still_downloading(client, home, monkeypatch):
+    """SETUP-12: NTFS reports 0 bytes for a folder."""
+    import stat as stat_module
+    _unpack(home / "user" / "Downloads" / UNPACKED, _person_archive("Sample", "Bob"))
+    real = os.stat
+
+    class Folder:
+        def __init__(self, st):
+            self._st = st
+
+        def __getattr__(self, name):
+            return 0 if name == "st_size" else getattr(self._st, name)
+
+    def windows_stat(path, *args, **kwargs):
+        st = real(path, *args, **kwargs)
+        return Folder(st) if stat_module.S_ISDIR(st.st_mode) else st
+
+    monkeypatch.setattr(archive_import.os, "stat", windows_stat)
+    [hit] = client.post("/api/v1/archive/requested").json()["found"]
+    assert hit["folder"] is True and hit["downloading"] is False
+
+
+@pytest.mark.parametrize("first,last", [("Sample", ""), ("Bob", ""), ("Sample", "Bob-Jones"), ("Bob", "Other")])
+def test_a_partial_name_match_asks_first(client, first, last):
+    """SETUP-01: one word, or an extra word, is not the confirmed creator's name."""
+    _confirm_bob(client)
+    preview = _upload(client, _person_archive(first, last))
+    assert preview["needs_confirmation"], f"{first} {last} was taken for Sample Bob"
+
+
+def test_the_same_name_in_another_order_or_case_is_the_creator(client):
+    _confirm_bob(client)
+    assert _upload(client, _person_archive("BOB", "Sámple"))["needs_confirmation"] == ""
+
+
+def test_a_second_import_waits_for_the_first(client, monkeypatch):
+    """SETUP-05: two imports at once would split the record of what each added."""
+    import threading
+    started, release = threading.Event(), threading.Event()
+    real = archive_import._IMPORTERS["skills"]
+
+    def slow(conn, rows, batches):
+        started.set()
+        release.wait(10)
+        return real(conn, rows, batches)
+
+    monkeypatch.setitem(archive_import._IMPORTERS, "skills", slow)
+    first = _upload(client, _person_archive("Sample", "Alice"))["source"]
+    second = _upload(client, _person_archive("Sample", "Alice"))["source"]
+    outcome = {}
+    worker = threading.Thread(target=lambda: outcome.setdefault(
+        "first", archive_import.import_archive(first, confirm_owner=True)))
+    worker.start()
+    try:
+        assert started.wait(10)
+        res = _import(client, second, confirm_owner=True)
+        assert res.status_code == 409 and "already importing" in res.json()["detail"]
+        assert client.post("/api/v1/archive/undo").status_code == 409
+    finally:
+        release.set()
+        worker.join(20)
+    assert outcome["first"]["status"] == "success"
+    assert _import(client, second, confirm_owner=True).status_code == 200
+
+
+KILLED = r'''
+import os, sys
+sys.path.insert(0, sys.argv[2])
+import archive_import
+archive_import.BATCH_SECONDS = 0
+archive_import.BATCH_PAUSE = 0
+def die(conn, rows, batches):
+    os._exit(9)
+archive_import._IMPORTERS["connections"] = die
+archive_import.import_archive(sys.argv[1], confirm_owner=True)
+'''
+
+
+def test_an_import_killed_part_way_can_be_removed(client, tmp_path):
+    """SETUP-05: a process killed mid-import leaves its committed rows recorded, as an import that did not finish."""
+    import subprocess
+    shares = SHARES_HEADER + "".join(
+        _share_row(datetime(2022, 1, 3 + i % 25, 9, i % 60, tzinfo=timezone.utc), i, f"Synthetic post {i} on compilers.")
+        for i in range(50))
+    members = _person_archive("Sample", "Alice")
+    members["Shares.csv"] = shares
+    source = _upload(client, members)["source"]
+    script = tmp_path / "killed.py"
+    script.write_text(KILLED)
+    backend = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "backend"))
+    done = subprocess.run([sys.executable, str(script), source, backend], env=dict(os.environ), cwd=str(tmp_path))
+    assert done.returncode == 9
+    assert _db().execute("SELECT COUNT(*) FROM own_posts").fetchone()[0] == 50
+    state = client.get("/api/v1/archive").json()
+    assert state["last_import"]["interrupted"] is True and state["complete"] is False
+    res = client.post("/api/v1/archive/undo")
+    assert res.status_code == 200, res.text
+    assert res.json()["removed"]["posts"] == 50
+    assert _nothing_imported()
+
+
+def test_the_archive_step_says_when_an_import_did_not_finish():
+    source = open(os.path.join(os.path.dirname(__file__), "..", "studio", "ui", "src", "components",
+                               "ArchiveImport.tsx"), encoding="utf-8").read()
+    assert "last_import?.interrupted" in source and "That import did not finish" in source

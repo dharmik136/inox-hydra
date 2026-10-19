@@ -42,7 +42,13 @@ type ArchiveProgress = Omit<ArchiveState, "found" | "last_import"> & {
   /** The folders Downloads is looked for in, while the step waits. */
   watching?: string[];
   found: (FoundArchive & { imported?: boolean; downloading?: boolean })[];
-  last_import: (NonNullable<ArchiveState["last_import"]> & { held_posts?: boolean }) | null;
+  last_import:
+    | (NonNullable<ArchiveState["last_import"]> & {
+        held_posts?: boolean;
+        /** The studio stopped part way through this import; what it wrote can be removed. */
+        interrupted?: boolean;
+      })
+    | null;
 };
 
 /**
@@ -149,7 +155,12 @@ export function ArchiveImport({
     <div className="flex flex-col gap-3">
       {!preview && (
         <>
-          {progress.last_import && !progress.complete ? (
+          {progress.last_import?.interrupted ? (
+            <p className="text-[13px] leading-relaxed text-ink-secondary">
+              That import did not finish, because the studio stopped part way. Remove what it added, then
+              import the archive again.
+            </p>
+          ) : progress.last_import && !progress.complete ? (
             <div className="flex flex-col items-start gap-2">
               <p className="text-[13px] leading-relaxed text-ink-secondary">
                 {"posts" in progress.last_import.summary
@@ -505,6 +516,9 @@ export function ArchiveImport({
 
 export function archiveStatus(state: ArchiveState): string {
   const progress = state as ArchiveProgress;
+  if (progress.last_import?.interrupted) {
+    return `The import of ${progress.last_import.archive_name} did not finish`;
+  }
   if (progress.last_import && progress.complete === false) {
     return `Imported ${localDate(progress.last_import.imported_at)} from ${progress.last_import.archive_name}, without your posts`;
   }

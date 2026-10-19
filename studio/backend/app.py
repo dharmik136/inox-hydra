@@ -2934,7 +2934,7 @@ class ArchiveImportPayload(ArchiveSourcePayload):
 def _archive_call(work):
     try:
         return work()
-    except archive_import.OwnerUnconfirmed as error:
+    except (archive_import.OwnerUnconfirmed, archive_import.ArchiveBusy) as error:
         raise HTTPException(status_code=409, detail=str(error))
     except archive_import.ArchiveError as error:
         raise HTTPException(status_code=400, detail=str(error))

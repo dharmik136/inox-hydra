@@ -56,6 +56,7 @@ import json
 import os
 import re
 import sys
+import threading
 import time
 import unicodedata
 import uuid
@@ -88,6 +89,11 @@ NO_POSTS_KEY = "archive_no_posts_at"
 # removed again on its own (remove_last_import).
 BROUGHT_KEY = "archive_import_brought:"
 PROFILE_COLUMNS = ("display_name", "headline", "about", "location")
+# One import or removal at a time: two at once would each record part of what
+# the other added, and undoing one would take rows the other still claims.
+_BUSY = threading.Lock()
+BUSY_MESSAGE = ("The studio is already importing an archive, or removing one. Wait for it to finish, "
+                "then try again.")
 
 MAX_ARCHIVE_BYTES = 1024 * 1024 * 1024
 # LinkedIn's CSVs are small: years of posts are a few megabytes. These bound
@@ -175,6 +181,10 @@ class ArchiveError(ValueError):
 
 class _Unreadable(ArchiveError):
     """The file does not open as a ZIP, or a file in it is cut short: damaged, or not finished downloading."""
+
+
+class ArchiveBusy(ArchiveError):
+    """Another import, or the removal of one, is running."""
 
 
 class OwnerUnconfirmed(ArchiveError):
@@ -298,7 +308,9 @@ def find_archives(limit: int = 5) -> List[Dict[str, Any]]:
                 "folder": folder_bytes is not None,
                 "bytes": folder_bytes if folder_bytes is not None else stat.st_size if is_file else 0,
                 "modified": datetime.fromtimestamp(stat.st_mtime, timezone.utc).isoformat(),
-                "downloading": partial or stat.st_size == 0 or any(final + s in listed for s in PARTIAL_SUFFIXES),
+                # Only a file can be an empty placeholder: Windows reports every folder as 0 bytes.
+                "downloading": partial or (is_file and stat.st_size == 0)
+                               or any(final + s in listed for s in PARTIAL_SUFFIXES),
             })
     hits.sort(key=lambda h: h["modified"], reverse=True)
     return hits[:limit]
@@ -656,21 +668,22 @@ def _same_person(owner: Dict[str, Any], creator: Dict[str, Any]) -> bool:
     Whether the archive's member is the confirmed creator.
 
     The profile address decides when the archive gives one. Otherwise the
-    names are compared word by word, so "Dr. Sample Bob" is Sample Bob; and
-    when the studio holds no name for the creator, their profile address
-    stands in for it ("sample-bob", "samplebob42").
+    names must hold the same words, whatever their case, accents or order: a
+    name that only shares a word ("Sample", or "Sample Bob-Jones" for Sample
+    Bob) is another person as far as this check knows, so the creator is
+    asked. When the studio holds no name for the creator, their profile
+    address stands in for it ("sample-bob", "samplebob42").
     """
     match = re.search(r"linkedin\.com/in/([^/?#]+)", owner.get("profile_url") or "")
     if match:
         return _words(unquote(match.group(1))) == _words(creator["vanity"])
-    theirs = set(_words(owner["name"]))
+    theirs = sorted(_words(owner["name"]))
     if not theirs:
         return False
     if creator["name"]:
-        mine = set(_words(creator["name"]))
-        return bool(mine) and (theirs <= mine or mine <= theirs)
-    vanity = _words(creator["vanity"])
-    return theirs <= set(vanity) or set(vanity) <= theirs or "".join(vanity).startswith("".join(_words(owner["name"])))
+        return theirs == sorted(_words(creator["name"]))
+    vanity = [w for w in _words(creator["vanity"]) if not w.isdigit()]
+    return theirs == sorted(vanity) or "".join(vanity).rstrip("0123456789") == "".join(_words(owner["name"]))
 
 
 def _ownership(parsed: Dict[str, Any]) -> Dict[str, Any]:
@@ -948,6 +961,10 @@ class _Batches:
         self.conn = conn
         self.brought: Dict[str, Any] = {}
         self._kept: Dict[str, Any] = {}
+        # Where the record of what was brought is kept, written with each
+        # batch it describes, so even a process killed part way leaves its
+        # rows recorded.
+        self.ledger_key: Optional[str] = None
         self._begin()
 
     def _begin(self) -> None:
@@ -957,10 +974,16 @@ class _Batches:
     def add(self, kind: str, key: Any) -> None:
         self.brought.setdefault(kind, []).append(key)
 
+    def save(self) -> None:
+        if self.ledger_key:
+            self.conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                              (self.ledger_key, json.dumps(self.brought)))
+
     def row(self) -> bool:
         """Called after each row written. True when a new batch has begun, so what was read may be stale."""
         if time.monotonic() - self._started < BATCH_SECONDS:
             return False
+        self.save()
         self.conn.commit()
         self._kept = {k: len(v) if isinstance(v, list) else v for k, v in self.brought.items()}
         time.sleep(BATCH_PAUSE)
@@ -1039,7 +1062,7 @@ def _import_comments(conn, rows: Iterable[Dict[str, str]], batches: _Batches) ->
             (urn, message[:4000], _text_key(message), when, when),
         )
         if cursor.rowcount:
-            batches.add("comments", cursor.lastrowid)
+            batches.add("comments", [cursor.lastrowid, when])
         tally["added" if cursor.rowcount else "already_there"] += 1
     return tally
 
@@ -1060,7 +1083,7 @@ def _import_reactions(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -
             (urn, REACTION_WORDS.get(kind, kind.lower()[:40] or None), when, when),
         )
         if cursor.rowcount:
-            batches.add("reactions", cursor.lastrowid)
+            batches.add("reactions", [cursor.lastrowid, when])
         tally["added" if cursor.rowcount else "already_there"] += 1
     return tally
 
@@ -1086,11 +1109,17 @@ def _import_profile(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict
         if value and not (current[column] or "").strip():
             conn.execute(f"UPDATE creator_identity SET {column} = ? WHERE id = 1", (value[:4000],))
             filled.append(column)
-            batches.brought.setdefault("profile", {})[column] = value[:4000]
-    if filled and not current["profile_observed_at"]:
-        observed = _now()
-        conn.execute("UPDATE creator_identity SET profile_observed_at = ? WHERE id = 1", (observed,))
-        batches.brought["observed_at"] = observed
+            # What it held before, to put back on undo.
+            batches.brought.setdefault("profile", {})[column] = [value[:4000], current[column]]
+    if filled:
+        stamp = current["profile_observed_at"]
+        if not stamp:
+            stamp = _now()
+            conn.execute("UPDATE creator_identity SET profile_observed_at = ? WHERE id = 1", (stamp,))
+            batches.brought["observed_at"] = stamp
+        # Every reading of the profile by the bridge moves this, so undo can
+        # tell whether anything has rewritten these fields since.
+        batches.brought["profile_stamp"] = stamp
     return {"filled": filled}
 
 
@@ -1150,7 +1179,7 @@ def _import_skills(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict[
             continue
         cursor = conn.execute("INSERT OR IGNORE INTO creator_skills (skill, observed_at) VALUES (?, ?)", (skill, now))
         if cursor.rowcount:
-            batches.add("skills", skill)
+            batches.add("skills", [skill, now])
         tally["added" if cursor.rowcount else "already_there"] += 1
     return tally
 
@@ -1176,7 +1205,7 @@ def _import_connections(conn, rows: List[Dict[str, str]], batches: _Batches) -> 
              row.get("position") or None, row.get("connected") or None, now),
         )
         if not exists:
-            batches.add("connections", url)
+            batches.add("connections", [url, now])
         tally["already_there" if exists else "added"] += 1
     return tally
 
@@ -1211,12 +1240,38 @@ def import_archive(source: str, include: Optional[List[str]] = None, confirm_own
     if ownership["needs_confirmation"] and not confirm_owner:
         raise OwnerUnconfirmed(ownership["needs_confirmation"] + " Nothing was imported. Say that it is yours "
                                "to import it.")
+    if not _BUSY.acquire(blocking=False):
+        raise ArchiveBusy(BUSY_MESSAGE)
+    try:
+        summary = _write_import(name, result, wanted, ownership)
+    finally:
+        _BUSY.release()
+    _discard(source)
+    return {"status": "success", "archive": {"name": name, "bytes": result["bytes"]}, "summary": summary}
 
+
+def _write_import(name: str, result: Dict[str, Any], wanted: set, ownership: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Writes an import, recorded from its first batch as one in progress.
+
+    The record (archive_imports row and the list of what it brought) commits
+    with the first batch and is updated with each, so an import cut off by a
+    killed process is still listed, as not finished, and can be removed.
+    """
     summary: Dict[str, Any] = {}
+    import_id = None
     conn = get_db()
     try:
         batches = _Batches(conn)
         try:
+            cursor = conn.execute(
+                "INSERT INTO archive_imports (archive_name, archive_bytes, imported_at, summary) VALUES (?, ?, ?, ?)",
+                (name[:200], result["bytes"], _now(), json.dumps({"in_progress": True})),
+            )
+            import_id = cursor.lastrowid
+            batches.ledger_key = f"{BROUGHT_KEY}{import_id}"
+            if ownership["owner"]:
+                batches.brought["owner"] = ownership["owner"]["name"]
             for kind, entry in result["parsed"].items():
                 if kind == "posts" and entry["rows"] == []:
                     # A Shares.csv with no rows is LinkedIn saying the account
@@ -1230,59 +1285,76 @@ def import_archive(source: str, include: Optional[List[str]] = None, confirm_own
                     summary[kind] = {"not_understood": True, "columns": entry["header"][:12]}
                     continue
                 summary[kind] = _IMPORTERS[kind](conn, entry["rows"], batches)
-            cursor = conn.execute(
-                "INSERT INTO archive_imports (archive_name, archive_bytes, imported_at, summary) VALUES (?, ?, ?, ?)",
-                (name[:200], result["bytes"], _now(), json.dumps(summary, sort_keys=True)),
-            )
-            if ownership["owner"]:
-                batches.brought["owner"] = ownership["owner"]["name"]
-            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                         (f"{BROUGHT_KEY}{cursor.lastrowid}", json.dumps(batches.brought)))
+            conn.execute("UPDATE archive_imports SET imported_at = ?, summary = ? WHERE id = ?",
+                         (_now(), json.dumps(summary, sort_keys=True), import_id))
+            batches.save()
             conn.commit()
         except BaseException:
             conn.rollback()
-            # What the earlier batches committed is taken out again, so an
-            # import that fails leaves nothing of itself behind.
+            # What the earlier batches committed is taken out again, with the
+            # record of it, so an import that fails leaves nothing behind.
             try:
                 _remove(conn, batches.committed())
+                conn.execute("DELETE FROM archive_imports WHERE id = ?", (import_id,))
+                conn.execute("DELETE FROM settings WHERE key = ?", (f"{BROUGHT_KEY}{import_id}",))
                 conn.commit()
             except Exception:
                 conn.rollback()
             raise
     finally:
         conn.close()
-    _discard(source)
-    return {"status": "success", "archive": {"name": name, "bytes": result["bytes"]}, "summary": summary}
+    return summary
 
 
 def _remove(conn, brought: Dict[str, Any], batches: Optional[_Batches] = None) -> Dict[str, int]:
-    """Deletes the rows an import added, by the keys it kept. Returns how many of each went."""
+    """
+    Deletes the rows an import added, by the keys it kept. Returns how many of each went.
+
+    Only what the import wrote and nothing has touched since: a row is
+    deleted only while it still carries the stamp the import gave it, so a
+    comment the bridge has read again (last_seen_at), a skill list the
+    bridge has re-read (observed_at) or a connection a later archive
+    refreshed (imported_at) stays. The profile fields go back to what they
+    held before, and only while no reading of the profile has happened
+    since. A post the bridge has since joined carries its activity id, so it
+    is not found by the archive's.
+    """
     removed: Dict[str, int] = {}
     deletes = {
-        # A post the bridge has since joined carries its activity id, so it is not in this list any more.
-        "posts": "DELETE FROM own_posts WHERE activity_urn = ? AND published_at_source = 'archive'",
-        "comments": "DELETE FROM outbound_engagements WHERE id = ? AND kind = 'comment'",
-        "reactions": "DELETE FROM outbound_engagements WHERE id = ? AND kind = 'reaction'",
-        "positions": "DELETE FROM creator_positions WHERE id = ?",
-        "education": "DELETE FROM creator_education WHERE id = ?",
-        "skills": "DELETE FROM creator_skills WHERE skill = ?",
-        "connections": "DELETE FROM connections WHERE profile_url = ?",
+        "posts": ("DELETE FROM own_posts WHERE activity_urn = ? AND published_at_source = 'archive'", None),
+        "comments": ("DELETE FROM outbound_engagements WHERE id = ? AND kind = 'comment'",
+                     "DELETE FROM outbound_engagements WHERE id = ? AND last_seen_at = ? AND kind = 'comment'"),
+        "reactions": ("DELETE FROM outbound_engagements WHERE id = ? AND kind = 'reaction'",
+                      "DELETE FROM outbound_engagements WHERE id = ? AND last_seen_at = ? AND kind = 'reaction'"),
+        # The bridge replaces these lists with new rows, so their ids are never the import's again.
+        "positions": ("DELETE FROM creator_positions WHERE id = ?", None),
+        "education": ("DELETE FROM creator_education WHERE id = ?", None),
+        "skills": ("DELETE FROM creator_skills WHERE skill = ?",
+                   "DELETE FROM creator_skills WHERE skill = ? AND observed_at = ?"),
+        "connections": ("DELETE FROM connections WHERE profile_url = ?",
+                        "DELETE FROM connections WHERE profile_url = ? AND imported_at = ?"),
     }
-    for kind, sql in deletes.items():
+    for kind, (plain, stamped) in deletes.items():
         removed[kind] = 0
         for key in brought.get(kind) or []:
             if batches:
                 batches.row()
-            removed[kind] += conn.execute(sql, (key,)).rowcount
-    # A profile field is emptied again only if it still holds what the archive put there.
+            # A bare key is from a record kept before rows carried their stamp.
+            sql, params = (stamped, tuple(key)) if isinstance(key, list) and stamped else (plain, (key,))
+            removed[kind] += conn.execute(sql, params).rowcount
     removed["profile"] = 0
-    for column, value in (brought.get("profile") or {}).items():
-        if column in PROFILE_COLUMNS:
-            removed["profile"] += conn.execute(
-                f"UPDATE creator_identity SET {column} = NULL WHERE id = 1 AND {column} = ?", (value,)).rowcount
-    if brought.get("observed_at"):
-        conn.execute("UPDATE creator_identity SET profile_observed_at = NULL WHERE id = 1 AND profile_observed_at = ?",
-                     (brought["observed_at"],))
+    stamp = brought.get("profile_stamp")
+    now_stamp = conn.execute("SELECT profile_observed_at FROM creator_identity WHERE id = 1").fetchone()
+    if stamp is None or (now_stamp is not None and now_stamp[0] == stamp):
+        for column, entry in (brought.get("profile") or {}).items():
+            if column in PROFILE_COLUMNS:
+                value, previous = entry if isinstance(entry, list) else (entry, None)
+                removed["profile"] += conn.execute(
+                    f"UPDATE creator_identity SET {column} = ? WHERE id = 1 AND {column} = ?",
+                    (previous, value)).rowcount
+        if brought.get("observed_at"):
+            conn.execute("UPDATE creator_identity SET profile_observed_at = NULL "
+                         "WHERE id = 1 AND profile_observed_at = ?", (brought["observed_at"],))
     return removed
 
 
@@ -1295,6 +1367,15 @@ def remove_last_import() -> Dict[str, Any]:
     found already there is left as it was, and so is a post the bridge has
     since read as the creator's own.
     """
+    if not _BUSY.acquire(blocking=False):
+        raise ArchiveBusy(BUSY_MESSAGE)
+    try:
+        return _remove_last_import()
+    finally:
+        _BUSY.release()
+
+
+def _remove_last_import() -> Dict[str, Any]:
     conn = get_db()
     try:
         last = conn.execute("SELECT id, archive_name FROM archive_imports ORDER BY id DESC LIMIT 1").fetchone()
@@ -1353,6 +1434,8 @@ def _held_posts(archive_name: str, summary: Dict[str, Any]) -> bool:
     An import held the posts when its Shares.csv was read, or when it was the
     complete archive and had no Shares.csv at all.
     """
+    if summary.get("in_progress"):
+        return False
     posts = summary.get("posts")
     if isinstance(posts, dict) and "added" in posts:
         return True
@@ -1385,7 +1468,7 @@ def archive_state(look: bool = False) -> Dict[str, Any]:
     covered = with_posts + ([no_posts_at] if no_posts_at else [])
     waiting = bool(requested_at) and not any(at >= requested_at for at in covered)
     found = find_archives() if look and waiting else []
-    imported_names = {name for name, _at, _summary in readings}
+    imported_names = {name for name, _at, summary in readings if not summary.get("in_progress")}
     for hit in found:
         hit["imported"] = hit["name"] in imported_names
     last = readings[-1] if readings else None
@@ -1403,6 +1486,9 @@ def archive_state(look: bool = False) -> Dict[str, Any]:
             "imported_at": last[1],
             "summary": last[2],
             "held_posts": _held_posts(last[0], last[2]),
+            # Recorded as in progress, and no import is running: the studio
+            # stopped part way, and what it wrote can be removed.
+            "interrupted": bool(last[2].get("in_progress")) and not _BUSY.locked(),
         } if last else None,
     }
 
