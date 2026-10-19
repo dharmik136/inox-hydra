@@ -1,0 +1,76 @@
+"""
+A save over a draft that changed since the editor loaded it is refused
+======================================================================
+The same draft open in two windows: whichever saved last silently replaced
+the other's text, and the window that saved first still said SAVED, so the
+creator believed both were kept.
+
+The Composer now sends the text it last loaded or saved as base_content. When
+the stored draft no longer matches it, the save is a 409 with a reason the
+author can read, and nothing is written. A caller that sends no base_content
+(the queue, the publish flow) is unchanged. The browser half, including
+"Keep this version", is in tests/test_qc_f1a_composer.py.
+"""
+
+import os
+import re
+
+from fastapi.testclient import TestClient
+
+from app import app
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+API_TS = os.path.join(REPO_ROOT, "studio", "ui", "src", "lib", "api.ts")
+
+client = TestClient(app)
+
+
+def _create(content):
+    response = client.post("/api/posts", json={"content": content, "status": "draft"})
+    assert response.status_code == 200
+    return response.json()["id"]
+
+
+def _stored(post_id):
+    return next(row for row in client.get("/api/posts").json()["posts"] if row["id"] == post_id)["content"]
+
+
+def test_the_later_of_two_saves_from_the_same_version_is_refused():
+    post_id = _create("Shared opening.\n\nShared body.")
+
+    first = client.put(f"/api/posts/{post_id}", json={
+        "content": "Shared opening.\n\nShared body.\n\nWindow A's closing.",
+        "base_content": "Shared opening.\n\nShared body.",
+    })
+    assert first.status_code == 200
+
+    second = client.put(f"/api/posts/{post_id}", json={
+        "content": "Window B fixed a typo.\n\nShared body.",
+        "base_content": "Shared opening.\n\nShared body.",
+    })
+    assert second.status_code == 409, second.text
+    assert "changed in another window" in second.json()["detail"]
+    assert _stored(post_id) == "Shared opening.\n\nShared body.\n\nWindow A's closing.", "the stale save was written"
+
+
+def test_a_save_from_the_current_version_goes_through():
+    post_id = _create("v1")
+    assert client.put(f"/api/posts/{post_id}", json={"content": "v2", "base_content": "v1"}).status_code == 200
+    assert client.put(f"/api/posts/{post_id}", json={"content": "v3", "base_content": "v2"}).status_code == 200
+    assert _stored(post_id) == "v3"
+
+
+def test_a_caller_that_sends_no_base_is_unchanged():
+    post_id = _create("v1")
+    assert client.put(f"/api/posts/{post_id}", json={"content": "v2"}).status_code == 200
+    assert client.put(f"/api/posts/{post_id}", json={"status": "draft"}).status_code == 200
+    assert _stored(post_id) == "v2"
+
+
+def test_the_interface_recognises_the_refusal_the_server_sends():
+    """The client tells a conflict from any other failure by the server's own words."""
+    detail = client.put(f"/api/posts/{_create('v1')}", json={"content": "x", "base_content": "v0"}).json()["detail"]
+    source = open(API_TS, encoding="utf-8").read()
+    marker = re.search(r'DRAFT_CHANGED_ELSEWHERE = "([^"]+)"', source)
+    assert marker, "api.ts no longer names the phrase it recognises a conflict by"
+    assert detail.startswith(marker.group(1)), (detail, marker.group(1))

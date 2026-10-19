@@ -277,6 +277,42 @@ def test_a_failed_save_shows_its_reason_on_screen(new_page, studio_url, api):
     expect(page.get_by_text("Post content exceeds maximum 5,000 character limit.", exact=True)).to_have_count(0)
 
 
+def test_a_save_over_a_draft_changed_in_another_tab_is_refused(new_page, studio_url, api):
+    """
+    The same draft open in two tabs: whichever saved last overwrote the other,
+    and the first still said SAVED. The later save is now refused with a
+    reason, and the author can still choose to keep their version.
+    """
+    _clear_posts(api)
+    original = "Shared opening.\n\nShared body."
+    created = api.post("/api/posts", json={"content": original, "status": "draft"}).json()["id"]
+
+    first = new_page()
+    second = new_page()
+    editor_a = _open_composer(first, studio_url)
+    editor_b = _open_composer(second, studio_url)
+    expect(editor_a).to_have_value(original)
+    expect(editor_b).to_have_value(original)
+
+    from_a = original + "\n\nTab A's closing paragraph."
+    editor_a.fill(from_a)
+    first.get_by_role("button", name="Save", exact=True).click()
+    expect(_status(first)).to_contain_text("SAVED")
+
+    from_b = "Tab B fixed a typo.\n\nShared body."
+    editor_b.fill(from_b)
+    second.get_by_role("button", name="Save", exact=True).click()
+    expect(_status(second)).to_contain_text("SAVE FAILED")
+    expect(second.locator("p", has_text="changed in another window")).to_be_visible()
+    stored = [row for row in api.get("/api/posts").json()["posts"] if row["id"] == created][0]
+    assert stored["content"] == from_a, "the stale tab overwrote the newer save"
+
+    second.get_by_role("button", name=re.compile("keep this version", re.I)).click()
+    expect(_status(second)).to_contain_text("SAVED")
+    stored = [row for row in api.get("/api/posts").json()["posts"] if row["id"] == created][0]
+    assert stored["content"] == from_b
+
+
 def test_the_strip_shows_the_count_against_linkedins_limit(new_page, studio_url, api):
     _clear_posts(api)
     page = new_page()

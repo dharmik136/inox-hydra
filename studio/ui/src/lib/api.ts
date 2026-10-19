@@ -67,11 +67,18 @@ export async function createDraft(content: string): Promise<string> {
   return data.id;
 }
 
-/** Writes new content over an existing draft. */
-export async function updateDraft(id: string, content: string): Promise<void> {
+/**
+ * Writes new content over an existing draft.
+ *
+ * base is the text the editor last loaded or saved for this draft. The server
+ * refuses the write when the stored draft no longer matches it, because
+ * someone saved it from another window in between; see
+ * isDraftChangedElsewhere. Leaving it out overwrites whatever is stored.
+ */
+export async function updateDraft(id: string, content: string, base?: string): Promise<void> {
   await call(`/api/posts/${encodeURIComponent(id)}`, {
     method: "PUT",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify(base === undefined ? { content } : { content, base_content: base }),
   });
 }
 
@@ -2197,4 +2204,17 @@ export async function installLicence(key: string): Promise<{ status: string; lic
 
 export async function removeLicence(): Promise<{ status: string; licence: LicenceState }> {
   return call("/api/v1/licence", { method: "DELETE" });
+}
+
+// -------------------------------------------------------------
+// Drafts changed in another window
+// -------------------------------------------------------------
+
+/** How the server's refusal of a stale draft save begins (routers/posts.py). */
+const DRAFT_CHANGED_ELSEWHERE = "This draft was changed in another window";
+
+/** Whether a failed updateDraft was refused because the draft changed elsewhere. */
+export function isDraftChangedElsewhere(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (error as Error & { status?: number }).status === 409 || error.message.includes(DRAFT_CHANGED_ELSEWHERE);
 }

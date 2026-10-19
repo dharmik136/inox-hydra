@@ -88,6 +88,15 @@ class PostUpdate(BaseModel):
     status: Optional[str] = None
     scheduled_for: Optional[str] = None
     tags: Optional[List[str]] = None
+    # The text the editor last loaded or saved. When it is sent and the stored
+    # post no longer matches it, someone else saved in between and the update
+    # is refused rather than written over theirs. Callers that send none, such
+    # as the queue, are unchanged.
+    base_content: Optional[str] = None
+
+
+# Starts the refusal. studio/ui/src/lib/api.ts recognises a conflict by it.
+DRAFT_CHANGED_ELSEWHERE = "This draft was changed in another window"
 
 
 class ReschedulePayload(BaseModel):
@@ -191,6 +200,15 @@ def update_post(post_id: str, updates: PostUpdate):
         if not existing:
             conn.close()
             raise HTTPException(status_code=404, detail="Post not found")
+
+        # Two windows on one draft: the later save used to replace the earlier
+        # one without a word, while the earlier window still said SAVED.
+        if updates.base_content is not None and existing["content"] != updates.base_content:
+            conn.close()
+            raise HTTPException(status_code=409, detail=(
+                f"{DRAFT_CHANGED_ELSEWHERE} after this one opened it, so saving would replace that "
+                "version. Keep this version to save over it, or copy your text and reload to see the other one."
+            ))
 
         content = updates.content if updates.content is not None else existing["content"]
         media_urls = json.dumps(updates.media_urls) if updates.media_urls is not None else existing["media_urls"]

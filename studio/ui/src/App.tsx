@@ -30,6 +30,7 @@ import {
   fetchLatestDraft,
   fetchOnboardingState,
   generateHooks,
+  isDraftChangedElsewhere,
   updateDraft,
   fetchDraftById,
   type GeneratedHook,
@@ -65,6 +66,13 @@ export default function App() {
   }, [saveState, draft]);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // The text this window last loaded or saved for the draft it holds, sent
+  // with every save so the server can refuse one that would replace a newer
+  // save from another window. Tied to the id, so a draft swapped in by any
+  // other path is never checked against the wrong text.
+  const base = useRef<{ id: string; content: string } | null>(null);
+  const [changedElsewhere, setChangedElsewhere] = useState(false);
   const [publishOpen, setPublishOpen] = useState(false);
 
   /**
@@ -162,6 +170,7 @@ export default function App() {
         if (!live || !existing || touched.current) return;
         setDraft(existing.content);
         setDraftId(existing.id);
+        base.current = { id: existing.id, content: existing.content };
       })
       .catch(() => {
         // Nothing loaded. The composer opens empty rather than claiming a
@@ -255,7 +264,7 @@ export default function App() {
    * reason. The 5,000 character limit is enforced server side and arrives as a
    * 400, which the author needs to read rather than have swallowed.
    */
-  const onSave = useCallback(async () => {
+  const onSave = useCallback(async (keepMine = false) => {
     if (saving.current) return;
     if (!draft.trim()) {
       // Refuse rather than create an empty row the queue would later show as
@@ -268,11 +277,16 @@ export default function App() {
     saving.current = true;
     setSaveState("saving");
     setSaveError(null);
+    setChangedElsewhere(false);
     try {
       if (draftId) {
-        await updateDraft(draftId, draft);
+        const known = base.current?.id === draftId ? base.current.content : undefined;
+        await updateDraft(draftId, draft, keepMine ? undefined : known);
+        base.current = { id: draftId, content: draft };
       } else {
-        setDraftId(await createDraft(draft));
+        const created = await createDraft(draft);
+        base.current = { id: created, content: draft };
+        setDraftId(created);
       }
       if (latestDraft.current !== draft) {
         // Typed into while the save was out: what is on screen is not what
@@ -291,6 +305,7 @@ export default function App() {
     } catch (error) {
       setSaveState("failed");
       setSaveError(error instanceof Error ? error.message : "The save was rejected.");
+      setChangedElsewhere(isDraftChangedElsewhere(error));
       setSavedAt(null);
     } finally {
       saving.current = false;
@@ -347,6 +362,7 @@ export default function App() {
         touched.current = true;
         setDraft(found.content);
         setDraftId(found.id);
+        base.current = { id: found.id, content: found.content };
         setSaveState("idle");
         setSavedAt(null);
         setSaveError(null);
@@ -396,7 +412,7 @@ export default function App() {
             saveState={saveState}
             savedAt={savedAt}
             saveError={saveError}
-            onSave={onSave}
+            onSave={() => void onSave()}
             onPublish={async () => {
             // Publishing acts on a stored post. An unsaved draft has no id, so
             // it is written first rather than opening a dialog that can only
@@ -405,7 +421,9 @@ export default function App() {
             setPublishOpen(true);
           }}
           />
-          {saveState === "failed" && saveError && <SaveReason reason={saveError} />}
+          {saveState === "failed" && saveError && (
+            <SaveReason reason={saveError} onKeepMine={changedElsewhere ? () => void onSave(true) : undefined} />
+          )}
           </>
         ) : (
           <header className="flex h-12 shrink-0 items-center gap-3 border-b border-edge bg-ink px-4">

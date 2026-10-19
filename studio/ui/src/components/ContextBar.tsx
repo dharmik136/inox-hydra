@@ -155,12 +155,23 @@ export function ContextBar({
  * a draft changed in another window. Hidden from assistive technology only
  * because the status in the bar already announces it.
  */
-export function SaveReason({ reason }: { reason: string }) {
+export function SaveReason({ reason, onKeepMine }: { reason: string; onKeepMine?: () => void }) {
   return (
     <div className="flex shrink-0 items-center gap-3 border-b border-edge bg-ink px-3 py-1.5 sm:px-4">
       <p className="min-w-0 flex-1 text-[12px] leading-snug text-signal-orange-text" aria-hidden="true">
         {reason}
       </p>
+      {/* Only for a draft saved from another window in between. The author
+          has seen that and chooses to replace it. */}
+      {onKeepMine && (
+        <button
+          type="button"
+          onClick={onKeepMine}
+          className="shrink-0 rounded-md border border-edge px-2.5 py-1 text-xs font-medium text-ink-secondary transition-colors hover:border-edge-strong hover:text-ink-primary"
+        >
+          Keep this version
+        </button>
+      )}
     </div>
   );
 }
