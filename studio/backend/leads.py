@@ -12,6 +12,7 @@ Lifecycle States:
 """
 
 import json
+import sqlite3
 import uuid
 import re
 from typing import List, Dict, Optional, Any
@@ -129,10 +130,17 @@ def page_leads(status: Optional[str] = None, query: Optional[str] = None, limit:
             found = universal_search.lead_filter(terms)
             if found is None:
                 return {"leads": [], "matching": 0, "total": total, "next_cursor": None}
+            universal_search.refold_pending(conn)
             where.append(found[0])
             params += found[1]
         condition = " AND ".join(where) or "1=1"
-        matching = conn.execute(f"SELECT COUNT(*) FROM leads l WHERE {condition}", params).fetchone()[0]
+        try:
+            matching = conn.execute(f"SELECT COUNT(*) FROM leads l WHERE {condition}", params).fetchone()[0]
+        except sqlite3.OperationalError as exc:
+            # Text the search index refuses matches nobody; it is not an error.
+            if "fts5" not in str(exc).lower() and "syntax" not in str(exc).lower():
+                raise
+            return {"leads": [], "matching": 0, "total": total, "next_cursor": None}
         page_where, page_params = condition, list(params)
         if cursor:
             try:

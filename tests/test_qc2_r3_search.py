@@ -108,6 +108,8 @@ VOCABULARY = ["pricing", "pric", "great", "post", "question", "sourdough", "olan
 def _snapshot(conn):
     """For every word, which posts, LinkedIn posts and leads the index finds, by their own keys."""
     import universal_search
+    # What the triggers queued is folded before any search reads the index.
+    universal_search.refold_pending(conn)
     out = {}
     for word in VOCABULARY:
         match = universal_search._match_word(word)
@@ -264,3 +266,98 @@ def test_help_folds_accents_the_way_search_does(home):
         assert docs_engine.DOCS_TOKENIZER in definition
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Review of DATA-03: styled letters, control characters, cheap punctuation
+# ---------------------------------------------------------------------------
+
+def test_a_bolded_or_italicised_draft_is_found_by_its_words(home):
+    """The Composer's Bold and Italic write Mathematical letters; search folds them back."""
+    from fastapi.testclient import TestClient
+    import app as app_module
+    import formatters
+    client = TestClient(app_module.app)
+    bold = client.post("/api/format/bold", json={"text": "Pricing lessons"}).json()["formatted"]
+    italic = client.post("/api/format/italic", json={"text": "sourdough"}).json()["formatted"]
+    assert bold != "Pricing lessons" and italic != "sourdough"
+    post = client.post("/api/posts", json={"content": f"{bold}\nWhat I learned about {italic} starters",
+                                           "status": "draft"}).json()["id"]
+    for query in ("pricing", "lessons", "sourdough", "learned", "pric", bold.split()[0]):
+        ids = [p["id"] for p in client.get("/api/v1/search", params={"q": query, "limit": 20}).json()["groups"]["posts"]]
+        assert post in ids, query
+    serif = formatters.to_serif_italic("hydration")
+    conn = _db()
+    try:
+        with conn:
+            conn.execute("INSERT INTO leads (id, name, full_name, headline, status, lead_status) "
+                         "VALUES ('lead-styled', ?, ?, ?, 'New Lead', 'NEW')",
+                         (formatters.to_sans_bold("Mira Kaul"), formatters.to_sans_bold("Mira Kaul"),
+                          formatters.to_monospace("Head of Bakery")))
+            conn.execute("INSERT INTO lead_interactions (lead_id, interaction_type, comment_text, comment_key) "
+                         "VALUES ('lead-styled', 'COMMENT', ?, 'styled')", (f"all about {serif}",))
+        import universal_search
+        for query in ("mira kaul", "bakery", "hydration"):
+            assert [r["id"] for r in universal_search.search_leads(universal_search.terms_of(query), 6, conn)] \
+                == ["lead-styled"], query
+        assert universal_search.lead_filter(universal_search.terms_of("mira"))
+        assert _snapshot(conn) == _rebuilt(conn), "the folded index differs from a rebuilt one"
+    finally:
+        conn.close()
+
+
+def test_control_characters_in_a_query_are_not_an_error(home):
+    from fastapi.testclient import TestClient
+    import app as app_module
+    client = TestClient(app_module.app)
+    for q in ("a\x00b", "\x00", "zoe\x07", "\x1b[0m"):
+        assert client.get("/api/leads", params={"limit": 50, "q": q}).status_code == 200, repr(q)
+        assert client.get("/api/v1/search", params={"q": q}).status_code == 200, repr(q)
+
+
+def test_a_typed_wildcard_is_the_prefix_search_it_asks_for(home):
+    import universal_search
+    conn = _db()
+    try:
+        plain = universal_search.search_leads(universal_search.terms_of("a"), 20, conn)
+        starred = universal_search.search_leads(universal_search.terms_of("a*"), 20, conn)
+        assert [r["id"] for r in starred] == [r["id"] for r in plain] and plain
+        assert universal_search.search_posts(universal_search.terms_of("*"), 20, conn) == []
+    finally:
+        conn.close()
+
+
+def test_punctuation_with_few_letters_reads_no_comments_and_few_rows(home, monkeypatch):
+    """ "c++" checked every lead whose words start with c, reading their comments: 481 ms."""
+    import universal_search
+    conn = _db()
+    seen = []
+    conn.set_trace_callback(seen.append)
+    try:
+        monkeypatch.setattr(universal_search, "LITERAL_SCAN_LIMIT", 25)
+        universal_search.search_leads(universal_search.terms_of("c++"), 6, conn)
+        universal_search.search_posts(universal_search.terms_of("c++"), 6, conn)
+    finally:
+        conn.set_trace_callback(None)
+        conn.close()
+    assert not [s for s in seen if "SELECT comment_text FROM lead_interactions WHERE lead_id" in s]
+
+
+def test_r3_migrations_are_frozen_sql():
+    """
+    Migrations 21, 22 and 24 ran post_summary's and universal_search's live
+    code, so editing either module would have changed what an old migration
+    does to a database that upgrades through it. They are SQL kept in
+    migrations.py now, and the live modules still agree with it.
+    """
+    import migrations
+    import universal_search
+    payloads = {version: payload for version, _d, payload in migrations.MIGRATIONS}
+    for version in (20, 21, 22, 24):
+        assert not callable(payloads[version]), version
+        assert all(isinstance(statement, str) for statement in payloads[version]), version
+    source = open(migrations.__file__, encoding="utf-8").read()
+    assert "import post_summary" not in source and "import universal_search" not in source
+    normal = lambda s: " ".join(s.split())
+    frozen = [normal(s) for s in payloads[24]]
+    assert [normal(s) for s in universal_search.search_schema() + universal_search.search_build()] == frozen[16:]
