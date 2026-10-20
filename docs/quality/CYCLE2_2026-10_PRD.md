@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In delivery |
+| Status | Delivered, awaiting release |
 | Owner | Product owner |
 | Started | 2026-10-20 |
 | Release | 2.6.0 (unreleased) |
@@ -96,3 +96,28 @@ changelog line written by the integrator, no personal data in the diff.
 Windows signing identity; Apple Developer Program; updater signing keys;
 Chrome Web Store and Edge Add-ons accounts and submissions; pushing the tag;
 testing Send to LinkedIn on a real account; clean test machines per OS.
+
+## 9. Results
+
+| | |
+|---|---|
+| Research findings | install 18, backend 22, frontend 26, data 18 |
+| Batches | 7 built, 7 reviewed; 15 fixes sent back, all fixed and re-checked |
+| Tests | 2198 to 2787 passing; UI audit 56 screens fresh and demo, no blocking finding |
+| Speed (three-year dataset) | main screens 0.4 to 1.9 s down to 9 to 78 ms; search about 2 s down to 4 to 53 ms; export peak memory 1.1 to 1.5 GB down to 22 MB |
+| Storage | secure delete everywhere; daily verified backups with rotation; readings roll-up and reaction fold proven count-identical on a copy |
+| Release | phase 0 fixed: smoke test, desktop UI build, all-or-nothing publishing, self-contained runtime, honest launchers |
+
+Process lessons:
+- Every sandbox and the test suite now refuse outbound connections at the
+  socket level. Two research helpers and two existing tests had reached real
+  services before that guard existed.
+- Count-preserving data changes are proven endpoint by endpoint on a copy of a
+  realistic dataset; the first fold design passed its own totals and still
+  changed six screens.
+- When a merge conflict is settled by taking one side of a file, the rest of
+  that file's changes from the other side are lost; resolve per hunk.
+
+Still the owner's: Windows signing, Apple enrolment, updater keys, store
+listings for the extension, a manual dry run of the release workflow, the
+first real Send to LinkedIn test, and pushing the v2.6.0 tag.

@@ -25,6 +25,12 @@ released. Version numbers follow `studio/__version__.py`.
   you never edited, queued or published, and only after a backup of your
   database. Today tells you once what was removed and where the copy is.
 
+- **A daily backup now runs on its own**, keeps about 14 copies, and checks
+  each one as it is made. Brand Studio has a new **Storage and privacy** tab
+  that shows what the studio holds, its retention rules, and its backups.
+  Folding reactions older than two years into counts, and listing leads silent
+  for two years, both ask you first; nothing of yours is removed without that.
+
 ### One name
 - **The product is Inox Hydra**, and the extension is **Inox Hydra Bridge**.
   Before, it went by five names, one borrowing a competitor's mark.
@@ -119,6 +125,171 @@ released. Version numbers follow `studio/__version__.py`.
   with file or directory name __pycache__". The packaging script lived in the
   extension folder, and running the tests left a Python cache beside the
   manifest; it now lives in `tools/`.
+
+### Ready for a normal creator, and for years of data
+
+A second cycle: four research reports (install, backend, frontend, data at
+scale), owner decisions, seven parallel batches, an independent review of each
+and a re-check of every fix sent back. The plan is
+docs/quality/CYCLE2_2026-10_PRD.md.
+
+#### Installing and updating
+- The release smoke test passes the studio's own security gate, so a 2.6.0
+  release can actually publish its portable ZIP and update manifest.
+- The desktop app installer includes the studio interface instead of opening
+  on an error page.
+- macOS and Linux builds carry their own pinned, checksum-verified Python, and
+  a build that would depend on the build machine's Python now fails instead of
+  shipping.
+- A release is published only when the portable ZIP, the update manifest and
+  the Windows installer are all on it; until then it stays a draft nobody
+  sees.
+- The portable launcher opens the studio only once it is really running, says
+  when another program holds port 8000, and shows the engine's error instead
+  of a page that cannot connect.
+- When another program uses port 8000, the portable launcher starts the studio
+  on the next free port and says that the browser extension needs 8000.
+- Double-clicking create_desktop_shortcut.vbs in the portable folder now makes
+  a working desktop shortcut.
+- The README inside the download no longer points at a store listing that does
+  not exist.
+- The studio's Docs screen in a downloaded copy shows the help articles only,
+  not the project's internal engineering documents.
+- The install, upgrade and removal instructions match what the Windows
+  download does today, and macOS and Linux users are told to run from source
+  for now.
+- Hindi and Gujarati quote overlays appear on generated images in the Windows
+  download and desktop app, which now include the text layout library Pillow
+  needs.
+
+#### Writing, drafts and publishing
+- A queued post missed while the computer slept now waits as due at its own
+  time, and Today says it was missed, with Post now and Move to next slot; it
+  is never moved without asking.
+- Your weekly posting slots can now be added, retimed, renamed and removed on
+  the Queue, and start with plain names such as Monday morning.
+- New studios start with neutral fill-in hook forms; the engineering creator
+  pack of 36 forms is now an opt-in from the Swipe File.
+- The Composer now has Drafts and New post: see every draft, open, find or
+  delete one, and clearing the editor never saves over an earlier draft.
+- Publish's main action is now Copy and mark posted: it copies the exact text
+  and records it as posted by you, with Queue it beside it and a Copy button
+  in the Composer.
+- Send to LinkedIn now names you as the author, sends only as the account you
+  confirmed after asking with that account and the time, refuses times
+  LinkedIn will not hold, and keeps a record of each send and LinkedIn's
+  answer.
+- Removed POST /api/v1/scheduler/native/stage, an unguarded duplicate of Send
+  to LinkedIn.
+
+#### Images
+- Images: a generation that fails or is blocked now says so and why, and
+  nothing is added to your library; choose who makes your images (the free
+  public generator, your OpenAI, Google Imagen, Stability AI, Replicate,
+  fal.ai or Together account, or AUTOMATIC1111, Forge or ComfyUI on your own
+  machine, or Off) in the Prompt tab, with what leaves your computer shown for
+  each. Image providers never follow a redirect to another address, and if you
+  already made images with an OpenAI or Gemini key, the studio keeps using the
+  model you had until you choose another.
+- Images: quotes and your watermark are drawn at full size on Windows, macOS
+  and Linux, and Hindi and Gujarati quotes and names are drawn in their own
+  letters instead of boxes.
+
+#### Everyday screens, help and restore
+- Reply to their comment drafts straight away from the post the person
+  commented on, without asking you to type it.
+- Screens that could not load while the studio was stopped recover by
+  themselves when it is back, and Queue, Leads and Posts stay current while
+  open.
+- Activity and Setup stop asking the studio for updates while their window is
+  hidden.
+- Help and search show creators the help articles only; maintainer and retired
+  documents no longer appear unless developer mode is on.
+- Docs lists the help articles only; the studio's engineering documents and
+  retired manuals are no longer part of the customer's library.
+- Brand Studio can now restore a backup: Local security, Your data, Restore. A
+  safety backup is taken first, and people you forgot after the backup was
+  made stay forgotten.
+- The import of your LinkedIn history has one name, Import your history, on
+  Setup, Today and Activity.
+- Setup says when it is done and takes you to Today.
+- Times on a screen use one clock format, a queued post shows its date, and an
+  unread figure on Activity reads not measured instead of 0.
+- Patterns compares each form once, in plain words, and no longer says Other
+  posts posts.
+- The help on saving a post no longer tells you to reload before starting the
+  next post.
+- The studio opens straight on Setup or Today without flashing the Composer
+  first.
+- The bridge mark beside Activity always agrees with the screen under it.
+- Demo mode now includes a sample creator with posts and people who engaged,
+  so Today, Posts, Patterns and Outbound show data.
+- After you mark a post as published, Today names it until the bridge sees it
+  on LinkedIn.
+- Today's status line no longer says nothing was captured when your posts are
+  already imported.
+- Search names a lead's stage as Leads does.
+- In the Composer, Ctrl+S saves and Ctrl+B, Ctrl+I and Ctrl+U format the
+  selection.
+- Empty Posts, Patterns and Outbound screens have a Go to Setup button.
+- After copying a message on Leads you can mark the person as Outreach Sent in
+  one click.
+- Forgetting a lead says that older backups keep them until rotation, and
+  where to remove them from backups too.
+
+#### Speed with years of data
+- Posts, Analytics, Patterns, Outbound, Today, Activity and the Leads review
+  open in under a tenth of a second on years of data, where they took up to
+  two seconds.
+- Search answers as you type, in milliseconds, on years of data; it matches
+  words from their start, so 'pric' finds pricing, and finds words you wrote
+  in bold or italic.
+- Exporting your data needs about 20 MB of memory however much you have, where
+  three years took over a gigabyte.
+- The database keeps its query statistics current, after updates and while the
+  studio runs.
+- The Leads screen opens at once however many leads you have, and searches on
+  the server.
+
+#### Storage, retention and privacy
+- Forgetting someone now overwrites their words in the database file on every
+  system, and Storage and privacy says how long they stay in older backups and
+  can remove them from backups too.
+- The studio now backs itself up once a day, checks every backup as it is
+  made, stores photos without recompressing them, and keeps about 14 automatic
+  backups and the last 2 pre-upgrade copies instead of every one ever made.
+- New Storage and privacy tab in Brand Studio: see what each kind of data
+  takes, choose how long readings and logs are kept, preview every cleanup
+  before it runs, fold two-year-old reactions into counts without changing any
+  number on screen, and review people who have been silent for two years.
+
+#### Reliability and privacy under the hood
+- A comment cut through an emoji is now captured as a lead, and any failure
+  inside the studio answers a readable sentence instead of 'Internal Server
+  Error'.
+- When the database is busy or the disk is full, the studio says so and asks
+  you to try again, and the rest of the studio keeps answering meanwhile.
+- The diagnostics file and the studio's log no longer contain searches,
+  message topics, names or profile addresses.
+- Starting the studio keeps the previous session's log as engine.log.1 instead
+  of deleting it.
+- A grounding source that hangs no longer freezes the preview or leaves
+  programs running.
+- Grounding sources started with npx now work on Windows.
+- Grounding sources no longer receive the studio's API keys.
+- A grounding source that fails now says why.
+- If the studio's database is damaged, the studio still opens and offers to
+  restore your newest backup.
+- Telemetry no longer grows with oversized payloads and loses nothing when the
+  studio stops.
+- Telemetry no longer keeps text or names, and forgetting your identity clears
+  it.
+- Deleting a media file now removes it, or says it could not and keeps it in
+  the library.
+- A very short image concept gets a clear message instead of an error.
+- Removed about thirty unused API routes (listed in the commit); anyone
+  scripting against them should use the studio's own routes. Telegram ingress
+  is now a maintainer feature that needs INOX_DEV_MODE=1.
 
 ### Fixed before release
 
