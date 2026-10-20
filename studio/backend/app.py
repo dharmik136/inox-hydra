@@ -83,6 +83,7 @@ try:
     from . import desktop as desktop_integration
     from .migrations import describe as describe_schema
     from . import support as support_tools
+    from . import safe_mode
     from . import updates as update_checker
     from .paths import (get_assets_dir, get_uploads_dir, get_generated_dir, get_data_dir,
                         get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
@@ -154,6 +155,7 @@ except ImportError:
     import desktop as desktop_integration
     from migrations import describe as describe_schema
     import support as support_tools
+    import safe_mode
     import updates as update_checker
     from paths import (get_assets_dir, get_uploads_dir, get_generated_dir, get_data_dir,
                        get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
@@ -205,21 +207,15 @@ OPENAPI_TAGS = [
     {"name": "Developer Tools", "description": "Maintainer only. Screen registry, state and migration inspectors, and annotation portability. Absent unless INOX_DEV_MODE is set."}
 ]
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    init_db()
-    seed_initial_data()
-    # Every other creator profile's database too, so switching to one, or the
-    # scheduler visiting it, never meets a schema older than this build.
-    for _profile in paths_module.profile_ids():
-        if _profile == paths_module.get_active_profile_id():
-            continue
-        try:
-            with paths_module.using_profile(_profile):
-                init_db()
-        except Exception:
-            logging.getLogger("studio.profiles").warning(
-                "Could not bring profile %s up to this build's schema.", _profile, exc_info=True)
+def _is_damaged_database(error: BaseException) -> bool:
+    """A database file SQLite cannot read, as opposed to one that is only busy."""
+    said = str(error).lower()
+    return isinstance(error, sqlite3.DatabaseError) and (
+        "malformed" in said or "not a database" in said or "encrypted" in said
+        or not isinstance(error, sqlite3.OperationalError))
+
+
+def _seal_plaintext_secrets() -> None:
     # An AI key saved before keys were sealed is still readable in the file
     # until something saves it again. Sealed here instead, once; a sealed
     # value is left alone, so this does nothing on every later start.
@@ -235,6 +231,41 @@ async def lifespan(app: FastAPI):
             _conn.close()
     except Exception:
         logging.getLogger("studio.vault").warning("Could not seal stored secrets at startup.", exc_info=True)
+
+
+def _open_after_restore() -> None:
+    """What a normal start does with the database, run again once safe mode has restored one."""
+    init_db()
+    seed_initial_data()
+    _seal_plaintext_secrets()
+    start_scheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # A database SQLite cannot read starts the studio in safe mode rather than
+    # not at all: one page that says what happened and offers the backups.
+    # See safe_mode.py. Nothing below touches the damaged file.
+    try:
+        init_db()
+        seed_initial_data()
+    except sqlite3.DatabaseError as damaged:
+        if not _is_damaged_database(damaged):
+            raise
+        safe_mode.enter(damaged)
+    # Every other creator profile's database too, so switching to one, or the
+    # scheduler visiting it, never meets a schema older than this build.
+    for _profile in paths_module.profile_ids():
+        if _profile == paths_module.get_active_profile_id():
+            continue
+        try:
+            with paths_module.using_profile(_profile):
+                init_db()
+        except Exception:
+            logging.getLogger("studio.profiles").warning(
+                "Could not bring profile %s up to this build's schema.", _profile, exc_info=True)
+    if not safe_mode.is_active():
+        _seal_plaintext_secrets()
     # The offline documentation index, built here rather than on whichever
     # search happened to run first. It was imported into this module and never
     # called, so the index was a snapshot of the corpus as it stood the first
@@ -251,7 +282,8 @@ async def lifespan(app: FastAPI):
         logging.getLogger("studio.docs").warning(
             "The documentation search index did not build at startup.", exc_info=True
         )
-    start_scheduler()
+    if not safe_mode.is_active():
+        start_scheduler()
     if os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN"):
         ingress_daemon.start_worker()
     yield
@@ -455,6 +487,42 @@ def _replay(messages, then):
 app.add_middleware(DropLoneSurrogates)
 
 
+async def _safe_mode_answer(request: Request):
+    """
+    Every answer while the database is damaged. See safe_mode.py.
+
+    Called from enforce_local_access after its checks, so the restore button
+    needs the same token as everything else, and the page load still hands
+    the interface its cookie.
+    """
+    from fastapi.responses import HTMLResponse
+
+    path = request.scope.get("path", "")
+    if path == "/api/v1/health":
+        # Still 200 with the app's name, so the desktop shell opens its window
+        # onto the page below instead of waiting on a splash for ever.
+        return JSONResponse({"status": "safe_mode", "app": "inox-hydra", "version": __version__})
+    if path == safe_mode.STATE_PATH and request.method == "GET":
+        return JSONResponse(await run_in_threadpool(safe_mode.describe))
+    if path == safe_mode.RESTORE_PATH and request.method == "POST":
+        try:
+            name = str((await request.json() or {}).get("name") or "")
+        except Exception:
+            name = ""
+        try:
+            result = await run_in_threadpool(safe_mode.restore, name, _open_after_restore)
+        except ValueError as refused:
+            return _studio_error(409, "not_restorable", str(refused))
+        except Exception as failed:
+            _error_log.error("Safe-mode restore failed", exc_info=True)
+            return _studio_error(500, "restore_failed", _printable(failed))
+        return JSONResponse(result)
+    if path.startswith("/api"):
+        described = await run_in_threadpool(safe_mode.describe)
+        return _studio_error(503, "database_damaged", described["message"])
+    return HTMLResponse(await run_in_threadpool(safe_mode.page), status_code=503)
+
+
 @app.exception_handler(RequestValidationError)
 async def _answer_invalid_request(request: Request, error):
     return _validation_answer(error.errors())
@@ -557,7 +625,10 @@ async def enforce_local_access(request: Request, call_next):
                     content={"detail": "Missing or invalid studio token."},
                 )
 
-    response = await call_next(request)
+    if safe_mode.is_active():
+        response = await _safe_mode_answer(request)
+    else:
+        response = await call_next(request)
 
     # Hand the interface its token as it loads. SameSite=Strict is the part
     # that matters: a browser will not attach this cookie to a request started

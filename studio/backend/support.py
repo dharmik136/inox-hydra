@@ -485,6 +485,45 @@ def _refuse_incompatible(info: Dict[str, Any]) -> None:
         )
 
 
+def restorable_backups() -> List[Dict[str, Any]]:
+    """
+    The active profile's backups that restore_backup would accept, best first.
+
+    Full backups before bare database copies, each newest first, which is the
+    order a creator recovering from a damaged database should try them in.
+    A safety copy of a damaged database holds it under damaged/ and is not
+    restorable, so it is never offered.
+    """
+    directory = paths.get_backups_dir()
+    found = []
+    try:
+        names = os.listdir(directory)
+    except OSError:
+        return []
+    for name in names:
+        full = os.path.join(directory, name)
+        if not os.path.isfile(full):
+            continue
+        try:
+            info = inspect_backup(full)
+        except Exception:
+            continue
+        if not info.get("has_database") or info.get("kind") not in ("backup", "database"):
+            continue
+        found.append({"path": full, "name": name, "kind": info["kind"],
+                      "modified": datetime.fromtimestamp(os.path.getmtime(full)).isoformat(timespec="minutes"),
+                      "_mtime": os.path.getmtime(full)})
+    found.sort(key=lambda entry: (entry["kind"] != "backup", -entry["_mtime"]))
+    for entry in found:
+        del entry["_mtime"]
+    return found
+
+
+def restore_command(archive: str) -> str:
+    """The exact command that restores `archive`, as doctor and the safe-mode page print it."""
+    return f'python -m studio.cli restore "{archive}" --yes'
+
+
 class ProfileMismatch(ValueError):
     """The backup is of another creator profile than the one it would replace."""
 

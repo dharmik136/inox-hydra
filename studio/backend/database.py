@@ -101,6 +101,11 @@ def init_db() -> None:
     6. leads: Post commenter & reactor CRM pipeline.
     7. settings: Key-value configuration store for tokens & Gemini API keys.
     """
+    # A database this call creates holds nothing yet, so the copy taken before
+    # its first migrations would be an empty file listed as a backup: on a
+    # fresh install it was the only one, and recovery advice pointed at it.
+    db_path = get_db_path()
+    created_now = not os.path.exists(db_path) or os.path.getsize(db_path) == 0
     conn = get_db()
 
     # Refuse a database this build does not understand BEFORE touching it.
@@ -421,7 +426,7 @@ def init_db() -> None:
     # a pre-ledger database is stamped rather than rebuilt. Any future schema
     # change belongs in studio/backend/migrations.py, never in this function.
     try:
-        report = ensure_schema(conn)
+        report = ensure_schema(conn, take_backup=not created_now)
     except Exception:
         conn.close()
         raise

@@ -125,6 +125,18 @@ def cmd_doctor(args) -> int:
         for err in report["errors"]:
             print(f"    - {err}")
         print()
+        if any(str(err).startswith("database unreadable") for err in report["errors"]):
+            # The one problem a creator cannot work around: say exactly what to run.
+            backups = support.restorable_backups()
+            if backups:
+                print("  The database cannot be read. Restore your newest backup with:")
+                print(f"    {support.restore_command(backups[0]['path'])}")
+                print("  A safety copy of the damaged files is kept first.")
+            else:
+                print("  The database cannot be read, and there is no backup to restore.")
+                print(f"  Quit the studio, move {paths.get_db_path()} out of that folder,")
+                print("  and start the studio again. It starts empty.")
+            print()
     else:
         print("  no problems found")
         print()
