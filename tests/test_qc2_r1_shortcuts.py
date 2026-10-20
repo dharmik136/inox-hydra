@@ -80,7 +80,8 @@ def test_the_unix_script_in_a_portable_folder_points_at_inoxhydra_sh(tmp_path):
     assert f"Icon={root / 'assets' / 'inox_hydra.png'}" in entry.read_text(encoding="utf-8")
 
 
-@pytest.mark.skipif(not shutil.which("bash"), reason="the shortcut script is bash")
+@pytest.mark.skipif(sys.platform == "win32" or not shutil.which("bash"),
+                    reason="the Unix shortcut script; Windows has the .vbs")
 def test_a_folder_with_no_launcher_still_says_so(tmp_path):
     root, launcher, home = _bundle(tmp_path, "something-else.sh")
     done = subprocess.run(["bash", str(root / "create_desktop_shortcut.sh")],

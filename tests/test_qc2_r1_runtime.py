@@ -128,7 +128,9 @@ def test_a_runtime_that_borrows_the_hosts_library_is_refused(tmp_path):
     runtime = tmp_path / "runtime"
     (runtime / "bin").mkdir(parents=True)
     shutil.copy2(sys.executable, runtime / "bin" / "python3")
-    with pytest.raises(SystemExit, match="not self-contained"):
+    # Here it borrows /usr/lib; a copied binary whose libpython is a relative
+    # link does not start at all. Either way the build refuses it.
+    with pytest.raises(SystemExit, match="not self-contained|does not start on its own"):
         build_portable.assert_runtime_self_contained(str(runtime))
 
 
