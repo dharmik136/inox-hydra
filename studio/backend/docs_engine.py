@@ -659,6 +659,11 @@ HELP_SECTIONS = [
         "blurb": "The studio will not open, a list is empty, or an error message needs explaining.",
         "paths": [
             "help/the-studio-will-not-open.md",
+            # Help for a creator: the portable build's InoxHydra-CLI.bat is
+            # how backup and restore run when the studio will not start, and
+            # two articles link here. Filed under maintainers, it was left out
+            # of the help a creator is shown.
+            "help/command-line-tool-reference.md",
             "help/why-is-my-lead-list-empty.md",
             "help/why-is-analytics-or-the-swipe-file-empty.md",
             "help/why-does-the-audit-say-blocked.md",
@@ -670,7 +675,6 @@ HELP_SECTIONS = [
         "title": "For maintainers",
         "blurb": "How the studio is built: data, architecture, the API, the desktop shell, packaging, and the rules the interface is held to.",
         "paths": [
-            "help/command-line-tool-reference.md",
             "help/turn-on-devtools.md",
             "DATA_ARCHITECTURE.md",
             "ARCHITECTURE.md",

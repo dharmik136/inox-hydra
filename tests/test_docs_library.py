@@ -113,7 +113,10 @@ def real_corpus_index():
 
 @pytest.fixture(scope="module")
 def catalogue():
-    response = client.get("/api/docs")
+    # The whole library, maintainer and retired documents included: these
+    # tests are about the registry. What a creator is listed is in
+    # tests/test_qc2_r5_docs.py.
+    response = client.get("/api/docs?internal=1")
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -402,7 +405,7 @@ def test_a_module_number_is_typed_as_the_label_it_is():
     assert re.search(r"number:\s*string;", client_source), (
         "DocModule.number is typed as a number again, and one of them is \"Master\""
     )
-    numbers = {module["number"] for module in client.get("/api/docs").json()["modules"]}
+    numbers = {module["number"] for module in client.get("/api/docs?internal=1").json()["modules"]}
     assert any(not value.isdigit() for value in numbers), (
         f"no non numeric module label left, so this guard no longer proves anything: {numbers}"
     )
@@ -789,7 +792,7 @@ def _help_articles():
 # Written in the help style but for whoever maintains the studio, so they are
 # filed where that reader looks. Named here so a user article cannot drift into
 # the reference by accident.
-MAINTAINER_ARTICLES = {"command-line-tool-reference.md", "turn-on-devtools.md"}
+MAINTAINER_ARTICLES = {"turn-on-devtools.md"}
 
 
 def test_every_help_article_is_filed_under_help():

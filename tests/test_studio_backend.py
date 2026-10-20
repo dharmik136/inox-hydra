@@ -279,7 +279,8 @@ def test_static_assets_and_docs():
 def test_docs_api_and_modules():
     from app import list_docs_modules, get_doc_module
 
-    docs_res = list_docs_modules()
+    # The curated modules are retired manuals, listed to a maintainer only (R1-N2).
+    docs_res = list_docs_modules(internal=True)
     assert docs_res["status"] == "success"
     assert docs_res["count"] >= 7
     modules = docs_res["modules"]

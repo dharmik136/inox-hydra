@@ -64,15 +64,24 @@ def test_help_hits_are_not_crowded_out_by_hidden_ones(consumer):
     assert {hit["kind"] for hit in results} == {"help"}
 
 
-def test_the_docs_home_marks_internal_sections_hidden(consumer):
-    sections = client.get("/api/docs").json()["sections"]
-    hidden = {section["id"] for section in sections if section["hidden"]}
-    assert hidden == INTERNAL, hidden
+def test_the_docs_listing_holds_only_help_for_a_creator(consumer):
+    """R1-N2: a packaged copy's /api/docs still listed the retired manuals."""
+    listing = client.get("/api/docs").json()
+    assert not {section["id"] for section in listing["sections"]} & INTERNAL, listing["sections"]
+    assert {docs_engine.section_kind(entry["section"]) for entry in listing["library"]} == {"help"}
+    assert listing["modules"] == [] and listing["count"] == 0, listing["modules"]
+    assert "help/command-line-tool-reference.md" in {entry["path"] for entry in listing["library"]}
+
+    # A maintainer asks for the rest explicitly.
+    everything = client.get("/api/docs", params={"internal": 1}).json()
+    assert INTERNAL <= {section["id"] for section in everything["sections"]}
+    assert everything["modules"]
+    hits = client.get("/api/docs/search", params={"q": "architecture", "limit": 20, "internal": 1}).json()["results"]
+    assert any(hit["kind"] != "help" for hit in hits)
 
 
 def test_a_hidden_document_still_opens_by_id(consumer):
-    # check-your-version-and-update-the-studio.md links to this maintainer article.
-    body = client.get("/api/docs/help-command-line-tool-reference")
+    body = client.get("/api/docs/data_architecture")
     assert body.status_code == 200, body.text
     assert body.json()["section"] == "For maintainers"
 
