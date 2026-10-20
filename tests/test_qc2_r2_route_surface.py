@@ -144,6 +144,17 @@ def test_every_route_the_extension_calls_still_exists():
     assert not missing, f"the extension calls routes that no longer exist: {missing}"
 
 
+def test_the_api_reference_documents_only_routes_that_exist():
+    """docs/API_REFERENCE.md is labelled current and checked against the code."""
+    declared = _declared()
+    with open(os.path.join(REPO_ROOT, "docs", "API_REFERENCE.md"), encoding="utf-8") as handle:
+        headings = re.findall(r"^### `(GET|POST|PUT|PATCH|DELETE) (/api/[^`\s]+)`", handle.read(), re.MULTILINE)
+    assert headings
+    missing = [f"{method} {path}" for method, path in headings
+               if (method, re.sub(r"\{[^}]*\}", "*", path)) not in declared]
+    assert not missing, f"documented but not served: {missing}"
+
+
 def test_the_cli_and_desktop_shell_routes_still_exist():
     declared = _declared()
     for method, path in [("GET", "/api/v1/health"), ("GET", "/api/v1/schema/status")]:

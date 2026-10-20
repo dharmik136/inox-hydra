@@ -85,7 +85,7 @@ section 2.2.
 ## Where the open work lives
 
 Not in these documents. The backlog is in the `gstack_backlog` table, reachable
-at `GET /api/v1/gstack/backlog` or in the app's governance view. Eighteen items
+at `GET /api/v1/gstack/backlog` (in dev mode only, `INOX_DEV_MODE=1`). Eighteen items
 from the data and first-run assessments are filed there as ids 243 to 260,
 each carrying a full specification and file references.
 
