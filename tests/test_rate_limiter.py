@@ -134,14 +134,31 @@ def test_single_writer_actor_concurrent_load():
 
 
 # -------------------------------------------------------------
-# 4. Anti-Bot Rate Limiting & Health API Endpoints
+# 4. The shipped limiter's settings, and the client honouring it
 # -------------------------------------------------------------
+def test_the_shipped_rate_limiter_settings():
+    """
+    The pacing the LinkedIn client runs under: 15 minutes on average, 2 minutes
+    of jitter, never under 11 or over 19. This was checked through the
+    /api/v1/rate-limiter routes, which cycle 2 removed (D1); the limiter itself
+    still ships, so it is checked directly.
+    """
+    diag = rate_limiter.get_diagnostics()
+    assert diag["mean_interval_seconds"] == 900.0
+    assert diag["std_deviation_seconds"] == 120.0
+    assert diag["clamping_bounds"] == [660.0, 1140.0]
+
+    metrics = write_actor.get_metrics()
+    assert "queue_depth" in metrics
+    assert "tasks_processed" in metrics
 
 
 def test_linkedin_client_gaussian_rate_limit():
     """Tests that linkedin_client respects Gaussian rate limiter when enforce_rate_limit=True."""
-    # Deplete rate limiter
-    rate_limiter.consume(rate_limiter.capacity + 1.0)
+    # Deplete rate limiter. consume(capacity + 1) is refused outright and takes
+    # nothing, so this used to pass only when an earlier test had already spent
+    # the one token.
+    rate_limiter.reset(tokens=0.0)
 
     # Calling sync_live_profile_and_stats with enforce_rate_limit=True should be throttled
     res = linkedin_client.sync_live_profile_and_stats(mock=False, enforce_rate_limit=True)
