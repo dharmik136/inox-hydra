@@ -25,10 +25,12 @@ try:
     from .support import _cell as csv_cell
     from .gstack_governance import gstack_engine
     from . import devtools
+    from . import sqlite_open
 except ImportError:
     from database import get_db
     from support import _cell as csv_cell
     from gstack_governance import gstack_engine
+    import sqlite_open
     import devtools
 
 MAX_LIST_LIMIT = 2000
@@ -74,7 +76,7 @@ class InternalSheetManager:
 
     def _get_conn(self) -> sqlite3.Connection:
         if self._db_path:
-            conn = sqlite3.connect(self._db_path)
+            conn = sqlite_open.connect(self._db_path)
             conn.row_factory = sqlite3.Row
             return conn
         return get_db()

@@ -35,12 +35,12 @@ import sys
 import zipfile
 
 try:
-    from .backend import paths, support, updates
+    from .backend import paths, sqlite_open, support, updates
     from .backend import migrations as migration_ledger
     from .__version__ import __version__
 except ImportError:  # executed as a loose script
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-    from studio.backend import paths, support, updates
+    from studio.backend import paths, sqlite_open, support, updates
     from studio.backend import migrations as migration_ledger
     from studio.__version__ import __version__
 
@@ -324,7 +324,7 @@ def cmd_migrate(args) -> int:
         print("run this for real, or on the next application start.")
         return 0
 
-    conn = sqlite3.connect(paths.get_db_path())
+    conn = sqlite_open.connect(paths.get_db_path())
     try:
         report = migration_ledger.ensure_schema(conn)
     finally:

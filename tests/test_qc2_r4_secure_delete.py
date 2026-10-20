@@ -90,3 +90,66 @@ def test_the_telemetry_shard_turns_secure_delete_on(home):
         assert conn.execute("PRAGMA secure_delete").fetchone()[0] == 1
     finally:
         conn.close()
+
+
+COOKIE = "AQEDzzSealedCookieMarker" + "q" * 40
+
+
+def _checkpoint():
+    conn = database.get_db()
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    conn.close()
+
+
+def test_reset_leaves_no_session_cookie_bytes_in_the_file(home):
+    from studio.backend import support
+
+    conn = database.get_db()
+    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('li_at', ?)", (COOKIE,))
+    conn.commit()
+    conn.close()
+    _checkpoint()
+    assert COOKIE.encode() in _file_bytes()
+
+    support.reset_configuration(keep_data=True)
+    _checkpoint()
+    assert COOKIE.encode() not in _file_bytes(), "reset left the session cookie's bytes in the database file"
+
+
+def test_the_update_check_connection_turns_it_on(home):
+    from studio.backend import updates
+
+    conn = updates._connect()
+    try:
+        assert conn.execute("PRAGMA secure_delete").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_every_writing_connection_goes_through_the_one_helper():
+    """
+    A connection that can delete must turn secure_delete on. Every opener
+    in the studio calls sqlite_open.connect (or sqlite_open.secure on a
+    connection it made); the only raw opens left are read-only or :memory:.
+    """
+    import re
+
+    root = os.path.join(os.path.dirname(__file__), "..", "studio")
+    allowed = ("mode=ro", ":memory:")
+    offenders = []
+    for dirpath, _, files in os.walk(root):
+        if "node_modules" in dirpath or "frontend" in dirpath:
+            continue
+        for name in files:
+            if not name.endswith(".py") or name == "sqlite_open.py":
+                continue
+            path = os.path.join(dirpath, name)
+            lines = open(path, encoding="utf-8").read().splitlines()
+            for number, line in enumerate(lines):
+                if "sqlite3.connect(" not in line or line.strip().startswith("#"):
+                    continue
+                window = "\n".join(lines[number:number + 12])
+                if any(a in line for a in allowed) or re.search(r"secure\(|secure_delete", window):
+                    continue
+                offenders.append(f"{os.path.relpath(path, root)}:{number + 1}: {line.strip()}")
+    assert offenders == [], "connections that can delete without secure_delete:\n" + "\n".join(offenders)

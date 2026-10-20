@@ -37,11 +37,12 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import paths
+    from . import paths, sqlite_open
     from .migrations import describe as describe_schema, backup_database, SCHEMA_VERSION, MIN_SUPPORTED_SCHEMA
     from ..__version__ import __version__
 except ImportError:  # top-level import mode
     import paths
+    import sqlite_open
     from migrations import describe as describe_schema, backup_database, SCHEMA_VERSION, MIN_SUPPORTED_SCHEMA
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     from __version__ import __version__
@@ -117,7 +118,7 @@ def _connect() -> sqlite3.Connection:
     """
     if not os.path.exists(paths.get_db_path()):
         raise ValueError(_no_database_message("read"))
-    conn = sqlite3.connect(paths.get_db_path())
+    conn = sqlite_open.connect(paths.get_db_path())
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -309,7 +310,7 @@ def _compact_copy(clean_label: str, stamp: str) -> Optional[str]:
     if not os.path.exists(db_path) or os.path.getsize(db_path) == 0:
         return None
     target = _unique_path(paths.get_backups_dir(), f"linkedin_studio_snapshot_{clean_label}_{stamp}", ".db")
-    source = sqlite3.connect(db_path, timeout=30.0)
+    source = sqlite_open.connect(db_path, timeout=30.0)
     try:
         source.execute("PRAGMA busy_timeout = 30000")
         source.execute("VACUUM INTO ?", (target,))
@@ -798,7 +799,7 @@ def _safety_snapshot() -> tuple:
 def _verify_staged_database(staged_db: str, archive: str) -> None:
     """The extracted database opens and passes SQLite's own check, or ValueError."""
     try:
-        conn = sqlite3.connect(staged_db)
+        conn = sqlite_open.connect(staged_db)
         try:
             verdict = conn.execute("PRAGMA quick_check").fetchone()[0]
         finally:

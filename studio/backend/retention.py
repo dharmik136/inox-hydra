@@ -46,13 +46,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import paths, support
+    from . import paths, sqlite_open, support
     from .crm import reverse_crm
     from .database import get_db
     from .migrations import SCHEMA_VERSION
     from .today import COMPARE_WINDOW
 except ImportError:  # top-level import mode
     import paths
+    import sqlite_open
     import support
     from crm import reverse_crm
     from database import get_db
@@ -330,9 +331,8 @@ def _telemetry_connect() -> Optional[sqlite3.Connection]:
     path = _telemetry_path()
     if not os.path.exists(path):
         return None
-    conn = sqlite3.connect(path, timeout=10.0)
+    conn = sqlite_open.connect(path, timeout=10.0)
     conn.execute("PRAGMA busy_timeout = 5000")
-    conn.execute("PRAGMA secure_delete = ON")
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     if "telemetry_events" not in tables:
         conn.close()
@@ -748,9 +748,8 @@ def _clear_pending(lead_ids: List[str]) -> None:
 
 def _scrub_database(path: str, lead_ids: List[str]) -> bool:
     """Removes the people from one database file in place. True when any were there."""
-    conn = sqlite3.connect(path)
+    conn = sqlite_open.connect(path)
     try:
-        conn.execute("PRAGMA secure_delete = ON")
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         if "leads" not in tables:
             return False

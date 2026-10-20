@@ -51,10 +51,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 try:
-    from . import paths
+    from . import paths, sqlite_open
     from .evidence_briefing import classify_post_topic
 except ImportError:
     import paths
+    import sqlite_open
     from evidence_briefing import classify_post_topic
 
 MANIFEST = ".inox-hydra-export.json"
@@ -90,7 +91,7 @@ class ExportRefused(ValueError):
 # ---------------------------------------------------------------------------
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(paths.get_db_path())
+    conn = sqlite_open.connect(paths.get_db_path())
     conn.row_factory = sqlite3.Row
     return conn
 

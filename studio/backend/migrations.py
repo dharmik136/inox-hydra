@@ -38,8 +38,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 try:
     from .paths import get_backups_dir, get_db_path
+    from . import sqlite_open
 except ImportError:
     from paths import get_backups_dir, get_db_path
+    import sqlite_open
 
 # The schema as produced by init_db() at the moment the ledger was adopted.
 # Databases created before the ledger existed already match this, so they are
@@ -964,9 +966,9 @@ def backup_database(reason: str = "migration") -> Optional[str]:
     name = f"linkedin_studio_{reason}_{stamp}.db"
     target = os.path.join(get_backups_dir(), name)
 
-    source = sqlite3.connect(db_path)
+    source = sqlite_open.connect(db_path)
     try:
-        destination = sqlite3.connect(target)
+        destination = sqlite_open.connect(target)
         try:
             source.backup(destination)
         finally:
