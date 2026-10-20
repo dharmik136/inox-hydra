@@ -237,7 +237,10 @@ def test_replacing_the_whole_text_and_saving_keeps_the_first_draft(context, stud
     _save(page)
 
     editor.click()
-    page.keyboard.press("Control+A")
+    # Select all, which is Command+A on macOS: Control+A there moves the
+    # caret to the start of the line instead, so the typing below would be
+    # inserted rather than replace the draft.
+    page.keyboard.press("ControlOrMeta+A")
     page.keyboard.type(f"{PREFIX} DRAFT B, a different idea")
     page.get_by_text("is kept as it was saved, in Drafts", exact=False).wait_for()
     _save(page)
