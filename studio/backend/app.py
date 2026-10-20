@@ -1863,6 +1863,15 @@ except (ImportError, ValueError):
 
 app.include_router(search_router_module.router)
 
+# Storage and privacy: retention rules, backups, the silent-lead review list
+# (studio/backend/routers/storage.py, rules in studio/backend/retention.py).
+try:
+    from .routers import storage as storage_router_module
+except (ImportError, ValueError):
+    from routers import storage as storage_router_module
+
+app.include_router(storage_router_module.router)
+
 DOCS_DIR = search_router_module.DOCS_DIR
 MODULES_DIR = search_router_module.MODULES_DIR
 DOCS_MODULES = search_router_module.DOCS_MODULES

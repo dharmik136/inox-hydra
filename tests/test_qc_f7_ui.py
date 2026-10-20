@@ -402,7 +402,7 @@ def test_every_tray_destination_can_be_reached_in_a_short_window(studio, width, 
 def test_brand_studio_tabs_are_all_on_a_phone_screen(studio, scheme):
     page = studio(375, 812, scheme).open("Brand Studio")
     tabs = page.get_by_role("tablist", name="Brand workspaces").get_by_role("tab")
-    assert tabs.count() == 5
+    assert tabs.count() == 6  # Storage and privacy joined in batch R4
     for index in range(tabs.count()):
         tab = tabs.nth(index)
         assert _inside(tab.bounding_box(), 375, 812), f"{tab.inner_text()} is off screen at 375 pixels"

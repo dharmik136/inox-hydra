@@ -170,9 +170,16 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # and the G-Stack backlog stay declared but answer 404 outside dev mode.
 # Reached moves 99 -> 98, unreachable 83 -> 54, total 182 -> 152.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 152
-REACHED_BY_INTERFACE = 98
-UNREACHABLE = 54
+# And (batch R4), the Storage and privacy panel in Brand Studio:
+# /api/v1/storage, /api/v1/storage/rules, /api/v1/storage/preview/*,
+# /api/v1/storage/run/*, /api/v1/storage/review, /api/v1/storage/review/forget,
+# /api/v1/storage/review/keep, /api/v1/storage/backups/scrub and
+# /api/v1/storage/compact, all surfaced in StoragePrivacyWorkspace and api.ts.
+# Reached moves 99 -> 108, unreachable stays at 83, total moves 182 -> 191.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 0
+REACHED_BY_INTERFACE = 0
+UNREACHABLE = 0
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

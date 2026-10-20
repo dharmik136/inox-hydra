@@ -658,6 +658,7 @@ HELP_SECTIONS = [
             "help/keep-each-creator-separate-and-enter-a-licence.md",
             "help/connect-your-linkedin-session.md",
             "help/back-up-restore-and-export.md",
+            "help/choose-what-the-studio-keeps.md",
             "help/check-your-version-and-update-the-studio.md",
             "help/remove-the-studio-from-this-computer.md",
         ],

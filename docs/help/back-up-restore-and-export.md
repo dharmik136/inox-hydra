@@ -23,9 +23,15 @@ To see the exact paths, open a terminal in the checkout folder, the one that hol
 
 When it finishes, a note reads "Saved *size* to *archive path*". Below the buttons the studio lists how many files the backups folder holds, five of them with their size and time, and the folder path. Your ZIP backups come first, newest first, then the automatic database copies. The file itself is not downloaded through the browser; it stays where the note says.
 
-**What happens:** the studio writes `inox_backup_manual_<date>_<time>.zip`. It contains `data/linkedin_studio.db` (copied through SQLite's backup API, so it is consistent even while the studio is running), every file under `assets/`, and a `backup_manifest.json` with the date and version.
+**What happens:** the studio writes `inox_backup_manual_<date>_<time>.zip`. It contains `data/linkedin_studio.db` (a compact copy taken in one consistent read, so it is consistent even while the studio is running), every file under `assets/`, and a `backup_manifest.json` with the date, the version and the result of the checks. Each backup is checked as it is made: the database copy must pass SQLite's integrity check, and the archive is read back against its checksums. If either fails, no file is kept and the note gives the reason; your earlier backups are unchanged. Photos and videos are stored as they are rather than compressed again, which saves time and no space.
 
-The studio also saves a timestamped copy of the database in the same folder before any schema upgrade, named `linkedin_studio_premigration_<date>_<time>.db`. Those appear in the list too, after your ZIP backups.
+**Automatic daily backup.** While the studio is open, it also makes `inox_backup_daily_<date>_<time>.zip` once a day, checked the same way. Any backup made in the last 24 hours counts, so pressing **Back up now** puts the next one off. Turn it off, and see the last and next backup, in Brand Studio's **Storage and privacy** tab. See [Choose what the studio keeps, and for how long](choose-what-the-studio-keeps.md).
+
+**Which backups are kept.** Of the automatic backups, the studio keeps the newest of each of the last 7 days, then of 4 weeks before those, then of 3 months before those: about 14, reaching back about four months. The backups a cleanup makes first (`inox_backup_pre_cleanup_<date>_<time>.zip`) are counted with them. Backups you make with **Back up now** or the command line, and the safety backups taken before a restore, are never removed by the studio.
+
+The studio also saves a timestamped copy of the database in the same folder before any schema upgrade, named `linkedin_studio_premigration_<date>_<time>.db`. The last 2 are kept. Those appear in the list too, after your ZIP backups.
+
+A backup holds everyone in your leads on the day it was made. If you later forget someone, they stay in older backups until those are removed, unless you remove them from backups too; see [Choose what the studio keeps, and for how long](choose-what-the-studio-keeps.md).
 
 > [!WARNING]
 > A backup contains your whole database, including your leads' names and comments, so store backup files carefully. Your AI key, and your LinkedIn session if one is stored, are in it only in sealed form, locked to this computer and your account on it. Restore the backup somewhere else and they read as not set: enter the AI key again there, and reconnect LinkedIn if you use it.

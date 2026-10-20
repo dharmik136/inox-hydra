@@ -38,8 +38,10 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 try:
     from .paths import get_backups_dir, get_db_path
+    from . import sqlite_open
 except ImportError:
     from paths import get_backups_dir, get_db_path
+    import sqlite_open
 
 # The schema as produced by init_db() at the moment the ledger was adopted.
 # Databases created before the ledger existed already match this, so they are
@@ -834,6 +836,102 @@ def _migrate_search_index(cursor: sqlite3.Cursor) -> None:
         cursor.execute(statement)
     universal_search.build_search_index(cursor.connection)
 
+def _migrate_retention(cursor: sqlite3.Cursor) -> None:
+    """
+    Empty structures for retention (studio/backend/retention.py), and nothing else.
+
+    No row is removed here. A cleanup runs later, after a backup, and on a
+    database that already holds readings or reactions only once the creator
+    has confirmed its preview: so the starting state of those two rules is
+    "ask" there, and "on" for a new install, which has nothing to lose.
+    """
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS reaction_folds (
+        post_urn TEXT PRIMARY KEY,
+        reactions INTEGER NOT NULL DEFAULT 0,
+        people INTEGER NOT NULL DEFAULT 0,
+        vip INTEGER NOT NULL DEFAULT 0,
+        qualified INTEGER NOT NULL DEFAULT 0,
+        icp_known INTEGER NOT NULL DEFAULT 0,
+        icp_sum REAL NOT NULL DEFAULT 0,
+        conversations INTEGER NOT NULL DEFAULT 0,
+        folded_through TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """)
+    # Per person: how many old reactions were folded, and on whose posts, so
+    # every count of a person's engagement stays what it was. Which posts is
+    # what a fold gives up.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS lead_reaction_folds (
+        lead_id TEXT PRIMARY KEY,
+        reactions INTEGER NOT NULL DEFAULT 0,
+        on_your_posts INTEGER NOT NULL DEFAULT 0,
+        on_others_posts INTEGER NOT NULL DEFAULT 0,
+        on_unknown_posts INTEGER NOT NULL DEFAULT 0,
+        folded_through TEXT,
+        topics TEXT
+    )
+    """)
+    # No foreign key: a later rebuild of leads would cascade into it. The
+    # trigger below removes a forgotten lead's row instead.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS lead_retention_keeps (
+        lead_id TEXT PRIMARY KEY,
+        kept_at TEXT NOT NULL
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS retention_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        outcome TEXT NOT NULL,
+        removed INTEGER NOT NULL DEFAULT 0,
+        backup TEXT,
+        detail TEXT
+    )
+    """)
+    # Who was forgotten, held only until the creator chooses whether to remove
+    # them from backups too: their copies there can be found by this id alone.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS forgotten_in_backups (
+        lead_id TEXT PRIMARY KEY,
+        forgotten_at TEXT NOT NULL
+    )
+    """)
+    # Migration 19's trigger, now covering the keep list too, and noting the
+    # id for backups whichever path did the forgetting.
+    cursor.execute("DROP TRIGGER IF EXISTS lead_forgotten")
+    cursor.execute("""
+    CREATE TRIGGER lead_forgotten AFTER DELETE ON leads
+    BEGIN
+        DELETE FROM lead_stage_events WHERE lead_id = OLD.id;
+        DELETE FROM lead_interactions WHERE lead_id = OLD.id;
+        DELETE FROM lead_enrichments WHERE lead_id = OLD.id;
+        DELETE FROM lead_retention_keeps WHERE lead_id = OLD.id;
+        DELETE FROM lead_reaction_folds WHERE lead_id = OLD.id;
+        INSERT OR REPLACE INTO forgotten_in_backups (lead_id, forgotten_at) VALUES (OLD.id, CURRENT_TIMESTAMP);
+    END
+    """)
+    # Someone forgotten who engages again is a lead again, and the backups made
+    # since hold them rightly. A lead's id is a hash of their profile.
+    cursor.execute("DROP TRIGGER IF EXISTS lead_returned")
+    cursor.execute("""
+    CREATE TRIGGER lead_returned AFTER INSERT ON leads
+    BEGIN
+        DELETE FROM forgotten_in_backups WHERE lead_id = NEW.id;
+    END
+    """)
+    starting = (
+        ("retention_readings", "SELECT EXISTS (SELECT 1 FROM post_metric_observations)"),
+        ("retention_fold_reactions", "SELECT EXISTS (SELECT 1 FROM lead_interactions WHERE interaction_type = 'LIKE')"),
+    )
+    for key, holds_data in starting:
+        state = "ask" if cursor.execute(holds_data).fetchone()[0] else "on"
+        cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, state))
+
 
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
@@ -861,6 +959,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (20, "Index the interactions the main screens read, and give the planner statistics", _MIGRATION_20_INDEXES),
     (21, "Keep a summary of each post's engagement and readings beside the raw rows", _migrate_post_summary),
     (22, "Index posts, leads and comments for search, kept in step by triggers", _migrate_search_index),
+    (23, "Retention: reaction folds, the lead keep list and a cleanup log", _migrate_retention),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
@@ -940,9 +1039,9 @@ def backup_database(reason: str = "migration") -> Optional[str]:
     name = f"linkedin_studio_{reason}_{stamp}.db"
     target = os.path.join(get_backups_dir(), name)
 
-    source = sqlite3.connect(db_path)
+    source = sqlite_open.connect(db_path)
     try:
-        destination = sqlite3.connect(target)
+        destination = sqlite_open.connect(target)
         try:
             source.backup(destination)
         finally:

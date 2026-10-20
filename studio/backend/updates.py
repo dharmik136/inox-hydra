@@ -38,10 +38,11 @@ except ImportError:
     import egress as _egress
 
 try:
-    from . import paths
+    from . import paths, sqlite_open
     from ..__version__ import __version__
 except ImportError:
     import paths
+    import sqlite_open
     import sys
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     from __version__ import __version__
@@ -68,7 +69,7 @@ def _etag_file() -> str:
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(paths.get_db_path())
+    conn = sqlite_open.connect(paths.get_db_path())
     conn.row_factory = sqlite3.Row
     return conn
 

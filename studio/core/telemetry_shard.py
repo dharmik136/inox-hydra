@@ -147,6 +147,7 @@ class TelemetryEngine:
         conn.execute("PRAGMA journal_mode = WAL")
         conn.execute("PRAGMA synchronous = NORMAL")
         conn.execute("PRAGMA busy_timeout = 5000")
+        conn.execute("PRAGMA secure_delete = ON")
         if path not in self._ready:
             self._ready.add(path)
             self._create_tables(conn)

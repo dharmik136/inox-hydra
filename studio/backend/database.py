@@ -27,9 +27,11 @@ from typing import Optional, List, Dict, Any
 try:
     from .paths import get_db_path, _STUDIO_DIR, DB_FILENAME
     from .migrations import ensure_schema, check_compatibility, backup_database
+    from .sqlite_open import secure
 except ImportError:
     from paths import get_db_path, _STUDIO_DIR, DB_FILENAME
     from migrations import ensure_schema, check_compatibility, backup_database
+    from sqlite_open import secure
 
 # Retained as a module constant for backwards compatibility. Live resolution
 # happens in get_db() so that INOX_HYDRA_HOME can be redirected at runtime.
@@ -70,6 +72,8 @@ def get_db() -> sqlite3.Connection:
     conn.execute("PRAGMA cache_size = -64000;")
     conn.execute("PRAGMA temp_store = MEMORY;")
     conn.execute("PRAGMA mmap_size = 268435456;")
+    # A delete overwrites the freed bytes, so a forgotten person is gone from the file (DATA-01).
+    secure(conn)
     _optimize_when_due(db_path)
     return conn
 

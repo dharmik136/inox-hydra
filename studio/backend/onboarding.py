@@ -1353,6 +1353,19 @@ def lead_review() -> Dict[str, Any]:
                 yours.update(post_summary.lead_ids_of(row))
             elif origin == "not_yours":
                 elsewhere.update(post_summary.lead_ids_of(row))
+        # Reactions older than 24 months that retention folded are no longer
+        # rows but are still engagements, each with whose post it was on when
+        # it was folded (retention.folded_counts).
+        try:
+            from . import retention
+        except ImportError:
+            import retention
+        folded = retention.folded_counts(conn)["by_lead"]
+        for key, fold in folded.items():
+            if int(fold.get("yours") or 0):
+                yours.add(key)
+            elif int(fold.get("not_yours") or 0):
+                elsewhere.add(key)
         candidates = elsewhere - yours
         seen: Dict[str, List[str]] = {lead_id: [] for lead_id in candidates}
         if candidates:
@@ -1361,6 +1374,10 @@ def lead_review() -> Dict[str, Any]:
                                     (json.dumps(sorted(candidates)),)):
                 if row["lead_id"] in seen:
                     seen[row["lead_id"]].append(_origin(row["post_urn"], own_ids, complete))
+            for key in candidates:
+                fold = folded.get(key) or {}
+                for verdict in ("yours", "not_yours", "unknown"):
+                    seen[key].extend([verdict] * int(fold.get(verdict) or 0))
         not_yours = [lead_id for lead_id, origins in seen.items()
                      if origins and all(o == "not_yours" for o in origins)]
         listed = [dict(r) for r in conn.execute(

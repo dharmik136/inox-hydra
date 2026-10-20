@@ -11,6 +11,8 @@ import {
   fetchLeadOfferDraft,
   fetchLeadReview,
   fetchLeadTimeline,
+  type FoldedReactions,
+  fetchLeads,
   fetchLeadsPage,
   forgetLead,
   launchBridge,
@@ -303,6 +305,21 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
 /**
  * The person dossier. A research sheet, not a modal.
  */
+/**
+ * Reactions older than 24 months that Storage and privacy folded into
+ * counts. They are still engagements, so the dossier counts them rather than
+ * dropping them; which posts they were on is what the fold gave up.
+ */
+function FoldedReactionsNote({ folded }: { folded: FoldedReactions }) {
+  return (
+    <p className="studio-meta mt-3 border-l border-edge pl-3 text-[10px] text-ink-muted">
+      {folded.count} {folded.count === 1 ? "REACTION" : "REACTIONS"} MORE THAN 24 MONTHS AGO
+      {folded.on_your_posts ? `, ${folded.on_your_posts} ON YOUR POSTS` : ""}. KEPT AS A COUNT; WHICH POSTS IS NO
+      LONGER RECORDED.
+    </p>
+  );
+}
+
 function Dossier({
   leadId,
   onChanged,
@@ -312,7 +329,7 @@ function Dossier({
   onChanged: () => void;
   onForgotten: (name: string) => void;
 }) {
-  const [data, setData] = useState<{ lead: DossierLead; interactions: LeadInteraction[]; stage_history?: LeadStageEvent[] } | null>(null);
+  const [data, setData] = useState<{ lead: DossierLead; interactions: LeadInteraction[]; stage_history?: LeadStageEvent[]; folded_reactions?: FoldedReactions | null } | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   // The label travels with the text, so the panel can say which of the four
@@ -375,6 +392,7 @@ function Dossier({
   if (!data) return <Centered>LOADING DOSSIER</Centered>;
 
   const { lead, interactions } = data;
+  const folded = data.folded_reactions ?? null;
   // A suggested reply is stored per interaction, so the most recent one that
   // carries a draft is the one worth offering.
   const suggested = interactions.find((entry) => entry.suggested_dm_reply)?.suggested_dm_reply ?? null;
@@ -438,7 +456,9 @@ function Dossier({
              is labelled as when the studio recorded the lead, which is what
              created_at means, rather than presented as the moment they
              engaged, which is not stored. */
-          lead.engagement_type ? (
+          folded ? (
+            <FoldedReactionsNote folded={folded} />
+          ) : lead.engagement_type ? (
             <div className="border-l border-edge pl-3">
               <p className="studio-meta text-[10px]">
                 {lead.engagement_type.toUpperCase()}
@@ -453,6 +473,7 @@ function Dossier({
             <p className="studio-meta text-ink-muted">NO INTERACTIONS RECORDED</p>
           )
         ) : (
+          <>
           <ul className="flex flex-col gap-3">
             {interactions.slice(0, 8).map((entry) => (
               <li key={entry.id} className="border-l border-edge pl-3">
@@ -480,6 +501,8 @@ function Dossier({
               </li>
             ))}
           </ul>
+          {folded && <FoldedReactionsNote folded={folded} />}
+          </>
         )}
       </section>
 
