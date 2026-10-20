@@ -132,6 +132,36 @@ def _latest_post(conn) -> Optional[Dict[str, Any]]:
     }
 
 
+def _marked_published(conn, latest: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    The newest post marked published in the studio that the bridge has not yet
+    seen on LinkedIn, when it is newer than the latest post the bridge has.
+
+    "Your latest post" reads only what the bridge read, so right after Mark as
+    published it went on showing a post from months before, while Analytics
+    and search already had the new one. Today now says which post is waiting.
+    """
+    row = conn.execute(
+        "SELECT id, content, published_at FROM posts WHERE status = 'published' AND activity_urn IS NULL "
+        "AND published_at IS NOT NULL ORDER BY published_at DESC LIMIT 1").fetchone()
+    if not row:
+        return None
+    try:
+        marked = datetime.fromisoformat(row["published_at"])
+        if marked.tzinfo is None:
+            marked = marked.replace(tzinfo=timezone.utc)
+        if latest and latest.get("published_at"):
+            seen = datetime.fromisoformat(latest["published_at"])
+            if seen.tzinfo is None:
+                seen = seen.replace(tzinfo=timezone.utc)
+            if seen >= marked:
+                return None
+    except (TypeError, ValueError):
+        return None
+    return {"post_id": row["id"], "published_at": row["published_at"],
+            "excerpt": " ".join((row["content"] or "").split())[:160] or None}
+
+
 def _reply_to(conn) -> List[Dict[str, Any]]:
     own_ids = onboarding._own_activity_ids(conn)
     if not own_ids:
@@ -310,6 +340,7 @@ def today_brief() -> Dict[str, Any]:
     conn = get_db()
     try:
         latest = _latest_post(conn) if state["steps"]["identity"] else None
+        marked = _marked_published(conn, latest)
         reply_to = _reply_to(conn) if state["steps"]["identity"] else []
         queue = _queue(conn)
         open_next = _open_next(state, latest, conn)
@@ -333,6 +364,7 @@ def today_brief() -> Dict[str, Any]:
         },
         "reply_to": reply_to,
         "latest_post": latest,
+        "marked_published": marked,
         "queue": queue,
         "open_next": open_next,
         "demo_cleanup": demo_cleanup,

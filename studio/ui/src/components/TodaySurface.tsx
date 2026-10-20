@@ -259,6 +259,13 @@ export function TodaySurface({
       </Section>
 
       <Section label="Your latest post">
+        {brief.marked_published && (
+          <p className="mb-3 text-[13px] leading-relaxed text-ink-secondary">
+            You marked {brief.marked_published.excerpt ? `“${brief.marked_published.excerpt}”` : "a post"} as
+            published {formatLocal(brief.marked_published.published_at)}. It appears here, with its figures, once the
+            bridge sees it on LinkedIn.{brief.latest_post ? " Until then, this is the latest one it has read:" : ""}
+          </p>
+        )}
         {brief.latest_post ? (
           <LatestPost post={brief.latest_post} opening={opening} onOpen={(url) => void open(url, "latest")} />
         ) : (

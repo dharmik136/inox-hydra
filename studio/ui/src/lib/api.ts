@@ -2134,6 +2134,8 @@ export interface TodayBrief {
   freshness: { bridge: BridgeStatus; drifting: string[]; last_capture_at: string | null; posts_held?: number };
   reply_to: TodayPerson[];
   latest_post: TodayLatestPost | null;
+  /** The newest post marked published here that the bridge has not yet seen on LinkedIn. */
+  marked_published?: { post_id: string; published_at: string; excerpt: string | null } | null;
   queue: {
     next_scheduled: { post_id: string; scheduled_for: string; excerpt: string } | null;
     next_open_slot: { local_datetime: string; day_name: string; time_slot: string; label: string | null } | null;

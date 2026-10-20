@@ -77,6 +77,22 @@ def test_posts_dates_read_as_dates_and_activity_figures_as_figures(studio):
     assert "Comments: not measured" in row, row
 
 
+def test_today_names_the_post_just_marked_published(studio):
+    """D-9: Today showed a months-old post as your latest right after Mark as published."""
+    from qc2_r5_live import seed_creator
+
+    client = studio["client"]
+    seed_creator(client, commenter=None)
+    created = client.post("/api/posts", json={"content": "Shipping the rota rewrite today.", "status": "draft"})
+    post_id = created.json()["id"]
+    assert client.post(f"/api/posts/{post_id}/publish-now").status_code == 200
+    page = studio["page"]
+    page.goto(studio["url"] + "/#/today", wait_until="networkidle")
+    section = page.locator("section", has_text="Your latest post").first.inner_text()
+    assert "You marked “Shipping the rota rewrite today.” as published" in section, section
+    assert "once the bridge sees it on LinkedIn" in section, section
+
+
 def test_today_does_not_say_nothing_captured_beside_posts_it_holds(studio):
     """D-10: "captured" counted the capture's runs, which a creator cannot see."""
     client = studio["client"]
