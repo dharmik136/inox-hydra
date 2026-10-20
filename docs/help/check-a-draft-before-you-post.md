@@ -48,7 +48,7 @@ The score starts at 100 and never goes below 20.
 | Dashes | Any em dash or en dash | 5 |
 | Mentions | More than 3 @mentions | 10 |
 
-The link penalty text says "-40% algorithmic reach penalty". That figure is the studio's rule of thumb. LinkedIn has not published it and the studio has not measured it. **Est. dwell** is worked out from word count at 200 words a minute. It is not a measurement of real readers.
+The points off are the studio's own weighting. The messages say what the audit found in the text and give advice; they state no reach figure, because LinkedIn has not published one and the studio has not measured one. **Est. dwell** is worked out from word count at 200 words a minute. It is not a measurement of real readers.
 
 > [!TIP]
 > To clear the dash penalty, select the text and choose **Clean formatting** in the toolbar that appears over a selection. It replaces em dashes, and en dashes with a space on each side, with commas. An en dash with no spaces, as in Mon-Fri or 2021-2024, becomes a hyphen.

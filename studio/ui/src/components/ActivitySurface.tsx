@@ -15,6 +15,7 @@ import {
   syncAllActivity,
   type ActivityStreamData,
 } from "@/lib/api";
+import { importEnding } from "@/lib/importOutcome";
 import { cn } from "@/lib/utils";
 
 function ago(iso: string): string {
@@ -38,6 +39,8 @@ export function ActivitySurface({
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  /** When the studio last answered, the one thing a refresh measures. */
+  const [loadedAt, setLoadedAt] = useState<Date | null>(null);
   const [tab, setTab] = useState<"posts" | "comments" | "reactions" | "leads" | "imports">("posts");
   const [copiedUrn, setCopiedUrn] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -50,6 +53,7 @@ export function ActivitySurface({
     try {
       const result = await fetchActivityStream(50);
       setStream(result);
+      setLoadedAt(new Date());
       setFailed(false);
     } catch {
       setFailed(true);
@@ -127,7 +131,7 @@ export function ActivitySurface({
         <div className="max-w-[44ch] text-center">
           <p className="studio-label text-signal-orange-text">ACTIVITY STREAM UNAVAILABLE</p>
           <p className="mt-2 text-[13px] text-ink-muted">
-            The local studio server is unreachable or returned an authentication error. Verify that the backend service is running on 127.0.0.1:8000.
+            The studio is not answering, or refused this page&apos;s request. Check that it is still running, then retry.
           </p>
           <button
             type="button"
@@ -205,8 +209,18 @@ export function ActivitySurface({
             )}
           >
             <Radio className="size-3.5" aria-hidden="true" />
-            <span>{autoRefresh ? "Live updates on" : "Live updates off"}</span>
+            <span>{autoRefresh ? "Auto refresh on" : "Auto refresh off"}</span>
           </button>
+          {/* This said "Live updates on" while the studio was down and the
+              list was stale. It says when the studio last answered instead,
+              and that it has stopped when it has. */}
+          {loadedAt && (
+            <span className={cn("studio-meta text-[10px]", failed ? "text-signal-orange-text" : "text-ink-muted")}>
+              {failed
+                ? `Studio not answering. Updated ${loadedAt.toLocaleTimeString()}`
+                : `Updated ${loadedAt.toLocaleTimeString()}`}
+            </span>
+          )}
           <button
             type="button"
             onClick={() => loadData()}
@@ -535,34 +549,39 @@ export function ActivitySurface({
                     </td>
                   </tr>
                 ) : (
-                  stream.recent_imports.map((req) => (
-                    <tr key={req.id}>
-                      <td className="py-2 font-medium uppercase text-ink-primary">{req.kind}</td>
-                      <td className="py-2">
-                        <span
-                          className={cn(
-                            "rounded px-1.5 py-0.5 text-[10px] uppercase font-medium",
-                            req.outcome === "completed"
-                              ? "bg-signal-green-subtle text-signal-green-text"
-                              : req.outcome === "pending"
-                              ? "bg-signal-orange-subtle text-signal-orange-text"
-                              : "bg-soft text-ink-secondary",
-                          )}
-                        >
-                          {req.outcome}
-                        </span>
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-ink-secondary">
-                        {req.items_seen ?? "-"}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-ink-muted">
-                        {ago(req.requested_at)}
-                      </td>
-                      <td className="py-2 text-right tabular-nums text-ink-muted">
-                        {req.finished_at ? ago(req.finished_at) : "-"}
-                      </td>
-                    </tr>
-                  ))
+                  stream.recent_imports.map((req) => {
+                    // Green only for an import read to the end. This keyed on
+                    // the old "completed", so a whole history showed in grey.
+                    const ending = importEnding(req);
+                    return (
+                      <tr key={req.id}>
+                        <td className="py-2 font-medium uppercase text-ink-primary">{req.kind}</td>
+                        <td className="py-2">
+                          <span
+                            className={cn(
+                              "rounded px-1.5 py-0.5 text-[10px] uppercase font-medium",
+                              ending.tone === "done"
+                                ? "bg-signal-green-subtle text-signal-green-text"
+                                : ending.tone === "partial"
+                                ? "bg-signal-orange-subtle text-signal-orange-text"
+                                : "bg-soft text-ink-secondary",
+                            )}
+                          >
+                            {ending.label}
+                          </span>
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-ink-secondary">
+                          {req.items_seen ?? "-"}
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-ink-muted">
+                          {ago(req.requested_at)}
+                        </td>
+                        <td className="py-2 text-right tabular-nums text-ink-muted">
+                          {req.finished_at ? ago(req.finished_at) : "-"}
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

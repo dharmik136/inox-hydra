@@ -535,7 +535,8 @@ class CreatorProfilePayload(BaseModel):
 
 class CopilotRequest(BaseModel):
     raw_content: str
-    target_audience: Optional[str] = "Engineering & Product Leaders"
+    # No default: an audience nobody gave is not told to the model (F2-N2).
+    target_audience: Optional[str] = None
     post_format: Optional[str] = "framework_breakdown"
     attached_media_type: Optional[str] = None
 
@@ -1128,6 +1129,12 @@ get_evidence_brief = insights_router_module.get_evidence_brief
 def get_today():
     """What to do in the next hour. See today.py."""
     return today_module.today_brief()
+
+
+@app.post("/api/v1/today/demo-cleanup-notice/dismiss", tags=["Onboarding"])
+def dismiss_demo_cleanup_notice():
+    """Hides Today's note on removed demo content; the record of it is kept."""
+    return today_module.dismiss_demo_cleanup()
 
 
 @app.get("/api/v1/onboarding/state", tags=["Onboarding"])

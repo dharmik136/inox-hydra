@@ -79,7 +79,7 @@ If you imported your archive in step 4, this step only adds what has happened si
 
 Click **Import**. The bridge browser opens that activity page, and the extension scrolls it for you. A banner at the bottom of the page reads "Studio is importing your posts: N so far." with a **Stop** button.
 
-- Keep the tab in view. The import pauses while the tab is hidden.
+- Keep the tab in view. The import pauses while the tab is hidden, and Setup then says PAUSED AT the count so far, BRING THE LINKEDIN TAB TO THE FRONT TO GO ON.
 - It stops by itself when the list stops growing. If the page has nothing more to load, that is the end of the list: the banner reads "Done. N posts imported." and the row in Setup reads **READ TO THE END**.
 - If the page still offers more (a **Show more** button, or a list still loading), the list stalled rather than ended. The banner says so, and the row reads **THE LIST STOPPED LOADING AT N. IMPORT AGAIN**. One import also reads at most 250 rounds of the list; past that the row reads **THE MOST ONE IMPORT READS**.
 - **Stop** ends it early. What was read so far is kept.

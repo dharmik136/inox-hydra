@@ -223,7 +223,7 @@ class LinkedInContentCopilotAgent:
         self,
         topic: str,
         content: str,
-        audience: str = "Engineering & Product Leaders",
+        audience: Optional[str] = None,
         post_format: str = "framework_breakdown",
     ) -> tuple:
         """
@@ -248,7 +248,8 @@ class LinkedInContentCopilotAgent:
         grounding_inputs = grounded["inputs"]
 
         brief_inputs = {
-            "audience": audience,
+            # Left out when not given: Brief skips empty inputs.
+            "audience": (audience or "").strip(),
             "post_format": post_format,
             "draft_excerpt": content[:600],
         }

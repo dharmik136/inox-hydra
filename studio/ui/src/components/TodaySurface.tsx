@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, Check, ExternalLink, Loader2 } from "lucide-react";
+import { Activity, Check, CheckCheck, Copy, ExternalLink, Loader2 } from "lucide-react";
 import {
+  dismissDemoCleanupNotice,
   fetchToday,
   launchBridge,
+  publishNow,
   syncAllActivity,
   type MetricComparison,
   type TodayBrief,
@@ -25,17 +27,19 @@ export function TodaySurface({
   onOpenLead,
   onOpenSetup,
   onOpenActivity,
+  onOpenQueue,
 }: {
   onOpenLead: (leadId: string) => void;
   onOpenSetup: () => void;
   onOpenActivity?: () => void;
+  onOpenQueue?: () => void;
 }) {
   const [brief, setBrief] = useState<TodayBrief | null>(null);
   const [failed, setFailed] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
   // What happened after a click, shown in the section that was clicked
   // rather than at the foot of the page, out of sight.
-  const [note, setNote] = useState<{ text: string; at: "top" | "latest"; error: boolean } | null>(null);
+  const [note, setNote] = useState<{ text: string; at: "top" | "latest" | "due"; error: boolean } | null>(null);
 
   const load = useCallback(() => {
     fetchToday()
@@ -79,14 +83,105 @@ export function TodaySurface({
     }
   }
 
+  // A due post is copied and posted by hand; the studio records it as
+  // published only when the creator says it is, as the Queue does.
+  async function copyDue(content: string) {
+    setNote(null);
+    try {
+      await navigator.clipboard.writeText(content);
+      setNote({ text: "Copied. Paste it into LinkedIn, post it, then press I posted it.", at: "due", error: false });
+    } catch {
+      setNote({ text: "This browser did not allow copying. Open the Queue to select the text.", at: "due", error: true });
+    }
+  }
+
+  async function markPosted(postId: string) {
+    setOpening(postId);
+    setNote(null);
+    try {
+      await publishNow(postId);
+      // Said at the top: with nothing left due, the due box goes.
+      setNote({ text: "Marked as published.", at: due.length > 1 ? "due" : "top", error: false });
+      load();
+    } catch (caught) {
+      setNote({
+        text: caught instanceof Error ? caught.message : "The studio refused to mark it as published.",
+        at: "due",
+        error: true,
+      });
+    } finally {
+      setOpening(null);
+    }
+  }
+
   if (failed && !brief) return <Centered>TODAY IS UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!brief) return <Centered>LOADING TODAY</Centered>;
+  // Absent from a studio older than this screen; nothing is due then.
+  const due = brief.queue.due ?? [];
 
   return (
     <article className="mx-auto max-w-[72ch] px-8 py-8">
       <p className="studio-label">Today</p>
       <h1 className="studio-title mt-2">What to do in the next hour</h1>
       <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">{freshnessLine(brief)}</p>
+
+      {brief.demo_cleanup && <DemoCleanupNotice notice={brief.demo_cleanup} onDismissed={load} />}
+
+      {/* First, because it has a time on it. A queued post is not posted by
+          the studio: at its time it waits here and on the Queue. */}
+      {due.length > 0 && (
+        <section className="mt-6 rounded-md border border-signal-orange p-4">
+          <p className="studio-meta text-[10px] text-signal-orange-text">
+            {due.length === 1 ? "A POST IS DUE" : `${due.length} POSTS ARE DUE`}
+          </p>
+          <p className="mt-1.5 text-[14px] leading-snug text-ink-primary">
+            Its time has come. Copy the text, post it on LinkedIn yourself, then press I posted it.
+          </p>
+          <ul className="mt-3 flex flex-col divide-y divide-edge border-y border-edge">
+            {due.map((post) => (
+              <li key={post.post_id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2">
+                <span className="studio-meta shrink-0 text-[10px] text-signal-orange-text">
+                  DUE {formatWhen(post.scheduled_for).toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-[13px] text-ink-secondary">{post.excerpt}</span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void copyDue(post.content)}
+                    className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+                  >
+                    <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                    Copy text
+                  </button>
+                  <button
+                    type="button"
+                    disabled={opening !== null}
+                    onClick={() => void markPosted(post.post_id)}
+                    className="flex items-center gap-1.5 rounded-md bg-signal-orange px-2.5 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+                  >
+                    {opening === post.post_id ? (
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <CheckCheck className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                    )}
+                    I posted it
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+          {onOpenQueue && (
+            <button
+              type="button"
+              onClick={onOpenQueue}
+              className="mt-3 text-[12px] text-ink-secondary underline underline-offset-2 hover:text-ink-primary"
+            >
+              Not posting it? Move it back to drafts from the Queue
+            </button>
+          )}
+          {note?.at === "due" && <Note text={note.text} error={note.error} />}
+        </section>
+      )}
 
       <section className="mt-6 rounded-md border border-edge-strong p-4">
         <p className="studio-meta text-[10px] text-ink-muted">ONE THING TO OPEN</p>
@@ -192,6 +287,65 @@ export function TodaySurface({
         </dl>
       </Section>
     </article>
+  );
+}
+
+const REMOVED_NAMES: Record<string, [string, string]> = {
+  drafts: ["draft", "drafts"],
+  posts: ["post", "posts"],
+  leads: ["lead", "leads"],
+  analytics_days: ["day of analytics", "days of analytics"],
+  audience_rows: ["audience row", "audience rows"],
+};
+
+/**
+ * Said once, after the studio removed sample content an earlier version had
+ * seeded into every install. Rows a creator could see went, so the screen
+ * says what and where the copy from before is, until they dismiss it.
+ */
+function DemoCleanupNotice({
+  notice,
+  onDismissed,
+}: {
+  notice: NonNullable<TodayBrief["demo_cleanup"]>;
+  onDismissed: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [hidden, setHidden] = useState(false);
+  if (hidden) return null;
+  const counts = notice.removed
+    .map(({ kind, count }) => {
+      const [one, many] = REMOVED_NAMES[kind] ?? [kind.replace(/_/g, " "), kind.replace(/_/g, " ")];
+      return `${count} ${count === 1 ? one : many}`;
+    })
+    .join(", ");
+
+  async function dismiss() {
+    setError(null);
+    try {
+      await dismissDemoCleanupNotice();
+      setHidden(true);
+      onDismissed();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The studio did not record that. Try again.");
+    }
+  }
+
+  return (
+    <div role="status" className="mt-6 rounded-md border border-edge-strong bg-soft p-4">
+      <p className="text-[13px] leading-relaxed break-words text-ink-secondary">
+        The studio removed sample content it had added in an earlier version: {counts}.
+        {notice.backup ? ` A copy of your database from before is at ${notice.backup}.` : ""}
+      </p>
+      <button
+        type="button"
+        onClick={() => void dismiss()}
+        className="mt-3 rounded-md border border-edge bg-canvas px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:text-ink-primary"
+      >
+        Dismiss
+      </button>
+      {error && <p role="alert" className="studio-meta mt-2 text-signal-orange-text">{error}</p>}
+    </div>
   );
 }
 

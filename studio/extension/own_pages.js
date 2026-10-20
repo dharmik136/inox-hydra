@@ -1194,7 +1194,13 @@
     for (let round = 0; round < MAX_ROUNDS; round += 1) {
       if (stopRequested) { outcome = "stopped"; break; }
       if (pageKind() !== kind) { outcome = "left_page"; break; }
-      await whileHidden();
+      // A hidden tab does not scroll, so the import waits. The studio is told,
+      // so Setup says it is paused and why instead of SCROLLING NOW.
+      if (document.visibilityState !== "visible" && !stopRequested) {
+        await studio("/api/v1/self/imports/event", { id: request.id, event: "paused", items_seen: total });
+        await whileHidden();
+        await studio("/api/v1/self/imports/event", { id: request.id, event: "resumed", items_seen: total });
+      }
 
       const added = await sendActivity(kind, me);
       total += added;

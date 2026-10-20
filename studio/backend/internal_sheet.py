@@ -22,10 +22,12 @@ from typing import Any, Dict, List, Optional
 
 try:
     from .database import get_db
+    from .support import _cell as csv_cell
     from .gstack_governance import gstack_engine
     from . import devtools
 except ImportError:
     from database import get_db
+    from support import _cell as csv_cell
     from gstack_governance import gstack_engine
     import devtools
 
@@ -487,7 +489,9 @@ class InternalSheetManager:
             failure_count = sum(
                 1 for n in network if isinstance(n, dict) and str(n.get("status") or "").startswith(("4", "5"))
             )
-            writer.writerow([
+            # Through csv_cell, as the other exports do: titles, selectors
+            # and captured text that begin with =, +, - or @ ran as formulas.
+            writer.writerow([csv_cell(value) for value in (
                 item.get("id"),
                 item.get("status"),
                 item.get("severity"),
@@ -508,7 +512,7 @@ class InternalSheetManager:
                 item.get("gstack_task_id") or "",
                 item.get("created_at"),
                 item.get("resolved_at") or "",
-            ])
+            )])
 
         return output.getvalue()
 

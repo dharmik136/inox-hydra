@@ -454,14 +454,21 @@ def generate_10x_hooks(topic_or_draft: Optional[str]) -> List[Dict[str, Any]]:
 
 def audit_linkedin_algorithm_safety(text: Optional[str]) -> Dict[str, Any]:
     """
-    Evaluates draft content against 2026 LinkedIn newsfeed algorithmic distribution guidelines:
-    1. Outbound link in post body (incurs -40% distribution penalty)
-    2. Hashtag spam (>5 hashtags triggers spam filter)
-    3. Wall-of-text dwell time penalty
-    4. Em-dash and unnatural corporate syntax
-    5. Tagging spam (>3 @mentions)
-    6. Estimated dwell time (reading speed ~200 wpm)
+    Checks a draft for the things creators are commonly told to avoid:
+    1. An outbound link in the post body
+    2. More than 5 hashtags
+    3. Dense paragraphs
+    4. Em and en dashes
+    5. More than 3 @mentions
+    6. Estimated reading time (about 200 words a minute)
     Guarded against null inputs and truncated to MAX_AUDIT_TEXT_LENGTH.
+
+    The messages say what was found in the text, and advice as advice. They
+    used to state reach effects as fact ("-40% algorithmic reach penalty",
+    tagging "demotes post reach", "High algorithmic retention potential"):
+    LinkedIn has published none of these figures and the studio measures none
+    of them. The points off are this audit's own weighting, and the help
+    article says so.
     """
     raw_text = text if isinstance(text, str) else str(text or "")
     text_clean = raw_text[:MAX_AUDIT_TEXT_LENGTH]
@@ -488,15 +495,15 @@ def audit_linkedin_algorithm_safety(text: Optional[str]) -> Dict[str, Any]:
     urls_found = re.findall(url_pattern, text_clean)
     if urls_found:
         safety_score -= 35
-        penalties.append("Outbound URL detected in post body (-40% algorithmic reach penalty).")
-        recommendations.append("Move external links to the 1st comment or profile banner to maximize organic feed impressions.")
+        penalties.append("Outbound link in the post body.")
+        recommendations.append("Many creators put links in the first comment instead. The studio has not measured what a link does to reach.")
 
     # 2. Hashtags check
     hashtags = re.findall(r'#\w+', text_clean)
     if len(hashtags) > 5:
         safety_score -= 15
-        penalties.append(f"Hashtag stuffing ({len(hashtags)} tags detected; maximum optimal is 3-5).")
-        recommendations.append("Reduce to 3-5 niche-relevant tags to avoid spam categorization.")
+        penalties.append(f"{len(hashtags)} hashtags, more than 5.")
+        recommendations.append("Keep the few hashtags that name your topic.")
     elif len(hashtags) == 0:
         recommendations.append("Consider adding 2-3 focused hashtags about your topic to aid discovery.")
 
@@ -505,8 +512,8 @@ def audit_linkedin_algorithm_safety(text: Optional[str]) -> Dict[str, Any]:
     dense_paragraphs = [p for p in paragraphs if len(p.splitlines()) > 3]
     if dense_paragraphs:
         safety_score -= 15
-        penalties.append("Dense paragraph detected (reduces mobile dwell time and scroll stoppage).")
-        recommendations.append("Insert line breaks after 1-2 sentences for clean visual cadence.")
+        penalties.append("Dense paragraph: more than 3 lines with no blank line.")
+        recommendations.append("Break after 1-2 sentences. Dense blocks are harder to read on a phone.")
 
     # 4. Em-dashes check
     if chr(0x2014) in text_clean or chr(0x2013) in text_clean:
@@ -518,17 +525,15 @@ def audit_linkedin_algorithm_safety(text: Optional[str]) -> Dict[str, Any]:
     mentions = re.findall(r'@\w+', text_clean)
     if len(mentions) > 3:
         safety_score -= 10
-        penalties.append(f"Excessive tags ({len(mentions)} @mentions).")
-        recommendations.append("Tagging >3 people who do not reply within 60 minutes demotes post reach.")
+        penalties.append(f"{len(mentions)} @mentions, more than 3.")
+        recommendations.append("Tag only the people the post is about.")
 
     # 6. Dwell time estimation
     words = len(re.findall(r'\b\w+\b', text_clean))
     est_seconds = int((words / 200) * 60)
 
     if est_seconds < 15 and len(text_clean.strip()) > 0:
-        recommendations.append("Post is brief (<15s read time). Expand on 1-2 core actionable points to boost dwell time.")
-    elif 45 <= est_seconds <= 90:
-        recommendations.append("Optimal dwell time window (45-90 seconds). High algorithmic retention potential.")
+        recommendations.append("Post is brief, under 15 seconds to read. Expand on 1-2 core points if there is more to say.")
 
     final_score = max(safety_score, 20)
     status_label = "Optimal" if final_score >= 85 else ("Moderate Risk" if final_score >= 60 else "High Penalty Risk")

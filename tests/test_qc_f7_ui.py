@@ -232,7 +232,7 @@ def test_activity_copy_urn_shows_a_tick_only_after_the_copy(studio, studio_url):
     session = studio()
     _deny_clipboard(session.page)
     page = session.open("Activity")
-    page.get_by_role("button", name="Live updates on").click()
+    page.get_by_role("button", name="Auto refresh on").click()
     page.get_by_role("button", name="Copy activity URN").first.click()
     page.wait_for_timeout(300)
     first = page.locator("article").get_by_role("button", name="Copy activity URN").first
@@ -318,7 +318,7 @@ def _open_in_bridge(studio, studio_url, answer):
     session = studio()
     session.answer("/api/v1/browser/launch", *answer)
     page = session.open("Activity")
-    page.get_by_role("button", name="Live updates on").click()
+    page.get_by_role("button", name="Auto refresh on").click()
     page.get_by_role("button", name="Open in Bridge Browser").first.click()
     return session, page
 

@@ -504,7 +504,7 @@ def test_the_header_claims_no_live_connection_it_has_not_seen(new_page, studio_u
     _clear_posts(api)
     page = new_page()
     page.goto(studio_url + "/#/setup", wait_until="networkidle")
-    activity = page.get_by_role("button", name=re.compile("Live Activity"))
+    activity = page.locator("header").get_by_role("button", name=re.compile(r"^Activity"))
     expect(activity).to_be_visible()
     assert activity.locator(".animate-pulse").count() == 0, "a pulsing dot claims live activity"
     assert activity.locator(".bg-signal-green").count() == 0, "a green dot claims a bridge never seen"

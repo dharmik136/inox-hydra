@@ -156,8 +156,14 @@ export function StudioRail({ sections, active, onSelect, trayOpen, onToggleTray,
 
       {/* Local shield. Blueprint section 14 asks for a persistent trust signal
           that stays calm rather than shouting. It is the one always visible
-          piece of state that is not about the document. */}
-      <div className="mb-3 flex flex-col items-center gap-1" title="All processing is local to this machine">
+          piece of state that is not about the document. It used to say
+          "All processing is local to this machine", which Send to LinkedIn
+          and a connected AI provider contradict, so it says what stays and
+          where to see what leaves, as Local security does. */}
+      <div
+        className="mb-3 flex flex-col items-center gap-1"
+        title="Your work is kept on this machine. Send to LinkedIn, a connected AI provider and Generate send what you choose; Brand Studio, Local security, lists what leaves and when."
+      >
         <ShieldCheck className="size-[18px] text-signal-green-text" strokeWidth={1.75} aria-hidden="true" />
         <span className="studio-meta text-[9px] tracking-wider text-ink-muted">LOCAL</span>
       </div>
