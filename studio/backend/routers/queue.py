@@ -13,16 +13,16 @@ from datetime import datetime, timezone
 import json
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 try:
-    from ..database import get_db
-    from ..scheduler import native_scheduler, parse_datetime_flexible
+    from ..database import get_db, neutral_slot_label
+    from ..scheduler import native_scheduler, parse_datetime_flexible, DAY_NAMES
     from ..event_bus import event_bus
 except ImportError:
-    from database import get_db
-    from scheduler import native_scheduler, parse_datetime_flexible
+    from database import get_db, neutral_slot_label
+    from scheduler import native_scheduler, parse_datetime_flexible, DAY_NAMES
     from event_bus import event_bus
 
 router = APIRouter()
@@ -62,6 +62,90 @@ def get_smart_slots():
         }
     finally:
         conn.close()
+
+
+class SlotPayload(BaseModel):
+    day_of_week: Optional[int] = Field(None, ge=0, le=6)
+    time_slot: Optional[str] = Field(None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    label: Optional[str] = Field(None, max_length=80)
+
+
+def _slot(conn, slot_id: int) -> Dict[str, Any]:
+    row = conn.execute("SELECT * FROM queue_slots WHERE id = ?", (slot_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="There is no such slot. Reload the Queue.")
+    return dict(row)
+
+
+def _refuse_duplicate(conn, day: int, time_slot: str, slot_id: Optional[int] = None) -> None:
+    row = conn.execute(
+        "SELECT id FROM queue_slots WHERE day_of_week = ? AND time_slot = ? AND is_active = 1 AND id IS NOT ?",
+        (day, time_slot, slot_id),
+    ).fetchone()
+    if row:
+        raise HTTPException(
+            status_code=409,
+            detail=f"There is already a slot on {DAY_NAMES[day]} at {time_slot}.",
+        )
+
+
+@router.post("/api/queue/slots", tags=["Smart Queue"])
+def add_queue_slot(payload: SlotPayload):
+    """
+    Adds a weekly slot, a local wall-clock time on one day of the week. With
+    no label it is named for the day and the part of the day.
+    """
+    if payload.day_of_week is None or payload.time_slot is None:
+        raise HTTPException(status_code=400, detail="A slot needs a day and a time, such as Tuesday 08:30.")
+    label = (payload.label or "").strip() or neutral_slot_label(payload.day_of_week, payload.time_slot)
+    conn = get_db()
+    try:
+        with conn:
+            _refuse_duplicate(conn, payload.day_of_week, payload.time_slot)
+            cursor = conn.execute(
+                "INSERT INTO queue_slots (day_of_week, time_slot, label, is_active) VALUES (?, ?, ?, 1)",
+                (payload.day_of_week, payload.time_slot, label),
+            )
+            slot = _slot(conn, cursor.lastrowid)
+    finally:
+        conn.close()
+    slot["day_name"] = DAY_NAMES[slot["day_of_week"]]
+    return {"status": "success", "slot": slot}
+
+
+@router.put("/api/queue/slots/{slot_id}", tags=["Smart Queue"])
+def update_queue_slot(slot_id: int, payload: SlotPayload):
+    """Changes a slot's day, time or name. Posts already queued keep their times."""
+    conn = get_db()
+    try:
+        with conn:
+            slot = _slot(conn, slot_id)
+            day = slot["day_of_week"] if payload.day_of_week is None else payload.day_of_week
+            time_slot = slot["time_slot"] if payload.time_slot is None else payload.time_slot
+            label = slot["label"] if payload.label is None else (payload.label.strip() or neutral_slot_label(day, time_slot))
+            _refuse_duplicate(conn, day, time_slot, slot_id)
+            conn.execute(
+                "UPDATE queue_slots SET day_of_week = ?, time_slot = ?, label = ? WHERE id = ?",
+                (day, time_slot, label, slot_id),
+            )
+            slot = _slot(conn, slot_id)
+    finally:
+        conn.close()
+    slot["day_name"] = DAY_NAMES[slot["day_of_week"]]
+    return {"status": "success", "slot": slot}
+
+
+@router.delete("/api/queue/slots/{slot_id}", tags=["Smart Queue"])
+def delete_queue_slot(slot_id: int):
+    """Removes a weekly slot. Posts already queued for it keep their times."""
+    conn = get_db()
+    try:
+        with conn:
+            _slot(conn, slot_id)
+            conn.execute("DELETE FROM queue_slots WHERE id = ?", (slot_id,))
+    finally:
+        conn.close()
+    return {"status": "success", "deleted": slot_id}
 
 
 @router.get("/api/queue/next-slot", tags=["Smart Queue"])

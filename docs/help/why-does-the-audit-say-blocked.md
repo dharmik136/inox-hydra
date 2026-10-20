@@ -3,7 +3,7 @@ Match each message under Checks to its cause and fix, and learn why WORTH A LOOK
 
 ## Short answer
 
-WORTH A LOOK is advice. It does not stop you doing anything. **Publish** in the Composer, and **Mark as published**, **Queue it** and **Send to LinkedIn** in the dialog it opens, never run the checks. The queue does not check them either. You can post a draft that reads WORTH A LOOK, and a draft that reads ALL CLEAR gets no special treatment. Older versions of the studio said BLOCKED here, and meant the same thing.
+WORTH A LOOK is advice. It does not stop you doing anything. **Publish** in the Composer, and **Copy and mark posted**, **Queue it** and **Send to LinkedIn** in the dialog it opens, never run the checks. The queue does not check them either. You can post a draft that reads WORTH A LOOK, and a draft that reads ALL CLEAR gets no special treatment. Older versions of the studio said BLOCKED here, and meant the same thing.
 
 The **Checks** section sits at the bottom of the inspector's **Audit** tab, below the Distribution audit. With nothing in the Composer, the tab reads NOTHING TO AUDIT YET and runs no checks. For how to open the inspector and read the rest of the tab, see [Check a draft before you post](check-a-draft-before-you-post.md).
 

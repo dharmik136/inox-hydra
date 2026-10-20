@@ -51,17 +51,19 @@ Saving is manual. Press **Save** in the top bar, or **Ctrl+S** (**Cmd+S** on a M
 | SAVING | The save is in progress |
 | SAVED 14:02:37 | Written to the database at that time |
 | SAVE FAILED | The save did not happen. Your text is still in the editor, and the reason is written in orange under the bar |
-| MARKED AS PUBLISHED | You used **Mark as published** on this post. After **Queue it** or **Send to LinkedIn**, that action's own message shows here instead, for example SCHEDULED FOR followed by the slot |
+| COPIED AND MARKED AS POSTED | You used **Copy and mark posted** on this post. After **Queue it** or **Send to LinkedIn**, that action's own message shows here instead, for example QUEUED FOR followed by the slot |
 
 ## What happens
 
-The first save creates a post in the studio's local database with the status draft. Later saves overwrite that same post. Nothing is sent anywhere. The next time you open the studio, the Composer reopens the draft you created most recently.
+The first save creates a post in the studio's local database with the status draft. Later saves overwrite that same post, unless you have cleared the editor or replaced all of its text at once since (see below). Nothing is sent anywhere. The next time you open the studio, the Composer reopens the draft you created most recently.
 
 ## Start a new post
 
-There is no New draft button, no list of drafts, and no way to delete a post from the interface.
+Press **New post** in the top bar. The editor clears, and the post you were writing stays in **Drafts** as it was last saved. If it has unsaved changes, the studio asks before it lets them go.
 
-After you use **Mark as published**, **Queue it** or **Send to LinkedIn**, the post leaves the draft list and the editor clears. Type the next post there: its first **Save** creates a new post, and the one you just recorded or queued is not touched. A queued post stays on the **Queue**, and a published one in **Analytics**. See [Start a new post or find an earlier one](start-a-new-post-or-find-an-earlier-one.md) and [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md).
+If you empty the editor, or select all of its text and type or paste over it, the Composer treats what follows as a new post. A line under the bar says your earlier draft is kept as it was saved, and the next **Save** creates a separate draft. Press **Write over that draft instead** on that line if you meant to rewrite the earlier draft.
+
+After **Copy and mark posted**, **Queue it** or **Send to LinkedIn**, the post leaves the draft list and the Composer clears, so the next post you type is saved as a new one and the one you just recorded or queued is not touched. A queued post stays on the **Queue**, and a published one in **Analytics**. See [Start a new post, or find one you wrote earlier](start-a-new-post-or-find-an-earlier-one.md) and [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md).
 
 ## If it does not work
 

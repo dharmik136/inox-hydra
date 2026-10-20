@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { CheckCheck, Copy, Pause, Play, Undo2, Zap } from "lucide-react";
+import { CheckCheck, Copy, Pause, Play, Plus, Trash2, Undo2, Zap } from "lucide-react";
 import {
+  addQueueSlot,
+  deleteQueueSlot,
   dispatchQueueNow,
   fetchCadenceHealth,
   fetchDuePosts,
@@ -11,12 +13,14 @@ import {
   type CadenceHealth,
   type QueueSlot,
   type ScheduledPost,
+  updateQueueSlot,
 } from "@/lib/api";
 import { useRefresh } from "@/lib/refresh";
 import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 /**
  * The smart queue (blueprint build order phase 4).
@@ -87,7 +91,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
       const actions = await dispatchQueueNow();
       setDispatchNote(
         actions.length
-          ? `${actions.length} post${actions.length === 1 ? "" : "s"} marked due or moved to a later slot`
+          ? `${actions.length} post${actions.length === 1 ? "" : "s"} marked due`
           : "Nothing was due",
       );
       await load();
@@ -140,8 +144,6 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
 
   if (failed && !slots) return <Centered>QUEUE UNAVAILABLE</Centered>;
   if (!slots || !health) return <Centered>LOADING QUEUE</Centered>;
-
-  const byDay = DAYS.map((_, index) => slots.filter((slot) => slot.day_of_week === index));
 
   return (
     <div className="mx-auto max-w-[96ch] px-8 py-8">
@@ -288,28 +290,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
         </section>
       )}
 
-      <section className="mt-8">
-        <p className="studio-label mb-3">Weekly slots</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-          {byDay.map((daySlots, index) => (
-            <div key={DAYS[index]} className="rounded-md border border-edge p-2">
-              <p className="studio-meta text-[10px]">{DAYS[index].toUpperCase()}</p>
-              {daySlots.length === 0 ? (
-                <p className="mt-1.5 text-[11px] text-ink-muted">None</p>
-              ) : (
-                <ul className="mt-1.5 flex flex-col gap-1">
-                  {daySlots.map((slot) => (
-                    <li key={slot.id} className="text-[12px] text-ink-primary">
-                      {formatSlotTime(slot.time_slot)}
-                      <span className="block text-[10px] text-ink-muted">{slot.label}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
+      <WeeklySlots slots={slots} onChanged={load} />
 
       <section className="mt-8">
         <p className="studio-label mb-3">Queued posts</p>
@@ -340,6 +321,187 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
         )}
       </section>
     </div>
+  );
+}
+
+/**
+ * The creator's posting week: the times Queue it offers, in this machine's
+ * local time.
+ *
+ * These were thirteen fixed slots named after the original author's own
+ * themes, with no way to change them. Each one can now be retimed, renamed
+ * or removed, and slots added. A slot left unnamed is called after its day
+ * and the part of the day. Posts already queued keep their times.
+ */
+function WeeklySlots({ slots, onChanged }: { slots: QueueSlot[]; onChanged: () => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
+  const [draft, setDraft] = useState<Record<number, { time: string; label: string }>>({});
+  const [adding, setAdding] = useState({ day: 0, time: "09:00", label: "" });
+  const byDay = DAYS.map((_, index) => slots.filter((slot) => slot.day_of_week === index));
+
+  async function act(work: () => Promise<unknown>, done: string) {
+    setBusy(true);
+    setNote(null);
+    try {
+      await work();
+      await onChanged();
+      setNote({ text: done, error: false });
+    } catch (caught) {
+      setNote({ text: caught instanceof Error ? caught.message : "The studio refused the change.", error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const edited = (slot: QueueSlot) => draft[slot.id] ?? { time: slot.time_slot, label: slot.label ?? "" };
+
+  return (
+    <section className="mt-8" aria-labelledby="queue-week">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <p id="queue-week" className="studio-label">
+          Weekly slots
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            setEditing((open) => !open);
+            setDraft({});
+            setNote(null);
+          }}
+          className="rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+        >
+          {editing ? "Done" : "Change slots"}
+        </button>
+      </div>
+      {note && (
+        <p role="status" className={cn("mb-2 text-[12px]", note.error ? "text-signal-orange-text" : "text-ink-secondary")}>
+          {note.text}
+        </p>
+      )}
+      {!editing ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+          {byDay.map((daySlots, index) => (
+            <div key={DAYS[index]} className="rounded-md border border-edge p-2">
+              <p className="studio-meta text-[10px]">{DAYS[index].toUpperCase()}</p>
+              {daySlots.length === 0 ? (
+                <p className="mt-1.5 text-[11px] text-ink-muted">None</p>
+              ) : (
+                <ul className="mt-1.5 flex flex-col gap-1">
+                  {daySlots.map((slot) => (
+                    <li key={slot.id} className="text-[12px] text-ink-primary">
+                      {formatSlotTime(slot.time_slot)}
+                      <span className="block text-[10px] text-ink-muted">{slot.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-md border border-edge p-3">
+          <p className="text-[12px] leading-snug text-ink-secondary">
+            Times are this computer&apos;s local time. Queue it offers the next of these that is at least
+            12 hours from your other posts. Posts already queued keep their times.
+          </p>
+          {slots.length === 0 && <p className="mt-3 text-[12px] text-ink-muted">No slots. Add one below.</p>}
+          <ul className="mt-3 flex flex-col divide-y divide-edge">
+            {slots.map((slot) => {
+              const value = edited(slot);
+              const changed = value.time !== slot.time_slot || value.label !== (slot.label ?? "");
+              const name = `${DAY_NAMES[slot.day_of_week]} ${formatSlotTime(slot.time_slot)}`;
+              return (
+                <li key={slot.id} className="flex flex-wrap items-center gap-2 py-2">
+                  <span className="w-24 shrink-0 text-[12px] text-ink-primary">{DAY_NAMES[slot.day_of_week]}</span>
+                  <input
+                    type="time"
+                    value={value.time}
+                    aria-label={`Time of the ${name} slot`}
+                    onChange={(event) => setDraft({ ...draft, [slot.id]: { ...value, time: event.target.value } })}
+                    className="rounded-md border border-edge bg-ink px-2 py-1 text-[12px] text-ink-primary"
+                  />
+                  <input
+                    value={value.label}
+                    maxLength={80}
+                    aria-label={`Name of the ${name} slot`}
+                    placeholder="Named after its day if left empty"
+                    onChange={(event) => setDraft({ ...draft, [slot.id]: { ...value, label: event.target.value } })}
+                    className="min-w-0 flex-1 basis-40 rounded-md border border-edge bg-ink px-2 py-1 text-[12px] text-ink-primary placeholder:text-ink-muted"
+                  />
+                  <button
+                    type="button"
+                    disabled={busy || !changed}
+                    onClick={() =>
+                      void act(
+                        () => updateQueueSlot(slot.id, { time_slot: value.time, label: value.label }),
+                        `Saved the ${DAY_NAMES[slot.day_of_week]} slot.`,
+                      ).then(() => setDraft(({ [slot.id]: _gone, ...rest }) => rest))
+                    }
+                    className="rounded-md border border-edge px-2 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-label={`Remove the ${name} slot`}
+                    onClick={() => void act(() => deleteQueueSlot(slot.id), `Removed the ${name} slot.`)}
+                    className="grid size-7 place-items-center rounded-md border border-edge text-ink-muted transition-colors hover:border-edge-strong hover:text-ink-primary disabled:opacity-40"
+                  >
+                    <Trash2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-edge pt-3">
+            <select
+              value={adding.day}
+              aria-label="Day of the new slot"
+              onChange={(event) => setAdding({ ...adding, day: Number(event.target.value) })}
+              className="rounded-md border border-edge bg-ink px-2 py-1 text-[12px] text-ink-primary"
+            >
+              {DAY_NAMES.map((day, index) => (
+                <option key={day} value={index}>
+                  {day}
+                </option>
+              ))}
+            </select>
+            <input
+              type="time"
+              value={adding.time}
+              aria-label="Time of the new slot"
+              onChange={(event) => setAdding({ ...adding, time: event.target.value })}
+              className="rounded-md border border-edge bg-ink px-2 py-1 text-[12px] text-ink-primary"
+            />
+            <input
+              value={adding.label}
+              maxLength={80}
+              aria-label="Name of the new slot"
+              placeholder="Name, optional"
+              onChange={(event) => setAdding({ ...adding, label: event.target.value })}
+              className="min-w-0 flex-1 basis-40 rounded-md border border-edge bg-ink px-2 py-1 text-[12px] text-ink-primary placeholder:text-ink-muted"
+            />
+            <button
+              type="button"
+              disabled={busy || !adding.time}
+              onClick={() =>
+                void act(
+                  () => addQueueSlot({ day_of_week: adding.day, time_slot: adding.time, label: adding.label }),
+                  `Added ${DAY_NAMES[adding.day]} ${adding.time}.`,
+                ).then(() => setAdding({ ...adding, label: "" }))
+              }
+              className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+            >
+              <Plus className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              Add slot
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 

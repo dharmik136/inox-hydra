@@ -143,9 +143,11 @@ def test_intelligence_sync_offline_fallback():
     templates = engine.get_templates()
     assert len(templates) >= len(FALLBACK_TEMPLATES)
 
-    # Verify ordered by velocity descending
+    # Verify ordered by velocity descending; unrated starter forms come last
     velocities = [t["velocity_score"] for t in templates]
-    assert velocities == sorted(velocities, reverse=True)
+    rated = [v for v in velocities if v is not None]
+    assert rated == sorted(rated, reverse=True)
+    assert velocities[: len(rated)] == rated
 
     status = engine.get_status()
     assert status["status"] == "success"

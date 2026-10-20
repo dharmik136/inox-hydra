@@ -29,7 +29,12 @@ const ROOM_FOR_FOLD_LABEL = 72;
 
 interface ComposerCanvasProps {
   value: string;
-  onChange: (next: string) => void;
+  /**
+   * `cleared` is true when this change emptied the editor or replaced all of
+   * its text at once, as Select all and typing does: the author has started
+   * a different post, and the draft they had must not be saved over.
+   */
+  onChange: (next: string, cleared?: boolean) => void;
   onReHook: (selection: string) => void;
   /** Bumped when a hook replaces the opening, to play the text transition. */
   swapKey: number;
@@ -52,6 +57,9 @@ const FORMAT_KEYS: Record<string, FormatKind> = { b: "bold", i: "italic", u: "un
 export function ComposerCanvas({ value, onChange, onReHook, swapKey, onSave }: ComposerCanvasProps) {
   const mirrorRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Whether the whole text is selected, so a keystroke or paste that replaces
+  // it can be told from an ordinary edit.
+  const wholeSelected = useRef(false);
   const reduceMotion = useReducedMotion();
 
   const [foldTop, setFoldTop] = useState<number | null>(null);
@@ -288,8 +296,19 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey, onSave }: C
         <textarea
           ref={textareaRef}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
-          onSelect={syncToolbar}
+          onChange={(event) => {
+            const next = event.target.value;
+            const replacedAll = wholeSelected.current && value.length > 0;
+            wholeSelected.current = false;
+            onChange(next, value.trim().length > 0 && (next.trim().length === 0 || replacedAll));
+          }}
+          onSelect={() => {
+            const textarea = textareaRef.current;
+            wholeSelected.current =
+              !!textarea && textarea.value.length > 0 && textarea.selectionStart === 0 &&
+              textarea.selectionEnd === textarea.value.length;
+            syncToolbar();
+          }}
           onBlur={() => setToolbar(null)}
           onScroll={syncToolbar}
           // A writing tool's keys. Ctrl+S opened the browser's Save Page As

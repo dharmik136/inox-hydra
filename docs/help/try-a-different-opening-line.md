@@ -28,7 +28,7 @@ The status mark turns to UNSAVED. Press **Save** to keep the change.
 
 | Label | Where it appears | What it means |
 | --- | --- | --- |
-| EDITOR'S RATING | Library forms | A rating typed into the library by whoever wrote the form, not a measurement |
+| EDITOR'S RATING | Engineering pack forms | A rating typed into the library by whoever wrote the form, not a measurement. Starter forms show no number |
 | No score | Generated hooks | Generated hooks show no number, only the fold verdict below |
 | FITS FOLD | Generated hooks | The hook's first line is 140 characters or fewer and the whole hook is 240 or fewer |
 | PAST FOLD | Generated hooks | The hook fails that length check |
@@ -45,10 +45,10 @@ See [Connect your own AI provider](connect-your-own-ai-provider.md) and [What le
 
 ## Browse more in the Swipe File
 
-The rail shows 12 forms. The full library of 36 built-in hook forms is in **Swipe File** on the rail.
+The rail shows 12 forms. The full library is in **Swipe File** on the rail: 12 starter forms in a new studio, and 36 more if you add the engineering creator pack there.
 
 - Type in **Search specimens** to filter by text.
-- Press an archetype chip to narrow the list, or **All** to clear it. The count reads, for example, `6 OF 36`.
+- Press an archetype chip to narrow the list, or **All** to clear it. The count reads, for example, `2 OF 12`.
 - Hover over a card to read the full specimen. It collapses when the pointer leaves.
 
 The banner reads "These are hook forms, not posts anyone measured." The library stores patterns, not real posts, so no reaction or comment counts are shown.
@@ -60,7 +60,7 @@ There is no button that moves a specimen into the Composer. Select the text on t
 | What you see | What it means |
 | --- | --- |
 | HOOK LIBRARY UNAVAILABLE | The rail could not reach the server. Reload the page. If it persists, see [The studio will not open or shows an error](the-studio-will-not-open.md) |
-| NO HOOKS IN THE LOCAL LIBRARY YET | The server returned no forms. The studio refills an empty library with the 36 built-in forms each time it reads it, so this usually means the database could not be read. Reload the page, then restart the studio if it persists |
+| NO HOOKS IN THE LOCAL LIBRARY YET | The server returned no forms. The studio refills an empty library with the 12 starter forms each time it reads it, so this usually means the database could not be read. Reload the page, then restart the studio if it persists |
 | LOADING HOOKS stays | The server is slow or stopped |
 | Re-Hook seems to do nothing | The request failed. No error is shown, and if generated hooks were on the rail it returns to the library. Check that text is actually selected (a selection of only spaces is ignored), then try again |
 

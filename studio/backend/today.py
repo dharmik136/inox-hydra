@@ -216,6 +216,15 @@ def _reply_to(conn) -> List[Dict[str, Any]]:
     return ranked
 
 
+def _missed(note: Optional[Dict[str, Any]], scheduled_for: Optional[str]) -> Optional[Dict[str, Any]]:
+    """The missed note for Today, only while it is about the post's current time."""
+    if not note or note.get("scheduled_for") != scheduled_for:
+        return None
+    late = note.get("late_minutes")
+    return {"scheduled_for": scheduled_for, "noticed_at": note.get("noticed_at"),
+            "late_minutes": late if isinstance(late, (int, float)) else None}
+
+
 def _queue(conn) -> Dict[str, Any]:
     row = conn.execute(
         "SELECT id, content, scheduled_for FROM posts WHERE status = 'scheduled' AND scheduled_for IS NOT NULL "
@@ -225,18 +234,25 @@ def _queue(conn) -> Dict[str, Any]:
         scheduled = {"post_id": row["id"], "scheduled_for": row["scheduled_for"],
                      "excerpt": clip(" ".join((row["content"] or "").split()), 120)}
     try:
-        try:
-            from .scheduler import native_scheduler
-        except ImportError:
-            from scheduler import native_scheduler
+        from .scheduler import native_scheduler
+    except ImportError:
+        from scheduler import native_scheduler
+    try:
         slot = native_scheduler.calculate_next_smart_slot()
     except Exception:
         slot = None
     # Posts whose time has come. The studio does not post them; it marks them
     # due and waits for the creator, so Today says so, oldest first, with the
-    # whole text for Copy text.
+    # whole text for Copy text. A post missed while the machine slept carries
+    # the time it was due and how late it was noticed, so Today can say it
+    # was missed rather than let it read as on time.
+    try:
+        missed = native_scheduler.missed_notes(conn)
+    except Exception:
+        missed = {}
     due = [{"post_id": r["id"], "scheduled_for": r["scheduled_for"], "content": r["content"] or "",
-            "excerpt": clip(" ".join((r["content"] or "").split()), 120)}
+            "excerpt": clip(" ".join((r["content"] or "").split()), 120),
+            "missed": _missed(missed.get(r["id"]), r["scheduled_for"])}
            for r in conn.execute(
                "SELECT id, content, scheduled_for FROM posts WHERE status = 'due' "
                "ORDER BY scheduled_for LIMIT ?", (DUE_LIMIT,))]

@@ -2400,6 +2400,78 @@ def clean_up_demo_data(conn: sqlite3.Connection) -> Optional[Dict[str, Any]]:
     return notice
 
 
+# The weekly posting times a new install starts with. Named for the day and
+# the part of the day only: they used to carry the original author's own
+# themes ("Thursday Architecture Playbook", "Sunday Career & Strategy"), which
+# every creator then saw as their own plan.
+DEFAULT_QUEUE_SLOTS = [
+    (0, "08:30"), (0, "17:30"),
+    (1, "08:30"), (1, "17:30"),
+    (2, "08:30"), (2, "17:30"),
+    (3, "08:30"), (3, "17:30"),
+    (4, "09:00"),
+    (5, "10:30"),
+    (6, "11:00"),
+]
+
+# What those slots used to be called, by day and time. A slot still carrying
+# one of these exact names was never renamed by the creator, so it takes the
+# neutral name; any other name is theirs and stays.
+LEGACY_SLOT_LABELS = {
+    (0, "08:30"): "Monday Morning Kickoff",
+    (0, "17:30"): "Monday Evening Read",
+    (1, "08:30"): "Tuesday Peak Hook",
+    (1, "17:30"): "Tuesday Evening Thought",
+    (2, "08:30"): "Wednesday Midweek Deep-Dive",
+    (2, "17:30"): "Wednesday Systems Review",
+    (3, "08:30"): "Thursday Architecture Playbook",
+    (3, "17:30"): "Thursday Evening Pulse",
+    (4, "09:00"): "Friday Weekly Retrospective",
+    (5, "10:30"): "Saturday Deep Thinking",
+    (6, "11:00"): "Sunday Career & Strategy",
+}
+
+QUEUE_SLOTS_SEEDED_KEY = "queue_slots_seeded"
+
+SLOT_DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def neutral_slot_label(day_of_week: int, time_slot: str) -> str:
+    """"Tuesday morning": the day and the part of the day, and nothing else."""
+    try:
+        hour = int(str(time_slot).split(":")[0])
+    except (TypeError, ValueError):
+        hour = 12
+    part = "morning" if hour < 12 else "afternoon" if hour < 17 else "evening"
+    day = SLOT_DAY_NAMES[day_of_week] if 0 <= day_of_week < 7 else "Weekly"
+    return f"{day} {part}"
+
+
+def _settle_queue_slots(cursor) -> None:
+    """
+    Seeds the default week once, and renames the old default names in place.
+
+    Idempotent: a seeded install is marked, so an empty table afterwards is a
+    creator who removed every slot, not a new install.
+    """
+    seeded = cursor.execute("SELECT 1 FROM settings WHERE key = ?", (QUEUE_SLOTS_SEEDED_KEY,)).fetchone()
+    count = cursor.execute("SELECT COUNT(*) FROM queue_slots").fetchone()[0]
+    if not seeded and count == 0:
+        cursor.executemany(
+            "INSERT INTO queue_slots (day_of_week, time_slot, label, is_active) VALUES (?, ?, ?, 1)",
+            [(day, time, neutral_slot_label(day, time)) for day, time in DEFAULT_QUEUE_SLOTS],
+        )
+    for (day, time), old in LEGACY_SLOT_LABELS.items():
+        cursor.execute(
+            "UPDATE queue_slots SET label = ? WHERE day_of_week = ? AND time_slot = ? AND label = ?",
+            (neutral_slot_label(day, time), day, time, old),
+        )
+    if not seeded:
+        cursor.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (QUEUE_SLOTS_SEEDED_KEY,)
+        )
+
+
 def seed_initial_data():
     conn = get_db()
     cursor = conn.cursor()
@@ -2473,8 +2545,11 @@ def seed_initial_data():
     cursor.execute("SELECT COUNT(*) FROM audience_demographics")
     demo_count = cursor.fetchone()[0]
 
-    cursor.execute("SELECT COUNT(*) FROM queue_slots")
-    slots_count = cursor.fetchone()[0]
+    # The weekly slots are seeded once, on a new install, and are the
+    # creator's from then on. This used to delete and re-seed the table
+    # whenever it held fewer than eight rows, which put a trimmed week back on
+    # the next start once slots could be edited.
+    _settle_queue_slots(cursor)
 
     if not seed_demo_metrics:
         # Real rows are never deleted. An empty table is the honest state of a
@@ -2482,7 +2557,7 @@ def seed_initial_data():
         count = max(count, 60)
         demo_count = max(demo_count, 14)
 
-    if count >= 60 and demo_count >= 14 and slots_count >= 8:
+    if count >= 60 and demo_count >= 14:
         conn.commit()
         conn.close()
         return
@@ -2491,8 +2566,6 @@ def seed_initial_data():
         cursor.execute("DELETE FROM analytics_daily WHERE source = 'seed' OR source IS NULL")
     if seed_demo_metrics and demo_count < 14:
         cursor.execute("DELETE FROM audience_demographics WHERE source = 'seed' OR source IS NULL")
-    if slots_count < 8:
-        cursor.execute("DELETE FROM queue_slots")
 
     if seed_demo_metrics:
         print("INOX_DEMO_DATA is set: seeding 90 days of FABRICATED analytics and demographics.")
@@ -2528,24 +2601,6 @@ def seed_initial_data():
             "INSERT INTO audience_demographics (dimension, label, percentage, source) VALUES (?, ?, ?, 'seed')",
             demo_demographics_rows(),
         )
-
-    # Seed Default Smart Queue Slots
-    if slots_count < 8:
-        default_slots = [
-            (0, "08:30", "Monday Morning Kickoff", 1),
-            (0, "17:30", "Monday Evening Read", 1),
-            (1, "08:30", "Tuesday Peak Hook", 1),
-            (1, "17:30", "Tuesday Evening Thought", 1),
-            (2, "08:30", "Wednesday Midweek Deep-Dive", 1),
-            (2, "17:30", "Wednesday Systems Review", 1),
-            (3, "08:30", "Thursday Architecture Playbook", 1),
-            (3, "17:30", "Thursday Evening Pulse", 1),
-            (4, "09:00", "Friday Weekly Retrospective", 1),
-            (5, "10:30", "Saturday Deep Thinking", 1),
-            (6, "11:00", "Sunday Career & Strategy", 1)
-        ]
-        for s in default_slots:
-            cursor.execute("INSERT INTO queue_slots (day_of_week, time_slot, label, is_active) VALUES (?, ?, ?, ?)", s)
 
     # Seed Inspirations
     # Five posts used to be seeded here, attributed to Dan Koe, Sahil Bloom,

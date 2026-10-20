@@ -147,8 +147,10 @@ def test_the_local_actions_still_say_they_are_local():
     assert "NEITHER OF THOSE TWO SENDS ANYTHING" in rendered, (
         "the local actions no longer distinguish themselves from the live one"
     )
-    assert "Mark as published" in rendered, (
-        "the honest control for a post the author published themselves is gone"
+    # Since cycle 2 (D-2) the control copies the text and then records it:
+    # the honest name for what the creator does next on LinkedIn.
+    assert "Copy and mark posted" in rendered, (
+        "the honest control for a post the author posts themselves is gone"
     )
 
 
@@ -161,9 +163,13 @@ def test_the_real_staging_path_still_exists():
     describing something that is no longer there.
     """
     app = _read(APP)
-    assert "/api/v1/scheduler/native/stage" in app, (
-        "the native staging endpoint is gone, so the gap this file documents no "
-        "longer exists and the notes referring to it are stale"
+    # BE-08 removed the unguarded duplicate, /api/v1/scheduler/native/stage.
+    # The guarded route is the staging path now, and it has to stay.
+    assert '@app.post("/api/v1/posts/{post_id}/stage-to-linkedin"' in app, (
+        "the staging endpoint is gone, so the notes referring to it are stale"
+    )
+    assert '@app.post("/api/v1/scheduler/native/stage"' not in app, (
+        "the unguarded staging route is back"
     )
 
 
@@ -180,7 +186,7 @@ def test_the_dialog_does_not_offer_to_send_anything():
     # and necessarily contains the words it is explaining.
     rendered = source[source.index("return ("):]
 
-    assert "Mark as published" in rendered, "the control no longer names what it does"
+    assert "Copy and mark posted" in rendered, "the control no longer names what it does"
     assert "Publish now" not in rendered, (
         "the control claims to publish, which this endpoint does not do"
     )
@@ -216,7 +222,7 @@ def test_the_composer_badge_does_not_claim_a_delivery():
     assert published_branch, "the published branch of the context bar has moved"
     branch = published_branch.group(1)
 
-    assert "MARKED AS PUBLISHED" in branch, (
+    assert "MARKED AS POSTED" in branch, (
         "the fallback badge reads as a delivery report rather than a record state"
     )
     assert not re.search(r'"PUBLISHED"', branch), (

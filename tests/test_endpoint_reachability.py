@@ -181,9 +181,24 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # each listed backup (BrandStudioSurface, api.ts restoreBackup).
 # Reached moves 99 -> 100, unreachable stays at 83, total moves 182 -> 183.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 0
-REACHED_BY_INTERFACE = 0
-UNREACHABLE = 0
+# Then batch R6 (cycle 2), each called by the interface:
+#   POST /api/posts/{id}/move-to-next-slot (Today, a missed post), BE-02;
+#   POST /api/queue/slots and PUT/DELETE /api/queue/slots/{id} (the Queue's
+#   Change slots), D-4; POST /api/v1/intelligence/packs/engineering (the
+#   Swipe File), D-8; GET /api/v1/posts/{id}/linkedin-send (Publish), BE-09.
+# Removed: POST /api/v1/scheduler/native/stage, the unguarded duplicate
+# send, which nothing called (BE-08).
+# Reached moves 99 -> 104, unreachable drops 83 -> 82, total moves 182 -> 186.
+# ---------------------------------------------------------------------------
+# Reconciled at integration (cycle 2), each batch from the 182 / 99 / 83 base:
+#   R2: 30 paths removed (reached -1, unreachable -29).
+#   R4: 9 Storage and privacy paths added, all reached (+9).
+#   R5: /api/v1/support/restore added, reached (+1).
+#   R6: 5 paths added and reached, native/stage removed (unreachable -1).
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 166
+REACHED_BY_INTERFACE = 113
+UNREACHABLE = 53
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

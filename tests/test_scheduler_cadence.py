@@ -208,7 +208,11 @@ def test_morning_grace_window_recovery():
 
 
 def test_stale_post_roll_forward_recovery():
-    """Verifies that posts overdue by > 120 minutes are kept as scheduled and rolled forward to next smart slot."""
+    """
+    A post overdue by more than 120 minutes is due at its own time, noted as
+    missed. It used to be rolled forward to the next slot without a word
+    (BE-02); the owner chose due, with Move to next slot on Today.
+    """
     conn = get_db()
     cursor = conn.cursor()
     test_id = f"test_stale_{uuid.uuid4().hex[:6]}"
@@ -226,8 +230,7 @@ def test_stale_post_roll_forward_recovery():
         actions = native_scheduler.check_scheduled_queue()
         matching = [a for a in actions if a["post_id"] == test_id]
         assert len(matching) == 1
-        assert matching[0]["action"] == "rolled_forward"
-        assert "new_scheduled_for" in matching[0]
+        assert matching[0]["action"] == "missed_due"
 
         # Verify DB status
         conn = get_db()
@@ -236,9 +239,9 @@ def test_stale_post_roll_forward_recovery():
         row = cursor.fetchone()
         conn.close()
 
-        assert row["status"] == "scheduled"
+        assert row["status"] == "due"
         assert row["published_at"] is None
-        assert row["scheduled_for"] > now.isoformat()
+        assert row["scheduled_for"] == due_time
     finally:
         conn = get_db()
         conn.cursor().execute("DELETE FROM posts WHERE id = ?", (test_id,))

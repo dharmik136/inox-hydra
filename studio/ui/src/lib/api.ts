@@ -276,7 +276,8 @@ export interface HookTemplate {
   id: number;
   archetype: string;
   hook_text: string;
-  velocity_score: number;
+  /** Null for a neutral starter form, which nobody rated. */
+  velocity_score: number | null;
   engagement_multiplier: string | null;
   pacing_style: string | null;
 }
@@ -574,11 +575,13 @@ export interface Inspiration {
    */
   likes_count: number | null;
   comments_count: number | null;
-  /** A real stored rating of the form, unlike the two fields above. */
-  velocity_score: number;
+  /** A stored rating typed by the form's author; null for a starter form nobody rated. */
+  velocity_score: number | null;
   pacing_style: string | null;
   /** 'shipped' came in the box, 'captured' was saved by the creator. */
   origin: string | null;
+  /** "engineering" for a form from the opt-in engineering creator pack. */
+  pack?: string | null;
 }
 
 export async function fetchInspirations(): Promise<Inspiration[]> {
@@ -1103,12 +1106,19 @@ export async function stageToLinkedIn(
   postId: string,
   scheduledAt: string,
   confirmResend = false,
+  /** The account the confirmation named (its vanity). The send goes only as that account. */
+  confirmAccount: string | null = null,
 ): Promise<StagedToLinkedIn> {
   return call<StagedToLinkedIn>(
     `/api/v1/posts/${encodeURIComponent(postId)}/stage-to-linkedin`,
     {
       method: "POST",
-      body: JSON.stringify({ scheduled_at: scheduledAt, confirm: true, confirm_resend: confirmResend }),
+      body: JSON.stringify({
+        scheduled_at: scheduledAt,
+        confirm: true,
+        confirm_resend: confirmResend,
+        confirm_account: confirmAccount,
+      }),
     },
   );
 }
@@ -2711,7 +2721,6 @@ export async function scrubBackups(leave = false): Promise<ScrubResult> {
 export async function compactDatabase(): Promise<{ before_bytes: number; after_bytes: number }> {
   return call("/api/v1/storage/compact", { method: "POST" });
 }
-}
 
 /**
  * Calls the listener each time the studio answers again after this window
@@ -2758,4 +2767,118 @@ export async function restoreBackup(name: string): Promise<RestoreOutcome> {
     safetyBackup: data.safety_backup ?? null,
     safetyNote: data.safety_note ?? "",
   };
+}
+
+// ---------------------------------------------------------------------------
+// Writing and publishing (cycle 2, R6)
+// ---------------------------------------------------------------------------
+
+/** A due post on Today, with the note the scheduler leaves when it was missed. */
+export interface TodayDuePost {
+  post_id: string;
+  scheduled_for: string;
+  content: string;
+  excerpt: string;
+  /** Present when the post was missed while the studio was closed or asleep. */
+  missed?: { scheduled_for: string; noticed_at: string | null; late_minutes: number | null } | null;
+}
+
+/**
+ * Adds or removes the opt-in engineering creator pack in the hook library.
+ * A new library holds neutral fill-in forms only.
+ */
+export async function setEngineeringPack(enabled: boolean): Promise<{ added?: number; removed?: number }> {
+  return call<{ added?: number; removed?: number }>("/api/v1/intelligence/packs/engineering", {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
+/**
+ * Queues a due post again at the next free slot, on the creator's word.
+ *
+ * The scheduler never moves a post by itself: a post missed while the machine
+ * slept stays due at its own time until the creator chooses this.
+ */
+export async function moveToNextSlot(postId: string): Promise<{ scheduled_for: string; message: string }> {
+  return call<{ scheduled_for: string; message: string }>(
+    `/api/posts/${encodeURIComponent(postId)}/move-to-next-slot`,
+    { method: "POST" },
+  );
+}
+
+/** A draft in the drafts list. `created_at` is when it was first saved, in UTC. */
+export interface DraftSummary {
+  id: string;
+  content: string;
+  created_at: string | null;
+}
+
+/** Every draft, newest first. */
+export async function fetchDrafts(): Promise<DraftSummary[]> {
+  const data = await call<{ posts?: PostRow[] }>("/api/posts?status=draft");
+  return (data.posts ?? [])
+    .map((row) => ({ id: row.id, content: row.content ?? "", created_at: row.created_at ?? null }))
+    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+}
+
+/** Deletes a draft. The server refuses a post that has gone out, and answers 404 for nothing. */
+export async function deleteDraft(id: string): Promise<void> {
+  await call(`/api/posts/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** One earlier send of a post to LinkedIn: what was sent, and LinkedIn's answer. */
+export interface LinkedInSendRecord {
+  at: string;
+  account: string | null;
+  author_urn: string | null;
+  scheduled_for: string;
+  outcome: "accepted" | "refused_by_linkedin" | "no_answer" | "failed_to_reach" | "not_sent";
+  http_status: number | null;
+  linkedin_answer: string | null;
+  message: string | null;
+  scheduled_urn: string | null;
+}
+
+/** Whether Send to LinkedIn can work for a post now, as which account, and its earlier sends. */
+export interface LinkedInSendState {
+  ready: boolean;
+  /** Why not: no_session, no_identity, account_unknown, other_account, author_unknown or egress_off. */
+  code: string | null;
+  reason: string | null;
+  account: { vanity: string; name: string | null; profile_url: string; member_urn_known: boolean } | null;
+  egress_allowed: boolean;
+  sends: LinkedInSendRecord[];
+}
+
+/** Reads this machine only: the saved session's account, and the send record for the post. */
+export async function fetchLinkedInSend(postId: string): Promise<LinkedInSendState> {
+  return call<LinkedInSendState>(`/api/v1/posts/${encodeURIComponent(postId)}/linkedin-send`);
+}
+
+/** A weekly slot as the creator sets it: a day (0 is Monday), a local time and an optional name. */
+export interface SlotChange {
+  day_of_week?: number;
+  time_slot?: string;
+  label?: string;
+}
+
+/** Adds a weekly slot. With no name it is called after its day and part of the day. */
+export async function addQueueSlot(slot: SlotChange): Promise<QueueSlot> {
+  const data = await call<{ slot: QueueSlot }>("/api/queue/slots", { method: "POST", body: JSON.stringify(slot) });
+  return data.slot;
+}
+
+/** Changes a weekly slot's day, time or name. Posts already queued keep their times. */
+export async function updateQueueSlot(id: number, change: SlotChange): Promise<QueueSlot> {
+  const data = await call<{ slot: QueueSlot }>(`/api/queue/slots/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(change),
+  });
+  return data.slot;
+}
+
+/** Removes a weekly slot. Posts already queued for it keep their times. */
+export async function deleteQueueSlot(id: number): Promise<void> {
+  await call(`/api/queue/slots/${id}`, { method: "DELETE" });
 }

@@ -37,6 +37,8 @@ try:
         native_scheduler,
         parse_datetime_flexible,
         normalize_datetime_to_utc_iso,
+        LINKEDIN_HOLDS_KEY,
+        MISSED_POST_KEY,
     )
     from ..linkedin_client import linkedin_client
     from ..event_bus import event_bus
@@ -66,6 +68,8 @@ except (ImportError, ValueError):
         native_scheduler,
         parse_datetime_flexible,
         normalize_datetime_to_utc_iso,
+        LINKEDIN_HOLDS_KEY,
+        MISSED_POST_KEY,
     )
     from linkedin_client import linkedin_client
     from event_bus import event_bus
@@ -338,15 +342,59 @@ def reschedule_post(post_id: str, payload: ReschedulePayload):
 
 
 
+@router.post("/api/posts/{post_id}/move-to-next-slot")
+def move_post_to_next_slot(post_id: str):
+    """
+    A due post, usually one missed while the machine slept, queued again at
+    the next free slot. Only on the creator's word: the scheduler never moves
+    a post by itself.
+    """
+    try:
+        slot = native_scheduler.move_to_next_slot(post_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Post not found")
+    except ValueError:
+        raise HTTPException(
+            status_code=409,
+            detail="This post is not due any more, so it was not moved. Reload to see where it is now.",
+        )
+    return {
+        "status": "success",
+        "scheduled_for": slot["slot_datetime"],
+        "slot": slot,
+        "message": f"Moved to {slot['day_name']} {slot['time_slot']}.",
+    }
+
+
 @router.delete("/api/posts/{post_id}")
 def delete_post(post_id: str):
+    """
+    Deletes a post that has not gone out: a draft, which the Composer's
+    drafts list deletes, or a queued one.
+
+    A published or sent post is part of the creator's record, and one handed
+    to LinkedIn's scheduler is held there whatever this database says, so
+    those are kept. This used to delete any of them without a check, and
+    answered "Post deleted" for an id that did not exist (BE-18).
+    """
     conn = get_db()
     try:
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM posts WHERE id = ?", (post_id,))
-        conn.commit()
-        conn.close()
-        return {"status": "success", "message": "Post deleted"}
+        row = conn.execute("SELECT status FROM posts WHERE id = ?", (post_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="There is no such post. It may have been deleted already.")
+        held = conn.execute(
+            "SELECT 1 FROM settings WHERE key = ?", (LINKEDIN_HOLDS_KEY + post_id,)
+        ).fetchone()
+        if row["status"] in ("published", "sent") or held:
+            word = "held by LinkedIn's scheduler" if held else POSTED_WORDS.get(row["status"], row["status"])
+            raise HTTPException(
+                status_code=409,
+                detail=f"This post is {word}, not a draft, so it was kept.",
+            )
+        with conn:
+            conn.execute("DELETE FROM posts WHERE id = ?", (post_id,))
+            conn.execute("DELETE FROM settings WHERE key = ?", (MISSED_POST_KEY + post_id,))
+        return {"status": "success", "message": "Deleted"}
     finally:
         conn.close()
 
