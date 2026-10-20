@@ -133,6 +133,12 @@ def _status(page):
     return page.locator("header [role=status]").first
 
 
+# "UNSAVED" contains "SAVED", so to_contain_text(SAVED) passes on an unsaved
+# draft and a wait for it returns at once. The bar writes the time beside it
+# only once the write returned (ContextBar.tsx), so that is what is matched.
+SAVED = re.compile(r"(?<!UN)SAVED \d")
+
+
 def _rows_with(api, content):
     return [row for row in api.get("/api/posts").json()["posts"] if row["content"] == content]
 
@@ -164,7 +170,7 @@ def test_reload_with_unsaved_text_asks_before_it_is_lost(new_page, studio_url, a
     editor.click()
     page.keyboard.type("Saved this time.")
     page.get_by_role("button", name="Save", exact=True).click()
-    expect(_status(page)).to_contain_text("SAVED")
+    expect(_status(page)).to_contain_text(SAVED)
     page.reload(wait_until="networkidle")
     assert dialogs == ["beforeunload"], "a reload with nothing unsaved still asked"
 
@@ -290,7 +296,7 @@ def test_a_double_click_on_save_writes_one_draft(new_page, studio_url, api):
                      .find(b => b.textContent.trim() === 'Save');
                    save.click(); save.click(); save.click(); }"""
     )
-    expect(_status(page)).to_contain_text("SAVED")
+    expect(_status(page)).to_contain_text(SAVED)
     page.wait_for_timeout(500)
     assert len(_rows_with(api, text)) == 1, "one Save gesture created several drafts"
 
@@ -316,7 +322,7 @@ def test_save_is_disabled_while_a_save_is_running(new_page, studio_url, api):
     save.click()
     expect(save).to_be_disabled()
     page.evaluate("() => window.__letTheSaveGo()")
-    expect(_status(page)).to_contain_text("SAVED")
+    expect(_status(page)).to_contain_text(SAVED)
     expect(save).to_be_enabled()
 
 
@@ -381,7 +387,7 @@ def test_a_save_over_a_draft_changed_in_another_tab_is_refused(new_page, studio_
     from_a = original + "\n\nTab A's closing paragraph."
     editor_a.fill(from_a)
     first.get_by_role("button", name="Save", exact=True).click()
-    expect(_status(first)).to_contain_text("SAVED")
+    expect(_status(first)).to_contain_text(SAVED)
 
     from_b = "Tab B fixed a typo.\n\nShared body."
     editor_b.fill(from_b)
@@ -392,7 +398,7 @@ def test_a_save_over_a_draft_changed_in_another_tab_is_refused(new_page, studio_
     assert stored["content"] == from_a, "the stale tab overwrote the newer save"
 
     second.get_by_role("button", name=re.compile("keep this version", re.I)).click()
-    expect(_status(second)).to_contain_text("SAVED")
+    expect(_status(second)).to_contain_text(SAVED)
     stored = [row for row in api.get("/api/posts").json()["posts"] if row["id"] == created][0]
     assert stored["content"] == from_b
 
@@ -648,7 +654,7 @@ def test_a_typo_in_a_queued_post_is_fixed_from_the_queue(new_page, studio_url, a
     page.on("dialog", lambda dialog: (asked.append(dialog.message), dialog.accept()))
     editor.fill("A queued post with a typo.\n\nSecond paragraph.")
     page.get_by_role("button", name="Save", exact=True).click()
-    expect(_status(page)).to_contain_text("SAVED")
+    expect(_status(page)).to_contain_text(SAVED)
     assert asked and "queued" in asked[0], asked
     row = _row(api, post_id)
     assert row["content"] == "A queued post with a typo.\n\nSecond paragraph."
@@ -666,7 +672,7 @@ def test_saving_over_a_post_queued_meanwhile_offers_both_ways_out(new_page, stud
     editor = _open_composer(page, studio_url)
     editor.fill("First words of the post.")
     page.get_by_role("button", name="Save", exact=True).click()
-    expect(_status(page)).to_contain_text("SAVED")
+    expect(_status(page)).to_contain_text(SAVED)
     post_id = api.get("/api/posts").json()["posts"][0]["id"]
     from database import get_db
 
@@ -691,7 +697,7 @@ def test_saving_over_a_post_queued_meanwhile_offers_both_ways_out(new_page, stud
 
     page.once("dialog", lambda dialog: dialog.accept())
     page.get_by_role("button", name="Correct the queued post").click()
-    expect(_status(page)).to_contain_text("SAVED")
+    expect(_status(page)).to_contain_text(SAVED)
     assert _row(api, post_id)["content"] == "First words of the post, corrected."
     assert _row(api, post_id)["status"] == "scheduled"
 
@@ -706,7 +712,7 @@ def test_save_as_a_new_draft_keeps_the_queued_post_and_the_new_text(new_page, st
     expect(editor).to_have_value("The queued text.")
     editor.fill("A different post, really.")
     page.get_by_role("button", name="Save as a new draft").click()
-    expect(_status(page)).to_contain_text("SAVED")
+    expect(_status(page)).to_contain_text(SAVED)
     assert _row(api, post_id)["content"] == "The queued text."
     drafts = [row for row in api.get("/api/posts?status=draft").json()["posts"] if row["content"] == "A different post, really."]
     assert len(drafts) == 1
@@ -714,6 +720,6 @@ def test_save_as_a_new_draft_keeps_the_queued_post_and_the_new_text(new_page, st
     # The Composer now holds the new draft: a further save goes there.
     editor.fill("A different post, really. Edited.")
     page.get_by_role("button", name="Save", exact=True).click()
-    expect(_status(page)).to_contain_text("SAVED")
+    expect(_status(page)).to_contain_text(SAVED)
     assert _row(api, drafts[0]["id"])["content"] == "A different post, really. Edited."
     assert _row(api, post_id)["content"] == "The queued text."

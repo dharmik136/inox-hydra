@@ -24,7 +24,16 @@ def test_ctrl_s_saves_the_draft_instead_of_the_page(studio):
     body = page.get_by_label("Post body")
     body.fill("A post saved from the keyboard.")
     body.press("Control+s")
-    page.wait_for_selector("text=SAVED", timeout=5000)
+    # Not text=SAVED: UNSAVED contains it, so the wait passed at once and the
+    # draft was read before the write landed. This is the state the bar shows
+    # only once the save returned (ContextBar.tsx: "SAVED <time>").
+    page.wait_for_function(
+        """() => {
+            const bar = document.body.innerText;
+            return /(^|[^N])SAVED \\d/.test(bar);
+        }""",
+        timeout=15000,
+    )
     assert ["s", True] in page.evaluate("window.__keys"), page.evaluate("window.__keys")
     drafts = studio["client"].get("/api/posts", params={"status": "draft"}).json()["posts"]
     assert any(post["content"] == "A post saved from the keyboard." for post in drafts), drafts
