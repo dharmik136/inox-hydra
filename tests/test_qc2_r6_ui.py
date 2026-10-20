@@ -392,25 +392,41 @@ def test_the_composer_copies_the_text_as_written(context, studio_url):
 # BE-09 / D-21: Send to LinkedIn names the account and the time, and says why not
 # ---------------------------------------------------------------------------
 
+def _served_client():
+    """The LinkedIn client the served app uses. A test elsewhere reloads the
+    module, so its own attribute can be a different instance."""
+    import app as served
+
+    return served.linkedin_client
+
+
 @pytest.fixture
 def no_session():
-    import linkedin_client as client_module
-
-    client_module.linkedin_client.clear_tokens()
+    _served_client().clear_tokens()
     yield
 
 
 @pytest.fixture
 def signed_in(monkeypatch):
     """A confirmed creator, a session the bridge synced with their URN, and a fake LinkedIn."""
-    import linkedin_client as client_module
+    import socket
+
     from test_qc2_r6_linkedin_send import FakeLinkedIn
 
+    sender = _served_client()
     fake = FakeLinkedIn()
     monkeypatch.setenv("INOX_ALLOW_LINKEDIN_EGRESS", "1")
     monkeypatch.delenv("INOX_NO_EGRESS", raising=False)
-    monkeypatch.setattr(client_module.linkedin_client, "base_url", f"http://127.0.0.1:{fake.port}/voyager/api")
-    client_module.linkedin_client.circuit_breaker.reset()
+    monkeypatch.setattr(sender, "base_url", f"http://127.0.0.1:{fake.port}/voyager/api")
+    sender.circuit_breaker.reset()
+    real_getaddrinfo = socket.getaddrinfo
+
+    def loopback_names_only(host, *args, **kwargs):
+        if host not in ("127.0.0.1", "::1", "localhost"):
+            raise AssertionError(f"a name lookup for {host} was attempted")
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", loopback_names_only)
     conn = get_db()
     conn.execute("DELETE FROM creator_identity WHERE id = 1")
     conn.execute(
@@ -419,13 +435,14 @@ def signed_in(monkeypatch):
     )
     conn.commit()
     conn.close()
-    client_module.linkedin_client.save_tokens(
+    sender.save_tokens(
         "AQEDAR6liveshaped", '"ajax:6060606060"',
         account={"vanity": "r6-creator", "member_urn": "urn:li:fsd_profile:ACoAAR6CREATOR0001"},
     )
     yield fake
     fake.close()
-    client_module.linkedin_client.clear_tokens()
+    sender.clear_tokens()
+    sender.circuit_breaker.reset()
     conn = get_db()
     conn.execute("DELETE FROM creator_identity WHERE id = 1")
     conn.execute("DELETE FROM settings WHERE key LIKE 'linkedin_send_log:%' OR key LIKE 'linkedin_holds:%'")

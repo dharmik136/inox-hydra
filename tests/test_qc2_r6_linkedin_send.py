@@ -32,7 +32,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "backend")))
 
 import app as app_module  # noqa: E402
-import linkedin_client as client_module  # noqa: E402
+
 from database import get_db  # noqa: E402
 
 client = TestClient(app_module.app)
@@ -81,9 +81,19 @@ def fake_linkedin(monkeypatch):
     fake = FakeLinkedIn()
     monkeypatch.setenv("INOX_ALLOW_LINKEDIN_EGRESS", "1")
     monkeypatch.delenv("INOX_NO_EGRESS", raising=False)
-    monkeypatch.setattr(client_module.linkedin_client, "base_url", f"http://127.0.0.1:{fake.port}/voyager/api")
-    client_module.linkedin_client.circuit_breaker.reset()
-    # Belt and braces: the client may open no connection except to the fake.
+    # The client the route uses. A test elsewhere reloads linkedin_client, so
+    # the module's own attribute can be a different instance from app's.
+    monkeypatch.setattr(app_module.linkedin_client, "base_url", f"http://127.0.0.1:{fake.port}/voyager/api")
+    app_module.linkedin_client.circuit_breaker.reset()
+    # Belt and braces: no name lookup and no connection except to the fake.
+    real_getaddrinfo = socket.getaddrinfo
+
+    def loopback_names_only(host, *args, **kwargs):
+        if host not in ("127.0.0.1", "::1", "localhost"):
+            raise AssertionError(f"a name lookup for {host} was attempted")
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", loopback_names_only)
     real_connect = socket.socket.connect
 
     def loopback_only(sock, address):
@@ -95,7 +105,7 @@ def fake_linkedin(monkeypatch):
     monkeypatch.setattr(socket.socket, "connect", loopback_only)
     yield fake
     fake.close()
-    client_module.linkedin_client.circuit_breaker.reset()
+    app_module.linkedin_client.circuit_breaker.reset()
 
 
 @pytest.fixture
@@ -122,7 +132,7 @@ def creator():
     conn.execute("DELETE FROM settings WHERE key LIKE ?", ("%" + PREFIX + "%",))
     conn.commit()
     conn.close()
-    client_module.linkedin_client.clear_tokens()
+    app_module.linkedin_client.clear_tokens()
 
 
 def _sync(vanity=VANITY, member_urn=URN):
@@ -177,7 +187,7 @@ def test_the_session_is_saved_with_the_account_and_its_member_urn(creator):
 
 def test_a_urn_that_is_not_a_member_urn_is_not_kept(creator):
     _sync(member_urn="urn:li:person:current_creator; DROP")
-    assert client_module.linkedin_client.session_account()["member_urn"] is None
+    assert app_module.linkedin_client.session_account()["member_urn"] is None
 
 
 def test_the_send_names_the_member_the_bridge_learnt_as_the_author(creator, fake_linkedin):
@@ -230,7 +240,7 @@ def test_linkedins_refusal_is_readable_and_recorded(creator, fake_linkedin):
 # ---------------------------------------------------------------------------
 
 def test_no_saved_session_is_refused_not_faked(creator, fake_linkedin):
-    client_module.linkedin_client.clear_tokens()
+    app_module.linkedin_client.clear_tokens()
     post_id = _seed("nosession")
     response = _send(post_id)
     assert response.status_code == 409
@@ -290,11 +300,11 @@ def test_without_confirmation_nothing_is_sent(creator, fake_linkedin):
 
 
 def test_the_client_never_names_a_stand_in_author(fake_linkedin):
-    client_module.linkedin_client.save_tokens("AQEDAR6liveshaped", '"ajax:1"')
+    app_module.linkedin_client.save_tokens("AQEDAR6liveshaped", '"ajax:1"')
     try:
-        result = client_module.linkedin_client.schedule_norm_share(content="A post.", scheduled_at_ms=1)
+        result = app_module.linkedin_client.schedule_norm_share(content="A post.", scheduled_at_ms=1)
     finally:
-        client_module.linkedin_client.clear_tokens()
+        app_module.linkedin_client.clear_tokens()
     assert result["code"] == "author_unknown"
     assert fake_linkedin.requests == []
 

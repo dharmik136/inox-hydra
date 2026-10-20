@@ -94,7 +94,14 @@ def test_a_post_linkedin_holds_is_published_at_its_time_not_due(monkeypatch):
     )
     try:
         when = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
-        sent = client.post(f"/api/v1/posts/{post_id}/stage-to-linkedin", json={"scheduled_at": when, "confirm": True})
+        # The account the session belongs to, as BE-09 requires; this test is
+        # about what the queue does afterwards.
+        monkeypatch.setattr(app_module.linkedin_client, "session_account",
+                            lambda: {"vanity": "test-creator", "member_urn": "urn:li:fsd_profile:ACoAATEST123"})
+        monkeypatch.setattr(app_module.linkedin_client, "is_authenticated", lambda: True)
+        monkeypatch.setattr(app_module.onboarding, "confirmed_vanity", lambda: "test-creator")
+        sent = client.post(f"/api/v1/posts/{post_id}/stage-to-linkedin",
+                           json={"scheduled_at": when, "confirm": True, "confirm_account": "test-creator"})
         assert sent.status_code == 200, sent.text
         # Its time comes, three hours late for this machine (it was asleep).
         past = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
