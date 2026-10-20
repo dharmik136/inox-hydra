@@ -1010,6 +1010,8 @@ export interface ImageProgress {
   status: string;
   result_url: string | null;
   error_message: string | null;
+  /** What the creator should know about a finished image, such as a quote that was not drawn. */
+  notice: string | null;
 }
 
 export async function startImageGeneration(concept: string, aspectRatio: string): Promise<string> {
@@ -1031,6 +1033,7 @@ export async function fetchImageProgress(taskId: string): Promise<ImageProgress>
     status: typeof data.status === "string" ? data.status : "unknown",
     result_url: typeof data.result_url === "string" ? data.result_url : null,
     error_message: typeof data.error_message === "string" ? data.error_message : null,
+    notice: typeof data.notice === "string" ? data.notice : null,
   };
 }
 
@@ -2563,4 +2566,70 @@ export async function fetchPostById(id: string): Promise<StoredPost | null> {
 export async function dismissDemoCleanupNotice(): Promise<boolean> {
   const res = await call<{ dismissed: boolean }>("/api/v1/today/demo-cleanup-notice/dismiss", { method: "POST" });
   return res.dismissed;
+}
+
+// ---------------------------------------------------------------------------
+// Image provider (R7): who makes the image when you press Generate
+// ---------------------------------------------------------------------------
+
+/** What leaves this machine with one image provider, in the server's words. */
+export interface ImageDisclosure {
+  sends: string;
+  to: string;
+  account: string;
+  leaves: boolean;
+}
+
+export interface ImageProviderOption {
+  id: string;
+  name: string;
+  kind: "public" | "cloud" | "local" | "off";
+  needs_key: boolean;
+  needs_url: boolean;
+  default_url: string;
+  default_model: string;
+  models: string[];
+  key_hint: string;
+  checks: boolean;
+  shares_ai_key: boolean;
+  disclosure: ImageDisclosure;
+}
+
+export interface ImageProviderConfig {
+  provider: string;
+  name: string;
+  kind: string;
+  model: string;
+  base_url: string;
+  /** "chosen" here, taken from the "ai_provider", or the "default". */
+  source: string;
+  has_key: boolean;
+  api_key_masked: string;
+  key_from: string;
+  verified_at: string;
+  check: string;
+  ready: boolean;
+  not_ready: string | null;
+  disclosure: ImageDisclosure;
+}
+
+export interface ImageProviderState {
+  config: ImageProviderConfig;
+  providers: ImageProviderOption[];
+  ai_provider: string | null;
+  image_egress_allowed: boolean;
+}
+
+export async function fetchImageProvider(): Promise<ImageProviderState> {
+  return call<ImageProviderState>("/api/image/provider");
+}
+
+/** Checks the setup without making an image and saves it; throws the reason when it fails. */
+export async function saveImageProvider(setup: {
+  provider: string;
+  api_key?: string;
+  model?: string;
+  base_url?: string;
+}): Promise<{ message: string; models: string[]; config: ImageProviderConfig }> {
+  return call("/api/image/provider", { method: "POST", body: JSON.stringify(setup) });
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { configureAi, fetchAiProviders, fetchAiStatus, type AiProviderOption, type AiStatus } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { ImageProviderSettings } from "./ImageProviderSettings";
 
 /** The capability keys the backend returns, in words rather than identifiers. */
 const CAPABILITY_LABELS: Record<string, string> = {
@@ -237,6 +238,8 @@ export function PromptPanel() {
           </p>
         </div>
       </section>
+
+      <ImageProviderSettings />
     </div>
   );
 }
