@@ -70,6 +70,8 @@ def get_db() -> sqlite3.Connection:
     conn.execute("PRAGMA cache_size = -64000;")
     conn.execute("PRAGMA temp_store = MEMORY;")
     conn.execute("PRAGMA mmap_size = 268435456;")
+    # A delete overwrites the freed bytes, so a forgotten person is gone from the file (DATA-01).
+    conn.execute("PRAGMA secure_delete = ON;")
     return conn
 
 
