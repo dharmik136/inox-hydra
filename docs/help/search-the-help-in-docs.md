@@ -11,7 +11,8 @@ Docs opens on a page headed **What do you need to know?**. Below the search box 
 
 - **Get started**: cards for the first-steps articles, each with an estimated reading time.
 - **Browse by topic**: one card per help topic, showing how many documents it holds and an estimated reading time.
-- **Also in the library**: **For maintainers** and **Retired manuals and history**. These are kept for reference, not for everyday use.
+
+Docs and search show the help articles only. The studio's engineering documents and its retired manuals are left out; with the Devtools surface switched on, they are listed under **Also in the library** as **For maintainers** and **Retired manuals and history**.
 
 The left column lists the same topics. Click a topic name to see its documents, or the arrow beside it to expand the list in place.
 
@@ -31,14 +32,14 @@ The left column lists the same topics. Click a topic name to see its documents, 
 | A short word such as `sched` | Also longer words that start with it, such as "schedule" and "scheduler" |
 | Punctuation, symbols, or accented and non-English letters | Ignored, treated as spaces |
 
-Help articles are listed before maintainer documents, and maintainer documents before retired manuals. Prefer a help article when both answer your question.
+With Devtools switched on, help articles are listed before maintainer documents, and maintainer documents before retired manuals. Prefer a help article when both answer your question.
 
 ## Read a document
 
 - The button at the top reads **ALL TOPICS**, or **BACK TO** the previous document's title if you followed a link from another document.
 - Above the text you see the topic, the file path, the word count and an estimated reading time.
 - Longer documents have an **In this document** list on the right when the window is wide enough. Click an entry to jump to it.
-- A retired manual shows a **Kept for the record** notice saying it describes an earlier version of the studio and parts of it no longer match. Its **GO TO THE HELP TOPICS** button returns you to the home page. Do not rely on a retired manual where it disagrees with a help article.
+- With Devtools switched on, a retired manual shows a **Kept for the record** notice saying it describes an earlier version of the studio and parts of it no longer match. Its **GO TO THE HELP TOPICS** button returns you to the home page. Do not rely on a retired manual where it disagrees with a help article.
 
 ## What happens
 

@@ -807,6 +807,8 @@ export interface DocSection {
   blurb: string;
   /** Help for the user, reference for a maintainer, or retired material kept for the record. */
   kind: "help" | "reference" | "retired";
+  /** Left out of the Docs home and of search: maintainer and retired documents, unless dev mode is on. */
+  hidden?: boolean;
   count: number;
   words: number;
   document_ids: string[];
@@ -1514,6 +1516,8 @@ export interface BackupArchive {
   name: string;
   bytes: number;
   modified: string;
+  /** Whether the studio can restore it: a ZIP backup or a database copy. */
+  restorable?: boolean;
 }
 
 export interface BackupListing {
@@ -2078,9 +2082,11 @@ export interface TodayLatestPost {
 
 export interface TodayBrief {
   identity: { known: boolean; name: string | null };
-  freshness: { bridge: BridgeStatus; drifting: string[]; last_capture_at: string | null };
+  freshness: { bridge: BridgeStatus; drifting: string[]; last_capture_at: string | null; posts_held?: number };
   reply_to: TodayPerson[];
   latest_post: TodayLatestPost | null;
+  /** The newest post marked published here that the bridge has not yet seen on LinkedIn. */
+  marked_published?: { post_id: string; published_at: string; excerpt: string | null } | null;
   queue: {
     next_scheduled: { post_id: string; scheduled_for: string; excerpt: string } | null;
     next_open_slot: { local_datetime: string; day_name: string; time_slot: string; label: string | null } | null;
@@ -2704,4 +2710,52 @@ export async function scrubBackups(leave = false): Promise<ScrubResult> {
 
 export async function compactDatabase(): Promise<{ before_bytes: number; after_bytes: number }> {
   return call("/api/v1/storage/compact", { method: "POST" });
+}
+}
+
+/**
+ * Calls the listener each time the studio answers again after this window
+ * could not reach it. Returns the unsubscribe.
+ *
+ * The banner said "this line goes away by itself when it is" back, and it
+ * did, while the screen under it kept its "could not be read" until the
+ * creator moved away and back: nothing told a screen that the studio had
+ * returned. A screen that subscribes reads its data again. A window left on
+ * another profile has not come back, so that does not count.
+ */
+export function onStudioBack(listener: () => void): () => void {
+  let away = connection.state === "offline";
+  return onConnectionChange((next) => {
+    if (next.state === "offline") {
+      away = true;
+    } else if (away && next.state === "online") {
+      away = false;
+      listener();
+    }
+  });
+}
+
+export interface RestoreOutcome {
+  restoredFrom: string;
+  safetyBackup: string | null;
+  safetyNote: string;
+}
+
+/**
+ * Restores one archive from the backups folder, by its file name there.
+ *
+ * The studio takes a safety backup of the current state first and swaps all
+ * or nothing. A refusal carries its reason, and a restore that stopped part
+ * way names the safety backup.
+ */
+export async function restoreBackup(name: string): Promise<RestoreOutcome> {
+  const data = await call<{ restored_from?: string; safety_backup?: string | null; safety_note?: string }>(
+    "/api/v1/support/restore",
+    { method: "POST", body: JSON.stringify({ name }) },
+  );
+  return {
+    restoredFrom: data.restored_from ?? name,
+    safetyBackup: data.safety_backup ?? null,
+    safetyNote: data.safety_note ?? "",
+  };
 }

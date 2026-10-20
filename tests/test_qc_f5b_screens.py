@@ -276,10 +276,12 @@ def test_a_contrast_mixed_up_with_time_is_not_shown_as_a_finding(studio):
     _own_posts(client, [{"text": f"Field notes {i}\nSome thoughts without tags", "reactions": 100 + i}
                         for i in range(10)], year_ms=AUGUST_2026)
     page = _open(studio, "Patterns")
-    page.wait_for_selector("text=Binary feature comparisons")
-    row = page.locator("section", has_text="Binary feature comparisons").locator("li", has_text="Contains hashtags")
+    # One list of forms since cycle 2 (D-13): the hashtag line sits under
+    # "Mixed up with when you posted", muted, with the years it compares.
+    page.wait_for_selector("text=Mixed up with when you posted")
+    row = page.locator("section", has_text="Mixed up with when you posted").locator("li", has_text="Hashtags")
     text = row.inner_text()
-    assert "MOSTLY 2024 AGAINST MOSTLY 2026: MIXED UP WITH WHEN YOU POSTED, NOT A FINDING" in text, text
+    assert "MOSTLY 2024 AGAINST MOSTLY 2026" in text, text
     assert row.locator(".text-signal-green-text").count() == 0, "the confounded ratio is still coloured as a finding"
     assert not studio["errors"], studio["errors"]
 

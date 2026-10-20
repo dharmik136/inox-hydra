@@ -298,11 +298,17 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
                 pass
 
 
-def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connection] = None) -> List[Dict[str, Any]]:
+def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connection] = None,
+                    skip_files: Optional[List[str]] = None) -> List[Dict[str, Any]]:
     """
     Executes a sub-millisecond BM25 full-text search against the docs_index virtual table.
     Returns matched snippets with <mark> keyword highlights.
+
+    skip_files names documents left out in the query itself, not after it:
+    hidden_document_paths(). Maintainer documents outnumber the help, so
+    dropping them from a page afterwards left "architecture" with no help hit.
     """
+    skipped = sorted(set(skip_files or []))
     if query is None or not isinstance(query, str):
         return []
 
@@ -356,10 +362,10 @@ def search_docs_fts(query: Any, limit: int = 10, conn: Optional[sqlite3.Connecti
             SELECT rowid, filename, section,
                    snippet(docs_index, 2, '<mark>', '</mark>', '...', 25) AS snippet, rank
             FROM docs_index
-            WHERE docs_index MATCH ?
+            WHERE docs_index MATCH ?""" + (f" AND filename NOT IN ({','.join('?' * len(skipped))})" if skipped else "") + """
             ORDER BY rank
             LIMIT ?
-            """, (match_query, bounded_limit + len(exclude))).fetchall()
+            """, (match_query, *skipped, bounded_limit + len(exclude))).fetchall()
             found = []
             for r in rows:
                 if r[0] in exclude:
@@ -669,6 +675,11 @@ HELP_SECTIONS = [
         "blurb": "The studio will not open, a list is empty, or an error message needs explaining.",
         "paths": [
             "help/the-studio-will-not-open.md",
+            # Help for a creator: the portable build's InoxHydra-CLI.bat is
+            # how backup and restore run when the studio will not start, and
+            # two articles link here. Filed under maintainers, it was left out
+            # of the help a creator is shown.
+            "help/command-line-tool-reference.md",
             "help/why-is-my-lead-list-empty.md",
             "help/why-is-analytics-or-the-swipe-file-empty.md",
             "help/why-does-the-audit-say-blocked.md",
@@ -680,7 +691,6 @@ HELP_SECTIONS = [
         "title": "For maintainers",
         "blurb": "How the studio is built: data, architecture, the API, the desktop shell, packaging, and the rules the interface is held to.",
         "paths": [
-            "help/command-line-tool-reference.md",
             "help/turn-on-devtools.md",
             "DATA_ARCHITECTURE.md",
             "ARCHITECTURE.md",
@@ -777,6 +787,45 @@ def section_kind(section_id):
         return "reference"
     return "help"
 
+
+# Sections a creator using the studio is not shown. Asked "restore my data",
+# search answered with the engineering bug register and nothing else, and the
+# Docs home listed 41 maintainer and retired documents beside the help. They
+# stay readable by id, so a help article that links to one still opens it,
+# and the developer switch brings them back for whoever maintains the studio.
+INTERNAL_SECTIONS = MAINTAINER_SECTIONS | RETIRED_SECTIONS
+
+
+def internal_documents_shown():
+    """Whether maintainer and retired documents are listed and searched: in dev mode only."""
+    try:
+        from .devtools import is_dev_mode
+    except ImportError:
+        from devtools import is_dev_mode
+    try:
+        return bool(is_dev_mode())
+    except Exception:
+        return False
+
+
+def hidden_document_paths(shown=None):
+    """The paths of the documents section_hidden leaves out; empty in dev mode."""
+    if internal_documents_shown() if shown is None else shown:
+        return []
+    return [path for section in HELP_SECTIONS if section["id"] in INTERNAL_SECTIONS for path in section["paths"]]
+
+
+def section_hidden(section_id, shown=None):
+    """
+    Whether a section is left out of search and the Docs home.
+
+    `shown` is internal_documents_shown(), passed by a caller that checks many
+    sections at once so the setting is read once.
+    """
+    if section_id not in INTERNAL_SECTIONS:
+        return False
+    return not (internal_documents_shown() if shown is None else shown)
+
 # Where a file that nobody has filed goes.
 #
 # It is its own section rather than an existing one, and it is named for what
@@ -812,6 +861,7 @@ def help_sections(docs_dir=None):
     library = document_library(docs_dir)
     by_path = {entry["path"]: entry for entry in library}
 
+    shown = internal_documents_shown()
     sections = []
     for section in HELP_SECTIONS:
         documents = [by_path[path] for path in section["paths"] if path in by_path]
@@ -826,6 +876,7 @@ def help_sections(docs_dir=None):
             "title": section["title"],
             "blurb": section["blurb"],
             "kind": section_kind(section["id"]),
+            "hidden": section_hidden(section["id"], shown),
             "documents": documents,
             "count": len(documents),
             "words": sum(entry["words"] for entry in documents),
@@ -838,6 +889,7 @@ def help_sections(docs_dir=None):
             "title": UNFILED["title"],
             "blurb": UNFILED["blurb"],
             "kind": "help",
+            "hidden": False,
             "documents": stray,
             "count": len(stray),
             "words": sum(entry["words"] for entry in stray),

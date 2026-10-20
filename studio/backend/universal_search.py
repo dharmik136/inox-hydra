@@ -513,7 +513,11 @@ def search_leads(terms: List[str], limit: int = 6, conn=None) -> List[Dict[str, 
             ORDER BY l.updated_at DESC, l.id
             """, params):
             who = row["full_name"] or row["name"] or "Unnamed lead"
-            about = " ".join(part for part in (row["headline"], row["company"]) if part)
+            # The company is left out when the headline already names it:
+            # "Engineering Manager at Logiq" and "Logiq" read "Logiq Logiq".
+            headline, company = row["headline"] or "", row["company"] or ""
+            about = headline if company and fold(company) in fold(headline) else " ".join(
+                part for part in (headline, company) if part)
             profile = " ".join(str(part or "") for part in (row["full_name"], row["name"], row["company"],
                                                             row["headline"], row["notes"]))
             profile_hit = all(term in fold(f"{who} {about}") for term in folded_terms)
@@ -538,7 +542,9 @@ def search_leads(terms: List[str], limit: int = 6, conn=None) -> List[Dict[str, 
                 "title": who,
                 "snippet": snippet_around(about, terms) if profile_hit or not said
                            else "Commented: " + snippet_around(said, terms),
-                "meta": (row["lead_status"] or row["status"] or "").replace("_", " ").upper(),
+                # The stage as the dossier names it ("Outreach Sent"), not the
+                # second vocabulary kept beside it ("DM_SENT").
+                "meta": (row["status"] or row["lead_status"] or "").replace("_", " ").upper(),
                 "opens": "leads",
             })
             if len(results) >= limit:

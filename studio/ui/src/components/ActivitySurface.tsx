@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Activity,
   ArrowUpRight,
   Check,
   Copy,
+  Download,
   ExternalLink,
   Loader2,
   Radio,
@@ -16,6 +16,8 @@ import {
   type ActivityStreamData,
 } from "@/lib/api";
 import { importEnding } from "@/lib/importOutcome";
+import { reportBridge } from "@/lib/bridgeState";
+import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 
 function ago(iso: string): string {
@@ -28,6 +30,15 @@ function ago(iso: string): string {
   if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
   return `${Math.round(seconds / 86400)}d ago`;
+}
+
+/**
+ * A figure as Posts writes it, "4,100", and "not measured" when the bridge
+ * never read it. A missing count used to read 0 here, and impressions read
+ * "4100" beside Posts' "4,100".
+ */
+function measured(value: number | null | undefined): string {
+  return value === null || value === undefined ? "not measured" : value.toLocaleString();
 }
 
 export function ActivitySurface({
@@ -53,6 +64,7 @@ export function ActivitySurface({
     try {
       const result = await fetchActivityStream(50);
       setStream(result);
+      reportBridge(result.summary.bridge_connected);
       setLoadedAt(new Date());
       setFailed(false);
     } catch {
@@ -66,13 +78,11 @@ export function ActivitySurface({
     loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = window.setInterval(() => {
-      loadData();
-    }, 2500);
-    return () => window.clearInterval(interval);
-  }, [autoRefresh, loadData]);
+  // Every 2.5 seconds while auto refresh is on and the window is in view. It
+  // used to poll a hidden tab at the same rate for as long as it stayed open,
+  // the largest steady load the interface put on the database while the
+  // bridge was writing. Also read on coming back, and after an outage.
+  useRefresh(loadData, autoRefresh ? 2500 : undefined);
 
   async function handleSyncAll() {
     setSyncing(true);
@@ -82,7 +92,7 @@ export function ActivitySurface({
       setSyncNotice(response.message);
       await loadData();
     } catch (err) {
-      setSyncNotice(err instanceof Error ? err.message : "Sync could not be started.");
+      setSyncNotice(err instanceof Error ? err.message : "The import could not be started.");
     } finally {
       setSyncing(false);
     }
@@ -184,7 +194,7 @@ export function ActivitySurface({
                 className={cn("size-1.5 rounded-full", bridgeOnline ? "bg-signal-green" : "bg-ink-muted")}
                 aria-hidden="true"
               />
-              {bridgeOnline ? "Bridge running" : "Bridge idle"}
+              {bridgeOnline ? "Bridge connected" : "Bridge not connected"}
             </span>
           </div>
           <h1 className="studio-title mt-1.5">What the bridge has read</h1>
@@ -254,7 +264,7 @@ export function ActivitySurface({
             </div>
             {summary.active_sync_chain && (
               <p className="mt-1 text-[11px] text-signal-orange-text">
-                Sync in progress: step {summary.active_sync_chain.current_index + 1} of{" "}
+                Import in progress: step {summary.active_sync_chain.current_index + 1} of{" "}
                 {summary.active_sync_chain.sequence.length} ({summary.active_sync_chain.sequence[summary.active_sync_chain.current_index]})
               </p>
             )}
@@ -272,9 +282,9 @@ export function ActivitySurface({
             {syncing ? (
               <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
             ) : (
-              <Activity className="size-3.5" strokeWidth={2} aria-hidden="true" />
+              <Download className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
             )}
-            <span>Sync All Activity</span>
+            <span>Import your history</span>
           </button>
         </div>
       </section>
@@ -371,7 +381,7 @@ export function ActivitySurface({
           <div className="flex flex-col divide-y divide-edge border-y border-edge">
             {stream.recent_posts.length === 0 ? (
               <p className="py-8 text-center text-[12px] text-ink-muted">
-                No authored posts have been loaded yet. Run a sync or browse your posts in LinkedIn to ingest.
+                None of your posts have been read yet. Press Import your history, or open your posts on LinkedIn in the bridge browser.
               </p>
             ) : (
               stream.recent_posts.map((post) => (
@@ -412,15 +422,15 @@ export function ActivitySurface({
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-ink-muted">
-                    <span className="tabular-nums">Reactions: {post.reactions ?? 0}</span>
+                    <span className="tabular-nums">Reactions: {measured(post.reactions)}</span>
                     <span aria-hidden="true">·</span>
-                    <span className="tabular-nums">Comments: {post.comments ?? 0}</span>
+                    <span className="tabular-nums">Comments: {measured(post.comments)}</span>
                     <span aria-hidden="true">·</span>
-                    <span className="tabular-nums">Reposts: {post.reposts ?? 0}</span>
+                    <span className="tabular-nums">Reposts: {measured(post.reposts)}</span>
                     {post.impressions !== null && (
                       <>
                         <span aria-hidden="true">·</span>
-                        <span className="tabular-nums">Impressions: {post.impressions}</span>
+                        <span className="tabular-nums">Impressions: {measured(post.impressions)}</span>
                       </>
                     )}
                     <span aria-hidden="true">·</span>

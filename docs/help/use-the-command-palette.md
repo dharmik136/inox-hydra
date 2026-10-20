@@ -21,7 +21,7 @@ To close it, press **Escape**, press **Ctrl+K** again, or click the dimmed area 
 | **Posts** | The saved text and tags of every post, whatever its status, and the text of your posts imported from LinkedIn, marked PUBLISHED ON LINKEDIN | A draft opens in the **Composer**. A queued or scheduled post opens **Queue**. A published post, and a post imported from LinkedIn, opens **Analytics** |
 | **Leads** | Name, company, headline and notes, and every comment the person left | Opens **Leads** with that person selected. A lead found by a comment shows the comment, starting "Commented:" |
 | **Swipe File** | The hook, archetype and pacing pattern of each specimen | Opens **Swipe File** with that card outlined in orange. Any search or archetype filter you had set there is cleared first, so the card is not hidden |
-| **Help** | Every document in **Docs** | Opens the article at the section that matched. Help articles come first and reference after. Retired manuals come last and are marked **RETIRED** |
+| **Help** | The help articles in **Docs** | Opens the article at the section that matched |
 
 3. Move with the arrow keys and press **Enter**, or click a result. The selected result shows where it will open, for example "Opens in Composer".
 
@@ -46,7 +46,7 @@ See [Start a new post, or find one you wrote earlier](start-a-new-post-or-find-a
 
 With nothing typed, the box lists what it can do without searching:
 
-- **Go to** each surface on the rail. **Go to Devtools** appears only when that surface is switched on. See [Turn on the Devtools surface](turn-on-devtools.md).
+- **Go to** each surface on the rail. **Go to Devtools** appears only when that surface, which is for whoever maintains the studio, is switched on.
 - **Switch theme** changes between the light and dark themes, the same as the sun or moon button in the top bar. The studio remembers the choice in this browser; until you make one, it follows your computer's setting.
 - **Show or hide the inspector** switches to the Composer and opens or closes the inspector.
 

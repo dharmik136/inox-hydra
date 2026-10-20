@@ -2605,6 +2605,48 @@ def list_support_backups():
     return {"directory": directory, "count": len(entries), "backups": entries}
 
 
+@app.post("/api/v1/support/restore", tags=["Support & Maintenance"])
+def restore_support_backup(payload: Optional[Dict[str, Any]] = None):
+    """
+    Restores one archive from the backups folder, after a safety backup.
+
+    Restore was only on the command line, which a portable or desktop install
+    has no checkout folder to run from. The request names a file listed in
+    the backups folder and nothing else: the name selects an entry of that
+    folder's listing, so a request never contributes a path. The restore
+    itself is support.restore_backup, unchanged: it checks the archive, takes
+    a pre_restore safety backup of the current state, then swaps all or
+    nothing. The restored database is then brought up to this build's schema
+    here, as a start would, so the running studio can read it at once.
+    """
+    name = str((payload or {}).get("name") or "")
+    directory = get_backups_dir()
+    if not name or name not in os.listdir(directory) or not os.path.isfile(os.path.join(directory, name)):
+        raise HTTPException(status_code=404, detail="That backup is not in the backups folder.")
+    archive = os.path.join(directory, name)
+    try:
+        result = support_tools.restore_backup(archive)
+    except support_tools.ProfileMismatch as mismatch:
+        raise HTTPException(status_code=409, detail=f"Not restored. {mismatch}")
+    except support_tools.RestoreFailed as failed:
+        safety = f" A safety backup of your state from just before is at {failed.safety_backup}." if failed.safety_backup else ""
+        raise HTTPException(status_code=500, detail=f"Not restored. {failed}{safety}")
+    except ValueError as refused:
+        raise HTTPException(status_code=400, detail=f"Not restored. {refused}")
+    try:
+        from .database import init_db as _bring_up_to_date
+    except ImportError:
+        from database import init_db as _bring_up_to_date
+    _bring_up_to_date()
+    return {
+        "status": "success",
+        "restored_from": name,
+        "safety_backup": result.get("safety_backup"),
+        "safety_note": result.get("safety_note") or "",
+        "assets_restored": result.get("assets_restored", 0),
+    }
+
+
 @app.post("/api/v1/support/export", tags=["Support & Maintenance"])
 def export_user_data(payload: Optional[Dict[str, Any]] = None):
     fmt = (payload or {}).get("format", "json")

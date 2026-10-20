@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Activity, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
 import { fetchPostsInsights, launchBridge, type PostInsight, type PostsInsights } from "@/lib/api";
+import { useRefresh } from "@/lib/refresh";
+import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 
@@ -18,23 +20,38 @@ type Unmeasured = { settled_without_figures?: number; settled_without_figures_fr
 export function PostsSurface({
   onOpenLead,
   onOpenActivity,
+  onOpenSetup,
 }: {
   onOpenLead: (leadId: string) => void;
   onOpenActivity?: () => void;
+  onOpenSetup?: () => void;
 }) {
   const [data, setData] = useState<PostsInsights | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
 
+  const load = useCallback(
+    () =>
+      fetchPostsInsights()
+        .then((result) => {
+          setData(result);
+          setFailed(false);
+        })
+        .catch(() => setFailed(true)),
+    [],
+  );
   useEffect(() => {
-    fetchPostsInsights().then(setData).catch(() => setFailed(true));
-  }, []);
+    void load();
+  }, [load]);
+  // Figures the bridge read from the other window appear on coming back to
+  // this one, and a list that failed in an outage returns by itself.
+  useRefresh(load);
 
-  if (failed) return <Centered>POSTS ARE UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
+  if (failed && !data) return <Centered>POSTS ARE UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!data) return <Centered>LOADING YOUR POSTS</Centered>;
   if (!data.posts.length) {
     return (
-      <EmptySurface label="Posts" title="What worked, and who it brought">
+      <EmptySurface label="Posts" title="What worked, and who it brought" onOpenSetup={onOpenSetup}>
         None of your posts have been imported yet. Import them in Setup, and each one appears here
         against your usual, with the people it brought.
       </EmptySurface>
@@ -100,7 +117,7 @@ function noUsualReason(data: PostsInsights & Unmeasured): string {
   return (
     `No usual yet: ${unmeasured} of your posts older than ${data.settled_after_days} days have no reactions, ` +
     `comments or impressions recorded${archive ? ", because LinkedIn's archive does not include them" : ""}. ` +
-    `Run "Posts you wrote" in Setup so the bridge reads their figures.`
+    `Press Import your history in Setup so the bridge reads their figures.`
   );
 }
 
@@ -122,7 +139,7 @@ function PostRow({
       <button type="button" onClick={onToggle} aria-expanded={expanded} className="w-full text-left">
         <div className="flex items-baseline justify-between gap-4">
           <p className="studio-meta text-[10px] text-ink-muted">
-            {post.published_at ? post.published_at.slice(0, 10) : "DATE UNKNOWN"}
+            {formatLocalDay(post.published_at, "Date unknown").toUpperCase()}
             {!post.settled && " · STILL GROWING"}
             {best && <span className="ml-2 text-signal-green-text">WORTH REPURPOSING</span>}
           </p>

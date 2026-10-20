@@ -113,7 +113,10 @@ def real_corpus_index():
 
 @pytest.fixture(scope="module")
 def catalogue():
-    response = client.get("/api/docs")
+    # The whole library, maintainer and retired documents included: these
+    # tests are about the registry. What a creator is listed is in
+    # tests/test_qc2_r5_docs.py.
+    response = client.get("/api/docs?internal=1")
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -402,7 +405,7 @@ def test_a_module_number_is_typed_as_the_label_it_is():
     assert re.search(r"number:\s*string;", client_source), (
         "DocModule.number is typed as a number again, and one of them is \"Master\""
     )
-    numbers = {module["number"] for module in client.get("/api/docs").json()["modules"]}
+    numbers = {module["number"] for module in client.get("/api/docs?internal=1").json()["modules"]}
     assert any(not value.isdigit() for value in numbers), (
         f"no non numeric module label left, so this guard no longer proves anything: {numbers}"
     )
@@ -789,7 +792,7 @@ def _help_articles():
 # Written in the help style but for whoever maintains the studio, so they are
 # filed where that reader looks. Named here so a user article cannot drift into
 # the reference by accident.
-MAINTAINER_ARTICLES = {"command-line-tool-reference.md", "turn-on-devtools.md"}
+MAINTAINER_ARTICLES = {"turn-on-devtools.md"}
 
 
 def test_every_help_article_is_filed_under_help():
@@ -997,11 +1000,15 @@ def test_an_index_built_without_stemming_is_rebuilt():
     assert docs_engine.search_docs_fts("folds", limit=3)
 
 
-def test_the_route_puts_every_whole_word_hit_before_any_prefix_hit():
+def test_the_route_puts_every_whole_word_hit_before_any_prefix_hit(monkeypatch):
     """
     Match first, kind second. Grouping by kind first let a help article that
     only mentioned a "folder" outrank a maintainer document about the fold.
+
+    In dev mode, because only there does search cover the maintainer
+    documents (see docs_engine.section_hidden).
     """
+    monkeypatch.setenv("INOX_DEV_MODE", "1")
     hits = client.get("/api/docs/search?q=fold&limit=100").json()["results"]
     key = [({"word": 0, "prefix": 1}[h["match"]], {"help": 0, "reference": 1, "retired": 2}[h["kind"]]) for h in hits]
     assert {k[0] for k in key} == {0, 1}, f"the query no longer mixes both kinds of hit: {sorted(set(key))}"
@@ -1009,7 +1016,10 @@ def test_the_route_puts_every_whole_word_hit_before_any_prefix_hit():
     assert key == sorted(key), key
 
 
-def test_a_page_of_results_for_a_whole_word_holds_no_prefix_guess():
+def test_a_page_of_results_for_a_whole_word_holds_no_prefix_guess(monkeypatch):
+    # The whole corpus, where "fold" has more than a page of whole-word hits.
+    # A customer's help has nine, and the prefix pass then fills the room left.
+    monkeypatch.setenv("INOX_DEV_MODE", "1")
     hits = client.get("/api/docs/search?q=fold&limit=20").json()["results"]
     marked = [m for hit in hits for m in _marked(hit)]
     assert "folder" not in marked and "folders" not in marked, marked

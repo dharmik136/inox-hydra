@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchOutboundInsights, type OutboundInsights } from "@/lib/api";
+import { useStudioBack } from "@/lib/refresh";
 import { EmptySurface } from "./EmptySurface";
 
 /**
@@ -13,15 +14,23 @@ import { EmptySurface } from "./EmptySurface";
  * posts; before that it would list everyone, on the strength of the studio
  * not having looked.
  */
-export function OutboundSurface() {
+export function OutboundSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}) {
   const [data, setData] = useState<OutboundInsights | null>(null);
   const [failed, setFailed] = useState(false);
+  // Read again when the studio answers after an outage, so a screen that
+  // failed while it was down does not stay failed once it is back.
+  const back = useStudioBack();
 
   useEffect(() => {
-    fetchOutboundInsights().then(setData).catch(() => setFailed(true));
-  }, []);
+    fetchOutboundInsights()
+      .then((result) => {
+        setData(result);
+        setFailed(false);
+      })
+      .catch(() => setFailed(true));
+  }, [back]);
 
-  if (failed) return <Centered>OUTBOUND IS UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
+  if (failed && !data) return <Centered>OUTBOUND IS UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!data) return <Centered>LOADING YOUR ACTIVITY</Centered>;
   const { totals, coverage } = data;
   if (!data.authors.length) {
@@ -30,7 +39,7 @@ export function OutboundSurface() {
     // right after Setup reported 15 comments and 25 reactions.
     if (totals.reactions + totals.comments > 0) {
       return (
-        <EmptySurface label="Outbound" title="Where your attention goes">
+        <EmptySurface label="Outbound" title="Where your attention goes" onOpenSetup={onOpenSetup}>
           {totals.reactions.toLocaleString()} reactions and {totals.comments.toLocaleString()} comments are imported,
           but LinkedIn&rsquo;s archive does not name the author of the posts they were on, so they cannot be ranked by
           person yet. In Setup, run &ldquo;Posts you reacted to&rdquo; and &ldquo;Comments you left&rdquo;: the bridge
@@ -39,7 +48,7 @@ export function OutboundSurface() {
       );
     }
     return (
-      <EmptySurface label="Outbound" title="Where your attention goes">
+      <EmptySurface label="Outbound" title="Where your attention goes" onOpenSetup={onOpenSetup}>
         None of your reactions or comments have been imported yet. Import them in Setup to see whose
         posts you engage with, and which of those people engage back.
       </EmptySurface>

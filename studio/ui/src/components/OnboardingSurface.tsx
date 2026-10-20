@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { Check, Copy, ExternalLink, Loader2 } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Loader2 } from "lucide-react";
 import {
   OWN_PROFILE_URL,
   confirmIdentity,
@@ -21,6 +21,8 @@ import {
   type SelfImport,
   type SelfImportKind,
 } from "@/lib/api";
+import { reportBridge } from "@/lib/bridgeState";
+import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { ArchiveImport, archiveStatus } from "./ArchiveImport";
 
@@ -41,7 +43,7 @@ const POLL_MS = 3000;
 
 /** What this screen reads from the onboarding state beyond the shared type. */
 type SetupState = OnboardingState & {
-  /** Import all three, while one is under way. Kept by the studio, so it survives a restart. */
+  /** Import your history, while one is under way. Kept by the studio, so it survives a restart. */
   sync_chain?: { sequence: SelfImportKind[]; current_kind: SelfImportKind } | null;
   /** Readings of your posts' figures and archive connections: what deleting everything also removes. */
   counts: { readings?: number; connections?: number };
@@ -51,7 +53,7 @@ type SetupState = OnboardingState & {
   extension_outdated?: boolean;
 };
 
-export function OnboardingSurface() {
+export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } = {}) {
   const [state, setState] = useState<SetupState | null>(null);
   const [bridge, setBridge] = useState<BrowserBridge | null>(null);
   const [failed, setFailed] = useState(false);
@@ -61,7 +63,9 @@ export function OnboardingSurface() {
 
   const refresh = useCallback(async () => {
     try {
-      setState(await fetchOnboardingState());
+      const next = await fetchOnboardingState();
+      setState(next);
+      reportBridge(next.bridge.connected);
       setFailed(false);
     } catch {
       setFailed(true);
@@ -70,10 +74,10 @@ export function OnboardingSurface() {
 
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
     fetchBrowserBridge().then(setBridge).catch(() => setBridge({ browsers: [], extension_path: "" }));
-    return () => window.clearInterval(timer);
   }, [refresh]);
+  // Every POLL_MS while the window is in view; a hidden one is not polled.
+  useRefresh(refresh, POLL_MS);
 
   // The browser that carries the extension, if any. "auto" lets the backend
   // pick, which it does by the same measured rule the Leads screen uses.
@@ -102,6 +106,9 @@ export function OnboardingSurface() {
   if (!state) return <Centered>LOADING SETUP</Centered>;
 
   const { steps, identity, candidate } = state;
+  // Every step ticked. The screen used to end on step 5 with nothing to say
+  // that Setup was over or where to go next.
+  const finished = steps.bridge && steps.identity && !!identity?.profile_observed_at && steps.archive && !!steps.history;
 
   return (
     <NoteContext.Provider value={note}>
@@ -251,12 +258,12 @@ export function OnboardingSurface() {
           last
           status={
             steps.identity
-              ? `${state.counts.posts} posts, ${state.counts.comments} comments, ${state.counts.reactions} reactions${
+              ? `${counted(state.counts.posts, "post")}, ${counted(state.counts.comments, "comment")}, ${counted(state.counts.reactions, "reaction")}${
                   steps.history
                     ? ""
                     : state.extension_outdated
-                      ? ". Your last posts import came from an older copy of the extension, which cannot tell whether it reached the end: reload the extension on your browser's extensions page, then run Posts you wrote again"
-                      : `. ${state.counts.posts ? "Your posts are in, but the" : "The"} list of your posts has not been read to its end yet: run Posts you wrote`
+                      ? ". Your last posts import came from an older copy of the extension, which cannot tell whether it reached the end: reload the extension on your browser's extensions page, then press Import again beside Posts you wrote"
+                      : `. ${state.counts.posts ? "Your posts are in, but the" : "The"} list of your posts has not been read to its end yet: press ${state.counts.posts ? "Import again" : "Import"} beside Posts you wrote`
                 }`
               : "Your posts, and what you have liked and commented on"
           }
@@ -293,9 +300,9 @@ export function OnboardingSurface() {
                   {busy === "all" ? (
                     <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                   ) : (
-                    <Check className="size-3.5" strokeWidth={2} aria-hidden="true" />
+                    <Download className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
                   )}
-                  Import all three
+                  Import your history
                 </button>
               </div>
               {state.sync_chain && (
@@ -327,6 +334,20 @@ export function OnboardingSurface() {
           )}
         </Step>
       </ol>
+
+      {finished && onOpenToday && (
+        <div
+          role="status"
+          className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-md border border-edge-strong p-4"
+        >
+          <p className="text-[13px] leading-snug text-ink-primary">
+            Setup is done. Each day, start on Today: who to reply to, and how your latest post is doing.
+          </p>
+          <Primary opensBrowser={false} onPress={onOpenToday}>
+            Go to Today
+          </Primary>
+        </div>
+      )}
 
       {/* Whether each part of the capture is still working.
           LinkedIn changes its markup without notice, and a reader that stops
@@ -456,6 +477,11 @@ const IMPORTS: { kind: SelfImportKind; label: string }[] = [
   { kind: "comments", label: "Comments you left" },
   { kind: "reactions", label: "Posts you reacted to" },
 ];
+
+/** "1 comment", "12 posts". */
+function counted(count: number, noun: string): string {
+  return `${count.toLocaleString()} ${noun}${count === 1 ? "" : "s"}`;
+}
 
 function bridgeLine(state: OnboardingState): string {
   const { bridge } = state;

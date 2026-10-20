@@ -2,11 +2,11 @@
 
 Open **Today** to see who is waiting on a reply, how your latest post is doing against your usual, and the one LinkedIn page most worth opening now.
 
-Once you have confirmed your profile in **Setup**, the studio opens on **Today**. It refreshes itself every 30 seconds while it is open, so captures from the bridge browser appear without reloading.
+Once you have confirmed your profile in **Setup**, the studio opens on **Today**. It refreshes itself every 30 seconds while the window is in view, and again when you come back to it, so captures from the bridge browser appear without reloading. If the studio stopped while Today was open, it comes back by itself once the studio is running again.
 
 ## The line under the title
 
-It says whether the bridge browser has been heard from, when anything was last captured, and how many parts of the capture have stopped working. If a part has stopped, **Setup** shows which one under **CAPTURE HEALTH**.
+It says whether the bridge browser has been heard from, when anything was last captured (or, before the first capture, how many of your posts the studio holds, for example 12 POSTS OF YOURS HELD), and how many parts of the capture have stopped working. The mark beside **Activity** at the top of the screen says the same about the bridge. If a part has stopped, **Setup** shows which one under **CAPTURE HEALTH**.
 
 ## One thing to open
 
@@ -31,6 +31,8 @@ They are ordered by what they did: people who engaged with more than one of your
 
 The opening of your most recent post, its age, and the reactions and comments last read on it.
 
+If you marked a post as published in the studio and the bridge has not yet seen it on LinkedIn, a line above names it, for example "You marked "Shipping the rota rewrite today." as published Tue 20 Oct, 04:40 PM". The post takes its place here, with its figures, once the bridge sees it.
+
 When it can be done fairly, the studio compares it with your usual:
 
 - Both are read at about two days old, between 36 and 72 hours. A post read at six hours and one read at six weeks say nothing about each other.
@@ -49,4 +51,4 @@ Each time your posts are imported or re-read, the counts LinkedIn shows on them 
 
 ## Queue
 
-The next post scheduled to go out, and the next open slot in your weekly posting schedule.
+The next post scheduled to go out, with its date and time, and the next open slot in your weekly posting schedule. Both times use your computer's clock format.

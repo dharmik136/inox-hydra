@@ -12,7 +12,8 @@ import {
   type QueueSlot,
   type ScheduledPost,
 } from "@/lib/api";
-import { formatLocal } from "@/lib/time";
+import { useRefresh } from "@/lib/refresh";
+import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -58,6 +59,10 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
   useEffect(() => {
     void load();
   }, [load]);
+  // "When a queued post's time comes, it moves to Due below": only if the
+  // screen reads again, which it did not while open. Every 30 seconds while
+  // in view, on coming back to the window, and after an outage.
+  useRefresh(load, 30000);
 
   async function onTogglePause() {
     if (!health) return;
@@ -133,7 +138,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
     }
   }
 
-  if (failed) return <Centered>QUEUE UNAVAILABLE</Centered>;
+  if (failed && !slots) return <Centered>QUEUE UNAVAILABLE</Centered>;
   if (!slots || !health) return <Centered>LOADING QUEUE</Centered>;
 
   const byDay = DAYS.map((_, index) => slots.filter((slot) => slot.day_of_week === index));
@@ -265,7 +270,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
         <section className="mt-6">
           <p className="studio-label mb-1.5">Next slot</p>
           <p className="text-[14px] text-ink-primary">
-            {health.next_smart_slot.day_name} {health.next_smart_slot.time_slot}
+            {health.next_smart_slot.day_name} {formatSlotTime(health.next_smart_slot.time_slot)}
             <span className="mx-2 text-ink-muted">·</span>
             <span className="text-ink-secondary">{health.next_smart_slot.label}</span>
           </p>
@@ -295,7 +300,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
                 <ul className="mt-1.5 flex flex-col gap-1">
                   {daySlots.map((slot) => (
                     <li key={slot.id} className="text-[12px] text-ink-primary">
-                      {slot.time_slot}
+                      {formatSlotTime(slot.time_slot)}
                       <span className="block text-[10px] text-ink-muted">{slot.label}</span>
                     </li>
                   ))}

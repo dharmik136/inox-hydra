@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { AlertTriangle, Search } from "lucide-react";
 import { fetchInspirations, type Inspiration } from "@/lib/api";
+import { useStudioBack } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import type { SearchFocus } from "@/lib/search";
 
@@ -20,6 +21,9 @@ import type { SearchFocus } from "@/lib/search";
 export function SwipeSurface({ focus = null }: { focus?: SearchFocus | null } = {}) {
   const [specimens, setSpecimens] = useState<Inspiration[] | null>(null);
   const [failed, setFailed] = useState(false);
+  // Read again when the studio answers after an outage, so a screen that
+  // failed while it was down does not stay failed once it is back.
+  const back = useStudioBack();
   const [query, setQuery] = useState("");
   const [archetype, setArchetype] = useState<string>("All");
   /** The specimen search opened, outlined until the reader moves on. */
@@ -44,12 +48,16 @@ export function SwipeSurface({ focus = null }: { focus?: SearchFocus | null } = 
   useEffect(() => {
     let live = true;
     fetchInspirations()
-      .then((rows) => live && setSpecimens(rows))
+      .then((rows) => {
+        if (!live) return;
+        setSpecimens(rows);
+        setFailed(false);
+      })
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, []);
+  }, [back]);
 
   const archetypes = useMemo(() => {
     if (!specimens) return [];

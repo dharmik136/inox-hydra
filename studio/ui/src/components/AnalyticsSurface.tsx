@@ -13,6 +13,7 @@ import {
   type PostAttribution,
 } from "@/lib/api";
 import { TimeSeriesChart, type SeriesPoint } from "./TimeSeriesChart";
+import { useStudioBack } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 
 const RANGES: AnalyticsRange[] = ["7d", "30d", "90d"];
@@ -58,6 +59,9 @@ export function AnalyticsSurface() {
   const [posts, setPosts] = useState<AnalyticsPost[] | null>(null);
   const [loadingRange, setLoadingRange] = useState(false);
   const [failed, setFailed] = useState(false);
+  // Read again when the studio answers after an outage, so a screen that
+  // failed while it was down does not stay failed once it is back.
+  const back = useStudioBack();
 
   // The posts do not depend on the range, so they are read once. They were
   // read again on every range click, and at 2,000 posts the screen went back
@@ -70,7 +74,7 @@ export function AnalyticsSurface() {
     return () => {
       live = false;
     };
-  }, []);
+  }, [back]);
 
   // A range change keeps the current chart on screen until the new one
   // arrives, rather than blanking the page.
@@ -89,7 +93,7 @@ export function AnalyticsSurface() {
     return () => {
       live = false;
     };
-  }, [range]);
+  }, [range, back]);
 
   const points: SeriesPoint[] = useMemo(
     () => (series ?? []).map((row) => ({ date: row.date, value: row[metric] })),

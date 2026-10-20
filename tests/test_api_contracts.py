@@ -198,7 +198,8 @@ def test_ai_command_execution():
 # 7. Documentation Suite API Tests
 # -------------------------------------------------------------
 def test_docs_modules_contract():
-    resp = client.get("/api/docs")
+    # The curated modules are retired manuals, listed to a maintainer only (R1-N2).
+    resp = client.get("/api/docs?internal=1")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "success"

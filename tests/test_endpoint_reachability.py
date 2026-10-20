@@ -177,6 +177,10 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # /api/v1/storage/compact, all surfaced in StoragePrivacyWorkspace and api.ts.
 # Reached moves 99 -> 108, unreachable stays at 83, total moves 182 -> 191.
 # ---------------------------------------------------------------------------
+# Then /api/v1/support/restore (batch R5, D-6), Brand Studio's Restore on
+# each listed backup (BrandStudioSurface, api.ts restoreBackup).
+# Reached moves 99 -> 100, unreachable stays at 83, total moves 182 -> 183.
+# ---------------------------------------------------------------------------
 TOTAL_API_PATHS = 0
 REACHED_BY_INTERFACE = 0
 UNREACHABLE = 0

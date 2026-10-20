@@ -33,7 +33,12 @@ interface ComposerCanvasProps {
   onReHook: (selection: string) => void;
   /** Bumped when a hook replaces the opening, to play the text transition. */
   swapKey: number;
+  /** Ctrl+S or Cmd+S in the editor: the same as the Save button. */
+  onSave?: () => void;
 }
+
+/** Ctrl or Cmd with these letters formats the selection, as the toolbar's buttons do. */
+const FORMAT_KEYS: Record<string, FormatKind> = { b: "bold", i: "italic", u: "underline" };
 
 /**
  * The main writing canvas (blueprint sections 7B, 7C and 7D).
@@ -44,7 +49,7 @@ interface ComposerCanvasProps {
  * mechanism serves three jobs: where the fold falls, where a selection is on
  * screen, and how tall the textarea has to be.
  */
-export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerCanvasProps) {
+export function ComposerCanvas({ value, onChange, onReHook, swapKey, onSave }: ComposerCanvasProps) {
   const mirrorRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const reduceMotion = useReducedMotion();
@@ -287,6 +292,20 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey }: ComposerC
           onSelect={syncToolbar}
           onBlur={() => setToolbar(null)}
           onScroll={syncToolbar}
+          // A writing tool's keys. Ctrl+S opened the browser's Save Page As
+          // over the draft, and Ctrl+B did nothing.
+          onKeyDown={(event) => {
+            if (!(event.ctrlKey || event.metaKey) || event.altKey || event.shiftKey) return;
+            const key = event.key.toLowerCase();
+            if (key === "s") {
+              event.preventDefault();
+              onSave?.();
+            } else if (FORMAT_KEYS[key]) {
+              event.preventDefault();
+              void applyFormat(FORMAT_KEYS[key]);
+            }
+          }}
+          aria-keyshortcuts="Control+S Control+B Control+I Control+U"
           spellCheck
           aria-label="Post body"
           // The one text field where Alt and a digit applies a hook.

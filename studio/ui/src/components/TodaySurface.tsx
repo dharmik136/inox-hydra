@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, Check, CheckCheck, Copy, ExternalLink, Loader2 } from "lucide-react";
+import { Activity, CheckCheck, Copy, Download, ExternalLink, Loader2 } from "lucide-react";
 import {
   dismissDemoCleanupNotice,
   fetchToday,
@@ -11,6 +11,9 @@ import {
   type TodayLatestPost,
   type TodayPerson,
 } from "@/lib/api";
+import { reportBridge } from "@/lib/bridgeState";
+import { useRefresh } from "@/lib/refresh";
+import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 /**
@@ -45,17 +48,17 @@ export function TodaySurface({
     fetchToday()
       .then((result) => {
         setBrief(result);
+        reportBridge(result.freshness.bridge.connected);
         setFailed(false);
       })
       .catch(() => setFailed(true));
   }, []);
 
-  useEffect(() => {
-    load();
-    // Captures arrive while this screen is open, from the other window.
-    const timer = window.setInterval(load, 30000);
-    return () => window.clearInterval(timer);
-  }, [load]);
+  useEffect(load, [load]);
+  // Captures arrive while this screen is open, from the other window. Read
+  // again every 30 seconds while the window is in view (a hidden one is not
+  // polled), on coming back to it, and when the studio is back after an outage.
+  useRefresh(load, 30000);
 
   async function open(url: string, at: "top" | "latest" = "top") {
     setOpening(url);
@@ -77,7 +80,7 @@ export function TodaySurface({
       setNote({ text: res.message, at: "top", error: false });
       load();
     } catch (caught) {
-      setNote({ text: caught instanceof Error ? caught.message : "Sync could not be started.", at: "top", error: true });
+      setNote({ text: caught instanceof Error ? caught.message : "The import could not be started.", at: "top", error: true });
     } finally {
       setOpening(null);
     }
@@ -141,7 +144,7 @@ export function TodaySurface({
             {due.map((post) => (
               <li key={post.post_id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2">
                 <span className="studio-meta shrink-0 text-[10px] text-signal-orange-text">
-                  DUE {formatWhen(post.scheduled_for).toUpperCase()}
+                  DUE {formatLocal(post.scheduled_for).toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[13px] text-ink-secondary">{post.excerpt}</span>
                 <span className="flex shrink-0 items-center gap-2">
@@ -219,9 +222,13 @@ export function TodaySurface({
             {opening === "sync-all" ? (
               <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
             ) : (
-              <Check className="size-3.5" strokeWidth={2} aria-hidden="true" />
+              <Download className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
             )}
-            Sync Activity via Bridge
+            {/* One name for the one action, as on Setup and Activity. It
+                was "Sync Activity via Bridge" here, "Import all three" on
+                Setup and "Sync All Activity" on Activity, with a tick that
+                read as done on a button that starts work. */}
+            Import your history
           </button>
           {onOpenActivity && (
             <button
@@ -252,6 +259,13 @@ export function TodaySurface({
       </Section>
 
       <Section label="Your latest post">
+        {brief.marked_published && (
+          <p className="mb-3 text-[13px] leading-relaxed text-ink-secondary">
+            You marked {brief.marked_published.excerpt ? `“${brief.marked_published.excerpt}”` : "a post"} as
+            published {formatLocal(brief.marked_published.published_at)}. It appears here, with its figures, once the
+            bridge sees it on LinkedIn.{brief.latest_post ? " Until then, this is the latest one it has read:" : ""}
+          </p>
+        )}
         {brief.latest_post ? (
           <LatestPost post={brief.latest_post} opening={opening} onOpen={(url) => void open(url, "latest")} />
         ) : (
@@ -270,7 +284,7 @@ export function TodaySurface({
             label="Next to go out"
             value={
               brief.queue.next_scheduled
-                ? `${formatWhen(brief.queue.next_scheduled.scheduled_for)}: ${brief.queue.next_scheduled.excerpt}`
+                ? `${formatLocal(brief.queue.next_scheduled.scheduled_for)}: ${brief.queue.next_scheduled.excerpt}`
                 : "Nothing scheduled"
             }
           />
@@ -278,7 +292,7 @@ export function TodaySurface({
             label="Next open slot"
             value={
               brief.queue.next_open_slot
-                ? `${brief.queue.next_open_slot.day_name} ${brief.queue.next_open_slot.time_slot}${
+                ? `${brief.queue.next_open_slot.day_name} ${formatSlotTime(brief.queue.next_open_slot.time_slot)}${
                     brief.queue.next_open_slot.label ? `, ${brief.queue.next_open_slot.label}` : ""
                   }`
                 : "No slot found"
@@ -459,10 +473,14 @@ function LatestPost({
 }
 
 function freshnessLine(brief: TodayBrief): string {
-  const { bridge, drifting, last_capture_at } = brief.freshness;
+  const { bridge, drifting, last_capture_at, posts_held: held = 0 } = brief.freshness;
   const parts = [
     bridge.connected ? "BRIDGE CONNECTED" : bridge.last_seen_at ? `BRIDGE LAST SEEN ${ago(bridge.last_seen_at)}` : "BRIDGE NOT SEEN YET",
-    last_capture_at ? `LAST CAPTURE ${ago(last_capture_at)}` : "NOTHING CAPTURED YET",
+    last_capture_at
+      ? `LAST CAPTURE ${ago(last_capture_at)}`
+      : held
+        ? `${held.toLocaleString()} ${held === 1 ? "POST" : "POSTS"} OF YOURS HELD`
+        : "NOTHING CAPTURED YET",
   ];
   if (drifting.length) parts.push(`${drifting.length} PART${drifting.length > 1 ? "S" : ""} OF THE CAPTURE NOT WORKING`);
   return parts.join(" · ");
@@ -475,11 +493,6 @@ function ago(iso: string): string {
   if (seconds < 5400) return `${Math.round(seconds / 60)} MIN AGO`;
   if (seconds < 172800) return `${Math.round(seconds / 3600)} H AGO`;
   return `${Math.round(seconds / 86400)} DAYS AGO`;
-}
-
-function formatWhen(iso: string): string {
-  const when = new Date(iso);
-  return Number.isNaN(when.getTime()) ? iso : when.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {

@@ -1,6 +1,6 @@
 # Back up, restore or export your data
 
-Take a backup or export from Brand Studio, find where it was saved, and restore one from the command line.
+Take a backup or export from Brand Studio, find where it was saved, and restore one from Brand Studio or, if the studio will not start, from the command line.
 
 ## Where your data lives
 
@@ -73,23 +73,33 @@ A figure the studio never read says "not measured", not 0.
 | --- | --- | --- |
 | Contents | Full database and all media | Content tables only, no media |
 | Credentials | Included | Excluded |
-| Can it be restored? | Yes, from the command line | No |
+| Can it be restored? | Yes, from Brand Studio or the command line | No |
 | Use it for | Getting your studio back | Taking your content to a spreadsheet, Obsidian or another tool |
 
 ## Restore a backup
 
-The interface has no restore button. Use a terminal opened in the checkout folder:
+1. Open **Brand Studio** from the rail.
+2. Choose the **Local security** tab and scroll to **Your data**.
+3. In the list of backups, click **Restore** beside the one you want. Every ZIP backup and every automatic database copy has one.
+4. The studio asks first. The question names the backup and says it replaces this profile's drafts, leads and analytics. Click **OK** to go ahead.
+5. When it finishes, a note reads "Restored *backup name*" and names the safety backup. Click **Reload the studio** to see the restored data. If you have unsaved work open, the studio asks before reloading.
+
+**What happens:** the studio unpacks the backup beside your data and checks its database first. Then it takes a `pre_restore` safety backup of your current state, swaps the database and the media files in, and brings the restored database up to this version's layout. If anything fails part way, everything it had changed is put back, the note starts "Not restored", and it names the safety backup. If you restored the wrong archive, restore the safety backup the same way: it is in the same list.
+
+A backup made in another creator profile is refused, with a note that names its profile. Switch to that profile first, then restore it there.
+
+### From the command line, when the studio will not start
+
+If the studio cannot open, for example because its database is damaged, use a terminal opened in the checkout folder:
 
 1. Close the studio server (the minimized **Inox Hydra Backend** window, or **Inox Hydra Engine** in the portable build).
 2. Check the archive first: `python -m studio.cli restore "<path to zip>"`. Without `--yes` it prints the backup's creation date, app version, whether it contains a database, and its media file count, then stops.
 3. Restore it: `python -m studio.cli restore "<path to zip>" --yes`.
 4. Start the studio again. The command ends with "Restart Inox Hydra for the restored data to take effect."
 
-**What happens:** the studio unpacks the backup beside your data and checks its database first. Then it takes a `pre_restore` safety backup of your current state, swaps the database and the media files in, and prints the safety backup's path. If anything fails part way, everything it had changed is put back, the message starts "Not restored", and it names the safety backup. If you restored the wrong archive, restore the safety backup the same way.
+The command line restore works the same way as the button, and prints the safety backup's path. When the current database is damaged it still runs: the current database cannot be copied normally, so the safety backup (`inox_backup_pre_restore_damaged_<date>_<time>.zip`) keeps its files exactly as they were, in a `damaged` folder inside the ZIP, and the command says so.
 
-If the studio will not start because its database is damaged, restore your latest backup the same way. The restore still runs: the current database cannot be copied normally, so the safety backup (`inox_backup_pre_restore_damaged_<date>_<time>.zip`) keeps its files exactly as they were, in a `damaged` folder inside the ZIP, and the command says so.
-
-To go back to the state from before an upgrade, restore its automatic copy the same way: `python -m studio.cli restore "<path to linkedin_studio_premigration_<date>_<time>.db>" --yes`. It replaces the database only and leaves your media files as they are. The next start brings it up to the current layout again.
+To go back to the state from before an upgrade, restore its automatic copy, with its **Restore** button or with `python -m studio.cli restore "<path to linkedin_studio_premigration_<date>_<time>.db>" --yes`. It replaces the database only and leaves your media files as they are, and it is brought up to the current layout again.
 
 In the portable build, use `InoxHydra-CLI.bat backup`, `InoxHydra-CLI.bat restore <zip>` and `InoxHydra-CLI.bat export`.
 
@@ -112,5 +122,6 @@ Restoring on a new PC brings back drafts, posts, leads, analytics, queue items, 
 | NO BACKUPS YET | The folder is empty | Click **Back up now** |
 | The note shows a server message or a status code instead of "Saved" | The backup or export did not complete | Read the message. If unclear, run `python -m studio.cli doctor` |
 | `No such backup` | The path you typed is wrong | Copy the file name from the list in **Your data** and the folder path shown below it |
+| `This backup is of creator profile` | The backup was made in another creator profile than the open one | Switch to the profile the message names, then restore it there. Nothing was changed |
 | `contains no database and cannot be restored` | The file is an export or another ZIP, not a backup | Choose an `inox_backup_` file |
 | `This backup was made by a newer version of Inox Hydra` | The backup comes from a newer studio, for example on another computer, and this one could not open it after restoring | Update this studio to the version the message names, or newer, then restore again. Nothing was changed |

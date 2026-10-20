@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useState as useLocalState } from "react";
-import { Archive, Check, Loader2, Network, ShieldCheck } from "lucide-react";
+import { Archive, Check, Loader2, Network, RotateCcw, ShieldCheck } from "lucide-react";
 import {
   createBackup,
   exportData,
@@ -9,6 +9,7 @@ import {
   fetchBackups,
   fetchEgressStatus,
   fetchProfile,
+  restoreBackup,
   saveSessionCookies,
   saveProfile,
   type AiStatus,
@@ -18,8 +19,9 @@ import {
   type CreatorProfile,
   type ProfileResponse,
 } from "@/lib/api";
+import { useStudioBack } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
-import { registerUnsavedWork } from "@/lib/unsaved";
+import { hasUnsavedWork, registerUnsavedWork, reloadStudio, unsavedWorkLabels } from "@/lib/unsaved";
 import { GroundingWorkspace } from "./GroundingWorkspace";
 import { LicenceWorkspace } from "./LicenceWorkspace";
 import { StoragePrivacyWorkspace } from "./StoragePrivacyWorkspace";
@@ -72,7 +74,13 @@ export function BrandStudioSurface() {
     [],
   );
 
+  // Read again when the studio answers after an outage, but only while the
+  // profile is still missing: a profile on screen may hold edits not saved yet.
+  const back = useStudioBack();
+  const hasProfile = useRef(false);
+  hasProfile.current = profile !== null;
   useEffect(() => {
+    if (hasProfile.current) return;
     let live = true;
     Promise.all([fetchProfile(), fetchAiStatus().catch(() => null)])
       .then(([profileResponse, aiStatus]) => {
@@ -80,12 +88,13 @@ export function BrandStudioSurface() {
         setLoaded(profileResponse);
         setProfile(profileResponse.profile);
         setAi(aiStatus);
+        setError(null);
       })
       .catch(() => live && setError("The profile could not be read."));
     return () => {
       live = false;
     };
-  }, []);
+  }, [back]);
 
   if (error && !profile) return <Centered>{error.toUpperCase()}</Centered>;
   if (!profile) return <Centered>LOADING BRAND STUDIO</Centered>;
@@ -456,6 +465,9 @@ function YourData() {
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  // Set once a restore has replaced this profile's data. Every screen still
+  // shows what it read before, so the one way on is a reload.
+  const [restored, setRestored] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -488,6 +500,47 @@ function YourData() {
     } finally {
       setBusy(null);
     }
+  }
+
+  /**
+   * Restores one listed archive, after asking.
+   *
+   * Restore used to be a terminal command only, which a portable or desktop
+   * install has no checkout folder to run. The studio takes a safety backup
+   * of the current state before it changes anything, and the question says
+   * so, because the answer to restoring the wrong archive is that copy.
+   */
+  async function restore(name: string) {
+    const question =
+      `Restore ${name}?\n\nThis replaces this profile's drafts, leads and analytics with what the backup holds. ` +
+      "A safety backup of the current state is taken first, so you can go back to it the same way.";
+    if (!window.confirm(question)) return;
+    setBusy(`restore:${name}`);
+    setNote(null);
+    try {
+      const done = await restoreBackup(name);
+      setNote(
+        `Restored ${done.restoredFrom}. ` +
+          (done.safetyBackup ? `The safety backup of your state from just before is ${done.safetyBackup}. ` : "") +
+          (done.safetyNote ? `${done.safetyNote} ` : "") +
+          "Reload the studio to see the restored data.",
+      );
+      setRestored(true);
+      await load();
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "The restore was refused. Nothing was changed.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Reloads through the unsaved-work guard, as the profile switcher does. */
+  function reloadAfterRestore() {
+    if (hasUnsavedWork()) {
+      const lost = unsavedWorkLabels().join(" and ") || "Your unsaved work";
+      if (!window.confirm(`${lost} would be lost by reloading. Reload anyway?`)) return;
+    }
+    reloadStudio();
   }
 
   return (
@@ -549,9 +602,18 @@ function YourData() {
       </p>
 
       {note && (
-        <p role="status" className="studio-meta mt-3 leading-snug break-all text-ink-secondary">
+        <p role="status" className="mt-3 text-[12px] leading-snug break-all text-ink-secondary">
           {note}
         </p>
+      )}
+      {restored && (
+        <button
+          type="button"
+          onClick={reloadAfterRestore}
+          className="mt-2 rounded-md bg-signal-orange px-2.5 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110"
+        >
+          Reload the studio
+        </button>
       )}
 
       {failed ? (
@@ -567,13 +629,29 @@ function YourData() {
           </p>
           <ul className="flex flex-col gap-1">
             {listing.backups.slice(0, 5).map((archive) => (
-              <li key={archive.name} className="flex items-baseline justify-between gap-3">
-                <span className="truncate text-[12px] text-ink-secondary">{archive.name}</span>
+              <li key={archive.name} className="flex items-center justify-between gap-3">
+                <span className="min-w-0 flex-1 truncate text-[12px] text-ink-secondary">{archive.name}</span>
                 <span className="studio-meta shrink-0 text-[10px] text-ink-muted">
                   {readableBytes(archive.bytes)}
                   <span className="mx-1.5">·</span>
                   {archive.modified.slice(0, 16).replace("T", " ")}
                 </span>
+                {archive.restorable && (
+                  <button
+                    type="button"
+                    onClick={() => void restore(archive.name)}
+                    disabled={busy !== null}
+                    aria-label={`Restore ${archive.name}`}
+                    className="flex shrink-0 items-center gap-1 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                  >
+                    {busy === `restore:${archive.name}` ? (
+                      <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <RotateCcw className="size-3" strokeWidth={1.75} aria-hidden="true" />
+                    )}
+                    Restore
+                  </button>
+                )}
               </li>
             ))}
           </ul>

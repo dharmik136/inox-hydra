@@ -18,7 +18,10 @@ try:
         section_meta,
         section_kind,
         help_sections,
-        search_docs_fts
+        search_docs_fts,
+        section_hidden,
+        hidden_document_paths,
+        internal_documents_shown
     )
     from .. import universal_search
     from ..intelligence_sync import intelligence_sync_engine
@@ -30,7 +33,10 @@ except (ImportError, ValueError):
         section_meta,
         section_kind,
         help_sections,
-        search_docs_fts
+        search_docs_fts,
+        section_hidden,
+        hidden_document_paths,
+        internal_documents_shown
     )
     import universal_search
     from intelligence_sync import intelligence_sync_engine
@@ -158,7 +164,7 @@ def _docs_catalogue():
 
 
 @router.get("/api/docs", tags=["Documentation"])
-def list_docs_modules():
+def list_docs_modules(internal: bool = False):
     """
     The documentation suite: the seven curated modules, and the whole library.
 
@@ -167,11 +173,19 @@ def list_docs_modules():
     could match had no route and the interface could not offer the hit it had
     just rendered. "library" closes that: one entry per indexed file, carrying
     the id that opens it and the curated module id when it has one.
+
+    A creator is listed the help articles only. The maintainer and retired
+    documents are listed in dev mode, or when asked for with ?internal=1;
+    either way each still opens by its id. The seven curated modules are all
+    retired manuals, so they are listed on the same terms.
     """
+    shown = internal or internal_documents_shown()
     catalogue, by_path = _docs_catalogue()
     library = []
     for path in sorted(by_path):
         record = catalogue[by_path[path]]
+        if section_hidden(record["section"], shown):
+            continue
         library.append({
             "id": record["id"],
             "path": record["path"],
@@ -185,20 +199,25 @@ def list_docs_modules():
 
     sections = []
     for section in help_sections(DOCS_DIR):
+        if section_hidden(section["id"], shown):
+            continue
         sections.append({
             "id": section["id"],
             "title": section["title"],
             "blurb": section["blurb"],
             "kind": section["kind"],
+            "hidden": False,
             "count": section["count"],
             "words": section["words"],
             "document_ids": [catalogue[by_path[entry["path"]]]["id"] for entry in section["documents"]],
         })
 
+    modules = [module for module in DOCS_MODULES
+               if module["id"] in catalogue and not section_hidden(catalogue[module["id"]]["section"], shown)]
     return {
         "status": "success",
-        "count": len(DOCS_MODULES),
-        "modules": DOCS_MODULES,
+        "count": len(modules),
+        "modules": modules,
         "library": library,
         "library_count": len(library),
         "sections": sections
@@ -206,7 +225,7 @@ def list_docs_modules():
 
 
 @router.get("/api/docs/search", tags=["Documentation"])
-def search_documentation(q: str, limit: int = 10):
+def search_documentation(q: str, limit: int = 10, internal: bool = False):
     """
     Sub-millisecond full-text search across all offline Markdown playbooks using SQLite FTS5 (Day 09).
     """
@@ -216,9 +235,15 @@ def search_documentation(q: str, limit: int = 10):
     except (TypeError, ValueError):
         safe_limit = 10
 
-    results = search_docs_fts(safe_q, limit=min(100, max(safe_limit * 4, 40)))
+    # Maintainer and retired documents are not answers for a creator; see
+    # docs_engine.section_hidden. Left out in the query, and any hit from a
+    # hidden section that is not in the written table is dropped below.
+    shown = internal or internal_documents_shown()
+    results = search_docs_fts(safe_q, limit=min(100, max(safe_limit * 4, 40)),
+                              skip_files=hidden_document_paths(shown))
 
     catalogue, by_path = _docs_catalogue()
+    kept = []
     for hit in results:
         filename = str(hit.get("filename") or "").replace("\\", "/")
         hit["filename"] = filename
@@ -227,6 +252,9 @@ def search_documentation(q: str, limit: int = 10):
         hit["document_title"] = record["title"] if record else filename
         hit["help_section"] = section_meta(record["section"])["title"] if record else ""
         hit["kind"] = section_kind(record["section"]) if record else "help"
+        if not (record and section_hidden(record["section"], shown)):
+            kept.append(hit)
+    results = kept
 
     rank = {"help": 0, "reference": 1, "retired": 2}
     how = {"word": 0, "prefix": 1}
