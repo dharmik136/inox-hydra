@@ -86,8 +86,10 @@ MAX_RESOURCE_BYTES = 64 * 1024
 MAX_LINE_BYTES = 8 * 1024 * 1024
 
 # What a server is given of the studio's own environment: enough to find its
-# runtime, its home folder and a temporary folder, and to read text in the
-# creator's language. Nothing else. It used to be the whole environment, so a
+# runtime, its home folder and a temporary folder, to read text in the
+# creator's language, and to reach the network the way this machine does
+# (proxy and certificate settings, without which npx -y fails on a company
+# network). Nothing else. It used to be the whole environment, so a
 # third-party package registered to read notes was handed every exported
 # ANTHROPIC_API_KEY, GEMINI_API_KEY and TELEGRAM_BOT_TOKEN, and the studio's
 # own INOX_HYDRA_HOME. A server that needs a variable gets it from its own
@@ -100,8 +102,10 @@ INHERITED_VARIABLES = frozenset({
     "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432", "COMMONPROGRAMFILES", "COMMONPROGRAMFILES(X86)",
     "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC", "OS", "NUMBER_OF_PROCESSORS",
     "PROCESSOR_ARCHITECTURE",
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+    "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "PIP_CERT",
 })
-INHERITED_PREFIXES = ("LC_", "XDG_")
+INHERITED_PREFIXES = ("LC_", "XDG_", "NPM_CONFIG_")
 
 # Through cmd.exe these characters can end one command and start another, or
 # expand a variable, so an argument carrying one is never passed to it.

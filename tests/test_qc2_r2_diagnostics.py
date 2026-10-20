@@ -65,6 +65,25 @@ def test_the_bundle_still_shows_what_a_maintainer_needs(home_with_log):
     assert "linkedin.com/in/<redacted>" in joined
 
 
+@pytest.mark.parametrize("line, kept", [
+    ("ValueError: no lead called Esmeralda Winterbottom",
+     "ValueError: no lead called <redacted>"),
+    ("RuntimeError: could not file Émile Durand for the post",
+     "RuntimeError: could not file <redacted> for the post"),
+    ("KeyError: missing किरण शर्मा in the cache",
+     "KeyError: missing <redacted> in the cache"),
+    ("sqlite3.OperationalError: database is locked",
+     "sqlite3.OperationalError: database is locked"),
+    ("sqlite3.OperationalError: no such table: lead_interactions",
+     "sqlite3.OperationalError: no such table: lead_interactions"),
+    ("ConnectionRefusedError: [Errno 111] Connection refused by HTTP 503",
+     "ConnectionRefusedError: [Errno 111] Connection refused by HTTP 503"),
+    ("INFO:     Application startup complete.", "INFO:     Application startup complete."),
+])
+def test_a_name_in_unquoted_error_text_is_removed_and_the_error_kept(line, kept):
+    assert support.scrub_log_line(line) == kept
+
+
 def test_a_backup_label_the_creator_typed_is_not_in_the_bundle(home_with_log):
     backups = paths.get_backups_dir()
     for name in ("inox_backup_before the Acme pitch_20261020_101010.zip",

@@ -195,6 +195,15 @@ def test_the_child_environment_is_an_allowlist():
                    "NOTES": "1"}
 
 
+def test_proxy_and_certificate_settings_are_passed_on():
+    """npx -y on a company network needs them; they are the machine's, not the studio's secrets."""
+    env = protocol.child_environment(
+        {"HTTPS_PROXY": "http://proxy:3128", "no_proxy": "localhost", "NODE_EXTRA_CA_CERTS": "/ca.pem",
+         "npm_config_registry": "https://registry.example", "GEMINI_API_KEY": "x"}, {})
+    assert env == {"HTTPS_PROXY": "http://proxy:3128", "no_proxy": "localhost", "NODE_EXTRA_CA_CERTS": "/ca.pem",
+                   "npm_config_registry": "https://registry.example"}
+
+
 def test_on_windows_a_cmd_shim_runs_through_cmd(tmp_path):
     """npx is npx.cmd on Windows, which CreateProcess cannot start by itself."""
     bin_dir = tmp_path / "nodejs"

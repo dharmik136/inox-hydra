@@ -51,9 +51,6 @@ Returns the daily time-series array for charts.
 }
 ```
 
-### `GET /api/analytics/demographics`
-Returns audience distribution across 4 dimensions: `job_title`, `company`, `geography`, and `seniority`.
-
 ### `GET /api/analytics/export`
 Generates and downloads a complete historical CSV report.
 
@@ -81,12 +78,14 @@ Returns current configuration, active mode, and capabilities.
 }
 ```
 
-### `POST /api/ai/settings`
-Saves your optional Google Gemini API key to local SQLite.
+### `POST /api/ai/configure`
+Saves an AI provider, its key and model, after verifying them with one test request; a key that fails verification is refused (400) and nothing is saved.
 * **Request Body**:
 ```json
 {
-  "gemini_api_key": "AIzaSy..."
+  "provider": "gemini",
+  "api_key": "AIzaSy...",
+  "model": "gemini-2.5-flash"
 }
 ```
 
@@ -112,22 +111,7 @@ Executes an instruction using Gemini (if key configured) or the Antigravity Loca
 
 ## 3. Carousel PDF Generator
 
-### `POST /api/carousel/generate`
-Generates a 1080×1080 multi-page PDF ready for LinkedIn Document upload.
-* **Request Body**:
-```json
-{
-  "slides": [
-    { "title": "Decoupled Architecture", "body": "Why schemas must be decoupled from business logic." },
-    { "title": "01. Immutable State", "body": "State transitions should be events, not in-place mutations." },
-    { "title": "Summary & Takeaways", "body": "Save this carousel to revisit foundational architecture." }
-  ],
-  "theme": "dark_slate",
-  "author_name": "Dharmik Shingala",
-  "author_title": "Content Strategist & Enterprise Systems Practitioner"
-}
-```
-* **Response (200 OK)**: Binary stream (`application/pdf`) with `Content-Disposition: attachment; filename=linkedin_carousel.pdf`.
+Carousels are built with `POST /api/v1/carousel/deck/generate` (section 6), or uploaded as a PDF through the media dropzone (`POST /api/media/upload`).
 
 ---
 
@@ -135,9 +119,6 @@ Generates a 1080×1080 multi-page PDF ready for LinkedIn Document upload.
 
 ### `GET /api/leads`
 Lists leads, optionally filtered by status (`New Lead`, `Outreach Sent`, `Connected`, `Meeting Booked`).
-
-### `POST /api/leads`
-Creates a new prospect lead in the pipeline.
 
 ### `PUT /api/leads/{id}/status`
 Updates lead pipeline status and notes.
@@ -166,9 +147,6 @@ Generates a personalized direct message script for the prospect.
 
 ### `POST /api/format/re-hook`
 Generates 10 high-converting alternative hooks with mobile fold analysis.
-
-### `POST /api/format/repurpose`
-Transforms draft text into 5 distinct LinkedIn frameworks.
 
 ### `POST /api/format/algorithm-audit`
 Performs real-time 2026 algorithmic distribution safety audit.
@@ -302,13 +280,9 @@ Imports a synchronized intelligence bundle directly for 100% air-gapped workstat
 
 ---
 
-## 10. Rate Limiter & Single-Writer Diagnostics
+## 10. Rate Limiter
 
-### `GET /api/v1/rate-limiter/status`
-Returns real-time diagnostics for the Gaussian jitter rate limiter, token bucket capacity, and time-to-next-token.
-
-### `POST /api/v1/rate-limiter/acquire`
-Attempts to acquire rate-limited permission for passive API/session requests.
+The Gaussian rate limiter paces the studio's own requests to LinkedIn (15 minutes on average, never under 11 or over 19). It has no routes: the status and acquire routes were removed in 2.6.0, because acquiring through the API took the one token the profile sync needs.
 
 ---
 
@@ -327,7 +301,7 @@ this the largest grant in the API. Four things hold it:
 - **The extension cannot relay these.** `RELAYABLE_PATHS` in the service worker
   lists three ingest endpoints. A test pins its size, because adding a fourth
   would be a one line change whose consequence nobody would notice.
-- A command is a list of arguments, never a string, and never reaches a shell.
+- A command is a list of arguments, never a string, and never reaches a shell, except that on Windows a `.cmd` or `.bat` launcher such as `npx` can only run through `cmd.exe`; then an argument containing `& | < > ^ % !` or a quote is refused.
   A string is rejected with `422`.
 - Adding does not enable. They are separate calls because they are separate
   decisions.

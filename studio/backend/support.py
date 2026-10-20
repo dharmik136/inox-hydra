@@ -211,13 +211,44 @@ def _keep_quoted(match) -> str:
     return f"{quote}{LOG_REDACTED}{quote}"
 
 
+# An exception's message can carry a name without quotes ("ValueError: no
+# lead called Esmeralda Winterbottom"). In such a line the exception type and
+# the message's shape are kept, and every word that looks like a proper noun
+# and does not start a sentence is removed: one starting with a capital and continuing in
+# lower case, or one in a script without case, which cannot be told apart from
+# a name. Identifiers, numbers, paths and ALL-CAPS codes stay, so "database is
+# locked" or "no such table: lead_interactions" read as they did.
+_EXCEPTION_LINE = re.compile(r"^(\s*(?:[\w.]+\.)?\w*(?:Error|Exception|Warning|Exit|Interrupt|Failed|Refused)\w*: )(.+)$")
+# Letters, with the combining marks of Indic scripts and of accented Latin.
+_LETTER_WORD = re.compile(r"(?<![\w<./\\-])(?:[^\W\d_]|[\u0900-\u0DFF\u0300-\u036F])+(?![\w>./\\-])")
+
+
+def _proper_noun(match) -> str:
+    word = match.group(0)
+    before = match.string[:match.start()].rstrip()
+    if not before or before[-1] in ".:;!?[])":
+        return word  # a capital that starts a sentence, or "Errno" in "[Errno 111]"
+    caseless = all(ch.lower() == ch.upper() for ch in word)
+    title = word[0].isupper() and not word.isupper()
+    return LOG_REDACTED if caseless or title else word
+
+
+def _without_proper_nouns(message: str) -> str:
+    message = _LETTER_WORD.sub(_proper_noun, message)
+    return re.sub(rf"{re.escape(LOG_REDACTED)}(?:\s+{re.escape(LOG_REDACTED)})+", LOG_REDACTED, message)
+
+
 def scrub_log_line(line: str) -> str:
     """One log line with nothing anybody typed and nobody's identity left in it."""
     text = _QUERY.sub("?" + LOG_REDACTED, str(line))
     text = _QUOTED.sub(_keep_quoted, text)
     text = _PROFILE.sub(lambda m: m.group(1) + LOG_REDACTED, text)
     text = _MEMBER_URN.sub(lambda m: f"urn:li:{m.group(1)}:{LOG_REDACTED}", text)
-    return _EMAIL.sub(LOG_REDACTED, text)
+    text = _EMAIL.sub(LOG_REDACTED, text)
+    exception = _EXCEPTION_LINE.match(text)
+    if exception:
+        text = exception.group(1) + _without_proper_nouns(exception.group(2))
+    return text
 
 
 # A backup's name carries the label it was given, which can be anything the

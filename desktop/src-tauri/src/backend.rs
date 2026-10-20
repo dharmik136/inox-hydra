@@ -105,8 +105,8 @@ fn open_engine_log() -> Option<std::fs::File> {
     std::fs::create_dir_all(path.parent()?).ok()?;
 
     // Moved aside rather than deleted, so the session that just crashed is
-    // still readable in engine.log.1. Windows will not rename over an
-    // existing file, so the older copy goes first.
+    // still readable in engine.log.1. The older copy is removed first so a
+    // failed rename leaves no doubt which file is the previous session's.
     if let Ok(meta) = std::fs::metadata(&path) {
         if meta.len() > MAX_LOG_BYTES {
             let previous = path.with_file_name("engine.log.1");
