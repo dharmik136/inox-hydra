@@ -803,38 +803,287 @@ _MIGRATION_20_INDEXES = (
 )
 
 
-def _migrate_post_summary(cursor: sqlite3.Cursor) -> None:
+# Migrations 21, 22 and 24 are SQL frozen here as it was written. They used
+# to run post_summary's and universal_search's live code, so a later edit to
+# either module would have changed what an old migration does to a database
+# that upgrades through it.
+
+# Migration 21: one summary row per post (post_summary.py), with the
+# triggers that mark a row stale when anything it is computed from changes.
+# Every post with engagement or readings is marked, and the summary computes
+# them right after the migration run (database.init_db), and on first read.
+_MIGRATION_21_SUMMARY = (
     """
-    Migration 21:
-    One summary row per post (post_summary.py), with the triggers that mark a
-    row stale when anything it is computed from changes, built from every
-    interaction and reading already held. 1.2 s at 500,000 interactions.
-    Run again it rebuilds the same rows.
+    CREATE TABLE IF NOT EXISTS post_engagement (
+        post_urn TEXT PRIMARY KEY,
+        people INTEGER NOT NULL DEFAULT 0,
+        commenters INTEGER NOT NULL DEFAULT 0,
+        vip INTEGER NOT NULL DEFAULT 0,
+        qualified INTEGER NOT NULL DEFAULT 0,
+        icp_known INTEGER NOT NULL DEFAULT 0,
+        icp_sum REAL NOT NULL DEFAULT 0,
+        conversations INTEGER NOT NULL DEFAULT 0,
+        folded_reactions INTEGER NOT NULL DEFAULT 0,
+        people_json TEXT,
+        lead_ids TEXT,
+        reading_48h TEXT,
+        latest_reading TEXT,
+        stale INTEGER NOT NULL DEFAULT 0
+    ) WITHOUT ROWID
+    """,
     """
-    try:
-        from . import post_summary
-    except ImportError:
-        import post_summary
-    for statement in post_summary.SCHEMA:
-        cursor.execute(statement)
-    post_summary.rebuild(cursor.connection)
+    CREATE TRIGGER IF NOT EXISTS post_engagement_interaction_added AFTER INSERT ON lead_interactions
+    WHEN NEW.post_urn IS NOT NULL AND NEW.post_urn != ''
+    BEGIN
+        INSERT INTO post_engagement (post_urn, stale) VALUES (NEW.post_urn, 1)
+        ON CONFLICT(post_urn) DO UPDATE SET stale = stale | 1;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS post_engagement_interaction_removed AFTER DELETE ON lead_interactions
+    WHEN OLD.post_urn IS NOT NULL AND OLD.post_urn != ''
+    BEGIN
+        UPDATE post_engagement SET stale = stale | 1 WHERE post_urn = OLD.post_urn AND (stale & 1) = 0;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS post_engagement_interaction_changed
+    AFTER UPDATE OF post_urn, lead_id, interaction_type ON lead_interactions
+    BEGIN
+        UPDATE post_engagement SET stale = stale | 1 WHERE post_urn = OLD.post_urn AND (stale & 1) = 0;
+        INSERT INTO post_engagement (post_urn, stale)
+        SELECT NEW.post_urn, 1 WHERE NEW.post_urn IS NOT NULL AND NEW.post_urn != ''
+        ON CONFLICT(post_urn) DO UPDATE SET stale = stale | 1;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS post_engagement_lead_changed
+    AFTER UPDATE OF full_name, name, icp_score, lead_status ON leads
+    WHEN OLD.full_name IS NOT NEW.full_name OR OLD.name IS NOT NEW.name
+      OR OLD.icp_score IS NOT NEW.icp_score OR OLD.lead_status IS NOT NEW.lead_status
+    BEGIN
+        UPDATE post_engagement SET stale = stale | 1
+        WHERE (stale & 1) = 0 AND post_urn IN (SELECT post_urn FROM lead_interactions WHERE lead_id = NEW.id);
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS post_engagement_reading_added AFTER INSERT ON post_metric_observations
+    WHEN NEW.activity_urn != ''
+    BEGIN
+        INSERT INTO post_engagement (post_urn, stale) VALUES (NEW.activity_urn, 2)
+        ON CONFLICT(post_urn) DO UPDATE SET stale = stale | 2;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS post_engagement_reading_changed AFTER UPDATE ON post_metric_observations
+    BEGIN
+        UPDATE post_engagement SET stale = stale | 2 WHERE post_urn = OLD.activity_urn AND (stale & 2) = 0;
+        INSERT INTO post_engagement (post_urn, stale)
+        SELECT NEW.activity_urn, 2 WHERE NEW.activity_urn != ''
+        ON CONFLICT(post_urn) DO UPDATE SET stale = stale | 2;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS post_engagement_reading_removed AFTER DELETE ON post_metric_observations
+    BEGIN
+        UPDATE post_engagement SET stale = stale | 2 WHERE post_urn = OLD.activity_urn AND (stale & 2) = 0;
+    END
+    """,
+    # Every post the summary will hold, marked for computing.
+    "INSERT INTO post_engagement (post_urn, stale) SELECT DISTINCT post_urn, 1 FROM lead_interactions "
+    "WHERE post_urn IS NOT NULL AND post_urn != '' ON CONFLICT(post_urn) DO UPDATE SET stale = stale | 1",
+    "INSERT INTO post_engagement (post_urn, stale) SELECT DISTINCT activity_urn, 2 FROM post_metric_observations "
+    "WHERE activity_urn != '' ON CONFLICT(post_urn) DO UPDATE SET stale = stale | 2",
+)
 
 
-def _migrate_search_index(cursor: sqlite3.Cursor) -> None:
+# Migration 22 built the first search index, contentless, whose rows could
+# only be removed by repeating the exact text indexed. Migration 24 replaces
+# it whole, so 22 now does nothing, and a database at 21 goes straight to
+# the index 24 builds.
+_MIGRATION_22_SUPERSEDED: tuple = ()
+
+
+# Migration 24: the search index universal_search.py reads (posts, LinkedIn
+# posts, leads and what they said), its triggers, and everything already
+# held indexed. Rows written with the Composer's styled letters are queued
+# on search_refold, which universal_search.refold() indexes through NFKC.
+_MIGRATION_24_SEARCH = (
+    "DROP TRIGGER IF EXISTS search_post_added",
+    "DROP TRIGGER IF EXISTS search_post_changed",
+    "DROP TRIGGER IF EXISTS search_post_removed",
+    "DROP TRIGGER IF EXISTS search_own_post_added",
+    "DROP TRIGGER IF EXISTS search_own_post_changed",
+    "DROP TRIGGER IF EXISTS search_own_post_removed",
+    "DROP TRIGGER IF EXISTS search_lead_added",
+    "DROP TRIGGER IF EXISTS search_lead_changed",
+    "DROP TRIGGER IF EXISTS search_lead_removed",
+    "DROP TRIGGER IF EXISTS search_comment_added",
+    "DROP TRIGGER IF EXISTS search_comment_changed",
+    "DROP TRIGGER IF EXISTS search_comment_removed",
+    "DROP TABLE IF EXISTS search_posts",
+    "DROP TABLE IF EXISTS search_leads",
+    "DROP TABLE IF EXISTS search_comments",
+    "DROP TABLE IF EXISTS search_docs",
     """
-    Migration 22:
-    The FTS5 index universal search reads (universal_search.py): posts,
-    LinkedIn posts, leads and what they said, with the triggers that keep it
-    in step, built from every row already held. 1.6 s at 49,142 leads and
-    131,000 comments. Run again it rebuilds the same index.
+    CREATE TABLE IF NOT EXISTS search_docs (
+        docid INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL,
+        ref TEXT NOT NULL,
+        UNIQUE (kind, ref)
+    )
+    """,
+    'CREATE TABLE IF NOT EXISTS search_refold (kind TEXT NOT NULL, ref TEXT NOT NULL, PRIMARY KEY (kind, ref)) WITHOUT ROWID',
+    "CREATE VIRTUAL TABLE IF NOT EXISTS search_posts USING fts5(body, tokenize='unicode61 remove_diacritics 2')",
+    "CREATE VIRTUAL TABLE IF NOT EXISTS search_leads USING fts5(name, about, notes, tokenize='unicode61 remove_diacritics 2')",
+    "CREATE VIRTUAL TABLE IF NOT EXISTS search_comments USING fts5(comment_text, tokenize='unicode61 remove_diacritics 2')",
     """
-    try:
-        from . import universal_search
-    except ImportError:
-        import universal_search
-    for statement in universal_search.SEARCH_SCHEMA:
-        cursor.execute(statement)
-    universal_search.build_search_index(cursor.connection)
+    CREATE TRIGGER IF NOT EXISTS search_post_added AFTER INSERT ON posts
+    BEGIN
+        INSERT OR IGNORE INTO search_docs (kind, ref) VALUES ('post', NEW.id);
+        INSERT INTO search_posts (rowid, body) SELECT last_insert_rowid(), replace(replace(replace(COALESCE(NEW.content, '') || ' ' || COALESCE(NEW.tags, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss') WHERE changes() > 0;
+        INSERT OR IGNORE INTO search_refold (kind, ref) SELECT 'post', NEW.id WHERE (COALESCE(NEW.content, '') || ' ' || COALESCE(NEW.tags, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*';
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS search_post_changed AFTER UPDATE OF content, tags, id ON posts
+    WHEN OLD.content IS NOT NEW.content OR OLD.tags IS NOT NEW.tags OR OLD.id IS NOT NEW.id
+    BEGIN
+        DELETE FROM search_posts WHERE rowid = (SELECT docid FROM search_docs WHERE kind = 'post' AND ref = OLD.id);
+        UPDATE search_docs SET ref = NEW.id WHERE kind = 'post' AND ref = OLD.id;
+        INSERT INTO search_posts (rowid, body)
+        SELECT docid, replace(replace(replace(COALESCE(NEW.content, '') || ' ' || COALESCE(NEW.tags, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss') FROM search_docs WHERE kind = 'post' AND ref = NEW.id;
+        DELETE FROM search_refold WHERE kind = 'post' AND ref = OLD.id;
+        INSERT OR IGNORE INTO search_refold (kind, ref) SELECT 'post', NEW.id WHERE (COALESCE(NEW.content, '') || ' ' || COALESCE(NEW.tags, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*';
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS search_post_removed AFTER DELETE ON posts
+    BEGIN
+        DELETE FROM search_posts WHERE rowid = (SELECT docid FROM search_docs WHERE kind = 'post' AND ref = OLD.id);
+        DELETE FROM search_docs WHERE kind = 'post' AND ref = OLD.id;
+        DELETE FROM search_refold WHERE kind = 'post' AND ref = OLD.id;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS search_own_post_added AFTER INSERT ON own_posts
+    BEGIN
+        INSERT OR IGNORE INTO search_docs (kind, ref) VALUES ('own_post', NEW.activity_urn);
+        INSERT INTO search_posts (rowid, body) SELECT last_insert_rowid(), replace(replace(replace(COALESCE(NEW.text, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss') WHERE changes() > 0;
+        INSERT OR IGNORE INTO search_refold (kind, ref) SELECT 'own_post', NEW.activity_urn WHERE (COALESCE(NEW.text, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*';
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS search_own_post_changed AFTER UPDATE OF text, activity_urn ON own_posts
+    WHEN OLD.text IS NOT NEW.text OR OLD.activity_urn IS NOT NEW.activity_urn
+    BEGIN
+        DELETE FROM search_posts WHERE rowid = (SELECT docid FROM search_docs WHERE kind = 'own_post' AND ref = OLD.activity_urn);
+        UPDATE search_docs SET ref = NEW.activity_urn WHERE kind = 'own_post' AND ref = OLD.activity_urn;
+        INSERT INTO search_posts (rowid, body)
+        SELECT docid, replace(replace(replace(COALESCE(NEW.text, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss') FROM search_docs WHERE kind = 'own_post' AND ref = NEW.activity_urn;
+        DELETE FROM search_refold WHERE kind = 'own_post' AND ref = OLD.activity_urn;
+        INSERT OR IGNORE INTO search_refold (kind, ref) SELECT 'own_post', NEW.activity_urn WHERE (COALESCE(NEW.text, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*';
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS search_own_post_removed AFTER DELETE ON own_posts
+    BEGIN
+        DELETE FROM search_posts WHERE rowid = (SELECT docid FROM search_docs WHERE kind = 'own_post' AND ref = OLD.activity_urn);
+        DELETE FROM search_docs WHERE kind = 'own_post' AND ref = OLD.activity_urn;
+        DELETE FROM search_refold WHERE kind = 'own_post' AND ref = OLD.activity_urn;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS search_lead_added AFTER INSERT ON leads
+    BEGIN
+        INSERT OR IGNORE INTO search_docs (kind, ref) VALUES ('lead', NEW.id);
+        INSERT INTO search_leads (rowid, name, about, notes)
+        SELECT last_insert_rowid(), replace(replace(replace(COALESCE(NEW.full_name, '') || ' ' || COALESCE(NEW.name, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss'), replace(replace(replace(COALESCE(NEW.company, '') || ' ' || COALESCE(NEW.headline, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss'), replace(replace(replace(COALESCE(NEW.notes, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss') WHERE changes() > 0;
+        INSERT INTO search_comments (rowid, comment_text)
+        SELECT (SELECT docid FROM search_docs WHERE kind = 'lead' AND ref = CAST(NEW.id AS TEXT)) * 4294967296 + i.id, replace(replace(replace(COALESCE(i.comment_text, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss')
+        FROM lead_interactions i
+        WHERE changes() > 0 AND i.lead_id = NEW.id AND i.comment_text IS NOT NULL ORDER BY i.id;
+        INSERT OR IGNORE INTO search_refold (kind, ref) SELECT 'lead', NEW.id WHERE (COALESCE(NEW.full_name, '') || ' ' || COALESCE(NEW.name, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*' OR (COALESCE(NEW.company, '') || ' ' || COALESCE(NEW.headline, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*' OR (COALESCE(NEW.notes, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*';
+        INSERT OR IGNORE INTO search_refold (kind, ref)
+        SELECT 'comment', CAST(i.id AS TEXT) FROM lead_interactions i
+        WHERE i.lead_id = NEW.id AND i.comment_text IS NOT NULL AND ((COALESCE(i.comment_text, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*');
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS search_lead_changed AFTER UPDATE OF full_name, name, company, headline, notes, id ON leads
+    WHEN OLD.full_name IS NOT NEW.full_name OR OLD.name IS NOT NEW.name OR OLD.company IS NOT NEW.company OR OLD.headline IS NOT NEW.headline OR OLD.notes IS NOT NEW.notes OR OLD.id IS NOT NEW.id
+    BEGIN
+        DELETE FROM search_leads WHERE rowid = (SELECT docid FROM search_docs WHERE kind = 'lead' AND ref = CAST(OLD.id AS TEXT));
+        UPDATE search_docs SET ref = NEW.id WHERE kind = 'lead' AND ref = OLD.id;
+        INSERT INTO search_leads (rowid, name, about, notes)
+        SELECT docid, replace(replace(replace(COALESCE(NEW.full_name, '') || ' ' || COALESCE(NEW.name, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss'), replace(replace(replace(COALESCE(NEW.company, '') || ' ' || COALESCE(NEW.headline, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss'), replace(replace(replace(COALESCE(NEW.notes, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss') FROM search_docs WHERE kind = 'lead' AND ref = NEW.id;
+        DELETE FROM search_refold WHERE kind = 'lead' AND ref = OLD.id;
+        INSERT OR IGNORE INTO search_refold (kind, ref) SELECT 'lead', NEW.id WHERE (COALESCE(NEW.full_name, '') || ' ' || COALESCE(NEW.name, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*' OR (COALESCE(NEW.company, '') || ' ' || COALESCE(NEW.headline, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*' OR (COALESCE(NEW.notes, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*';
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS search_lead_removed AFTER DELETE ON leads
+    BEGIN
+        DELETE FROM search_comments WHERE rowid BETWEEN (SELECT docid FROM search_docs WHERE kind = 'lead' AND ref = CAST(OLD.id AS TEXT)) * 4294967296
+            AND (SELECT docid FROM search_docs WHERE kind = 'lead' AND ref = CAST(OLD.id AS TEXT)) * 4294967296 + 4294967295;
+        DELETE FROM search_leads WHERE rowid = (SELECT docid FROM search_docs WHERE kind = 'lead' AND ref = CAST(OLD.id AS TEXT));
+        DELETE FROM search_docs WHERE kind = 'lead' AND ref = OLD.id;
+        DELETE FROM search_refold WHERE kind = 'lead' AND ref = OLD.id;
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS search_comment_added AFTER INSERT ON lead_interactions
+    WHEN NEW.comment_text IS NOT NULL
+    BEGIN
+        INSERT INTO search_comments (rowid, comment_text)
+        SELECT docid * 4294967296 + NEW.id, replace(replace(replace(COALESCE(NEW.comment_text, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss')
+        FROM search_docs WHERE kind = 'lead' AND ref = CAST(NEW.lead_id AS TEXT);
+        INSERT OR IGNORE INTO search_refold (kind, ref)
+        SELECT 'comment', CAST(NEW.id AS TEXT) WHERE (COALESCE(NEW.comment_text, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*';
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS search_comment_changed AFTER UPDATE OF comment_text, lead_id, id ON lead_interactions
+    WHEN OLD.comment_text IS NOT NEW.comment_text OR OLD.lead_id IS NOT NEW.lead_id OR OLD.id IS NOT NEW.id
+    BEGIN
+        DELETE FROM search_comments WHERE rowid = (SELECT docid FROM search_docs WHERE kind = 'lead' AND ref = CAST(OLD.lead_id AS TEXT)) * 4294967296 + OLD.id;
+        INSERT INTO search_comments (rowid, comment_text)
+        SELECT docid * 4294967296 + NEW.id, replace(replace(replace(COALESCE(NEW.comment_text, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss')
+        FROM search_docs WHERE kind = 'lead' AND ref = CAST(NEW.lead_id AS TEXT) AND NEW.comment_text IS NOT NULL;
+        DELETE FROM search_refold WHERE kind = 'comment' AND ref = CAST(OLD.id AS TEXT);
+        INSERT OR IGNORE INTO search_refold (kind, ref)
+        SELECT 'comment', CAST(NEW.id AS TEXT) WHERE NEW.comment_text IS NOT NULL AND ((COALESCE(NEW.comment_text, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*');
+    END
+    """,
+    """
+    CREATE TRIGGER IF NOT EXISTS search_comment_removed AFTER DELETE ON lead_interactions
+    WHEN OLD.comment_text IS NOT NULL
+    BEGIN
+        DELETE FROM search_comments WHERE rowid = (SELECT docid FROM search_docs WHERE kind = 'lead' AND ref = CAST(OLD.lead_id AS TEXT)) * 4294967296 + OLD.id;
+        DELETE FROM search_refold WHERE kind = 'comment' AND ref = CAST(OLD.id AS TEXT);
+    END
+    """,
+    'DELETE FROM search_posts',
+    'DELETE FROM search_leads',
+    'DELETE FROM search_comments',
+    'DELETE FROM search_docs',
+    'DELETE FROM search_refold',
+    "INSERT INTO search_docs (kind, ref) SELECT 'post', id FROM posts ORDER BY rowid",
+    "INSERT INTO search_docs (kind, ref) SELECT 'own_post', activity_urn FROM own_posts ORDER BY rowid",
+    "INSERT INTO search_docs (kind, ref) SELECT 'lead', id FROM leads ORDER BY rowid",
+    "INSERT INTO search_posts (rowid, body) SELECT d.docid, replace(replace(replace(COALESCE(p.content, '') || ' ' || COALESCE(p.tags, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss') FROM search_docs d JOIN posts p ON p.id = d.ref WHERE d.kind = 'post' ORDER BY d.docid",
+    "INSERT INTO search_posts (rowid, body) SELECT d.docid, replace(replace(replace(COALESCE(p.text, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss') FROM search_docs d JOIN own_posts p ON p.activity_urn = d.ref WHERE d.kind = 'own_post' ORDER BY d.docid",
+    "INSERT INTO search_leads (rowid, name, about, notes) SELECT d.docid, replace(replace(replace(COALESCE(p.full_name, '') || ' ' || COALESCE(p.name, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss'), replace(replace(replace(COALESCE(p.company, '') || ' ' || COALESCE(p.headline, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss'), replace(replace(replace(COALESCE(p.notes, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss') FROM search_docs d JOIN leads p ON p.id = d.ref WHERE d.kind = 'lead' ORDER BY d.docid",
+    "INSERT INTO search_comments (rowid, comment_text) SELECT d.docid * 4294967296 + i.id, replace(replace(replace(COALESCE(i.comment_text, ''), char(305), 'i'), char(223), 'ss'), char(7838), 'ss') FROM lead_interactions i JOIN search_docs d ON d.kind = 'lead' AND d.ref = CAST(i.lead_id AS TEXT) WHERE i.comment_text IS NOT NULL ORDER BY 1",
+    "INSERT INTO search_refold (kind, ref) SELECT 'post', id FROM posts p WHERE (COALESCE(p.content, '') || ' ' || COALESCE(p.tags, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*'",
+    "INSERT INTO search_refold (kind, ref) SELECT 'own_post', activity_urn FROM own_posts p WHERE (COALESCE(p.text, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*'",
+    "INSERT INTO search_refold (kind, ref) SELECT 'lead', id FROM leads p WHERE (COALESCE(p.full_name, '') || ' ' || COALESCE(p.name, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*' OR (COALESCE(p.company, '') || ' ' || COALESCE(p.headline, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*' OR (COALESCE(p.notes, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*'",
+    "INSERT INTO search_refold (kind, ref) SELECT 'comment', CAST(i.id AS TEXT) FROM lead_interactions i WHERE i.comment_text IS NOT NULL AND ((COALESCE(i.comment_text, '')) GLOB '*[' || char(119808) || '-' || char(120831) || char(8448) || '-' || char(8527) || char(64256) || '-' || char(64335) || char(65280) || '-' || char(65519) || ']*')",
+    "INSERT INTO search_posts (search_posts) VALUES ('optimize')",
+    "INSERT INTO search_leads (search_leads) VALUES ('optimize')",
+    "INSERT INTO search_comments (search_comments) VALUES ('optimize')",
+)
+
 
 def _migrate_retention(cursor: sqlite3.Cursor) -> None:
     """
@@ -957,9 +1206,10 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (18, "Connections and archive imports, from LinkedIn's own data archive", _MIGRATION_18_ARCHIVE),
     (19, "Nothing about a forgotten lead outlives them", _MIGRATION_19_FORGET),
     (20, "Index the interactions the main screens read, and give the planner statistics", _MIGRATION_20_INDEXES),
-    (21, "Keep a summary of each post's engagement and readings beside the raw rows", _migrate_post_summary),
-    (22, "Index posts, leads and comments for search, kept in step by triggers", _migrate_search_index),
+    (21, "Keep a summary of each post's engagement and readings beside the raw rows", _MIGRATION_21_SUMMARY),
+    (22, "Index posts, leads and comments for search (superseded by 24)", _MIGRATION_22_SUPERSEDED),
     (23, "Retention: reaction folds, the lead keep list and a cleanup log", _migrate_retention),
+    (24, "Search folds the Composer's bold and italic letters, and removes rows by id", _MIGRATION_24_SEARCH),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

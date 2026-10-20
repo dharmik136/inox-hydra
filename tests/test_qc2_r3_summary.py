@@ -82,12 +82,20 @@ def test_migration_21_builds_every_post(monkeypatch):
         conn.commit()
         report = migrations.ensure_schema(conn, take_backup=False)
         assert 21 in [m["version"] for m in report["applied"]]
+        # The migration marks every post; the summary computes them straight
+        # after, as database.init_db does.
+        assert conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0] > 50
+        import post_summary
+        post_summary.catch_up(conn, batch=500)
         assert conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0] == 0
         assert conn.execute("SELECT COUNT(*) FROM post_engagement").fetchone()[0] > 50
         _consistent(conn)
         # Idempotent: run again over the same rows, the same table.
         before = conn.execute("SELECT * FROM post_engagement ORDER BY post_urn").fetchall()
-        migrations._migrate_post_summary(conn.cursor())
+        with conn:
+            for statement in dict((v, p) for v, _d, p in migrations.MIGRATIONS)[21]:
+                conn.execute(statement)
+        post_summary.catch_up(conn, batch=500)
         assert [tuple(r) for r in conn.execute("SELECT * FROM post_engagement ORDER BY post_urn")] == \
             [tuple(r) for r in before]
         conn.close()
@@ -103,8 +111,13 @@ def test_the_thresholds_are_the_crms():
 
 
 def test_a_capture_leaves_the_summary_current(home):
-    """The writer that records an interaction refreshes the rows it marked."""
+    """
+    The captured post is current when the capture returns; the person's other
+    posts, marked when their score moved, are caught up just after, outside
+    the capture's transaction (tests/test_qc2_r3_capture.py).
+    """
     import crm
+    import post_summary
     post = home["own"][-1]
     for n in range(3):
         crm.reverse_crm.ingest_interaction(
@@ -118,6 +131,9 @@ def test_a_capture_leaves_the_summary_current(home):
         headline="Founder and CEO", interaction_type="LIKE", post_urn=home["own"][-2])
     conn = _db()
     try:
+        assert conn.execute("SELECT stale FROM post_engagement WHERE post_urn = ?",
+                            (home["own"][-2],)).fetchone()[0] == 0
+        assert post_summary.wait_for_catch_up(10)
         assert conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0] == 0
         _consistent(conn)
     finally:

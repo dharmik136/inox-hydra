@@ -508,9 +508,25 @@ class ReverseCRMManager:
                         "profile_url = COALESCE(NULLIF(profile_url, ''), ?) WHERE id = ?",
                         (strongest_engagement(stored, interaction_type), profile_url, lead_id),
                     )
-                    # Provisional; the score is recomputed below once this
-                    # interaction is recorded.
-                    new_icp = icp_score
+                    # The score reflects the person as they are now and the
+                    # best engagement on record. It was max(old, new), which
+                    # only ever rose: after a headline change from CTO to
+                    # intern the seniority updated and the score stayed at 95.
+                    # Every recorded interaction is scored against the current
+                    # headline, with this one, and the result written once. A
+                    # provisional score written first and corrected after
+                    # marked every post the person had engaged with in the
+                    # per-post summary on every capture.
+                    new_icp = icp_score = max(
+                        [icp_score] + [
+                            ICPScoringEngine.calculate_icp_score(headline, company, r["comment_text"],
+                                                                 r["interaction_type"])
+                            for r in cursor.execute(
+                                "SELECT interaction_type, comment_text FROM lead_interactions WHERE lead_id = ?",
+                                (lead_id,),
+                            ).fetchall()
+                        ]
+                    )
                     cursor.execute("""
                     UPDATE leads SET
                         full_name = ?,
@@ -554,28 +570,17 @@ class ReverseCRMManager:
                     (lead_id, post_urn or "", interaction_type, interaction_comment_key(comment_text)),
                 ).fetchone()[0]
 
-                # The score reflects the person as they are now and the best
-                # engagement on record. It was max(old, new), which only ever
-                # rose: after a headline change from CTO to intern the
-                # seniority updated and the score stayed at 95. Recomputing
-                # every recorded interaction against the current headline keeps
-                # a strong past comment counting without keeping a stale title.
-                icp_score = max(
-                    [icp_score] + [
-                        ICPScoringEngine.calculate_icp_score(headline, company, r["comment_text"], r["interaction_type"])
-                        for r in cursor.execute(
-                            "SELECT interaction_type, comment_text FROM lead_interactions WHERE lead_id = ?",
-                            (lead_id,),
-                        ).fetchall()
-                    ]
-                )
-                cursor.execute("UPDATE leads SET icp_score = ? WHERE id = ?", (icp_score, lead_id))
-                # The triggers marked this post's summary, and the posts of a
-                # lead whose name or score moved; bring them current in the
-                # same transaction, so the capture leaves no stale row.
-                post_summary.refresh(conn)
+                # The captured post's summary row is brought current here,
+                # so a capture leaves its post right. A name or score that
+                # moved also marked the person's other posts: those are
+                # caught up after this transaction, in the background and by
+                # the next reader, in small batches, never inside the
+                # capture's hold on the write lock.
+                if post_urn:
+                    post_summary.refresh(conn, [post_urn])
         finally:
             conn.close()
+        post_summary.catch_up_later()
 
         tier = qualification_tier(icp_score)
         return {

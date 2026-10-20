@@ -496,6 +496,23 @@ def init_db() -> None:
     # A migration changes what is indexed and how much there is of it, so the
     # planner's statistics are refreshed straight after.
     if report.get("applied"):
+        # The per-post summary and the search index that migrations 21 and 24
+        # left marked are computed now, by today's code, so the first screen
+        # opened after an update reads them ready (1.3 s at three years).
+        try:
+            from . import post_summary, universal_search
+        except ImportError:
+            import post_summary
+            import universal_search
+        try:
+            conn = get_db()
+            try:
+                post_summary.catch_up(conn, batch=500)
+                universal_search.refold_pending(conn)
+            finally:
+                conn.close()
+        except sqlite3.Error as exc:
+            logging.getLogger("studio.database").warning("Catching up the summary after migrations skipped: %s", exc)
         try:
             optimize_db()
         except sqlite3.Error as exc:

@@ -1202,29 +1202,45 @@ def export_data(destination: Optional[str] = None, fmt: str = "json") -> str:
     # years (500,000 interactions), 1.5 GB for the CSV ZIP, on the laptop the
     # creator is leaving with. The files are the same, byte for byte apart
     # from the time they were written.
+    #
+    # Written under a name that does not look finished and renamed only once
+    # complete, so an export that fails part way (a read error, a full disk)
+    # leaves nothing behind that could be taken for the whole of it. And read
+    # in one transaction, so a capture during the seconds an export takes
+    # cannot make two of its tables disagree.
+    partial = destination + ".partial"
     conn = _connect()
     try:
+        conn.execute("BEGIN")
         available = set(_table_names(conn))
         tables = [table for table in EXPORTABLE_TABLES if table in available]
         # Session cookies and API keys live in `settings`, which is deliberately not
         # exportable. An export is content, not credentials.
         if fmt == "json":
-            with open(destination, "w", encoding="utf-8", newline="\n") as f:
+            with open(partial, "w", encoding="utf-8", newline="\n") as f:
                 _write_json_export(conn, tables, f)
-            return destination
-
-        with zipfile.ZipFile(destination, "w", zipfile.ZIP_DEFLATED) as z:
-            for table in tables:
-                with z.open(f"{table}.csv", "w") as raw, \
-                        io.TextIOWrapper(raw, encoding="utf-8", newline="") as text:
-                    writer = None
-                    for rows in _row_batches(conn, table):
-                        if writer is None:
-                            writer = csv.writer(text)
-                            writer.writerow(rows[0].keys())
-                        writer.writerows([_cell(v) for v in row] for row in rows)
+        else:
+            with zipfile.ZipFile(partial, "w", zipfile.ZIP_DEFLATED) as z:
+                for table in tables:
+                    with z.open(f"{table}.csv", "w") as raw, \
+                            io.TextIOWrapper(raw, encoding="utf-8", newline="") as text:
+                        writer = None
+                        for rows in _row_batches(conn, table):
+                            if writer is None:
+                                writer = csv.writer(text)
+                                writer.writerow(rows[0].keys())
+                            writer.writerows([_cell(v) for v in row] for row in rows)
+        os.replace(partial, destination)
         return destination
+    except BaseException:
+        try:
+            os.remove(partial)
+        except OSError:
+            pass
+        raise
     finally:
+        if conn.in_transaction:
+            conn.rollback()
         conn.close()
 
 
