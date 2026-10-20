@@ -360,6 +360,10 @@ export default function App() {
   // each one created its own draft.
   const saving = useRef(false);
 
+  // Settles when the save now on its way has finished, so a Publish click
+  // that lands while one is out can wait for it instead of being dropped.
+  const savingDone = useRef<Promise<void>>(Promise.resolve());
+
   // Reopen the most recent draft from the studio's own database, which is
   // what the queue and the scheduler read. A draft held anywhere else is
   // invisible to both.
@@ -529,6 +533,10 @@ export default function App() {
     }
 
     saving.current = true;
+    let settled = () => {};
+    savingDone.current = new Promise<void>((resolve) => {
+      settled = resolve;
+    });
     setSaveState("saving");
     setSaveError(null);
     setChangedElsewhere(false);
@@ -569,6 +577,7 @@ export default function App() {
       return false;
     } finally {
       saving.current = false;
+      settled();
     }
   }, [draft, draftId, noticePosted]);
 
@@ -819,13 +828,20 @@ export default function App() {
             // unsaved edit is written first now. A save that fails leaves the
             // dialog closed, with its reason in the strip, rather than opening
             // a dialog that can only say "save first".
-            if (saveState === "saving") return;
             if (!draft.trim()) {
               setSaveState("failed");
               setSaveError("There is nothing written to publish.");
               return;
             }
-            if (!draftId || saveState === "dirty" || saveState === "failed") {
+            // A click that landed while a save was still on its way used to do
+            // nothing at all: no dialog, no word about why, and on a slow
+            // machine that is most of a second after every Save. It waits for
+            // that save now. What is stored is then what is on screen only if
+            // that save wrote this text, so the refs say whether to write
+            // again rather than this render's save state, which is a step
+            // behind by the time the wait is over.
+            await savingDone.current;
+            if (!base.current || base.current.content !== latestDraft.current) {
               if (!(await onSave())) return;
             }
             setPublishOpen(true);

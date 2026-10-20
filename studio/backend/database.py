@@ -64,16 +64,27 @@ def get_db() -> sqlite3.Connection:
             )
 
     conn = sqlite3.connect(db_path, timeout=5.0)
-    conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode = WAL;")
-    conn.execute("PRAGMA synchronous = NORMAL;")
-    conn.execute("PRAGMA busy_timeout = 5000;")
-    conn.execute("PRAGMA foreign_keys = ON;")
-    conn.execute("PRAGMA cache_size = -64000;")
-    conn.execute("PRAGMA temp_store = MEMORY;")
-    conn.execute("PRAGMA mmap_size = 268435456;")
-    # A delete overwrites the freed bytes, so a forgotten person is gone from the file (DATA-01).
-    secure(conn)
+    # A damaged file fails on the first PRAGMA below, and the connection was
+    # then left open with its handles on the database, the WAL and the shared
+    # memory file: nothing had named it, but the traceback kept it alive. On
+    # Windows an open handle stops anyone renaming the file, so the restore
+    # safe mode offers answered "The process cannot access the file because it
+    # is being used by another process" and the only way out of safe mode did
+    # not work. Opening either succeeds or leaves nothing behind.
+    try:
+        conn.row_factory = sqlite3.Row
+        # A delete overwrites the freed bytes, so a forgotten person is gone from the file (DATA-01).
+        secure(conn)
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
+        conn.execute("PRAGMA busy_timeout = 5000;")
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA cache_size = -64000;")
+        conn.execute("PRAGMA temp_store = MEMORY;")
+        conn.execute("PRAGMA mmap_size = 268435456;")
+    except BaseException:
+        conn.close()
+        raise
     _optimize_when_due(db_path)
     return conn
 
