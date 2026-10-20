@@ -8,7 +8,8 @@ answers one question, and every section is something they can act on now:
   who to reply to   people who commented on your posts and have not heard
                     from you, repeat engagers first, then the most recent
   your latest post  how it is doing against your usual, at the same age
-  the queue         what goes out next, and the next open slot
+  the queue         posts that are due to post now, what goes out next,
+                    and the next open slot
   one page to open  the single LinkedIn page most worth opening right now
 
 What it will not do is rank people by the ICP score. That number is a keyword
@@ -47,6 +48,9 @@ COMPARE_WITH = 20
 MIN_COMPARISONS = 3
 
 COMPARED_METRICS = ("impressions", "reactions", "comments")
+
+# Due posts listed on Today; the Queue lists every one.
+DUE_LIMIT = 10
 
 
 def _reading_at_age(conn, activity_urn: str) -> Optional[Dict[str, Any]]:
@@ -194,7 +198,15 @@ def _queue(conn) -> Dict[str, Any]:
         slot = native_scheduler.calculate_next_smart_slot()
     except Exception:
         slot = None
-    return {"next_scheduled": scheduled, "next_open_slot": slot}
+    # Posts whose time has come. The studio does not post them; it marks them
+    # due and waits for the creator, so Today says so, oldest first, with the
+    # whole text for Copy text.
+    due = [{"post_id": r["id"], "scheduled_for": r["scheduled_for"], "content": r["content"] or "",
+            "excerpt": " ".join((r["content"] or "").split())[:120]}
+           for r in conn.execute(
+               "SELECT id, content, scheduled_for FROM posts WHERE status = 'due' "
+               "ORDER BY scheduled_for LIMIT ?", (DUE_LIMIT,))]
+    return {"next_scheduled": scheduled, "next_open_slot": slot, "due": due}
 
 
 def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) -> Dict[str, Any]:

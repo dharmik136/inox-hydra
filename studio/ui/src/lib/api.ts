@@ -2127,6 +2127,8 @@ export interface TodayBrief {
   queue: {
     next_scheduled: { post_id: string; scheduled_for: string; excerpt: string } | null;
     next_open_slot: { local_datetime: string; day_name: string; time_slot: string; label: string | null } | null;
+    /** Queued posts whose time has come, oldest first. The creator posts them. */
+    due: { post_id: string; scheduled_for: string; content: string; excerpt: string }[];
   };
   open_next: { action: "open" | "setup"; url?: string; reason: string };
 }

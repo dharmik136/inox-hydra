@@ -695,6 +695,7 @@ export default function App() {
                 <TodaySurface
                   onOpenSetup={() => navigate("setup")}
                   onOpenActivity={() => navigate("activity")}
+                  onOpenQueue={() => navigate("queue")}
                   onOpenLead={(leadId) => {
                     if (!navigate("leads")) return;
                     focusNonce.current += 1;
