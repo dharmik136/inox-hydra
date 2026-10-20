@@ -15,6 +15,7 @@ Strict Invariants:
 import http.client
 import os
 import socket
+import sqlite3
 import sys
 import threading
 
@@ -27,7 +28,10 @@ if REPO_ROOT not in sys.path:
 if BACKEND not in sys.path:
     sys.path.insert(0, BACKEND)
 
+import database  # noqa: E402
+import paths  # noqa: E402
 from studio.backend import desktop  # noqa: E402
+from test_qc2_r2_safe_mode import _damage  # noqa: E402
 
 
 def _free_port():
@@ -115,3 +119,48 @@ def test_a_program_that_answers_nothing_still_holds_its_port():
             conn.close()
         listener.close()
         thread.join(timeout=2)
+
+
+# ---------------------------------------------------------------------------
+# A file another handle holds, which Windows will not let anyone rename
+# ---------------------------------------------------------------------------
+
+def _handles_on(path: str):
+    """The file descriptors this process holds on path, where /proc says so."""
+    fds = "/proc/self/fd"
+    if not os.path.isdir(fds):
+        return []
+    held = []
+    for entry in os.listdir(fds):
+        try:
+            target = os.readlink(os.path.join(fds, entry))
+        except OSError:
+            continue
+        if target == path:
+            held.append(entry)
+    return held
+
+
+def test_opening_a_damaged_database_leaves_no_handle_on_it(tmp_path, monkeypatch):
+    """
+    Opening a damaged database failed on its first PRAGMA and left the
+    connection, and so a handle on the file, its WAL and its shared memory
+    file, open. Windows refuses to rename a file any handle holds, so the
+    restore that safe mode offers answered "The process cannot access the
+    file because it is being used by another process" and the one way out of
+    safe mode did not work. Measured on Linux as the descriptors left behind,
+    and on every platform as the rename Windows refused.
+    """
+    monkeypatch.setenv("INOX_HYDRA_HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("INOX_DEMO_DATA", raising=False)
+    database.init_db()
+    db = paths.get_db_path()
+    _damage(db)
+
+    with pytest.raises(sqlite3.DatabaseError):
+        database.get_db()
+
+    for path in (db, db + "-wal", db + "-shm"):
+        assert _handles_on(path) == [], f"{os.path.basename(path)} is still open"
+    # What support._swap does to every live file, and what Windows refused.
+    os.replace(db, db + ".moved")
