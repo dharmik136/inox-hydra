@@ -1565,6 +1565,8 @@ export interface BackupArchive {
   name: string;
   bytes: number;
   modified: string;
+  /** Whether the studio can restore it: a ZIP backup or a database copy. */
+  restorable?: boolean;
 }
 
 export interface BackupListing {
@@ -2587,4 +2589,29 @@ export function onStudioBack(listener: () => void): () => void {
       listener();
     }
   });
+}
+
+export interface RestoreOutcome {
+  restoredFrom: string;
+  safetyBackup: string | null;
+  safetyNote: string;
+}
+
+/**
+ * Restores one archive from the backups folder, by its file name there.
+ *
+ * The studio takes a safety backup of the current state first and swaps all
+ * or nothing. A refusal carries its reason, and a restore that stopped part
+ * way names the safety backup.
+ */
+export async function restoreBackup(name: string): Promise<RestoreOutcome> {
+  const data = await call<{ restored_from?: string; safety_backup?: string | null; safety_note?: string }>(
+    "/api/v1/support/restore",
+    { method: "POST", body: JSON.stringify({ name }) },
+  );
+  return {
+    restoredFrom: data.restored_from ?? name,
+    safetyBackup: data.safety_backup ?? null,
+    safetyNote: data.safety_note ?? "",
+  };
 }
