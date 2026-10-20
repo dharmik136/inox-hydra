@@ -49,7 +49,7 @@ def client(monkeypatch):
     return client
 
 
-@pytest.mark.parametrize("route", ["/api/leads/export/csv", "/api/v1/crm/leads/export-csv"])
+@pytest.mark.parametrize("route", ["/api/leads/export/csv"])
 def test_a_cell_written_by_someone_else_cannot_run_as_a_formula(client, route):
     response = client.get(route)
     assert response.status_code == 200

@@ -41,7 +41,8 @@ def _offline_getaddrinfo(host, *args, **kwargs):
 
 
 @pytest.fixture
-def offline(monkeypatch):
+def offline(monkeypatch, request):
+    request.node.add_marker(pytest.mark.simulates_offline)
     monkeypatch.setattr(socket, "getaddrinfo", _offline_getaddrinfo)
     for name in ("INOX_NO_EGRESS", "INOX_ALLOW_MODEL_EGRESS", "INOX_ALLOW_IMAGE_EGRESS"):
         monkeypatch.delenv(name, raising=False)
@@ -54,9 +55,11 @@ def offline(monkeypatch):
 def gemini_configured():
     from app import app
 
+    from agno_agentos.model_gateway import save_ai_config
+
     client = TestClient(app)
-    res = client.post("/api/ai/settings", json={"gemini_api_key": PLANTED})
-    assert res.status_code == 200, res.text
+    # As the removed /api/ai/settings did: a Gemini key saved without a check.
+    save_ai_config(provider="gemini", api_key=PLANTED, model="gemini-2.5-flash")
     yield client
     client.post("/api/ai/configure", json={"provider": "local_deterministic"})
 

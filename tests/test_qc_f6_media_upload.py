@@ -52,14 +52,18 @@ def test_an_upload_over_its_cap_is_refused_and_nothing_is_kept(client, monkeypat
 
 
 def test_an_upload_is_copied_in_chunks_not_read_whole(client, monkeypatch):
+    # The route is a plain function on the thread pool [BE-10], so it reads the
+    # upload's spooled file directly rather than through UploadFile.read.
+    import tempfile
+
     sizes = []
-    real_read = UploadFile.read
+    real_read = tempfile.SpooledTemporaryFile.read
 
-    async def recording_read(self, size=-1):
+    def recording_read(self, size=-1):
         sizes.append(size)
-        return await real_read(self, size)
+        return real_read(self, size)
 
-    monkeypatch.setattr(UploadFile, "read", recording_read)
+    monkeypatch.setattr(tempfile.SpooledTemporaryFile, "read", recording_read)
     data = b"\x00\x00\x00\x18ftypmp42" + os.urandom(3 * 1024 * 1024)
     res = _upload(client, "clip.mp4", data, "video/mp4")
     assert res.status_code == 200, res.text

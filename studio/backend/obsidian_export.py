@@ -51,6 +51,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 try:
+    from .text_cut import clip
+except ImportError:
+    from text_cut import clip
+
+try:
     from . import paths
     from .evidence_briefing import classify_post_topic
 except ImportError:
@@ -428,7 +433,7 @@ def _build(record: Dict[str, Any], previous: Optional[Dict[str, str]] = None,
             for item in engaged:
                 person = _link("People", person_note[item["lead_id"]])
                 kind = (item.get("interaction_type") or "engaged").lower()
-                said = f": \"{str(item['comment_text']).strip()[:200]}\"" if item.get("comment_text") else ""
+                said = f": \"{clip(str(item['comment_text']).strip(), 200)}\"" if item.get("comment_text") else ""
                 lines.append(f"- {person} {kind}{said}")
         else:
             lines.append("Nobody the studio has seen yet.")
@@ -502,7 +507,7 @@ def _build(record: Dict[str, Any], previous: Optional[Dict[str, str]] = None,
         for item in items:
             mine = str(item.get("my_text") or "").strip()
             if item.get("kind") == "comment":
-                lines.append(f"- commented: \"{mine[:240]}\"" if mine else "- commented")
+                lines.append(f"- commented: \"{clip(mine, 240)}\"" if mine else "- commented")
             else:
                 lines.append(f"- reacted ({item.get('reaction_kind') or 'like'})")
             if item.get("target_excerpt"):

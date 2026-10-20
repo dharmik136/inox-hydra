@@ -6,8 +6,13 @@ manages desktop shortcuts, clipboard paths, and autonomous history sync. Zero cl
 """
 
 from typing import Optional, Dict, Any, List
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
+
+try:
+    from ..text_cut import clip
+except ImportError:  # pragma: no cover - direct script use
+    from text_cut import clip
 
 try:
     from ..browser_launcher import (
@@ -166,12 +171,18 @@ def sync_all_activity(payload: Optional[Dict[str, Any]] = None):
     }
 
 
+ACTIVITY_STREAM_MAX = 5000
+
+
 @router.get("/api/v1/self/activity-stream", tags=["Browser Bridge"])
-def get_activity_stream(limit: int = 25):
+def get_activity_stream(limit: int = Query(25, ge=1)):
     """
     Returns real-time inspection data of all activity streams and live ingestion records
     for the product dashboard and CLI monitors. Zero cloud egress.
     """
+    # At least one row, at most 5,000 per list. limit=-1 used to return every
+    # row, and a number SQLite cannot hold answered 500.
+    limit = min(limit, ACTIVITY_STREAM_MAX)
     conn = get_db()
     try:
         cursor = conn.cursor()
@@ -201,7 +212,7 @@ def get_activity_stream(limit: int = 25):
         recent_posts = [
             {
                 "activity_urn": r[0],
-                "excerpt": (r[1] or "")[:200],
+                "excerpt": clip(r[1] or "", 200),
                 "published_at": r[2],
                 "reactions": r[3],
                 "comments": r[4],
@@ -226,8 +237,8 @@ def get_activity_stream(limit: int = 25):
         recent_comments = [
             {
                 "target_author": r[0] or "Unknown",
-                "my_text": (r[1] or "")[:240],
-                "target_excerpt": (r[2] or "")[:160],
+                "my_text": clip(r[1] or "", 240),
+                "target_excerpt": clip(r[2] or "", 160),
                 "target_activity_urn": r[3],
                 "last_seen_at": r[4],
             }
@@ -249,7 +260,7 @@ def get_activity_stream(limit: int = 25):
             {
                 "target_author": r[0] or "Unknown",
                 "reaction_kind": r[1] or "like",
-                "target_excerpt": (r[2] or "")[:160],
+                "target_excerpt": clip(r[2] or "", 160),
                 "target_activity_urn": r[3],
                 "last_seen_at": r[4],
             }

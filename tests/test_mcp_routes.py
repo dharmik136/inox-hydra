@@ -234,7 +234,8 @@ def test_preview_reports_a_server_that_is_down():
     body = client.get("/api/v1/mcp/preview").json()
 
     assert body["material"] == []
-    assert body["errors"] and body["errors"][0]["server"] == "Broken"
+    # A sentence naming it, which the interface shows as is [BE-15].
+    assert body["errors"] and body["errors"][0].startswith("Broken: ")
 
 
 def test_preview_reports_its_budget():

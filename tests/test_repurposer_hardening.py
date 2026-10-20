@@ -120,9 +120,6 @@ def test_api_format_request_oversized_422():
     resp2 = client.post("/api/format/algorithm-audit", json={"text": huge_text})
     assert resp2.status_code == 422
 
-    resp3 = client.post("/api/format/repurpose", json={"text": huge_text})
-    assert resp3.status_code == 422
-
 
 def test_get_gemini_api_key_safe():
     """Verifies get_gemini_api_key executes without unhandled DB connection leak."""

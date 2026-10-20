@@ -12,7 +12,7 @@ import json
 import math
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, Path, Query
 
 try:
     from ..database import get_db
@@ -324,28 +324,6 @@ def get_analytics_overview(range: str = "30d"):
         conn.close()
 
 
-@router.get("/api/analytics/demographics")
-def get_demographics(dimension: Optional[str] = None):
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        if dimension:
-            cursor.execute("SELECT dimension, label, percentage FROM audience_demographics WHERE dimension = ? ORDER BY percentage DESC", (dimension,))
-        else:
-            cursor.execute("SELECT dimension, label, percentage FROM audience_demographics ORDER BY percentage DESC")
-        rows = [dict(r) for r in cursor.fetchall()]
-        conn.close()
-
-        grouped = {}
-        for r in rows:
-            dim = r["dimension"]
-            grouped.setdefault(dim, []).append(r)
-
-        return {"status": "success", "demographics": grouped}
-    finally:
-        conn.close()
-
-
 @router.get("/api/analytics/export")
 def export_analytics(format: str = "csv"):
     conn = get_db()
@@ -467,7 +445,13 @@ def get_posts_leaderboard():
 
 
 @router.get("/api/v1/analytics/posts/{post_id}/leads", tags=["Enterprise Reverse CRM", "Analytics"])
-def get_post_leads_attribution(post_id: str, account_id: str = "default"):
+def get_post_leads_attribution(post_id: str = Path(..., max_length=200),
+                               account_id: str = Query("default", max_length=100)):
+    # A numeric id is also looked up as an integer, and one SQLite cannot hold
+    # raised OverflowError, a 500, rather than finding nothing.
+    digits = post_id.strip().lstrip("-")
+    if digits.isdigit() and int(digits) > 2 ** 63 - 1:
+        raise HTTPException(status_code=422, detail="That post id is out of range.")
     return reverse_crm.get_post_attribution(post_id, account_id=account_id)
 
 
@@ -509,19 +493,3 @@ def ingest_live_analytics(payload: dict):
     result = linkedin_client.ingest_analytics_payload(payload)
     return result
 
-
-@router.get("/api/v1/telemetry/status", tags=["Analytics"])
-def get_telemetry_shard_status():
-    if not telemetry_engine:
-        return {"status": "unavailable", "message": "Telemetry shard not initialized"}
-    status = telemetry_engine.get_status()
-    if telemetry_buffer:
-        status["pending_in_buffer"] = telemetry_buffer.pending_count()
-    return status
-
-
-@router.post("/api/v1/telemetry/flush", tags=["Analytics"])
-def flush_telemetry_shard():
-    if not telemetry_buffer:
-        return {"flushed_events": 0, "flushed_dwells": 0}
-    return telemetry_buffer.flush()

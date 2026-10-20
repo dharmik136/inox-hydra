@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 try:
     from ..database import get_db
@@ -74,12 +74,28 @@ except (ImportError, ValueError):
 router = APIRouter()
 
 
+# Every status a post can be stored with. Any other string was stored as given
+# ("banana", or a megabyte of text), and the post then appeared on no screen.
+POST_STATUSES = frozenset({"draft", "scheduled", "queued", "due", "published", "sent", "failed"})
+
+
+def _known_status(value: Optional[str]) -> Optional[str]:
+    if value is not None and value not in POST_STATUSES:
+        raise ValueError("status must be one of " + ", ".join(sorted(POST_STATUSES)))
+    return value
+
+
 class PostCreate(BaseModel):
     content: str
     media_urls: Optional[List[str]] = []
     status: Optional[str] = "draft"
     scheduled_for: Optional[str] = None
     tags: Optional[List[str]] = []
+
+    @field_validator("status")
+    @classmethod
+    def _status_is_known(cls, value: Optional[str]) -> Optional[str]:
+        return _known_status(value)
 
 
 class PostUpdate(BaseModel):
@@ -88,6 +104,11 @@ class PostUpdate(BaseModel):
     status: Optional[str] = None
     scheduled_for: Optional[str] = None
     tags: Optional[List[str]] = None
+
+    @field_validator("status")
+    @classmethod
+    def _status_is_known(cls, value: Optional[str]) -> Optional[str]:
+        return _known_status(value)
     # The text the editor last loaded or saved. When it is sent and the stored
     # post no longer matches it, someone else saved in between and the update
     # is refused rather than written over theirs. Callers that send none, such
@@ -342,11 +363,6 @@ def audit_algorithm(req: FormatRequest):
     return audit_linkedin_algorithm_safety(req.text)
 
 
-@router.post("/api/format/repurpose")
-def repurpose(req: FormatRequest):
-    return {"status": "success", "frameworks": repurpose_content(req.text)}
-
-
 @router.post("/api/format/bold")
 def format_bold(req: FormatRequest):
     return {"formatted": to_sans_bold(req.text)}
@@ -372,11 +388,6 @@ def format_clean(req: FormatRequest):
     return {"cleaned": clean_text_formatting(req.text)}
 
 
-@router.post("/api/format/analyze")
-def format_analyze(req: FormatRequest):
-    return analyze_hook(req.text)
-
-
 @router.post("/api/format/serif-bold")
 def format_serif_bold(req: FormatRequest):
     return {"formatted": to_serif_bold(req.text)}
@@ -400,11 +411,6 @@ def format_underline(req: FormatRequest):
 @router.post("/api/format/circled-numbers")
 def format_circled_numbers(req: FormatRequest):
     return {"formatted": to_circled_numbers(req.text)}
-
-
-@router.post("/api/format/dwell")
-def format_dwell(req: FormatRequest):
-    return calculate_dwell_metrics(req.text)
 
 
 @router.post("/api/v1/posts/injected", tags=["Post Identity"])

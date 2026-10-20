@@ -204,6 +204,7 @@ def test_gstack_anti_slop_audit_engine():
 # -------------------------------------------------------------
 # TASK 6: G-Stack API Endpoints
 # -------------------------------------------------------------
+@pytest.mark.usefixtures("dev_mode")
 def test_gstack_api_endpoints():
     """Validates FastAPI routes: roles, backlog query, task creation, and audit."""
     # 1. GET /api/v1/gstack/roles

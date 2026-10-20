@@ -195,20 +195,3 @@ async def test_stream_completion_anthropic_mock(monkeypatch):
         assert chunks == ["Claude ", "Token"]
 
 
-def test_stream_ai_endpoint_sse_contract():
-    """Verifies that POST /api/ai/stream returns text/event-stream with SSE chunks."""
-    from studio.backend.app import app
-    from studio.backend.security import get_or_create_token, TOKEN_HEADER
-    from fastapi.testclient import TestClient
-
-    client = TestClient(app)
-    token = get_or_create_token()
-    response = client.post(
-        "/api/ai/stream",
-        headers={TOKEN_HEADER: token},
-        json={"prompt": "Architecture design"},
-    )
-    assert response.status_code == 200
-    assert "text/event-stream" in response.headers.get("content-type", "")
-    assert "data: [DONE]" in response.text
-

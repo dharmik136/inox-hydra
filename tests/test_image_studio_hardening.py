@@ -81,16 +81,32 @@ def test_api_oversized_concept_rejected_422():
     assert resp.status_code == 422
 
 
-def test_pollinations_zero_dimensions_safe():
+def test_pollinations_zero_dimensions_safe(monkeypatch):
     """Verifies that _call_pollinations guards against zero or negative dimensions."""
+    import image_studio
+
+    # The request is answered here: this test once called the public image
+    # service on every run, and the suite refuses the network now.
+    asked = []
+
+    def no_service(url, timeout=None, **_kwargs):
+        asked.append(url)
+        return type("Answer", (), {"status_code": 503, "content": b""})()
+
+    monkeypatch.setattr(image_studio.requests, "get", no_service)
+
     # height=0 must not trigger ZeroDivisionError
     res = image_studio_manager._call_pollinations("Prompt test", width=1080, height=0)
-    # The call should handle clamped dimensions safely (network call may return None or bytes)
-    assert res is None or isinstance(res, bytes)
+    assert res is None
 
     # Negative dimensions must not crash
     res_neg = image_studio_manager._call_pollinations("Prompt test", width=-100, height=-50)
-    assert res_neg is None or isinstance(res_neg, bytes)
+    assert res_neg is None
+
+    # Both reached the request with real, positive dimensions.
+    assert len(asked) == 2
+    for url in asked:
+        assert "width=0" not in url and "height=0" not in url and "=-" not in url
 
 
 def test_remove_watermark_crop_zero_dimensions_safe():

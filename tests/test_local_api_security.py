@@ -43,7 +43,7 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 # what happens when a caller does not have that, so they override per request.
 client = TestClient(app)
 
-STUDIO_PATH = "/api/v1/crm/telemetry"
+STUDIO_PATH = "/api/leads"  # any token-guarded read; /api/v1/crm/telemetry was removed in cycle 2
 
 
 def token():

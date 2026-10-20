@@ -27,6 +27,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
+    from .text_cut import clip
+except ImportError:
+    from text_cut import clip
+
+try:
     from . import onboarding
     from .database import get_db
 except ImportError:
@@ -121,7 +126,7 @@ def _latest_post(conn) -> Optional[Dict[str, Any]]:
 
     return {
         "activity_urn": latest["activity_urn"],
-        "excerpt": " ".join((latest["text"] or "").split())[:160] or None,
+        "excerpt": clip(" ".join((latest["text"] or "").split()), 160) or None,
         "published_at": latest["published_at"],
         "age_hours": round(age, 1),
         "current": current,
@@ -169,7 +174,7 @@ def _reply_to(conn) -> List[Dict[str, Any]]:
         if (row["engaged_at"] or "") >= (person["engaged_at"] or ""):
             person["engaged_at"] = row["engaged_at"]
             if row["comment_text"]:
-                person["latest_comment"] = row["comment_text"][:200]
+                person["latest_comment"] = clip(row["comment_text"], 200)
 
     # Only people who commented: a reaction leaves nothing to reply to. Repeat
     # engagement first, then the most recent comment.
@@ -190,7 +195,7 @@ def _queue(conn) -> Dict[str, Any]:
     scheduled = None
     if row:
         scheduled = {"post_id": row["id"], "scheduled_for": row["scheduled_for"],
-                     "excerpt": " ".join((row["content"] or "").split())[:120]}
+                     "excerpt": clip(" ".join((row["content"] or "").split()), 120)}
     try:
         try:
             from .scheduler import native_scheduler
@@ -203,7 +208,7 @@ def _queue(conn) -> Dict[str, Any]:
     # due and waits for the creator, so Today says so, oldest first, with the
     # whole text for Copy text.
     due = [{"post_id": r["id"], "scheduled_for": r["scheduled_for"], "content": r["content"] or "",
-            "excerpt": " ".join((r["content"] or "").split())[:120]}
+            "excerpt": clip(" ".join((r["content"] or "").split()), 120)}
            for r in conn.execute(
                "SELECT id, content, scheduled_for FROM posts WHERE status = 'due' "
                "ORDER BY scheduled_for LIMIT ?", (DUE_LIMIT,))]

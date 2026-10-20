@@ -365,6 +365,7 @@ def test_the_routes_no_longer_supply_a_topic():
     """
     from fastapi.testclient import TestClient
     import app as app_module
+    from crm import ICPScoringEngine
 
     client = TestClient(app_module.app)
     body = {"lead_name": "Asha Kulkarni", "comment_text": "How did you stage the rollout?"}
@@ -372,6 +373,6 @@ def test_the_routes_no_longer_supply_a_topic():
     reply = client.post("/api/v1/crm/leads/generate-dm", json=body).json()
     assert reply["suggested_dm"] == "", "a reply was drafted about a post nobody named"
 
-    for variant in client.post("/api/v1/crm/dm/variants", json=body).json()["variants"]:
+    for variant in ICPScoringEngine.generate_anti_slop_dm_variants(**body):
         assert "sovereign" not in variant["dm_text"].lower()
         assert " on ." not in variant["dm_text"] and "post ." not in variant["dm_text"]

@@ -17,6 +17,7 @@ Architectural Guarantees:
 import json
 import logging
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -62,6 +63,55 @@ def _in_profile(profile_id: Optional[str]):
     return _paths.using_profile(profile_id)
 
 TELEMETRY_DB_FILENAME = "analytics_telemetry.db"
+
+# What one telemetry entry keeps of the payload it records [DATA-14, BE-13].
+#
+# Every payload was stored whole: posts' text, commenters' names, viewers'
+# job titles, and request paths that, for /identity/profiles, name the member
+# whose profile was viewed. One request with an extra 10 MB field added 10 MB.
+# Nothing reads any of it but a count. So an entry keeps only the payload's
+# shape: its numbers, how many items each list or object held, the HTTP
+# method, and the request path cut before anything that identifies a person.
+# Text is never kept, and neither is a key that is not a plain field name.
+MAX_PAYLOAD_KEYS = 50
+_FIELD_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,40}$")
+_PERSON_PATH_MARKERS = ("/identity/profiles", "/in/", "/company/", "/school/")
+_MEMBER_ID = re.compile(r"urn(?::|%3A)li(?::|%3A)[A-Za-z_]+(?::|%3A)[^/?#]+", re.IGNORECASE)
+
+
+def _path_shape(url: str) -> str:
+    """A request path with no query, and nothing after the part that would name someone."""
+    path = str(url).split("?", 1)[0].split("#", 1)[0]
+    for marker in _PERSON_PATH_MARKERS:
+        at = path.find(marker)
+        if at >= 0:
+            path = path[:at + len(marker)].rstrip("/")
+            break
+    return _MEMBER_ID.sub("urn:li:<id>", path)[:300]
+
+
+def minimal_payload(payload: Any) -> Dict[str, Any]:
+    """What a telemetry entry stores of `payload`. See the note above."""
+    if not isinstance(payload, dict):
+        return {"shape": type(payload).__name__}
+    kept: Dict[str, Any] = {}
+    counts: Dict[str, int] = {}
+    for key, value in list(payload.items())[:MAX_PAYLOAD_KEYS]:
+        if not isinstance(key, str) or not _FIELD_NAME.match(key):
+            continue
+        if key == "url" and isinstance(value, str):
+            kept["url"] = _path_shape(value)
+        elif key == "method" and isinstance(value, str):
+            kept["method"] = value.upper()[:10]
+        elif isinstance(value, bool):
+            kept[key] = value
+        elif isinstance(value, (int, float)) and value == value and abs(value) < 1e15:
+            kept[key] = value
+        elif isinstance(value, (list, dict)):
+            counts[key] = len(value)
+    if counts:
+        kept["counts"] = counts
+    return kept
 
 
 def get_telemetry_db_path() -> str:
@@ -296,7 +346,7 @@ class TelemetryBuffer:
         Automatically flushes when batch_size threshold is exceeded.
         """
         try:
-            payload_str = json.dumps(payload, default=str) if not isinstance(payload, str) else payload
+            payload_str = json.dumps(minimal_payload(payload))
         except Exception:
             payload_str = "{}"
 
@@ -429,6 +479,21 @@ class TelemetryBuffer:
         """Returns total items currently in-memory waiting for flush."""
         with self._lock:
             return len(self._events_buffer) + len(self._dwell_buffer)
+
+    def forget(self) -> None:
+        """
+        Removes this profile's telemetry, staged and stored, when the creator
+        forgets their identity [DATA-14]. It was left behind, readings of the
+        creator's own pages included. Staged entries bound for this profile (an
+        unpinned one is written to whichever is active) are dropped first, so a
+        flush cannot write them back after the shard is cleared.
+        """
+        profile = _active_profile()
+        with self._flush_lock:
+            with self._lock:
+                self._events_buffer = [(p, e) for p, e in self._events_buffer if p not in (profile, None)]
+                self._dwell_buffer = [(p, d) for p, d in self._dwell_buffer if p not in (profile, None)]
+            self.engine.clear()
 
 
 # Global instances

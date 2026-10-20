@@ -204,39 +204,34 @@ def test_macro_crm_telemetry_aggregation():
 
 def test_fastapi_crm_endpoints():
     """Validates FastAPI CRM endpoints: /telemetry, /dm/variants, and /score-preview."""
-    # 1. Telemetry endpoint
-    r_telem = client.get("/api/v1/crm/telemetry")
-    assert r_telem.status_code == 200
-    t_data = r_telem.json()
+    # The three routes were removed in cycle 2 (D1); the engine they wrapped is tested here.
+    from crm import ICPScoringEngine, reverse_crm
+
+    # 1. Telemetry
+    t_data = reverse_crm.get_crm_telemetry()
     assert t_data["status"] == "success"
     assert "summary" in t_data
     assert "funnel" in t_data
     assert "seniority_distribution" in t_data
     assert "inquiry_telemetry" in t_data
 
-    # 2. DM Variants endpoint
-    r_dm = client.post("/api/v1/crm/dm/variants", json={
-        "lead_name": "Elena Rostova",
-        "comment_text": "Is SQLite WAL fast enough for real-time telemetry streaming?",
-        "post_topic": "real-time telemetry"
-    })
-    assert r_dm.status_code == 200
-    dm_data = r_dm.json()
-    assert dm_data["status"] == "success"
-    assert len(dm_data["variants"]) == 3
-    for var in dm_data["variants"]:
+    # 2. DM variants
+    variants = ICPScoringEngine.generate_anti_slop_dm_variants(
+        lead_name="Elena Rostova",
+        comment_text="Is SQLite WAL fast enough for real-time telemetry streaming?",
+        post_topic="real-time telemetry",
+    )
+    assert len(variants) == 3
+    for var in variants:
         assert "\u2014" not in var["dm_text"]
 
-    # 3. Enhanced Score Preview endpoint
-    r_score = client.post("/api/v1/crm/score-preview", json={
-        "headline": "Managing Director & Partner",
-        "company": "Enterprise Fintech Labs",
-        "comment_text": "Could you share the memory profiling numbers?",
-        "interaction_type": "COMMENT"
-    })
-    assert r_score.status_code == 200
-    s_data = r_score.json()
-    assert s_data["status"] == "success"
+    # 3. Score breakdown
+    s_data = ICPScoringEngine.calculate_icp_breakdown(
+        headline="Managing Director & Partner",
+        company="Enterprise Fintech Labs",
+        comment_text="Could you share the memory profiling numbers?",
+        interaction_type="COMMENT",
+    )
     assert s_data["icp_score"] >= 80.0
     assert s_data["qualification_tier"] == "TIER_1_VIP"
     assert "contributions" in s_data

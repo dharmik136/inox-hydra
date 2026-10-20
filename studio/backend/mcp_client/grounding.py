@@ -43,7 +43,13 @@ Strict Invariants:
 """
 
 import json
+import time
 from typing import Any, Dict, List, Optional
+
+try:
+    from ..text_cut import clip
+except ImportError:  # pragma: no cover - direct script use
+    from text_cut import clip
 
 try:
     from .protocol import McpServer
@@ -110,13 +116,19 @@ MAX_GROUNDING_BYTES = 6 * 1024
 # leave nothing from any other source.
 MAX_PER_RESOURCE_BYTES = 1500
 
+# The whole gather, every server together. Each server's start and requests
+# have their own limits, but twelve slow servers in a row would still keep a
+# preview, or a draft, waiting for minutes. A server reached after the budget
+# is spent is skipped and named.
+GATHER_TIMEOUT_SECONDS = 30.0
+
 
 def _summarise(text: str, limit: int = MAX_PER_RESOURCE_BYTES) -> str:
     """Trims to a budget on a whitespace boundary, and says that it did."""
     clean = " ".join(str(text or "").split())
     if len(clean) <= limit:
         return clean
-    cut = clean[:limit]
+    cut = clip(clean, limit)
     space = cut.rfind(" ")
     if space > limit // 2:
         cut = cut[:space]
@@ -194,6 +206,7 @@ def gather(provider: str = "local_deterministic",
     gathered: List[Dict[str, str]] = []
     errors: List[Dict[str, str]] = []
     budget = MAX_GROUNDING_BYTES
+    deadline = time.monotonic() + GATHER_TIMEOUT_SECONDS
 
     for definition in enabled_servers():
         name = definition.get("name") or "unnamed"
@@ -201,22 +214,26 @@ def gather(provider: str = "local_deterministic",
 
         if budget <= 0:
             break
+        if time.monotonic() >= deadline:
+            errors.append({"server": name, "error": "skipped: the sources before it used all the time allowed"})
+            continue
 
         server = McpServer(
             name=name,
             command=command,
             cwd=definition.get("cwd"),
             env=definition.get("env") or {},
+            deadline=deadline,
         )
 
         try:
             if not server.start():
-                errors.append({"server": name, "error": "did not start"})
+                errors.append({"server": name, "error": server.last_error or "did not start"})
                 continue
 
             resources = server.list_resources()
             if not resources:
-                errors.append({"server": name, "error": "offered nothing"})
+                errors.append({"server": name, "error": server.last_error or "offered nothing"})
                 continue
 
             taken = 0

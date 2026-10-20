@@ -13,7 +13,6 @@ import json
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 try:
@@ -21,7 +20,6 @@ try:
         get_current_ai_config,
         save_ai_config,
         verify_ai_connection,
-        stream_llm_completion_async,
         SUPPORTED_PROVIDERS,
         AIProviderConfig,
     )
@@ -32,7 +30,6 @@ except ImportError:
         get_current_ai_config,
         save_ai_config,
         verify_ai_connection,
-        stream_llm_completion_async,
         SUPPORTED_PROVIDERS,
         AIProviderConfig,
     )
@@ -50,10 +47,6 @@ class CopilotRequest(BaseModel):
     attached_media_type: Optional[str] = None
 
 
-class AISettingsPayload(BaseModel):
-    gemini_api_key: str
-
-
 class AIConfigureRequest(BaseModel):
     provider: str
     api_key: Optional[str] = ""
@@ -68,13 +61,6 @@ class AICommandPayload(BaseModel):
 
     def resolved_context(self) -> Optional[str]:
         return self.context if self.context is not None else self.draft_context
-
-
-class AIStreamRequest(BaseModel):
-    prompt: str
-    system_prompt: Optional[str] = None
-    max_tokens: Optional[int] = 1200
-    temperature: Optional[float] = 0.7
 
 
 @router.get("/api/ai/status", tags=["AI Command Engine"])
@@ -133,20 +119,7 @@ def configure_ai_endpoint(req: AIConfigureRequest):
     }
 
 
-@router.post("/api/ai/settings", tags=["AI Command Engine"])
-def save_ai_settings(payload: AISettingsPayload):
-    """Saves Gemini API key to local SQLite settings store."""
-    save_ai_config(provider="gemini", api_key=payload.gemini_api_key.strip(), model="gemini-2.5-flash")
-
-    return {
-        "status": "success",
-        "message": "Gemini API key saved to local SQLite settings",
-        "ai_status": get_ai_status(),
-    }
-
-
 @router.post("/api/ai/command", tags=["AI Command Engine"])
-@router.post("/api/repurposer/command", tags=["AI Command Engine"])
 def execute_ai_command(payload: AICommandPayload):
     """Executes high-velocity content commands, tone shifts, and hook transformations."""
     return command_ai_engine(payload.command, payload.resolved_context())
@@ -158,42 +131,3 @@ def copilot_optimize(req: CopilotRequest):
     result = orchestrator.optimize_content(req.model_dump())
     return {"status": "success", "copilot": result.model_dump()}
 
-
-@router.post("/api/swipe/analyze", tags=["AI Content Copilot"])
-def analyze_swipe_pattern(payload: Dict[str, Any]):
-    """Reverse-engineers viral posts into reusable formulas and blueprints."""
-    result = orchestrator.analyze_swipe(payload)
-    return {"status": "success", "pattern": result.model_dump()}
-
-
-@router.post("/api/ai/stream", tags=["AI Command Engine"])
-async def stream_ai_completion(req: AIStreamRequest):
-    """
-    Streams LLM completion tokens via Server-Sent Events (SSE).
-    Reduces Time-to-First-Token (TTFT) from 6s+ to ~200ms.
-    Strict zero cloud egress when local deterministic engine is active.
-    """
-    cfg = get_current_ai_config()
-
-    async def token_generator():
-        async for chunk in stream_llm_completion_async(
-            config=cfg,
-            prompt=req.prompt,
-            system_prompt=req.system_prompt,
-            max_tokens=req.max_tokens or 1200,
-            temperature=req.temperature or 0.7,
-        ):
-            if chunk:
-                payload = json.dumps({"token": chunk})
-                yield f"data: {payload}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(
-        token_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )

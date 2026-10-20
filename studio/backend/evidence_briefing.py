@@ -16,6 +16,11 @@ from collections import Counter
 from typing import Dict, Any, List, Optional, Tuple
 
 try:
+    from .text_cut import clip
+except ImportError:
+    from text_cut import clip
+
+try:
     from .database import get_db, get_db_path
     from .contrast_engine import compute_all_contrasts
 except ImportError:
@@ -356,7 +361,7 @@ def get_retrieval_evidence_brief(limit_top: int = 3, limit_bottom: int = 2) -> D
 
     lines.append("TOP PERFORMING EXAMPLES:")
     for p in top_posts:
-        excerpt = " ".join((p.get("text") or "").split())[:90]
+        excerpt = clip(" ".join((p.get("text") or "").split()), 90)
         q_leads = p.get("qualified_leads", 0)
         rxn = p.get("reactions", 0)
         lines.append(f"- \"{excerpt}...\" ({rxn} reactions, {_people(q_leads)} qualified)")

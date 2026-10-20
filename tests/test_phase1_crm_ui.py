@@ -31,43 +31,16 @@ def setup_database():
     init_db()
 
 
-def test_crm_telemetry_endpoint_contract():
-    """Validates the GET /api/v1/crm/telemetry endpoint response schema."""
-    res = client.get("/api/v1/crm/telemetry")
-    assert res.status_code == 200
-    data = res.json()
-
-    assert data["status"] == "success"
-    assert "summary" in data
-    assert "funnel" in data
-    assert "seniority_distribution" in data
-    assert "inquiry_telemetry" in data
-
-    s = data["summary"]
-    assert "total_leads" in s
-    assert "high_value_leads" in s
-    assert "avg_icp_score" in s
-    assert "conversion_rate_pct" in s
-    assert "avg_interactions_per_lead" in s
-
-    f = data["funnel"]
-    for status_key in ["NEW", "ENGAGED", "DM_DRAFTED", "DM_SENT", "CONVERTED", "ARCHIVED"]:
-        assert status_key in f
-
-
 def test_crm_dm_variants_endpoint_contract():
     """Validates the POST /api/v1/crm/dm/variants endpoint generates 3 zero em-dash options."""
-    res = client.post("/api/v1/crm/dm/variants", json={
+    # The route was removed in cycle 2 (D1); the generator remains.
+    from crm import ICPScoringEngine
+
+    variants = ICPScoringEngine.generate_anti_slop_dm_variants(**{
         "lead_name": "Marcus Vance",
         "comment_text": "How do you achieve sub-millisecond local queries?",
         "post_topic": "distributed local storage"
     })
-    assert res.status_code == 200
-    data = res.json()
-
-    assert data["status"] == "success"
-    assert "variants" in data
-    variants = data["variants"]
     assert len(variants) == 3
 
     angles = [v["angle"] for v in variants]
@@ -109,10 +82,6 @@ def test_gdpr_hard_purge_lifecycle():
     # 4. Confirm timeline query now 404s
     verify_res = client.get(f"/api/v1/crm/leads/{lead_id}/timeline")
     assert verify_res.status_code == 404
-
-
-
-
 
 
 def test_strict_zero_em_dash_compliance():

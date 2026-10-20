@@ -22,7 +22,7 @@ Only add a command you would be willing to run yourself.
 1. Open **Brand Studio** in the rail and choose the **Grounding** tab.
 2. Under **Connect a source**, type a **Name**.
 3. In the command box (placeholder `Command, for example: npx -y @some/mcp-server`), type the command that starts the server.
-4. Check the line that appears underneath, for example `RUNS AS 3 ARGUMENTS: [npx] [-y] [@some/mcp-server]`. That list is exactly what will be run. It never goes through a shell.
+4. Check the line that appears underneath, for example `RUNS AS 3 ARGUMENTS: [npx] [-y] [@some/mcp-server]`. That list is exactly what will be run. It never goes through a shell, with one exception: on Windows, `npx` and other launchers installed as `.cmd` files can only be run by `cmd.exe`, so they go through it, and a source whose arguments contain `&`, `|`, `<`, `>`, `^`, `%`, `!` or a quote is not started.
 5. Optionally fill in **What it holds (optional)**.
 6. Press **Add, switched off**.
 
@@ -62,7 +62,9 @@ To change the provider, see [Connect your own AI provider](connect-your-own-ai-p
 | What you see | What it means |
 | --- | --- |
 | **NO SOURCES CONNECTED** although you added some | The list could not load, usually because the server is not running. See [The studio will not open](the-studio-will-not-open.md). |
-| `[object Object]` under the preview | A source failed (it did not start, or offered nothing). The interface cannot print the reason; check the command runs in a terminal. |
+| *Name*: the command *X* was not found | The program is not installed, or not on the PATH the studio sees. Check the command runs in a terminal. |
+| *Name*: did not answer initialize within 10 s | The program started but never spoke MCP. The studio stopped it and everything it had started. |
+| *Name*: skipped | The sources before it used the 30 seconds a preview or a draft allows. Switch off a slow one. |
 | A server named *X* already exists. | Names must be unique, ignoring case. Pick another. |
 | A server needs a plain name and a command given as a list of arguments. | The name must start with a letter or digit and use only letters, digits, spaces, `_`, `.` or `-`. |
 | `422` | The name is longer than 48 characters, or the command has more than 24 arguments. |

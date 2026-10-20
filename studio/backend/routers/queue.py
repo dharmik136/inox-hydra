@@ -107,7 +107,7 @@ def get_queue_status():
 
 
 @router.post("/api/queue/toggle-pause", tags=["Smart Queue"])
-async def toggle_queue_pause(payload: Optional[QueuePausePayload] = None):
+def toggle_queue_pause(payload: Optional[QueuePausePayload] = None):
     """Toggles or sets the automated publishing queue pause state."""
     current = native_scheduler.is_queue_paused()
     new_state = payload.paused if (payload and payload.paused is not None) else not current
@@ -126,7 +126,7 @@ async def toggle_queue_pause(payload: Optional[QueuePausePayload] = None):
             ),
         }
 
-    await event_bus.publish("queue_status_changed", {"queue_paused": actual_state})
+    event_bus.publish_sync("queue_status_changed", {"queue_paused": actual_state})
     msg = "Publishing queue paused." if actual_state else "Publishing queue resumed."
     return {
         "status": "success",

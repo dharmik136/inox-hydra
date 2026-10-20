@@ -273,15 +273,7 @@ def test_intelligence_api_endpoints():
     assert "velocity_score" in first_item
     assert "archetype" in first_item
 
-    # 3. POST /api/v1/intelligence/sync (with mock 304)
-    mock_resp = MagicMock()
-    mock_resp.status_code = 304
-    with patch("requests.get", return_value=mock_resp):
-        res_sync = client.post("/api/v1/intelligence/sync", json={"force": False})
-        assert res_sync.status_code == 200
-        data_sync = res_sync.json()
-        assert data_sync["status"] == "up_to_date"
-        assert data_sync["bytes_transferred"] == 0
+    # POST /api/v1/intelligence/sync was removed in cycle 2 (D1): nothing called it.
 
 
 # -------------------------------------------------------------

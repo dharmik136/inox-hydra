@@ -236,6 +236,7 @@ def test_telegram_is_the_default_so_a_missed_argument_fails_closed(monkeypatch):
     assert daemon.process_incoming_update(_message(OWNER)) is None
 
 
+@pytest.mark.usefixtures("dev_mode")
 def test_the_simulate_route_still_works_end_to_end():
     """The route a creator actually uses, through the real app."""
     from fastapi.testclient import TestClient

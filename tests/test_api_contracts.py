@@ -51,14 +51,6 @@ def test_analytics_overview_contract():
     assert len(data["series"]) >= 28
 
 
-def test_analytics_demographics_contract():
-    response = client.get("/api/analytics/demographics")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["status"] == "success"
-    assert "demographics" in data
-
-
 def test_analytics_export_csv():
     response = client.get("/api/analytics/export")
     assert response.status_code == 200
@@ -149,22 +141,6 @@ def test_algorithmic_safety_audit_rules():
 # -------------------------------------------------------------
 # 4. Carousel 1080×1080 PDF Builder Tests
 # -------------------------------------------------------------
-def test_carousel_builder_contract():
-    slides_payload = {
-        "slides": [
-            {"tag": "COVER", "title": "The Decoupled Enterprise", "body": "Why modern data pipelines avoid centralized schemas."},
-            {"tag": "POINT 1", "title": "Immutable State", "body": "Treat every event as an append-only log record."},
-            {"tag": "SUMMARY", "title": "Key Takeaway", "body": "Architecture empowers teams to operate autonomously."}
-        ],
-        "theme": "dark_slate",
-        "author_name": "Dharmik Shingala",
-        "author_title": "Content Strategist & Enterprise Systems Practitioner"
-    }
-    resp = client.post("/api/carousel/generate", json=slides_payload)
-    assert resp.status_code == 200
-    assert resp.headers["content-type"] == "application/pdf"
-    assert resp.content.startswith(b"%PDF")
-    assert len(resp.content) > 10000
 
 
 # -------------------------------------------------------------

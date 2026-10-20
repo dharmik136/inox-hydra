@@ -151,13 +151,6 @@ def test_batch_add_leads_cap_500():
     assert result2["added"] >= 0
 
 
-def test_batch_add_leads_api_returns_400():
-    """Validates that POST /api/leads/batch returns 400 for oversized batches."""
-    oversized = [{"name": f"API Batch {i}"} for i in range(MAX_BATCH_SIZE + 1)]
-    res = client.post("/api/leads/batch", json={"leads": oversized})
-    assert res.status_code == 400
-
-
 # ---------------------------------------------------------------
 # 5. ingest_interaction() field length sanitization
 # ---------------------------------------------------------------
@@ -207,12 +200,6 @@ def test_archive_inactive_minimum_7_days():
     assert result4["status"] == "success"
 
 
-def test_archive_inactive_api_returns_400():
-    """Validates that POST /api/v1/crm/leads/archive-inactive returns 400 for < 7 days."""
-    res = client.post("/api/v1/crm/leads/archive-inactive", json={"inactive_days": 2})
-    assert res.status_code == 400
-
-
 # ---------------------------------------------------------------
 # 7. list_high_value_leads() query limit cap
 # ---------------------------------------------------------------
@@ -230,8 +217,10 @@ def test_high_value_leads_limit_capped_at_500():
 # ---------------------------------------------------------------
 def test_lead_lifecycle_full_pipeline():
     """End-to-end lifecycle: create, update status, generate DM, delete."""
-    # Create
-    res = client.post("/api/leads", json={
+    # Create (POST /api/leads was removed in cycle 2; add_lead is what remains)
+    from leads import add_lead
+
+    data = add_lead({
         "name": "Lifecycle Test Lead",
         "headline": "VP of Engineering at Scale Corp",
         "company": "Scale Corp",
@@ -239,8 +228,6 @@ def test_lead_lifecycle_full_pipeline():
         "engagement_type": "Commented",
         "notes": "Engaged on architecture post"
     })
-    assert res.status_code == 200
-    data = res.json()
     assert data["status"] == "success"
     lead_id = data["id"]
 

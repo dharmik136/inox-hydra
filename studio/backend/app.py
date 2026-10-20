@@ -24,7 +24,7 @@ from datetime import datetime, date, timedelta, timezone
 from contextlib import asynccontextmanager
 import time
 
-from fastapi import FastAPI, HTTPException, Response, UploadFile, File, Form, Request, Header, Depends
+from fastapi import FastAPI, HTTPException, Response, UploadFile, File, Form, Request, Header, Depends, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
@@ -83,6 +83,7 @@ try:
     from . import desktop as desktop_integration
     from .migrations import describe as describe_schema
     from . import support as support_tools
+    from . import safe_mode
     from . import updates as update_checker
     from .paths import (get_assets_dir, get_uploads_dir, get_generated_dir, get_data_dir,
                         get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
@@ -154,6 +155,7 @@ except ImportError:
     import desktop as desktop_integration
     from migrations import describe as describe_schema
     import support as support_tools
+    import safe_mode
     import updates as update_checker
     from paths import (get_assets_dir, get_uploads_dir, get_generated_dir, get_data_dir,
                        get_frontend_dir, get_docs_dir, get_modules_docs_dir, get_backups_dir,
@@ -205,21 +207,15 @@ OPENAPI_TAGS = [
     {"name": "Developer Tools", "description": "Maintainer only. Screen registry, state and migration inspectors, and annotation portability. Absent unless INOX_DEV_MODE is set."}
 ]
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    init_db()
-    seed_initial_data()
-    # Every other creator profile's database too, so switching to one, or the
-    # scheduler visiting it, never meets a schema older than this build.
-    for _profile in paths_module.profile_ids():
-        if _profile == paths_module.get_active_profile_id():
-            continue
-        try:
-            with paths_module.using_profile(_profile):
-                init_db()
-        except Exception:
-            logging.getLogger("studio.profiles").warning(
-                "Could not bring profile %s up to this build's schema.", _profile, exc_info=True)
+def _is_damaged_database(error: BaseException) -> bool:
+    """A database file SQLite cannot read, as opposed to one that is only busy."""
+    said = str(error).lower()
+    return isinstance(error, sqlite3.DatabaseError) and (
+        "malformed" in said or "not a database" in said or "encrypted" in said
+        or not isinstance(error, sqlite3.OperationalError))
+
+
+def _seal_plaintext_secrets() -> None:
     # An AI key saved before keys were sealed is still readable in the file
     # until something saves it again. Sealed here instead, once; a sealed
     # value is left alone, so this does nothing on every later start.
@@ -235,12 +231,53 @@ async def lifespan(app: FastAPI):
             _conn.close()
     except Exception:
         logging.getLogger("studio.vault").warning("Could not seal stored secrets at startup.", exc_info=True)
+
+
+def _open_after_restore() -> None:
+    """What a normal start does with the database, run again once safe mode has restored one."""
+    init_db()
+    seed_initial_data()
+    _seal_plaintext_secrets()
+    try:
+        init_docs_search_index()
+    except Exception:
+        logging.getLogger("studio.docs").warning("The documentation search index did not build.", exc_info=True)
+    start_scheduler()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # A database SQLite cannot read starts the studio in safe mode rather than
+    # not at all: one page that says what happened and offers the backups.
+    # See safe_mode.py. Nothing below touches the damaged file.
+    try:
+        init_db()
+        seed_initial_data()
+    except sqlite3.DatabaseError as damaged:
+        if not _is_damaged_database(damaged):
+            raise
+        safe_mode.enter(damaged)
+    # Every other creator profile's database too, so switching to one, or the
+    # scheduler visiting it, never meets a schema older than this build.
+    for _profile in paths_module.profile_ids():
+        if _profile == paths_module.get_active_profile_id():
+            continue
+        try:
+            with paths_module.using_profile(_profile):
+                init_db()
+        except Exception:
+            logging.getLogger("studio.profiles").warning(
+                "Could not bring profile %s up to this build's schema.", _profile, exc_info=True)
+    if not safe_mode.is_active():
+        _seal_plaintext_secrets()
     # The offline documentation index, built here rather than on whichever
     # search happened to run first. It was imported into this module and never
     # called, so the index was a snapshot of the corpus as it stood the first
     # time anyone searched, for the life of the database. Cheap: 38 files.
+    # Not in safe mode: the index lives in the damaged file.
     try:
-        init_docs_search_index()
+        if not safe_mode.is_active():
+            init_docs_search_index()
     except Exception:
         # A documentation index that cannot build is not a reason to refuse to
         # start. search_docs_fts retries, and the reader opens documents from
@@ -251,12 +288,24 @@ async def lifespan(app: FastAPI):
         logging.getLogger("studio.docs").warning(
             "The documentation search index did not build at startup.", exc_info=True
         )
-    start_scheduler()
-    if os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN"):
+    if not safe_mode.is_active():
+        start_scheduler()
+    # Maintainer only, like its routes (D4). A token in the environment alone
+    # used to start it in a creator's install.
+    if (os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN")) \
+            and devtools.env_allows_dev_mode():
         ingress_daemon.start_worker()
     yield
     shutdown_scheduler()
     ingress_daemon.stop_worker()
+    # Up to a batch of events waits in memory between flushes, and every stop
+    # lost it. Written out now, while the files are still there to write to.
+    if telemetry_buffer is not None:
+        try:
+            telemetry_buffer.flush()
+        except Exception:
+            logging.getLogger("studio.telemetry_shard").warning("Telemetry was not flushed at shutdown.",
+                                                                exc_info=True)
 
 
 # The interactive documentation is a maintainer tool, so it follows the same
@@ -299,6 +348,244 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", security.TOKEN_HEADER],
 )
+
+
+# -------------------------------------------------------------
+# One error boundary
+#
+# Without these, any error a route did not catch answered a bare
+# "500 Internal Server Error" in plain text, which the interface showed as
+# "The studio refused this request (500)". Worse, a request carrying half an
+# emoji (a lone UTF-16 surrogate) or a NaN failed validation, and FastAPI's own
+# 422 handler then crashed echoing that input back, so the extension's capture
+# was answered 500 and resent for ever.
+#
+# Every answer below is JSON in the shape refusalFrom() in the interface
+# reads: {"detail": {"code", "message"}} or, for validation, a list of
+# {"loc", "msg", "type"}. None carries a traceback, the request's input, or a
+# stored value. The traceback goes to the log only.
+# -------------------------------------------------------------
+_error_log = logging.getLogger("studio.errors")
+
+# The access log keeps paths, never query strings, and only the requests that
+# failed or changed something. See log_setup.py.
+try:
+    from . import log_setup
+except ImportError:
+    import log_setup
+log_setup.install()
+
+try:
+    from fastapi.exceptions import RequestValidationError
+    from pydantic import ValidationError as _PydanticValidationError
+except ImportError:  # pragma: no cover
+    RequestValidationError = _PydanticValidationError = None
+
+
+def _printable(text: Any) -> str:
+    """Text that can always be encoded as UTF-8: a lone surrogate becomes U+FFFD."""
+    return str(text).encode("utf-8", "replace").decode("utf-8") if text is not None else ""
+
+
+def _studio_error(status: int, code: str, message: str, headers: Optional[Dict[str, str]] = None) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"detail": {"code": code, "message": message}}, headers=headers)
+
+
+def _validation_answer(errors) -> JSONResponse:
+    detail = []
+    for error in errors or []:
+        detail.append({
+            "loc": [_printable(part) if not isinstance(part, int) else part for part in error.get("loc", ())],
+            "msg": _printable(error.get("msg", "")),
+            "type": _printable(error.get("type", "")),
+        })
+    return JSONResponse(status_code=422, content={"detail": detail})
+
+
+def _database_trouble(error: BaseException) -> Optional[JSONResponse]:
+    """The answer for a database or disk failure a person can act on, or None."""
+    said = str(error).lower()
+    full = (isinstance(error, OSError) and getattr(error, "errno", None) == 28) or "disk is full" in said \
+        or "database or disk is full" in said
+    if full:
+        return _studio_error(
+            503, "disk_full",
+            "The drive that holds the studio's data is full, so this was not saved. "
+            f"Free some space on it (the data folder is {paths_module.get_app_home()}) and try again.",
+        )
+    if isinstance(error, sqlite3.OperationalError) and ("locked" in said or "busy" in said):
+        return _studio_error(
+            503, "studio_busy",
+            "The studio's database is busy with another task, such as an import, a backup or a second "
+            "copy of the studio. Nothing was saved. Try again in a moment.",
+            headers={"Retry-After": "5"},
+        )
+    if isinstance(error, sqlite3.DatabaseError) and ("malformed" in said or "not a database" in said):
+        return _studio_error(
+            503, "database_damaged",
+            "The studio's database file is damaged, so this could not be read or saved. Restore your "
+            "newest backup: run \"python -m studio.cli doctor\", which prints the exact restore command, "
+            "then start the studio again.",
+        )
+    return None
+
+
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+_SURROGATE_ESCAPE = re.compile(rb"\\u[dD][89a-fA-F][0-9a-fA-F]{2}")
+
+
+def _without_lone_surrogates(value: Any) -> Any:
+    if isinstance(value, str):
+        return _LONE_SURROGATE.sub("", value)
+    if isinstance(value, list):
+        return [_without_lone_surrogates(item) for item in value]
+    if isinstance(value, dict):
+        return {_without_lone_surrogates(k): _without_lone_surrogates(v) for k, v in value.items()}
+    return value
+
+
+class DropLoneSurrogates:
+    """
+    Removes half-characters from a JSON body before any route reads it.
+
+    JavaScript cuts strings in UTF-16 units, so a client that trims text to a
+    length can cut an emoji in half, and JSON.stringify then sends the lone
+    half as an escape such as \\ud83d. Python decodes it into a string nothing
+    can store or encode: SQLite refused it, and the extension's lead was lost.
+    A lone half shows as nothing on any screen, so it is dropped and the rest
+    of the text is kept. A whole pair decodes to one character and is never
+    touched. Only a body that contains such an escape is re-read.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not scope.get("path", "").startswith("/api"):
+            return await self.app(scope, receive, send)
+        headers = dict(scope.get("headers") or [])
+        if b"json" not in headers.get(b"content-type", b""):
+            return await self.app(scope, receive, send)
+
+        chunks, more = [], True
+        while more:
+            message = await receive()
+            if message["type"] != "http.request":
+                return await self.app(scope, _replay([message], receive), send)
+            chunks.append(message.get("body", b""))
+            more = message.get("more_body", False)
+        body = b"".join(chunks)
+
+        if _SURROGATE_ESCAPE.search(body):
+            try:
+                cleaned = _without_lone_surrogates(json.loads(body))
+                body = json.dumps(cleaned, ensure_ascii=False).encode("utf-8")
+                scope = dict(scope)
+                scope["headers"] = [(k, v) for k, v in scope["headers"] if k != b"content-length"] + [
+                    (b"content-length", str(len(body)).encode("ascii"))]
+            except ValueError:
+                pass  # Not JSON at all: the route's own validation answers it.
+        return await self.app(scope, _replay([{"type": "http.request", "body": body, "more_body": False}], receive),
+                              send)
+
+
+def _replay(messages, then):
+    """Hands back the messages already read, then whatever the client sends next."""
+    pending = list(messages)
+
+    async def receive():
+        if pending:
+            return pending.pop(0)
+        return await then()
+
+    return receive
+
+
+app.add_middleware(DropLoneSurrogates)
+
+
+async def _safe_mode_answer(request: Request):
+    """
+    Every answer while the database is damaged. See safe_mode.py.
+
+    Called from enforce_local_access after its checks, so the restore button
+    needs the same token as everything else, and the page load still hands
+    the interface its cookie.
+    """
+    from fastapi.responses import HTMLResponse
+
+    path = request.scope.get("path", "")
+    if path == "/api/v1/health":
+        # Still 200 with the app's name, so the desktop shell opens its window
+        # onto the page below instead of waiting on a splash for ever.
+        return JSONResponse({"status": "safe_mode", "app": "inox-hydra", "version": __version__})
+    if path == safe_mode.STATE_PATH and request.method == "GET":
+        return JSONResponse(await run_in_threadpool(safe_mode.describe))
+    if path == safe_mode.RESTORE_PATH and request.method == "POST":
+        try:
+            name = str((await request.json() or {}).get("name") or "")
+        except Exception:
+            name = ""
+        try:
+            result = await run_in_threadpool(safe_mode.restore, name, _open_after_restore)
+        except ValueError as refused:
+            return _studio_error(409, "not_restorable", str(refused))
+        except Exception as failed:
+            _error_log.error("Safe-mode restore failed", exc_info=True)
+            return _studio_error(500, "restore_failed", _printable(failed))
+        return JSONResponse(result)
+    if path.startswith("/api"):
+        described = await run_in_threadpool(safe_mode.describe)
+        return _studio_error(503, "database_damaged", described["message"])
+    return HTMLResponse(await run_in_threadpool(safe_mode.page), status_code=503)
+
+
+@app.exception_handler(RequestValidationError)
+async def _answer_invalid_request(request: Request, error):
+    return _validation_answer(error.errors())
+
+
+@app.exception_handler(_PydanticValidationError)
+async def _answer_invalid_value(request: Request, error):
+    # A model built inside a route from the request's values, such as an
+    # agent's input contract, is the request's fault, not the studio's.
+    return _validation_answer(error.errors(include_url=False, include_input=False, include_context=False))
+
+
+@app.exception_handler(sqlite3.Error)
+async def _answer_database_error(request: Request, error):
+    answer = _database_trouble(error)
+    if answer is not None:
+        _error_log.warning("%s %s: %s", request.method, request.scope.get("path", ""), _printable(error))
+        return answer
+    return _answer_unexpected_error_now(request, error)
+
+
+@app.exception_handler(OSError)
+async def _answer_os_error(request: Request, error):
+    answer = _database_trouble(error)
+    if answer is not None:
+        _error_log.warning("%s %s: %s", request.method, request.scope.get("path", ""), _printable(error))
+        return answer
+    return _answer_unexpected_error_now(request, error)
+
+
+def _answer_unexpected_error_now(request: Request, error: BaseException, log: bool = True) -> JSONResponse:
+    if log:
+        _error_log.error("%s %s failed", request.method, request.scope.get("path", ""),
+                         exc_info=(type(error), error, error.__traceback__))
+    return _studio_error(
+        500, "internal_error",
+        "Something went wrong inside the studio and this did not finish. Nothing more is shown here; "
+        "the details are in the studio's log (engine.log in the logs folder).",
+    )
+
+
+@app.exception_handler(Exception)
+async def _answer_unexpected_error(request: Request, error):
+    # Starlette raises the error again after this answer is sent, and the
+    # server logs its traceback then, so it is not logged twice here.
+    return _answer_unexpected_error_now(request, error, log=False)
 
 
 @app.middleware("http")
@@ -355,7 +642,10 @@ async def enforce_local_access(request: Request, call_next):
                     content={"detail": "Missing or invalid studio token."},
                 )
 
-    response = await call_next(request)
+    if safe_mode.is_active():
+        response = await _safe_mode_answer(request)
+    else:
+        response = await call_next(request)
 
     # Hand the interface its token as it loads. SameSite=Strict is the part
     # that matters: a browser will not attach this cookie to a request started
@@ -517,20 +807,26 @@ class ImageGenerateRequest(BaseModel):
         s = v.strip() if isinstance(v, str) else ""
         if not s:
             raise ValueError("concept cannot be empty or only whitespace")
+        # The image agent's own contract needs three characters. Said here, at
+        # the boundary, instead of as a 500 on Preview and a pydantic dump
+        # in Generate's failure message.
+        if len(s) < 3:
+            raise ValueError("the concept needs at least 3 characters, for example \"AI chip\" rather than \"AI\"")
         return s[:2000]
 
 
 class CreatorProfilePayload(BaseModel):
-    name: Optional[str] = ""
-    headline: Optional[str] = ""
-    company: Optional[str] = ""
-    brand_watermark_text: Optional[str] = ""
-    brand_watermark_position: Optional[str] = "bottom_right"
-    brand_watermark_style: Optional[str] = "glass_pill"
+    # Bounded: a 10 MB name was stored and then returned by every later read.
+    name: Optional[str] = Field("", max_length=200)
+    headline: Optional[str] = Field("", max_length=500)
+    company: Optional[str] = Field("", max_length=200)
+    brand_watermark_text: Optional[str] = Field("", max_length=200)
+    brand_watermark_position: Optional[str] = Field("bottom_right", max_length=64)
+    brand_watermark_style: Optional[str] = Field("glass_pill", max_length=64)
     brand_watermark_enabled: Optional[bool] = True
     eliminate_provider_watermark_default: Optional[bool] = True
-    default_aspect_ratio: Optional[str] = "1:1"
-    default_visual_style: Optional[str] = "photorealistic"
+    default_aspect_ratio: Optional[str] = Field("1:1", max_length=16)
+    default_visual_style: Optional[str] = Field("photorealistic", max_length=64)
 
 
 class CopilotRequest(BaseModel):
@@ -539,13 +835,6 @@ class CopilotRequest(BaseModel):
     target_audience: Optional[str] = None
     post_format: Optional[str] = "framework_breakdown"
     attached_media_type: Optional[str] = None
-
-
-class CarouselRequest(BaseModel):
-    slides: List[Dict[str, str]]
-    theme: Optional[str] = "dark_slate"
-    author_name: Optional[str] = None
-    author_title: Optional[str] = None
 
 
 class LeadCreate(BaseModel):
@@ -567,10 +856,6 @@ class LeadStatusUpdate(BaseModel):
 class CookiePayload(BaseModel):
     li_at: str
     JSESSIONID: str
-
-
-class AISettingsPayload(BaseModel):
-    gemini_api_key: str
 
 
 class AIConfigureRequest(BaseModel):
@@ -603,7 +888,6 @@ app.include_router(analytics_router_module.router)
 get_range_days = analytics_router_module.get_range_days
 get_kpis = analytics_router_module.get_kpis
 get_analytics_overview = analytics_router_module.get_analytics_overview
-get_demographics = analytics_router_module.get_demographics
 export_analytics = analytics_router_module.export_analytics
 get_posts_leaderboard = analytics_router_module.get_posts_leaderboard
 get_post_leads_attribution = analytics_router_module.get_post_leads_attribution
@@ -628,7 +912,7 @@ delete_post = posts_router_module.delete_post
 
 
 @app.post("/api/posts/{post_id}/publish-now", tags=["LinkedIn Native Scheduler"])
-async def publish_post_now(post_id: str):
+def publish_post_now(post_id: str):
     """
     Immediately dispatches a scheduled post or draft as published.
     Normalizes status to published, records UTC published_at,
@@ -656,7 +940,7 @@ async def publish_post_now(post_id: str):
         conn.commit()
         conn.close()
 
-        await event_bus.publish("post_published", {
+        event_bus.publish_sync("post_published", {
             "post_id": post_id,
             "content": existing["content"][:80],
             "action": "published_now",
@@ -697,7 +981,7 @@ def _readable_size(size: int) -> str:
 
 
 @app.post("/api/media/upload", tags=["Media Studio & Dropzone"])
-async def upload_media_file(file: UploadFile = File(...)):
+def upload_media_file(file: UploadFile = File(...)):
     """
     Unified drag-and-drop media upload handler supporting:
     - Single & Multi-Images (.png, .jpg, .jpeg, .webp)
@@ -740,7 +1024,9 @@ async def upload_media_file(file: UploadFile = File(...)):
 
     # The signature checks below need only the start of the file; the rest is
     # copied to disk in chunks, so memory stays bounded whatever the size.
-    content = await file.read(64 * 1024)
+    # A plain function, so this runs on the thread pool: the disk and database
+    # work below no longer holds up every other request while it waits.
+    content = file.file.read(64 * 1024)
     size_bytes = len(content)
 
     if size_bytes == 0:
@@ -785,7 +1071,7 @@ async def upload_media_file(file: UploadFile = File(...)):
         with open(file_path, "wb") as f:
             f.write(content)
             while True:
-                chunk = await file.read(MEDIA_UPLOAD_CHUNK)
+                chunk = file.file.read(MEDIA_UPLOAD_CHUNK)
                 if not chunk:
                     break
                 size_bytes += len(chunk)
@@ -870,26 +1156,39 @@ def list_media_assets():
 
 @app.delete("/api/media/{asset_id}", tags=["Media Studio & Dropzone"])
 def delete_media_asset(asset_id: str):
-    """Deletes an uploaded media asset and cleans up local storage."""
+    """
+    Deletes an uploaded media asset: the file first, then its library row.
+
+    The file goes first, because a row removed while its file stays hides a
+    photo the creator asked to delete and carries it into every later backup.
+    That is what happened when the removal failed (a viewer, OneDrive or
+    antivirus holding the file on Windows): the error was swallowed, the row
+    dropped, and the answer was "deleted". Now a file that cannot be removed
+    keeps its row and answers 409 with the reason, and an id that is not in
+    the library answers 404.
+    """
     conn = get_db()
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT storage_path FROM media_assets WHERE id = ?", (asset_id,))
-        row = cursor.fetchone()
-        if row:
-            rel_path = row["storage_path"]
-            if rel_path.startswith("/assets/"):
-                sub_path = rel_path.replace("/assets/", "")
-                full_path = os.path.join(get_assets_dir(), sub_path)
-                if os.path.exists(full_path):
-                    try:
-                        os.remove(full_path)
-                    except Exception:
-                        pass
-            cursor.execute("DELETE FROM media_assets WHERE id = ?", (asset_id,))
-            conn.commit()
-        conn.close()
-        return {"status": "success", "message": f"Asset {asset_id} deleted"}
+        row = conn.execute("SELECT filename, storage_path FROM media_assets WHERE id = ?", (asset_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="That file is not in the media library. Nothing was deleted.")
+        rel_path = row["storage_path"] or ""
+        if rel_path.startswith("/assets/"):
+            assets_root = os.path.realpath(get_assets_dir())
+            full_path = os.path.realpath(os.path.join(assets_root, rel_path[len("/assets/"):]))
+            inside = os.path.commonpath([assets_root, full_path]) == assets_root
+            if inside and os.path.exists(full_path):
+                try:
+                    os.remove(full_path)
+                except OSError as error:
+                    raise HTTPException(status_code=409, detail=(
+                        f"{row['filename'] or 'The file'} could not be removed "
+                        f"({error.strerror or 'the system refused'}). It may be open in another program, "
+                        "or its folder may be read-only. It is still in the library; close it and try again."
+                    ))
+        with conn:
+            conn.execute("DELETE FROM media_assets WHERE id = ?", (asset_id,))
+        return {"status": "success", "message": f"Deleted {row['filename'] or asset_id}."}
     finally:
         conn.close()
 
@@ -926,16 +1225,6 @@ def synthesize_image_prompt(req: ImageGenerateRequest):
 
 
 # Backwards compatibility stub for legacy carousel call
-@app.post("/api/carousel/generate", tags=["Media Studio & Dropzone"])
-def legacy_carousel_stub(req: CarouselRequest):
-    """Legacy endpoint notice: Synthetic Pillow carousels deprecated in favor of native PDF dropzone."""
-    padding = b" " * 10500
-    content = b"%PDF-1.4\n% Decommissioned: Use native PDF drag-and-drop in Media Dropzone.\n" + padding + b"\n%%EOF"
-    return Response(
-        content=content,
-        media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=use_media_dropzone.pdf"}
-    )
 
 
 class CarouselDeckRequest(BaseModel):
@@ -1008,7 +1297,6 @@ def generate_vector_carousel_deck(req: CarouselDeckRequest):
 
 get_10x_hooks = posts_router_module.get_10x_hooks
 audit_algorithm = posts_router_module.audit_algorithm
-repurpose = posts_router_module.repurpose
 
 
 # -------------------------------------------------------------
@@ -1023,11 +1311,8 @@ app.include_router(ai_router_module.router)
 ai_status = ai_router_module.ai_status
 get_ai_config_endpoint = ai_router_module.get_ai_config_endpoint
 configure_ai_endpoint = ai_router_module.configure_ai_endpoint
-save_ai_settings = ai_router_module.save_ai_settings
 execute_ai_command = ai_router_module.execute_ai_command
 copilot_optimize = ai_router_module.copilot_optimize
-analyze_swipe_pattern = ai_router_module.analyze_swipe_pattern
-stream_ai_completion = ai_router_module.stream_ai_completion
 
 
 format_bold = posts_router_module.format_bold
@@ -1035,13 +1320,11 @@ format_italic = posts_router_module.format_italic
 format_mono = posts_router_module.format_mono
 format_strike = posts_router_module.format_strike
 format_clean = posts_router_module.format_clean
-format_analyze = posts_router_module.format_analyze
 format_serif_bold = posts_router_module.format_serif_bold
 format_serif_italic = posts_router_module.format_serif_italic
 format_blackboard = posts_router_module.format_blackboard
 format_underline = posts_router_module.format_underline
 format_circled_numbers = posts_router_module.format_circled_numbers
-format_dwell = posts_router_module.format_dwell
 
 
 # -------------------------------------------------------------
@@ -1057,8 +1340,6 @@ app.include_router(crm_router_module.router)
 
 get_leads = crm_router_module.get_leads
 export_leads_csv_route = crm_router_module.export_leads_csv_route
-create_lead = crm_router_module.create_lead
-create_leads_batch = crm_router_module.create_leads_batch
 update_lead = crm_router_module.update_lead
 remove_lead = crm_router_module.remove_lead
 get_lead_dm = crm_router_module.get_lead_dm
@@ -1214,7 +1495,11 @@ def post_identity_reject():
 
 @app.delete("/api/v1/identity", tags=["Onboarding"])
 def delete_identity():
-    return onboarding.forget_identity()
+    result = onboarding.forget_identity()
+    # The telemetry shard is a separate file, which forgetting left alone [DATA-14].
+    if telemetry_buffer is not None:
+        telemetry_buffer.forget()
+    return result
 
 
 @app.post("/api/v1/self/posts/ingest", tags=["Onboarding"])
@@ -1478,8 +1763,6 @@ def get_auth_status():
 
 
 ingest_live_analytics = analytics_router_module.ingest_live_analytics
-get_telemetry_shard_status = analytics_router_module.get_telemetry_shard_status
-flush_telemetry_shard = analytics_router_module.flush_telemetry_shard
 
 
 # -------------------------------------------------------------
@@ -1745,71 +2028,35 @@ def preview_mcp_grounding():
         "status": "success",
         "egress": gathered["egress"],
         "material": gathered["material"],
-        "errors": gathered["errors"],
+        # Sentences, "notes: did not start", which the interface shows as
+        # they are. They were objects, and it showed "[object Object]".
+        "errors": [f"{e.get('server')}: {e.get('error')}" if isinstance(e, dict) else str(e)
+                   for e in gathered["errors"]],
         "bytes_used": gathered["bytes_used"],
         "bytes_budget": gathered["bytes_budget"],
     }
 
 
 # -------------------------------------------------------------
-# Real-Time Event Bus & Server-Sent Events (SSE)
-# -------------------------------------------------------------
-@app.get("/api/v1/stream/events", tags=["Real-Time Event Stream"])
-async def stream_events(request: Request, last_event_id: Optional[str] = Header(None, alias="Last-Event-ID")):
-    """
-    Subscribes the active browser Studio session to the real-time event bus via Server-Sent Events.
-    Broadcasts draft_ingested, scheduled_post_recovery, and reverse_crm updates in under 5ms.
-    """
-    parsed_id = int(last_event_id) if last_event_id and last_event_id.isdigit() else None
-
-    async def event_generator():
-        async for event in event_bus.subscribe(parsed_id):
-            if await request.is_disconnected():
-                break
-            yield event_bus.format_sse(event)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
-    )
-
-
-@app.get("/api/v1/stream/history", tags=["Real-Time Event Stream"])
-def get_stream_history():
-    """Returns past broadcast events from circular replay buffer."""
-    return {"status": "success", "events": event_bus.get_history()}
-
-
-class BroadcastEventRequest(BaseModel):
-    event: str = Field(..., min_length=1, max_length=100)
-    data: Dict[str, Any] = Field(default_factory=dict)
-
-
-@app.post("/api/v1/stream/broadcast", tags=["Real-Time Event Stream"])
-async def broadcast_event(req: BroadcastEventRequest):
-    """Manually broadcasts an event across the SSE stream."""
-    clean_event = re.sub(r"[\r\n]+", "", req.event).strip()
-    if not clean_event:
-        raise HTTPException(status_code=400, detail="Event name cannot be empty or pure whitespace.")
-    payload = await event_bus.publish(clean_event, req.data)
-    return {"status": "success", "published": payload}
-
-
-# -------------------------------------------------------------
 # Ubiquitous Ingress & Thought Capture
+#
+# Telegram ingress is a maintainer feature: no screen offers it, nothing
+# documents it for a creator beyond its own help article, and it ships in
+# every install. So, like the devtools, its routes answer 404 and its worker
+# never starts outside dev mode (owner decision D4, cycle 2).
 # -------------------------------------------------------------
+def _maintainer_only():
+    """require_dev_mode, by a name that exists before that function is defined further down."""
+    return require_dev_mode()
+
+
 class IngressSimulateRequest(BaseModel):
     text: str
     chat_id: Optional[str] = None
     sender_name: Optional[str] = "Creator"
 
 
-@app.post("/api/v1/ingress/simulate", tags=["Ubiquitous Ingress"])
+@app.post("/api/v1/ingress/simulate", tags=["Ubiquitous Ingress"], dependencies=[Depends(_maintainer_only)])
 def simulate_ingress(req: IngressSimulateRequest):
     """
     Simulates incoming message from Telegram mobile bot or desktop tray.
@@ -1839,15 +2086,15 @@ class ParseTextRequest(BaseModel):
     text: str
 
 
-@app.post("/api/v1/ingress/parse", tags=["Ubiquitous Ingress"])
+@app.post("/api/v1/ingress/parse", tags=["Ubiquitous Ingress"], dependencies=[Depends(_maintainer_only)])
 def parse_ingress_text(req: ParseTextRequest):
     """Parses text without persisting, returning fold metrics and directives."""
     parsed = IngressMessageParser.parse_message(req.text)
     return {"status": "success", "parsed": parsed}
 
 
-@app.get("/api/v1/ingress/drafts", tags=["Ubiquitous Ingress"])
-def get_ingress_drafts(limit: int = 50, status: Optional[str] = None):
+@app.get("/api/v1/ingress/drafts", tags=["Ubiquitous Ingress"], dependencies=[Depends(_maintainer_only)])
+def get_ingress_drafts(limit: int = Query(50, ge=1, le=500), status: Optional[str] = Query(None, max_length=40)):
     """Retrieves sovereign drafts from SQLite drafts table."""
     drafts = list_drafts(limit=limit, status=status)
     return {"status": "success", "count": len(drafts), "drafts": drafts}
@@ -2123,16 +2370,9 @@ def evaluate_recovery(req: RecoveryEvaluateRequest):
 # -------------------------------------------------------------
 IngestInteractionRequest = crm_router_module.IngestInteractionRequest
 ingest_crm_interaction = crm_router_module.ingest_crm_interaction
-get_high_value_leads = crm_router_module.get_high_value_leads
-get_crm_telemetry = crm_router_module.get_crm_telemetry
 GenerateDMRequest = crm_router_module.GenerateDMRequest
 generate_lead_dm = crm_router_module.generate_lead_dm
-generate_anti_slop_dm_variants = crm_router_module.generate_anti_slop_dm_variants
-ScorePreviewRequest = crm_router_module.ScorePreviewRequest
-preview_icp_score = crm_router_module.preview_icp_score
 purge_crm_lead = crm_router_module.purge_crm_lead
-ArchiveInactiveRequest = crm_router_module.ArchiveInactiveRequest
-archive_inactive_crm_leads = crm_router_module.archive_inactive_crm_leads
 get_lead_interaction_timeline = crm_router_module.get_lead_interaction_timeline
 LeadRemoval = crm_router_module.LeadRemoval
 get_lead_review = crm_router_module.get_lead_review
@@ -2162,103 +2402,10 @@ def get_egress_status():
     return egress_policy.describe()
 
 
-@app.get("/api/v1/session/health", tags=["LinkedIn Session & Telemetry"])
-def check_session_health(mock: bool = False):
-    """
-    Checks session viability against the Voyager API.
-
-    This contacts LinkedIn, so it is refused unless egress is explicitly
-    enabled. A refusal returns healthy: null, meaning "not checked", rather than
-    healthy: true, which would certify a session nobody looked at.
-    """
-    return linkedin_client.check_session_health(mock=mock)
-
-
-@app.post("/api/v1/session/sync-profile", tags=["LinkedIn Session & Telemetry"])
-def sync_linkedin_profile():
-    """
-    Fetches the creator's own name and headline from LinkedIn.
-
-    This is the one place in the product that deliberately contacts LinkedIn,
-    and it exists as its own route precisely so that contacting them is a thing
-    someone chooses to do. It used to run as a side effect of saving a session
-    token, which the extension did on a 15 minute alarm and on every
-    creator-analytics response, so the studio was issuing authenticated requests
-    the creator never asked for.
-
-    Refused unless INOX_ALLOW_LINKEDIN_EGRESS is set.
-    """
-    return linkedin_client.sync_live_profile_and_stats(enforce_rate_limit=True)
-
-
-@app.get("/api/v1/ingress/status", tags=["Mobile & Bot Ingress"])
+@app.get("/api/v1/ingress/status", tags=["Mobile & Bot Ingress"], dependencies=[Depends(_maintainer_only)])
 def get_ingress_status():
     """Diagnostics and adaptive polling metrics for Telegram Ingress Daemon."""
     return ingress_daemon.get_daemon_status()
-
-
-@app.post("/api/v1/database/checkpoint", tags=["Settings & Creator Profile"])
-def trigger_database_checkpoint():
-    """Truncates and checkpoints SQLite WAL file to minimize disk footprint."""
-    return checkpoint_db()
-
-
-@app.get("/api/v1/rate-limiter/status", tags=["Anti-Bot & Rate Limiting"])
-def get_rate_limiter_status():
-    """Telemetry diagnostics for the Gaussian jitter rate limiter."""
-    return {
-        "status": "success",
-        "diagnostics": rate_limiter.get_diagnostics()
-    }
-
-
-class RateLimiterAcquireRequest(BaseModel):
-    tokens: float = Field(default=1.0, ge=0.0, le=100.0)
-    block: bool = Field(default=False)
-    timeout: Optional[float] = Field(default=None, ge=0.0, le=30.0)
-
-
-@app.post("/api/v1/rate-limiter/acquire", tags=["Anti-Bot & Rate Limiting"])
-def acquire_rate_limit_token(req: Optional[RateLimiterAcquireRequest] = None):
-    """Acquires a token under the Gaussian jitter rate governor."""
-    t = req.tokens if req else 1.0
-    b = req.block if req else False
-    timeout = req.timeout if req else None
-    if b and timeout is None:
-        timeout = 10.0  # Defensive cap to prevent blocking FastAPI thread indefinitely
-    success = rate_limiter.acquire(tokens=t, block=b, timeout=timeout)
-    wait_time = rate_limiter.wait_time_seconds(tokens=t)
-    return {
-        "status": "success" if success else "rejected",
-        "acquired": success,
-        "wait_time_seconds": wait_time,
-        "diagnostics": rate_limiter.get_diagnostics()
-    }
-
-
-@app.get("/api/v1/rate-limiter/single-writer/metrics", tags=["Anti-Bot & Rate Limiting"])
-def get_single_writer_metrics():
-    """Diagnostics for the centralized single-writer actor write queue."""
-    return {
-        "status": "success",
-        "metrics": write_actor.get_metrics()
-    }
-
-
-class IntelligenceSyncRequest(BaseModel):
-    force: bool = False
-    cdn_url: Optional[str] = None
-
-
-@app.post("/api/v1/intelligence/sync", tags=["Intelligence Sync & Radar"])
-def trigger_intelligence_sync(req: Optional[IntelligenceSyncRequest] = None):
-    """Triggers asymmetric ETag-based intelligence sync against the GitHub CDN."""
-    force = req.force if req else False
-    cdn_url = req.cdn_url if req else None
-    res = intelligence_sync_engine.sync(force=force, cdn_url=cdn_url)
-    if isinstance(res, dict) and res.get("status") == "error":
-        raise HTTPException(status_code=400, detail=res.get("message", "Sync failed"))
-    return res
 
 
 @app.get("/api/v1/intelligence/templates", tags=["Intelligence Sync & Radar"])
@@ -2407,24 +2554,6 @@ def get_schema_status():
     return status
 
 
-@app.get("/api/v1/support/diagnostics", tags=["Support & Maintenance"])
-def get_diagnostics():
-    """
-    Redacted diagnostics the user can attach to an issue.
-
-    Session cookies and API keys are removed by allowlist before this returns.
-    See studio/backend/support.py for why that is an allowlist.
-    """
-    return support_tools.collect_diagnostics()
-
-
-@app.post("/api/v1/support/diagnostics/export", tags=["Support & Maintenance"])
-def export_diagnostics():
-    path = support_tools.write_diagnostics_bundle()
-    return {"status": "success", "path": path,
-            "note": "Safe to attach to a public issue. Credentials are redacted."}
-
-
 @app.post("/api/v1/support/backup", tags=["Support & Maintenance"])
 def create_support_backup(payload: Optional[Dict[str, Any]] = None):
     label = (payload or {}).get("label", "manual")
@@ -2523,7 +2652,7 @@ def run_update_check(payload: Optional[Dict[str, Any]] = None):
     return update_checker.check_for_update(force=bool((payload or {}).get("force")))
 
 
-@app.get("/api/v1/gstack/roles", tags=["G-Stack Multi-Agent Governance"])
+@app.get("/api/v1/gstack/roles", tags=["G-Stack Multi-Agent Governance"], dependencies=[Depends(_maintainer_only)])
 def get_gstack_roles():
     """Returns the 6 G-Stack cognitive roles, their titles, PRD references, and mandates."""
     return {
@@ -2532,7 +2661,7 @@ def get_gstack_roles():
     }
 
 
-@app.get("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"])
+@app.get("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"], dependencies=[Depends(_maintainer_only)])
 def get_gstack_backlog(role: Optional[str] = None, status: Optional[str] = None, limit: int = 500):
     """Lists backlog tasks filtered by G-Stack role or status."""
     tasks = gstack_engine.get_backlog(role=role, status=status, limit=limit)
@@ -2543,7 +2672,7 @@ def get_gstack_backlog(role: Optional[str] = None, status: Optional[str] = None,
     }
 
 
-@app.post("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"])
+@app.post("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"], dependencies=[Depends(_maintainer_only)])
 def add_gstack_task(req: GStackBacklogTaskCreate):
     """Appends a new engineering task to the G-Stack governance backlog."""
     try:
@@ -2561,7 +2690,7 @@ def add_gstack_task(req: GStackBacklogTaskCreate):
         raise HTTPException(status_code=400, detail=str(err))
 
 
-@app.patch("/api/v1/gstack/backlog/{task_id}", tags=["G-Stack Multi-Agent Governance"])
+@app.patch("/api/v1/gstack/backlog/{task_id}", tags=["G-Stack Multi-Agent Governance"], dependencies=[Depends(_maintainer_only)])
 def update_gstack_task_status(task_id: int, req: GStackBacklogStatusUpdate):
     """Updates the execution status of a G-Stack backlog item."""
     try:
@@ -2989,7 +3118,7 @@ async def post_archive_upload(request: Request):
     writer = archive_import.UploadWriter(unquote(request.headers.get("x-archive-name") or "archive.zip"))
     try:
         async for chunk in request.stream():
-            writer.write(chunk)
+            await run_in_threadpool(writer.write, chunk)
     except archive_import.ArchiveError as error:
         raise HTTPException(status_code=413, detail=str(error))
     except BaseException:

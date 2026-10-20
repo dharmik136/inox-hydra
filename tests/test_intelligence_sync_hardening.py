@@ -140,13 +140,6 @@ def test_api_import_bundle_invalid_returns_400():
     assert "Empty or invalid" in res.json()["detail"]
 
 
-def test_api_sync_invalid_scheme_returns_400():
-    """Verify API POST /api/v1/intelligence/sync returns 400 for SSRF attempts."""
-    res = client.post("/api/v1/intelligence/sync", json={"force": True, "cdn_url": "http://insecure.internal"})
-    assert res.status_code == 400
-    assert "Disallowed URL scheme" in res.json()["detail"]
-
-
 def test_zero_em_dash_compliance():
     """Verify complete absence of em-dash character across intelligence_sync.py and test files."""
     files_to_check = [
@@ -185,33 +178,3 @@ def test_sync_http_200_no_valid_templates_preserves_cache():
         assert not os.path.exists(etag_file), "ETag must not be saved for a payload with no valid templates"
 
 
-def test_api_sync_empty_payload_is_not_a_client_error():
-    """Verify a CDN 200 carrying no valid templates reports as a preserved no-op, not an HTTP 400."""
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = {"templates": [None, "junk", {"hook_text": "   "}]}
-    mock_resp.headers = {"ETag": '"etag-empty-api"'}
-
-    with tempfile.TemporaryDirectory() as td:
-        from studio.backend import app as app_module
-        engine = app_module.intelligence_sync_engine
-        original_etag_file = engine.etag_file
-        engine.etag_file = os.path.join(td, "etag_cache")
-        try:
-            with patch("requests.get", return_value=mock_resp):
-                res = client.post("/api/v1/intelligence/sync", json={"force": True})
-            assert res.status_code == 200, "A preserved cache must not surface as a client error"
-            body = res.json()
-            assert body["status"] == "no_valid_templates"
-            assert body["hooks_count"] == 0
-            assert body["templates_available"] > 0
-            assert not os.path.exists(engine.etag_file)
-        finally:
-            engine.etag_file = original_etag_file
-
-
-def test_api_sync_real_error_still_returns_400():
-    """Verify genuine client errors (SSRF-blocked scheme) still map to HTTP 400."""
-    res = client.post("/api/v1/intelligence/sync", json={"force": True, "cdn_url": "file:///etc/passwd"})
-    assert res.status_code == 400
-    assert "Disallowed URL scheme" in res.json()["detail"]

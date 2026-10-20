@@ -67,6 +67,11 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import unquote
 
 try:
+    from .text_cut import clip
+except ImportError:
+    from text_cut import clip
+
+try:
     from . import paths
     from .database import get_db
 except ImportError:
@@ -1030,14 +1035,14 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Di
                 "published_at_source = CASE WHEN published_at IS NULL THEN 'archive' ELSE published_at_source END, "
                 "text = CASE WHEN text IS NULL OR length(text) < length(?) THEN ? ELSE text END "
                 "WHERE activity_urn = ?",
-                (when, text[:10000] or None, text[:10000] or None, same),
+                (when, clip(text, 10000) or None, clip(text, 10000) or None, same),
             )
             tally["already_there"] += 1
             continue
         conn.execute(
             "INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, reactions, comments, "
             "reposts, impressions, first_seen_at, last_seen_at) VALUES (?, ?, ?, 'archive', NULL, NULL, NULL, NULL, ?, ?)",
-            (urn, text[:10000] or None, when, now, now),
+            (urn, clip(text, 10000) or None, when, now, now),
         )
         batches.add("posts", urn)
         tally["added"] += 1
@@ -1059,7 +1064,7 @@ def _import_comments(conn, rows: Iterable[Dict[str, str]], batches: _Batches) ->
             "INSERT OR IGNORE INTO outbound_engagements (target_activity_urn, target_author, target_excerpt, kind, "
             "reaction_kind, my_text, my_text_key, first_seen_at, last_seen_at) "
             "VALUES (?, NULL, NULL, 'comment', NULL, ?, ?, ?, ?)",
-            (urn, message[:4000], _text_key(message), when, when),
+            (urn, clip(message, 4000), _text_key(message), when, when),
         )
         if cursor.rowcount:
             batches.add("comments", [cursor.lastrowid, when])
@@ -1107,10 +1112,10 @@ def _import_profile(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict
     filled = []
     for column, value in values.items():
         if value and not (current[column] or "").strip():
-            conn.execute(f"UPDATE creator_identity SET {column} = ? WHERE id = 1", (value[:4000],))
+            conn.execute(f"UPDATE creator_identity SET {column} = ? WHERE id = 1", (clip(value, 4000),))
             filled.append(column)
             # What it held before, to put back on undo.
-            batches.brought.setdefault("profile", {})[column] = [value[:4000], current[column]]
+            batches.brought.setdefault("profile", {})[column] = [clip(value, 4000), current[column]]
     if filled:
         stamp = current["profile_observed_at"]
         if not stamp:
@@ -1144,7 +1149,7 @@ def _import_positions(conn, rows: List[Dict[str, str]], batches: _Batches) -> Di
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (ordinal, row.get("title") or None, row.get("company") or None,
              _span(row.get("started", ""), row.get("finished", "")) or None,
-             row.get("location") or None, (row.get("description") or "")[:4000] or None, now),
+             row.get("location") or None, clip(row.get("description") or "", 4000) or None, now),
         )
         batches.add("positions", cursor.lastrowid)
         tally["added"] += 1
@@ -1173,7 +1178,7 @@ def _import_skills(conn, rows: List[Dict[str, str]], batches: _Batches) -> Dict[
     now = _now()
     for row in rows:
         batches.row()
-        skill = (row.get("name") or "").strip()[:200]
+        skill = clip((row.get("name") or "").strip(), 200)
         if not skill:
             tally["skipped"] += 1
             continue
