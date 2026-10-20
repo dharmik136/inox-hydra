@@ -1154,26 +1154,39 @@ def list_media_assets():
 
 @app.delete("/api/media/{asset_id}", tags=["Media Studio & Dropzone"])
 def delete_media_asset(asset_id: str):
-    """Deletes an uploaded media asset and cleans up local storage."""
+    """
+    Deletes an uploaded media asset: the file first, then its library row.
+
+    The file goes first, because a row removed while its file stays hides a
+    photo the creator asked to delete and carries it into every later backup.
+    That is what happened when the removal failed (a viewer, OneDrive or
+    antivirus holding the file on Windows): the error was swallowed, the row
+    dropped, and the answer was "deleted". Now a file that cannot be removed
+    keeps its row and answers 409 with the reason, and an id that is not in
+    the library answers 404.
+    """
     conn = get_db()
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT storage_path FROM media_assets WHERE id = ?", (asset_id,))
-        row = cursor.fetchone()
-        if row:
-            rel_path = row["storage_path"]
-            if rel_path.startswith("/assets/"):
-                sub_path = rel_path.replace("/assets/", "")
-                full_path = os.path.join(get_assets_dir(), sub_path)
-                if os.path.exists(full_path):
-                    try:
-                        os.remove(full_path)
-                    except Exception:
-                        pass
-            cursor.execute("DELETE FROM media_assets WHERE id = ?", (asset_id,))
-            conn.commit()
-        conn.close()
-        return {"status": "success", "message": f"Asset {asset_id} deleted"}
+        row = conn.execute("SELECT filename, storage_path FROM media_assets WHERE id = ?", (asset_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="That file is not in the media library. Nothing was deleted.")
+        rel_path = row["storage_path"] or ""
+        if rel_path.startswith("/assets/"):
+            assets_root = os.path.realpath(get_assets_dir())
+            full_path = os.path.realpath(os.path.join(assets_root, rel_path[len("/assets/"):]))
+            inside = os.path.commonpath([assets_root, full_path]) == assets_root
+            if inside and os.path.exists(full_path):
+                try:
+                    os.remove(full_path)
+                except OSError as error:
+                    raise HTTPException(status_code=409, detail=(
+                        f"{row['filename'] or 'The file'} could not be removed "
+                        f"({error.strerror or 'the system refused'}). It may be open in another program, "
+                        "or its folder may be read-only. It is still in the library; close it and try again."
+                    ))
+        with conn:
+            conn.execute("DELETE FROM media_assets WHERE id = ?", (asset_id,))
+        return {"status": "success", "message": f"Deleted {row['filename'] or asset_id}."}
     finally:
         conn.close()
 
