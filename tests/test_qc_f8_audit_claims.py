@@ -21,7 +21,7 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 # A draft that trips every rule, and one that lands in the 45 to 90 second window.
 EVERYTHING = (
-    "Read the write-up at https://example.com/post — it matters.\n"
+    "Read the write-up at https://example.com/post " + chr(0x2014) + " it matters.\n"
     "line two\nline three\nline four\nline five\n\n"
     "@ana @ben @cleo @dev thoughts?\n\n"
     "#a #b #c #d #e #f #g"
