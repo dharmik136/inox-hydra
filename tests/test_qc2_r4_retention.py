@@ -164,6 +164,7 @@ def _back_to_19():
     conn.execute("DROP TABLE reaction_folds")
     conn.execute("DROP TABLE lead_retention_keeps")
     conn.execute("DROP TABLE retention_log")
+    conn.execute("DROP TABLE lead_reaction_folds")
     conn.execute("DROP TABLE forgotten_in_backups")
     conn.execute("DROP TRIGGER lead_returned")
     conn.execute("DELETE FROM settings WHERE key LIKE 'retention_%'")
@@ -298,7 +299,7 @@ def test_old_reactions_fold_into_per_post_counts_and_comments_stay(home, monkeyp
     assert _count("SELECT COUNT(*) FROM lead_interactions WHERE interaction_type = 'LIKE'") == 15
     assert retention.run("reactions")["removed"] == 0
     assert _likes_per_post() == before, "running the fold again counted reactions twice"
-    assert retention.folded_reactions()["urn:li:activity:0"] == 10
+    assert retention.folded_counts()["by_post"]["urn:li:activity:0"]["reactions"] == 10
 
 
 # ---------------------------------------------------------------------------

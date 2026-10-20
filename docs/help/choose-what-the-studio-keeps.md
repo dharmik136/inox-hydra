@@ -26,13 +26,13 @@ When you forget people or a cleanup removes rows, the space they took stays insi
 | Daily backup | On | On, Off | The newest backup |
 | Network readings log (what the extension saw of LinkedIn's network requests) | 30 days | 7, 30 or 90 days | |
 | Post readings | Every reading for 30 days, then the last reading of each day | 30, 90 or 365 days; Off | The last reading of each day, every reading from 36 to 72 hours after a post went out, and everything recent |
-| Reactions older than 24 months | Folded into a count per post | On, Off | Comments, all of them, and how many reacted to each post |
+| Reactions older than 24 months | Folded into counts | On, Off | Comments, all of them; how many people reacted to each post; how many old reactions each person made |
 | People silent for 24 months | Listed for you to review | List them, Do not list them | Everyone you have not chosen to forget |
 | Your posts, drafts, notes, daily analytics, comments, connections | Kept for good | | All of it |
 
 **Post readings.** The extension reads a post's figures many times while it is new. After 30 days, the studio keeps the last reading of each day. Today compares your latest post with your earlier ones at about two days old, so every reading from 36 to 72 hours after a post went out is kept, and Today's comparison and each post's latest figures stay exactly as they were.
 
-**Reactions.** A reaction nobody has seen again for 24 months becomes part of its post's count of folded reactions: the studio stops listing who reacted, and keeps how many. Reactions are never folded with comments; every comment is kept. LinkedIn's own reaction figures for your posts are not affected.
+**Reactions.** A reaction nobody has seen again for 24 months is folded into counts. Kept: how many people reacted to each post, and how many of these reactions each person made, whether on your posts, and the topics of those posts, so the numbers on every screen stay the same. Lost: which people reacted to which post, and when. Everyone stays in your leads, including people whose only engagement was such a reaction; a person's timeline shows how many old reactions they made. Comments are never folded; every comment is kept. LinkedIn's own reaction figures for your posts are not affected.
 
 ### Previews and confirmation
 

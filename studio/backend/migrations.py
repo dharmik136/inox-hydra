@@ -800,8 +800,28 @@ def _migrate_retention(cursor: sqlite3.Cursor) -> None:
     CREATE TABLE IF NOT EXISTS reaction_folds (
         post_urn TEXT PRIMARY KEY,
         reactions INTEGER NOT NULL DEFAULT 0,
+        people INTEGER NOT NULL DEFAULT 0,
+        vip INTEGER NOT NULL DEFAULT 0,
+        qualified INTEGER NOT NULL DEFAULT 0,
+        icp_known INTEGER NOT NULL DEFAULT 0,
+        icp_sum REAL NOT NULL DEFAULT 0,
+        conversations INTEGER NOT NULL DEFAULT 0,
         folded_through TEXT,
         updated_at TEXT NOT NULL
+    )
+    """)
+    # Per person: how many old reactions were folded, and on whose posts, so
+    # every count of a person's engagement stays what it was. Which posts is
+    # what a fold gives up.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS lead_reaction_folds (
+        lead_id TEXT PRIMARY KEY,
+        reactions INTEGER NOT NULL DEFAULT 0,
+        on_your_posts INTEGER NOT NULL DEFAULT 0,
+        on_others_posts INTEGER NOT NULL DEFAULT 0,
+        on_unknown_posts INTEGER NOT NULL DEFAULT 0,
+        folded_through TEXT,
+        topics TEXT
     )
     """)
     # No foreign key: a later rebuild of leads would cascade into it. The
@@ -842,6 +862,7 @@ def _migrate_retention(cursor: sqlite3.Cursor) -> None:
         DELETE FROM lead_interactions WHERE lead_id = OLD.id;
         DELETE FROM lead_enrichments WHERE lead_id = OLD.id;
         DELETE FROM lead_retention_keeps WHERE lead_id = OLD.id;
+        DELETE FROM lead_reaction_folds WHERE lead_id = OLD.id;
         INSERT OR REPLACE INTO forgotten_in_backups (lead_id, forgotten_at) VALUES (OLD.id, CURRENT_TIMESTAMP);
     END
     """)

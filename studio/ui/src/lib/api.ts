@@ -534,9 +534,23 @@ export interface LeadStageEvent {
   changed_at: string;
 }
 
+/** Reactions older than 24 months that retention folded into counts (studio/backend/retention.py). */
+export interface FoldedReactions {
+  count: number;
+  on_your_posts: number;
+  on_others_posts: number;
+  on_unknown_posts: number;
+  folded_through: string | null;
+}
+
 export async function fetchLeadTimeline(
   leadId: string,
-): Promise<{ lead: Lead; interactions: LeadInteraction[]; stage_history?: LeadStageEvent[] }> {
+): Promise<{
+  lead: Lead;
+  interactions: LeadInteraction[];
+  stage_history?: LeadStageEvent[];
+  folded_reactions?: FoldedReactions | null;
+}> {
   return call(`/api/v1/crm/leads/${encodeURIComponent(leadId)}/timeline`);
 }
 

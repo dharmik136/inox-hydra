@@ -1336,6 +1336,16 @@ def lead_review() -> Dict[str, Any]:
             key = str(row["lead_id"])
             if key in origins:
                 origins[key].append(_origin(row["post_urn"], own_ids, complete))
+        # Reactions older than 24 months that retention folded: no longer rows,
+        # still engagements, each with where it was when it was folded.
+        try:
+            from . import retention
+        except ImportError:
+            import retention
+        for key, fold in retention.folded_counts(conn)["by_lead"].items():
+            if key in origins:
+                for verdict in ("yours", "not_yours", "unknown"):
+                    origins[key].extend([verdict] * int(fold.get(verdict) or 0))
     finally:
         conn.close()
 

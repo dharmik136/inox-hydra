@@ -280,12 +280,14 @@ function describePreview(preview: RetentionPreview): string {
     );
   }
   return (
-    `Folds ${count(preview.rows)} reactions on ${count(preview.posts)} posts, from ${count(preview.people)} people, ` +
-    `into a count per post${size}. Who reacted is no longer listed on those posts; how many reacted is kept. ` +
-    `${count(preview.comments_kept)} comments are kept, all of them.` +
-    (preview.people_left_without_engagement
-      ? ` ${count(preview.people_left_without_engagement)} people reacted only in that time; they stay in your leads with no engagement shown.`
-      : "")
+    `Folds ${count(preview.rows)} reactions made more than 24 months ago, on ${count(preview.posts)} posts, by ` +
+    `${count(preview.people)} people${size}. ` +
+    "Kept: how many people reacted to each post, and how many of these reactions each person made, whether on " +
+    "your posts, and the topics of those posts, so every count on every screen stays the same. " +
+    "Lost: which people reacted to which post, and when. " +
+    `Everyone stays in your leads, including the ${count(preview.people_left_without_engagement)} whose only ` +
+    "engagement was one of these reactions; their timeline shows the count. " +
+    `All ${count(preview.comments_kept)} comments are kept.`
   );
 }
 
@@ -406,8 +408,9 @@ function Rules({
               )}
               {job === "reactions" && (
                 <p className="text-[13px] leading-relaxed text-ink-secondary">
-                  A reaction nobody has seen again for 24 months becomes part of its post&apos;s count of folded
-                  reactions. Comments are always kept. Default: on for a new install.
+                  A reaction older than 24 months is kept as a count on its post and on the person who made
+                  it; which person reacted to which post is not kept. Comments are always kept. Default: on for a
+                  new install.
                 </p>
               )}
 

@@ -47,16 +47,18 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import paths, sqlite_open, support
-    from .crm import reverse_crm
+    from . import evidence_briefing, onboarding, paths, sqlite_open, support
+    from .crm import QUALIFIED_THRESHOLD, VIP_THRESHOLD, reverse_crm
     from .database import get_db
     from .migrations import SCHEMA_VERSION
     from .today import COMPARE_WINDOW
 except ImportError:  # top-level import mode
+    import evidence_briefing
+    import onboarding
     import paths
     import sqlite_open
     import support
-    from crm import reverse_crm
+    from crm import QUALIFIED_THRESHOLD, VIP_THRESHOLD, reverse_crm
     from database import get_db
     from migrations import SCHEMA_VERSION
     from today import COMPARE_WINDOW
@@ -74,6 +76,8 @@ logger = logging.getLogger("studio.retention")
 BATCH = 500
 LEAD_SILENT_DAYS = 730          # 24 months
 REACTION_FOLD_DAYS = 730        # 24 months
+# Lead statuses that mean the creator went on to talk to the person.
+CONVERSATION_STATUSES = ("ENGAGED", "CONVERTED")
 
 # Each rule: the settings key, the value used when none is stored, the values
 # accepted, and the default as the panel states it.
@@ -152,6 +156,12 @@ def _write_setting(conn, key: str, value: Optional[str]) -> None:
         (key, value))
 
 
+def _choices(name: str) -> List[str]:
+    """What the creator may set a rule to."""
+    options = RULES[name]["options"]
+    return [o for o in options if o != "ask"] if name in _JOB_SWITCH.values() else list(options)
+
+
 def rules(conn=None) -> Dict[str, str]:
     """Each rule's current value, the fallback where none is stored or it is not one of its options."""
     own = conn is None
@@ -181,8 +191,10 @@ def set_rules(changes: Dict[str, Any]) -> Dict[str, str]:
         rule = RULES.get(name)
         if rule is None:
             raise RetentionRefused(f"there is no rule called {name!r}")
-        if str(value) not in rule["options"] or str(value) == "ask":
-            raise RetentionRefused(f"{name} can be {', '.join(o for o in rule['options'] if o != 'ask')}")
+        # "ask" for readings and reactions is the migration's waiting state, not
+        # a choice; for the silent-lead review it is the default choice.
+        if str(value) not in _choices(name):
+            raise RetentionRefused(f"{name} can be {', '.join(_choices(name))}")
         if name in _JOB_SWITCH.values() and str(value) == "on":
             raise RetentionRefused(f"{name} is switched on by confirming its preview, so you see what it removes first")
     conn = get_db()
@@ -507,9 +519,28 @@ def _preview_reactions(rule: Dict[str, str]) -> Dict[str, Any]:
             "older_than_days": REACTION_FOLD_DAYS, "bytes": _estimate(per_row, rows)}
 
 
+def _topic_of_posts(conn) -> Dict[str, str]:
+    """Each recorded post's topic, as Patterns groups them today (evidence_briefing)."""
+    posts = [(r[0], r[1]) for r in conn.execute("SELECT activity_urn, text FROM own_posts WHERE text IS NOT NULL")]
+    vocabulary = evidence_briefing.derive_topic_vocabulary([text for _, text in posts])
+    return {urn: evidence_briefing.classify_post_topic(text, vocabulary) for urn, text in posts}
+
+
 def _run_reactions(rule: Dict[str, str]) -> int:
     """
-    Folds reactions older than 24 months into reaction_folds, batch by batch.
+    Folds reactions older than 24 months, batch by batch, keeping what every
+    screen counts, so no number changes:
+
+      per post    how many reacted; how many of those engaged with that post
+                  in no other way (they are added to its people, the others
+                  are still counted from their comment or repost); and of
+                  those, how many were VIP, qualified, of known score (with
+                  the scores' sum) and in conversation, as they were then;
+      per person  how many old reactions they made; whether on the creator's
+                  posts, someone else's or posts the studio cannot place; and
+                  the topics of those posts, as Patterns named them then.
+
+    Lost is which person reacted to which post, and when.
 
     Each batch adds its counts and deletes its rows in one transaction, so a
     reaction is counted exactly once whatever stops the run.
@@ -518,25 +549,81 @@ def _run_reactions(rule: Dict[str, str]) -> int:
     removed, after = 0, 0
     conn = get_db()
     try:
+        own_ids = onboarding._own_activity_ids(conn)
+        complete = onboarding.post_history_complete(conn)
+        topic_of = _topic_of_posts(conn)
         while True:
             batch = conn.execute(
-                f"SELECT id, COALESCE(post_urn, '') AS post, COALESCE(last_seen_at, first_seen_at, interacted_at) AS at "
-                f"{_FOLDABLE} AND id > ? ORDER BY id LIMIT ?", (cut, after, BATCH)).fetchall()
+                f"SELECT i.id, i.lead_id, COALESCE(i.post_urn, '') AS post, "
+                f"COALESCE(i.last_seen_at, i.first_seen_at, i.interacted_at) AS at, "
+                f"l.icp_score AS icp, l.lead_status AS status "
+                f"FROM lead_interactions i LEFT JOIN leads l ON l.id = CAST(i.lead_id AS TEXT) "
+                f"WHERE i.interaction_type = 'LIKE' "
+                f"AND COALESCE(i.last_seen_at, i.first_seen_at, i.interacted_at) < ? "
+                f"AND i.id > ? ORDER BY i.id LIMIT ?", (cut, after, BATCH)).fetchall()
             if not batch:
                 break
-            counts: Dict[str, List[Any]] = {}
+            posts: Dict[str, Dict[str, Any]] = {}
+            people: Dict[str, Dict[str, Any]] = {}
             for row in batch:
-                entry = counts.setdefault(row["post"], [0, ""])
-                entry[0] += 1
-                entry[1] = max(entry[1], row["at"] or "")
+                only_here = conn.execute(
+                    "SELECT NOT EXISTS (SELECT 1 FROM lead_interactions WHERE lead_id = ? "
+                    "AND COALESCE(post_urn, '') = ? AND id != ?)",
+                    (row["lead_id"], row["post"], row["id"])).fetchone()[0]
+                post = posts.setdefault(row["post"], {"reactions": 0, "people": 0, "vip": 0, "qualified": 0,
+                                                      "icp_known": 0, "icp_sum": 0.0, "conversations": 0, "at": ""})
+                post["reactions"] += 1
+                post["at"] = max(post["at"], row["at"] or "")
+                if only_here:
+                    post["people"] += 1
+                    if row["icp"] is not None:
+                        post["icp_known"] += 1
+                        post["icp_sum"] += float(row["icp"])
+                        post["vip"] += 1 if row["icp"] >= VIP_THRESHOLD else 0
+                        post["qualified"] += 1 if row["icp"] >= QUALIFIED_THRESHOLD else 0
+                    post["conversations"] += 1 if (row["status"] or "") in CONVERSATION_STATUSES else 0
+                person = people.setdefault(str(row["lead_id"]), {"yours": 0, "not_yours": 0, "unknown": 0,
+                                                                 "at": "", "topics": set()})
+                person[onboarding._origin(row["post"], own_ids, complete)] += 1
+                person["at"] = max(person["at"], row["at"] or "")
+                if row["post"] in topic_of:
+                    person["topics"].add(topic_of[row["post"]])
             with conn:
-                for post, (count, through) in counts.items():
+                for urn, post in posts.items():
                     conn.execute(
-                        "INSERT INTO reaction_folds (post_urn, reactions, folded_through, updated_at) VALUES (?, ?, ?, ?) "
-                        "ON CONFLICT(post_urn) DO UPDATE SET reactions = reaction_folds.reactions + excluded.reactions, "
+                        "INSERT INTO reaction_folds (post_urn, reactions, people, vip, qualified, icp_known, icp_sum, "
+                        "conversations, folded_through, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                        "ON CONFLICT(post_urn) DO UPDATE SET "
+                        "reactions = reaction_folds.reactions + excluded.reactions, "
+                        "people = reaction_folds.people + excluded.people, "
+                        "vip = reaction_folds.vip + excluded.vip, "
+                        "qualified = reaction_folds.qualified + excluded.qualified, "
+                        "icp_known = reaction_folds.icp_known + excluded.icp_known, "
+                        "icp_sum = reaction_folds.icp_sum + excluded.icp_sum, "
+                        "conversations = reaction_folds.conversations + excluded.conversations, "
                         "folded_through = MAX(COALESCE(reaction_folds.folded_through, ''), excluded.folded_through), "
                         "updated_at = excluded.updated_at",
-                        (post, count, through, _stamp()))
+                        (urn, post["reactions"], post["people"], post["vip"], post["qualified"], post["icp_known"],
+                         post["icp_sum"], post["conversations"], post["at"], _stamp()))
+                for lead_id, person in people.items():
+                    held = conn.execute(
+                        "SELECT reactions, on_your_posts, on_others_posts, on_unknown_posts, folded_through, topics "
+                        "FROM lead_reaction_folds WHERE lead_id = ?", (lead_id,)).fetchone()
+                    topics = set(person["topics"])
+                    counts = [person["yours"] + person["not_yours"] + person["unknown"],
+                              person["yours"], person["not_yours"], person["unknown"]]
+                    through = person["at"]
+                    if held:
+                        counts = [a + b for a, b in zip(counts, held[:4])]
+                        through = max(through, held[4] or "")
+                        try:
+                            topics |= set(json.loads(held[5] or "[]"))
+                        except ValueError:
+                            pass
+                    conn.execute(
+                        "INSERT OR REPLACE INTO lead_reaction_folds (lead_id, reactions, on_your_posts, "
+                        "on_others_posts, on_unknown_posts, folded_through, topics) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (lead_id, *counts, through, json.dumps(sorted(topics))))
                 ids = [row["id"] for row in batch]
                 removed += conn.execute(
                     f"DELETE FROM lead_interactions WHERE id IN ({','.join('?' for _ in ids)})", ids).rowcount
@@ -561,13 +648,70 @@ def preview(job: str) -> Dict[str, Any]:
     return out
 
 
-def folded_reactions() -> Dict[str, int]:
-    """Reactions folded per post: {post_urn: count}. A post with none is absent."""
-    conn = get_db()
+def folded_counts(conn=None) -> Dict[str, Dict[str, Dict[str, Any]]]:
+    """
+    The one helper every reader adds to what the live rows say, so a fold
+    changes no number on any screen:
+
+      by_post  {post_urn: {"reactions", "people", "vip", "qualified",
+               "icp_known", "icp_sum", "conversations"}}. "people" are the
+               folded reactors who engaged with that post in no other way:
+               add them to its people (the others are still counted from
+               their comment or repost). The tier fields describe those same
+               people as they were when folded; add them to the post's own.
+               post_urn is as stored.
+      by_lead  {lead_id: {"reactions", "yours", "not_yours", "unknown",
+               "topics", "folded_through"}}: a person's old reactions, on
+               whose posts, and the topics of those posts as Patterns named
+               them when folded. Every key engaged at least once, so union
+               these ids into "people engaged" and a topic's people (each
+               person still a lead: read their score and status as now).
+
+    Empty before any fold, or on a database from before migration 20.
+    """
+    own = conn is None
+    conn = conn or get_db()
     try:
-        return {r[0]: r[1] for r in conn.execute("SELECT post_urn, reactions FROM reaction_folds")}
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        by_post: Dict[str, Dict[str, Any]] = {}
+        by_lead: Dict[str, Dict[str, Any]] = {}
+        if "reaction_folds" in tables:
+            for r in conn.execute("SELECT post_urn, reactions, people, vip, qualified, icp_known, icp_sum, "
+                                  "conversations FROM reaction_folds"):
+                by_post[r[0]] = {"reactions": r[1], "people": r[2], "vip": r[3], "qualified": r[4],
+                                 "icp_known": r[5], "icp_sum": r[6], "conversations": r[7]}
+        if "lead_reaction_folds" in tables:
+            for r in conn.execute("SELECT lead_id, reactions, on_your_posts, on_others_posts, on_unknown_posts, "
+                                  "folded_through, topics FROM lead_reaction_folds"):
+                try:
+                    topics = json.loads(r[6] or "[]")
+                except ValueError:
+                    topics = []
+                by_lead[str(r[0])] = {"reactions": r[1], "yours": r[2], "not_yours": r[3], "unknown": r[4],
+                                      "folded_through": r[5], "topics": topics}
+        return {"by_post": by_post, "by_lead": by_lead}
     finally:
-        conn.close()
+        if own:
+            conn.close()
+
+
+def folded_for_lead(lead_id: str, conn=None) -> Optional[Dict[str, Any]]:
+    """One person's folded reactions, for their timeline, or None."""
+    own = conn is None
+    conn = conn or get_db()
+    try:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'lead_reaction_folds'").fetchone():
+            return None
+        row = conn.execute(
+            "SELECT reactions, on_your_posts, on_others_posts, on_unknown_posts, folded_through "
+            "FROM lead_reaction_folds WHERE lead_id = ?", (str(lead_id),)).fetchone()
+    finally:
+        if own:
+            conn.close()
+    if not row or not row[0]:
+        return None
+    return {"count": row[0], "on_your_posts": row[1], "on_others_posts": row[2], "on_unknown_posts": row[3],
+            "folded_through": row[4], "older_than_days": REACTION_FOLD_DAYS}
 
 
 def _backup_first(backup: Optional[str]) -> str:
@@ -630,9 +774,12 @@ def run(job: str, backup: Optional[str] = None, confirmed: bool = True) -> Dict[
 _SILENT_LEADS = """
     SELECT * FROM (
         SELECT l.id, COALESCE(l.full_name, l.name) AS name, l.headline, l.company, l.created_at,
-               COALESCE(s.interactions, 0) AS interactions,
-               MAX(COALESCE(s.last_at, ''), COALESCE(l.updated_at, ''), COALESCE(l.created_at, '')) AS last_activity
+               COALESCE(s.interactions, 0) + COALESCE(f.reactions, 0) AS interactions,
+               COALESCE(f.reactions, 0) AS folded_reactions,
+               MAX(COALESCE(s.last_at, ''), COALESCE(f.folded_through, ''), COALESCE(l.updated_at, ''),
+                   COALESCE(l.created_at, '')) AS last_activity
         FROM leads l
+        LEFT JOIN lead_reaction_folds f ON f.lead_id = l.id
         LEFT JOIN (
             SELECT lead_id, COUNT(*) AS interactions,
                    MAX(COALESCE(last_seen_at, first_seen_at, interacted_at)) AS last_at
@@ -1066,7 +1213,7 @@ def overview() -> Dict[str, Any]:
     return {
         "rules": current,
         "defaults": {name: rule["default"] for name, rule in RULES.items()},
-        "options": {name: [o for o in rule["options"] if o != "ask"] for name, rule in RULES.items()},
+        "options": {name: _choices(name) for name in RULES},
         "sizes": sizes(),
         "backups": {**support.backup_schedule(enabled=current["daily_backup"] == "on"),
                     "last_daily": last_daily_backup(),
