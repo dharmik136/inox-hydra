@@ -58,7 +58,7 @@ Under **Pipeline**, click one of the four stages: **New Lead**, **Outreach Sent*
 
 ## Forget a person
 
-If someone asks you to delete what you hold about them, or the studio captured the wrong person, open their dossier and click **Forget this person** at the bottom. The button turns orange and names them, for example **Forget Asha Rao, it cannot be undone**. Click it again to forget them, or **CANCEL**. The studio removes the person, everything they said, their stage history and your notes on them, and the top of the stream says so. Backups and exports you made earlier still hold them; export to Obsidian again to remove their note from the vault.
+If someone asks you to delete what you hold about them, or the studio captured the wrong person, open their dossier and click **Forget this person** at the bottom. The button turns orange and names them, for example **Forget Asha Rao, it cannot be undone**. Click it again to forget them, or **CANCEL**. The studio removes the person, everything they said, their stage history and your notes on them, and the top of the stream says so. Exports you made earlier still hold them; export to Obsidian again to remove their note from the vault. Older backups also still hold them until rotation removes those backups; to remove them from backups too, open **Brand Studio**, **Storage and privacy**. Deleting the leads that engaged only with other people's posts says the same before you confirm.
 
 ## Draft a message
 

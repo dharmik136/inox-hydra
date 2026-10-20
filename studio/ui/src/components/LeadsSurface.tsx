@@ -705,6 +705,13 @@ function Dossier({
 }
 
 /**
+ * What deleting a person does not reach. Backups rotate, and a person deleted
+ * here stays in the older ones until they go; Storage and privacy can remove
+ * them from backups too (batch R4's secure delete).
+ */
+const BACKUPS_KEEP_THEM = "Older backups still hold them until rotation removes those backups; to remove them from backups too, use Brand Studio, Storage and privacy.";
+
+/**
  * A post, named the way a drafted message can quote it: its first sentence,
  * at most 80 characters of whole words, in quotation marks, without the
  * closing stop the template adds itself. Null when there is no text.
@@ -851,7 +858,7 @@ function ForgetLead({ lead, onForgotten }: { lead: Lead; onForgotten: () => void
     <section className="mt-8 border-t border-edge pt-4">
       <p className="mb-2 text-[12px] leading-snug text-ink-muted">
         Forgetting removes this person, everything they said, their stage history and your notes
-        from this studio. Backups and exports you made earlier still hold them.
+        from this studio. Exports you made earlier still hold them. {BACKUPS_KEEP_THEM}
       </p>
       <div className="flex items-center gap-2">
         <button
@@ -1070,6 +1077,9 @@ function LeadReviewPanel({ onChanged }: { onChanged: () => void }) {
                   </button>
                 )}
               </div>
+              {confirming && (
+                <p className="mt-2 text-[12px] leading-snug text-ink-muted">{BACKUPS_KEEP_THEM}</p>
+              )}
             </div>
           )}
         </>
