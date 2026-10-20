@@ -86,7 +86,7 @@ RULES: Dict[str, Dict[str, Any]] = {
                      "default": "on"},
     "telemetry_days": {"key": "retention_telemetry_days", "fallback": "30", "options": ["7", "30", "90"],
                        "default": "30"},
-    # "ask" is set by migration 20 where readings or reactions already existed,
+    # "ask" is set by migration 23 where readings or reactions already existed,
     # and replaced only by the creator: "on" through run() after a preview, or "off".
     "readings": {"key": "retention_readings", "fallback": "ask", "options": ["on", "off", "ask"],
                  "default": "on"},
@@ -648,7 +648,7 @@ def preview(job: str) -> Dict[str, Any]:
     return out
 
 
-def folded_counts(conn=None) -> Dict[str, Dict[str, Dict[str, Any]]]:
+def folded_counts(conn=None, leads: bool = True) -> Dict[str, Dict[str, Dict[str, Any]]]:
     """
     The one helper every reader adds to what the live rows say, so a fold
     changes no number on any screen:
@@ -667,7 +667,9 @@ def folded_counts(conn=None) -> Dict[str, Dict[str, Dict[str, Any]]]:
                these ids into "people engaged" and a topic's people (each
                person still a lead: read their score and status as now).
 
-    Empty before any fold, or on a database from before migration 20.
+    Empty before any fold, or on a database from before migration 23. With
+    leads=False, by_lead is left empty: the per-post summary reads only
+    by_post, on every capture.
     """
     own = conn is None
     conn = conn or get_db()
@@ -680,7 +682,7 @@ def folded_counts(conn=None) -> Dict[str, Dict[str, Dict[str, Any]]]:
                                   "conversations FROM reaction_folds"):
                 by_post[r[0]] = {"reactions": r[1], "people": r[2], "vip": r[3], "qualified": r[4],
                                  "icp_known": r[5], "icp_sum": r[6], "conversations": r[7]}
-        if "lead_reaction_folds" in tables:
+        if leads and "lead_reaction_folds" in tables:
             for r in conn.execute("SELECT lead_id, reactions, on_your_posts, on_others_posts, on_unknown_posts, "
                                   "folded_through, topics FROM lead_reaction_folds"):
                 try:
@@ -906,7 +908,7 @@ def _scrub_pending(conn) -> List[str]:
     """
     Everyone forgotten, by any path, since the creator last chose: the
     lead_forgotten trigger notes each id in forgotten_in_backups, and a
-    person who engages again is taken off it (migration 20).
+    person who engages again is taken off it (migration 23).
     """
     return [r[0] for r in conn.execute("SELECT lead_id FROM forgotten_in_backups ORDER BY forgotten_at")]
 

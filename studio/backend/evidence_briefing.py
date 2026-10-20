@@ -230,6 +230,16 @@ def get_topic_attribution_map() -> Dict[str, Any]:
         # to be read here: 1.3 s at 500,000. Only leads whose score or status
         # could qualify are read, and the rule below decides.
         summary = post_summary.current(conn)
+        # People whose reactions the retention job folded (batch R4), by the
+        # topics of the posts they reacted to, as this screen named them then.
+        try:
+            from . import retention
+        except ImportError:
+            import retention
+        folded_by_topic: Dict[str, set] = {}
+        for lead_id, person in retention.folded_counts(conn)["by_lead"].items():
+            for topic in person["topics"]:
+                folded_by_topic.setdefault(topic, set()).add(lead_id)
         candidates = conn.execute("""
             SELECT id, icp_score, lead_status, status FROM leads
             WHERE icp_score >= 60
@@ -278,13 +288,13 @@ def get_topic_attribution_map() -> Dict[str, Any]:
         entry["total_reactions"] += rxn
         # A person who engaged with two posts of a topic is one person for it.
         entry["people"].update(post_summary.lead_ids_of(summary.get(urn)))
-        # Reactions folded into counts by the retention job (batch R4) keep
-        # no names, so each counts as one more person engaged.
-        entry["folded"] = entry.get("folded", 0) + (summary.get(urn) or {}).get("folded_reactions", 0)
 
     for entry in topic_aggregates.values():
-        people = entry.pop("people")
-        entry["people_engaged"] = len(people) + entry.pop("folded", 0)
+        # A folded reactor is still a lead, so they join the topic's people
+        # once, however many of its posts they reacted to or commented on,
+        # and count as qualified by their score and status now.
+        people = entry.pop("people") | folded_by_topic.get(entry["topic"], set())
+        entry["people_engaged"] = len(people)
         entry["qualified_leads"] = len(people & qualified_people)
 
     topic_list = sorted(

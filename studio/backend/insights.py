@@ -113,12 +113,12 @@ def posts_overview() -> Dict[str, Any]:
             "against_usual": ratios or None,
             # Commenters first, then by name, at most post_summary.TOP_PEOPLE.
             "people": post_summary.people_of(engaged),
-            # Reactions older than 24 months are kept as a count once the
-            # retention job folds them (retention.py), so they still count
-            # here: each was one person's reaction to this post. Someone who
-            # also commented on it is counted again, since the fold keeps no
-            # names; folded_reactions says how much of the count that is.
-            "people_count": (engaged["people"] + engaged["folded_reactions"]) if engaged else 0,
+            # Reactions older than 24 months are kept as counts once the
+            # retention job folds them (retention.py). The summary's people
+            # include the folded reactors who did nothing else on this post;
+            # one who also commented is counted once, from the comment.
+            # folded_reactions is how many reactions were folded.
+            "people_count": engaged["people"] if engaged else 0,
             "folded_reactions": engaged["folded_reactions"] if engaged else 0,
             # People from this post the creator went on to talk to: Connected
             # or Meeting Booked. The question the Posts screen exists for.

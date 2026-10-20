@@ -283,27 +283,46 @@ def _engagements(conn, keys: Optional[List[str]]) -> Dict[str, Dict[str, Any]]:
         people.append(r)
     if people:
         rows[current] = _engagement(people)
-    for urn, count in _folded(conn, keys).items():
-        rows.setdefault(urn, dict(_NO_ENGAGEMENT))["folded_reactions"] = count
+    for urn, fold in folded(conn, keys).items():
+        _add_folded(rows.setdefault(urn, dict(_NO_ENGAGEMENT)), fold)
     return rows
 
 
-def _folded(conn, keys: Optional[List[str]]) -> Dict[str, int]:
+# What a fold adds to a post's own counts. The folded reactors who engaged
+# with the post in no other way are its people still; the others are counted
+# from their comment or repost, so nobody is counted twice.
+FOLDED_TIERS = ("people", "vip", "qualified", "icp_known", "icp_sum", "conversations")
+
+
+def _add_folded(row: Dict[str, Any], fold: Dict[str, Any]) -> None:
+    for column in FOLDED_TIERS:
+        row[column] = row[column] + (fold.get(column) or 0)
+    row["folded_reactions"] = row["folded_reactions"] + int(fold.get("reactions") or 0)
+
+
+def folded(conn, keys: Optional[Iterable[str]] = None) -> Dict[str, Dict[str, Any]]:
     """
-    Reactions the retention job (retention.py, batch R4) folded into counts:
-    reactions older than 24 months, whose rows are gone but which still
-    happened. The table exists once that migration has run.
+    Reactions the retention job (retention.py, batch R4) folded into counts,
+    per post, as retention.folded_counts() keeps them: reactions older than
+    24 months, whose rows are gone but which still happened, and of the
+    people who made them, those with no other engagement on the post and
+    their tiers. Empty before the fold's migration has run.
 
     The fold deletes the reaction rows in the same transaction as it adds the
-    count, and deleting them marks the post's summary stale, so the count is
-    read again whenever it moves.
+    counts, and deleting them marks the post's summary stale, so the counts
+    are read again whenever they move.
     """
     if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'reaction_folds'").fetchone():
         return {}
-    where, params = _in_clause(keys, "post_urn")
-    return {r["post_urn"]: int(r["reactions"] or 0)
-            for r in _rows(conn, f"SELECT post_urn, reactions FROM reaction_folds WHERE {where}", params)
-            if r["reactions"]}
+    # Imported here: retention reads the CRM, which refreshes this summary.
+    try:
+        from . import retention
+    except ImportError:
+        import retention
+    by_post = retention.folded_counts(conn, leads=False)["by_post"]
+    wanted = None if keys is None else set(keys)
+    return {urn: fold for urn, fold in by_post.items()
+            if (wanted is None or urn in wanted) and (fold.get("reactions") or fold.get("people"))}
 
 
 def compute(conn, keys: Optional[Iterable[str]] = None) -> Dict[str, Dict[str, Any]]:
@@ -339,7 +358,8 @@ def combined(conn, keys: Iterable[str]) -> Dict[str, Any]:
         elif r["commented"]:
             person["commented"] = 1
     engagement = _engagement(list(people.values()))
-    engagement["folded_reactions"] = sum(_folded(conn, [k for k in keys if k]).values())
+    for fold in folded(conn, [k for k in keys if k]).values():
+        _add_folded(engagement, fold)
     return engagement
 
 

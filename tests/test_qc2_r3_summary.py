@@ -453,64 +453,76 @@ def test_the_leads_review_is_the_same(home, monkeypatch, complete):
 # Reactions folded by the retention job (batch R4)
 # ---------------------------------------------------------------------------
 
-# Batch R4's table, as its migration creates it (branch qc2/r4, retention.py).
-REACTION_FOLDS = """
-    CREATE TABLE IF NOT EXISTS reaction_folds (
-        post_urn TEXT PRIMARY KEY,
-        reactions INTEGER NOT NULL DEFAULT 0,
-        folded_through TEXT,
-        updated_at TEXT NOT NULL
-    )
-"""
+def _fold(monkeypatch, ids):
+    """
+    Batch R4's fold (retention._run_reactions), as the Storage and privacy
+    panel runs it, over these reactions only: they are dated past the 24
+    month cutoff, and the cutoff is set so that nothing else is.
+    """
+    import retention
+    conn = _db()
+    try:
+        with conn:
+            conn.execute("UPDATE lead_interactions SET last_seen_at = '2001-01-01T00:00:00+00:00' "
+                         "WHERE id IN (SELECT value FROM json_each(?))", (json.dumps(ids),))
+    finally:
+        conn.close()
+    monkeypatch.setattr(retention, "_fold_cutoff", lambda: "2002-01-01T00:00:00+00:00")
+    assert retention._run_reactions(retention.rules()) == len(ids)
 
 
-def _fold(conn, ids):
-    """What retention._run_reactions does to one batch: count, then delete, in one transaction."""
-    marks = json.dumps(ids)
-    with conn:
-        for post, count in conn.execute(
-                "SELECT post_urn, COUNT(*) FROM lead_interactions WHERE id IN (SELECT value FROM json_each(?)) "
-                "GROUP BY post_urn", (marks,)).fetchall():
-            conn.execute("INSERT INTO reaction_folds (post_urn, reactions, folded_through, updated_at) "
-                         "VALUES (?, ?, '2024-01-01', '2026-10-20') ON CONFLICT(post_urn) DO UPDATE SET "
-                         "reactions = reaction_folds.reactions + excluded.reactions", (post, count))
-        conn.execute("DELETE FROM lead_interactions WHERE id IN (SELECT value FROM json_each(?))", (marks,))
+def _likes_with_a_comment(conn, ids):
+    """How many of these likes were by someone who also commented on that post."""
+    return conn.execute("""
+        SELECT COUNT(*) FROM lead_interactions i WHERE i.id IN (SELECT value FROM json_each(?))
+          AND EXISTS (SELECT 1 FROM lead_interactions o WHERE o.lead_id = i.lead_id
+                      AND o.post_urn = i.post_urn AND o.interaction_type = 'COMMENT')""",
+                        (json.dumps(ids),)).fetchone()[0]
 
 
-def test_folded_reactions_still_count_on_the_posts_screen(home):
+def test_folded_reactions_still_count_on_the_posts_screen(home, monkeypatch):
     """
     A folded reaction loses its person, not its post: the Posts screen counts
-    the same people for a post after the fold as before it.
+    the same people for a post after the fold as before it, including the
+    people who also commented, who are counted once (retention.folded_counts
+    keeps how many folded reactors did nothing else on the post).
     """
     import insights
     import post_summary
-    before = {p["activity_urn"]: p["people_count"] for p in insights.posts_overview()["posts"]}
+
+    def shown():
+        return {p["activity_urn"]: (p["people_count"], p["conversations"]) for p in insights.posts_overview()["posts"]}
+
+    before = shown()
     conn = _db()
     try:
-        conn.execute(REACTION_FOLDS)
-        # Likes whose person did nothing else on that post, so the count is exact.
-        ids = [r[0] for r in conn.execute("""
-            SELECT i.id FROM lead_interactions i WHERE i.interaction_type = 'LIKE' AND i.post_urn != ''
-              AND NOT EXISTS (SELECT 1 FROM lead_interactions o WHERE o.lead_id = i.lead_id
-                              AND o.post_urn = i.post_urn AND o.id != i.id)
-            ORDER BY i.id LIMIT 400""")]
-        _fold(conn, ids)
+        ids = [r[0] for r in conn.execute(
+            "SELECT id FROM lead_interactions WHERE interaction_type = 'LIKE' AND post_urn != '' "
+            "ORDER BY id LIMIT 400")]
+        assert _likes_with_a_comment(conn, ids) > 10, "some folded reactors also commented on the post"
+    finally:
+        conn.close()
+    _fold(monkeypatch, ids)
+    conn = _db()
+    try:
         folded = dict(conn.execute("SELECT post_urn, reactions FROM reaction_folds").fetchall())
-        assert folded and conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0]
+        assert sum(folded.values()) == len(ids)
         _consistent(conn)
         rows = post_summary.current(conn)
         assert all(rows[urn]["folded_reactions"] == n for urn, n in folded.items())
     finally:
         conn.close()
     after = insights.posts_overview()["posts"]
-    assert {p["activity_urn"]: p["people_count"] for p in after} == before
+    assert {p["activity_urn"]: (p["people_count"], p["conversations"]) for p in after} == before
     assert sum(p["folded_reactions"] for p in after) == sum(n for urn, n in folded.items() if urn in home["own"]) > 300
 
 
-def test_analytics_and_topic_counts_are_the_same_after_a_fold(home):
+def test_analytics_and_topic_counts_are_the_same_after_a_fold(home, monkeypatch):
     """
-    Folding the only engagement of people who did nothing else leaves every
-    post's leads and every topic's people as they were.
+    Folding reactions leaves every post's leads, VIP and average score, and
+    every topic's people and qualified people, as they were: for people who
+    did nothing else, people who also commented, people who reacted to
+    several posts of a topic, and qualified people alike.
     """
     import evidence_briefing
     from fastapi.testclient import TestClient
@@ -518,52 +530,59 @@ def test_analytics_and_topic_counts_are_the_same_after_a_fold(home):
     client = TestClient(app_module.app)
 
     def counts():
-        posts = {p["id"]: p["attribution"]["total_leads"] for p in client.get("/api/analytics/posts").json()["posts"]}
+        posts = {p["id"]: (p["attribution"]["total_leads"], p["attribution"]["vip_leads"], p["attribution"]["avg_icp"])
+                 for p in client.get("/api/analytics/posts").json()["posts"]}
         topics = {t["topic"]: (t["people_engaged"], t["qualified_leads"])
                   for t in evidence_briefing.get_topic_attribution_map()["topics"]}
         return posts, topics
 
-    conn = _db()
-    try:
-        with conn:
-            for n in range(30):
-                conn.execute("INSERT INTO leads (id, name, full_name, status, lead_status, icp_score) "
-                             "VALUES (?, ?, ?, 'New Lead', 'NEW', 10)", (f"lead-once-{n}", f"Once {n}", f"Once {n}"))
-                conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, comment_key) "
-                             "VALUES (?, ?, 'LIKE', '')", (f"lead-once-{n}", home["own"][n % 20]))
-    finally:
-        conn.close()
     before = counts()
     conn = _db()
     try:
-        conn.execute(REACTION_FOLDS)
+        # Every like but those of the one lead tied to a post by
+        # leads.post_id: the fold keeps no names, so that lead would be
+        # counted once by the tie and once by the fold (a known limit).
         ids = [r[0] for r in conn.execute("""
-            SELECT i.id FROM lead_interactions i JOIN leads l ON l.id = i.lead_id
-            WHERE i.interaction_type = 'LIKE' AND i.post_urn != '' AND COALESCE(l.icp_score, 0) < 60
-              AND COALESCE(l.lead_status, '') NOT IN ('ENGAGED', 'CONVERTED') AND l.status IN ('New Lead', 'Outreach Sent')
-              AND COALESCE(l.post_id, '') = ''
-              AND (SELECT COUNT(*) FROM lead_interactions o WHERE o.lead_id = i.lead_id) = 1""")]
-        assert len(ids) >= 3, "the history has people who only liked one post"
-        _fold(conn, ids)
+            SELECT i.id FROM lead_interactions i JOIN leads l ON l.id = CAST(i.lead_id AS TEXT)
+            WHERE i.interaction_type = 'LIKE' AND i.post_urn != '' AND COALESCE(l.post_id, '') = ''""")]
+        assert _likes_with_a_comment(conn, ids) > 10
+        qualified = conn.execute(
+            "SELECT COUNT(DISTINCT i.lead_id) FROM lead_interactions i JOIN leads l ON l.id = CAST(i.lead_id AS TEXT) "
+            "WHERE i.id IN (SELECT value FROM json_each(?)) AND l.icp_score >= 60", (json.dumps(ids),)).fetchone()[0]
+        assert qualified > 10, "qualified people's reactions are folded too"
+    finally:
+        conn.close()
+    _fold(monkeypatch, ids)
+    conn = _db()
+    try:
         _consistent(conn)
     finally:
         conn.close()
     after = counts()
     assert after == before
-    assert sum(after[0].values()) > 0
+    assert sum(leads for leads, _vip, _avg in after[0].values()) > 0
 
 
-def test_a_post_with_only_folded_reactions_keeps_its_row(home):
+def test_a_post_with_only_folded_reactions_keeps_its_row(home, monkeypatch):
     import post_summary
     post = home["own"][5]
     conn = _db()
     try:
-        conn.execute(REACTION_FOLDS)
         with conn:
             conn.execute("DELETE FROM post_metric_observations WHERE activity_urn = ?", (post,))
-        _fold(conn, [r[0] for r in conn.execute("SELECT id FROM lead_interactions WHERE post_urn = ?", (post,))])
+            conn.execute("DELETE FROM lead_interactions WHERE post_urn = ? AND interaction_type != 'LIKE'", (post,))
+        people = post_summary.current(conn, [post])[post]["people"]
+        ids = [r[0] for r in conn.execute("SELECT id FROM lead_interactions WHERE post_urn = ?", (post,))]
+    finally:
+        conn.close()
+    assert people > 0
+    _fold(monkeypatch, ids)
+    conn = _db()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM lead_interactions WHERE post_urn = ?", (post,)).fetchone()[0] == 0
         row = post_summary.current(conn, [post])[post]
-        assert row["people"] == 0 and row["folded_reactions"] > 0
+        assert row["people"] == people and row["folded_reactions"] == len(ids)
+        assert post_summary.lead_ids_of(row) == []
         _consistent(conn)
     finally:
         conn.close()
