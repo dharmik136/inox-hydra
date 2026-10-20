@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Status | Delivered, awaiting release |
-| Owner | Dharmik Shingala |
+| Owner | Product owner |
 | Started | 2026-10-19 |
 | Release | 2.6.0 (unreleased) |
 | Register | [BUG_REGISTER_2026-10.md](BUG_REGISTER_2026-10.md) |
