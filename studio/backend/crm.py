@@ -16,9 +16,11 @@ import json
 import logging
 
 try:
+    from . import post_summary
     from .database import get_db
     from .migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 except ImportError:
+    import post_summary
     from database import get_db
     from migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 
@@ -568,6 +570,10 @@ class ReverseCRMManager:
                     ]
                 )
                 cursor.execute("UPDATE leads SET icp_score = ? WHERE id = ?", (icp_score, lead_id))
+                # The triggers marked this post's summary, and the posts of a
+                # lead whose name or score moved; bring them current in the
+                # same transaction, so the capture leaves no stale row.
+                post_summary.refresh(conn)
         finally:
             conn.close()
 
@@ -869,8 +875,16 @@ class ReverseCRMManager:
                 post_meta = dict(p_row)
 
             # 2. Query leads and interactions associated with this post
-            query = """
-            SELECT 
+            #
+            # Each interaction on the post, by idx_interactions_post, then each
+            # lead tied to the post only by leads.post_id. Written as one LEFT
+            # JOIN with an OR across the two tables, no index could serve it
+            # and every lead was scanned: 386 ms for one post at 49,142 leads.
+            # CAST(... AS TEXT) lets the leads key serve the join despite the
+            # INTEGER affinity of lead_interactions.lead_id (fixed by the
+            # phase 3 rebuild). The last two sort keys are the order the old
+            # scan met rows in, so ties come out as they always did.
+            columns = """
                 l.id as lead_id,
                 COALESCE(l.full_name, l.name) as name,
                 l.headline,
@@ -879,16 +893,26 @@ class ReverseCRMManager:
                 COALESCE(l.icp_score, 0.0) as icp_score,
                 COALESCE(l.lead_status, 'NEW') as lead_status,
                 l.profile_url,
+                l.icp_score as sort_score,
+                l.rowid as lead_row,
+            """
+            query = f"""
+            SELECT {columns}
                 li.id as interaction_id,
                 li.interaction_type,
                 li.comment_text,
                 li.suggested_dm_reply,
                 li.interacted_at
+            FROM lead_interactions li JOIN leads l ON l.id = CAST(li.lead_id AS TEXT)
+            WHERE li.post_urn IN ({{placeholders}})
+            UNION ALL
+            SELECT {columns}
+                NULL, NULL, NULL, NULL, NULL
             FROM leads l
-            LEFT JOIN lead_interactions li
-                ON l.id = li.lead_id AND li.post_urn IN ({placeholders})
-            WHERE li.post_urn IN ({placeholders}) OR l.post_id IN ({placeholders})
-            ORDER BY l.icp_score DESC, li.interacted_at DESC
+            WHERE l.post_id IN ({{placeholders}})
+              AND NOT EXISTS (SELECT 1 FROM lead_interactions li
+                              WHERE li.lead_id = l.id AND li.post_urn IN ({{placeholders}}))
+            ORDER BY sort_score DESC, interacted_at DESC, lead_row, interaction_id
             """
             keys = sorted(match_keys)
             placeholders = ", ".join("?" for _ in keys)

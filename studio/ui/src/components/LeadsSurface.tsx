@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { ArrowLeft, Copy, Download, ExternalLink, Loader2 } from "lucide-react";
 import {
@@ -11,7 +11,7 @@ import {
   fetchLeadOfferDraft,
   fetchLeadReview,
   fetchLeadTimeline,
-  fetchLeads,
+  fetchLeadsPage,
   forgetLead,
   launchBridge,
   generateLeadDm,
@@ -37,13 +37,11 @@ const TIER_LABELS: Record<string, string> = {
   DISQUALIFIED: "Disqualified",
 };
 
-/** How many rows the stream draws before asking. Five thousand drawn at once was 30,000 nodes. */
+/** How many rows the stream reads and draws before asking. Five thousand drawn at once was 30,000 nodes. */
 const STREAM_PAGE = 200;
 
-/** Lower case without accents, so "zoe" finds Zoë and "angstrom" finds Ångström. */
-function folded(text: string): string {
-  return text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-}
+/** The pause in typing after which the search box asks the server, so a word is one request, not five. */
+const SEARCH_PAUSE_MS = 250;
 
 /**
  * The CRM (blueprint section 11).
@@ -61,55 +59,98 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
   // take turns; from md up both are always shown and this has no effect.
   const [pane, setPane] = useState<"stream" | "dossier">(focus ? "dossier" : "stream");
   // The stream had no way to narrow it, so five thousand leads were one list
-  // drawn in full. The box and the stage filter work on the loaded list, and
-  // only the first STREAM_PAGE matches are drawn until the creator asks for more.
+  // drawn in full; then the whole list, 49,142 leads and 24 MB after three
+  // years, was read on every visit to be filtered here. The server now does
+  // the filtering and sends STREAM_PAGE rows at a time, the next page when
+  // the creator asks for more.
   const [query, setQuery] = useState("");
+  const [searched, setSearched] = useState("");
   const [stage, setStage] = useState("All");
-  const [limit, setLimit] = useState(STREAM_PAGE);
+  const [counts, setCounts] = useState({ matching: 0, total: 0 });
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const shown = useMemo(() => {
-    const words = folded(query).split(/\s+/).filter(Boolean);
-    return (leads ?? []).filter(
-      (lead) =>
-        (stage === "All" || lead.status === stage) &&
-        words.every((word) =>
-          folded([lead.name, lead.company, lead.headline, lead.notes].filter(Boolean).join(" ")).includes(word),
-        ),
-    );
-  }, [leads, query, stage]);
+  // Answers that arrive after the filters changed again are dropped.
+  const request = useRef(0);
+  const loadedRows = useRef(STREAM_PAGE);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSearched(query), SEARCH_PAUSE_MS);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  const load = useCallback(
+    (rows: number) => {
+      const ticket = ++request.current;
+      fetchLeadsPage({ status: stage, query: searched, limit: Math.max(STREAM_PAGE, rows) })
+        .then((page) => {
+          if (ticket !== request.current) return;
+          setLeads(page.leads);
+          loadedRows.current = Math.max(STREAM_PAGE, page.leads.length);
+          setCounts({ matching: page.matching, total: page.total });
+          setNextCursor(page.next_cursor);
+          // Open on the first lead so the dossier is never an empty panel next
+          // to a populated list.
+          setSelected((current) => current ?? page.leads[0]?.id ?? null);
+          setFailed(false);
+        })
+        .catch(() => {
+          if (ticket === request.current) setFailed(true);
+        });
+    },
+    [stage, searched],
+  );
+
+  // The first page, whenever the stage or the search changes.
+  useEffect(() => {
+    load(STREAM_PAGE);
+  }, [load]);
 
   // Re-read after an action so the row and the dossier cannot disagree about
   // a lead's status. The stream shows the status on every row, so a change
-  // made in the dossier is visible in two places at once or in neither.
-  const reload = useCallback(() => {
-    fetchLeads()
-      .then((rows) => {
-        setLeads(rows);
-        // Open on the first lead so the dossier is never an empty panel next
-        // to a populated list.
-        setSelected((current) => current ?? rows[0]?.id ?? null);
-        setFailed(false);
+  // made in the dossier is visible in two places at once or in neither. As
+  // many rows as are on screen are read again, so the list does not jump.
+  const loadRef = useRef(load);
+  loadRef.current = load;
+  const reload = useCallback(() => loadRef.current(loadedRows.current), []);
+
+  const showMore = () => {
+    if (!nextCursor || loadingMore) return;
+    const ticket = request.current;
+    setLoadingMore(true);
+    fetchLeadsPage({ status: stage, query: searched, cursor: nextCursor, limit: STREAM_PAGE })
+      .then((page) => {
+        if (ticket !== request.current) return;
+        setLeads((current) => {
+          const rows = [...(current ?? []), ...page.leads];
+          loadedRows.current = rows.length;
+          return rows;
+        });
+        setCounts({ matching: page.matching, total: page.total });
+        setNextCursor(page.next_cursor);
       })
-      .catch(() => setFailed(true));
-  }, []);
+      .catch(() => {
+        if (ticket === request.current) setFailed(true);
+      })
+      .finally(() => setLoadingMore(false));
+  };
 
+  // A lead opened from search is selected at once: the dossier reads the
+  // person by id, whichever page their row is on. The filters are cleared so
+  // the stream is the whole list again. Keyed on the nonce so choosing the
+  // same person twice still scrolls back to them.
   useEffect(() => {
-    reload();
-  }, [reload]);
-
-  // A lead opened from search is selected, and its row brought into view, once
-  // the list holding it has rendered. Keyed on the nonce so choosing the same
-  // person twice still scrolls back to them.
-  useEffect(() => {
-    if (!focus || !leads) return;
-    const index = leads.findIndex((lead) => lead.id === focus.id);
-    if (index < 0) return;
+    if (!focus) return;
     setSelected(focus.id);
     setPane("dossier");
-    // The row must be drawn to be scrolled to.
     setQuery("");
+    setSearched("");
     setStage("All");
-    setLimit((current) => Math.max(current, index + 1));
+  }, [focus]);
+
+  // Their row is brought into view once it is drawn.
+  useEffect(() => {
+    if (!focus || !leads?.some((lead) => lead.id === focus.id)) return;
     window.requestAnimationFrame(() => {
       document.querySelector(`[data-lead-id="${CSS.escape(focus.id)}"]`)?.scrollIntoView({ block: "nearest" });
     });
@@ -117,7 +158,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
 
   if (failed) return <Centered>LEAD PIPELINE UNAVAILABLE</Centered>;
   if (!leads) return <Centered>LOADING LEADS</Centered>;
-  if (leads.length === 0) {
+  if (counts.total === 0) {
     return <EmptyStream />;
   }
 
@@ -134,7 +175,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
           <h1 className="studio-label">Lead stream</h1>
           <div className="flex items-baseline gap-2">
             <p className="studio-meta text-[10px]">
-              {shown.length === leads.length ? leads.length : `${shown.length} OF ${leads.length}`}
+              {counts.matching === counts.total ? counts.total : `${counts.matching} OF ${counts.total}`}
             </p>
             {/* A download, not a fetch: the route streams a file, so the
                 browser is the right thing to hand it to. */}
@@ -152,20 +193,14 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
             type="search"
             aria-label="Find a lead"
             value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setLimit(STREAM_PAGE);
-            }}
+            onChange={(event) => setQuery(event.target.value)}
             placeholder="Name, company, headline or notes"
             className="min-w-0 flex-1 rounded-md border border-edge bg-ink px-2.5 py-1 text-[12px] text-ink-primary placeholder:text-ink-muted focus:border-edge-strong focus:outline-none"
           />
           <select
             aria-label="Stage"
             value={stage}
-            onChange={(event) => {
-              setStage(event.target.value);
-              setLimit(STREAM_PAGE);
-            }}
+            onChange={(event) => setStage(event.target.value)}
             className="rounded-md border border-edge bg-ink px-1.5 py-1 text-[12px] text-ink-secondary focus:border-edge-strong focus:outline-none"
           >
             <option value="All">Every stage</option>
@@ -183,10 +218,10 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
         )}
         <LeadReviewPanel onChanged={reload} />
         <ul className="min-h-0 flex-1 overflow-y-auto">
-          {shown.length === 0 && (
+          {leads.length === 0 && (
             <li className="studio-meta px-4 py-3 text-[10px] text-ink-muted">NO LEAD MATCHES</li>
           )}
-          {shown.slice(0, limit).map((lead) => (
+          {leads.map((lead) => (
             <li key={lead.id}>
               <button
                 type="button"
@@ -221,17 +256,18 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
               </button>
             </li>
           ))}
-          {shown.length > limit && (
+          {nextCursor && (
             <li className="px-4 py-3">
               <button
                 type="button"
-                onClick={() => setLimit((current) => current + STREAM_PAGE)}
-                className="studio-meta text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+                onClick={showMore}
+                disabled={loadingMore}
+                className="studio-meta text-[10px] text-ink-muted transition-colors hover:text-ink-primary disabled:opacity-60"
               >
                 Show more
               </button>
               <span className="studio-meta ml-2 text-[10px] text-ink-muted">
-                {shown.length - limit} NOT SHOWN YET
+                {loadingMore ? "LOADING" : `${Math.max(0, counts.matching - leads.length)} NOT SHOWN YET`}
               </span>
             </li>
           )}

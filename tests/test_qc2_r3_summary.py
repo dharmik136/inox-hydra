@@ -1,0 +1,569 @@
+"""
+The per-post summary is the raw rows, counted once.
+==================================================
+
+Cycle 2, batch R3 (DATA-02).
+
+Posts, Analytics, Patterns (attribution and evidence), Outbound and Today read
+every one of 500,000 interactions into Python on every load: 0.4 to 1.9 s a
+screen on three years of one prolific creator. They now read post_engagement,
+one row per post (studio/backend/post_summary.py), built by migration 21 and
+kept current by triggers that mark rows stale, by the capture and reading
+writers that refresh what they marked, and by every reader catching up.
+
+Two kinds of test:
+- consistency: after every way the raw rows change, the table equals a fresh
+  computation from them;
+- the same answers: each screen's numbers equal what the old full scan
+  computed, written out here as it was, on a history built to have ties.
+"""
+
+import json
+import os
+import shutil
+import statistics
+import sys
+import tempfile
+
+import pytest
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.join(REPO_ROOT, "studio", "backend"))
+sys.path.insert(0, os.path.dirname(__file__))
+
+import qc2_r3_data  # noqa: E402
+
+
+@pytest.fixture
+def home(monkeypatch):
+    path = tempfile.mkdtemp(prefix="inox_qc2_r3_sum_")
+    monkeypatch.setenv("INOX_HYDRA_HOME", path)
+    monkeypatch.delenv("INOX_DEMO_DATA", raising=False)
+    from database import init_db, get_db
+    init_db()
+    conn = get_db()
+    data = qc2_r3_data.build(conn)
+    conn.close()
+    yield data
+    shutil.rmtree(path, ignore_errors=True)
+
+
+def _db():
+    from database import get_db
+    return get_db()
+
+
+def _consistent(conn):
+    import post_summary
+    problems = post_summary.differences(conn)
+    assert problems == [], problems[:10]
+
+
+# ---------------------------------------------------------------------------
+# Built by the migration, and kept true to the raw rows
+# ---------------------------------------------------------------------------
+
+def test_migration_21_builds_every_post(monkeypatch):
+    """A database that already holds a history gets every row at migration time."""
+    path = tempfile.mkdtemp(prefix="inox_qc2_r3_mig_")
+    monkeypatch.setenv("INOX_HYDRA_HOME", path)
+    try:
+        import migrations
+        from database import init_db, get_db
+        init_db()
+        conn = get_db()
+        qc2_r3_data.build(conn)
+        # Back to version 20 with no summary, as an existing install is.
+        conn.execute("DROP TABLE post_engagement")
+        for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'trigger' "
+                                    "AND name LIKE 'post_engagement_%'").fetchall():
+            conn.execute(f"DROP TRIGGER {name}")
+        conn.execute("PRAGMA user_version = 20")
+        conn.commit()
+        report = migrations.ensure_schema(conn, take_backup=False)
+        assert 21 in [m["version"] for m in report["applied"]]
+        assert conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM post_engagement").fetchone()[0] > 50
+        _consistent(conn)
+        # Idempotent: run again over the same rows, the same table.
+        before = conn.execute("SELECT * FROM post_engagement ORDER BY post_urn").fetchall()
+        migrations._migrate_post_summary(conn.cursor())
+        assert [tuple(r) for r in conn.execute("SELECT * FROM post_engagement ORDER BY post_urn")] == \
+            [tuple(r) for r in before]
+        conn.close()
+    finally:
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def test_the_thresholds_are_the_crms():
+    import crm
+    import post_summary
+    assert post_summary.VIP_SCORE == crm.VIP_THRESHOLD
+    assert post_summary.QUALIFIED_SCORE == crm.QUALIFIED_THRESHOLD
+
+
+def test_a_capture_leaves_the_summary_current(home):
+    """The writer that records an interaction refreshes the rows it marked."""
+    import crm
+    post = home["own"][-1]
+    for n in range(3):
+        crm.reverse_crm.ingest_interaction(
+            full_name=f"New Person {n}", linkedin_urn=f"https://www.linkedin.com/in/new-{n}",
+            headline="CTO at Newco", interaction_type="COMMENT", comment_text="Is pricing per seat?",
+            post_urn=post)
+    # The same person again, now a VIP by a new headline: their score moves
+    # on every post they engaged with.
+    crm.reverse_crm.ingest_interaction(
+        full_name="New Person 0", linkedin_urn="https://www.linkedin.com/in/new-0",
+        headline="Founder and CEO", interaction_type="LIKE", post_urn=home["own"][-2])
+    conn = _db()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0] == 0
+        _consistent(conn)
+    finally:
+        conn.close()
+
+
+def test_a_reading_leaves_the_summary_current(home):
+    import onboarding
+    import post_summary
+    post = home["own"][-1]
+    conn = _db()
+    try:
+        with conn:
+            onboarding._record_observation(conn, post, "post_analytics", {"impressions": 4321, "reactions": 77})
+        row = conn.execute("SELECT stale, latest_reading FROM post_engagement WHERE post_urn = ?", (post,)).fetchone()
+        assert row["stale"] == 0
+        assert post_summary.reading_of(dict(row), "latest_reading")["impressions"] == 4321
+        _consistent(conn)
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("change", [
+    "UPDATE leads SET lead_status = 'ENGAGED' WHERE id IN (SELECT id FROM leads LIMIT 40)",
+    "UPDATE leads SET icp_score = 91 WHERE rowid % 5 = 0",
+    "UPDATE leads SET icp_score = NULL WHERE rowid % 7 = 0",
+    "UPDATE leads SET full_name = 'Aaron Aardvark' WHERE rowid % 9 = 0",
+    "UPDATE leads SET name = 'Zed' WHERE full_name IS NULL",
+    "DELETE FROM leads WHERE rowid % 4 = 0",
+    "DELETE FROM lead_interactions WHERE id % 3 = 0",
+    "UPDATE OR IGNORE lead_interactions SET post_urn = (SELECT activity_urn FROM own_posts LIMIT 1) WHERE id % 11 = 0",
+    "UPDATE OR IGNORE lead_interactions SET interaction_type = 'COMMENT' WHERE id % 6 = 0",
+    "UPDATE OR IGNORE lead_interactions SET lead_id = 'lead-0001' WHERE id % 13 = 0 AND lead_id != 'lead-0001'",
+    "DELETE FROM post_metric_observations WHERE id % 2 = 0",
+    "UPDATE post_metric_observations SET age_hours = 48 WHERE id % 17 = 0",
+    "DELETE FROM lead_interactions",
+])
+def test_any_change_to_the_raw_rows_is_caught_up(home, change):
+    """Direct SQL, as a forget, an import undo or a future writer would do it."""
+    conn = _db()
+    try:
+        with conn:
+            conn.execute(change)
+        assert conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0] > 0
+        _consistent(conn)
+    finally:
+        conn.close()
+
+
+def test_forgetting_and_archiving_are_caught_up(home):
+    import crm
+    for lead_id in home["leads"][:30]:
+        crm.reverse_crm.purge_lead(lead_id)
+    conn = _db()
+    try:
+        with conn:
+            conn.execute("UPDATE leads SET updated_at = '2020-01-01 00:00:00'")
+    finally:
+        conn.close()
+    crm.reverse_crm.archive_inactive_leads(90)
+    conn = _db()
+    try:
+        _consistent(conn)
+    finally:
+        conn.close()
+
+
+def test_a_reader_never_waits_on_a_writer(home):
+    """With the write lock held elsewhere, a read computes the stale rows itself."""
+    import post_summary
+    writer = _db()
+    reader = _db()
+    try:
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("UPDATE leads SET lead_status = 'CONVERTED' WHERE id = ?", (home["leads"][1],))
+        writer.commit()
+        writer.execute("BEGIN IMMEDIATE")
+        rows = post_summary.current(reader)
+        writer.rollback()
+        fresh = post_summary.compute(reader)
+        assert {u: r["conversations"] for u, r in rows.items()} == {u: r["conversations"] for u, r in fresh.items()}
+        assert reader.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0] > 0
+        post_summary.current(reader)
+        assert reader.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0] == 0
+    finally:
+        writer.close()
+        reader.close()
+
+
+def test_lead_ids_round_trip_whatever_they_contain():
+    import post_summary
+    for ids in (["lead-1", "lead_2"], ["odd\x1fid", "x"], ["\x1estart", "y"], []):
+        encoded = post_summary._encode_ids(ids)
+        assert post_summary.lead_ids_of({"lead_ids": encoded}) == ids
+
+
+# ---------------------------------------------------------------------------
+# The same answers as the full scans they replace
+# ---------------------------------------------------------------------------
+
+def _old_engagers(conn):
+    """insights.posts_overview's scan before R3, in the order its plan read rows."""
+    import onboarding
+    engagers = {}
+    for row in conn.execute(
+            "SELECT i.post_urn, i.lead_id, i.interaction_type, COALESCE(l.full_name, l.name) AS name, l.lead_status "
+            "FROM leads l JOIN lead_interactions i ON l.id = i.lead_id WHERE i.post_urn IS NOT NULL "
+            "ORDER BY l.rowid, i.lead_id, i.interacted_at DESC, i.id"):
+        engagers.setdefault(onboarding._activity_id(row["post_urn"]), []).append(dict(row))
+    return engagers
+
+
+def test_posts_screen_people_are_the_same(home):
+    import insights
+    import onboarding
+    conn = _db()
+    try:
+        with conn:
+            # Give the conversations count something to count.
+            conn.execute("UPDATE leads SET lead_status = 'ENGAGED' WHERE rowid % 6 = 0")
+        old = _old_engagers(conn)
+    finally:
+        conn.close()
+    result = insights.posts_overview()
+    checked = 0
+    for post in result["posts"]:
+        by_person = {}
+        for p in old.get(onboarding._activity_id(post["activity_urn"]), []):
+            person = by_person.setdefault(str(p["lead_id"]), {
+                "lead_id": str(p["lead_id"]), "name": p["name"], "commented": False, "status": p["lead_status"]})
+            if p["interaction_type"] == "COMMENT":
+                person["commented"] = True
+        assert post["people"] == sorted(by_person.values(),
+                                        key=lambda p: (not p["commented"], p["name"] or ""))[:12], post["activity_urn"]
+        assert post["people_count"] == len(by_person)
+        assert post["conversations"] == sum(1 for p in by_person.values()
+                                            if (p["status"] or "") in ("ENGAGED", "CONVERTED"))
+        checked += bool(by_person)
+    assert checked > 40
+
+
+def test_analytics_attribution_is_the_same(home):
+    from fastapi.testclient import TestClient
+    import app as app_module
+    from crm import VIP_THRESHOLD
+    conn = _db()
+    try:
+        scores, people = {}, {}
+        for r in conn.execute("""
+            SELECT li.post_urn AS post_key, l.id AS lead_id, l.icp_score
+            FROM leads l CROSS JOIN lead_interactions li ON li.lead_id = l.id
+            WHERE li.post_urn IS NOT NULL AND li.post_urn != ''
+            UNION ALL
+            SELECT post_id, id, icp_score FROM leads WHERE post_id IS NOT NULL AND post_id != ''"""):
+            scores[r["lead_id"]] = r["icp_score"]
+            people.setdefault(r["post_key"], set()).add(r["lead_id"])
+        studio_ids = {r["activity_urn"]: r["id"] for r in conn.execute("SELECT id, activity_urn FROM posts")}
+    finally:
+        conn.close()
+    body = TestClient(app_module.app).get("/api/analytics/posts").json()
+    tied = 0
+    for post in body["posts"]:
+        key = str(studio_ids.get(post["activity_urn"]) or post["id"]) if post.get("activity_urn") else str(post["id"])
+        brought = people.get(key, set()) | people.get(post.get("activity_urn") or "", set())
+        known = [scores[lead] for lead in brought if scores[lead] is not None]
+        assert post["attribution"] == {
+            "total_leads": len(brought),
+            "vip_leads": sum(1 for s in known if s >= VIP_THRESHOLD),
+            "avg_icp": round(sum(known) / len(known), 1) if known else 0.0,
+        }, post["id"]
+        tied += key in people and key != post.get("activity_urn")
+    assert tied, "the lead tied to a post by leads.post_id was not exercised"
+
+
+def test_topic_attribution_is_the_same(home):
+    import evidence_briefing
+    conn = _db()
+    try:
+        with conn:
+            conn.execute("UPDATE leads SET status = 'Connected' WHERE rowid % 10 = 0")
+            conn.execute("UPDATE leads SET lead_status = 'converted' WHERE rowid % 15 = 0")
+        people_per_post, qualified = {}, set()
+        for row in conn.execute("SELECT i.post_urn, l.id, l.icp_score, l.lead_status, l.status "
+                                "FROM lead_interactions i JOIN leads l ON l.id = i.lead_id WHERE i.post_urn IS NOT NULL"):
+            icp = row["icp_score"] or 0
+            people_per_post.setdefault(row["post_urn"], set()).add(row["id"])
+            if icp >= 60.0 or (row["lead_status"] or "").upper() in ("ENGAGED", "CONVERTED") or \
+                    "connected" in (row["status"] or "").lower() or "meeting" in (row["status"] or "").lower():
+                qualified.add(row["id"])
+        posts = [dict(r) for r in conn.execute("SELECT activity_urn, text FROM own_posts WHERE text IS NOT NULL")]
+    finally:
+        conn.close()
+    vocabulary = evidence_briefing.derive_topic_vocabulary([p["text"] for p in posts])
+    expected = {}
+    for p in posts:
+        topic = evidence_briefing.classify_post_topic(p["text"], vocabulary)
+        expected.setdefault(topic, set()).update(people_per_post.get(p["activity_urn"], set()))
+    result = evidence_briefing.get_topic_attribution_map()
+    got = {t["topic"]: (t["people_engaged"], t["qualified_leads"]) for t in result["topics"]}
+    assert got == {topic: (len(people), len(people & qualified)) for topic, people in expected.items()}
+    assert any(q for _p, q in got.values())
+
+
+def test_evidence_exemplars_are_the_same(home):
+    import evidence_briefing
+    conn = _db()
+    try:
+        old = [dict(r) for r in conn.execute("""
+            SELECT p.activity_urn, p.text, p.reactions, p.comments,
+                   COUNT(DISTINCT CASE WHEN q.icp_score >= 60 THEN q.lead_id END) AS qualified_leads
+            FROM own_posts p
+            LEFT JOIN (SELECT li.post_urn, l.id AS lead_id, l.icp_score
+                       FROM leads l CROSS JOIN lead_interactions li ON li.lead_id = l.id) q
+                   ON q.post_urn = p.activity_urn
+            WHERE p.text IS NOT NULL AND p.reactions IS NOT NULL
+            GROUP BY p.activity_urn ORDER BY p.reactions DESC""")]
+    finally:
+        conn.close()
+    result = evidence_briefing.get_retrieval_evidence_brief(limit_top=len(old), limit_bottom=0)
+    assert result["top_exemplars"] == old
+
+
+def test_outbound_reciprocity_is_the_same(home):
+    import insights
+    import onboarding
+    conn = _db()
+    try:
+        own_ids = onboarding._own_activity_ids(conn)
+        engaged_back = {}
+        for row in conn.execute("SELECT COALESCE(l.full_name, l.name) AS name, i.post_urn FROM lead_interactions i "
+                                "JOIN leads l ON l.id = i.lead_id WHERE i.post_urn IS NOT NULL"):
+            post = onboarding._activity_id(row["post_urn"])
+            if post in own_ids:
+                engaged_back.setdefault(insights._name_key(row["name"]), set()).add(post)
+        read_posts = {onboarding._activity_id(r[0]) for r in conn.execute(
+            "SELECT DISTINCT post_urn FROM lead_interactions WHERE post_urn IS NOT NULL")}
+    finally:
+        conn.close()
+    result = insights.outbound_overview()
+    assert result["authors"], "the history has outbound authors"
+    for author in result["authors"]:
+        assert author["engaged_back"] == len(engaged_back.get(insights._name_key(author["name"]), ())), author
+    assert any(a["engaged_back"] for a in result["authors"])
+    conn = _db()
+    try:
+        engaged_posts = [r[0] for r in conn.execute(
+            "SELECT activity_urn FROM own_posts WHERE COALESCE(reactions, 0) + COALESCE(comments, 0) > 0")]
+    finally:
+        conn.close()
+    assert result["coverage"]["posts_read"] == sum(1 for u in engaged_posts if onboarding._activity_id(u) in read_posts)
+
+
+def test_todays_comparison_reads_the_same_readings(home):
+    import today
+    conn = _db()
+    try:
+        posts = conn.execute("SELECT activity_urn FROM own_posts WHERE published_at IS NOT NULL "
+                             "ORDER BY published_at DESC LIMIT 21").fetchall()
+
+        def old_at_age(urn):
+            rows = conn.execute("SELECT age_hours, impressions, reactions, comments FROM post_metric_observations "
+                                "WHERE activity_urn = ? AND age_hours BETWEEN 36 AND 72 ORDER BY observed_at, id",
+                                (urn,)).fetchall()
+            return dict(min(rows, key=lambda r: abs(r["age_hours"] - 48.0))) if rows else None
+
+        old = [old_at_age(p[0]) for p in posts]
+        newest = conn.execute("SELECT age_hours, impressions, reactions, comments, observed_at "
+                              "FROM post_metric_observations WHERE activity_urn = ? "
+                              "ORDER BY observed_at DESC, id DESC LIMIT 1", (posts[0][0],)).fetchone()
+        latest = today._latest_post(conn)
+    finally:
+        conn.close()
+    assert old[0] and sum(1 for r in old if r) > 10, "the history has readings at two days"
+    assert old[0]["age_hours"] == 47.5, "the tie at 47.5 and 48.5 hours goes to the earlier reading"
+    assert latest["current"] == (old[0] or (dict(newest) if newest else None))
+    usual = [r for r in old[1:] if r]
+    assert latest["comparison"], latest["not_compared_because"]
+    for metric, entry in latest["comparison"].items():
+        assert entry["this_post"] == old[0][metric]
+        theirs = [r[metric] for r in usual if r[metric] is not None]
+        assert entry["your_usual"] == statistics.median(theirs)
+        assert entry["posts_compared"] == len(theirs)
+
+
+def _old_lead_review(onboarding):
+    """onboarding.lead_review before R3: every interaction classified one by one."""
+    conn = _db()
+    try:
+        own_ids = onboarding._own_activity_ids(conn)
+        complete = onboarding.post_history_complete(conn)
+        leads = {r["id"]: dict(r) for r in conn.execute(
+            "SELECT id, COALESCE(full_name, name) AS name, headline, created_at FROM leads")}
+        origins = {lead_id: [] for lead_id in leads}
+        for row in conn.execute("SELECT lead_id, post_urn FROM lead_interactions"):
+            if str(row["lead_id"]) in origins:
+                origins[str(row["lead_id"])].append(onboarding._origin(row["post_urn"], own_ids, complete))
+    finally:
+        conn.close()
+    groups = {"yours": [], "not_yours": [], "unknown": []}
+    for lead_id, seen in origins.items():
+        verdict = ("yours" if "yours" in seen else
+                   "not_yours" if seen and all(o == "not_yours" for o in seen) else "unknown")
+        groups[verdict].append({**leads[lead_id], "interactions": len(seen)})
+    return {"status": "success", "history_complete": complete, "counts": {k: len(v) for k, v in groups.items()},
+            "not_yours": sorted(groups["not_yours"], key=lambda l: l.get("created_at") or "")}
+
+
+@pytest.mark.parametrize("complete", [False, True])
+def test_the_leads_review_is_the_same(home, monkeypatch, complete):
+    import onboarding
+    monkeypatch.setattr(onboarding, "post_history_complete", lambda conn: complete)
+    conn = _db()
+    try:
+        with conn:
+            # People who engaged only with someone else's post, some of them also without a post.
+            for n in range(12):
+                conn.execute("INSERT INTO leads (id, name, full_name, status, lead_status, created_at) "
+                             "VALUES (?, ?, ?, 'New Lead', 'NEW', '2026-01-01 00:00:00')",
+                             (f"lead-away-{n}", f"Away {n}", f"Away {n}"))
+                conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, comment_key) "
+                             "VALUES (?, 'urn:li:activity:123456789', 'LIKE', '')", (f"lead-away-{n}",))
+                if n % 3 == 0:
+                    conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, comment_key) "
+                                 "VALUES (?, NULL, 'LIKE', '')", (f"lead-away-{n}",))
+    finally:
+        conn.close()
+    new = onboarding.lead_review()
+    assert new == _old_lead_review(onboarding)
+    assert bool(new["not_yours"]) == complete and new["counts"]["yours"] > 100
+
+
+# ---------------------------------------------------------------------------
+# Reactions folded by the retention job (batch R4)
+# ---------------------------------------------------------------------------
+
+# Batch R4's table, as its migration creates it (branch qc2/r4, retention.py).
+REACTION_FOLDS = """
+    CREATE TABLE IF NOT EXISTS reaction_folds (
+        post_urn TEXT PRIMARY KEY,
+        reactions INTEGER NOT NULL DEFAULT 0,
+        folded_through TEXT,
+        updated_at TEXT NOT NULL
+    )
+"""
+
+
+def _fold(conn, ids):
+    """What retention._run_reactions does to one batch: count, then delete, in one transaction."""
+    marks = json.dumps(ids)
+    with conn:
+        for post, count in conn.execute(
+                "SELECT post_urn, COUNT(*) FROM lead_interactions WHERE id IN (SELECT value FROM json_each(?)) "
+                "GROUP BY post_urn", (marks,)).fetchall():
+            conn.execute("INSERT INTO reaction_folds (post_urn, reactions, folded_through, updated_at) "
+                         "VALUES (?, ?, '2024-01-01', '2026-10-20') ON CONFLICT(post_urn) DO UPDATE SET "
+                         "reactions = reaction_folds.reactions + excluded.reactions", (post, count))
+        conn.execute("DELETE FROM lead_interactions WHERE id IN (SELECT value FROM json_each(?))", (marks,))
+
+
+def test_folded_reactions_still_count_on_the_posts_screen(home):
+    """
+    A folded reaction loses its person, not its post: the Posts screen counts
+    the same people for a post after the fold as before it.
+    """
+    import insights
+    import post_summary
+    before = {p["activity_urn"]: p["people_count"] for p in insights.posts_overview()["posts"]}
+    conn = _db()
+    try:
+        conn.execute(REACTION_FOLDS)
+        # Likes whose person did nothing else on that post, so the count is exact.
+        ids = [r[0] for r in conn.execute("""
+            SELECT i.id FROM lead_interactions i WHERE i.interaction_type = 'LIKE' AND i.post_urn != ''
+              AND NOT EXISTS (SELECT 1 FROM lead_interactions o WHERE o.lead_id = i.lead_id
+                              AND o.post_urn = i.post_urn AND o.id != i.id)
+            ORDER BY i.id LIMIT 400""")]
+        _fold(conn, ids)
+        folded = dict(conn.execute("SELECT post_urn, reactions FROM reaction_folds").fetchall())
+        assert folded and conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0]
+        _consistent(conn)
+        rows = post_summary.current(conn)
+        assert all(rows[urn]["folded_reactions"] == n for urn, n in folded.items())
+    finally:
+        conn.close()
+    after = insights.posts_overview()["posts"]
+    assert {p["activity_urn"]: p["people_count"] for p in after} == before
+    assert sum(p["folded_reactions"] for p in after) == sum(n for urn, n in folded.items() if urn in home["own"]) > 300
+
+
+def test_analytics_and_topic_counts_are_the_same_after_a_fold(home):
+    """
+    Folding the only engagement of people who did nothing else leaves every
+    post's leads and every topic's people as they were.
+    """
+    import evidence_briefing
+    from fastapi.testclient import TestClient
+    import app as app_module
+    client = TestClient(app_module.app)
+
+    def counts():
+        posts = {p["id"]: p["attribution"]["total_leads"] for p in client.get("/api/analytics/posts").json()["posts"]}
+        topics = {t["topic"]: (t["people_engaged"], t["qualified_leads"])
+                  for t in evidence_briefing.get_topic_attribution_map()["topics"]}
+        return posts, topics
+
+    conn = _db()
+    try:
+        with conn:
+            for n in range(30):
+                conn.execute("INSERT INTO leads (id, name, full_name, status, lead_status, icp_score) "
+                             "VALUES (?, ?, ?, 'New Lead', 'NEW', 10)", (f"lead-once-{n}", f"Once {n}", f"Once {n}"))
+                conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, comment_key) "
+                             "VALUES (?, ?, 'LIKE', '')", (f"lead-once-{n}", home["own"][n % 20]))
+    finally:
+        conn.close()
+    before = counts()
+    conn = _db()
+    try:
+        conn.execute(REACTION_FOLDS)
+        ids = [r[0] for r in conn.execute("""
+            SELECT i.id FROM lead_interactions i JOIN leads l ON l.id = i.lead_id
+            WHERE i.interaction_type = 'LIKE' AND i.post_urn != '' AND COALESCE(l.icp_score, 0) < 60
+              AND COALESCE(l.lead_status, '') NOT IN ('ENGAGED', 'CONVERTED') AND l.status IN ('New Lead', 'Outreach Sent')
+              AND COALESCE(l.post_id, '') = ''
+              AND (SELECT COUNT(*) FROM lead_interactions o WHERE o.lead_id = i.lead_id) = 1""")]
+        assert len(ids) >= 3, "the history has people who only liked one post"
+        _fold(conn, ids)
+        _consistent(conn)
+    finally:
+        conn.close()
+    after = counts()
+    assert after == before
+    assert sum(after[0].values()) > 0
+
+
+def test_a_post_with_only_folded_reactions_keeps_its_row(home):
+    import post_summary
+    post = home["own"][5]
+    conn = _db()
+    try:
+        conn.execute(REACTION_FOLDS)
+        with conn:
+            conn.execute("DELETE FROM post_metric_observations WHERE activity_urn = ?", (post,))
+        _fold(conn, [r[0] for r in conn.execute("SELECT id FROM lead_interactions WHERE post_urn = ?", (post,))])
+        row = post_summary.current(conn, [post])[post]
+        assert row["people"] == 0 and row["folded_reactions"] > 0
+        _consistent(conn)
+    finally:
+        conn.close()

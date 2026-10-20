@@ -2501,3 +2501,37 @@ export async function dismissDemoCleanupNotice(): Promise<boolean> {
   const res = await call<{ dismissed: boolean }>("/api/v1/today/demo-cleanup-notice/dismiss", { method: "POST" });
   return res.dismissed;
 }
+
+export interface LeadsPage {
+  leads: Lead[];
+  /** Leads that match the stage and the search, across every page. */
+  matching: number;
+  /** Every lead the studio holds. */
+  total: number;
+  /** Pass back to read the next page; null on the last one. */
+  next_cursor: string | null;
+}
+
+/**
+ * One page of the lead stream, newest first, filtered on the server: the
+ * stage, and the search box, where every word must be the start of a word
+ * in the person's name, company, headline or notes.
+ */
+export async function fetchLeadsPage(options: {
+  status?: string;
+  query?: string;
+  cursor?: string | null;
+  limit?: number;
+}): Promise<LeadsPage> {
+  const params = new URLSearchParams({ limit: String(options.limit ?? 200) });
+  if (options.status && options.status !== "All") params.set("status", options.status);
+  if (options.query?.trim()) params.set("q", options.query.trim());
+  if (options.cursor) params.set("cursor", options.cursor);
+  const data = await call<Partial<LeadsPage>>(`/api/leads?${params}`);
+  return {
+    leads: data.leads ?? [],
+    matching: data.matching ?? 0,
+    total: data.total ?? 0,
+    next_cursor: data.next_cursor ?? null,
+  };
+}

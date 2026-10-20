@@ -10,6 +10,7 @@ Strict Invariants:
 - Clean connection closure in finally blocks.
 """
 
+import hashlib
 import time
 import unicodedata
 from collections import Counter
@@ -23,9 +24,11 @@ except ImportError:
 try:
     from .database import get_db, get_db_path
     from .contrast_engine import compute_all_contrasts
+    from . import post_summary
 except ImportError:
     from database import get_db, get_db_path
     from contrast_engine import compute_all_contrasts
+    import post_summary
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +188,25 @@ def _posts(n: int) -> str:
     return f"{n} {'post' if n == 1 else 'posts'}"
 
 
+# Each post's topic, for the posts as they were when last classified. Reading
+# every word of 1,417 posts twice took 0.35 s on every Patterns load; the
+# answer only changes when a post's text does, which the digest notices.
+_topics_cache: Dict[str, Any] = {}
+
+
+def _topics_of(posts: List[Dict[str, Any]]) -> List[str]:
+    """The topic of each post, in order, under the vocabulary of these posts."""
+    digest = hashlib.sha256()
+    for p in posts:
+        digest.update(f"{p.get('activity_urn')}\x1f{p.get('text')}\x1e".encode("utf-8", "replace"))
+    key = digest.hexdigest()
+    if _topics_cache.get("key") != key:
+        vocabulary = derive_topic_vocabulary([p.get("text") for p in posts])
+        _topics_cache.clear()
+        _topics_cache.update(key=key, topics=[classify_post_topic(p.get("text"), vocabulary) for p in posts])
+    return list(_topics_cache["topics"])
+
+
 def get_topic_attribution_map() -> Dict[str, Any]:
     """
     Computes CP4 Topic to Qualified-Lead Attribution Map.
@@ -198,12 +220,16 @@ def get_topic_attribution_map() -> Dict[str, Any]:
         ).fetchall()
         posts = [dict(r) for r in post_rows]
 
-        # Fetch lead interactions linked to post URNs with qualified status
-        interactions = conn.execute("""
-            SELECT i.post_urn, l.id, l.icp_score, l.lead_status, l.status
-            FROM lead_interactions i
-            JOIN leads l ON l.id = i.lead_id
-            WHERE i.post_urn IS NOT NULL
+        # Who engaged with each post, from the per-post summary, and which
+        # leads count as qualified. Every interaction joined to its lead used
+        # to be read here: 1.3 s at 500,000. Only leads whose score or status
+        # could qualify are read, and the rule below decides.
+        summary = post_summary.current(conn)
+        candidates = conn.execute("""
+            SELECT id, icp_score, lead_status, status FROM leads
+            WHERE icp_score >= 60
+               OR COALESCE(lead_status, '') NOT IN ('', 'NEW', 'ARCHIVED', 'CONTACTED', 'QUALIFIED', 'DM_SENT', 'DM_DRAFTED')
+               OR COALESCE(status, '') NOT IN ('', 'New Lead', 'Outreach Sent')
         """).fetchall()
     finally:
         conn.close()
@@ -219,24 +245,20 @@ def get_topic_attribution_map() -> Dict[str, Any]:
     # People per post, not interactions. Adding one per interaction row made
     # a founder who commented and reacted two qualified leads, three people
     # "6 qualified leads", and leads divided by posts a 600% "conversion".
-    people_per_post: Dict[str, set] = {}
     qualified_people: set = set()
-    for row in interactions:
-        urn = row["post_urn"]
+    for row in candidates:
         icp = row["icp_score"] or 0
         lead_status = (row["lead_status"] or "").upper()
         status = (row["status"] or "").lower()
         is_qualified = (icp >= 60.0) or (lead_status in ("ENGAGED", "CONVERTED")) or ("connected" in status or "meeting" in status)
-        people_per_post.setdefault(urn, set()).add(row["id"])
         if is_qualified:
             qualified_people.add(row["id"])
 
     # Aggregate by topic
-    vocabulary = derive_topic_vocabulary([p.get("text") for p in posts])
+    topics = _topics_of(posts)
     topic_aggregates: Dict[str, Dict[str, Any]] = {}
-    for p in posts:
+    for p, topic in zip(posts, topics):
         urn = p.get("activity_urn") or ""
-        topic = classify_post_topic(p.get("text"), vocabulary)
         rxn = p.get("reactions") or 0
 
         entry = topic_aggregates.setdefault(topic, {
@@ -250,11 +272,14 @@ def get_topic_attribution_map() -> Dict[str, Any]:
         entry["post_count"] += 1
         entry["total_reactions"] += rxn
         # A person who engaged with two posts of a topic is one person for it.
-        entry["people"] |= people_per_post.get(urn, set())
+        entry["people"].update(post_summary.lead_ids_of(summary.get(urn)))
+        # Reactions folded into counts by the retention job (batch R4) keep
+        # no names, so each counts as one more person engaged.
+        entry["folded"] = entry.get("folded", 0) + (summary.get(urn) or {}).get("folded_reactions", 0)
 
     for entry in topic_aggregates.values():
         people = entry.pop("people")
-        entry["people_engaged"] = len(people)
+        entry["people_engaged"] = len(people) + entry.pop("folded", 0)
         entry["qualified_leads"] = len(people & qualified_people)
 
     topic_list = sorted(
@@ -304,23 +329,17 @@ def get_retrieval_evidence_brief(limit_top: int = 3, limit_bottom: int = 2) -> D
         # was ranked by a count of interactions, which put a 50 reaction post
         # with three chatty commenters above posts with 300.
         #
-        # The interactions are joined to leads from the leads side, inside
-        # the subquery. Joined the other way, lead_interactions.lead_id
-        # (INTEGER affinity) against leads.id (TEXT) can use no index, and
-        # every post scanned every lead: 1.8 s at 2,000 posts, 19 ms now.
+        # The qualified people per post come from the per-post summary.
+        # Joining every interaction to its lead for the count took 0.9 s at
+        # 500,000 interactions. Posts with equal reactions keep the order the
+        # old GROUP BY gave them, by URN.
+        summary = post_summary.current(conn)
         rows = conn.execute("""
-            SELECT p.activity_urn, p.text, p.reactions, p.comments,
-                   COUNT(DISTINCT CASE WHEN q.icp_score >= 60 THEN q.lead_id END) AS qualified_leads
-            FROM own_posts p
-            LEFT JOIN (
-                SELECT li.post_urn, l.id AS lead_id, l.icp_score
-                FROM leads l CROSS JOIN lead_interactions li ON li.lead_id = l.id
-            ) q ON q.post_urn = p.activity_urn
-            WHERE p.text IS NOT NULL AND p.reactions IS NOT NULL
-            GROUP BY p.activity_urn
-            ORDER BY p.reactions DESC
+            SELECT activity_urn, text, reactions, comments FROM own_posts
+            WHERE text IS NOT NULL AND reactions IS NOT NULL
+            ORDER BY reactions DESC, activity_urn
         """).fetchall()
-        posts = [dict(r) for r in rows]
+        posts = [dict(r, qualified_leads=(summary.get(r["activity_urn"]) or {}).get("qualified", 0)) for r in rows]
     finally:
         conn.close()
 

@@ -16,10 +16,12 @@ from fastapi import APIRouter, HTTPException, Response, Path, Query
 
 try:
     from ..database import get_db
+    from .. import post_summary
     from ..crm import reverse_crm, VIP_THRESHOLD
     from ..linkedin_client import linkedin_client
 except (ImportError, ValueError):
     from database import get_db
+    import post_summary
     from crm import reverse_crm, VIP_THRESHOLD
     from linkedin_client import linkedin_client
 
@@ -405,22 +407,44 @@ def get_posts_leaderboard():
 
         listed.sort(key=lambda d: (d["impressions"] is None, -(d["impressions"] or 0),
                                    d["reactions"] is None, -(d["reactions"] or 0)))
-        # Who each post brought, read once for every post rather than once per
-        # post. The per-post query joined lead_interactions.lead_id (INTEGER
-        # affinity) to leads.id (TEXT), which no index can serve, so every
-        # post scanned every lead: 4 seconds at 2,000 posts and 5,000 leads.
-        # Driving the join from leads lets SQLite use idx_interactions_lead.
+        # Who each post brought, from the per-post summary: its people, how
+        # many are VIP, and their scores' sum. Reading every interaction to
+        # build each post's set took 1 s at 500,000. A lead tied to a post by
+        # leads.post_id, or a post reached under two keys, is counted from the
+        # sets themselves, so nobody is counted twice.
+        summary = post_summary.current(conn)
         scores: Dict[str, Any] = {}
-        people: Dict[str, set] = {}
-        for r in cursor.execute("""
-            SELECT li.post_urn AS post_key, l.id AS lead_id, l.icp_score
-            FROM leads l CROSS JOIN lead_interactions li ON li.lead_id = l.id
-            WHERE li.post_urn IS NOT NULL AND li.post_urn != ''
-            UNION ALL
-            SELECT post_id, id, icp_score FROM leads WHERE post_id IS NOT NULL AND post_id != ''
-        """).fetchall():
-            scores[r["lead_id"]] = r["icp_score"]
-            people.setdefault(r["post_key"], set()).add(r["lead_id"])
+        by_post_id: Dict[str, set] = {}
+        for r in cursor.execute(
+                "SELECT post_id, id, icp_score FROM leads WHERE post_id IS NOT NULL AND post_id != ''").fetchall():
+            scores[r["id"]] = r["icp_score"]
+            by_post_id.setdefault(r["post_id"], set()).add(r["id"])
+
+        def attribution(post_id_str: str, post_urn: str) -> Dict[str, Any]:
+            keys = [k for k in dict.fromkeys((post_id_str, post_urn)) if k]
+            rows_for = [summary[k] for k in keys if k in summary and summary[k]["people"]]
+            tied = [by_post_id[k] for k in keys if k in by_post_id]
+            # Reactions the retention job folded into counts (batch R4) were
+            # each one person on this post; they count among its leads. The
+            # fold keeps no names, so VIP and the average score are over the
+            # people still named.
+            folded = sum(summary[k]["folded_reactions"] for k in keys if k in summary)
+            if len(rows_for) == 1 and not tied:
+                row = rows_for[0]
+                return {"total_leads": row["people"] + folded, "vip_leads": row["vip"],
+                        "avg_icp": round(row["icp_sum"] / row["icp_known"], 1) if row["icp_known"] else 0.0}
+            brought = set().union(*tied, *(post_summary.lead_ids_of(row) for row in rows_for))
+            missing = [lead for lead in brought if lead not in scores]
+            if missing:
+                for r in cursor.execute("SELECT id, icp_score FROM leads WHERE id IN (SELECT value FROM json_each(?))",
+                                        (json.dumps(missing),)).fetchall():
+                    scores[r["id"]] = r["icp_score"]
+            known = [scores[lead] for lead in brought if scores.get(lead) is not None]
+            return {
+                "total_leads": len(brought) + folded,
+                "vip_leads": sum(1 for score in known if score >= VIP_THRESHOLD),
+                "avg_icp": round(sum(known) / len(known), 1) if known else 0.0,
+            }
 
         rows = []
         for d in listed:
@@ -430,13 +454,7 @@ def get_posts_leaderboard():
 
             post_id_str = str(d.pop("studio_post_id") or d["id"])
             post_urn = d.get("activity_urn") or ""
-            brought = people.get(post_id_str, set()) | people.get(post_urn, set())
-            known = [scores[lead] for lead in brought if scores[lead] is not None]
-            d["attribution"] = {
-                "total_leads": len(brought),
-                "vip_leads": sum(1 for score in known if score >= VIP_THRESHOLD),
-                "avg_icp": round(sum(known) / len(known), 1) if known else 0.0,
-            }
+            d["attribution"] = attribution(post_id_str, post_urn)
             rows.append(d)
         conn.close()
         return {"status": "success", "posts": rows}

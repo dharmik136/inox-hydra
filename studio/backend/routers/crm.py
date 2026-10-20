@@ -14,6 +14,7 @@ try:
     from ..database import get_db
     from ..leads import (
         list_leads,
+        page_leads,
         add_lead,
         batch_add_leads,
         update_lead_status,
@@ -28,6 +29,7 @@ except (ImportError, ValueError):
     from database import get_db
     from leads import (
         list_leads,
+        page_leads,
         add_lead,
         batch_add_leads,
         update_lead_status,
@@ -85,8 +87,16 @@ _ENRICHMENT_RETIRED = (
 
 
 @router.get("/api/leads")
-def get_leads(status: Optional[str] = None, search: Optional[str] = None):
-    return {"status": "success", "leads": list_leads(status, search)}
+def get_leads(status: Optional[str] = None, search: Optional[str] = None, limit: Optional[int] = None,
+              cursor: Optional[str] = None, q: Optional[str] = None):
+    """
+    Every lead, or with limit, one page of them: the Leads screen asks for
+    200 at a time and filters on the server (q, status), with next_cursor
+    for the next page and how many match and exist in all.
+    """
+    if limit is None:
+        return {"status": "success", "leads": list_leads(status, search)}
+    return {"status": "success", **page_leads(status, q, limit, cursor)}
 
 
 @router.get("/api/leads/export/csv", tags=["Inbound CRM"])

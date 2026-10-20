@@ -32,10 +32,11 @@ except ImportError:
     from text_cut import clip
 
 try:
-    from . import onboarding
+    from . import onboarding, post_summary
     from .database import get_db
 except ImportError:
     import onboarding
+    import post_summary
     from database import get_db
 
 # People are listed while their engagement is recent enough to answer.
@@ -48,8 +49,9 @@ ANSWERED_STATUSES = ("DM_SENT", "ENGAGED", "CONVERTED")
 # Posts are compared at the same age, because a post read at six hours and one
 # read at six weeks say nothing about each other. Two days is when most of a
 # post's reach has arrived, and the window either side tolerates reading gaps.
-COMPARE_AT_HOURS = 48.0
-COMPARE_WINDOW = (36.0, 72.0)
+# The summary keeps each post's reading at this age, so the numbers live there.
+COMPARE_AT_HOURS = post_summary.READING_AT_HOURS
+COMPARE_WINDOW = post_summary.READING_WINDOW
 COMPARE_WITH = 20
 MIN_COMPARISONS = 3
 
@@ -59,26 +61,6 @@ COMPARED_METRICS = ("impressions", "reactions", "comments")
 DUE_LIMIT = 10
 
 
-def _reading_at_age(conn, activity_urn: str) -> Optional[Dict[str, Any]]:
-    """The post's reading closest to two days old, within the window."""
-    rows = conn.execute(
-        "SELECT age_hours, impressions, reactions, comments FROM post_metric_observations "
-        "WHERE activity_urn = ? AND age_hours BETWEEN ? AND ?",
-        (activity_urn, *COMPARE_WINDOW),
-    ).fetchall()
-    if not rows:
-        return None
-    best = min(rows, key=lambda r: abs(r["age_hours"] - COMPARE_AT_HOURS))
-    return dict(best)
-
-
-def _latest_reading(conn, activity_urn: str) -> Optional[Dict[str, Any]]:
-    row = conn.execute(
-        "SELECT age_hours, impressions, reactions, comments, observed_at FROM post_metric_observations "
-        "WHERE activity_urn = ? ORDER BY observed_at DESC LIMIT 1", (activity_urn,)).fetchone()
-    return dict(row) if row else None
-
-
 def _latest_post(conn) -> Optional[Dict[str, Any]]:
     posts = conn.execute(
         "SELECT activity_urn, text, published_at FROM own_posts WHERE published_at IS NOT NULL "
@@ -86,12 +68,19 @@ def _latest_post(conn) -> Optional[Dict[str, Any]]:
     if not posts:
         return None
 
+    # Each post's reading closest to two days old, and its latest, from the
+    # per-post summary rather than from every reading of 21 posts.
+    readings = post_summary.current(conn, [p["activity_urn"] for p in posts])
+
+    def at_age(urn: str) -> Optional[Dict[str, Any]]:
+        return post_summary.reading_of(readings.get(urn), "reading_48h")
+
     latest, earlier = posts[0], posts[1:]
     age = (datetime.now(timezone.utc) - datetime.fromisoformat(latest["published_at"])).total_seconds() / 3600.0
-    own = _reading_at_age(conn, latest["activity_urn"])
-    current = own or _latest_reading(conn, latest["activity_urn"])
+    own = at_age(latest["activity_urn"])
+    current = own or post_summary.reading_of(readings.get(latest["activity_urn"]), "latest_reading")
 
-    usual_readings = [r for r in (_reading_at_age(conn, p["activity_urn"]) for p in earlier) if r]
+    usual_readings = [r for r in (at_age(p["activity_urn"]) for p in earlier) if r]
     comparison = None
     if own and len(usual_readings) >= MIN_COMPARISONS:
         comparison = {}
@@ -145,14 +134,23 @@ def _reply_to(conn) -> List[Dict[str, Any]]:
     # When an engagement happened is when the studio first saw it. last_seen_at
     # moves every time the post is reopened and the same comment read again,
     # which made a comment from 13 days ago read "JUST NOW" and jump the queue.
+    #
+    # The window is read through idx_interactions_engaged, and each row finds
+    # its lead by the leads primary key. Joined as l.id = i.lead_id, the
+    # INTEGER affinity of lead_interactions.lead_id made SQLite scan all
+    # 49,142 leads and probe each one's interactions: 424 ms for 9,780 rows.
+    # CAST(... AS TEXT) compares as text, which the key can serve, until the
+    # phase 3 rebuild gives the column its real type. The ORDER BY is the
+    # order that scan produced, so ties come out as they always did.
     rows = conn.execute(
         """
         SELECT i.lead_id, i.post_urn, i.comment_text, i.interaction_type,
                COALESCE(i.first_seen_at, i.interacted_at) AS engaged_at,
                COALESCE(i.last_seen_at, i.interacted_at) AS seen_at,
                COALESCE(l.full_name, l.name) AS name, l.headline, l.lead_status
-        FROM lead_interactions i JOIN leads l ON l.id = i.lead_id
+        FROM lead_interactions i JOIN leads l ON l.id = CAST(i.lead_id AS TEXT)
         WHERE COALESCE(i.first_seen_at, i.interacted_at) >= ?
+        ORDER BY l.rowid, i.interacted_at DESC, i.id
         """, (since,)).fetchall()
 
     people: Dict[str, Dict[str, Any]] = {}

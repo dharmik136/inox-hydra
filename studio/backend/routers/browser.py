@@ -5,6 +5,7 @@ Detects installed browsers, launches bridge instance with unpackaged extension,
 manages desktop shortcuts, clipboard paths, and autonomous history sync. Zero cloud egress.
 """
 
+import json
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -271,16 +272,48 @@ def get_activity_stream(limit: int = Query(25, ge=1)):
         # them. This was ORDER BY id, and a captured lead's id is a hash, so
         # the list was in no order and the people just captured could be
         # missing from it. Re-reading a comment does not move anyone up.
+        #
+        # Computing that for every lead took 0.4 s at 49,142 leads. Only two
+        # kinds of lead can be among the first `limit`: those met first by
+        # walking idx_interactions_engaged from the newest engagement, and
+        # those with no engagement at all, newest first. Both are gathered,
+        # with anyone tied at the edge, and the same ORDER BY ranks them.
+        candidates: List[str] = []
+        seen_leads, edge = set(), None
+        walk = conn.cursor()
+        for lead_id, engaged in walk.execute(
+                "SELECT l.id, COALESCE(i.first_seen_at, i.interacted_at) FROM lead_interactions i "
+                "JOIN leads l ON l.id = CAST(i.lead_id AS TEXT) "
+                "WHERE COALESCE(i.first_seen_at, i.interacted_at) IS NOT NULL "
+                "ORDER BY COALESCE(i.first_seen_at, i.interacted_at) DESC"):
+            if len(seen_leads) >= limit and engaged != edge:
+                break
+            if lead_id not in seen_leads:
+                seen_leads.add(lead_id)
+                candidates.append(lead_id)
+            edge = engaged
+        walk.close()
+        never = "id NOT IN (SELECT CAST(lead_id AS TEXT) FROM lead_interactions)"
+        candidates += [r[0] for r in cursor.execute(
+            f"""
+            SELECT id FROM leads
+            WHERE {never}
+              AND (created_at IS NULL OR created_at >= COALESCE(
+                  (SELECT created_at FROM leads WHERE {never} ORDER BY created_at DESC LIMIT 1 OFFSET ?), ''))
+            UNION
+            SELECT CAST(lead_id AS TEXT) FROM lead_interactions WHERE COALESCE(first_seen_at, interacted_at) IS NULL
+            """, (limit - 1,)).fetchall()]
         cursor.execute(
             """
             SELECT l.id, l.name, l.headline, l.company, l.engagement_type, l.icp_score, l.status, l.created_at
             FROM leads l
+            WHERE l.id IN (SELECT value FROM json_each(?))
             ORDER BY COALESCE(
                 (SELECT MAX(COALESCE(i.first_seen_at, i.interacted_at)) FROM lead_interactions i WHERE i.lead_id = l.id),
                 l.created_at) DESC, l.created_at DESC
             LIMIT ?
             """,
-            (limit,),
+            (json.dumps(candidates), limit),
         )
         recent_leads = [
             {
