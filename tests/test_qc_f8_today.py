@@ -143,10 +143,13 @@ def test_today_shows_a_due_post_and_i_posted_it_takes_it_off(studio_url):
             section = page.locator("section", has_text="Time to post this one.")
             expect(section).to_be_visible(timeout=10000)
             expect(section).to_contain_text("post it on LinkedIn")
-            section.get_by_role("button", name="Copy text").first.click()
+            # Other tests may leave due posts in the shared database, so the
+            # buttons are the ones on this post's own row.
+            row = section.locator("li", has_text="Time to post this one.")
+            row.get_by_role("button", name="Copy text").click()
             expect(section).to_contain_text("Copied")
             assert page.evaluate("() => navigator.clipboard.readText()") == "Time to post this one.\n\nBody."
-            section.get_by_role("button", name="I posted it").first.click()
+            row.get_by_role("button", name="I posted it").click()
             expect(page.get_by_text("Time to post this one.")).to_have_count(0, timeout=10000)
         finally:
             browser.close()

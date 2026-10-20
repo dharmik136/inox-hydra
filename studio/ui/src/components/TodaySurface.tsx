@@ -100,7 +100,8 @@ export function TodaySurface({
     setNote(null);
     try {
       await publishNow(postId);
-      setNote({ text: "Marked as published.", at: "due", error: false });
+      // Said at the top: with nothing left due, the due box goes.
+      setNote({ text: "Marked as published.", at: due.length > 1 ? "due" : "top", error: false });
       load();
     } catch (caught) {
       setNote({
@@ -115,6 +116,8 @@ export function TodaySurface({
 
   if (failed && !brief) return <Centered>TODAY IS UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!brief) return <Centered>LOADING TODAY</Centered>;
+  // Absent from a studio older than this screen; nothing is due then.
+  const due = brief.queue.due ?? [];
 
   return (
     <article className="mx-auto max-w-[72ch] px-8 py-8">
@@ -126,16 +129,16 @@ export function TodaySurface({
 
       {/* First, because it has a time on it. A queued post is not posted by
           the studio: at its time it waits here and on the Queue. */}
-      {brief.queue.due.length > 0 && (
+      {due.length > 0 && (
         <section className="mt-6 rounded-md border border-signal-orange p-4">
           <p className="studio-meta text-[10px] text-signal-orange-text">
-            {brief.queue.due.length === 1 ? "A POST IS DUE" : `${brief.queue.due.length} POSTS ARE DUE`}
+            {due.length === 1 ? "A POST IS DUE" : `${due.length} POSTS ARE DUE`}
           </p>
           <p className="mt-1.5 text-[14px] leading-snug text-ink-primary">
             Its time has come. Copy the text, post it on LinkedIn yourself, then press I posted it.
           </p>
           <ul className="mt-3 flex flex-col divide-y divide-edge border-y border-edge">
-            {brief.queue.due.map((post) => (
+            {due.map((post) => (
               <li key={post.post_id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2">
                 <span className="studio-meta shrink-0 text-[10px] text-signal-orange-text">
                   DUE {formatWhen(post.scheduled_for).toUpperCase()}
