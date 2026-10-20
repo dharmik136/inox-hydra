@@ -44,20 +44,62 @@ def test_an_oversized_payload_is_not_kept():
     finally:
         conn.close()
     assert len(payload) < 1024
-    assert json.loads(payload)["characters"] > 10 * 1024 * 1024
+    assert "ZZZZ" not in payload
     assert os.path.getsize(engine.db_path) - before < 1024 * 1024
 
 
-def test_a_normal_payload_is_kept_whole():
-    engine, buffer = _shard()
-    buffer.ingest("analytics_ingest", {"series": [{"date": "2026-10-20", "impressions": 120}]})
-    buffer.flush()
+def _last_payload(engine):
     conn = engine.get_connection()
     try:
-        payload = conn.execute("SELECT payload FROM telemetry_events ORDER BY id DESC LIMIT 1").fetchone()[0]
+        return json.loads(conn.execute("SELECT payload FROM telemetry_events ORDER BY id DESC LIMIT 1").fetchone()[0])
     finally:
         conn.close()
-    assert json.loads(payload)["series"][0]["impressions"] == 120
+
+
+def test_an_entry_keeps_the_payloads_shape_and_no_text_or_names():
+    """DATA-14: numbers and counts, never what anybody wrote or who they are."""
+    engine, buffer = _shard()
+    buffer.ingest("feed_updates_v2", {
+        "url": "https://www.linkedin.com/voyager/api/identity/profiles/asha-mehta-42/views?q=1",
+        "statusCode": 200,
+        "method": "get",
+        "posts": [{"content": "Asha Mehta wrote about layoffs at Acme", "impressions": 1250}],
+        "viewer_seniority": [{"label": "Chief Technology Officer", "percentage": 35.0}],
+        "author": "asha-mehta-42",
+        "Asha Mehta": 3,
+    })
+    buffer.flush()
+    kept = _last_payload(engine)
+    assert kept == {
+        "url": "https://www.linkedin.com/voyager/api/identity/profiles",
+        "statusCode": 200,
+        "method": "GET",
+        "counts": {"posts": 1, "viewer_seniority": 1},
+    }
+
+
+@pytest.mark.parametrize("url, shape", [
+    ("https://www.linkedin.com/in/asha-mehta-42/recent-activity/", "https://www.linkedin.com/in"),
+    ("https://www.linkedin.com/voyager/api/feed/updatesV2?q=x", "https://www.linkedin.com/voyager/api/feed/updatesV2"),
+    ("/voyager/api/graphql/urn:li:fsd_profile:ACoAAB12345/x", "/voyager/api/graphql/urn:li:<id>/x"),
+])
+def test_a_request_path_names_nobody(url, shape):
+    from studio.core.telemetry_shard import minimal_payload
+
+    assert minimal_payload({"url": url})["url"] == shape
+
+
+def test_forgetting_the_identity_clears_telemetry():
+    engine, buffer = _shard()
+    buffer.ingest("analytics_ingest", {"impressions": 5})
+    buffer.flush()
+    buffer.ingest("analytics_ingest", {"impressions": 6})
+    assert engine.get_status()["total_events"] > 0
+    res = TestClient(app_module.app).delete("/api/v1/identity")
+    assert res.status_code == 200, res.text
+    assert buffer.pending_count() == 0
+    buffer.flush()
+    assert engine.get_status()["total_events"] == 0
 
 
 def test_buffered_events_are_written_at_shutdown():

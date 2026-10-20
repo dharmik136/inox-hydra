@@ -1489,7 +1489,11 @@ def post_identity_reject():
 
 @app.delete("/api/v1/identity", tags=["Onboarding"])
 def delete_identity():
-    return onboarding.forget_identity()
+    result = onboarding.forget_identity()
+    # The telemetry shard is a separate file, which forgetting left alone [DATA-14].
+    if telemetry_buffer is not None:
+        telemetry_buffer.forget()
+    return result
 
 
 @app.post("/api/v1/self/posts/ingest", tags=["Onboarding"])
