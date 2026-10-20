@@ -30,8 +30,14 @@ GOOD_KEY = "sk-notarealkey-r7-good-0123456789"
 _LOOPBACK = ("127.", "::1", "localhost", "0.0.0.0")
 
 
+# Every non-loopback address something tried to reach, refused, since the
+# guard was last installed. A test asserts it stays empty.
+REFUSED = []
+
+
 def install_socket_guard(monkeypatch):
-    """Refuses every connection and name lookup that is not loopback."""
+    """Refuses every connection and name lookup that is not loopback, and records it in REFUSED."""
+    REFUSED.clear()
     real_connect = socket.socket.connect
     real_create = socket.create_connection
     real_getaddrinfo = socket.getaddrinfo
@@ -41,16 +47,19 @@ def install_socket_guard(monkeypatch):
 
     def guarded_connect(self, address):
         if self.family in (socket.AF_INET, socket.AF_INET6) and not host_of(address).startswith(_LOOPBACK):
+            REFUSED.append(host_of(address))
             raise ConnectionRefusedError(f"sandbox: outbound connection to {host_of(address)} refused")
         return real_connect(self, address)
 
     def guarded_create(address, *a, **k):
         if not host_of(address).startswith(_LOOPBACK):
+            REFUSED.append(host_of(address))
             raise ConnectionRefusedError(f"sandbox: outbound connection to {host_of(address)} refused")
         return real_create(address, *a, **k)
 
     def guarded_getaddrinfo(host, *a, **k):
         if host and not str(host).startswith(_LOOPBACK):
+            REFUSED.append(str(host))
             raise socket.gaierror(f"sandbox: name lookup for {host} refused")
         return real_getaddrinfo(host, *a, **k)
 
@@ -78,6 +87,9 @@ class FakeImageServer:
         # provider prefix -> (status, body bytes, content type), answered to
         # every request under that prefix instead of the normal answer.
         self.fail = {}
+        # provider prefix -> (status, Location), answered to every request
+        # under that prefix: a provider or web UI that redirects.
+        self.redirect = {}
         self.jpeg = picture()
         self.png = picture(fmt="PNG")
         self.server = None
@@ -119,6 +131,15 @@ class FakeImageServer:
                 except ValueError:
                     record["json"] = None
                 fake.requests.append(record)
+                if prefix in fake.redirect:
+                    status, location = fake.redirect[prefix]
+                    # "{path}" stands for the rest of the requested path and query.
+                    location = location.replace("{path}", "/" + rest + (f"?{parts.query}" if parts.query else ""))
+                    self.send_response(status)
+                    self.send_header("Location", location)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 if prefix in fake.fail:
                     status, body, ctype = fake.fail[prefix]
                     return self._answer(status, body, ctype)

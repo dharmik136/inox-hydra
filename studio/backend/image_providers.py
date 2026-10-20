@@ -39,7 +39,7 @@ import re
 import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 import requests
 
@@ -420,6 +420,15 @@ def _host(url: str) -> str:
         return ""
 
 
+# How many redirects within one address a request may follow.
+_MAX_SAME_ORIGIN_REDIRECTS = 3
+
+
+def _origin(url: str) -> Tuple[str, str]:
+    parts = urlsplit(url)
+    return parts.scheme.lower(), parts.netloc.rsplit("@", 1)[-1].lower()
+
+
 def _send(method: str, url: str, config: ImageProviderConfig, timeout: float, **kwargs) -> requests.Response:
     """
     One request to the provider, through the egress guard.
@@ -428,13 +437,42 @@ def _send(method: str, url: str, config: ImageProviderConfig, timeout: float, **
     Everything else, a web UI on another machine included, is the image
     category and can be refused, which raises EgressRefused before a socket
     opens.
+
+    Redirects are never followed to another address. requests follows them by
+    default, and the guard is asked about the first address only, so a web UI
+    on 127.0.0.1 that answered 307 had the prompt re-sent to whatever host its
+    Location named, under INOX_NO_EGRESS, while the Prompt tab said it stays
+    on this computer (R7 review). A cloud provider's redirect would have
+    carried the key in its header the same way. A redirect within the same
+    scheme, host and port goes nowhere new, so it is followed, a few times at
+    most.
     """
     if not (config.meta["kind"] == "local" and _egress.on_this_machine(url)):
         _egress.require(url, "image")
+    origin = _origin(url)
     try:
-        if method == "GET":
-            return requests.get(url, timeout=timeout, **kwargs)
-        return requests.post(url, timeout=timeout, **kwargs)
+        for _hop in range(_MAX_SAME_ORIGIN_REDIRECTS + 1):
+            if method == "GET":
+                response = requests.get(url, timeout=timeout, allow_redirects=False, **kwargs)
+            else:
+                response = requests.post(url, timeout=timeout, allow_redirects=False, **kwargs)
+            if not 300 <= response.status_code < 400:
+                return response
+            location = response.headers.get("Location") or ""
+            target = urljoin(url, location)
+            if not location or _origin(target) != origin:
+                where = _origin(target)[1] if location else "nowhere"
+                raise ImageProviderError(
+                    f"{config.name} answered with a redirect to {where} (HTTP {response.status_code}). "
+                    "The studio does not follow a redirect to another address, so nothing was sent there."
+                )
+            url = target
+            if response.status_code in (301, 302, 303):
+                # What browsers and requests do: the next request is a GET
+                # with no body.
+                method = "GET"
+                kwargs = {k: v for k, v in kwargs.items() if k not in ("json", "data", "files")}
+        raise ImageProviderError(f"{config.name} kept redirecting, so the studio stopped.")
     except requests.Timeout:
         raise ImageProviderError(f"{config.name} did not answer within {int(timeout)} seconds.")
     except requests.ConnectionError as error:
@@ -450,6 +488,9 @@ def _send(method: str, url: str, config: ImageProviderConfig, timeout: float, **
 
 def _short(error: Any) -> str:
     text = _egress.redact(error)
+    # The commonest failure offline, which otherwise reads as a library repr.
+    if "NameResolutionError" in text or "Failed to resolve" in text or "Name or service not known" in text:
+        return "its name could not be looked up. Check that this computer is online."
     # requests nests the reason several layers deep; the last clause says it.
     for marker in ("Caused by ", "Failed to establish a new connection: "):
         if marker in text:

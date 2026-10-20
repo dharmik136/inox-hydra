@@ -74,9 +74,11 @@ def studio(fake, monkeypatch):
     egress.reset_for_tests()
     fake.requests.clear()
     fake.fail.clear()
+    fake.redirect.clear()
     yield TestClient(app)
     clear()
     fake.fail.clear()
+    fake.redirect.clear()
 
 
 def _media_count():
