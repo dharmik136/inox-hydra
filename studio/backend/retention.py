@@ -35,6 +35,7 @@ Strict Invariants:
 - A number that was not measured is None, never 0.
 """
 
+import functools
 import json
 import logging
 import os
@@ -102,6 +103,26 @@ _JOB_SWITCH = {"readings": "readings", "reactions": "fold_reactions"}
 
 class RetentionRefused(ValueError):
     """A request this module will not carry out, with the reason to show."""
+
+
+# A cleanup the creator starts may run behind a checked backup made this long
+# ago, rather than write another full copy (about 190 MB at three years).
+REUSE_BACKUP_WITHIN = timedelta(minutes=60)
+
+
+def _taking_turns(func):
+    """
+    Runs a cleanup, a forget, a scrub or a compact only when no restore,
+    archive import or other backup or cleanup is running (support.FILES_LOCK).
+    """
+    @functools.wraps(func)
+    def turn(*args, **kwargs):
+        try:
+            with support.maintenance_turn():
+                return func(*args, **kwargs)
+        except support.MaintenanceBusy as busy:
+            raise RetentionRefused(f"Not now: {busy}. Nothing was changed; try again when it has finished.") from busy
+    return turn
 
 
 # ---------------------------------------------------------------------------
@@ -550,27 +571,33 @@ def folded_reactions() -> Dict[str, int]:
 
 
 def _backup_first(backup: Optional[str]) -> str:
-    """The verified backup a cleanup runs behind: the one given, or a new one."""
+    """
+    The verified backup a cleanup runs behind: the one given, else one made in
+    the last hour that holds the studio as it is now, else a new one, which
+    is then rotated with the rest so cleanups do not pile up full copies.
+    """
     if backup and os.path.exists(backup):
         return backup
-    return support.create_backup("pre_cleanup")
+    reused = support.reusable_backup(REUSE_BACKUP_WITHIN)
+    if reused:
+        return reused
+    made = support.create_backup("pre_cleanup")
+    support.rotate_backups()
+    return made
 
 
+@_taking_turns
 def run(job: str, backup: Optional[str] = None, confirmed: bool = True) -> Dict[str, Any]:
     """
     Runs one cleanup now, behind a verified backup, and logs it.
 
     For readings and reactions this is the creator confirming the preview, so
-    it also switches the rule on: from now on the daily run does it too.
+    it also switches the rule on: from now on the daily run does it too. With
+    nothing to remove, no backup is taken.
     """
     if job not in _RUNS:
         raise RetentionRefused(f"there is no cleanup called {job!r}")
     started = _now()
-    try:
-        backup = _backup_first(backup)
-    except Exception as error:
-        _log(job, started, "not run: the backup before it failed", detail={"error": str(error)})
-        raise RetentionRefused(f"Nothing was removed: the backup taken first failed ({error}).") from error
     switch = _JOB_SWITCH.get(job)
     if switch and confirmed:
         conn = get_db()
@@ -579,6 +606,14 @@ def run(job: str, backup: Optional[str] = None, confirmed: bool = True) -> Dict[
                 _write_setting(conn, RULES[switch]["key"], "on")
         finally:
             conn.close()
+    if not _PREVIEWS[job](rules())["rows"]:
+        _log(job, started, "nothing to do")
+        return {"job": job, "removed": 0, "backup": None, "free_bytes": sizes()["free_bytes"]}
+    try:
+        backup = _backup_first(backup)
+    except Exception as error:
+        _log(job, started, "not run: the backup before it failed", detail={"error": str(error)})
+        raise RetentionRefused(f"Nothing was removed: the backup taken first failed ({error}).") from error
     try:
         removed = _RUNS[job](rules())
     except Exception as error:
@@ -673,6 +708,7 @@ def _backup_disclosure(forgotten_at: datetime) -> Dict[str, Any]:
     }
 
 
+@_taking_turns
 def forget_leads(lead_ids: Any) -> Dict[str, Any]:
     """
     Forgets the chosen people from the review list, behind a verified backup.
@@ -694,7 +730,7 @@ def forget_leads(lead_ids: Any) -> Dict[str, Any]:
     if not doomed:
         return {"forgotten": 0, "kept_since": len(chosen), "backup": None, "backups": _backup_disclosure(started)}
     try:
-        backup = support.create_backup("pre_cleanup")
+        backup = _backup_first(None)
     except Exception as error:
         _log("forget_silent_leads", started, "not run: the backup before it failed", detail={"error": str(error)})
         raise RetentionRefused(f"Nobody was forgotten: the backup taken first failed ({error}).") from error
@@ -820,6 +856,7 @@ def _scrub_one(path: str, lead_ids: List[str], work: str) -> str:
     return "rewritten"
 
 
+@_taking_turns
 def scrub_backups() -> Dict[str, Any]:
     """
     Removes the people forgotten since the last scrub from every backup and
@@ -872,6 +909,7 @@ def leave_backups() -> Dict[str, Any]:
 # Compacting: offered, never forced
 # ---------------------------------------------------------------------------
 
+@_taking_turns
 def compact() -> Dict[str, Any]:
     """
     VACUUM, so the space freed by forgetting and by cleanups leaves the file,
@@ -940,12 +978,25 @@ def run_daily() -> Dict[str, Any]:
     A cleanup never runs without a verified backup behind it. When the daily
     backup fails, nothing is removed that day.
     """
-    report: Dict[str, Any] = {"backup": None, "jobs": {}}
+    try:
+        with support.maintenance_turn():
+            return _run_daily()
+    except support.MaintenanceBusy as busy:
+        _log("daily_backup", _now(), f"skipped: {busy}; tried again next hour")
+        return {"backup": None, "jobs": {}, "skipped": str(busy)}
+
+
+def _run_daily() -> Dict[str, Any]:
+    report: Dict[str, Any] = {"backup": None, "jobs": {}, "skipped": None}
     current = rules()
     backup_path = None
     if current["daily_backup"] == "on":
         started = _now()
         made = support.run_daily_backup()
+        if made is not None and made.get("skipped"):
+            _log("daily_backup", started, f"skipped: {made['skipped']}; tried again next hour")
+            report["skipped"] = made["skipped"]
+            return report
         if made is not None:
             _record_backup(made)
             _log("daily_backup", started, "done" if made["ok"] else "failed",
@@ -956,11 +1007,10 @@ def run_daily() -> Dict[str, Any]:
                 return report
             backup_path = made["archive"]
     if backup_path is None:
-        # No backup was due: the newest, made within the day, holds everything
-        # a cleanup can remove, all of which is at least 30 days old.
-        found = support._backups_by_kind()["zip"]
-        if found and datetime.now() - found[0][0] < support.DAILY_BACKUP_EVERY:
-            backup_path = found[0][1]
+        # No backup was due: a checked one from within the day holds everything
+        # a cleanup can remove, all of which is at least 30 days old, unless a
+        # restore came after it (reusable_backup leaves those out).
+        backup_path = support.reusable_backup(support.DAILY_BACKUP_EVERY)
     for job in JOBS:
         switch = _JOB_SWITCH.get(job)
         if switch and current[switch] != "on":
@@ -971,7 +1021,8 @@ def run_daily() -> Dict[str, Any]:
                 report["jobs"][job] = "nothing to do"
                 continue
             result = run(job, backup=backup_path, confirmed=False)
-            backup_path = os.path.join(paths.get_backups_dir(), result["backup"])
+            if result["backup"]:
+                backup_path = os.path.join(paths.get_backups_dir(), result["backup"])
             report["jobs"][job] = f"removed {result['removed']}"
         except Exception as error:
             logger.warning("Retention %s failed.", job, exc_info=True)
@@ -985,9 +1036,9 @@ def run_for_every_profile() -> List[Dict[str, Any]]:
     database is at this build's schema. Start-up brings every profile's
     database up to date; one that is not is left alone, never migrated here.
     """
-    # The suite starts the app many times; a backup appearing in a test's
-    # folder part way through would be this job, not the code under test.
-    if "PYTEST_CURRENT_TEST" in os.environ:
+    # Off only where INOX_SCHEDULED_MAINTENANCE says so (tests/conftest.py):
+    # an app started by a test would otherwise back up into that test's home.
+    if os.environ.get("INOX_SCHEDULED_MAINTENANCE") == "off":
         return []
     reports = []
     for profile_id in paths.profile_ids():

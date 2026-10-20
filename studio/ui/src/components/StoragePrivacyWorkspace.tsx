@@ -315,7 +315,9 @@ function Rules({
     void act(`run-${job}`, async () => {
       const done = await runRetention(job);
       setPreviews((current) => ({ ...current, [job]: undefined }));
-      return `Done: ${count(done.removed)} removed, after backing up to ${done.backup}.`;
+      return done.backup
+        ? `Done: ${count(done.removed)} removed, behind the checked backup ${done.backup}.`
+        : "Done: nothing to remove now, and the rule is on.";
     });
   }
 

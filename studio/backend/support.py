@@ -24,6 +24,7 @@ Strict Invariants:
 """
 
 import csv
+import functools
 import io
 import json
 import os
@@ -32,7 +33,9 @@ import re
 import shutil
 import sqlite3
 import sys
+import threading
 import zipfile
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -325,11 +328,15 @@ def _compact_copy(clean_label: str, stamp: str) -> Optional[str]:
 
 def _integrity_of(path: str) -> str:
     """PRAGMA integrity_check on a copy: "ok", or what SQLite found."""
-    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
-        rows = conn.execute("PRAGMA integrity_check").fetchall()
-    finally:
-        conn.close()
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        try:
+            rows = conn.execute("PRAGMA integrity_check").fetchall()
+        finally:
+            conn.close()
+    except sqlite3.DatabaseError as error:
+        # A copy too damaged to check is a copy that failed its check.
+        return str(error)
     verdict = "; ".join(str(r[0]) for r in rows[:5])
     return verdict or "no answer"
 
@@ -552,10 +559,21 @@ def _describe(entry: Optional[tuple]) -> Optional[Dict[str, Any]]:
     }
 
 
+def _dated_sensibly(entries: List[tuple]) -> List[tuple]:
+    """
+    Backups not dated in the future. One stamped years ahead (a wrong clock
+    once, a copy from another machine) used to count as made "within the
+    day" until that date, so no daily backup was made at all.
+    """
+    limit = datetime.now() + timedelta(minutes=5)
+    return [entry for entry in entries if entry[0] <= limit]
+
+
 def backup_schedule(enabled: bool) -> Dict[str, Any]:
     """The newest backup, when the next automatic one is due, and how many are kept."""
     found = _backups_by_kind()
-    newest = found["zip"][0] if found["zip"] else None
+    sensible = _dated_sensibly(found["zip"])
+    newest = sensible[0] if sensible else None
     next_due = None
     if enabled:
         due = (newest[0] + DAILY_BACKUP_EVERY) if newest else datetime.now()
@@ -583,16 +601,116 @@ def run_daily_backup(force: bool = False) -> Optional[Dict[str, Any]]:
     """
     if not _has_database():
         return None
-    found = _backups_by_kind()
-    if not force and found["zip"] and datetime.now() - found["zip"][0][0] < DAILY_BACKUP_EVERY:
-        return None
     at = datetime.now().isoformat(timespec="seconds")
     try:
-        archive = create_backup("daily")
-    except Exception as error:
-        return {"ok": False, "at": at, "archive": None, "bytes": None, "error": str(error), "rotation": None}
-    return {"ok": True, "at": at, "archive": archive, "bytes": os.path.getsize(archive), "error": None,
-            "rotation": rotate_backups()}
+        with maintenance_turn():
+            found = _dated_sensibly(_backups_by_kind()["zip"])
+            if not force and found and datetime.now() - found[0][0] < DAILY_BACKUP_EVERY:
+                return None
+            try:
+                archive = create_backup("daily")
+            except Exception as error:
+                return {"ok": False, "at": at, "archive": None, "bytes": None, "error": str(error),
+                        "rotation": None, "skipped": None}
+            return {"ok": True, "at": at, "archive": archive, "bytes": os.path.getsize(archive), "error": None,
+                    "rotation": rotate_backups(), "skipped": None}
+    except MaintenanceBusy as busy:
+        return {"ok": False, "at": at, "archive": None, "bytes": None, "error": None, "rotation": None,
+                "skipped": str(busy)}
+
+
+# ---------------------------------------------------------------------------
+# Taking turns: a restore, an archive import, and the studio's own backups
+# and cleanups never run at once
+# ---------------------------------------------------------------------------
+
+# Held by a restore while it swaps files, and by each backup run or cleanup.
+# Reentrant, so the daily run can hold it across its backup and its cleanups.
+FILES_LOCK = threading.RLock()
+# How long a restore waits for a backup or cleanup that is running to finish.
+RESTORE_WAIT_SECONDS = 300
+# A restore from the command line works in a .restore-* folder in the
+# profile home; one younger than this means a restore is under way there.
+RESTORE_STAGING_FRESH = timedelta(hours=2)
+
+
+class MaintenanceBusy(RuntimeError):
+    """A restore or an archive import is running; the job waits for its next turn."""
+
+
+def _other_work() -> Optional[str]:
+    try:
+        from . import archive_import
+    except ImportError:
+        import archive_import
+    if archive_import._BUSY.locked():
+        return "an archive import is running"
+    home = paths.get_profile_home()
+    try:
+        names = os.listdir(home)
+    except OSError:
+        names = []
+    for name in names:
+        full = os.path.join(home, name)
+        if name.startswith(".restore-") and os.path.isdir(full) and \
+                datetime.now() - datetime.fromtimestamp(os.path.getmtime(full)) < RESTORE_STAGING_FRESH:
+            return "a restore is in progress"
+    return None
+
+
+@contextmanager
+def maintenance_turn():
+    """
+    Holds FILES_LOCK for a backup run or a cleanup, or raises MaintenanceBusy
+    at once: the job does not wait, it says why and tries again next hour.
+    """
+    if not FILES_LOCK.acquire(blocking=False):
+        raise MaintenanceBusy("a restore, or another backup or cleanup, is running")
+    try:
+        reason = _other_work()
+        if reason:
+            raise MaintenanceBusy(reason)
+        yield
+    finally:
+        FILES_LOCK.release()
+
+
+def _waits_for_maintenance(func):
+    """A restore waits for a running backup or cleanup, then holds the others off."""
+    @functools.wraps(func)
+    def holding(*args, **kwargs):
+        if not FILES_LOCK.acquire(timeout=RESTORE_WAIT_SECONDS):
+            raise ValueError("A backup or cleanup is still running, so the restore did not start. "
+                             "Try again in a few minutes. Nothing was changed.")
+        try:
+            return func(*args, **kwargs)
+        finally:
+            FILES_LOCK.release()
+    return holding
+
+
+def reusable_backup(within: timedelta) -> Optional[str]:
+    """
+    The newest backup made within `within` that holds the studio as it is
+    now, so a cleanup can run behind it instead of writing another full copy:
+    checked when made, not dated in the future, not a restore's safety copy
+    and not older than the last restore (both hold a state that is gone).
+    """
+    found = _dated_sensibly(_backups_by_kind()["zip"])
+
+    def label(path: str) -> str:
+        return _ZIP_NAME.match(os.path.basename(path)).group("label")
+
+    restores = [made_at for made_at, path in found if label(path).startswith("pre_restore")]
+    last_restore = max(restores) if restores else None
+    for made_at, path in found:
+        if datetime.now() - made_at > within:
+            break
+        if label(path).startswith("pre_restore") or (last_restore and made_at <= last_restore):
+            continue
+        if ((_manifest_of(path).get("verified") or {}).get("integrity_check")) == "ok":
+            return path
+    return None
 
 
 SQLITE_HEADER = b"SQLite format 3\x00"
@@ -851,6 +969,7 @@ def _swap(plan: List[tuple], staging: str) -> None:
         raise RestoreFailed(f"The restore stopped part way ({error}). Everything it had changed was put back.") from error
 
 
+@_waits_for_maintenance
 def restore_backup(archive: str, take_safety_backup: bool = True, into_active_profile: bool = False) -> Dict[str, Any]:
     """
     Replaces current state with a backup's contents, all or nothing.

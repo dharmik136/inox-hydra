@@ -451,11 +451,13 @@ def test_forgotten_people_can_be_removed_from_backups_too(home):
     copy = migrations.backup_database("premigration")
     retention.forget_leads(["lead-silent"])
     held = [os.path.join(paths.get_backups_dir(), n) for n in os.listdir(paths.get_backups_dir())]
-    assert len(held) == 3
+    # The manual backup is minutes old and checked, so the forget ran behind it
+    # rather than writing another full copy.
+    assert len(held) == 2
 
     result = retention.scrub_backups()
 
-    assert result["failed"] == [] and result["rewritten"] == 3, result
+    assert result["failed"] == [] and result["rewritten"] == 2, result
     for path in held:
         if path.endswith(".zip"):
             with zipfile.ZipFile(path) as z:
@@ -575,3 +577,41 @@ def test_the_scheduled_job_is_registered_and_skips_under_the_suite(monkeypatch):
     func, trigger, kwargs = added["daily_backup_and_retention"]
     assert trigger == "interval" and kwargs["hours"] == 1
     assert func.__name__ == "run_for_every_profile"
+
+
+# ---------------------------------------------------------------------------
+# Review R4: no extra full backup per run
+# ---------------------------------------------------------------------------
+
+def _zips():
+    return sorted(n for n in os.listdir(paths.get_backups_dir()) if n.endswith(".zip"))
+
+
+def test_runs_within_the_hour_share_one_backup(home):
+    _telemetry([45, 46])
+    first = retention.run("telemetry")
+    _telemetry([47])
+    second = retention.run("telemetry")
+    assert first["backup"] == second["backup"]
+    assert len(_zips()) == 1
+
+
+def test_a_run_with_nothing_to_remove_takes_no_backup(home):
+    _set("retention_readings", "ask")
+    done = retention.run("readings")
+    assert done["removed"] == 0 and done["backup"] is None
+    assert _zips() == []
+    assert retention.rules()["readings"] == "on"
+
+
+def test_a_cleanup_backup_is_rotated_with_the_rest(home):
+    earlier = datetime.now() - timedelta(hours=2)
+    for minutes in (0, 10):
+        made = earlier + timedelta(minutes=minutes)
+        path = os.path.join(paths.get_backups_dir(), f"inox_backup_daily_{made.strftime('%Y%m%d_%H%M%S')}.zip")
+        open(path, "wb").close()
+    _telemetry([45])
+    if datetime.now().date() != earlier.date():
+        pytest.skip("the two hours before now cross midnight")
+    retention.run("telemetry")
+    assert len(_zips()) == 1, _zips()

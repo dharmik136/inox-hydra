@@ -222,3 +222,103 @@ def test_the_backup_snapshot_is_written_with_vacuum_into_not_left_behind(home):
     conn = sqlite3.connect(paths.get_db_path())
     assert conn.execute("PRAGMA quick_check").fetchone()[0] == "ok"
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Review R4: backups and cleanups take turns with restores and imports
+# ---------------------------------------------------------------------------
+
+def test_no_daily_backup_while_an_archive_import_runs(home):
+    from studio.backend import archive_import, retention
+
+    archive_import._BUSY.acquire()
+    try:
+        made = support.run_daily_backup()
+        report = retention.run_daily()
+    finally:
+        archive_import._BUSY.release()
+    assert made["skipped"] and "import" in made["skipped"]
+    assert report["skipped"] and report["jobs"] == {}
+    assert [n for n in os.listdir(paths.get_backups_dir()) if n.endswith(".zip")] == []
+    assert retention.recent_log()[0]["outcome"].startswith("skipped")
+
+
+def test_no_daily_backup_while_a_restore_runs_elsewhere(home):
+    from studio.backend import retention
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+
+    def restoring():
+        with support.FILES_LOCK:
+            started.set()
+            release.wait(5)
+
+    worker = threading.Thread(target=restoring)
+    worker.start()
+    started.wait(5)
+    try:
+        assert support.run_daily_backup()["skipped"]
+        with pytest.raises(retention.RetentionRefused, match="Nothing was changed"):
+            retention.run("telemetry")
+    finally:
+        release.set()
+        worker.join()
+
+
+def test_a_restore_staging_folder_from_another_process_holds_the_jobs(home):
+    staging = os.path.join(paths.get_profile_home(), ".restore-20261020_090000-123")
+    os.makedirs(staging)
+    assert "restore" in support.run_daily_backup()["skipped"]
+    old = (datetime.now() - timedelta(hours=3)).timestamp()
+    os.utime(staging, (old, old))
+    assert support.run_daily_backup()["ok"], "a stale staging folder blocked backups for good"
+
+
+def test_a_restore_waits_for_a_running_backup_then_goes_ahead(home, monkeypatch):
+    archive = support.create_backup("manual")
+    monkeypatch.setattr(support, "RESTORE_WAIT_SECONDS", 0.2)
+    import threading
+
+    started, release = threading.Event(), threading.Event()
+
+    def backing_up():
+        with support.maintenance_turn():
+            started.set()
+            release.wait(5)
+
+    worker = threading.Thread(target=backing_up)
+    worker.start()
+    started.wait(5)
+    try:
+        with pytest.raises(ValueError, match="Nothing was changed"):
+            support.restore_backup(archive, take_safety_backup=False)
+    finally:
+        release.set()
+        worker.join()
+    assert support.restore_backup(archive, take_safety_backup=False)["restored_from"] == archive
+
+
+def test_a_backup_stamped_in_the_future_does_not_stop_daily_backups(home):
+    future = datetime(2031, 1, 1, 9, 0, 0)
+    _touch_backup(f"inox_backup_daily_{_stamp(future)}.zip", future)
+    made = support.run_daily_backup()
+    assert made is not None and made["ok"]
+    assert datetime.fromisoformat(support.backup_schedule(enabled=True)["next_due"]) < datetime(2030, 1, 1)
+
+
+def test_an_integrity_check_that_errors_is_reported_as_a_failed_check(home, monkeypatch):
+    def broken(*args, **kwargs):
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    real = support._integrity_of
+    monkeypatch.setattr(support.sqlite3, "connect", broken)
+    assert "malformed" in real(paths.get_db_path())
+
+
+def test_a_restore_s_safety_copy_is_never_reused_as_the_backup_behind_a_cleanup(home):
+    support.create_backup("manual")
+    assert support.reusable_backup(timedelta(hours=1))
+    archive = support.create_backup("pre_restore")
+    assert support.reusable_backup(timedelta(hours=1)) is None
+    os.remove(archive)

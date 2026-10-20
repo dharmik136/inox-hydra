@@ -2696,7 +2696,7 @@ export async function previewRetention(job: RetentionJob): Promise<RetentionPrev
 }
 
 /** Backs up, then runs the cleanup, and keeps it on from now on. */
-export async function runRetention(job: RetentionJob): Promise<{ removed: number; backup: string; free_bytes: number }> {
+export async function runRetention(job: RetentionJob): Promise<{ removed: number; backup: string | null; free_bytes: number }> {
   return call(`/api/v1/storage/run/${job}`, { method: "POST" });
 }
 

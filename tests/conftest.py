@@ -43,6 +43,10 @@ if "INOX_HYDRA_HOME" not in os.environ:
 # cares about the un-seeded state must clear this and re-seed for itself.
 os.environ.setdefault("INOX_DEMO_DATA", "1")
 
+# The hourly backup and retention job never runs in the suite: an app started
+# by a test would otherwise write backups into that test's home (batch R4).
+os.environ.setdefault("INOX_SCHEDULED_MAINTENANCE", "off")
+
 
 def pytest_configure(config):
     """Initializes and seeds the sandboxed database before test execution."""
