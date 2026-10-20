@@ -478,12 +478,23 @@ def studio_url(port: int) -> str:
 
 
 def _can_bind(port: int) -> bool:
+    """
+    Whether the engine could listen here: bound exactly as uvicorn binds.
+
+    On Linux and macOS that is with SO_REUSEADDR (asyncio's default there),
+    which still refuses a port another socket is listening on but not one
+    whose only traces are TIME_WAIT connections. A plain bind refused those,
+    so stopping the studio and starting it again within a minute moved it off
+    8000 with "in use by another program". On Windows asyncio binds plainly,
+    so this does too: SO_REUSEADDR there would admit a second listener, and
+    SO_EXCLUSIVEADDRUSE refuses the lingering connections the same way.
+    """
     import socket
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        if is_windows() and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        if not is_windows():
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((STUDIO_HOST, port))
         return True
     except OSError:
