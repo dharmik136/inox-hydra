@@ -28,12 +28,12 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 try:
     from . import paths
-    from .database import get_db, init_db, SEEDED_DEMO_POST_IDS
+    from .database import get_db, init_db, SEEDED_DEMO_POST_IDS, DEFAULT_QUEUE_SLOTS, neutral_slot_label
     from .event_bus import event_bus
     from .migrations import SCHEMA_VERSION
 except ImportError:
     import paths
-    from database import get_db, init_db, SEEDED_DEMO_POST_IDS
+    from database import get_db, init_db, SEEDED_DEMO_POST_IDS, DEFAULT_QUEUE_SLOTS, neutral_slot_label
     from event_bus import event_bus
     from migrations import SCHEMA_VERSION
 
@@ -52,6 +52,12 @@ GRACE_WINDOW_MINUTES = 120.0
 # the post was due and how late it was noticed, for Today's notice.
 MISSED_POST_KEY = "missed_post:"
 ON_TIME_THRESHOLD_MINUTES = 5.0
+
+# The default week, as slots, for when the creator's cannot be read.
+DEFAULT_SLOTS = [
+    {"day_of_week": day, "time_slot": time, "label": neutral_slot_label(day, time), "is_active": 1}
+    for day, time in DEFAULT_QUEUE_SLOTS
+]
 
 DAY_NAMES = [
     "Monday", "Tuesday", "Wednesday", "Thursday",
@@ -157,7 +163,7 @@ class NativeScheduler:
                 conn.close()
 
     def get_active_slots(self) -> List[Dict[str, Any]]:
-        """Fetches active queue slots from SQLite with fallback to enterprise defaults."""
+        """The creator's active weekly slots, or the default week when they cannot be read."""
         conn = get_db()
         try:
             cursor = conn.cursor()
@@ -168,26 +174,12 @@ class NativeScheduler:
             rows = cursor.fetchall()
             slots = [dict(r) for r in rows]
         except Exception as e:
-            logger.warning("Could not query queue_slots: %s", e)
-            slots = []
+            # Only when the table cannot be read. An empty week is the
+            # creator's choice once slots can be edited, so it stays empty.
+            logger.warning("Could not query queue_slots, using the default week: %s", e)
+            slots = [dict(slot) for slot in DEFAULT_SLOTS]
         finally:
             conn.close()
-
-        if not slots:
-            # Standard enterprise default slots: Mon-Fri 08:30 & 17:30
-            slots = [
-                {"day_of_week": 0, "time_slot": "08:30", "label": "Monday Morning Kickoff", "is_active": 1},
-                {"day_of_week": 0, "time_slot": "17:30", "label": "Monday Evening Read", "is_active": 1},
-                {"day_of_week": 1, "time_slot": "08:30", "label": "Tuesday Peak Hook", "is_active": 1},
-                {"day_of_week": 1, "time_slot": "17:30", "label": "Tuesday Evening Thought", "is_active": 1},
-                {"day_of_week": 2, "time_slot": "08:30", "label": "Wednesday Midweek Deep-Dive", "is_active": 1},
-                {"day_of_week": 2, "time_slot": "17:30", "label": "Wednesday Systems Review", "is_active": 1},
-                {"day_of_week": 3, "time_slot": "08:30", "label": "Thursday Architecture Playbook", "is_active": 1},
-                {"day_of_week": 3, "time_slot": "17:30", "label": "Thursday Evening Pulse", "is_active": 1},
-                {"day_of_week": 4, "time_slot": "09:00", "label": "Friday Weekly Retrospective", "is_active": 1},
-                {"day_of_week": 5, "time_slot": "10:30", "label": "Saturday Deep Thinking", "is_active": 1},
-                {"day_of_week": 6, "time_slot": "11:00", "label": "Sunday Career & Strategy", "is_active": 1},
-            ]
 
         for s in slots:
             dow = s["day_of_week"]

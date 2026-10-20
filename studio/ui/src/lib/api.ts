@@ -2591,3 +2591,30 @@ export async function moveToNextSlot(postId: string): Promise<{ scheduled_for: s
     { method: "POST" },
   );
 }
+
+/** A weekly slot as the creator sets it: a day (0 is Monday), a local time and an optional name. */
+export interface SlotChange {
+  day_of_week?: number;
+  time_slot?: string;
+  label?: string;
+}
+
+/** Adds a weekly slot. With no name it is called after its day and part of the day. */
+export async function addQueueSlot(slot: SlotChange): Promise<QueueSlot> {
+  const data = await call<{ slot: QueueSlot }>("/api/queue/slots", { method: "POST", body: JSON.stringify(slot) });
+  return data.slot;
+}
+
+/** Changes a weekly slot's day, time or name. Posts already queued keep their times. */
+export async function updateQueueSlot(id: number, change: SlotChange): Promise<QueueSlot> {
+  const data = await call<{ slot: QueueSlot }>(`/api/queue/slots/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(change),
+  });
+  return data.slot;
+}
+
+/** Removes a weekly slot. Posts already queued for it keep their times. */
+export async function deleteQueueSlot(id: number): Promise<void> {
+  await call(`/api/queue/slots/${id}`, { method: "DELETE" });
+}

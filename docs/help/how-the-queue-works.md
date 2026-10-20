@@ -38,7 +38,18 @@ Slot times are in this computer's local time.
 | Saturday | 10:30 |
 | Sunday | 11:00 |
 
-Each has a label, such as Monday Morning Kickoff.
+Each is named after its day and the part of the day, such as Monday morning or Thursday evening. A studio that started with the older names (such as Monday Morning Kickoff) is renamed the same way, unless you had renamed a slot yourself.
+
+## Change your weekly slots
+
+1. Open **Queue** and find **Weekly slots**.
+2. Press **Change slots**. Each slot is listed with its day, its time and its name.
+3. To change a slot, edit its time or its name, then press **Save** on its row. A name left empty is filled in from the day and the part of the day.
+4. To remove a slot, press the bin button on its row.
+5. To add a slot, choose a day and a time at the bottom, type a name if you want one, and press **Add slot**. Two slots on the same day at the same time are refused.
+6. Press **Done**.
+
+Times are this computer's local time. Posts already queued keep their times when you change or remove a slot. **Queue it** in **Publish** then offers the next of your slots that is clear of the 12-hour rule. If you remove every slot, it offers a time 24 hours ahead instead.
 
 ## What happens at a scheduled time
 
@@ -79,7 +90,7 @@ While paused, the 30-second check skips every post and **Check for due posts** r
 
 ## What the Queue cannot do
 
-The Queue page has no controls to add, edit or remove slots, or to reschedule or unschedule a post. To fix the text of a queued post, press **Edit text** on its row. The post opens in the Composer with a line under the bar saying you are editing a queued post; **Save** asks before it changes that post's text, and the post stays at its time in the queue. **Save as a new draft** keeps the queued post as it was and saves your text as a separate draft.
+The Queue page has no control to reschedule or unschedule one queued post; a missed post can be moved with **Move to next slot** on **Today**. To fix the text of a queued post, press **Edit text** on its row. The post opens in the Composer with a line under the bar saying you are editing a queued post; **Save** asks before it changes that post's text, and the post stays at its time in the queue. **Save as a new draft** keeps the queued post as it was and saves your text as a separate draft.
 
 ## If it does not work
 

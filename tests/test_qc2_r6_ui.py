@@ -156,3 +156,50 @@ def test_post_now_copies_the_text_and_records_it_as_posted(context, studio_url):
     page.get_by_text("Copied and recorded as posted by you", exact=False).wait_for()
     assert page.evaluate("() => navigator.clipboard.readText()") == text
     assert [r["status"] for r in _rows()] == ["published"]
+
+
+# ---------------------------------------------------------------------------
+# D-4: the weekly slots can be changed from the Queue, and start with neutral names
+# ---------------------------------------------------------------------------
+
+def _slot_rows():
+    conn = get_db()
+    try:
+        return [dict(r) for r in conn.execute("SELECT * FROM queue_slots ORDER BY day_of_week, time_slot")]
+    finally:
+        conn.close()
+
+
+def test_the_week_can_be_changed_from_the_queue(context, studio_url):
+    before = _slot_rows()
+    try:
+        page = _open(context, studio_url, "queue")
+        week = page.locator("section[aria-labelledby=queue-week]")
+        assert "Architecture" not in week.inner_text() and "Monday morning" in week.inner_text()
+
+        week.get_by_role("button", name="Change slots").click()
+        week.get_by_label("Day of the new slot").select_option("5")
+        week.get_by_label("Time of the new slot").fill("07:45")
+        week.get_by_label("Name of the new slot").fill("Weekend early")
+        week.get_by_role("button", name="Add slot").click()
+        week.get_by_text("Added Saturday 07:45.").wait_for()
+        assert any(r["time_slot"] == "07:45" and r["label"] == "Weekend early" for r in _slot_rows())
+
+        week.get_by_label("Name of the Monday 08:30 slot").fill("Before work")
+        row = week.locator("li", has=page.get_by_label("Name of the Monday 08:30 slot"))
+        row.get_by_role("button", name="Save").click()
+        week.get_by_text("Saved the Monday slot.").wait_for()
+        assert any(r["time_slot"] == "08:30" and r["label"] == "Before work" for r in _slot_rows())
+
+        week.get_by_role("button", name="Remove the Saturday 07:45 slot").click()
+        week.get_by_text("Removed the Saturday 07:45 slot.").wait_for()
+        assert not any(r["time_slot"] == "07:45" for r in _slot_rows())
+    finally:
+        conn = get_db()
+        conn.execute("DELETE FROM queue_slots")
+        conn.executemany(
+            "INSERT INTO queue_slots (id, day_of_week, time_slot, label, is_active) VALUES (?,?,?,?,?)",
+            [(r["id"], r["day_of_week"], r["time_slot"], r["label"], r["is_active"]) for r in before],
+        )
+        conn.commit()
+        conn.close()
