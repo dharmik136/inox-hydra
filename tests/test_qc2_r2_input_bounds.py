@@ -25,7 +25,15 @@ def client():
     return TestClient(app, raise_server_exceptions=False)
 
 
-@pytest.mark.parametrize("status", ["banana", "x" * 100000, "DRAFT"])
+# The long one carries its own short name: pytest puts the whole parameter in
+# the test's id and then in PYTEST_CURRENT_TEST, and Windows refuses an
+# environment variable longer than 32767 characters, which errored the setup
+# and the teardown of this test there.
+@pytest.mark.parametrize("status", [
+    "banana",
+    pytest.param("x" * 100000, id="a hundred thousand letters"),
+    "DRAFT",
+])
 def test_an_unknown_post_status_is_refused(client, status):
     res = client.post("/api/posts", json={"content": "a post with a made-up status", "status": status})
     assert res.status_code == 422, res.text

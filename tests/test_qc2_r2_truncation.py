@@ -66,7 +66,11 @@ def test_a_code_point_cut_never_leaves_half_an_emoji():
       const now = Array.from(text).slice(0, 140).join("");
       process.stdout.write(JSON.stringify({old: JSON.stringify(old), now: JSON.stringify(now)}));
     """
-    out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True).stdout)
+    # encoding: node writes UTF-8, and text=True alone decodes it with the
+    # console code page. On Windows that is cp1252, which turned the rocket
+    # into the four letters of its UTF-8 bytes and failed the last assertion.
+    out = json.loads(subprocess.run(["node", "-e", script], capture_output=True, text=True,
+                                    encoding="utf-8", check=True).stdout)
     assert "\\ud83d" in out["old"]  # the defect, as it was
     assert "\\ud83d" not in out["now"]
     assert json.loads(out["now"]).endswith("\U0001F680")

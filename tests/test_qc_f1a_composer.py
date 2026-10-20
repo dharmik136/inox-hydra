@@ -296,18 +296,26 @@ def test_a_double_click_on_save_writes_one_draft(new_page, studio_url, api):
 
 
 def test_save_is_disabled_while_a_save_is_running(new_page, studio_url, api):
+    """
+    The save is held until this test lets it go, rather than for a fixed 800
+    ms. A slow machine spent that whole budget on the save itself and then had
+    nothing left to see SAVED within the assertion's five seconds, which is
+    how the Windows job failed here with the strip still reading SAVING.
+    """
     _clear_posts(api)
     page = new_page()
     editor = _open_composer(page, studio_url)
     editor.fill("Slow save")
     page.evaluate(
         """() => { const real = window.fetch;
+                   const held = new Promise((resolve) => { window.__letTheSaveGo = resolve; });
                    window.fetch = (input, init) => (init && init.method === 'POST' && String(input).endsWith('/api/posts'))
-                     ? new Promise(r => setTimeout(r, 800)).then(() => real(input, init)) : real(input, init); }"""
+                     ? held.then(() => real(input, init)) : real(input, init); }"""
     )
     save = page.get_by_role("button", name="Save", exact=True)
     save.click()
     expect(save).to_be_disabled()
+    page.evaluate("() => window.__letTheSaveGo()")
     expect(_status(page)).to_contain_text("SAVED")
     expect(save).to_be_enabled()
 
