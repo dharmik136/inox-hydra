@@ -180,54 +180,42 @@ def test_runtime_dependency_declared(manifest, package):
 
 def test_staged_docs_match_what_the_app_serves(staging_dir):
     """
-    tools/prepare_package.py must stage every document the Docs tab lists.
+    tools/prepare_package.py must stage every document a help section lists.
 
     This ran the staging tool's output rather than the tool, by looking for
     studio/docs on disk and skipping when it was absent. studio/docs is
     gitignored as a build artifact, so it existed only on a machine where
     somebody had run the tool by hand, and the test skipped on every CI run
-    from the day it was written. The check on what ships to a user was the one
-    not being made.
+    from the day it was written. It now stages into a temporary directory and
+    asserts on the result, so it runs everywhere and exercises the tool.
 
-    It now stages into a temporary directory and asserts on the result, so it
-    runs everywhere and exercises the tool instead of its leftovers.
+    What is staged changed in cycle 2 (D-5): a packaged copy carries the help
+    and none of the maintainer, quality or retired documents, so the module
+    manuals and ENTERPRISE_USAGE.md must now be absent.
     """
     result = prepare_package.stage_docs(staging_dir)
     staged = result["destination"]
 
     assert result["missing"] == [], (
-        f"prepare_package lists {result['missing']} as documents the app "
-        f"serves, and they are not in docs/. The build prints a warning and "
-        f"succeeds, so these would simply be absent from the shipped Docs tab."
+        f"a help section lists {result['missing']}, and they are not in docs/"
     )
-
-    modules_dir = os.path.join(staged, "modules")
-    assert os.path.isdir(modules_dir), "staged docs are missing the modules directory"
-    module_files = [f for f in os.listdir(modules_dir) if f.endswith(".md")]
-    assert len(module_files) >= 6, f"expected the 6 module docs, found {module_files}"
-    assert os.path.exists(os.path.join(staged, "ENTERPRISE_USAGE.md"))
+    assert prepare_package.missing_help(staged) == []
+    assert not os.path.exists(os.path.join(staged, "modules")), "the retired module manuals were staged"
+    assert not os.path.exists(os.path.join(staged, "ENTERPRISE_USAGE.md"))
 
 
 def test_every_document_the_app_serves_is_staged(staging_dir):
     """
-    The list in prepare_package and the files on disk have to agree in both
-    directions. The assertion above catches a listed file that is missing;
-    this one catches a served file that was never listed, which ships a build
-    whose Docs tab is missing a page nobody noticed writing.
+    Both directions: every article in docs/help reaches the staged tree, and
+    nothing that is not help does.
     """
     result = prepare_package.stage_docs(staging_dir)
 
-    for name in prepare_package.TOP_LEVEL_DOCS:
-        assert os.path.exists(os.path.join(result["destination"], name)), (
-            f"{name} is listed as served and did not reach the staged tree"
-        )
-
-    source_modules = os.path.join(REPO_ROOT, "docs", "modules")
-    expected = sorted(f for f in os.listdir(source_modules) if f.endswith(".md"))
-    assert result["modules"] == expected, (
-        f"staged modules {result['modules']} do not match docs/modules "
-        f"{expected}"
-    )
+    source_help = sorted("help/" + f for f in os.listdir(os.path.join(REPO_ROOT, "docs", "help"))
+                         if f.endswith(".md"))
+    assert [path for path in result["help"] if path.startswith("help/")] == source_help
+    others = [path for path in result["help"] if not path.startswith("help/")]
+    assert others == [path for path in prepare_package.served_help_paths() if not path.startswith("help/")]
 
 
 def test_a_missing_document_fails_the_build(monkeypatch, staging_dir):
@@ -238,8 +226,8 @@ def test_a_missing_document_fails_the_build(monkeypatch, staging_dir):
     """
     monkeypatch.setattr(
         prepare_package, "stage_docs",
-        lambda *a, **k: {"destination": staging_dir, "top_level": [], "modules": [],
-                         "missing": ["ENTERPRISE_USAGE.md"], "copied": 3},
+        lambda *a, **k: {"destination": staging_dir, "help": [],
+                         "missing": ["help/back-up-restore-and-export.md"], "copied": 3},
     )
     # Version propagation is a separate concern and must not decide this.
     monkeypatch.setattr(
@@ -268,13 +256,14 @@ def test_a_complete_tree_still_succeeds(monkeypatch, staging_dir):
 
 def test_a_document_that_disappears_is_reported_as_missing(monkeypatch, staging_dir):
     """
-    The real staging path, not a stubbed return. A name in the served list
+    The real staging path, not a stubbed return. A path a help section lists
     with no file behind it has to come back in `missing` rather than being
     skipped over silently.
     """
+    real = prepare_package.served_help_paths
     monkeypatch.setattr(
-        prepare_package, "TOP_LEVEL_DOCS",
-        prepare_package.TOP_LEVEL_DOCS + ["A_DOCUMENT_THAT_DOES_NOT_EXIST.md"],
+        prepare_package, "served_help_paths",
+        lambda: real() + ["A_DOCUMENT_THAT_DOES_NOT_EXIST.md"],
     )
 
     result = prepare_package.stage_docs(staging_dir)
@@ -284,26 +273,20 @@ def test_a_document_that_disappears_is_reported_as_missing(monkeypatch, staging_
 
 def test_every_document_the_docs_tab_lists_is_staged(staging_dir):
     """
-    app.py's DOCS_MODULES and prepare_package's lists are maintained
-    separately, and DOCS_MODULES is hardcoded rather than a directory scan, so
-    the tab renders an entry whether or not the file shipped. A drift between
-    the two therefore produces a visible row that answers 404 on click, which
-    is the worst version of this failure and the one no test covered.
+    A packaged copy's Docs screen is built from the staged tree. Every
+    document a listed section names must be on disk there, so no row renders
+    and answers 404 on click, and no section is listed empty.
     """
-    sys.path.insert(0, os.path.join(REPO_ROOT, "studio", "backend"))
-    import app as app_module
+    sys.path.insert(0, REPO_ROOT)
+    from studio.backend import docs_engine
 
     result = prepare_package.stage_docs(staging_dir)
     staged = result["destination"]
 
-    for module in app_module.DOCS_MODULES:
-        name = module["file"]
-        in_modules = os.path.exists(os.path.join(staged, "modules", name))
-        in_top = os.path.exists(os.path.join(staged, name))
-        assert in_modules or in_top, (
-            f"the Docs tab lists '{module['title']}' and nothing stages "
-            f"{name}, so the entry renders and the click answers 404"
-        )
+    for section in docs_engine.help_sections(staged):
+        assert section["count"] > 0, f"{section['title']} is listed with nothing in it"
+        for entry in section["documents"]:
+            assert os.path.isfile(os.path.join(staged, *entry["path"].split("/"))), entry["path"]
 
 
 def test_staging_twice_leaves_the_same_tree(staging_dir):
