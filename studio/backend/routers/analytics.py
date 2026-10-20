@@ -446,9 +446,14 @@ def get_posts_leaderboard():
             keys = [k for k in dict.fromkeys((post_id_str, post_urn)) if k]
             rows_for = [summary[k] for k in keys if k in summary and summary[k]["people"]]
             tied = [by_post_id[k] for k in keys if k in by_post_id]
+            # Reactions the retention job folded into counts (batch R4) were
+            # each one person on this post; they count among its leads. The
+            # fold keeps no names, so VIP and the average score are over the
+            # people still named.
+            folded = sum(summary[k]["folded_reactions"] for k in keys if k in summary)
             if len(rows_for) == 1 and not tied:
                 row = rows_for[0]
-                return {"total_leads": row["people"], "vip_leads": row["vip"],
+                return {"total_leads": row["people"] + folded, "vip_leads": row["vip"],
                         "avg_icp": round(row["icp_sum"] / row["icp_known"], 1) if row["icp_known"] else 0.0}
             brought = set().union(*tied, *(post_summary.lead_ids_of(row) for row in rows_for))
             missing = [lead for lead in brought if lead not in scores]
@@ -458,7 +463,7 @@ def get_posts_leaderboard():
                     scores[r["id"]] = r["icp_score"]
             known = [scores[lead] for lead in brought if scores.get(lead) is not None]
             return {
-                "total_leads": len(brought),
+                "total_leads": len(brought) + folded,
                 "vip_leads": sum(1 for score in known if score >= VIP_THRESHOLD),
                 "avg_icp": round(sum(known) / len(known), 1) if known else 0.0,
             }

@@ -507,6 +507,52 @@ def test_folded_reactions_still_count_on_the_posts_screen(home):
     assert sum(p["folded_reactions"] for p in after) == sum(n for urn, n in folded.items() if urn in home["own"]) > 300
 
 
+def test_analytics_and_topic_counts_are_the_same_after_a_fold(home):
+    """
+    Folding the only engagement of people who did nothing else leaves every
+    post's leads and every topic's people as they were.
+    """
+    import evidence_briefing
+    from fastapi.testclient import TestClient
+    import app as app_module
+    client = TestClient(app_module.app)
+
+    def counts():
+        posts = {p["id"]: p["attribution"]["total_leads"] for p in client.get("/api/analytics/posts").json()["posts"]}
+        topics = {t["topic"]: (t["people_engaged"], t["qualified_leads"])
+                  for t in evidence_briefing.get_topic_attribution_map()["topics"]}
+        return posts, topics
+
+    conn = _db()
+    try:
+        with conn:
+            for n in range(30):
+                conn.execute("INSERT INTO leads (id, name, full_name, status, lead_status, icp_score) "
+                             "VALUES (?, ?, ?, 'New Lead', 'NEW', 10)", (f"lead-once-{n}", f"Once {n}", f"Once {n}"))
+                conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, comment_key) "
+                             "VALUES (?, ?, 'LIKE', '')", (f"lead-once-{n}", home["own"][n % 20]))
+    finally:
+        conn.close()
+    before = counts()
+    conn = _db()
+    try:
+        conn.execute(REACTION_FOLDS)
+        ids = [r[0] for r in conn.execute("""
+            SELECT i.id FROM lead_interactions i JOIN leads l ON l.id = i.lead_id
+            WHERE i.interaction_type = 'LIKE' AND i.post_urn != '' AND COALESCE(l.icp_score, 0) < 60
+              AND COALESCE(l.lead_status, '') NOT IN ('ENGAGED', 'CONVERTED') AND l.status IN ('New Lead', 'Outreach Sent')
+              AND COALESCE(l.post_id, '') = ''
+              AND (SELECT COUNT(*) FROM lead_interactions o WHERE o.lead_id = i.lead_id) = 1""")]
+        assert len(ids) >= 3, "the history has people who only liked one post"
+        _fold(conn, ids)
+        _consistent(conn)
+    finally:
+        conn.close()
+    after = counts()
+    assert after == before
+    assert sum(after[0].values()) > 0
+
+
 def test_a_post_with_only_folded_reactions_keeps_its_row(home):
     import post_summary
     post = home["own"][5]

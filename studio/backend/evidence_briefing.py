@@ -268,10 +268,13 @@ def get_topic_attribution_map() -> Dict[str, Any]:
         entry["total_reactions"] += rxn
         # A person who engaged with two posts of a topic is one person for it.
         entry["people"].update(post_summary.lead_ids_of(summary.get(urn)))
+        # Reactions folded into counts by the retention job (batch R4) keep
+        # no names, so each counts as one more person engaged.
+        entry["folded"] = entry.get("folded", 0) + (summary.get(urn) or {}).get("folded_reactions", 0)
 
     for entry in topic_aggregates.values():
         people = entry.pop("people")
-        entry["people_engaged"] = len(people)
+        entry["people_engaged"] = len(people) + entry.pop("folded", 0)
         entry["qualified_leads"] = len(people & qualified_people)
 
     topic_list = sorted(
