@@ -72,8 +72,13 @@ def test_the_watermark_is_drawn_at_its_intended_size():
 
 
 @pytest.mark.parametrize("text", [HINDI, GUJARATI, "Hindi: पहले, Gujarati: પહેલાં"])
-def test_every_letter_of_an_indic_quote_has_a_glyph(text):
+def test_every_letter_of_an_indic_quote_has_a_glyph(text, monkeypatch):
     """No .notdef: each piece is drawn with a font whose cmap has every letter."""
+    # Which font carries a letter is the same question on every machine, but
+    # _runs refuses a complex script first where Pillow has no raqm layout
+    # (the python.org macOS build has none). The refusal has its own test
+    # below, so here the gate is held open and the font choice is what is read.
+    monkeypatch.setattr(quote_renderer, "shaping_available", lambda: True)
     runs = quote_renderer._runs(text, 41)
     assert "".join(piece for piece, _font in runs) == unicodedata.normalize("NFC", text)
     for piece, font in runs:
@@ -127,6 +132,10 @@ def test_without_shaping_a_hindi_quote_is_refused_not_misdrawn(monkeypatch):
 
 
 def test_a_letter_no_font_has_is_refused_by_name(monkeypatch):
+    # Tamil needs shaping too, and without raqm that refusal comes first and
+    # says something else true. The letter is what is being tested, so the
+    # shaping gate is held open, as it is on a machine that has raqm.
+    monkeypatch.setattr(quote_renderer, "shaping_available", lambda: True)
     monkeypatch.setattr(quote_renderer, "_FONTS", quote_renderer._FontChain())
     monkeypatch.setattr(quote_renderer, "_system_font_files", lambda: [])
     base = Image.new("RGB", (1080, 1080), CARD)
