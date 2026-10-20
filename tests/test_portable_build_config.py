@@ -116,10 +116,13 @@ def test_release_workflow_builds_on_windows(workflow):
     Compiled wheels are ABI specific. A Linux runner would produce a ZIP that
     cannot import pymupdf, pillow or pydantic-core, and would still pass.
     """
-    assert "runs-on: windows-latest" in workflow, (
+    # The build job only: the publish job (INS-04) builds nothing and runs on
+    # Linux, and the desktop installers are built by desktop.yml.
+    job = workflow[workflow.index("\n  build-portable:\n"):workflow.index("\n  build-desktop:\n")]
+    assert "runs-on: windows-latest" in job, (
         "the portable artifact must be built on a Windows runner"
     )
-    assert "ubuntu" not in workflow.lower(), "a Linux runner would produce a broken artifact"
+    assert "ubuntu" not in job.lower(), "a Linux runner would produce a broken artifact"
 
 
 def test_release_workflow_gates_on_verification(workflow):
