@@ -106,7 +106,11 @@ def _today_view():
     conn = database.get_db()
     try:
         urns = [r[0] for r in conn.execute("SELECT activity_urn FROM own_posts ORDER BY activity_urn")]
-        return {urn: (today._reading_at_age(conn, urn), today._latest_reading(conn, urn),
+        # Today reads each post's two-day and latest reading from the
+        # per-post summary (batch R3), which the roll-up's deletes mark stale.
+        readings = post_summary.current(conn, urns)
+        return {urn: (post_summary.reading_of(readings.get(urn), "reading_48h"),
+                      post_summary.reading_of(readings.get(urn), "latest_reading"),
                       bool(conn.execute("SELECT 1 FROM post_metric_observations WHERE activity_urn = ? "
                                         "AND source = 'post_analytics' LIMIT 1", (urn,)).fetchone()))
                 for urn in urns}
