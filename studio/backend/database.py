@@ -73,6 +73,8 @@ def get_db() -> sqlite3.Connection:
     # not work. Opening either succeeds or leaves nothing behind.
     try:
         conn.row_factory = sqlite3.Row
+        # A delete overwrites the freed bytes, so a forgotten person is gone from the file (DATA-01).
+        secure(conn)
         conn.execute("PRAGMA journal_mode = WAL;")
         conn.execute("PRAGMA synchronous = NORMAL;")
         conn.execute("PRAGMA busy_timeout = 5000;")
@@ -80,8 +82,6 @@ def get_db() -> sqlite3.Connection:
         conn.execute("PRAGMA cache_size = -64000;")
         conn.execute("PRAGMA temp_store = MEMORY;")
         conn.execute("PRAGMA mmap_size = 268435456;")
-        # A delete overwrites the freed bytes, so a forgotten person is gone from the file (DATA-01).
-        secure(conn)
     except BaseException:
         conn.close()
         raise
