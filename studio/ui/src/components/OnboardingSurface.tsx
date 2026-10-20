@@ -21,6 +21,8 @@ import {
   type SelfImport,
   type SelfImportKind,
 } from "@/lib/api";
+import { reportBridge } from "@/lib/bridgeState";
+import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { ArchiveImport, archiveStatus } from "./ArchiveImport";
 
@@ -61,7 +63,9 @@ export function OnboardingSurface() {
 
   const refresh = useCallback(async () => {
     try {
-      setState(await fetchOnboardingState());
+      const next = await fetchOnboardingState();
+      setState(next);
+      reportBridge(next.bridge.connected);
       setFailed(false);
     } catch {
       setFailed(true);
@@ -70,10 +74,10 @@ export function OnboardingSurface() {
 
   useEffect(() => {
     void refresh();
-    const timer = window.setInterval(() => void refresh(), POLL_MS);
     fetchBrowserBridge().then(setBridge).catch(() => setBridge({ browsers: [], extension_path: "" }));
-    return () => window.clearInterval(timer);
   }, [refresh]);
+  // Every POLL_MS while the window is in view; a hidden one is not polled.
+  useRefresh(refresh, POLL_MS);
 
   // The browser that carries the extension, if any. "auto" lets the backend
   // pick, which it does by the same measured rule the Leads screen uses.

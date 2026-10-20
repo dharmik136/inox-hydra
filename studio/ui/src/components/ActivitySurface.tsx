@@ -16,6 +16,7 @@ import {
   type ActivityStreamData,
 } from "@/lib/api";
 import { importEnding } from "@/lib/importOutcome";
+import { reportBridge } from "@/lib/bridgeState";
 import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 
@@ -54,6 +55,7 @@ export function ActivitySurface({
     try {
       const result = await fetchActivityStream(50);
       setStream(result);
+      reportBridge(result.summary.bridge_connected);
       setLoadedAt(new Date());
       setFailed(false);
     } catch {

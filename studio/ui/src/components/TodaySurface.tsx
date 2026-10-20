@@ -11,6 +11,7 @@ import {
   type TodayLatestPost,
   type TodayPerson,
 } from "@/lib/api";
+import { reportBridge } from "@/lib/bridgeState";
 import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 
@@ -46,6 +47,7 @@ export function TodaySurface({
     fetchToday()
       .then((result) => {
         setBrief(result);
+        reportBridge(result.freshness.bridge.connected);
         setFailed(false);
       })
       .catch(() => setFailed(true));

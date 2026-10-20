@@ -43,6 +43,8 @@ import {
 import type { SearchFocus } from "@/lib/search";
 import { measurableLength, measurableWordCount, openingEnd, storedLength, swapOpening } from "@/lib/text";
 import { DOCKED_INSPECTOR_QUERY, useMediaQuery } from "@/lib/viewport";
+import { onBridgeReport, reportBridge } from "@/lib/bridgeState";
+import { useRefresh } from "@/lib/refresh";
 import { confirmLeaving, registerUnsavedWork } from "@/lib/unsaved";
 
 /** Average adult reading speed. Used for an estimate that is labelled as one. */
@@ -110,6 +112,12 @@ export default function App() {
   const [active, setActive] = useState<SectionId>(linked.current ?? "composer");
   const activeRef = useRef(active);
   activeRef.current = active;
+  // Opened without an address, the first screen is Setup or Today, and which
+  // one is not known until the studio says whether it knows who you are.
+  // The Composer was drawn in the meantime, for one frame, with its draft,
+  // templates and profile fetched, and then replaced. Until the answer, or a
+  // move the creator makes first, the shell is drawn without a screen.
+  const [choosingHome, setChoosingHome] = useState(!linked.current);
 
   /**
    * Moves to another screen, the one way every control and link does.
@@ -119,6 +127,7 @@ export default function App() {
    * caller that has already asked. Returns whether the move happened.
    */
   const navigate = useCallback((next: SectionId, confirmed = false): boolean => {
+    setChoosingHome(false);
     if (next === activeRef.current) return true;
     if (!confirmed && !confirmLeaving(activeRef.current)) return false;
     setActive(next);
@@ -133,6 +142,7 @@ export default function App() {
     if (!linked.current) writeAddress(activeRef.current, true);
     const onPop = () => {
       const target = sectionFromAddress(window.location.hash) ?? "composer";
+      setChoosingHome(false);
       if (target === activeRef.current) return;
       if (!confirmLeaving(activeRef.current)) {
         writeAddress(activeRef.current, false);
@@ -237,10 +247,32 @@ export default function App() {
   // about the creator until it knows who they are. Asked once. Moving
   // elsewhere before the answer arrives wins over it, so a creator who clicks
   // straight to the composer is not pulled back.
+  // Whether the bridge has been heard from lately, for the mark beside
+  // Activity. That mark used to pulse green on every screen whatever the
+  // bridge was doing, including on Setup beside "Not seen yet". It shows what
+  // the last screen to read the bridge's state was told (Today, Setup and
+  // Activity report it), so it cannot disagree with the screen under it, and
+  // reads that state itself only when nothing has for a minute, since the
+  // server calls the bridge connected for 150 seconds after it last
+  // reported. Null until known, and then nothing is claimed.
+  const [bridgeConnected, setBridgeConnected] = useState<boolean | null>(null);
+  const bridgeReadAt = useRef(0);
+  useEffect(
+    () =>
+      onBridgeReport((connected) => {
+        bridgeReadAt.current = Date.now();
+        setBridgeConnected(connected);
+      }),
+    [],
+  );
+
   useEffect(() => {
     let live = true;
     fetchOnboardingState()
       .then((state) => {
+        // The same answer gives the header its first reading of the bridge,
+        // which it used to ask for a second time a moment later.
+        reportBridge(state.bridge.connected);
         // Setup until the studio knows who you are, Today afterwards. Not
         // when the studio was opened on a screen's address, and replacing
         // the address rather than adding one, so Back does not return to a
@@ -251,34 +283,27 @@ export default function App() {
           writeAddress(home, true);
         }
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => live && setChoosingHome(false));
     return () => {
       live = false;
     };
   }, []);
 
-  // Whether the bridge has been heard from lately, for the mark beside
-  // Activity. That mark used to pulse green on every screen whatever the
-  // bridge was doing, including on Setup beside "Not seen yet". Read from the
-  // state Setup shows, again each minute while the header is on screen, since
-  // the server calls the bridge connected for 150 seconds after it last
-  // reported. Null until known, and then nothing is claimed.
-  const [bridgeConnected, setBridgeConnected] = useState<boolean | null>(null);
   const showsHeader = active !== "composer";
+  const showsHeaderRef = useRef(showsHeader);
+  showsHeaderRef.current = showsHeader;
+  const readBridge = useCallback(() => {
+    if (!showsHeaderRef.current || Date.now() - bridgeReadAt.current < 50_000) return;
+    bridgeReadAt.current = Date.now();
+    return fetchOnboardingState()
+      .then((state) => reportBridge(state.bridge.connected))
+      .catch(() => setBridgeConnected(null));
+  }, []);
   useEffect(() => {
-    if (!showsHeader) return;
-    let live = true;
-    const read = () =>
-      fetchOnboardingState()
-        .then((state) => live && setBridgeConnected(state.bridge.connected))
-        .catch(() => live && setBridgeConnected(null));
-    void read();
-    const timer = window.setInterval(read, 60_000);
-    return () => {
-      live = false;
-      window.clearInterval(timer);
-    };
-  }, [showsHeader]);
+    if (showsHeader) void readBridge();
+  }, [showsHeader, readBridge]);
+  useRefresh(readBridge, 60_000);
 
   const sections = useMemo(
     () => STUDIO_SECTIONS.filter((section) => section.id !== "devtools" || devMode),
@@ -693,6 +718,10 @@ export default function App() {
 
       <div className="relative flex min-w-0 flex-1 flex-col">
         <StudioStatusBanner />
+        {choosingHome ? (
+          <main className="min-h-0 flex-1" aria-busy="true" />
+        ) : (
+        <>
         {/* The context bar is about the document being written. On a surface
             that has no document it reported "0 chars, 0% of fold" beside a
             Save button with nothing to save, which is telemetry about nothing.
@@ -926,6 +955,8 @@ export default function App() {
             onClose={() => setTrayOpen(false)}
           />
         </div>
+        </>
+        )}
       </div>
 
       <PublishDialog
