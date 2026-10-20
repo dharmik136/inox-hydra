@@ -62,7 +62,7 @@ If someone asks you to delete what you hold about them, or the studio captured t
 
 ## Draft a message
 
-1. In **THE POST THEY ENGAGED WITH**, you can type the subject of the post. The box is optional. Left blank, the draft says only "my recent post". The studio does not know which post it was.
+1. In **THE POST THEY ENGAGED WITH**, you can type the subject of the post. The box is optional. When the dossier shows which of your posts they engaged with (**ON YOUR POST**), the box names that post, and left blank the draft quotes the post's first sentence: the one their comment was on, or else the latest of yours they reacted to. When the studio does not hold the post, the draft says only "my recent post".
 2. To offer them something, type what it is in **WHAT YOU WOULD SHARE WITH THEM**, for example "the checklist I use for orders".
 3. Click a style: **Peer question**, **Suggest a call**, **Offer something** or **Reply to their comment**.
 4. Read the draft. Its label says which control wrote it.
@@ -77,7 +77,7 @@ If someone asks you to delete what you hold about them, or the studio captured t
 
 The drafts use only the person's record (first name, company, how they engaged, their comment) and what you type in the two boxes. They say nothing about your work, your company or your background, because the studio does not know it. If a comment contains a question, **Reply to their comment** says it saw their question instead of thanking them for the comment. Read every draft before sending it.
 
-If the topic box is empty, the openers name no subject: **Peer question** and **Offer something** say only "my recent post", and **Suggest a call** says only "my post". **Reply to their comment** writes nothing until you fill in the box.
+If the topic box is empty and the studio does not hold the post they engaged with, the openers name no subject: **Peer question** and **Offer something** say only "my recent post", and **Suggest a call** says only "my post". **Reply to their comment** then writes nothing until you fill in the box.
 
 ## What happens
 
@@ -95,6 +95,6 @@ Click **CSV** above the stream to download every lead as `linkedin_studio_crm_le
 | DOSSIER UNAVAILABLE | That person's record could not be loaded. |
 | **Reply to their comment** is greyed out | Hover it: "This lead has left no comment to reply to". Use one of the other three. |
 | **Offer something** is greyed out | Hover it: "Say what you would share with them, above". Type it in the share box. |
-| "Say which post they commented on, above, and a reply can be drafted." | **Reply to their comment** needs the topic box. Type the subject of the post and press it again. |
+| "Say which post they commented on, above, and a reply can be drafted." | The studio does not hold the post they commented on, so **Reply to their comment** needs the topic box. Type the subject of the post and press it again. |
 | "Lead not found" | The lead no longer exists. Reopen **Leads**. |
 | "The removal was refused." or another message under **Remove these** | The deletion did not run. Nothing was removed. Reopen **Leads** and try again. |

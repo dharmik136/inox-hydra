@@ -344,7 +344,16 @@ function Dossier({
   const suggested = interactions.find((entry) => entry.suggested_dm_reply)?.suggested_dm_reply ?? null;
   // A DM is drafted from something the lead actually said, so without a
   // comment there is nothing to draft from and the control says so.
-  const latestComment = interactions.find((entry) => entry.comment_text)?.comment_text ?? null;
+  const commented = interactions.find((entry) => entry.comment_text) ?? null;
+  const latestComment = commented?.comment_text ?? null;
+  // The post they engaged with, when the studio holds it: the one the comment
+  // was on, else the latest of yours they reacted to. The page shows it
+  // ("ON YOUR POST: ..."), and the reply used to ask the creator to type it
+  // again before it would draft anything.
+  const knownPost =
+    postNamed(commented?.post_origin === "yours" ? commented.post_excerpt : null) ??
+    postNamed(interactions.find((entry) => entry.post_origin === "yours" && entry.post_excerpt)?.post_excerpt);
+  const aboutPost = topic.trim() || knownPost || "";
 
   // Left aligned against the stream rather than centred in the leftover space,
   // which on a wide window opens a gap between the two halves and makes the
@@ -530,17 +539,22 @@ function Dossier({
           Nothing is sent from here; LinkedIn DMs are not something this studio can do on your behalf.
         </p>
 
-        {/* The template writes "my recent post on ...", and the studio does not
-            know which post they engaged with, so it guesses a subject. A
-            creator whose work is about something else would send a draft that
-            names the wrong topic, which is worth one input to avoid. */}
+        {/* The template writes "my recent post on ...". When the studio
+            holds the post they engaged with, the draft names that post unless
+            the creator types a subject here; when it does not, it never
+            guesses one, because a draft that names the wrong topic is worse
+            than one that says "my recent post". */}
         <label className="mb-3 block">
           <span className="studio-meta text-[10px] text-ink-muted">THE POST THEY ENGAGED WITH</span>
           <input
             type="text"
             value={topic}
             onChange={(event) => setTopic(event.target.value)}
-            placeholder="Optional. Left blank, the draft says only “my recent post”"
+            placeholder={
+              knownPost
+                ? `Optional. Left blank, the draft names the post they engaged with: ${knownPost}`
+                : "Optional. Left blank, the draft says only “my recent post”"
+            }
             className="mt-1 w-full rounded-md border border-edge bg-ink px-2.5 py-1.5 text-[13px] text-ink-primary placeholder:text-ink-muted focus:border-edge-strong focus:outline-none"
           />
         </label>
@@ -567,7 +581,7 @@ function Dossier({
               pending={drafting === style.id}
               disabled={drafting !== null}
               onPress={() =>
-                void draftWith(style.id, style.label, () => fetchLeadDmScript(lead.id, style.id, topic))
+                void draftWith(style.id, style.label, () => fetchLeadDmScript(lead.id, style.id, aboutPost))
               }
             />
           ))}
@@ -577,7 +591,7 @@ function Dossier({
             disabled={drafting !== null || !offer.trim()}
             hint={offer.trim() ? undefined : "Say what you would share with them, above"}
             onPress={() =>
-              void draftWith("offer", "Offer something", () => fetchLeadOfferDraft(lead.id, offer, topic))
+              void draftWith("offer", "Offer something", () => fetchLeadOfferDraft(lead.id, offer, aboutPost))
             }
           />
           <DraftButton
@@ -587,7 +601,7 @@ function Dossier({
             hint={latestComment ? undefined : "This lead has left no comment to reply to"}
             onPress={() =>
               void draftWith("reply", "Reply to their comment", () =>
-                generateLeadDm(lead.name, latestComment as string, topic || undefined),
+                generateLeadDm(lead.name, latestComment as string, aboutPost || undefined),
               )
             }
           />
@@ -646,6 +660,24 @@ function Dossier({
       <ForgetLead lead={lead} onForgotten={() => onForgotten(lead.name)} />
     </article>
   );
+}
+
+/**
+ * A post, named the way a drafted message can quote it: its first sentence,
+ * at most 80 characters of whole words, in quotation marks, without the
+ * closing stop the template adds itself. Null when there is no text.
+ */
+function postNamed(excerpt: string | null | undefined): string | null {
+  const text = (excerpt ?? "").trim();
+  if (!text) return null;
+  const sentence = (text.match(/^.+?[.!?](?=\s|$)/)?.[0] ?? text).replace(/[.!?:]+$/, "");
+  let named = "";
+  for (const word of sentence.split(/\s+/)) {
+    if (`${named} ${word}`.trim().length > 80) break;
+    named = `${named} ${word}`.trim();
+  }
+  named = named || sentence.slice(0, 80);
+  return named ? `“${named}”` : null;
 }
 
 /**
