@@ -11,6 +11,7 @@ import {
   type TodayLatestPost,
   type TodayPerson,
 } from "@/lib/api";
+import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 
 /**
@@ -50,12 +51,11 @@ export function TodaySurface({
       .catch(() => setFailed(true));
   }, []);
 
-  useEffect(() => {
-    load();
-    // Captures arrive while this screen is open, from the other window.
-    const timer = window.setInterval(load, 30000);
-    return () => window.clearInterval(timer);
-  }, [load]);
+  useEffect(load, [load]);
+  // Captures arrive while this screen is open, from the other window. Read
+  // again every 30 seconds while the window is in view (a hidden one is not
+  // polled), on coming back to it, and when the studio is back after an outage.
+  useRefresh(load, 30000);
 
   async function open(url: string, at: "top" | "latest" = "top") {
     setOpening(url);

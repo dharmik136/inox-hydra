@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Activity, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
 import { fetchPostsInsights, launchBridge, type PostInsight, type PostsInsights } from "@/lib/api";
+import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 
@@ -26,11 +27,24 @@ export function PostsSurface({
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
 
+  const load = useCallback(
+    () =>
+      fetchPostsInsights()
+        .then((result) => {
+          setData(result);
+          setFailed(false);
+        })
+        .catch(() => setFailed(true)),
+    [],
+  );
   useEffect(() => {
-    fetchPostsInsights().then(setData).catch(() => setFailed(true));
-  }, []);
+    void load();
+  }, [load]);
+  // Figures the bridge read from the other window appear on coming back to
+  // this one, and a list that failed in an outage returns by itself.
+  useRefresh(load);
 
-  if (failed) return <Centered>POSTS ARE UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
+  if (failed && !data) return <Centered>POSTS ARE UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!data) return <Centered>LOADING YOUR POSTS</Centered>;
   if (!data.posts.length) {
     return (

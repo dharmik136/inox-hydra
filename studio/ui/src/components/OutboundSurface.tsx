@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchOutboundInsights, type OutboundInsights } from "@/lib/api";
+import { useStudioBack } from "@/lib/refresh";
 import { EmptySurface } from "./EmptySurface";
 
 /**
@@ -16,12 +17,20 @@ import { EmptySurface } from "./EmptySurface";
 export function OutboundSurface() {
   const [data, setData] = useState<OutboundInsights | null>(null);
   const [failed, setFailed] = useState(false);
+  // Read again when the studio answers after an outage, so a screen that
+  // failed while it was down does not stay failed once it is back.
+  const back = useStudioBack();
 
   useEffect(() => {
-    fetchOutboundInsights().then(setData).catch(() => setFailed(true));
-  }, []);
+    fetchOutboundInsights()
+      .then((result) => {
+        setData(result);
+        setFailed(false);
+      })
+      .catch(() => setFailed(true));
+  }, [back]);
 
-  if (failed) return <Centered>OUTBOUND IS UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
+  if (failed && !data) return <Centered>OUTBOUND IS UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!data) return <Centered>LOADING YOUR ACTIVITY</Centered>;
   const { totals, coverage } = data;
   if (!data.authors.length) {

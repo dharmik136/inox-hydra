@@ -11,6 +11,7 @@ import {
   type ContrastFinding,
   type TopicAttributionInsights,
 } from "@/lib/api";
+import { useStudioBack } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 
@@ -44,6 +45,9 @@ export function PatternsSurface() {
   const [contrasts, setContrasts] = useState<ContrastInsights | null>(null);
   const [attribution, setAttribution] = useState<TopicAttributionInsights | null>(null);
   const [failed, setFailed] = useState(false);
+  // Read again when the studio answers after an outage, so a screen that
+  // failed while it was down does not stay failed once it is back.
+  const back = useStudioBack();
 
   useEffect(() => {
     Promise.all([
@@ -57,11 +61,12 @@ export function PatternsSurface() {
         setCadence(c);
         if (co) setContrasts(co);
         if (a) setAttribution(a);
+        setFailed(false);
       })
       .catch(() => setFailed(true));
-  }, []);
+  }, [back]);
 
-  if (failed) return <Centered>PATTERNS ARE UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
+  if (failed && !patterns) return <Centered>PATTERNS ARE UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!patterns || !cadence) return <Centered>LOADING PATTERNS</Centered>;
   if (!cadence.posts) {
     return (

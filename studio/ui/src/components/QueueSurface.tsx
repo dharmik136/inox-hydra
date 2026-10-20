@@ -12,6 +12,7 @@ import {
   type QueueSlot,
   type ScheduledPost,
 } from "@/lib/api";
+import { useRefresh } from "@/lib/refresh";
 import { formatLocal } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -58,6 +59,10 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
   useEffect(() => {
     void load();
   }, [load]);
+  // "When a queued post's time comes, it moves to Due below": only if the
+  // screen reads again, which it did not while open. Every 30 seconds while
+  // in view, on coming back to the window, and after an outage.
+  useRefresh(load, 30000);
 
   async function onTogglePause() {
     if (!health) return;
@@ -133,7 +138,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
     }
   }
 
-  if (failed) return <Centered>QUEUE UNAVAILABLE</Centered>;
+  if (failed && !slots) return <Centered>QUEUE UNAVAILABLE</Centered>;
   if (!slots || !health) return <Centered>LOADING QUEUE</Centered>;
 
   const byDay = DAYS.map((_, index) => slots.filter((slot) => slot.day_of_week === index));

@@ -16,6 +16,7 @@ import {
   type ActivityStreamData,
 } from "@/lib/api";
 import { importEnding } from "@/lib/importOutcome";
+import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 
 function ago(iso: string): string {
@@ -66,13 +67,11 @@ export function ActivitySurface({
     loadData();
   }, [loadData]);
 
-  useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = window.setInterval(() => {
-      loadData();
-    }, 2500);
-    return () => window.clearInterval(interval);
-  }, [autoRefresh, loadData]);
+  // Every 2.5 seconds while auto refresh is on and the window is in view. It
+  // used to poll a hidden tab at the same rate for as long as it stayed open,
+  // the largest steady load the interface put on the database while the
+  // bridge was writing. Also read on coming back, and after an outage.
+  useRefresh(loadData, autoRefresh ? 2500 : undefined);
 
   async function handleSyncAll() {
     setSyncing(true);

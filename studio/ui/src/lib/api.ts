@@ -2564,3 +2564,25 @@ export async function dismissDemoCleanupNotice(): Promise<boolean> {
   const res = await call<{ dismissed: boolean }>("/api/v1/today/demo-cleanup-notice/dismiss", { method: "POST" });
   return res.dismissed;
 }
+
+/**
+ * Calls the listener each time the studio answers again after this window
+ * could not reach it. Returns the unsubscribe.
+ *
+ * The banner said "this line goes away by itself when it is" back, and it
+ * did, while the screen under it kept its "could not be read" until the
+ * creator moved away and back: nothing told a screen that the studio had
+ * returned. A screen that subscribes reads its data again. A window left on
+ * another profile has not come back, so that does not count.
+ */
+export function onStudioBack(listener: () => void): () => void {
+  let away = connection.state === "offline";
+  return onConnectionChange((next) => {
+    if (next.state === "offline") {
+      away = true;
+    } else if (away && next.state === "online") {
+      away = false;
+      listener();
+    }
+  });
+}

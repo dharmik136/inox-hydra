@@ -18,6 +18,7 @@ import {
   type CreatorProfile,
   type ProfileResponse,
 } from "@/lib/api";
+import { useStudioBack } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { registerUnsavedWork } from "@/lib/unsaved";
 import { GroundingWorkspace } from "./GroundingWorkspace";
@@ -71,7 +72,13 @@ export function BrandStudioSurface() {
     [],
   );
 
+  // Read again when the studio answers after an outage, but only while the
+  // profile is still missing: a profile on screen may hold edits not saved yet.
+  const back = useStudioBack();
+  const hasProfile = useRef(false);
+  hasProfile.current = profile !== null;
   useEffect(() => {
+    if (hasProfile.current) return;
     let live = true;
     Promise.all([fetchProfile(), fetchAiStatus().catch(() => null)])
       .then(([profileResponse, aiStatus]) => {
@@ -79,12 +86,13 @@ export function BrandStudioSurface() {
         setLoaded(profileResponse);
         setProfile(profileResponse.profile);
         setAi(aiStatus);
+        setError(null);
       })
       .catch(() => live && setError("The profile could not be read."));
     return () => {
       live = false;
     };
-  }, []);
+  }, [back]);
 
   if (error && !profile) return <Centered>{error.toUpperCase()}</Centered>;
   if (!profile) return <Centered>LOADING BRAND STUDIO</Centered>;

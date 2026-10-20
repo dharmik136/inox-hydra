@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { SearchFocus } from "@/lib/search";
+import { useRefresh } from "@/lib/refresh";
 
 /** The timeline's lead: whether it was scored at all, and its tier under the one rule. */
 type DossierLead = Lead & { scored?: boolean; qualification_tier?: string };
@@ -96,6 +97,9 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
   useEffect(() => {
     reload();
   }, [reload]);
+  // People the bridge captured from the other window appear on coming back
+  // to this one, and the list returns by itself after an outage.
+  useRefresh(reload);
 
   // A lead opened from search is selected, and its row brought into view, once
   // the list holding it has rendered. Keyed on the nonce so choosing the same
@@ -115,7 +119,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
     });
   }, [focus, leads]);
 
-  if (failed) return <Centered>LEAD PIPELINE UNAVAILABLE</Centered>;
+  if (failed && !leads) return <Centered>LEAD PIPELINE UNAVAILABLE</Centered>;
   if (!leads) return <Centered>LOADING LEADS</Centered>;
   if (leads.length === 0) {
     return <EmptyStream />;
@@ -334,8 +338,16 @@ function Dossier({
       live = false;
     };
   }, [leadId]);
+  // A new comment from this person, or a dossier that failed in an outage,
+  // is read again on coming back to the window and when the studio returns.
+  useRefresh(() =>
+    fetchLeadTimeline(leadId).then((result) => {
+      setData((current) => (current === null || current.lead.id === leadId ? result : current));
+      setFailed(false);
+    }),
+  );
 
-  if (failed) return <Centered>DOSSIER UNAVAILABLE</Centered>;
+  if (failed && !data) return <Centered>DOSSIER UNAVAILABLE</Centered>;
   if (!data) return <Centered>LOADING DOSSIER</Centered>;
 
   const { lead, interactions } = data;
