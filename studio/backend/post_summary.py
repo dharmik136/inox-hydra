@@ -234,7 +234,9 @@ def _engagement(people: List[sqlite3.Row]) -> Dict[str, Any]:
         "vip": sum(1 for score in known if score >= VIP_SCORE),
         "qualified": sum(1 for score in known if score >= QUALIFIED_SCORE),
         "icp_known": len(known),
-        "icp_sum": sum(known),
+        # Rounded so that the same scores give the same sum whichever order
+        # they are added in, the fold's included.
+        "icp_sum": round(sum(known), 6),
         "conversations": sum(1 for p in people if (p["status"] or "") in CONVERSATION_STATUSES),
         "folded_reactions": 0,
         "people_json": json.dumps([[str(p["lead_id"]), p["name"], 1 if p["commented"] else 0, p["status"]]
@@ -297,6 +299,7 @@ FOLDED_TIERS = ("people", "vip", "qualified", "icp_known", "icp_sum", "conversat
 def _add_folded(row: Dict[str, Any], fold: Dict[str, Any]) -> None:
     for column in FOLDED_TIERS:
         row[column] = row[column] + (fold.get(column) or 0)
+    row["icp_sum"] = round(row["icp_sum"], 6)
     row["folded_reactions"] = row["folded_reactions"] + int(fold.get("reactions") or 0)
 
 

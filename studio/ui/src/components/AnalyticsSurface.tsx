@@ -311,7 +311,7 @@ function PostRow({ post }: { post: AnalyticsPost }) {
               <p className="studio-meta text-ink-muted">ATTRIBUTION UNAVAILABLE</p>
             ) : !attribution ? (
               <p className="studio-meta text-ink-muted">READING ATTRIBUTION</p>
-            ) : attribution.leads.length === 0 ? (
+            ) : attribution.leads.length === 0 && attribution.summary.total_leads_generated === 0 ? (
               <p className="studio-meta text-ink-muted">NO LEADS ATTRIBUTED TO THIS POST</p>
             ) : (
               <>
@@ -336,6 +336,12 @@ function PostRow({ post }: { post: AnalyticsPost }) {
                     </li>
                   ))}
                 </ul>
+                {attribution.summary.folded_leads > 0 && (
+                  <p className="studio-meta mt-2 text-[10px] text-ink-muted">
+                    {attribution.summary.folded_leads} MORE FROM REACTIONS OVER 24 MONTHS OLD, KEPT AS A COUNT
+                    WITHOUT NAMES (STORAGE AND PRIVACY)
+                  </p>
+                )}
               </>
             )}
           </td>

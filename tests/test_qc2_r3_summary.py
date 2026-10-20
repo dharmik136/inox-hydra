@@ -468,7 +468,7 @@ def _fold(monkeypatch, ids):
     finally:
         conn.close()
     monkeypatch.setattr(retention, "_fold_cutoff", lambda: "2002-01-01T00:00:00+00:00")
-    assert retention._run_reactions(retention.rules()) == len(ids)
+    return retention._run_reactions(retention.rules())
 
 
 def _likes_with_a_comment(conn, ids):
@@ -502,7 +502,7 @@ def test_folded_reactions_still_count_on_the_posts_screen(home, monkeypatch):
         assert _likes_with_a_comment(conn, ids) > 10, "some folded reactors also commented on the post"
     finally:
         conn.close()
-    _fold(monkeypatch, ids)
+    assert _fold(monkeypatch, ids) == len(ids)
     conn = _db()
     try:
         folded = dict(conn.execute("SELECT post_urn, reactions FROM reaction_folds").fetchall())
@@ -519,48 +519,75 @@ def test_folded_reactions_still_count_on_the_posts_screen(home, monkeypatch):
 
 def test_analytics_and_topic_counts_are_the_same_after_a_fold(home, monkeypatch):
     """
-    Folding reactions leaves every post's leads, VIP and average score, and
-    every topic's people and qualified people, as they were: for people who
-    did nothing else, people who also commented, people who reacted to
-    several posts of a topic, and qualified people alike.
+    Folding reactions leaves every post's leads, VIP and average score in
+    Analytics and in its leads drawer, and every topic's people and qualified
+    people, as they were: for people who did nothing else, people who also
+    commented, people who reacted to several posts of a topic, qualified
+    people and a lead tied to a post by leads.post_id alike.
     """
+    import crm
     import evidence_briefing
     from fastapi.testclient import TestClient
     import app as app_module
     client = TestClient(app_module.app)
+    tied_post = home["studio"][2]
 
     def counts():
         posts = {p["id"]: (p["attribution"]["total_leads"], p["attribution"]["vip_leads"], p["attribution"]["avg_icp"])
                  for p in client.get("/api/analytics/posts").json()["posts"]}
         topics = {t["topic"]: (t["people_engaged"], t["qualified_leads"])
                   for t in evidence_briefing.get_topic_attribution_map()["topics"]}
-        return posts, topics
+        drawer = {}
+        for post_id in home["studio"]:
+            summary = crm.reverse_crm.get_post_attribution(post_id)["attribution_summary"]
+            drawer[post_id] = tuple(summary[k] for k in ("total_leads_generated", "vip_leads_count", "avg_icp_score",
+                                                         "likes_count", "total_interactions"))
+        brief = evidence_briefing.get_retrieval_evidence_brief(limit_top=10, limit_bottom=10)
+        evidence = [(p.get("activity_urn"), p.get("qualified_leads"))
+                    for p in brief["top_exemplars"] + brief["bottom_exemplars"]]
+        return posts, topics, drawer, evidence
 
+    conn = _db()
+    try:
+        with conn:
+            # A lead tied to a studio post by leads.post_id who also liked it:
+            # Analytics and the drawer count them from the tie.
+            conn.execute("INSERT INTO leads (id, name, full_name, status, lead_status, icp_score, post_id) "
+                         "VALUES ('lead-tied', 'Tied', 'Tied', 'New Lead', 'NEW', 85, ?)", (tied_post,))
+            urn = conn.execute("SELECT activity_urn FROM posts WHERE id = ?", (tied_post,)).fetchone()[0]
+            conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, comment_key) "
+                         "VALUES ('lead-tied', ?, 'LIKE', '')", (urn,))
+    finally:
+        conn.close()
     before = counts()
     conn = _db()
     try:
-        # Every like but those of the one lead tied to a post by
-        # leads.post_id: the fold keeps no names, so that lead would be
-        # counted once by the tie and once by the fold (a known limit).
-        ids = [r[0] for r in conn.execute("""
-            SELECT i.id FROM lead_interactions i JOIN leads l ON l.id = CAST(i.lead_id AS TEXT)
-            WHERE i.interaction_type = 'LIKE' AND i.post_urn != '' AND COALESCE(l.post_id, '') = ''""")]
+        ids = [r[0] for r in conn.execute(
+            "SELECT id FROM lead_interactions WHERE interaction_type = 'LIKE' AND post_urn != ''")]
         assert _likes_with_a_comment(conn, ids) > 10
         qualified = conn.execute(
             "SELECT COUNT(DISTINCT i.lead_id) FROM lead_interactions i JOIN leads l ON l.id = CAST(i.lead_id AS TEXT) "
             "WHERE i.id IN (SELECT value FROM json_each(?)) AND l.icp_score >= 60", (json.dumps(ids),)).fetchone()[0]
         assert qualified > 10, "qualified people's reactions are folded too"
+        tied = conn.execute("SELECT COUNT(*) FROM lead_interactions i JOIN leads l ON l.id = CAST(i.lead_id AS TEXT) "
+                            "WHERE i.interaction_type = 'LIKE' AND COALESCE(l.post_id, '') != '' AND "
+                            "(l.post_id = i.post_urn OR l.post_id IN (SELECT id FROM posts WHERE activity_urn = i.post_urn))"
+                            ).fetchone()[0]
     finally:
         conn.close()
-    _fold(monkeypatch, ids)
+    assert tied >= 1
+    # The tied lead's reaction is kept as a row, so nobody is counted twice.
+    assert _fold(monkeypatch, ids) == len(ids) - tied
     conn = _db()
     try:
+        assert conn.execute("SELECT COUNT(*) FROM lead_interactions WHERE lead_id = 'lead-tied'").fetchone()[0] == 1
         _consistent(conn)
     finally:
         conn.close()
     after = counts()
     assert after == before
     assert sum(leads for leads, _vip, _avg in after[0].values()) > 0
+    assert sum(row[3] for row in after[2].values()) > 0, "the drawers count folded likes"
 
 
 def test_a_post_with_only_folded_reactions_keeps_its_row(home, monkeypatch):
@@ -576,7 +603,7 @@ def test_a_post_with_only_folded_reactions_keeps_its_row(home, monkeypatch):
     finally:
         conn.close()
     assert people > 0
-    _fold(monkeypatch, ids)
+    assert _fold(monkeypatch, ids) == len(ids)
     conn = _db()
     try:
         assert conn.execute("SELECT COUNT(*) FROM lead_interactions WHERE post_urn = ?", (post,)).fetchone()[0] == 0

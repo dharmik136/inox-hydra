@@ -965,11 +965,24 @@ class ReverseCRMManager:
                     }
 
             leads_list = list(deduped_leads.values())
-            total_leads = len(leads_list)
+            # Reactions older than 24 months that the retention job folded
+            # (retention.folded_counts): each was a like on this post, and the
+            # folded reactors who did nothing else on it are still among its
+            # leads, with their tiers as they were. They have no names here.
+            fold = {"reactions": 0, "people": 0, "vip": 0, "icp_sum": 0.0}
+            for entry in post_summary.folded(conn, keys).values():
+                for column in fold:
+                    fold[column] += entry.get(column) or 0
+            total_interactions += fold["reactions"]
+            likes_count += fold["reactions"]
+            total_leads = len(leads_list) + fold["people"]
             # The one tier rule, as in the CRM and the CSV. This counted from 75,
             # and from seniority labels classify_seniority never produces.
-            vip_leads_count = sum(1 for l in leads_list if l["qualification_tier"] == "TIER_1_VIP")
-            avg_icp = round(sum(l["icp_score"] for l in leads_list) / total_leads, 1) if total_leads > 0 else 0.0
+            vip_leads_count = sum(1 for l in leads_list if l["qualification_tier"] == "TIER_1_VIP") + fold["vip"]
+            # A lead with no score counts as 0 here, as it always has; the
+            # fold sums only known scores, which is the same total.
+            score_sum = round(sum(l["icp_score"] for l in leads_list) + fold["icp_sum"], 6)
+            avg_icp = round(score_sum / total_leads, 1) if total_leads > 0 else 0.0
 
             return {
                 "status": "success",
@@ -984,6 +997,10 @@ class ReverseCRMManager:
                     "likes_count": likes_count,
                     "reposts_count": reposts_count,
                     "questions_count": questions_count,
+                    # Of the likes and leads above, how many are kept only as
+                    # counts, so the list below names fewer people.
+                    "folded_reactions": fold["reactions"],
+                    "folded_leads": fold["people"],
                 },
                 "leads": leads_list,
             }

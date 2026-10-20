@@ -284,7 +284,8 @@ function describePreview(preview: RetentionPreview): string {
     `${count(preview.people)} people${size}. ` +
     "Kept: how many people reacted to each post, and how many of these reactions each person made, whether on " +
     "your posts, and the topics of those posts, so every count on every screen stays the same. " +
-    "Lost: which people reacted to which post, and when. " +
+    "Lost: which people reacted to which post, and when, so a post's list of names can be shorter than its " +
+    "count of people. " +
     `Everyone stays in your leads, including the ${count(preview.people_left_without_engagement)} whose only ` +
     "engagement was one of these reactions; their timeline shows the count. " +
     `All ${count(preview.comments_kept)} comments are kept.`

@@ -449,7 +449,7 @@ def get_posts_leaderboard():
             return {
                 "total_leads": len(brought) + fold["people"],
                 "vip_leads": sum(1 for score in known if score >= VIP_THRESHOLD) + fold["vip"],
-                "avg_icp": round((sum(known) + fold["icp_sum"]) / known_count, 1) if known_count else 0.0,
+                "avg_icp": round(round(sum(known) + fold["icp_sum"], 6) / known_count, 1) if known_count else 0.0,
             }
 
         rows = []

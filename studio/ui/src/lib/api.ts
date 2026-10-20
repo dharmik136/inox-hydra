@@ -1269,6 +1269,8 @@ export interface PostAttribution {
     avg_icp_score: number;
     comments_count: number;
     likes_count: number;
+    /** Leads counted from reactions older than 24 months that were folded into counts: no names. */
+    folded_leads: number;
   };
   leads: AttributedLead[];
 }
@@ -1288,6 +1290,7 @@ export async function fetchPostAttribution(postId: string): Promise<PostAttribut
       avg_icp_score: summary.avg_icp_score ?? 0,
       comments_count: summary.comments_count ?? 0,
       likes_count: summary.likes_count ?? 0,
+      folded_leads: summary.folded_leads ?? 0,
     },
     leads: Array.isArray(data.leads) ? data.leads : [],
   };

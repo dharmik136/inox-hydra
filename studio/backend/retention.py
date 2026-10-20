@@ -489,8 +489,25 @@ def _run_readings(rule: Dict[str, str]) -> int:
     return _delete_ids("post_metric_observations", ids)
 
 
-_FOLDABLE = ("FROM lead_interactions WHERE interaction_type = 'LIKE' "
-             "AND COALESCE(last_seen_at, first_seen_at, interacted_at) < ?")
+def _not_tied(i: str) -> str:
+    """
+    The reaction's person is not tied to its post by leads.post_id. Analytics
+    and the per-post leads drawer count a tied lead from the tie, so folding
+    their reaction would count them twice (once tied, once folded); those few
+    reactions stay as rows.
+    """
+    return (f"NOT EXISTS (SELECT 1 FROM leads t WHERE t.id = CAST({i}.lead_id AS TEXT) "
+            f"AND COALESCE(t.post_id, '') != '' AND (t.post_id = {i}.post_urn OR t.post_id IN "
+            f"(SELECT p.id FROM posts p WHERE p.activity_urn = {i}.post_urn)))")
+
+
+def _foldable(i: str) -> str:
+    """The condition a reaction row (alias i) meets to be folded; one ? for the cutoff."""
+    return (f"{i}.interaction_type = 'LIKE' AND COALESCE({i}.last_seen_at, {i}.first_seen_at, {i}.interacted_at) < ? "
+            f"AND {_not_tied(i)}")
+
+
+_FOLDABLE = f"FROM lead_interactions i WHERE {_foldable('i')}"
 
 
 def _fold_cutoff() -> str:
@@ -508,8 +525,7 @@ def _preview_reactions(rule: Dict[str, str]) -> Dict[str, Any]:
         # they stay as leads, with nothing captured left to show.
         left_empty = conn.execute(
             f"SELECT COUNT(*) FROM (SELECT DISTINCT lead_id {_FOLDABLE}) f WHERE NOT EXISTS ("
-            "SELECT 1 FROM lead_interactions i WHERE i.lead_id = f.lead_id AND NOT ("
-            "i.interaction_type = 'LIKE' AND COALESCE(i.last_seen_at, i.first_seen_at, i.interacted_at) < ?))",
+            f"SELECT 1 FROM lead_interactions o WHERE o.lead_id = f.lead_id AND NOT ({_foldable('o')}))",
             (cut, cut)).fetchone()[0]
         comments = conn.execute("SELECT COUNT(*) FROM lead_interactions WHERE interaction_type = 'COMMENT'").fetchone()[0]
         per_row = _bytes_per_row(conn, "lead_interactions")
@@ -559,8 +575,7 @@ def _run_reactions(rule: Dict[str, str]) -> int:
                 f"COALESCE(i.last_seen_at, i.first_seen_at, i.interacted_at) AS at, "
                 f"l.icp_score AS icp, l.lead_status AS status "
                 f"FROM lead_interactions i LEFT JOIN leads l ON l.id = CAST(i.lead_id AS TEXT) "
-                f"WHERE i.interaction_type = 'LIKE' "
-                f"AND COALESCE(i.last_seen_at, i.first_seen_at, i.interacted_at) < ? "
+                f"WHERE {_foldable('i')} "
                 f"AND i.id > ? ORDER BY i.id LIMIT ?", (cut, after, BATCH)).fetchall()
             if not batch:
                 break
