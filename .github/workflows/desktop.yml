@@ -49,7 +49,7 @@ jobs:
       - name: Set up Python Runtime
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.13.15"
           cache: "pip"
 
       # Linux requires webkit2gtk-4.1 and related development packages to
@@ -135,6 +135,14 @@ jobs:
             throw "Payload is incomplete: $($missing -join ', ')"
           }
           "Payload layout verified."
+
+      # The layout check above only proves files exist. This copies the
+      # payload to a new folder and drives it with its own interpreter and a
+      # scrubbed environment, the way an installed copy runs: it fails on a
+      # runtime that borrows the runner's Python, and on a missing interface.
+      - name: Smoke Test The Staged Payload
+        shell: bash
+        run: python tools/smoke_portable.py --payload desktop/payload
 
       - name: Install Tauri CLI
         run: npm install --global @tauri-apps/cli@^2

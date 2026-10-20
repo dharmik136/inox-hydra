@@ -227,7 +227,8 @@ def main(argv=None) -> int:
             f.write(SMOKE)
 
         result = subprocess.run(
-            [interpreter, script],
+            # -s: no user site packages, as every launcher starts it.
+            [interpreter, "-s", script],
             cwd=root, env=scrubbed_environment(),
             capture_output=True, text=True, timeout=900,
         )

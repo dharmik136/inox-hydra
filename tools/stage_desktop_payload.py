@@ -103,6 +103,7 @@ def main():
     # This is what lets the Rust shell spawn the interpreter without setting
     # PYTHONPATH. Losing it means an engine that cannot import its own package.
     build_portable.write_path_file(runtime_dir)
+    build_portable.assert_runtime_self_contained(runtime_dir)
 
     lib_dir = os.path.join(PAYLOAD_ROOT, "lib")
     os.makedirs(lib_dir)
