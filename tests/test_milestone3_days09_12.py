@@ -232,20 +232,20 @@ def test_day12_inbound_crm_and_warm_engagers(confirmed_creator):
         "lead_name": "Marcus",
         "company": "Distributed Systems Inc"
     }
-    dm_resp = client.post("/api/v1/crm/dm/variants", json=dm_payload)
-    assert dm_resp.status_code == 200
-    dm_data = dm_resp.json()
-    assert dm_data["status"] == "success"
-    variants = dm_data["variants"]
+    # The variants route was removed in cycle 2 (D1); the generator remains.
+    from crm import ICPScoringEngine
+
+    variants = ICPScoringEngine.generate_anti_slop_dm_variants(
+        lead_name=dm_payload["lead_name"], comment_text=dm_payload["comment_text"])
     assert len(variants) == 3
     for v in variants:
         assert "\u2014" not in v["text"], "Em-dash found in DM variant text"
         assert "Marcus" in v["text"]
 
     # 3. Verify Telemetry reflects the inquiry
-    telem_resp = client.get("/api/v1/crm/telemetry")
-    assert telem_resp.status_code == 200
-    telem_data = telem_resp.json()
+    from crm import reverse_crm
+
+    telem_data = reverse_crm.get_crm_telemetry()
     assert telem_data["summary"]["total_leads"] > 0
     assert telem_data["inquiry_telemetry"]["question_inquiry_rate_pct"] >= 0.0
 

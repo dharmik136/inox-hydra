@@ -136,29 +136,6 @@ def test_single_writer_actor_concurrent_load():
 # -------------------------------------------------------------
 # 4. Anti-Bot Rate Limiting & Health API Endpoints
 # -------------------------------------------------------------
-def test_rate_limiter_api_endpoints():
-    """Tests /api/v1/rate-limiter/status and /api/v1/rate-limiter/acquire endpoints."""
-    # Status endpoint
-    res_status = client.get("/api/v1/rate-limiter/status")
-    assert res_status.status_code == 200
-    diag = res_status.json()["diagnostics"]
-    assert diag["mean_interval_seconds"] == 900.0
-    assert diag["std_deviation_seconds"] == 120.0
-    assert diag["clamping_bounds"] == [660.0, 1140.0]
-
-    # Acquire endpoint (non-blocking)
-    res_acq = client.post("/api/v1/rate-limiter/acquire", json={"tokens": 1.0, "block": False})
-    assert res_acq.status_code == 200
-    data = res_acq.json()
-    assert "acquired" in data
-    assert "wait_time_seconds" in data
-
-    # Metrics endpoint
-    res_metrics = client.get("/api/v1/rate-limiter/single-writer/metrics")
-    assert res_metrics.status_code == 200
-    m = res_metrics.json()["metrics"]
-    assert "queue_depth" in m
-    assert "tasks_processed" in m
 
 
 def test_linkedin_client_gaussian_rate_limit():

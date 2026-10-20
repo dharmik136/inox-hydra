@@ -162,7 +162,7 @@ def test_gather_has_one_overall_deadline(tmp_path, monkeypatch):
 
 
 def test_a_server_never_sees_the_studios_keys(tmp_path, monkeypatch):
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-PLANTED-IN-STUDIO-ENV")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-notarealkey-PLANTED-IN-ENV")
     monkeypatch.setenv("GEMINI_API_KEY", "AIzaPLANTED")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:PLANTED")
     monkeypatch.setenv("INOX_HYDRA_HOME", os.environ["INOX_HYDRA_HOME"])

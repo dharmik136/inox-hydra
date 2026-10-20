@@ -220,6 +220,12 @@ class _NoRealBrowser(types.ModuleType):
         return getattr(subprocess, name)
 
 
+@pytest.fixture
+def dev_mode(monkeypatch):
+    """The maintainer surface: devtools, Telegram ingress and the G-Stack backlog answer only in dev mode."""
+    monkeypatch.setenv("INOX_DEV_MODE", "1")
+
+
 @pytest.fixture(autouse=True)
 def no_real_browser(monkeypatch):
     for name in ("browser_launcher", "studio.backend.browser_launcher"):

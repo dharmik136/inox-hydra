@@ -363,11 +363,6 @@ def audit_algorithm(req: FormatRequest):
     return audit_linkedin_algorithm_safety(req.text)
 
 
-@router.post("/api/format/repurpose")
-def repurpose(req: FormatRequest):
-    return {"status": "success", "frameworks": repurpose_content(req.text)}
-
-
 @router.post("/api/format/bold")
 def format_bold(req: FormatRequest):
     return {"formatted": to_sans_bold(req.text)}
@@ -393,11 +388,6 @@ def format_clean(req: FormatRequest):
     return {"cleaned": clean_text_formatting(req.text)}
 
 
-@router.post("/api/format/analyze")
-def format_analyze(req: FormatRequest):
-    return analyze_hook(req.text)
-
-
 @router.post("/api/format/serif-bold")
 def format_serif_bold(req: FormatRequest):
     return {"formatted": to_serif_bold(req.text)}
@@ -421,11 +411,6 @@ def format_underline(req: FormatRequest):
 @router.post("/api/format/circled-numbers")
 def format_circled_numbers(req: FormatRequest):
     return {"formatted": to_circled_numbers(req.text)}
-
-
-@router.post("/api/format/dwell")
-def format_dwell(req: FormatRequest):
-    return calculate_dwell_metrics(req.text)
 
 
 @router.post("/api/v1/posts/injected", tags=["Post Identity"])

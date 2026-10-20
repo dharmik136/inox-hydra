@@ -150,12 +150,11 @@ def test_api_analytics_ingest_with_telemetry_shard():
     conn.close()
 
     # Flush shard and verify status
-    flush_res = client.post("/api/v1/telemetry/flush")
-    assert flush_res.status_code == 200
+    # The status and flush routes were removed in cycle 2 (D1); the shard is read directly.
+    from studio.core.telemetry_shard import telemetry_buffer, telemetry_engine
 
-    status_res = client.get("/api/v1/telemetry/status")
-    assert status_res.status_code == 200
-    status_data = status_res.json()
+    telemetry_buffer.flush()
+    status_data = telemetry_engine.get_status()
     assert status_data["status"] == "healthy"
     assert status_data["journal_mode"].upper() == "WAL"
 

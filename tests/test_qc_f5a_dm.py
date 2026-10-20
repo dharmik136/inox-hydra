@@ -100,12 +100,15 @@ def test_an_offer_needs_the_creator_to_say_what_it_is(client, leads):
 
 
 def test_the_reply_and_its_variants_claim_nothing_about_the_creator(client):
+    # The variants route was removed in cycle 2 (D1); the generator remains.
+    from crm import ICPScoringEngine
+
     for comment in ("How long do you proof it?", "Loved the flour waste numbers"):
         body = {"lead_name": "Asha Rao", "comment_text": comment, "post_topic": "flour waste"}
         reply = client.post("/api/v1/crm/leads/generate-dm", json=body).json()["suggested_dm"]
         assert reply and not _claims(reply), f"the reply says {_claims(reply)}:\n{reply}"
         assert "breakdown" not in reply.lower(), f"the reply names a post format nobody gave:\n{reply}"
-        for variant in client.post("/api/v1/crm/dm/variants", json=body).json()["variants"]:
+        for variant in ICPScoringEngine.generate_anti_slop_dm_variants(**body):
             assert not _claims(variant["dm_text"]), f"{variant['angle']}: {variant['dm_text']}"
 
 

@@ -24,7 +24,7 @@ from datetime import datetime, date, timedelta, timezone
 from contextlib import asynccontextmanager
 import time
 
-from fastapi import FastAPI, HTTPException, Response, UploadFile, File, Form, Request, Header, Depends
+from fastapi import FastAPI, HTTPException, Response, UploadFile, File, Form, Request, Header, Depends, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
@@ -284,7 +284,10 @@ async def lifespan(app: FastAPI):
         )
     if not safe_mode.is_active():
         start_scheduler()
-    if os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN"):
+    # Maintainer only, like its routes (D4). A token in the environment alone
+    # used to start it in a creator's install.
+    if (os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN")) \
+            and devtools.env_allows_dev_mode():
         ingress_daemon.start_worker()
     yield
     shutdown_scheduler()
@@ -828,13 +831,6 @@ class CopilotRequest(BaseModel):
     attached_media_type: Optional[str] = None
 
 
-class CarouselRequest(BaseModel):
-    slides: List[Dict[str, str]]
-    theme: Optional[str] = "dark_slate"
-    author_name: Optional[str] = None
-    author_title: Optional[str] = None
-
-
 class LeadCreate(BaseModel):
     name: str
     headline: Optional[str] = ""
@@ -854,10 +850,6 @@ class LeadStatusUpdate(BaseModel):
 class CookiePayload(BaseModel):
     li_at: str
     JSESSIONID: str
-
-
-class AISettingsPayload(BaseModel):
-    gemini_api_key: str
 
 
 class AIConfigureRequest(BaseModel):
@@ -890,7 +882,6 @@ app.include_router(analytics_router_module.router)
 get_range_days = analytics_router_module.get_range_days
 get_kpis = analytics_router_module.get_kpis
 get_analytics_overview = analytics_router_module.get_analytics_overview
-get_demographics = analytics_router_module.get_demographics
 export_analytics = analytics_router_module.export_analytics
 get_posts_leaderboard = analytics_router_module.get_posts_leaderboard
 get_post_leads_attribution = analytics_router_module.get_post_leads_attribution
@@ -1228,16 +1219,6 @@ def synthesize_image_prompt(req: ImageGenerateRequest):
 
 
 # Backwards compatibility stub for legacy carousel call
-@app.post("/api/carousel/generate", tags=["Media Studio & Dropzone"])
-def legacy_carousel_stub(req: CarouselRequest):
-    """Legacy endpoint notice: Synthetic Pillow carousels deprecated in favor of native PDF dropzone."""
-    padding = b" " * 10500
-    content = b"%PDF-1.4\n% Decommissioned: Use native PDF drag-and-drop in Media Dropzone.\n" + padding + b"\n%%EOF"
-    return Response(
-        content=content,
-        media_type="application/pdf",
-        headers={"Content-Disposition": "attachment; filename=use_media_dropzone.pdf"}
-    )
 
 
 class CarouselDeckRequest(BaseModel):
@@ -1310,7 +1291,6 @@ def generate_vector_carousel_deck(req: CarouselDeckRequest):
 
 get_10x_hooks = posts_router_module.get_10x_hooks
 audit_algorithm = posts_router_module.audit_algorithm
-repurpose = posts_router_module.repurpose
 
 
 # -------------------------------------------------------------
@@ -1325,11 +1305,8 @@ app.include_router(ai_router_module.router)
 ai_status = ai_router_module.ai_status
 get_ai_config_endpoint = ai_router_module.get_ai_config_endpoint
 configure_ai_endpoint = ai_router_module.configure_ai_endpoint
-save_ai_settings = ai_router_module.save_ai_settings
 execute_ai_command = ai_router_module.execute_ai_command
 copilot_optimize = ai_router_module.copilot_optimize
-analyze_swipe_pattern = ai_router_module.analyze_swipe_pattern
-stream_ai_completion = ai_router_module.stream_ai_completion
 
 
 format_bold = posts_router_module.format_bold
@@ -1337,13 +1314,11 @@ format_italic = posts_router_module.format_italic
 format_mono = posts_router_module.format_mono
 format_strike = posts_router_module.format_strike
 format_clean = posts_router_module.format_clean
-format_analyze = posts_router_module.format_analyze
 format_serif_bold = posts_router_module.format_serif_bold
 format_serif_italic = posts_router_module.format_serif_italic
 format_blackboard = posts_router_module.format_blackboard
 format_underline = posts_router_module.format_underline
 format_circled_numbers = posts_router_module.format_circled_numbers
-format_dwell = posts_router_module.format_dwell
 
 
 # -------------------------------------------------------------
@@ -1359,8 +1334,6 @@ app.include_router(crm_router_module.router)
 
 get_leads = crm_router_module.get_leads
 export_leads_csv_route = crm_router_module.export_leads_csv_route
-create_lead = crm_router_module.create_lead
-create_leads_batch = crm_router_module.create_leads_batch
 update_lead = crm_router_module.update_lead
 remove_lead = crm_router_module.remove_lead
 get_lead_dm = crm_router_module.get_lead_dm
@@ -1780,8 +1753,6 @@ def get_auth_status():
 
 
 ingest_live_analytics = analytics_router_module.ingest_live_analytics
-get_telemetry_shard_status = analytics_router_module.get_telemetry_shard_status
-flush_telemetry_shard = analytics_router_module.flush_telemetry_shard
 
 
 # -------------------------------------------------------------
@@ -2057,64 +2028,25 @@ def preview_mcp_grounding():
 
 
 # -------------------------------------------------------------
-# Real-Time Event Bus & Server-Sent Events (SSE)
-# -------------------------------------------------------------
-@app.get("/api/v1/stream/events", tags=["Real-Time Event Stream"])
-async def stream_events(request: Request, last_event_id: Optional[str] = Header(None, alias="Last-Event-ID")):
-    """
-    Subscribes the active browser Studio session to the real-time event bus via Server-Sent Events.
-    Broadcasts draft_ingested, scheduled_post_recovery, and reverse_crm updates in under 5ms.
-    """
-    parsed_id = int(last_event_id) if last_event_id and last_event_id.isdigit() else None
-
-    async def event_generator():
-        async for event in event_bus.subscribe(parsed_id):
-            if await request.is_disconnected():
-                break
-            yield event_bus.format_sse(event)
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        }
-    )
-
-
-@app.get("/api/v1/stream/history", tags=["Real-Time Event Stream"])
-def get_stream_history():
-    """Returns past broadcast events from circular replay buffer."""
-    return {"status": "success", "events": event_bus.get_history()}
-
-
-class BroadcastEventRequest(BaseModel):
-    event: str = Field(..., min_length=1, max_length=100)
-    data: Dict[str, Any] = Field(default_factory=dict)
-
-
-@app.post("/api/v1/stream/broadcast", tags=["Real-Time Event Stream"])
-async def broadcast_event(req: BroadcastEventRequest):
-    """Manually broadcasts an event across the SSE stream."""
-    clean_event = re.sub(r"[\r\n]+", "", req.event).strip()
-    if not clean_event:
-        raise HTTPException(status_code=400, detail="Event name cannot be empty or pure whitespace.")
-    payload = await event_bus.publish(clean_event, req.data)
-    return {"status": "success", "published": payload}
-
-
-# -------------------------------------------------------------
 # Ubiquitous Ingress & Thought Capture
+#
+# Telegram ingress is a maintainer feature: no screen offers it, nothing
+# documents it for a creator beyond its own help article, and it ships in
+# every install. So, like the devtools, its routes answer 404 and its worker
+# never starts outside dev mode (owner decision D4, cycle 2).
 # -------------------------------------------------------------
+def _maintainer_only():
+    """require_dev_mode, by a name that exists before that function is defined further down."""
+    return require_dev_mode()
+
+
 class IngressSimulateRequest(BaseModel):
     text: str
     chat_id: Optional[str] = None
     sender_name: Optional[str] = "Creator"
 
 
-@app.post("/api/v1/ingress/simulate", tags=["Ubiquitous Ingress"])
+@app.post("/api/v1/ingress/simulate", tags=["Ubiquitous Ingress"], dependencies=[Depends(_maintainer_only)])
 def simulate_ingress(req: IngressSimulateRequest):
     """
     Simulates incoming message from Telegram mobile bot or desktop tray.
@@ -2144,15 +2076,15 @@ class ParseTextRequest(BaseModel):
     text: str
 
 
-@app.post("/api/v1/ingress/parse", tags=["Ubiquitous Ingress"])
+@app.post("/api/v1/ingress/parse", tags=["Ubiquitous Ingress"], dependencies=[Depends(_maintainer_only)])
 def parse_ingress_text(req: ParseTextRequest):
     """Parses text without persisting, returning fold metrics and directives."""
     parsed = IngressMessageParser.parse_message(req.text)
     return {"status": "success", "parsed": parsed}
 
 
-@app.get("/api/v1/ingress/drafts", tags=["Ubiquitous Ingress"])
-def get_ingress_drafts(limit: int = 50, status: Optional[str] = None):
+@app.get("/api/v1/ingress/drafts", tags=["Ubiquitous Ingress"], dependencies=[Depends(_maintainer_only)])
+def get_ingress_drafts(limit: int = Query(50, ge=1, le=500), status: Optional[str] = Query(None, max_length=40)):
     """Retrieves sovereign drafts from SQLite drafts table."""
     drafts = list_drafts(limit=limit, status=status)
     return {"status": "success", "count": len(drafts), "drafts": drafts}
@@ -2428,16 +2360,9 @@ def evaluate_recovery(req: RecoveryEvaluateRequest):
 # -------------------------------------------------------------
 IngestInteractionRequest = crm_router_module.IngestInteractionRequest
 ingest_crm_interaction = crm_router_module.ingest_crm_interaction
-get_high_value_leads = crm_router_module.get_high_value_leads
-get_crm_telemetry = crm_router_module.get_crm_telemetry
 GenerateDMRequest = crm_router_module.GenerateDMRequest
 generate_lead_dm = crm_router_module.generate_lead_dm
-generate_anti_slop_dm_variants = crm_router_module.generate_anti_slop_dm_variants
-ScorePreviewRequest = crm_router_module.ScorePreviewRequest
-preview_icp_score = crm_router_module.preview_icp_score
 purge_crm_lead = crm_router_module.purge_crm_lead
-ArchiveInactiveRequest = crm_router_module.ArchiveInactiveRequest
-archive_inactive_crm_leads = crm_router_module.archive_inactive_crm_leads
 get_lead_interaction_timeline = crm_router_module.get_lead_interaction_timeline
 LeadRemoval = crm_router_module.LeadRemoval
 get_lead_review = crm_router_module.get_lead_review
@@ -2467,103 +2392,10 @@ def get_egress_status():
     return egress_policy.describe()
 
 
-@app.get("/api/v1/session/health", tags=["LinkedIn Session & Telemetry"])
-def check_session_health(mock: bool = False):
-    """
-    Checks session viability against the Voyager API.
-
-    This contacts LinkedIn, so it is refused unless egress is explicitly
-    enabled. A refusal returns healthy: null, meaning "not checked", rather than
-    healthy: true, which would certify a session nobody looked at.
-    """
-    return linkedin_client.check_session_health(mock=mock)
-
-
-@app.post("/api/v1/session/sync-profile", tags=["LinkedIn Session & Telemetry"])
-def sync_linkedin_profile():
-    """
-    Fetches the creator's own name and headline from LinkedIn.
-
-    This is the one place in the product that deliberately contacts LinkedIn,
-    and it exists as its own route precisely so that contacting them is a thing
-    someone chooses to do. It used to run as a side effect of saving a session
-    token, which the extension did on a 15 minute alarm and on every
-    creator-analytics response, so the studio was issuing authenticated requests
-    the creator never asked for.
-
-    Refused unless INOX_ALLOW_LINKEDIN_EGRESS is set.
-    """
-    return linkedin_client.sync_live_profile_and_stats(enforce_rate_limit=True)
-
-
-@app.get("/api/v1/ingress/status", tags=["Mobile & Bot Ingress"])
+@app.get("/api/v1/ingress/status", tags=["Mobile & Bot Ingress"], dependencies=[Depends(_maintainer_only)])
 def get_ingress_status():
     """Diagnostics and adaptive polling metrics for Telegram Ingress Daemon."""
     return ingress_daemon.get_daemon_status()
-
-
-@app.post("/api/v1/database/checkpoint", tags=["Settings & Creator Profile"])
-def trigger_database_checkpoint():
-    """Truncates and checkpoints SQLite WAL file to minimize disk footprint."""
-    return checkpoint_db()
-
-
-@app.get("/api/v1/rate-limiter/status", tags=["Anti-Bot & Rate Limiting"])
-def get_rate_limiter_status():
-    """Telemetry diagnostics for the Gaussian jitter rate limiter."""
-    return {
-        "status": "success",
-        "diagnostics": rate_limiter.get_diagnostics()
-    }
-
-
-class RateLimiterAcquireRequest(BaseModel):
-    tokens: float = Field(default=1.0, ge=0.0, le=100.0)
-    block: bool = Field(default=False)
-    timeout: Optional[float] = Field(default=None, ge=0.0, le=30.0)
-
-
-@app.post("/api/v1/rate-limiter/acquire", tags=["Anti-Bot & Rate Limiting"])
-def acquire_rate_limit_token(req: Optional[RateLimiterAcquireRequest] = None):
-    """Acquires a token under the Gaussian jitter rate governor."""
-    t = req.tokens if req else 1.0
-    b = req.block if req else False
-    timeout = req.timeout if req else None
-    if b and timeout is None:
-        timeout = 10.0  # Defensive cap to prevent blocking FastAPI thread indefinitely
-    success = rate_limiter.acquire(tokens=t, block=b, timeout=timeout)
-    wait_time = rate_limiter.wait_time_seconds(tokens=t)
-    return {
-        "status": "success" if success else "rejected",
-        "acquired": success,
-        "wait_time_seconds": wait_time,
-        "diagnostics": rate_limiter.get_diagnostics()
-    }
-
-
-@app.get("/api/v1/rate-limiter/single-writer/metrics", tags=["Anti-Bot & Rate Limiting"])
-def get_single_writer_metrics():
-    """Diagnostics for the centralized single-writer actor write queue."""
-    return {
-        "status": "success",
-        "metrics": write_actor.get_metrics()
-    }
-
-
-class IntelligenceSyncRequest(BaseModel):
-    force: bool = False
-    cdn_url: Optional[str] = None
-
-
-@app.post("/api/v1/intelligence/sync", tags=["Intelligence Sync & Radar"])
-def trigger_intelligence_sync(req: Optional[IntelligenceSyncRequest] = None):
-    """Triggers asymmetric ETag-based intelligence sync against the GitHub CDN."""
-    force = req.force if req else False
-    cdn_url = req.cdn_url if req else None
-    res = intelligence_sync_engine.sync(force=force, cdn_url=cdn_url)
-    if isinstance(res, dict) and res.get("status") == "error":
-        raise HTTPException(status_code=400, detail=res.get("message", "Sync failed"))
-    return res
 
 
 @app.get("/api/v1/intelligence/templates", tags=["Intelligence Sync & Radar"])
@@ -2712,24 +2544,6 @@ def get_schema_status():
     return status
 
 
-@app.get("/api/v1/support/diagnostics", tags=["Support & Maintenance"])
-def get_diagnostics():
-    """
-    Redacted diagnostics the user can attach to an issue.
-
-    Session cookies and API keys are removed by allowlist before this returns.
-    See studio/backend/support.py for why that is an allowlist.
-    """
-    return support_tools.collect_diagnostics()
-
-
-@app.post("/api/v1/support/diagnostics/export", tags=["Support & Maintenance"])
-def export_diagnostics():
-    path = support_tools.write_diagnostics_bundle()
-    return {"status": "success", "path": path,
-            "note": "Safe to attach to a public issue. Credentials are redacted."}
-
-
 @app.post("/api/v1/support/backup", tags=["Support & Maintenance"])
 def create_support_backup(payload: Optional[Dict[str, Any]] = None):
     label = (payload or {}).get("label", "manual")
@@ -2828,7 +2642,7 @@ def run_update_check(payload: Optional[Dict[str, Any]] = None):
     return update_checker.check_for_update(force=bool((payload or {}).get("force")))
 
 
-@app.get("/api/v1/gstack/roles", tags=["G-Stack Multi-Agent Governance"])
+@app.get("/api/v1/gstack/roles", tags=["G-Stack Multi-Agent Governance"], dependencies=[Depends(_maintainer_only)])
 def get_gstack_roles():
     """Returns the 6 G-Stack cognitive roles, their titles, PRD references, and mandates."""
     return {
@@ -2837,7 +2651,7 @@ def get_gstack_roles():
     }
 
 
-@app.get("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"])
+@app.get("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"], dependencies=[Depends(_maintainer_only)])
 def get_gstack_backlog(role: Optional[str] = None, status: Optional[str] = None, limit: int = 500):
     """Lists backlog tasks filtered by G-Stack role or status."""
     tasks = gstack_engine.get_backlog(role=role, status=status, limit=limit)
@@ -2848,7 +2662,7 @@ def get_gstack_backlog(role: Optional[str] = None, status: Optional[str] = None,
     }
 
 
-@app.post("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"])
+@app.post("/api/v1/gstack/backlog", tags=["G-Stack Multi-Agent Governance"], dependencies=[Depends(_maintainer_only)])
 def add_gstack_task(req: GStackBacklogTaskCreate):
     """Appends a new engineering task to the G-Stack governance backlog."""
     try:
@@ -2866,7 +2680,7 @@ def add_gstack_task(req: GStackBacklogTaskCreate):
         raise HTTPException(status_code=400, detail=str(err))
 
 
-@app.patch("/api/v1/gstack/backlog/{task_id}", tags=["G-Stack Multi-Agent Governance"])
+@app.patch("/api/v1/gstack/backlog/{task_id}", tags=["G-Stack Multi-Agent Governance"], dependencies=[Depends(_maintainer_only)])
 def update_gstack_task_status(task_id: int, req: GStackBacklogStatusUpdate):
     """Updates the execution status of a G-Stack backlog item."""
     try:

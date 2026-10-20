@@ -205,37 +205,6 @@ def test_single_writer_actor_drain_on_stop():
             assert "shut down" in str(err)
 
 
-def test_app_broadcast_event_validation():
-    """FastAPI broadcast endpoint rejects invalid, oversized, or empty event names."""
-    # Empty event name
-    r_empty = client.post("/api/v1/stream/broadcast", json={"event": "   ", "data": {}})
-    assert r_empty.status_code == 400
-
-    # Oversized event name (> 100 chars)
-    r_huge = client.post("/api/v1/stream/broadcast", json={"event": "A" * 150, "data": {}})
-    assert r_huge.status_code == 422
-
-
-def test_app_rate_limiter_acquire_bounds():
-    """FastAPI rate-limiter acquire endpoint enforces Pydantic bounds on tokens and timeout."""
-    # Negative tokens rejected by Pydantic validation
-    r_neg = client.post("/api/v1/rate-limiter/acquire", json={"tokens": -5.0})
-    assert r_neg.status_code == 422
-
-    # Huge tokens (> 100) rejected
-    r_huge = client.post("/api/v1/rate-limiter/acquire", json={"tokens": 500.0})
-    assert r_huge.status_code == 422
-
-    # Timeout > 30s rejected
-    r_timeout = client.post("/api/v1/rate-limiter/acquire", json={"timeout": 60.0})
-    assert r_timeout.status_code == 422
-
-    # Valid acquire
-    r_valid = client.post("/api/v1/rate-limiter/acquire", json={"tokens": 1.0, "block": False})
-    assert r_valid.status_code == 200
-    assert "diagnostics" in r_valid.json()
-
-
 def test_zero_em_dash_compliance_module11():
     """Verify zero em-dash (0x2014) characters exist in Module 11 files."""
     em_dash = chr(0x2014)

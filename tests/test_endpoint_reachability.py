@@ -161,9 +161,18 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # on the note that says what the demo cleanup removed (TodaySurface, api.ts).
 # Reached moves 98 -> 99, unreachable stays at 83, total moves 181 -> 182.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 182
-REACHED_BY_INTERFACE = 99
-UNREACHABLE = 83
+# Then 182 -> 152 (cycle 2, batch R2, owner decision D1): thirty paths no
+# interface, extension, CLI or desktop shell calls were removed because they
+# bypassed a guard the interface enforces, were broken, or duplicated another
+# route. /api/ai/stream was one, and was counted reached only because an
+# unused helper in api.ts named it; the client's strings now count only when a
+# component imports the function that carries them [BE-22]. Telegram ingress
+# and the G-Stack backlog stay declared but answer 404 outside dev mode.
+# Reached moves 99 -> 98, unreachable 83 -> 54, total 182 -> 152.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 152
+REACHED_BY_INTERFACE = 98
+UNREACHABLE = 54
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 
@@ -212,18 +221,65 @@ def _declared_routes():
     return routes
 
 
-def _interface_paths():
-    """Every /api path the interface names, from any file under studio/ui/src."""
-    found = set()
-    for dirpath, _dirnames, filenames in os.walk(UI_SRC):
+API_CLIENT = os.path.join("lib", "api.ts")
+_PATH_LITERAL = re.compile(r"[\"'`](/api/[^\"'`\s]*)[\"'`]")
+_TOP_LEVEL = re.compile(r"^(?:export\s+)?(?:async\s+)?(?:function|const|let|class|interface|type)\s+(\w+)", re.MULTILINE)
+
+
+def _client_chunks(text):
+    """(name, exported, body) for each top-level declaration in the API client."""
+    starts = list(_TOP_LEVEL.finditer(text))
+    chunks = []
+    for index, match in enumerate(starts):
+        end = starts[index + 1].start() if index + 1 < len(starts) else len(text)
+        chunks.append((match.group(1), match.group(0).startswith("export"), text[match.start():end]))
+    return chunks
+
+
+def _interface_paths(ui_src=UI_SRC):
+    """
+    Every /api path the interface names, from any file under studio/ui/src.
+
+    Except that a path written in the API client counts only when the exported
+    function that carries it is imported by something else in the interface.
+    Crediting any string in api.ts counted /api/ai/stream as reached for as long
+    as its helper existed, although no component ever called it [BE-22].
+    A helper api.ts keeps to itself is counted, since its callers are there.
+    """
+    sources = {}
+    for dirpath, _dirnames, filenames in os.walk(ui_src):
         for name in filenames:
-            if not name.endswith((".ts", ".tsx")):
+            if name.endswith((".ts", ".tsx")):
+                full = os.path.join(dirpath, name)
+                with open(full, encoding="utf-8") as handle:
+                    sources[os.path.relpath(full, ui_src)] = handle.read()
+
+    found = set()
+    for relpath, text in sources.items():
+        if relpath == API_CLIENT:
+            continue
+        found.update(_normalise(hit) for hit in _PATH_LITERAL.findall(text))
+
+    client = sources.get(API_CLIENT)
+    if client is not None:
+        elsewhere = "\n".join(text for relpath, text in sources.items() if relpath != API_CLIENT)
+        for name, exported, body in _client_chunks(client):
+            if exported and not re.search(rf"\b{re.escape(name)}\b", elsewhere):
                 continue
-            with open(os.path.join(dirpath, name), encoding="utf-8") as handle:
-                text = handle.read()
-            for hit in re.findall(r"[\"'`](/api/[^\"'`\s]*)[\"'`]", text):
-                found.add(_normalise(hit))
+            found.update(_normalise(hit) for hit in _PATH_LITERAL.findall(body))
     return found
+
+
+def test_an_exported_but_unused_client_function_is_not_counted(tmp_path):
+    (tmp_path / "lib").mkdir()
+    (tmp_path / "lib" / "api.ts").write_text(
+        'async function call(path) { return fetch(path); }\n'
+        'export async function used() { return call("/api/used"); }\n'
+        'export async function unused() { return call("/api/unused"); }\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "Screen.tsx").write_text('import { used } from "./lib/api";\nused();\n', encoding="utf-8")
+    assert _interface_paths(str(tmp_path)) == {"/api/used"}
 
 
 @pytest.fixture(scope="module")

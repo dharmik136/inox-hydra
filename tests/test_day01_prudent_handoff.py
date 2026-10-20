@@ -191,6 +191,7 @@ def test_event_bus_pubsub_and_format():
     assert 'data: {"message": "hello world"}\n\n' in wire_format
 
 
+@pytest.mark.usefixtures("dev_mode")
 def test_ingress_simulation_api():
     """Tests /api/v1/ingress/simulate broadcasts draft_ingested and returns 200."""
     res = client.post("/api/v1/ingress/simulate", json={
@@ -201,16 +202,6 @@ def test_ingress_simulation_api():
     data = res.json()
     assert data["status"] == "success"
     assert data["record"]["title"] == "Event bus real-time validation test #streaming"
-
-
-def test_stream_history_api():
-    """Tests /api/v1/stream/history returns buffered events."""
-    res = client.get("/api/v1/stream/history")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["status"] == "success"
-    assert isinstance(data["events"], list)
-    assert len(data["events"]) > 0
 
 
 # -------------------------------------------------------------
@@ -354,15 +345,15 @@ def test_reverse_crm_manager_ingestion():
 
 def test_crm_api_endpoints():
     """Tests /api/v1/crm/interactions/ingest and /api/v1/crm/score-preview."""
-    res = client.post("/api/v1/crm/score-preview", json={
-        "headline": "CEO & Founder",
-        "company": "Cloud Distributed Matrix",
-        "comment_text": "What is the failover latency?",
-        "interaction_type": "COMMENT"
-    })
-    assert res.status_code == 200
-    data = res.json()
-    assert data["status"] == "success"
+    # The score-preview route was removed in cycle 2 (D1); the engine it wrapped remains.
+    from crm import ICPScoringEngine
+
+    data = ICPScoringEngine.calculate_icp_breakdown(
+        headline="CEO & Founder",
+        company="Cloud Distributed Matrix",
+        comment_text="What is the failover latency?",
+        interaction_type="COMMENT",
+    )
     assert data["icp_score"] > 80.0
     assert data["seniority_level"] == "Founder"
 
@@ -431,13 +422,14 @@ def test_circuit_breaker_safeguards():
     assert cb.can_execute() is False
     assert "Failure threshold reached" in cb.last_trip_reason
 
-    # Test /api/v1/session/health endpoint in mock mode
-    res = client.get("/api/v1/session/health?mock=true")
-    assert res.status_code == 200
-    data = res.json()
+    # The session health route was removed in cycle 2 (D1); the client check remains.
+    from linkedin_client import linkedin_client
+
+    data = linkedin_client.check_session_health(mock=True)
     assert data["healthy"] is True
 
 
+@pytest.mark.usefixtures("dev_mode")
 def test_telegram_adaptive_polling():
     """Validates Telegram ingress adaptive polling delays, backoff, and diagnostics."""
     daemon = TelegramIngressDaemon()
@@ -492,11 +484,6 @@ def test_crm_gdpr_purge_and_timeline():
     assert t_data["lead"]["id"] == lead_id
     assert len(t_data["interactions"]) >= 1
 
-    # Verify archival endpoint
-    res_archive = client.post("/api/v1/crm/leads/archive-inactive", json={"inactive_days": 180})
-    assert res_archive.status_code == 200
-    assert res_archive.json()["status"] == "success"
-
     # Execute GDPR Purge
     res_purge = client.delete(f"/api/v1/crm/leads/{lead_id}/purge")
     assert res_purge.status_code == 200
@@ -521,8 +508,9 @@ def test_crm_gdpr_purge_and_timeline():
 
 def test_sqlite_wal_checkpoint_api():
     """Validates /api/v1/database/checkpoint endpoint returns status checkpointed."""
-    res = client.post("/api/v1/database/checkpoint")
-    assert res.status_code == 200
-    data = res.json()
+    # The route was removed in cycle 2 (D1); the checkpoint itself remains.
+    from database import checkpoint_db
+
+    data = checkpoint_db()
     assert data["status"] == "checkpointed"
 

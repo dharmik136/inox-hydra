@@ -3,6 +3,7 @@ If you create your own Telegram bot and set two environment variables before sta
 
 ## What it is, and what it is not
 
+- It is a maintainer feature, and it runs only when the studio is started with `INOX_DEV_MODE=1` as well as the two variables below. In an ordinary install its status page answers "Not Found" and no message is read.
 - It is optional and off unless you configure it. There is no switch or setting for it anywhere in the studio interface. The only trace is the `ingress` row under **What has left this machine** in Brand Studio's **Local security** tab, which counts each request to Telegram.
 - The bot never replies. You get no confirmation in Telegram.
 - It works only while the studio is running. The studio asks Telegram for messages and opens no port.
@@ -17,7 +18,7 @@ Your own bot token and your own numeric chat id. Creating a bot and finding your
 
 ## Set it up
 
-1. Set `TELEGRAM_BOT_TOKEN` to your bot token and `TELEGRAM_CHAT_ID` to your chat id, in the environment the studio server starts from. (`PRUDENT_TELEGRAM_BOT_TOKEN` and `PRUDENT_TELEGRAM_CHAT_ID` are also accepted.)
+1. Set `INOX_DEV_MODE` to `1`, `TELEGRAM_BOT_TOKEN` to your bot token and `TELEGRAM_CHAT_ID` to your chat id, in the environment the studio server starts from. (`PRUDENT_TELEGRAM_BOT_TOKEN` and `PRUDENT_TELEGRAM_CHAT_ID` are also accepted.)
 2. Stop the studio and start it again. See [Stop the studio, and use the tray icon](stop-the-studio-and-use-the-tray-icon.md). Both values are read once at startup, so a change needs a restart.
 
 > [!IMPORTANT]

@@ -171,7 +171,7 @@ def sync_all_activity(payload: Optional[Dict[str, Any]] = None):
     }
 
 
-ACTIVITY_STREAM_MAX = 500
+ACTIVITY_STREAM_MAX = 5000
 
 
 @router.get("/api/v1/self/activity-stream", tags=["Browser Bridge"])
@@ -180,7 +180,7 @@ def get_activity_stream(limit: int = Query(25, ge=1)):
     Returns real-time inspection data of all activity streams and live ingestion records
     for the product dashboard and CLI monitors. Zero cloud egress.
     """
-    # At least one row, at most 500 per list. limit=-1 used to return every
+    # At least one row, at most 5,000 per list. limit=-1 used to return every
     # row, and a number SQLite cannot hold answered 500.
     limit = min(limit, ACTIVITY_STREAM_MAX)
     conn = get_db()

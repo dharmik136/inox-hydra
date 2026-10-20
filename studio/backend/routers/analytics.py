@@ -324,28 +324,6 @@ def get_analytics_overview(range: str = "30d"):
         conn.close()
 
 
-@router.get("/api/analytics/demographics")
-def get_demographics(dimension: Optional[str] = None):
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-        if dimension:
-            cursor.execute("SELECT dimension, label, percentage FROM audience_demographics WHERE dimension = ? ORDER BY percentage DESC", (dimension,))
-        else:
-            cursor.execute("SELECT dimension, label, percentage FROM audience_demographics ORDER BY percentage DESC")
-        rows = [dict(r) for r in cursor.fetchall()]
-        conn.close()
-
-        grouped = {}
-        for r in rows:
-            dim = r["dimension"]
-            grouped.setdefault(dim, []).append(r)
-
-        return {"status": "success", "demographics": grouped}
-    finally:
-        conn.close()
-
-
 @router.get("/api/analytics/export")
 def export_analytics(format: str = "csv"):
     conn = get_db()
@@ -515,19 +493,3 @@ def ingest_live_analytics(payload: dict):
     result = linkedin_client.ingest_analytics_payload(payload)
     return result
 
-
-@router.get("/api/v1/telemetry/status", tags=["Analytics"])
-def get_telemetry_shard_status():
-    if not telemetry_engine:
-        return {"status": "unavailable", "message": "Telemetry shard not initialized"}
-    status = telemetry_engine.get_status()
-    if telemetry_buffer:
-        status["pending_in_buffer"] = telemetry_buffer.pending_count()
-    return status
-
-
-@router.post("/api/v1/telemetry/flush", tags=["Analytics"])
-def flush_telemetry_shard():
-    if not telemetry_buffer:
-        return {"flushed_events": 0, "flushed_dwells": 0}
-    return telemetry_buffer.flush()

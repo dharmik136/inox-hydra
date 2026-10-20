@@ -1,4 +1,5 @@
 import pytest
+import pytest
 import os
 from fastapi.testclient import TestClient
 
@@ -32,6 +33,7 @@ def test_gstack_add_task_empty_specification_rejected():
             )
 
 
+@pytest.mark.usefixtures("dev_mode")
 def test_gstack_add_task_invalid_role_rejected():
     """Verify invalid role raises ValueError in engine and returns 400 in API."""
     engine = GStackGovernanceEngine()
@@ -71,6 +73,7 @@ def test_gstack_update_status_invalid_task_id():
     assert engine.update_backlog_status(99999999, "VERIFIED") is False
 
 
+@pytest.mark.usefixtures("dev_mode")
 def test_gstack_update_status_invalid_status_rejected():
     """Verify invalid status update raises ValueError in engine and returns 400 in API."""
     engine = GStackGovernanceEngine()

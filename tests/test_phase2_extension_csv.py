@@ -17,7 +17,7 @@ client = TestClient(app)
 
 def test_phase2_leads_export_csv_endpoint():
     """Verify GET /api/v1/crm/leads/export-csv returns RFC-4180 CSV with enriched schema."""
-    resp = client.get("/api/v1/crm/leads/export-csv")
+    resp = client.get("/api/leads/export/csv")
     assert resp.status_code == 200
     assert "text/csv" in resp.headers.get("content-type", "")
     assert "linkedin_studio_crm_leads.csv" in resp.headers.get("content-disposition", "")

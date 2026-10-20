@@ -42,17 +42,6 @@ except (ImportError, ValueError):
 router = APIRouter()
 
 
-class LeadCreate(BaseModel):
-    name: str
-    headline: Optional[str] = ""
-    company: Optional[str] = ""
-    profile_url: Optional[str] = ""
-    engagement_type: Optional[str] = "Commented"
-    post_id: Optional[str] = ""
-    status: Optional[str] = "New Lead"
-    notes: Optional[str] = ""
-
-
 class LeadStatusUpdate(BaseModel):
     status: str
     notes: Optional[str] = None
@@ -84,17 +73,6 @@ class GenerateDMRequest(BaseModel):
     custom_insight: Optional[str] = None
 
 
-class ScorePreviewRequest(BaseModel):
-    headline: Optional[str] = ""
-    company: Optional[str] = None
-    comment_text: Optional[str] = None
-    interaction_type: Optional[str] = "COMMENT"
-
-
-class ArchiveInactiveRequest(BaseModel):
-    inactive_days: int = 90
-
-
 class LeadRemoval(BaseModel):
     lead_ids: List[str]
 
@@ -111,7 +89,6 @@ def get_leads(status: Optional[str] = None, search: Optional[str] = None):
     return {"status": "success", "leads": list_leads(status, search)}
 
 
-@router.get("/api/v1/crm/leads/export-csv", tags=["Enterprise Reverse CRM"])
 @router.get("/api/leads/export/csv", tags=["Inbound CRM"])
 def export_leads_csv_route(status: Optional[str] = None, search: Optional[str] = None):
     csv_data = export_leads_csv(status, search)
@@ -120,21 +97,6 @@ def export_leads_csv_route(status: Optional[str] = None, search: Optional[str] =
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=linkedin_studio_crm_leads.csv"}
     )
-
-
-@router.post("/api/leads")
-def create_lead(lead: LeadCreate):
-    data = lead.model_dump() if hasattr(lead, "model_dump") else lead.dict()
-    return add_lead(data)
-
-
-@router.post("/api/leads/batch")
-def create_leads_batch(payload: Dict[str, Any]):
-    leads_list = payload.get("leads", [])
-    result = batch_add_leads(leads_list)
-    if result.get("status") == "error":
-        raise HTTPException(status_code=400, detail=result["message"])
-    return result
 
 
 @router.put("/api/leads/{lead_id}/status")
@@ -213,17 +175,6 @@ def ingest_crm_interaction(req: IngestInteractionRequest):
     return {"status": "success", "interaction": result, "lead": result}
 
 
-@router.get("/api/v1/crm/leads/high-value", tags=["Enterprise Reverse CRM"])
-def get_high_value_leads(min_score: float = 60.0, limit: int = 50):
-    leads = reverse_crm.list_high_value_leads(min_icp_score=min_score, limit=limit)
-    return {"status": "success", "count": len(leads), "leads": leads}
-
-
-@router.get("/api/v1/crm/telemetry", tags=["Enterprise Reverse CRM"])
-def get_crm_telemetry():
-    return reverse_crm.get_crm_telemetry()
-
-
 @router.post("/api/v1/crm/leads/generate-dm", tags=["Enterprise Reverse CRM"])
 def generate_lead_dm(req: GenerateDMRequest):
     dm = ICPScoringEngine.generate_contextual_dm(
@@ -235,46 +186,12 @@ def generate_lead_dm(req: GenerateDMRequest):
     return {"status": "success", "suggested_dm": dm}
 
 
-@router.post("/api/v1/crm/dm/variants", tags=["Enterprise Reverse CRM"])
-def generate_anti_slop_dm_variants(req: GenerateDMRequest):
-    variants = ICPScoringEngine.generate_anti_slop_dm_variants(
-        lead_name=req.lead_name,
-        comment_text=req.comment_text,
-        post_topic=req.post_topic,
-        custom_insight=req.custom_insight,
-    )
-    return {"status": "success", "variants": variants}
-
-
-@router.post("/api/v1/crm/score-preview", tags=["Enterprise Reverse CRM"])
-def preview_icp_score(req: ScorePreviewRequest):
-    breakdown = ICPScoringEngine.calculate_icp_breakdown(
-        headline=req.headline,
-        company=req.company,
-        comment_text=req.comment_text,
-        interaction_type=req.interaction_type or "COMMENT",
-    )
-    return {
-        "status": "success",
-        **breakdown,
-    }
-
-
 @router.delete("/api/v1/crm/leads/{lead_id}/purge", tags=["Enterprise Reverse CRM"])
 def purge_crm_lead(lead_id: str):
     res = reverse_crm.purge_lead(lead_id)
     if not res["lead_deleted"]:
         raise HTTPException(status_code=404, detail="Lead not found")
     return res
-
-
-@router.post("/api/v1/crm/leads/archive-inactive", tags=["Enterprise Reverse CRM"])
-def archive_inactive_crm_leads(req: Optional[ArchiveInactiveRequest] = None):
-    days = req.inactive_days if req else 90
-    result = reverse_crm.archive_inactive_leads(days)
-    if result.get("status") == "error":
-        raise HTTPException(status_code=400, detail=result["message"])
-    return result
 
 
 @router.get("/api/v1/crm/leads/{lead_id}/timeline", tags=["Enterprise Reverse CRM"])

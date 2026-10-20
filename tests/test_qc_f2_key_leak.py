@@ -55,9 +55,11 @@ def offline(monkeypatch, request):
 def gemini_configured():
     from app import app
 
+    from agno_agentos.model_gateway import save_ai_config
+
     client = TestClient(app)
-    res = client.post("/api/ai/settings", json={"gemini_api_key": PLANTED})
-    assert res.status_code == 200, res.text
+    # As the removed /api/ai/settings did: a Gemini key saved without a check.
+    save_ai_config(provider="gemini", api_key=PLANTED, model="gemini-2.5-flash")
     yield client
     client.post("/api/ai/configure", json={"provider": "local_deterministic"})
 

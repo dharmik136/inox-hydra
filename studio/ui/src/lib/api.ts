@@ -1182,69 +1182,6 @@ export async function configureAi(provider: string, apiKey: string, model?: stri
   });
 }
 
-/**
- * Streams AI completions token by token using Server Sent Events (SSE).
- * Calls /api/ai/stream with prompt, system_prompt, max_tokens, and temperature.
- * Invokes onChunk callback as tokens arrive and resolves with the full text.
- */
-export async function streamAiCompletion(
-  prompt: string,
-  options?: {
-    systemPrompt?: string;
-    maxTokens?: number;
-    temperature?: number;
-    onChunk?: (chunk: string) => void;
-  },
-): Promise<string> {
-  const response = await studioFetch("/api/ai/stream", {
-    method: "POST",
-    body: JSON.stringify({
-      prompt,
-      system_prompt: options?.systemPrompt ?? null,
-      max_tokens: options?.maxTokens ?? 1200,
-      temperature: options?.temperature ?? 0.7,
-    }),
-  });
-
-  if (!response.ok) throw await refusalFrom(response);
-
-  const reader = response.body?.getReader();
-  if (!reader) {
-    return "";
-  }
-
-  const decoder = new TextDecoder();
-  let accumulated = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const text = decoder.decode(value, { stream: true });
-    const lines = text.split("\n");
-    for (const line of lines) {
-      if (line.startsWith("data: ")) {
-        const payloadStr = line.slice(6).trim();
-        if (payloadStr === "[DONE]") {
-          continue;
-        }
-        try {
-          const payload = JSON.parse(payloadStr);
-          if (payload && typeof payload.token === "string") {
-            accumulated += payload.token;
-            if (options?.onChunk) {
-              options.onChunk(payload.token);
-            }
-          }
-        } catch {
-          // ignore incomplete or malformed chunk
-        }
-      }
-    }
-  }
-
-  return accumulated;
-}
-
 /** The analytics CSV streams as a file, so it is a link rather than a fetch. */
 export const ANALYTICS_CSV_URL = "/api/analytics/export?format=csv";
 
