@@ -33,6 +33,11 @@ import re
 from typing import Any, Dict, List, Optional
 
 try:
+    from ..text_cut import clip
+except ImportError:  # pragma: no cover - direct script use
+    from text_cut import clip
+
+try:
     from ..database import get_db
 except ImportError:  # pragma: no cover - direct script use
     from database import get_db
@@ -122,7 +127,7 @@ def _normalise(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "cwd": str(entry.get("cwd") or "") or None,
         "env": {str(k): str(v) for k, v in env.items()},
         "enabled": bool(entry.get("enabled", False)),
-        "description": str(entry.get("description") or "")[:200],
+        "description": clip(str(entry.get("description") or ""), 200),
     }
 
 

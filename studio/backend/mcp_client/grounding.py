@@ -46,6 +46,11 @@ import json
 from typing import Any, Dict, List, Optional
 
 try:
+    from ..text_cut import clip
+except ImportError:  # pragma: no cover - direct script use
+    from text_cut import clip
+
+try:
     from .protocol import McpServer
     from .servers import enabled_servers
 except ImportError:  # pragma: no cover - direct script use
@@ -116,7 +121,7 @@ def _summarise(text: str, limit: int = MAX_PER_RESOURCE_BYTES) -> str:
     clean = " ".join(str(text or "").split())
     if len(clean) <= limit:
         return clean
-    cut = clean[:limit]
+    cut = clip(clean, limit)
     space = cut.rfind(" ")
     if space > limit // 2:
         cut = cut[:space]

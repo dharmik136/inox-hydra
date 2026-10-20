@@ -10,6 +10,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 try:
+    from ..text_cut import clip
+except ImportError:  # pragma: no cover - direct script use
+    from text_cut import clip
+
+try:
     from ..browser_launcher import (
         detect_installed_browsers,
         get_extension_dir,
@@ -201,7 +206,7 @@ def get_activity_stream(limit: int = 25):
         recent_posts = [
             {
                 "activity_urn": r[0],
-                "excerpt": (r[1] or "")[:200],
+                "excerpt": clip(r[1] or "", 200),
                 "published_at": r[2],
                 "reactions": r[3],
                 "comments": r[4],
@@ -226,8 +231,8 @@ def get_activity_stream(limit: int = 25):
         recent_comments = [
             {
                 "target_author": r[0] or "Unknown",
-                "my_text": (r[1] or "")[:240],
-                "target_excerpt": (r[2] or "")[:160],
+                "my_text": clip(r[1] or "", 240),
+                "target_excerpt": clip(r[2] or "", 160),
                 "target_activity_urn": r[3],
                 "last_seen_at": r[4],
             }
@@ -249,7 +254,7 @@ def get_activity_stream(limit: int = 25):
             {
                 "target_author": r[0] or "Unknown",
                 "reaction_kind": r[1] or "like",
-                "target_excerpt": (r[2] or "")[:160],
+                "target_excerpt": clip(r[2] or "", 160),
                 "target_activity_urn": r[3],
                 "last_seen_at": r[4],
             }

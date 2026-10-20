@@ -22,6 +22,11 @@ except ImportError:
     from database import get_db
     from migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 
+try:
+    from .text_cut import clip
+except ImportError:
+    from text_cut import clip
+
 logger = logging.getLogger("studio.crm")
 
 
@@ -346,7 +351,7 @@ class ICPScoringEngine:
         if not post_topic:
             return ""
 
-        excerpt = text[:60]
+        excerpt = clip(text, 60)
         if excerpt.endswith((".", "!", "?")):
             excerpt = excerpt[:-1]
 
@@ -386,7 +391,7 @@ class ICPScoringEngine:
         Strictly zero em-dashes (\\u2014) and no corporate jargon.
         """
         first_name = lead_name.split()[0] if lead_name else "there"
-        excerpt = comment_text.strip()[:60] if comment_text else ""
+        excerpt = clip(comment_text.strip(), 60) if comment_text else ""
         if excerpt.endswith((".", "!", "?")):
             excerpt = excerpt[:-1]
 
@@ -459,10 +464,10 @@ class ReverseCRMManager:
     ) -> Dict[str, Any]:
         """Ingest or update a lead and record an interaction."""
         # Sanitize field lengths to prevent abuse
-        full_name = (full_name or "").strip()[:MAX_CRM_NAME_LENGTH]
-        headline = (headline or "").strip()[:MAX_CRM_HEADLINE_LENGTH]
-        company = (company or "").strip()[:MAX_CRM_COMPANY_LENGTH] if company else company
-        comment_text = comment_text[:MAX_CRM_COMMENT_LENGTH] if comment_text else comment_text
+        full_name = clip((full_name or "").strip(), MAX_CRM_NAME_LENGTH)
+        headline = clip((headline or "").strip(), MAX_CRM_HEADLINE_LENGTH)
+        company = clip((company or "").strip(), MAX_CRM_COMPANY_LENGTH) if company else company
+        comment_text = clip(comment_text, MAX_CRM_COMMENT_LENGTH) if comment_text else comment_text
         # The capture's own placeholders are not words anybody wrote. Stored as
         # comment text, "Reacted to post on LinkedIn" was shown in the dossier
         # as the person's comment, beside a Reply button that could only fail.

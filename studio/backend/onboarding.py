@@ -40,6 +40,11 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import quote, unquote
 
 try:
+    from .text_cut import clip
+except ImportError:
+    from text_cut import clip
+
+try:
     from .database import get_db
 except ImportError:
     from database import get_db
@@ -128,7 +133,7 @@ def _text(value: Any, limit: int) -> Optional[str]:
     if not isinstance(value, str):
         value = str(value)
     value = value.strip()
-    return value[:limit] if value else None
+    return clip(value, limit) if value else None
 
 
 def _count(value: Any) -> Optional[int]:
@@ -1312,7 +1317,7 @@ def annotate_interactions(interactions: List[Dict[str, Any]]) -> List[Dict[str, 
     for item in interactions:
         item["post_origin"] = _origin(item.get("post_urn"), own_ids, complete)
         text = texts.get(_activity_id(item.get("post_urn")))
-        item["post_excerpt"] = " ".join(text.split())[:140] if text else None
+        item["post_excerpt"] = clip(" ".join(text.split()), 140) if text else None
     return interactions
 
 

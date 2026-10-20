@@ -49,6 +49,11 @@ import sys
 import threading
 from typing import Any, Dict, List, Optional
 
+try:
+    from ..text_cut import clip
+except ImportError:  # pragma: no cover - direct script use
+    from text_cut import clip
+
 # The revision of the protocol this client implements. Sent during the
 # handshake so a server can refuse or adapt. A server answering with something
 # unexpected is logged and dropped rather than guessed at.
@@ -332,7 +337,7 @@ class McpServer:
             text = item.get("text")
             if not isinstance(text, str) or not text:
                 continue
-            chunk = text[:budget]
+            chunk = clip(text, budget)
             collected.append(chunk)
             budget -= len(chunk)
             if budget <= 0:

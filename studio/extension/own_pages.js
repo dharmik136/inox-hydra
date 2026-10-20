@@ -979,7 +979,7 @@
           if (!text) continue;
           items.push({
             target_activity_urn: urn, kind: "comment", my_text: text,
-            target_author: cardActorName(card), target_excerpt: (cardText(card) || "").slice(0, 300),
+            target_author: cardActorName(card), target_excerpt: Array.from(cardText(card) || "").slice(0, 300).join(""),
           });
         }
       } else if (kind === "activity_reactions") {
@@ -987,7 +987,7 @@
         const match = REACTION_WORDS.find(([word]) => header.includes(word));
         items.push({
           target_activity_urn: urn, kind: "reaction", reaction_kind: match ? match[1] : "like",
-          target_author: cardActorName(card), target_excerpt: (cardText(card) || "").slice(0, 300),
+          target_author: cardActorName(card), target_excerpt: Array.from(cardText(card) || "").slice(0, 300).join(""),
         });
       }
     }

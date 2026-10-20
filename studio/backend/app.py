@@ -301,6 +301,200 @@ app.add_middleware(
 )
 
 
+# -------------------------------------------------------------
+# One error boundary
+#
+# Without these, any error a route did not catch answered a bare
+# "500 Internal Server Error" in plain text, which the interface showed as
+# "The studio refused this request (500)". Worse, a request carrying half an
+# emoji (a lone UTF-16 surrogate) or a NaN failed validation, and FastAPI's own
+# 422 handler then crashed echoing that input back, so the extension's capture
+# was answered 500 and resent for ever.
+#
+# Every answer below is JSON in the shape refusalFrom() in the interface
+# reads: {"detail": {"code", "message"}} or, for validation, a list of
+# {"loc", "msg", "type"}. None carries a traceback, the request's input, or a
+# stored value. The traceback goes to the log only.
+# -------------------------------------------------------------
+_error_log = logging.getLogger("studio.errors")
+
+try:
+    from fastapi.exceptions import RequestValidationError
+    from pydantic import ValidationError as _PydanticValidationError
+except ImportError:  # pragma: no cover
+    RequestValidationError = _PydanticValidationError = None
+
+
+def _printable(text: Any) -> str:
+    """Text that can always be encoded as UTF-8: a lone surrogate becomes U+FFFD."""
+    return str(text).encode("utf-8", "replace").decode("utf-8") if text is not None else ""
+
+
+def _studio_error(status: int, code: str, message: str, headers: Optional[Dict[str, str]] = None) -> JSONResponse:
+    return JSONResponse(status_code=status, content={"detail": {"code": code, "message": message}}, headers=headers)
+
+
+def _validation_answer(errors) -> JSONResponse:
+    detail = []
+    for error in errors or []:
+        detail.append({
+            "loc": [_printable(part) if not isinstance(part, int) else part for part in error.get("loc", ())],
+            "msg": _printable(error.get("msg", "")),
+            "type": _printable(error.get("type", "")),
+        })
+    return JSONResponse(status_code=422, content={"detail": detail})
+
+
+def _database_trouble(error: BaseException) -> Optional[JSONResponse]:
+    """The answer for a database or disk failure a person can act on, or None."""
+    said = str(error).lower()
+    full = (isinstance(error, OSError) and getattr(error, "errno", None) == 28) or "disk is full" in said \
+        or "database or disk is full" in said
+    if full:
+        return _studio_error(
+            503, "disk_full",
+            "The drive that holds the studio's data is full, so this was not saved. "
+            f"Free some space on it (the data folder is {paths_module.get_app_home()}) and try again.",
+        )
+    if isinstance(error, sqlite3.OperationalError) and ("locked" in said or "busy" in said):
+        return _studio_error(
+            503, "studio_busy",
+            "The studio's database is busy with another task, such as an import, a backup or a second "
+            "copy of the studio. Nothing was saved. Try again in a moment.",
+            headers={"Retry-After": "5"},
+        )
+    if isinstance(error, sqlite3.DatabaseError) and ("malformed" in said or "not a database" in said):
+        return _studio_error(
+            503, "database_damaged",
+            "The studio's database file is damaged, so this could not be read or saved. Restore your "
+            "newest backup: run \"python -m studio.cli doctor\", which prints the exact restore command, "
+            "then start the studio again.",
+        )
+    return None
+
+
+_LONE_SURROGATE = re.compile("[\ud800-\udfff]")
+_SURROGATE_ESCAPE = re.compile(rb"\\u[dD][89a-fA-F][0-9a-fA-F]{2}")
+
+
+def _without_lone_surrogates(value: Any) -> Any:
+    if isinstance(value, str):
+        return _LONE_SURROGATE.sub("", value)
+    if isinstance(value, list):
+        return [_without_lone_surrogates(item) for item in value]
+    if isinstance(value, dict):
+        return {_without_lone_surrogates(k): _without_lone_surrogates(v) for k, v in value.items()}
+    return value
+
+
+class DropLoneSurrogates:
+    """
+    Removes half-characters from a JSON body before any route reads it.
+
+    JavaScript cuts strings in UTF-16 units, so a client that trims text to a
+    length can cut an emoji in half, and JSON.stringify then sends the lone
+    half as an escape such as \\ud83d. Python decodes it into a string nothing
+    can store or encode: SQLite refused it, and the extension's lead was lost.
+    A lone half shows as nothing on any screen, so it is dropped and the rest
+    of the text is kept. A whole pair decodes to one character and is never
+    touched. Only a body that contains such an escape is re-read.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or not scope.get("path", "").startswith("/api"):
+            return await self.app(scope, receive, send)
+        headers = dict(scope.get("headers") or [])
+        if b"json" not in headers.get(b"content-type", b""):
+            return await self.app(scope, receive, send)
+
+        chunks, more = [], True
+        while more:
+            message = await receive()
+            if message["type"] != "http.request":
+                return await self.app(scope, _replay([message], receive), send)
+            chunks.append(message.get("body", b""))
+            more = message.get("more_body", False)
+        body = b"".join(chunks)
+
+        if _SURROGATE_ESCAPE.search(body):
+            try:
+                cleaned = _without_lone_surrogates(json.loads(body))
+                body = json.dumps(cleaned, ensure_ascii=False).encode("utf-8")
+                scope = dict(scope)
+                scope["headers"] = [(k, v) for k, v in scope["headers"] if k != b"content-length"] + [
+                    (b"content-length", str(len(body)).encode("ascii"))]
+            except ValueError:
+                pass  # Not JSON at all: the route's own validation answers it.
+        return await self.app(scope, _replay([{"type": "http.request", "body": body, "more_body": False}], receive),
+                              send)
+
+
+def _replay(messages, then):
+    """Hands back the messages already read, then whatever the client sends next."""
+    pending = list(messages)
+
+    async def receive():
+        if pending:
+            return pending.pop(0)
+        return await then()
+
+    return receive
+
+
+app.add_middleware(DropLoneSurrogates)
+
+
+@app.exception_handler(RequestValidationError)
+async def _answer_invalid_request(request: Request, error):
+    return _validation_answer(error.errors())
+
+
+@app.exception_handler(_PydanticValidationError)
+async def _answer_invalid_value(request: Request, error):
+    # A model built inside a route from the request's values, such as an
+    # agent's input contract, is the request's fault, not the studio's.
+    return _validation_answer(error.errors(include_url=False, include_input=False, include_context=False))
+
+
+@app.exception_handler(sqlite3.Error)
+async def _answer_database_error(request: Request, error):
+    answer = _database_trouble(error)
+    if answer is not None:
+        _error_log.warning("%s %s: %s", request.method, request.scope.get("path", ""), _printable(error))
+        return answer
+    return _answer_unexpected_error_now(request, error)
+
+
+@app.exception_handler(OSError)
+async def _answer_os_error(request: Request, error):
+    answer = _database_trouble(error)
+    if answer is not None:
+        _error_log.warning("%s %s: %s", request.method, request.scope.get("path", ""), _printable(error))
+        return answer
+    return _answer_unexpected_error_now(request, error)
+
+
+def _answer_unexpected_error_now(request: Request, error: BaseException, log: bool = True) -> JSONResponse:
+    if log:
+        _error_log.error("%s %s failed", request.method, request.scope.get("path", ""),
+                         exc_info=(type(error), error, error.__traceback__))
+    return _studio_error(
+        500, "internal_error",
+        "Something went wrong inside the studio and this did not finish. Nothing more is shown here; "
+        "the details are in the studio's log (engine.log in the logs folder).",
+    )
+
+
+@app.exception_handler(Exception)
+async def _answer_unexpected_error(request: Request, error):
+    # Starlette raises the error again after this answer is sent, and the
+    # server logs its traceback then, so it is not logged twice here.
+    return _answer_unexpected_error_now(request, error, log=False)
+
+
 @app.middleware("http")
 async def enforce_local_access(request: Request, call_next):
     """
@@ -628,7 +822,7 @@ delete_post = posts_router_module.delete_post
 
 
 @app.post("/api/posts/{post_id}/publish-now", tags=["LinkedIn Native Scheduler"])
-async def publish_post_now(post_id: str):
+def publish_post_now(post_id: str):
     """
     Immediately dispatches a scheduled post or draft as published.
     Normalizes status to published, records UTC published_at,
@@ -656,7 +850,7 @@ async def publish_post_now(post_id: str):
         conn.commit()
         conn.close()
 
-        await event_bus.publish("post_published", {
+        event_bus.publish_sync("post_published", {
             "post_id": post_id,
             "content": existing["content"][:80],
             "action": "published_now",
@@ -697,7 +891,7 @@ def _readable_size(size: int) -> str:
 
 
 @app.post("/api/media/upload", tags=["Media Studio & Dropzone"])
-async def upload_media_file(file: UploadFile = File(...)):
+def upload_media_file(file: UploadFile = File(...)):
     """
     Unified drag-and-drop media upload handler supporting:
     - Single & Multi-Images (.png, .jpg, .jpeg, .webp)
@@ -740,7 +934,9 @@ async def upload_media_file(file: UploadFile = File(...)):
 
     # The signature checks below need only the start of the file; the rest is
     # copied to disk in chunks, so memory stays bounded whatever the size.
-    content = await file.read(64 * 1024)
+    # A plain function, so this runs on the thread pool: the disk and database
+    # work below no longer holds up every other request while it waits.
+    content = file.file.read(64 * 1024)
     size_bytes = len(content)
 
     if size_bytes == 0:
@@ -785,7 +981,7 @@ async def upload_media_file(file: UploadFile = File(...)):
         with open(file_path, "wb") as f:
             f.write(content)
             while True:
-                chunk = await file.read(MEDIA_UPLOAD_CHUNK)
+                chunk = file.file.read(MEDIA_UPLOAD_CHUNK)
                 if not chunk:
                     break
                 size_bytes += len(chunk)
@@ -2989,7 +3185,7 @@ async def post_archive_upload(request: Request):
     writer = archive_import.UploadWriter(unquote(request.headers.get("x-archive-name") or "archive.zip"))
     try:
         async for chunk in request.stream():
-            writer.write(chunk)
+            await run_in_threadpool(writer.write, chunk)
     except archive_import.ArchiveError as error:
         raise HTTPException(status_code=413, detail=str(error))
     except BaseException:

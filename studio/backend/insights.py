@@ -25,6 +25,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
+    from .text_cut import clip
+except ImportError:
+    from text_cut import clip
+
+try:
     from . import contrast_engine, onboarding
     from .database import get_db
 except ImportError:
@@ -45,7 +50,7 @@ def _age_hours(published_at: Optional[str]) -> Optional[float]:
 
 
 def _excerpt(text: Optional[str], limit: int = 140) -> Optional[str]:
-    return " ".join((text or "").split())[:limit] or None
+    return clip(" ".join((text or "").split()), limit) or None
 
 
 def posts_overview() -> Dict[str, Any]:

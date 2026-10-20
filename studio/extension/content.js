@@ -1031,7 +1031,7 @@ function observeAndCaptureEngagers() {
 
       const headline = headlineEl ? headlineEl.innerText.replace(/[\n\r]+/g, " ").trim() : "";
       const profileUrl = linkEl ? linkEl.href.split("?")[0] : "";
-      const commentText = bodyEl ? bodyEl.innerText.trim().slice(0, 140) : "";
+      const commentText = bodyEl ? Array.from(bodyEl.innerText.trim()).slice(0, 140).join("") : "";
       // Whose post this is cannot be told: not filed, rather than guessed.
       if (!postUrnFor(card) && !postAuthorFor(card)) return;
 
@@ -1076,7 +1076,7 @@ function observeAndCaptureEngagers() {
         company: c.headline.includes(" at ") ? c.headline.split(" at ")[1].split("|")[0].trim() : "",
         profile_url: c.profileUrl,
         engagement_type: "Commented",
-        notes: c.commentText ? `Commented: "${c.commentText.slice(0, 140)}"` : "Commented on post",
+        notes: c.commentText ? `Commented: "${Array.from(c.commentText).slice(0, 140).join("")}"` : "Commented on post",
         post_urn: postUrn,
         post_author: c.postAuthor,
         _isNew: isNew

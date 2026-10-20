@@ -17,6 +17,11 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timezone
 
 try:
+    from .text_cut import clip
+except ImportError:
+    from text_cut import clip
+
+try:
     from .crm import qualification_tier, reverse_crm
 except ImportError:
     from crm import qualification_tier, reverse_crm
@@ -81,13 +86,13 @@ def list_leads(status: Optional[str] = None, search: Optional[str] = None) -> Li
 
 
 def add_lead(lead_data: Dict) -> Dict:
-    name = (lead_data.get("name") or "").strip()[:MAX_NAME_LENGTH]
+    name = clip((lead_data.get("name") or "").strip(), MAX_NAME_LENGTH)
     if not name:
         return {"status": "error", "message": "Name is required"}
 
-    headline = (lead_data.get("headline") or "").strip()[:MAX_HEADLINE_LENGTH]
-    company = (lead_data.get("company") or "").strip()[:MAX_COMPANY_LENGTH]
-    notes = (lead_data.get("notes") or "").strip()[:MAX_NOTES_LENGTH]
+    headline = clip((lead_data.get("headline") or "").strip(), MAX_HEADLINE_LENGTH)
+    company = clip((lead_data.get("company") or "").strip(), MAX_COMPANY_LENGTH)
+    notes = clip((lead_data.get("notes") or "").strip(), MAX_NOTES_LENGTH)
 
     lead_id = lead_data.get("id") or f"lead_{uuid.uuid4().hex[:8]}"
     conn = get_db()
@@ -240,7 +245,7 @@ def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = Non
         # removal once nothing reads it.
         mapped_status = LEAD_STATUS_TO_PIPELINE.get(new_status, "NEW")
         if notes is not None:
-            sanitized_notes = notes.strip()[:MAX_NOTES_LENGTH]
+            sanitized_notes = clip(notes.strip(), MAX_NOTES_LENGTH)
             c.execute(
                 "UPDATE leads SET status = ?, lead_status = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                 (new_status, mapped_status, sanitized_notes, lead_id),
@@ -270,7 +275,7 @@ def update_lead_status(lead_id: str, new_status: str, notes: Optional[str] = Non
 
 def update_lead_notes(lead_id: str, notes: str) -> Dict:
     """The creator's own notes on a lead, written from the dossier. The stage is left alone."""
-    sanitized = (notes or "").strip()[:MAX_NOTES_LENGTH]
+    sanitized = clip((notes or "").strip(), MAX_NOTES_LENGTH)
     conn = get_db()
     try:
         updated = conn.execute(
@@ -349,7 +354,7 @@ def generate_dm_script(
             if match:
                 extracted = match.group(1).strip()
                 if len(extracted) > 10:
-                    comment_ref = f' Your point about "{extracted[:60]}..." really stood out.'
+                    comment_ref = f' Your point about "{clip(extracted, 60)}..." really stood out.'
 
         if style == "resource_share":
             if not what:
