@@ -822,7 +822,16 @@ def _migrate_retention(cursor: sqlite3.Cursor) -> None:
         detail TEXT
     )
     """)
-    # Migration 19's trigger, now covering the keep list too.
+    # Who was forgotten, held only until the creator chooses whether to remove
+    # them from backups too: their copies there can be found by this id alone.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS forgotten_in_backups (
+        lead_id TEXT PRIMARY KEY,
+        forgotten_at TEXT NOT NULL
+    )
+    """)
+    # Migration 19's trigger, now covering the keep list too, and noting the
+    # id for backups whichever path did the forgetting.
     cursor.execute("DROP TRIGGER IF EXISTS lead_forgotten")
     cursor.execute("""
     CREATE TRIGGER lead_forgotten AFTER DELETE ON leads
@@ -831,6 +840,16 @@ def _migrate_retention(cursor: sqlite3.Cursor) -> None:
         DELETE FROM lead_interactions WHERE lead_id = OLD.id;
         DELETE FROM lead_enrichments WHERE lead_id = OLD.id;
         DELETE FROM lead_retention_keeps WHERE lead_id = OLD.id;
+        INSERT OR REPLACE INTO forgotten_in_backups (lead_id, forgotten_at) VALUES (OLD.id, CURRENT_TIMESTAMP);
+    END
+    """)
+    # Someone forgotten who engages again is a lead again, and the backups made
+    # since hold them rightly. A lead's id is a hash of their profile.
+    cursor.execute("DROP TRIGGER IF EXISTS lead_returned")
+    cursor.execute("""
+    CREATE TRIGGER lead_returned AFTER INSERT ON leads
+    BEGIN
+        DELETE FROM forgotten_in_backups WHERE lead_id = NEW.id;
     END
     """)
     starting = (

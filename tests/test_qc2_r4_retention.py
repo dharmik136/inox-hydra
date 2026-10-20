@@ -164,6 +164,8 @@ def _back_to_19():
     conn.execute("DROP TABLE reaction_folds")
     conn.execute("DROP TABLE lead_retention_keeps")
     conn.execute("DROP TABLE retention_log")
+    conn.execute("DROP TABLE forgotten_in_backups")
+    conn.execute("DROP TRIGGER lead_returned")
     conn.execute("DELETE FROM settings WHERE key LIKE 'retention_%'")
     conn.execute("PRAGMA user_version = 19")
     conn.commit()
@@ -469,6 +471,26 @@ def test_forgotten_people_can_be_removed_from_backups_too(home):
     assert support.inspect_backup(copy)["kind"] == "database"
     assert retention.scrub_pending()["people"] == 0
     assert [n for n in os.listdir(paths.get_backups_dir()) if n.startswith(".scrub-")] == []
+
+
+def test_a_forget_from_anywhere_can_be_removed_from_backups_too(home):
+    from studio.backend.crm import reverse_crm
+
+    _lead("lead-dossier", "Dora Dossier")
+    support.create_backup("manual")
+    assert reverse_crm.purge_lead("lead-dossier")["lead_deleted"]
+    assert retention.scrub_pending()["people"] == 1, "a forget from the Leads screen was not offered for backups"
+    assert retention.scrub_backups()["rewritten"] == 1
+    assert retention.scrub_pending()["people"] == 0
+
+
+def test_someone_who_comes_back_is_not_removed_from_later_backups(home):
+    from studio.backend.crm import reverse_crm
+
+    _lead("lead-back", "Bea Back")
+    reverse_crm.purge_lead("lead-back")
+    _lead("lead-back", "Bea Back")
+    assert retention.scrub_pending()["people"] == 0
 
 
 def test_leaving_backups_to_rotation_drops_the_held_ids(home):

@@ -61,7 +61,7 @@ Forgetting removes a person from the database at once. Copies of them stay in ba
 - in the database copies taken before an upgrade, until two more upgrades have replaced them;
 - in backups you made yourself with **Back up now**, until you delete them.
 
-After you forget people from the review list, the panel offers two choices:
+After anyone is removed from your leads, from this review list, from the Leads screen or by any other removal, this section offers two choices:
 
 - **Remove from backups too** rewrites every backup and pre-upgrade copy in this profile's backups folder without them. Each rewritten file is checked before it replaces the original, and keeps its date. It can take a minute for a large studio. A backup that could not be rewritten is named in the message and still holds them.
 - **Leave them until the backups expire** leaves the backups as they are.

@@ -656,7 +656,7 @@ function ForgottenInBackups({ view, busy, act }: { view: StorageOverview; busy: 
       {view.scrub.people > 0 && (
         <div className="mt-3 rounded-md border border-edge p-3">
           <p className="text-[13px] leading-relaxed text-ink-primary">
-            {count(view.scrub.people)} {view.scrub.people === 1 ? "person" : "people"} you forgot here may still be
+            {count(view.scrub.people)} {view.scrub.people === 1 ? "person" : "people"} removed from your leads may still be
             in older backups.
           </p>
           <p className="mt-1 text-[12px] leading-relaxed text-ink-muted">

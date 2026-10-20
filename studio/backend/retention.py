@@ -93,7 +93,6 @@ RULES: Dict[str, Dict[str, Any]] = {
 }
 
 LAST_BACKUP_KEY = "retention_last_daily_backup"
-SCRUB_PENDING_KEY = "retention_scrub_pending"
 
 JOBS = ("telemetry", "readings", "reactions")
 # The jobs the daily run may do on its own, and the rule that switches each on.
@@ -680,9 +679,9 @@ def forget_leads(lead_ids: Any) -> Dict[str, Any]:
 
     Each one is checked again first: someone who engaged, or whom the creator
     acted on, since the list was shown is kept. Forgetting goes through the
-    one removal path every other forget uses (crm.purge_lead). Their ids are
-    then held until the creator chooses whether to remove them from backups
-    too, which only those ids make possible.
+    one removal path every other forget uses (crm.purge_lead), whose trigger
+    holds their ids until the creator chooses whether to remove them from
+    backups too, which only those ids make possible.
     """
     chosen = _ids(lead_ids)
     started = _now()
@@ -706,11 +705,6 @@ def forget_leads(lead_ids: Any) -> Dict[str, Any]:
             forgotten += 1
     conn = get_db()
     try:
-        with conn:
-            pending = _scrub_pending(conn)
-            pending["lead_ids"] = sorted(set(pending["lead_ids"]) | set(doomed))
-            pending["since"] = pending.get("since") or _stamp(started)
-            _write_setting(conn, SCRUB_PENDING_KEY, json.dumps(pending))
         # The freed pages are zeroed (secure_delete); this puts them back into
         # the database file now rather than at the next checkpoint.
         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -725,23 +719,31 @@ def forget_leads(lead_ids: Any) -> Dict[str, Any]:
 # Removing forgotten people from backups too
 # ---------------------------------------------------------------------------
 
-def _scrub_pending(conn) -> Dict[str, Any]:
-    try:
-        value = json.loads(_read_setting(conn, SCRUB_PENDING_KEY) or "{}")
-    except ValueError:
-        value = {}
-    if not isinstance(value, dict) or not isinstance(value.get("lead_ids"), list):
-        value = {"lead_ids": [], "since": None}
-    return value
+def _scrub_pending(conn) -> List[str]:
+    """
+    Everyone forgotten, by any path, since the creator last chose: the
+    lead_forgotten trigger notes each id in forgotten_in_backups, and a
+    person who engages again is taken off it (migration 20).
+    """
+    return [r[0] for r in conn.execute("SELECT lead_id FROM forgotten_in_backups ORDER BY forgotten_at")]
 
 
 def scrub_pending() -> Dict[str, Any]:
     conn = get_db()
     try:
-        pending = _scrub_pending(conn)
+        people, since = conn.execute("SELECT COUNT(*), MIN(forgotten_at) FROM forgotten_in_backups").fetchone()
     finally:
         conn.close()
-    return {"people": len(pending["lead_ids"]), "since": pending.get("since")}
+    return {"people": people, "since": since}
+
+
+def _clear_pending(lead_ids: List[str]) -> None:
+    conn = get_db()
+    try:
+        with conn:
+            conn.executemany("DELETE FROM forgotten_in_backups WHERE lead_id = ?", [(i,) for i in lead_ids])
+    finally:
+        conn.close()
 
 
 def _scrub_database(path: str, lead_ids: List[str]) -> bool:
@@ -752,19 +754,24 @@ def _scrub_database(path: str, lead_ids: List[str]) -> bool:
         tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
         if "leads" not in tables:
             return False
-        marks = ",".join("?" for _ in lead_ids)
-        present = conn.execute(f"SELECT COUNT(*) FROM leads WHERE id IN ({marks})", lead_ids).fetchone()[0]
+        # A temporary table, not one ? per id: thousands may be forgotten at once.
+        conn.execute("CREATE TEMP TABLE scrub_ids (id TEXT PRIMARY KEY)")
+        conn.executemany("INSERT OR IGNORE INTO temp.scrub_ids VALUES (?)", [(i,) for i in lead_ids])
+        chosen = "(SELECT id FROM temp.scrub_ids)"
+        present = conn.execute(f"SELECT COUNT(*) FROM leads WHERE id IN {chosen}").fetchone()[0]
         if "lead_interactions" in tables:
-            present += conn.execute(
-                f"SELECT COUNT(*) FROM lead_interactions WHERE lead_id IN ({marks})", lead_ids).fetchone()[0]
+            present += conn.execute(f"SELECT COUNT(*) FROM lead_interactions WHERE lead_id IN {chosen}").fetchone()[0]
         if not present:
             return False
         with conn:
             # Explicitly, table by table: an older backup may predate the trigger.
             for table in ("lead_interactions", "lead_stage_events", "lead_enrichments", "lead_retention_keeps"):
                 if table in tables:
-                    conn.execute(f"DELETE FROM {table} WHERE lead_id IN ({marks})", lead_ids)
-            conn.execute(f"DELETE FROM leads WHERE id IN ({marks})", lead_ids)
+                    conn.execute(f"DELETE FROM {table} WHERE lead_id IN {chosen}")
+            conn.execute(f"DELETE FROM leads WHERE id IN {chosen}")
+            # The copy's own trigger noted them; that list belongs to the live studio only.
+            if "forgotten_in_backups" in tables:
+                conn.execute(f"DELETE FROM forgotten_in_backups WHERE lead_id IN {chosen}")
         conn.execute("VACUUM")
         verdict = conn.execute("PRAGMA integrity_check").fetchone()[0]
         if verdict != "ok":
@@ -826,7 +833,7 @@ def scrub_backups() -> Dict[str, Any]:
     started = _now()
     conn = get_db()
     try:
-        lead_ids = _scrub_pending(conn)["lead_ids"]
+        lead_ids = _scrub_pending(conn)
     finally:
         conn.close()
     result = {"rewritten": 0, "unchanged": 0, "failed": []}
@@ -846,12 +853,7 @@ def scrub_backups() -> Dict[str, Any]:
         finally:
             shutil.rmtree(work, ignore_errors=True)
     if not result["failed"]:
-        conn = get_db()
-        try:
-            with conn:
-                _write_setting(conn, SCRUB_PENDING_KEY, None)
-        finally:
-            conn.close()
+        _clear_pending(lead_ids)
     _log("remove_from_backups", started, "done" if not result["failed"] else "partly done",
          removed=len(lead_ids), detail=result)
     return result
@@ -861,8 +863,7 @@ def leave_backups() -> Dict[str, Any]:
     """The creator chose to let rotation remove them: the held ids are dropped."""
     conn = get_db()
     try:
-        with conn:
-            _write_setting(conn, SCRUB_PENDING_KEY, None)
+        _clear_pending(_scrub_pending(conn))
     finally:
         conn.close()
     return scrub_pending()
