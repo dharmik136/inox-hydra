@@ -81,12 +81,12 @@ A figure the studio never read says "not measured", not 0.
 1. Open **Brand Studio** from the rail.
 2. Choose the **Local security** tab and scroll to **Your data**.
 3. In the list of backups, click **Restore** beside the one you want. Every ZIP backup and every automatic database copy has one.
-4. The studio asks first. The question names the backup and says it replaces this profile's drafts, leads and analytics. Click **OK** to go ahead.
-5. When it finishes, a note reads "Restored *backup name*" and names the safety backup. Click **Reload the studio** to see the restored data. If you have unsaved work open, the studio asks before reloading.
+4. The studio asks first. The question names the backup and says what it replaces: everything in this creator profile, that is drafts and the queue, leads and analytics, your confirmed identity and Setup, settings and stored keys, media files (not for an automatic database copy, which leaves media as they are), and the record of people you forgot. Click **OK** to go ahead.
+5. When it finishes, a note reads "Restored *backup name*" and names the safety backup. If people you forgot after the backup was made were in it, the note says how many were forgotten again. Click **Reload the studio** to see the restored data. If you have unsaved work open, the studio asks before reloading.
 
-**What happens:** the studio unpacks the backup beside your data and checks its database first. Then it takes a `pre_restore` safety backup of your current state, swaps the database and the media files in, and brings the restored database up to this version's layout. If anything fails part way, everything it had changed is put back, the note starts "Not restored", and it names the safety backup. If you restored the wrong archive, restore the safety backup the same way: it is in the same list.
+**What happens:** the studio unpacks the backup beside your data and checks its database first. Then it takes a `pre_restore` safety backup of your current state, swaps the database and the media files in, and brings the restored database up to this version's layout, as a start would: stored keys are sealed and the help's search index is rebuilt. Anyone you forgot after the backup was made is then forgotten again, so an older backup does not bring them back; they stay listed under **Storage and privacy** for removal from your other backups. If anything fails part way, everything it had changed is put back, the note starts "Not restored", and it names the safety backup. If you restored the wrong archive, restore the safety backup the same way: it is in the same list.
 
-A backup made in another creator profile is refused, with a note that names its profile. Switch to that profile first, then restore it there.
+A backup made in another creator profile is refused, with a note that names its profile. Switch to that profile with the profile switcher, then restore it there.
 
 ### From the command line, when the studio will not start
 
@@ -97,7 +97,7 @@ If the studio cannot open, for example because its database is damaged, use a te
 3. Restore it: `python -m studio.cli restore "<path to zip>" --yes`.
 4. Start the studio again. The command ends with "Restart Inox Hydra for the restored data to take effect."
 
-The command line restore works the same way as the button, and prints the safety backup's path. When the current database is damaged it still runs: the current database cannot be copied normally, so the safety backup (`inox_backup_pre_restore_damaged_<date>_<time>.zip`) keeps its files exactly as they were, in a `damaged` folder inside the ZIP, and the command says so.
+The command line restore works the same way as the button, and prints the safety backup's path. It does not forget again the people you forgot after the backup was made: after restoring from the command line, check **Leads** and forget them again. When the current database is damaged it still runs: the current database cannot be copied normally, so the safety backup (`inox_backup_pre_restore_damaged_<date>_<time>.zip`) keeps its files exactly as they were, in a `damaged` folder inside the ZIP, and the command says so.
 
 To go back to the state from before an upgrade, restore its automatic copy, with its **Restore** button or with `python -m studio.cli restore "<path to linkedin_studio_premigration_<date>_<time>.db>" --yes`. It replaces the database only and leaves your media files as they are, and it is brought up to the current layout again.
 

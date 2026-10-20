@@ -508,11 +508,17 @@ function YourData() {
    * Restore used to be a terminal command only, which a portable or desktop
    * install has no checkout folder to run. The studio takes a safety backup
    * of the current state before it changes anything, and the question says
-   * so, because the answer to restoring the wrong archive is that copy.
+   * so, because the answer to restoring the wrong archive is that copy. It
+   * names everything a restore replaces: it said "drafts, leads and
+   * analytics" of a restore that also replaces who you are, your settings and
+   * keys, your media and the record of people you forgot.
    */
-  async function restore(name: string) {
+  async function restore(name: string, databaseOnly: boolean) {
     const question =
-      `Restore ${name}?\n\nThis replaces this profile's drafts, leads and analytics with what the backup holds. ` +
+      `Restore ${name}?\n\nThis replaces everything in this creator profile with what the backup holds: drafts ` +
+      "and the queue, leads and analytics, your confirmed identity and Setup, settings and stored keys, " +
+      (databaseOnly ? "and the record of people you forgot. Media files are left as they are. " : "media files, and the record of people you forgot. ") +
+      "Anyone you have forgotten since the backup was made is forgotten again after the restore. " +
       "A safety backup of the current state is taken first, so you can go back to it the same way.";
     if (!window.confirm(question)) return;
     setBusy(`restore:${name}`);
@@ -523,6 +529,11 @@ function YourData() {
         `Restored ${done.restoredFrom}. ` +
           (done.safetyBackup ? `The safety backup of your state from just before is ${done.safetyBackup}. ` : "") +
           (done.safetyNote ? `${done.safetyNote} ` : "") +
+          (done.forgottenAgain
+            ? `${done.forgottenAgain} ${done.forgottenAgain === 1 ? "person" : "people"} you had forgotten since that backup ${
+                done.forgottenAgain === 1 ? "was" : "were"
+              } forgotten again. `
+            : "") +
           "Reload the studio to see the restored data.",
       );
       setRestored(true);
@@ -639,7 +650,7 @@ function YourData() {
                 {archive.restorable && (
                   <button
                     type="button"
-                    onClick={() => void restore(archive.name)}
+                    onClick={() => void restore(archive.name, archive.kind === "database")}
                     disabled={busy !== null}
                     aria-label={`Restore ${archive.name}`}
                     className="flex shrink-0 items-center gap-1 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"

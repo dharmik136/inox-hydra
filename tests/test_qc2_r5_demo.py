@@ -113,8 +113,36 @@ def test_a_start_without_demo_mode_removes_the_sample_creator(demo, monkeypatch)
     assert onboarding.confirmed_vanity() == ""
     assert _count("SELECT COUNT(*) FROM own_posts WHERE text LIKE '%(demo data)%'") == 0
     assert _count("SELECT COUNT(*) FROM own_posts WHERE activity_urn = ?", real_post) == 1, "a non-demo row went"
-    assert _count("SELECT COUNT(*) FROM leads WHERE name LIKE 'Sample engager%'") == 0
+    assert _count("SELECT COUNT(*) FROM leads WHERE name LIKE '%(demo data)%'") == 0
     assert _count("SELECT COUNT(*) FROM outbound_engagements") == 0
     notice = demo.get("/api/v1/today").json().get("demo_cleanup") or {}
     removed = {item["kind"]: item["count"] for item in notice.get("removed", [])}
     assert removed.get("posts", 0) >= len(database.DEMO_OWN_POSTS)
+
+
+def test_demo_leads_go_even_after_the_demo_identity_was_forgotten(demo, monkeypatch):
+    """
+    Review: forget the sample creator in demo mode, confirm a real one, then
+    start without demo mode. The six sample engagers stayed in the real
+    profile, because the cleanup looked only while the sample creator was the
+    confirmed one.
+    """
+    onboarding.forget_identity()
+    onboarding.observe_profile({"vanity": "real-creator", "self_evidence": ["owner_edit_controls"],
+                                "display_name": "Real Creator"})
+    onboarding.confirm_identity("real-creator")
+    assert _count("SELECT COUNT(*) FROM leads WHERE name LIKE '%(demo data)%'") == len(database.DEMO_ENGAGERS)
+
+    monkeypatch.delenv("INOX_DEMO_DATA")
+    database.seed_initial_data()
+
+    assert onboarding.confirmed_vanity() == "real-creator", "the real creator was removed"
+    assert _count("SELECT COUNT(*) FROM leads WHERE name LIKE '%(demo data)%'") == 0
+    assert _count("SELECT COUNT(*) FROM lead_interactions WHERE lead_id NOT IN (SELECT id FROM leads)") == 0
+
+
+def test_a_demo_draft_greets_the_engager_by_a_first_name(demo):
+    leads = demo.get("/api/leads").json()["leads"]
+    anika = next(lead for lead in leads if "Anika" in (lead.get("name") or ""))
+    script = demo.get(f"/api/leads/{anika['id']}/dm-script", params={"style": "value_add"}).json()["dm_script"]
+    assert script.startswith("Hi Anika"), script
