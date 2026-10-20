@@ -12,7 +12,7 @@ import json
 import math
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, Path, Query
 
 try:
     from ..database import get_db
@@ -467,7 +467,13 @@ def get_posts_leaderboard():
 
 
 @router.get("/api/v1/analytics/posts/{post_id}/leads", tags=["Enterprise Reverse CRM", "Analytics"])
-def get_post_leads_attribution(post_id: str, account_id: str = "default"):
+def get_post_leads_attribution(post_id: str = Path(..., max_length=200),
+                               account_id: str = Query("default", max_length=100)):
+    # A numeric id is also looked up as an integer, and one SQLite cannot hold
+    # raised OverflowError, a 500, rather than finding nothing.
+    digits = post_id.strip().lstrip("-")
+    if digits.isdigit() and int(digits) > 2 ** 63 - 1:
+        raise HTTPException(status_code=422, detail="That post id is out of range.")
     return reverse_crm.get_post_attribution(post_id, account_id=account_id)
 
 
