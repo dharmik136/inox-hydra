@@ -318,6 +318,14 @@ app.add_middleware(
 # -------------------------------------------------------------
 _error_log = logging.getLogger("studio.errors")
 
+# The access log keeps paths, never query strings, and only the requests that
+# failed or changed something. See log_setup.py.
+try:
+    from . import log_setup
+except ImportError:
+    import log_setup
+log_setup.install()
+
 try:
     from fastapi.exceptions import RequestValidationError
     from pydantic import ValidationError as _PydanticValidationError

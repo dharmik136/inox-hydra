@@ -133,8 +133,10 @@ def cmd_doctor(args) -> int:
         destination = support.write_diagnostics_bundle(args.output)
         print(f"Diagnostics bundle written to:\n  {destination}")
         print()
-        print("This file is safe to attach to a public issue. Session cookies and API")
-        print("keys are redacted. You can open it in any text editor to confirm.")
+        print("It holds versions, folder layout, table counts and the last log lines.")
+        print("Session cookies and API keys are redacted, and so are query strings,")
+        print("quoted text, profile addresses and emails in the log lines. Open it in")
+        print("a text editor and read it before you attach it to a public issue.")
     else:
         print("Run with --bundle to write a redacted report you can attach to an issue.")
     return 0

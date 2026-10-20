@@ -87,9 +87,10 @@ else
     mkdir -p "$LOG_DIR"
     LOG_FILE="$LOG_DIR/engine.log"
     # Bounded as the desktop shell bounds it: the log explains the launch that
-    # just failed, it is not an archive.
+    # just failed, it is not an archive. Moved aside rather than deleted, so
+    # the last session's crash is still in engine.log.1 for doctor --bundle.
     if [ -f "$LOG_FILE" ] && [ "$(wc -c < "$LOG_FILE" | tr -d ' ')" -gt 2097152 ]; then
-        rm -f "$LOG_FILE"
+        mv -f "$LOG_FILE" "$LOG_FILE.1"
     fi
     echo "--- engine launch at unix time $(date +%s) ---" >> "$LOG_FILE"
 

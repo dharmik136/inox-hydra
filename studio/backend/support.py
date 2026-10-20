@@ -182,6 +182,56 @@ def _without_account_folder(value: Any, pairs: List[tuple]) -> Any:
     return value
 
 
+# A log line can carry what somebody typed or who somebody is: a search or a
+# message topic in a query string, a name or a comment quoted in an error, a
+# LinkedIn profile address, an email. None of that explains a fault, and the
+# people it names never agreed to be in a file posted to a public issue. So
+# every line the bundle tails is reduced to its shape before it is included.
+# The request line of an access entry and a traceback's file names are kept,
+# because they are what a maintainer reads.
+LOG_REDACTED = "<redacted>"
+_REQUEST_LINE = re.compile(r"^(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS) \S+ HTTP/\d(\.\d)?$")
+_SOURCE_FILE = re.compile(r"^[^\s]*\.py$")
+_QUERY = re.compile(r"\?[^\s\"']*")
+_QUOTED = re.compile(r"\"([^\"]*)\"|'([^']*)'")
+_PROFILE = re.compile(r"(/in/|/company/)[^/\s\"'?#]+", re.IGNORECASE)
+_MEMBER_URN = re.compile(r"urn:li:(person|member|fsd_profile|fs_miniProfile|fsd_company):[^\s\"',)]+", re.IGNORECASE)
+_EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
+
+
+def _keep_quoted(match) -> str:
+    inner = match.group(1) if match.group(1) is not None else match.group(2)
+    quote = '"' if match.group(1) is not None else "'"
+    if _REQUEST_LINE.match(inner) or _SOURCE_FILE.match(inner):
+        return match.group(0)
+    return f"{quote}{LOG_REDACTED}{quote}"
+
+
+def scrub_log_line(line: str) -> str:
+    """One log line with nothing anybody typed and nobody's identity left in it."""
+    text = _QUERY.sub("?" + LOG_REDACTED, str(line))
+    text = _QUOTED.sub(_keep_quoted, text)
+    text = _PROFILE.sub(lambda m: m.group(1) + LOG_REDACTED, text)
+    text = _MEMBER_URN.sub(lambda m: f"urn:li:{m.group(1)}:{LOG_REDACTED}", text)
+    return _EMAIL.sub(LOG_REDACTED, text)
+
+
+# A backup's name carries the label it was given, which can be anything the
+# creator typed ("before the Acme pitch"). The studio's own labels are kept.
+_BACKUP_NAME = re.compile(r"^(inox_backup_|linkedin_studio_(?:snapshot_)?)(.+?)(_\d{8}_\d{6}.*)$")
+_STUDIO_BACKUP_LABELS = frozenset({
+    "manual", "pre_restore", "pre_reset", "premigration", "migration", "daily", "auto", "automatic",
+    "scheduled", "snapshot",
+})
+
+
+def _backup_name(name: str) -> str:
+    match = _BACKUP_NAME.match(name)
+    if not match or match.group(2) in _STUDIO_BACKUP_LABELS:
+        return name
+    return f"{match.group(1)}{LOG_REDACTED}{match.group(3)}"
+
+
 def collect_diagnostics() -> Dict[str, Any]:
     """
     Everything needed to diagnose a problem on a machine we cannot reach.
@@ -235,7 +285,7 @@ def collect_diagnostics() -> Dict[str, Any]:
         backups_dir = paths.get_backups_dir()
         for name in sorted(os.listdir(backups_dir))[-10:]:
             full = os.path.join(backups_dir, name)
-            report["backups"].append({"name": name, "bytes": os.path.getsize(full)})
+            report["backups"].append({"name": _backup_name(name), "bytes": os.path.getsize(full)})
     except Exception as exc:
         report["errors"].append(f"backups unreadable: {exc}")
 
@@ -251,7 +301,7 @@ def collect_diagnostics() -> Dict[str, Any]:
             full = os.path.join(logs_dir, name)
             with open(full, encoding="utf-8", errors="replace") as f:
                 tail = f.readlines()[-200:]
-            report["logs"].append({"name": name, "last_lines": [line.rstrip() for line in tail]})
+            report["logs"].append({"name": name, "last_lines": [scrub_log_line(line.rstrip()) for line in tail]})
     except Exception as exc:
         report["errors"].append(f"logs unreadable: {exc}")
 
