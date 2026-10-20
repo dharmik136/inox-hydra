@@ -44,9 +44,11 @@ def _has_dbstat() -> bool:
     """
     Whether this SQLite can measure a table's pages (the dbstat virtual table).
 
-    dbstat is a compile-time option (SQLITE_ENABLE_DBSTAT_VTAB). Debian's and
-    the Windows build have it; the python.org macOS build does not, so there
-    retention.sizes() says "not measured" by design and the panel says so.
+    dbstat is a compile-time option (SQLITE_ENABLE_DBSTAT_VTAB). Debian's build
+    has it; the python.org macOS build and the Windows build do not, and CI
+    proved both, so there retention.sizes() says "not measured" by design and
+    the panel says so. So this is asked at run time, never assumed per
+    platform.
     """
     probe = sqlite3.connect(":memory:")
     try:
