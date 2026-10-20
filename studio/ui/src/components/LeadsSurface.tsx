@@ -12,7 +12,6 @@ import {
   fetchLeadReview,
   fetchLeadTimeline,
   type FoldedReactions,
-  fetchLeads,
   fetchLeadsPage,
   forgetLead,
   launchBridge,
