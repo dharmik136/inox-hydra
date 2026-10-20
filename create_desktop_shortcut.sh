@@ -7,22 +7,36 @@
 set -e
 
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LAUNCHER="$INSTALL_DIR/launch_studio.sh"
-ICON="$INSTALL_DIR/studio/extension/icons/icon-128.png"
 
-if [ ! -f "$LAUNCHER" ]; then
-    echo "[!] Could not find launch_studio.sh next to this script."
-    echo "    Expected at: $LAUNCHER"
+# The portable folder has InoxHydra.sh; a source checkout has launch_studio.sh.
+# Only the second was looked for, so in the portable folder, where this script
+# also ships, it always stopped with "Could not find launch_studio.sh".
+LAUNCHER=""
+for CANDIDATE in "$INSTALL_DIR/InoxHydra.sh" "$INSTALL_DIR/launch_studio.sh"; do
+    if [ -f "$CANDIDATE" ]; then
+        LAUNCHER="$CANDIDATE"
+        break
+    fi
+done
+
+if [ -z "$LAUNCHER" ]; then
+    echo "[!] Could not find InoxHydra.sh or launch_studio.sh next to this script."
+    echo "    Looked in: $INSTALL_DIR"
     exit 1
 fi
 
 chmod +x "$LAUNCHER"
 
-if [ ! -f "$ICON" ]; then
-    if [ -f "$INSTALL_DIR/desktop/src-tauri/icons/icon.png" ]; then
-        ICON="$INSTALL_DIR/desktop/src-tauri/icons/icon.png"
+ICON=""
+for CANDIDATE in "$INSTALL_DIR/assets/inox_hydra.png" \
+                 "$INSTALL_DIR/studio/extension/icons/icon-128.png" \
+                 "$INSTALL_DIR/extension/icons/icon-128.png" \
+                 "$INSTALL_DIR/desktop/src-tauri/icons/icon.png"; do
+    if [ -f "$CANDIDATE" ]; then
+        ICON="$CANDIDATE"
+        break
     fi
-fi
+done
 
 # Detect platform
 OS_NAME="$(uname -s)"
