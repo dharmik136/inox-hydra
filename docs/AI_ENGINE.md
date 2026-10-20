@@ -37,7 +37,7 @@ graph TD
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `openai` | OpenAI | `gpt-4o` | `gpt-4o`, `gpt-4o-mini`, `o3-mini` | DALL-E 3 (`dall-e-3`) | Yes |
 | `gemini` | Google Gemini | `gemini-2.5-flash` | `gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-1.5-pro` | Imagen 3 (`imagen-3.0-generate-002`) | Yes |
-| `anthropic` | Anthropic Claude | `claude-3-5-sonnet-20241022` | `claude-3-5-sonnet`, `claude-3-5-haiku`, `claude-3-opus` | No (Pollinations fallback) | Yes |
+| `anthropic` | Anthropic Claude | `claude-sonnet-5-5` | `claude-sonnet-5-5`, `claude-opus-5-5`, `claude-haiku-5-5` | No (Pollinations fallback) | Yes |
 | `ollama` | Ollama Local LLM | `llama3:latest` | `llama3`, `mistral`, `deepseek-r1`, `qwen2.5` | No (Local canvas fallback) | No |
 | `groq` | Groq LPU | `llama-3.3-70b-versatile` | `llama-3.3-70b-versatile`, `llama-3.1-8b-instant` | No (Pollinations fallback) | Yes |
 | `custom_openai` | Custom OpenAI Endpoint | `default` | Any model hosted on vLLM, LocalAI, or OpenRouter | No (Pollinations fallback) | Optional |
@@ -61,7 +61,7 @@ python studio_cli.py ai list-providers
 # Configure an AI provider (interactive prompt or non-interactive flags)
 python studio_cli.py ai configure --provider openai --api-key "sk-..." --model gpt-4o
 python studio_cli.py ai configure --provider gemini --api-key "AIzaSy..." --model gemini-2.5-flash
-python studio_cli.py ai configure --provider anthropic --api-key "sk-ant-..." --model claude-3-5-sonnet-20241022
+python studio_cli.py ai configure --provider anthropic --api-key "sk-ant-..." --model claude-sonnet-5-5
 python studio_cli.py ai configure --provider ollama --model llama3:latest
 
 # Display currently active provider, model, masked key, and status

@@ -34,7 +34,7 @@ Whether you run cutting-edge frontier models from OpenAI, Google, or Anthropic, 
 
 ### 3. Anthropic Claude
 * **Provider Key**: `anthropic`
-* **Supported Models**: `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`, `claude-3-opus-20240229`
+* **Supported Models**: `claude-sonnet-5-5`, `claude-opus-5-5`, `claude-haiku-5-5`
 * **Endpoint**: `https://api.anthropic.com/v1`
 
 ### 4. Ollama (Local Hardware LLM)
@@ -79,7 +79,7 @@ python studio_cli.py ai configure --provider openai --api-key "sk-..." --model g
 python studio_cli.py ai configure --provider gemini --api-key "AIzaSy..." --model gemini-2.5-flash
 
 # Configure Anthropic Claude
-python studio_cli.py ai configure --provider anthropic --api-key "sk-ant-..." --model claude-3-5-sonnet-20241022
+python studio_cli.py ai configure --provider anthropic --api-key "sk-ant-..." --model claude-sonnet-5-5
 ```
 
 ### 3. Configure Local Offline Inference

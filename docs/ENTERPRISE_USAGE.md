@@ -138,7 +138,7 @@ Pulls creator performance directly from the authenticated LinkedIn connection:
 
 The centralized intelligence and content generation console:
 * **Bring-Your-Own-AI (BYO-AI) Multi-Model Gateway**:
-  * **Supported Providers**: OpenAI (`gpt-4o`, DALL-E 3), Google Gemini (`gemini-2.5-flash`), Anthropic (`claude-3-5-sonnet-20241022`), Groq LPU (`llama-3.3-70b-versatile`), local Ollama (`llama3` on localhost), and custom OpenAI-compatible endpoints.
+  * **Supported Providers**: OpenAI (`gpt-4o`, DALL-E 3), Google Gemini (`gemini-2.5-flash`), Anthropic (`claude-sonnet-5-5`), Groq LPU (`llama-3.3-70b-versatile`), local Ollama (`llama3` on localhost), and custom OpenAI-compatible endpoints.
   * **Active CLI Verification Ping**: Run `python studio_cli.py ai configure` to perform an active HTTP handshake before credentials are saved to SQLite. Broken credentials are automatically rejected.
   * **Local Deterministic Fallback**: 100% offline, zero-cloud-egress pattern synthesizer (0ms latency) serving 10 hook archetypes and 5 repurposing frameworks when no external AI is configured.
 * **Prompt Presets**:

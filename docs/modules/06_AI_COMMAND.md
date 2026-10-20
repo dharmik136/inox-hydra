@@ -67,7 +67,7 @@ graph TD
 | :--- | :--- | :--- | :--- | :--- |
 | **`openai`** | `gpt-4o` | `api.openai.com/v1/models` | DALL-E 3 HD (1024x1024, 1792x1024) | 1,200ms - 2,500ms |
 | **`gemini`** | `Gemini 2.5 Flash` (`gemini-2.5-flash`) | `generativelanguage.googleapis.com` | Imagen 3 via Gemini API | 800ms - 1,800ms |
-| **`anthropic`** | `claude-3-5-sonnet-20241022` | `api.anthropic.com/v1/messages` | Multi-prompt enhancement | 1,400ms - 3,000ms |
+| **`anthropic`** | `claude-sonnet-5-5` | `api.anthropic.com/v1/messages` | Multi-prompt enhancement | 1,400ms - 3,000ms |
 | **`ollama`** | `llama3` | `http://localhost:11434/api/tags` | Local canvas generation | 500ms - 4,000ms (HW-dependent) |
 | **`groq`** | `llama-3.3-70b-versatile` | `api.groq.com/openai/v1/models` | Fast prompt enrichment | 250ms - 600ms |
 | **`custom_openai`** | User-defined | User-defined `/v1/models` | Compatible endpoints | Variable |

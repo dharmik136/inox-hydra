@@ -209,7 +209,7 @@ def main():
     config_parser = ai_subparsers.add_parser("configure", help="Configure and test an AI provider")
     config_parser.add_argument("--provider", choices=list(SUPPORTED_PROVIDERS.keys()), help="AI provider name")
     config_parser.add_argument("--api-key", help="API Key for the provider")
-    config_parser.add_argument("--model", help="Model name (e.g. gpt-4o, gemini-2.5-flash, claude-3-5-sonnet)")
+    config_parser.add_argument("--model", help="Model name (e.g. gpt-4o, gemini-2.5-flash, claude-sonnet-5-5)")
     config_parser.add_argument("--base-url", help="Base URL for Ollama, vLLM, or custom endpoint")
 
     # ai test

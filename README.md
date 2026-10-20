@@ -211,7 +211,7 @@ Inox Hydra is designed as an open, model-agnostic creator studio. You can seamle
    * Models: `gpt-4o`, `gpt-4o-mini`, `o3-mini`, `dall-e-3`.
    * State-of-the-art copywriting, viral hook formulation, and DALL-E 3 image generation.
 3. **Anthropic Claude**:
-   * Models: `claude-3-5-sonnet-20241022`, `claude-3-5-haiku-20241022`.
+   * Models: `claude-sonnet-5-5` (default), `claude-opus-5-5`, `claude-haiku-5-5`.
    * Long-form practitioner essays, technical nuance, and architecture breakdowns.
 4. **Local Offline LLMs (Ollama / vLLM)**:
    * Models: `llama3`, `mistral`, `deepseek-r1`, `qwen2.5`.
