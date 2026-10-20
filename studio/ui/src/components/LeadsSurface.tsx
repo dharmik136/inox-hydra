@@ -160,7 +160,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
               setQuery(event.target.value);
               setLimit(STREAM_PAGE);
             }}
-            placeholder="Name, company, headline or notes"
+            placeholder="Name, company or notes"
             className="min-w-0 flex-1 rounded-md border border-edge bg-ink px-2.5 py-1 text-[12px] text-ink-primary placeholder:text-ink-muted focus:border-edge-strong focus:outline-none"
           />
           <select
@@ -291,6 +291,9 @@ function Dossier({
   const [topic, setTopic] = useState("");
   const [offer, setOffer] = useState("");
   const [copied, setCopied] = useState(false);
+  // A draft has been copied to send on LinkedIn, so the next step, saying it
+  // went, is offered beside it rather than two clicks away in the pipeline.
+  const [handedOver, setHandedOver] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
@@ -327,6 +330,7 @@ function Dossier({
     setDraft(null);
     setDrafting(null);
     setCopied(false);
+    setHandedOver(false);
     // The topic is about the creator's own posting, not about the lead, so it
     // survives moving between people in the stream. Clearing it would make a
     // creator retype the same subject for every lead in a session.
@@ -642,6 +646,7 @@ function Dossier({
                     .then(() => {
                       setActionError((current) => (current === refusal ? null : current));
                       setCopied(true);
+                      setHandedOver(true);
                       window.setTimeout(() => setCopied(false), 1600);
                     })
                     .catch(refused);
@@ -655,6 +660,31 @@ function Dossier({
             <p className="rounded-md border border-edge bg-ink p-3 text-[13px] leading-relaxed whitespace-pre-wrap text-ink-secondary">
               {draft?.text ?? suggested}
             </p>
+            {handedOver && lead.status === "New Lead" && (
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <p className="text-[12px] text-ink-muted">Sent it on LinkedIn?</p>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    setActionError(null);
+                    try {
+                      await updateLeadStatus(lead.id, "Outreach Sent");
+                      await refresh();
+                      onChanged();
+                    } catch (caught) {
+                      setActionError(caught instanceof Error ? caught.message : "The change was refused.");
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  className="rounded-full border border-edge-strong px-2.5 py-0.5 text-[11px] text-ink-primary transition-colors hover:bg-soft disabled:opacity-50"
+                >
+                  Mark as Outreach Sent
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           /* Nothing is generated on render. Drafting is an action the creator

@@ -20,9 +20,11 @@ type Unmeasured = { settled_without_figures?: number; settled_without_figures_fr
 export function PostsSurface({
   onOpenLead,
   onOpenActivity,
+  onOpenSetup,
 }: {
   onOpenLead: (leadId: string) => void;
   onOpenActivity?: () => void;
+  onOpenSetup?: () => void;
 }) {
   const [data, setData] = useState<PostsInsights | null>(null);
   const [failed, setFailed] = useState(false);
@@ -49,7 +51,7 @@ export function PostsSurface({
   if (!data) return <Centered>LOADING YOUR POSTS</Centered>;
   if (!data.posts.length) {
     return (
-      <EmptySurface label="Posts" title="What worked, and who it brought">
+      <EmptySurface label="Posts" title="What worked, and who it brought" onOpenSetup={onOpenSetup}>
         None of your posts have been imported yet. Import them in Setup, and each one appears here
         against your usual, with the people it brought.
       </EmptySurface>

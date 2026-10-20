@@ -31,7 +31,7 @@ type TopicRow = Omit<TopicAttributionInsights["topics"][number], "lead_conversio
  * no best day: you chose the days you posted on, so they cannot be separated
  * from everything else about those posts.
  */
-export function PatternsSurface() {
+export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}) {
   const [patterns, setPatterns] = useState<PatternsInsights | null>(null);
   const [cadence, setCadence] = useState<CadenceInsights | null>(null);
   const [contrasts, setContrasts] = useState<ContrastInsights | null>(null);
@@ -62,7 +62,7 @@ export function PatternsSurface() {
   if (!patterns || !cadence) return <Centered>LOADING PATTERNS</Centered>;
   if (!cadence.posts) {
     return (
-      <EmptySurface label="Patterns" title="What your own posts suggest">
+      <EmptySurface label="Patterns" title="What your own posts suggest" onOpenSetup={onOpenSetup}>
         None of your posts have been imported yet. Once they are, this compares the ones that share a
         form with the ones that do not, and says only what the sample supports.
       </EmptySurface>

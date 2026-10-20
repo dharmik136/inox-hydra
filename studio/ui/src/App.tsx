@@ -905,6 +905,7 @@ export default function App() {
               {active === "posts" && (
                 <PostsSurface
                   onOpenActivity={() => navigate("activity")}
+                  onOpenSetup={() => navigate("setup")}
                   onOpenLead={(leadId) => {
                     if (!navigate("leads")) return;
                     focusNonce.current += 1;
@@ -912,8 +913,8 @@ export default function App() {
                   }}
                 />
               )}
-              {active === "outbound" && <OutboundSurface />}
-              {active === "patterns" && <PatternsSurface />}
+              {active === "outbound" && <OutboundSurface onOpenSetup={() => navigate("setup")} />}
+              {active === "patterns" && <PatternsSurface onOpenSetup={() => navigate("setup")} />}
               {active === "swipe" && <SwipeSurface focus={focusFor("swipe")} />}
               {active === "analytics" && <AnalyticsSurface />}
               {active === "settings" && <BrandStudioSurface />}
