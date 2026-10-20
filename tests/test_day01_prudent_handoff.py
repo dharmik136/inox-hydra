@@ -258,15 +258,20 @@ def test_schedule_recovery_evaluation():
 
 
 def test_scheduler_api_endpoints():
-    """Tests native scheduler staging and recovery API endpoints."""
+    """
+    Tests the recovery endpoint, and that the unguarded staging route is gone.
+
+    POST /api/v1/scheduler/native/stage sent any text to LinkedIn's scheduler
+    with no confirmation, no time check and no record (BE-08). The guarded
+    /api/v1/posts/{id}/stage-to-linkedin is the one way to LinkedIn.
+    """
     future_ms = int((datetime.now() + timedelta(days=1)).timestamp() * 1000)
     res1 = client.post("/api/v1/scheduler/native/stage", json={
         "content": "API test for cloud scheduling",
         "scheduled_at_ms": future_ms,
         "mock": True
     })
-    assert res1.status_code == 200
-    assert res1.json()["status"] == "success"
+    assert res1.status_code in (404, 405)
 
     res2 = client.post("/api/v1/scheduler/recovery/evaluate", json={
         "scheduled_at": (datetime.now() - timedelta(minutes=15)).isoformat()

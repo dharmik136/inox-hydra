@@ -567,6 +567,11 @@ class LeadStatusUpdate(BaseModel):
 class CookiePayload(BaseModel):
     li_at: str
     JSESSIONID: str
+    # The account signed in to that browser, as the bridge noted it on the
+    # creator's own profile, and its member URN, which Send to LinkedIn names
+    # as the author. Absent from an older extension.
+    vanity: Optional[str] = Field(None, max_length=100)
+    member_urn: Optional[str] = Field(None, max_length=120)
 
 
 class AISettingsPayload(BaseModel):
@@ -1434,7 +1439,10 @@ def receive_cookies(payload: CookiePayload):
     # load and every 15 minute alarm produced a request the creator never made.
     # The sync is still available on its own endpoint for anyone who opts into
     # egress deliberately.
-    linkedin_client.save_tokens(payload.li_at, payload.JSESSIONID)
+    linkedin_client.save_tokens(
+        payload.li_at, payload.JSESSIONID,
+        account={"vanity": onboarding.normalise_vanity(payload.vanity or ""), "member_urn": payload.member_urn},
+    )
     return {
         "status": "success",
         "message": "LinkedIn session tokens saved to local studio",
@@ -1859,16 +1867,12 @@ def get_ingress_drafts(limit: int = 50, status: Optional[str] = None):
 # -------------------------------------------------------------
 # LinkedIn Native Cloud Scheduler & Grace Recovery
 # -------------------------------------------------------------
-class NativeStageRequest(BaseModel):
-    content: str
-    scheduled_at_ms: int
-    author_urn: Optional[str] = None
-    mock: bool = False
-
-
 class StagePostRequest(BaseModel):
     scheduled_at: str
     confirm: bool = False
+    # The LinkedIn account the confirmation named (its vanity). The send goes
+    # only when the saved session is still that account's.
+    confirm_account: Optional[str] = Field(None, max_length=100)
     # Sends again after an earlier send got no answer, once the creator has
     # checked LinkedIn and the post is not there.
     confirm_resend: bool = False
@@ -1876,6 +1880,134 @@ class StagePostRequest(BaseModel):
 
 # A send LinkedIn never answered, per post: the time it went out.
 UNANSWERED_SEND_KEY = "linkedin_send_unanswered:"
+
+# Every send of a post to LinkedIn, per post: what was sent and LinkedIn's
+# answer, newest last, so a creator (and the owner testing on a real account)
+# can see exactly what happened.
+SEND_LOG_KEY = "linkedin_send_log:"
+SEND_LOG_LIMIT = 20
+
+# LinkedIn holds a scheduled post from shortly ahead up to about three months
+# out. The studio refuses outside that window rather than spend a request on
+# the creator's account that LinkedIn would refuse.
+SEND_MIN_LEAD = timedelta(minutes=10)
+SEND_MAX_LEAD = timedelta(days=90)
+
+
+def send_readiness() -> Dict[str, Any]:
+    """
+    Whether Send to LinkedIn can work now, and if not, the one thing to do.
+
+    Checked in the order the creator has to fix them, each with a sentence.
+    The account is the one the saved session belongs to, as the bridge
+    reported it; it has to be the creator this studio is set up for, and its
+    member URN has to be known, because LinkedIn needs a post's author.
+    """
+    identity = onboarding.confirmed_vanity()
+    account = linkedin_client.session_account()
+    name = None
+    try:
+        conn = get_db()
+        try:
+            row = conn.execute("SELECT display_name FROM creator_identity WHERE id = 1").fetchone()
+            name = row["display_name"] if row else None
+        finally:
+            conn.close()
+    except Exception:
+        name = None
+    described = None
+    if account:
+        described = {
+            "vanity": account["vanity"],
+            "name": name if identity and identity == account["vanity"] else None,
+            "profile_url": f"linkedin.com/in/{account['vanity']}",
+            "member_urn_known": bool(account.get("member_urn")),
+        }
+
+    def verdict(code: Optional[str], reason: Optional[str]) -> Dict[str, Any]:
+        return {
+            "status": "success",
+            "ready": code is None,
+            "code": code,
+            "reason": reason,
+            "account": described,
+            "egress_allowed": egress_policy.allowed("linkedin"),
+        }
+
+    if not linkedin_client.is_authenticated():
+        return verdict("no_session", (
+            "Nothing can be sent: this studio has no saved LinkedIn session. In the browser where you "
+            "are signed in to LinkedIn, open the Inox Hydra Bridge and press Sync LinkedIn Session."
+        ))
+    if not identity:
+        return verdict("no_identity", "Confirm which LinkedIn account is yours in Setup first.")
+    if not account:
+        return verdict("account_unknown", (
+            "The saved session does not say which LinkedIn account it is. Open your own LinkedIn "
+            "profile in that browser, then press Sync LinkedIn Session in the bridge again."
+        ))
+    if account["vanity"] != identity:
+        return verdict("other_account", (
+            f"The saved session is for linkedin.com/in/{account['vanity']}, but this studio is set up "
+            f"for linkedin.com/in/{identity}. Sign in to LinkedIn as yourself in that browser, open your "
+            "profile, and press Sync LinkedIn Session again."
+        ))
+    if not account.get("member_urn"):
+        return verdict("author_unknown", (
+            "The studio does not know your LinkedIn member id yet, which LinkedIn needs to name you as "
+            "the author. Open your own LinkedIn profile in the bridge browser, then press Sync LinkedIn "
+            "Session in the extension."
+        ))
+    if not egress_policy.allowed("linkedin"):
+        return verdict("egress_off", (
+            "Sending to LinkedIn is switched off in this studio. It is allowed only when the studio is "
+            "started with INOX_ALLOW_LINKEDIN_EGRESS=1; see Publish, queue or send a post to LinkedIn "
+            "in Docs."
+        ))
+    return verdict(None, None)
+
+
+def _send_log(post_id: str) -> List[Dict[str, Any]]:
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (SEND_LOG_KEY + post_id,)).fetchone()
+    finally:
+        conn.close()
+    try:
+        entries = json.loads(row["value"]) if row and row["value"] else []
+    except (TypeError, ValueError):
+        entries = []
+    return entries if isinstance(entries, list) else []
+
+
+def _record_send(post_id: str, entry: Dict[str, Any]) -> None:
+    """Appends one send to the post's record. Never raises: the record must not hide the result."""
+    try:
+        entries = (_send_log(post_id) + [entry])[-SEND_LOG_LIMIT:]
+        conn = get_db()
+        try:
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+                (SEND_LOG_KEY + post_id, json.dumps(entries)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        logging.getLogger("studio.linkedin").warning("Could not record a send of post %s to LinkedIn.", post_id, exc_info=True)
+
+
+@app.get("/api/v1/posts/{post_id}/linkedin-send", tags=["LinkedIn Native Scheduler"])
+def get_linkedin_send(post_id: str):
+    """
+    Whether Send to LinkedIn can work for this post, which account it would
+    send as, and the record of every earlier send of it with LinkedIn's
+    answer. Reads only this machine.
+    """
+    readiness = send_readiness()
+    readiness["sends"] = _send_log(post_id)
+    return readiness
 
 
 def _unanswered_send(post_id: str) -> Optional[str]:
@@ -1900,6 +2032,16 @@ def _record_unanswered_send(post_id: str) -> None:
         conn.close()
 
 
+def _linkedin_said(answer: Any) -> Optional[str]:
+    """LinkedIn's own reason from a JSON error body, when it gives one."""
+    try:
+        body = json.loads(answer) if isinstance(answer, str) and answer.strip().startswith("{") else None
+    except ValueError:
+        body = None
+    message = body.get("message") if isinstance(body, dict) else None
+    return " ".join(message.split())[:300] if isinstance(message, str) and message.strip() else None
+
+
 def _send_refusal_text(result: Dict[str, Any]) -> str:
     """Why a send to LinkedIn did not happen, in one sentence the creator can act on."""
     message = result.get("message")
@@ -1907,8 +2049,17 @@ def _send_refusal_text(result: Dict[str, Any]) -> str:
         return message
     status = result.get("http_status")
     if status:
-        # LinkedIn's own body is often a page of HTML, which is not a reason.
-        return f"LinkedIn refused the post (HTTP {status}). Nothing was scheduled."
+        said = _linkedin_said(result.get("answer") or result.get("error"))
+        if status in (401, 403):
+            return (
+                f"LinkedIn refused the post (HTTP {status}"
+                + (f": {said}" if said else "")
+                + "): it did not accept the saved session. Nothing was scheduled. Sign in to LinkedIn "
+                "again, press Sync LinkedIn Session in the bridge, and try again in five minutes."
+            )
+        # LinkedIn's own body is often a page of HTML, which is not a reason,
+        # so its words are quoted only from a JSON answer.
+        return f"LinkedIn refused the post (HTTP {status}" + (f": {said}" if said else "") + "). Nothing was scheduled."
     error = str(result.get("error") or "").strip()
     if error:
         return f"The studio could not reach LinkedIn ({error[:200]}). Nothing was scheduled."
@@ -1960,10 +2111,24 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
     parsed = parse_datetime_flexible(scheduled)
     if parsed is None:
         raise HTTPException(status_code=400, detail="Invalid scheduled_at timestamp.")
-    if parsed <= datetime.now(timezone.utc):
+    now = datetime.now(timezone.utc)
+    if parsed <= now:
         raise HTTPException(
             status_code=400,
             detail="LinkedIn will not hold a post for a time that has passed.",
+        )
+    if parsed < now + SEND_MIN_LEAD:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "That time is less than 10 minutes away, too soon for LinkedIn to hold the post. "
+                "Nothing was sent. Choose a later slot, or post it yourself now."
+            ),
+        )
+    if parsed > now + SEND_MAX_LEAD:
+        raise HTTPException(
+            status_code=400,
+            detail="LinkedIn holds a post for up to about three months ahead. Nothing was sent. Choose an earlier time.",
         )
 
     conn = get_db()
@@ -1981,6 +2146,23 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
 
     if not content.strip():
         raise HTTPException(status_code=400, detail="This post has no content to send.")
+
+    # The account, before anything leaves. No session is a refusal here, not
+    # a mock run reported as a send; and the confirmation must have named the
+    # account the session belongs to now, so a session synced from another
+    # account after the dialog opened cannot send as them.
+    readiness = send_readiness()
+    if readiness["code"] in ("no_session", "no_identity", "account_unknown", "other_account", "author_unknown"):
+        raise HTTPException(status_code=409, detail={"code": readiness["code"], "message": readiness["reason"]})
+    account = linkedin_client.session_account() or {}
+    if onboarding.normalise_vanity(req.confirm_account or "") != account.get("vanity"):
+        raise HTTPException(status_code=409, detail={
+            "code": "account_changed",
+            "message": (
+                f"Nothing was sent. The confirmation did not name linkedin.com/in/{account.get('vanity')}, "
+                "the account the saved session is for now. Close Publish and open it again."
+            ),
+        })
 
     # An earlier send that LinkedIn never answered may have scheduled the post
     # already, so a second one waits until the creator has looked.
@@ -2001,7 +2183,32 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
     result = linkedin_client.schedule_norm_share(
         content=content,
         scheduled_at_ms=int(parsed.timestamp() * 1000),
+        author_urn=account.get("member_urn"),
     )
+
+    # What was sent and what LinkedIn said, whatever happened. A request the
+    # egress guard or the breaker stopped is recorded as not sent.
+    reached = result.get("mode") == "live" or result.get("status") == "unknown" or bool(result.get("http_status")) \
+        or (result.get("status") == "error" and result.get("error") and not result.get("code"))
+    outcome = (
+        "accepted" if result.get("status") == "success" and result.get("mode") == "live"
+        else "no_answer" if result.get("status") == "unknown"
+        else "refused_by_linkedin" if result.get("http_status")
+        else "failed_to_reach" if reached
+        else "not_sent"
+    )
+    _record_send(post_id, {
+        "at": datetime.now(timezone.utc).isoformat(),
+        "account": account.get("vanity"),
+        "author_urn": account.get("member_urn"),
+        "scheduled_for": scheduled,
+        "outcome": outcome,
+        "sent": result.get("payload") if reached else None,
+        "http_status": result.get("http_status"),
+        "linkedin_answer": result.get("answer") if reached else None,
+        "message": None if outcome == "accepted" else _send_refusal_text(result),
+        "scheduled_urn": result.get("scheduled_urn") or None,
+    })
 
     if result.get("status") == "unknown":
         _record_unanswered_send(post_id)
@@ -2074,19 +2281,10 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
     }
 
 
-@app.post("/api/v1/scheduler/native/stage", tags=["LinkedIn Native Scheduler"])
-def stage_native_scheduled_post(req: NativeStageRequest):
-    """
-    Pre-stages post directly into LinkedIn native cloud scheduler via Voyager API.
-    Solves the sleeping laptop problem by delegating execution to LinkedIn cloud.
-    """
-    result = linkedin_client.schedule_norm_share(
-        content=req.content,
-        scheduled_at_ms=req.scheduled_at_ms,
-        author_urn=req.author_urn,
-        mock=req.mock
-    )
-    return result
+# POST /api/v1/scheduler/native/stage was a second way to the same send with
+# none of these guards: any text, any time, no confirmation, no record, and a
+# mock "pre-staged successfully" when no session was saved (BE-08). Removed;
+# the route above is the one way to LinkedIn.
 
 
 class RecoveryEvaluateRequest(BaseModel):

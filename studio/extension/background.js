@@ -210,11 +210,26 @@ async function syncActiveSessionToStudio() {
     return { status: "not_signed_in", message: "Sign in to LinkedIn in this browser first." };
   }
 
+  // Which account the session belongs to, as own_pages.js noted it on the
+  // creator's own profile, and that member's id, which Send to LinkedIn
+  // names as the post's author. The id goes only with the account it was
+  // read for; neither is sent once the sign-in has changed since.
+  const account = await new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(["signedInVanity", "signedInMemberUrn"], (items) => resolve(items || {}));
+    } catch (err) {
+      resolve({});
+    }
+  });
+  const vanity = account.signedInVanity || null;
+  const member = account.signedInMemberUrn;
+  const memberUrn = member && vanity && member.vanity === vanity ? member.urn : null;
+
   let response;
   try {
     response = await studioFetch("/api/auth/cookies", {
       method: "POST",
-      body: JSON.stringify({ li_at: li_at.value, JSESSIONID: jsessionid.value })
+      body: JSON.stringify({ li_at: li_at.value, JSESSIONID: jsessionid.value, vanity, member_urn: memberUrn })
     });
   } catch (err) {
     return { status: "unreachable", message: "The studio is not running on port 8000." };
@@ -227,6 +242,12 @@ async function syncActiveSessionToStudio() {
   }
   if (!response.ok) {
     return { status: "error", message: "The studio refused the session (" + response.status + ")." };
+  }
+  if (!memberUrn) {
+    return {
+      status: "synced",
+      message: "Session saved, but not yet which account it is. Open your own LinkedIn profile in this browser, then press Sync again."
+    };
   }
   return { status: "synced", message: "Session saved to the studio, for sending to LinkedIn only." };
 }
@@ -258,7 +279,7 @@ async function liAtDigest(value) {
 }
 
 function forgetSignedInMember() {
-  chrome.storage.local.remove(["signedInVanity", LI_AT_DIGEST_KEY]);
+  chrome.storage.local.remove(["signedInVanity", "signedInMemberUrn", LI_AT_DIGEST_KEY]);
 }
 
 try {

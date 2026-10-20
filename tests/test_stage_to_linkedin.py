@@ -50,6 +50,20 @@ client = TestClient(app_module.app)
 PREFIX = "stageprobe-"
 
 
+# Since BE-09 the send goes only as the account the saved session belongs to,
+# with that member's URN as the author, and only when the confirmation named
+# it. These tests are about what happens after that check, so the account is
+# stated here rather than taken from whatever the shared sandbox holds.
+ACCOUNT = {"vanity": "test-creator", "member_urn": "urn:li:fsd_profile:ACoAATEST123", "saved_at": "2026-10-20T00:00:00+00:00"}
+
+
+@pytest.fixture(autouse=True)
+def signed_in_account(monkeypatch):
+    monkeypatch.setattr(app_module.linkedin_client, "session_account", lambda: dict(ACCOUNT))
+    monkeypatch.setattr(app_module.linkedin_client, "is_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.onboarding, "confirmed_vanity", lambda: "test-creator")
+
+
 def _future(hours=6):
     return (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
 
@@ -78,6 +92,7 @@ def _row(post_id):
 
 
 def _stage(post_id, **body):
+    body.setdefault("confirm_account", "test-creator")
     return client.post(f"/api/v1/posts/{post_id}/stage-to-linkedin", json=body)
 
 
@@ -177,14 +192,25 @@ def test_a_mock_result_is_never_reported_as_a_send(monkeypatch):
     # saving a session turned this into a different scenario entirely, which is
     # how it passed alone and failed in the suite.
     monkeypatch.setattr(app_module.linkedin_client, "get_tokens", lambda: {})
+    monkeypatch.setattr(app_module.linkedin_client, "is_authenticated", lambda: False)
     post_id = _seed("nosession")
 
     response = _stage(post_id, scheduled_at=_future(), confirm=True)
 
+    # Since BE-09 no session is refused before the client runs at all.
     assert response.status_code == 409, (
         f"a mock run was reported as a real one: {response.status_code} "
         f"{response.text[:120]}"
     )
+    assert response.json()["detail"]["code"] == "no_session"
+    assert "Nothing can be sent" in response.json()["detail"]["message"]
+    assert _row(post_id)["status"] == "draft"
+
+    # And a mock-shaped session that slips past is still never a send.
+    monkeypatch.setattr(app_module.linkedin_client, "get_tokens", lambda: {"li_at": "mock_x", "JSESSIONID": "ajax:1"})
+    monkeypatch.setattr(app_module.linkedin_client, "is_authenticated", lambda: True)
+    response = _stage(post_id, scheduled_at=_future(), confirm=True)
+    assert response.status_code == 409
     assert "Nothing was sent" in response.json()["detail"]
     assert _row(post_id)["status"] == "draft", (
         "the post was recorded as scheduled even though nothing was sent"

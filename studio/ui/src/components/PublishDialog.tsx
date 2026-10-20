@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { CalendarClock, CheckCheck, Copy, Loader2, Send } from "lucide-react";
 import {
+  fetchLinkedInSend,
   fetchNextSlot,
   publishNow,
   schedulePost,
@@ -9,10 +10,21 @@ import {
   StudioError,
   validateCadence,
   type CadenceVerdict,
+  type LinkedInSendRecord,
+  type LinkedInSendState,
   type NextSlot,
 } from "@/lib/api";
 import { formatLocal } from "@/lib/time";
 import { cn } from "@/lib/utils";
+
+/** An earlier send, in words. */
+function sendOutcome(record: LinkedInSendRecord): string {
+  if (record.outcome === "accepted") return "LinkedIn accepted it and is holding it";
+  if (record.outcome === "refused_by_linkedin") return `LinkedIn refused it (HTTP ${record.http_status ?? "?"})`;
+  if (record.outcome === "no_answer") return "sent, and LinkedIn did not answer";
+  if (record.outcome === "failed_to_reach") return "the studio could not reach LinkedIn";
+  return "nothing was sent";
+}
 
 const FOCUSABLE = "button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex='-1'])";
 
@@ -73,6 +85,10 @@ export function PublishDialog({ open, postId, opening, content, onClose, onDone 
   // The clipboard refused, so nothing was recorded. Marking it posted without
   // the copy is then offered, for a creator who copied the text another way.
   const [copyRefused, setCopyRefused] = useState(false);
+  // Whether Send to LinkedIn can work, as which account, and this post's
+  // earlier sends. Read when the dialog opens, so a send that cannot work is
+  // greyed out with the reason beside it rather than refused after confirming.
+  const [linkedin, setLinkedin] = useState<LinkedInSendState | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -82,6 +98,12 @@ export function PublishDialog({ open, postId, opening, content, onClose, onDone 
     setConfirmingSend(false);
     setResendOffered(false);
     setCopyRefused(false);
+    setLinkedin(null);
+    if (postId) {
+      fetchLinkedInSend(postId)
+        .then((state) => live && setLinkedin(state))
+        .catch(() => live && setLinkedin(null));
+    }
     fetchNextSlot()
       .then(async (next) => {
         if (!live) return;
@@ -172,7 +194,12 @@ export function PublishDialog({ open, postId, opening, content, onClose, onDone 
         onDone("Marked as posted");
       } else if (action === "send" || action === "resend") {
         if (!slot) throw new Error("No slot is available to send into.");
-        const staged = await stageToLinkedIn(postId, slot.slot_datetime, action === "resend");
+        const staged = await stageToLinkedIn(
+          postId,
+          slot.slot_datetime,
+          action === "resend",
+          linkedin?.account?.vanity ?? null,
+        );
         // The server's own sentence, not a cheerful rewrite of it. It is the
         // thing that distinguishes "LinkedIn has this" from "a row moved".
         onDone(staged.message);
@@ -191,10 +218,21 @@ export function PublishDialog({ open, postId, opening, content, onClose, onDone 
       // what just happened.
       setConfirmingSend(false);
       setResendOffered(caught instanceof StudioError && caught.code === "send_unconfirmed");
+      // The refusal and LinkedIn's answer are in the post's record now.
+      if (postId && (action === "send" || action === "resend")) {
+        fetchLinkedInSend(postId)
+          .then(setLinkedin)
+          .catch(() => undefined);
+      }
     } finally {
       setBusy(false);
     }
   }
+
+  const account = linkedin?.account ?? null;
+  const sendAs = account ? `${account.name ? `${account.name} (${account.profile_url})` : account.profile_url}` : null;
+  const lastSend: LinkedInSendRecord | null = linkedin?.sends?.length ? linkedin.sends[linkedin.sends.length - 1] : null;
+  const sendBlocked = !linkedin || !linkedin.ready;
 
   return (
     <AnimatePresence>
@@ -368,12 +406,19 @@ export function PublishDialog({ open, postId, opening, content, onClose, onDone 
                     </button>
                   ) : confirmingSend ? (
                     <div className="mt-3">
-                      <p className="text-[13px] leading-relaxed text-signal-orange-text">
+                      {/* Names the account and the time, both, before anything leaves. */}
+                      <p className="text-[13px] leading-relaxed text-ink-primary">
+                        Send as <span className="font-medium">{sendAs ?? "your LinkedIn account"}</span>, for
+                        LinkedIn to publish at{" "}
+                        <span className="font-medium">
+                          {slot ? formatLocal(slot.local_datetime) : "the selected slot"}
+                        </span>{" "}
+                        (this computer&apos;s time)?
+                      </p>
+                      <p className="mt-2 text-[13px] leading-relaxed text-signal-orange-text">
                         This sends the post&apos;s text to LinkedIn, signed in with your saved
-                        LinkedIn session, for{" "}
-                        {slot ? formatLocal(slot.local_datetime) : "the selected slot"}.
-                        It cannot be undone from here: after this, changing it means going
-                        to LinkedIn.
+                        LinkedIn session. It cannot be undone from here: after this, changing it
+                        means going to LinkedIn.
                       </p>
                       <div className="mt-3 flex items-center gap-2">
                         <button
@@ -394,23 +439,39 @@ export function PublishDialog({ open, postId, opening, content, onClose, onDone 
                           ) : (
                             <Send className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
                           )}
-                          Yes, send it to LinkedIn
+                          {account ? `Yes, send as ${account.name ?? account.vanity}` : "Yes, send it to LinkedIn"}
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <button
-                      type="button"
-                      disabled={busy || !slot || verdict?.valid === false}
-                      onClick={() => setConfirmingSend(true)}
-                      className={cn(
-                        "mt-3 flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary",
-                        "transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40",
+                    <>
+                      <button
+                        type="button"
+                        disabled={busy || !slot || verdict?.valid === false || sendBlocked}
+                        onClick={() => setConfirmingSend(true)}
+                        aria-describedby={linkedin && !linkedin.ready ? "linkedin-send-reason" : undefined}
+                        className={cn(
+                          "mt-3 flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary",
+                          "transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40",
+                        )}
+                      >
+                        <Send className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                        Send to LinkedIn
+                      </button>
+                      {linkedin && !linkedin.ready && linkedin.reason && (
+                        <p id="linkedin-send-reason" className="mt-2 text-[12px] leading-snug text-ink-secondary">
+                          {linkedin.reason}
+                        </p>
                       )}
-                    >
-                      <Send className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                      Send to LinkedIn
-                    </button>
+                      {linkedin?.ready && sendAs && (
+                        <p className="mt-2 text-[12px] leading-snug text-ink-muted">Sends as {sendAs}.</p>
+                      )}
+                    </>
+                  )}
+                  {lastSend && (
+                    <p className="studio-meta mt-2 leading-snug text-ink-muted">
+                      LAST SEND {formatLocal(lastSend.at).toUpperCase()}: {sendOutcome(lastSend).toUpperCase()}
+                    </p>
                   )}
                 </div>
 

@@ -331,11 +331,69 @@
   function noteSignedInMember() {
     const vanity = vanityOf(window.location.href);
     if (!vanity || vanity === "me" || pageKind() !== "profile" || !selfEvidence().length) return;
+    const urn = readMemberUrn(vanity);
     try {
-      chrome.storage.local.set({ signedInVanity: vanity });
+      const items = { signedInVanity: vanity };
+      // Kept with the vanity it was read for, so it can never be sent with
+      // another account's session.
+      if (urn) items.signedInMemberUrn = { vanity, urn };
+      chrome.storage.local.set(items);
     } catch (err) {
       // The extension was reloaded under this page; the next load notes it.
     }
+  }
+
+  // The member's own id, as LinkedIn names it in the page's data, for Send
+  // to LinkedIn: LinkedIn needs the author of a post it is asked to hold.
+  //
+  // LinkedIn renders each page with the data behind it in hidden <code>
+  // blocks (Voyager responses, normalised: "data" plus an "included" list).
+  // The profile shown carries "publicIdentifier" (the vanity) beside its
+  // "entityUrn", urn:li:fsd_profile:<id>; the signed-in member's own entry
+  // (from /voyager/api/me) carries the same id as "dashEntityUrn", or as an
+  // fs_miniProfile urn. Read only on the creator's own profile, matched on
+  // the vanity, so a stranger's id is never taken. Nothing is requested.
+  const MEMBER_URN = /^urn:li:(?:fsd_profile|fs_miniProfile):([A-Za-z0-9_-]{6,80})$/;
+  function readMemberUrn(vanity) {
+    let found = null;
+    let budget = 50000;
+    const visit = (node, depth) => {
+      if (found || !node || typeof node !== "object" || depth > 8 || --budget < 0) return;
+      if (Array.isArray(node)) {
+        for (const item of node) visit(item, depth + 1);
+        return;
+      }
+      const id = typeof node.publicIdentifier === "string" ? node.publicIdentifier : null;
+      if (id) {
+        let own = id;
+        try {
+          own = decodeURIComponent(id).normalize("NFC").toLowerCase();
+        } catch (err) {
+          own = id.toLowerCase();
+        }
+        if (own === vanity) {
+          for (const key of ["entityUrn", "dashEntityUrn", "objectUrn"]) {
+            const match = typeof node[key] === "string" ? MEMBER_URN.exec(node[key]) : null;
+            if (match) {
+              found = `urn:li:fsd_profile:${match[1]}`;
+              return;
+            }
+          }
+        }
+      }
+      for (const key of Object.keys(node)) visit(node[key], depth + 1);
+    };
+    for (const block of document.querySelectorAll("code")) {
+      const text = block.textContent || "";
+      if (text.length > 4000000 || text.indexOf("publicIdentifier") < 0) continue;
+      try {
+        visit(JSON.parse(text), 0);
+      } catch (err) {
+        // Not JSON, or not whole: some blocks are only request descriptions.
+      }
+      if (found) break;
+    }
+    return found;
   }
 
   // An activity page is read only when it is the confirmed creator's. /in/me/

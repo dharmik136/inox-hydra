@@ -1090,12 +1090,19 @@ export async function stageToLinkedIn(
   postId: string,
   scheduledAt: string,
   confirmResend = false,
+  /** The account the confirmation named (its vanity). The send goes only as that account. */
+  confirmAccount: string | null = null,
 ): Promise<StagedToLinkedIn> {
   return call<StagedToLinkedIn>(
     `/api/v1/posts/${encodeURIComponent(postId)}/stage-to-linkedin`,
     {
       method: "POST",
-      body: JSON.stringify({ scheduled_at: scheduledAt, confirm: true, confirm_resend: confirmResend }),
+      body: JSON.stringify({
+        scheduled_at: scheduledAt,
+        confirm: true,
+        confirm_resend: confirmResend,
+        confirm_account: confirmAccount,
+      }),
     },
   );
 }
@@ -2624,6 +2631,35 @@ export async function fetchDrafts(): Promise<DraftSummary[]> {
 /** Deletes a draft. The server refuses a post that has gone out, and answers 404 for nothing. */
 export async function deleteDraft(id: string): Promise<void> {
   await call(`/api/posts/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** One earlier send of a post to LinkedIn: what was sent, and LinkedIn's answer. */
+export interface LinkedInSendRecord {
+  at: string;
+  account: string | null;
+  author_urn: string | null;
+  scheduled_for: string;
+  outcome: "accepted" | "refused_by_linkedin" | "no_answer" | "failed_to_reach" | "not_sent";
+  http_status: number | null;
+  linkedin_answer: string | null;
+  message: string | null;
+  scheduled_urn: string | null;
+}
+
+/** Whether Send to LinkedIn can work for a post now, as which account, and its earlier sends. */
+export interface LinkedInSendState {
+  ready: boolean;
+  /** Why not: no_session, no_identity, account_unknown, other_account, author_unknown or egress_off. */
+  code: string | null;
+  reason: string | null;
+  account: { vanity: string; name: string | null; profile_url: string; member_urn_known: boolean } | null;
+  egress_allowed: boolean;
+  sends: LinkedInSendRecord[];
+}
+
+/** Reads this machine only: the saved session's account, and the send record for the post. */
+export async function fetchLinkedInSend(postId: string): Promise<LinkedInSendState> {
+  return call<LinkedInSendState>(`/api/v1/posts/${encodeURIComponent(postId)}/linkedin-send`);
 }
 
 /** A weekly slot as the creator sets it: a day (0 is Monday), a local time and an optional name. */

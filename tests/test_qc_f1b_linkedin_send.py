@@ -22,6 +22,20 @@ client = TestClient(app_module.app)
 PREFIX = "qcf1b-send-"
 
 
+# Since BE-09 the send goes only as the account the saved session belongs to,
+# with that member's URN as the author, and only when the confirmation named
+# it. These tests are about what happens after that check, so the account is
+# stated here rather than taken from whatever the shared sandbox holds.
+ACCOUNT = {"vanity": "test-creator", "member_urn": "urn:li:fsd_profile:ACoAATEST123", "saved_at": "2026-10-20T00:00:00+00:00"}
+
+
+@pytest.fixture(autouse=True)
+def signed_in_account(monkeypatch):
+    monkeypatch.setattr(app_module.linkedin_client, "session_account", lambda: dict(ACCOUNT))
+    monkeypatch.setattr(app_module.linkedin_client, "is_authenticated", lambda: True)
+    monkeypatch.setattr(app_module.onboarding, "confirmed_vanity", lambda: "test-creator")
+
+
 def _future(hours=6):
     return (datetime.now(timezone.utc) + timedelta(hours=hours)).isoformat()
 
@@ -59,7 +73,7 @@ def clean():
 def _send(post_id, **extra):
     return client.post(
         f"/api/v1/posts/{post_id}/stage-to-linkedin",
-        json={"scheduled_at": _future(), "confirm": True, **extra},
+        json={"scheduled_at": _future(), "confirm": True, "confirm_account": "test-creator", **extra},
     )
 
 
@@ -102,7 +116,7 @@ def test_a_timeout_after_sending_is_reported_as_unknown(monkeypatch):
         raise requests.exceptions.ReadTimeout("read timed out")
 
     monkeypatch.setattr(client_module.requests, "post", timed_out)
-    result = sender.schedule_norm_share(content="A post.", scheduled_at_ms=1)
+    result = sender.schedule_norm_share(content="A post.", scheduled_at_ms=1, author_urn="urn:li:fsd_profile:ACoAATEST123")
     assert result["status"] == "unknown"
     assert "Check your scheduled posts on LinkedIn" in result["message"]
 

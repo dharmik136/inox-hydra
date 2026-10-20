@@ -16,7 +16,9 @@ The session is two LinkedIn cookies, `li_at` and `JSESSIONID`.
 2. Click the extension's toolbar icon.
 3. Click **Sync LinkedIn Session**.
 
-The popup says what happened: "Session saved to the studio, for sending to LinkedIn only." on success, "Sign in to LinkedIn in this browser first." if you are not logged in, "The studio is not running on port 8000." if it cannot reach the studio, or "The studio refused this browser." if step 1 was skipped.
+Before you press it, open your own LinkedIn profile in that browser once and let it load. That is where the extension learns which account is signed in and its member id, which Send to LinkedIn names as the author of your post. They are sent to the studio with the session.
+
+The popup says what happened: "Session saved to the studio, for sending to LinkedIn only." on success, "Session saved, but not yet which account it is. Open your own LinkedIn profile in this browser, then press Sync again." when it has not seen your profile since you signed in, "Sign in to LinkedIn in this browser first." if you are not logged in, "The studio is not running on port 8000." if it cannot reach the studio, or "The studio refused this browser." if step 1 was skipped.
 
 The session is copied only when you press the button. Nothing copies it on a timer.
 
@@ -33,7 +35,7 @@ The fields clear and the note reads "Saved to the local vault."
 
 The studio does not tell you how to find these values. As general browser steps, not studio behaviour: on linkedin.com, open your browser's developer tools, go to the storage or application panel, open the cookies for `https://www.linkedin.com`, and copy the value of each cookie.
 
-Pressing **Sync LinkedIn Session** in the extension later overwrites what you pasted.
+A pasted session does not say which account it belongs to, so **Send to LinkedIn** refuses it and asks you to sync from the extension instead. Pressing **Sync LinkedIn Session** in the extension later overwrites what you pasted.
 
 ## Check it
 

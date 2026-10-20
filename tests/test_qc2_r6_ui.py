@@ -386,3 +386,79 @@ def test_the_composer_copies_the_text_as_written(context, studio_url):
     page.get_by_role("button", name="Copied").wait_for()
     assert page.evaluate("() => navigator.clipboard.readText()").replace("\r\n", "\n") == text
     assert _rows() == [], "copying saved or recorded something"
+
+
+# ---------------------------------------------------------------------------
+# BE-09 / D-21: Send to LinkedIn names the account and the time, and says why not
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def no_session():
+    import linkedin_client as client_module
+
+    client_module.linkedin_client.clear_tokens()
+    yield
+
+
+@pytest.fixture
+def signed_in(monkeypatch):
+    """A confirmed creator, a session the bridge synced with their URN, and a fake LinkedIn."""
+    import linkedin_client as client_module
+    from test_qc2_r6_linkedin_send import FakeLinkedIn
+
+    fake = FakeLinkedIn()
+    monkeypatch.setenv("INOX_ALLOW_LINKEDIN_EGRESS", "1")
+    monkeypatch.delenv("INOX_NO_EGRESS", raising=False)
+    monkeypatch.setattr(client_module.linkedin_client, "base_url", f"http://127.0.0.1:{fake.port}/voyager/api")
+    client_module.linkedin_client.circuit_breaker.reset()
+    conn = get_db()
+    conn.execute("DELETE FROM creator_identity WHERE id = 1")
+    conn.execute(
+        "INSERT INTO creator_identity (id, vanity, display_name, confirmed_at) VALUES (1, 'r6-creator', 'Rae Six', ?)",
+        (datetime.now(timezone.utc).isoformat(),),
+    )
+    conn.commit()
+    conn.close()
+    client_module.linkedin_client.save_tokens(
+        "AQEDAR6liveshaped", '"ajax:6060606060"',
+        account={"vanity": "r6-creator", "member_urn": "urn:li:fsd_profile:ACoAAR6CREATOR0001"},
+    )
+    yield fake
+    fake.close()
+    client_module.linkedin_client.clear_tokens()
+    conn = get_db()
+    conn.execute("DELETE FROM creator_identity WHERE id = 1")
+    conn.execute("DELETE FROM settings WHERE key LIKE 'linkedin_send_log:%' OR key LIKE 'linkedin_holds:%'")
+    conn.commit()
+    conn.close()
+
+
+def test_send_to_linkedin_without_a_session_is_greyed_out_with_the_reason(context, studio_url, no_session):
+    page, editor = _composer(context, studio_url)
+    editor.fill(f"{PREFIX} a post with no session to send it")
+    dialog = _publish(page)
+    send = dialog.get_by_role("button", name="Send to LinkedIn")
+    dialog.get_by_text("no saved LinkedIn session", exact=False).wait_for()
+    assert send.is_disabled()
+
+
+def test_the_confirmation_names_the_account_and_the_time_and_the_send_reaches_only_the_fake(
+        context, studio_url, signed_in):
+    page, editor = _composer(context, studio_url)
+    editor.fill(f"{PREFIX} the post for LinkedIn to hold")
+    dialog = _publish(page)
+    dialog.get_by_text("Sends as Rae Six (linkedin.com/in/r6-creator).").wait_for()
+
+    dialog.get_by_role("button", name="Send to LinkedIn").click()
+    confirm = " ".join(dialog.inner_text().split())
+    assert "Send as Rae Six (linkedin.com/in/r6-creator), for LinkedIn to publish at" in confirm
+    assert "(this computer's time)" in confirm
+    assert signed_in.requests == [], "the first press sent something"
+
+    dialog.get_by_role("button", name="Yes, send as Rae Six").click()
+    dialog.wait_for(state="detached")
+    assert len(signed_in.requests) == 1
+    assert signed_in.requests[0]["body"]["author"] == "urn:li:fsd_profile:ACoAAR6CREATOR0001"
+    assert signed_in.requests[0]["body"]["commentary"]["text"] == f"{PREFIX} the post for LinkedIn to hold"
+    page.get_by_text("LINKEDIN IS HOLDING THIS POST", exact=False).wait_for()
+    assert [r["status"] for r in _rows()] == ["scheduled"]

@@ -11,6 +11,7 @@ Anti-Detection Safeguards:
 """
 
 import json
+import re
 import sqlite3
 import os
 import threading
@@ -188,6 +189,19 @@ def _pipeline_status(human_status):
     return LEAD_STATUS_TO_PIPELINE.get(human_status, "NEW")
 
 
+# Which LinkedIn account a saved session belongs to, as the bridge reported it
+# with the session: the vanity of the member signed in to that browser and
+# their member URN, which Send to LinkedIn names as a post's author.
+SESSION_ACCOUNT_KEY = "linkedin_session_account"
+
+# A member URN as LinkedIn's own pages name one. Nothing else is stored or
+# sent as an author.
+MEMBER_URN_PATTERN = re.compile(r"^urn:li:(?:fsd_profile|person|member):[A-Za-z0-9_-]{1,80}$")
+
+# How much of LinkedIn's answer is kept in the send record.
+ANSWER_LIMIT = 2000
+
+
 class LinkedInClient:
     """
     Client for communicating with LinkedIn internal Voyager endpoints
@@ -222,7 +236,12 @@ class LinkedInClient:
         tokens = self.get_tokens()
         return bool(tokens.get("li_at") and tokens.get("JSESSIONID"))
 
-    def save_tokens(self, li_at: str, jsessionid: str):
+    def save_tokens(self, li_at: str, jsessionid: str, account: Optional[Dict[str, Any]] = None):
+        """
+        Stores the session, and which account it belongs to when the bridge
+        said. A session saved without one replaces any account recorded
+        earlier, because the old one may not be this session's.
+        """
         enc_li_at = encrypt_token(li_at)
         enc_jsessionid = encrypt_token(jsessionid)
         conn = None
@@ -235,6 +254,19 @@ class LinkedInClient:
                 cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('JSESSIONID', ?)", (enc_jsessionid,))
                 cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('session_status', 'connected')")
                 cursor.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('last_token_update', ?)", (now_iso,))
+                vanity = str((account or {}).get("vanity") or "").strip().lower()[:100]
+                urn = str((account or {}).get("member_urn") or "").strip()
+                if vanity:
+                    cursor.execute(
+                        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                        (SESSION_ACCOUNT_KEY, json.dumps({
+                            "vanity": vanity,
+                            "member_urn": urn if MEMBER_URN_PATTERN.fullmatch(urn) else None,
+                            "saved_at": now_iso,
+                        })),
+                    )
+                else:
+                    cursor.execute("DELETE FROM settings WHERE key = ?", (SESSION_ACCOUNT_KEY,))
         finally:
             if conn:
                 try:
@@ -255,10 +287,25 @@ class LinkedInClient:
         conn = get_db()
         try:
             with conn:
-                conn.execute("DELETE FROM settings WHERE key IN ('li_at', 'JSESSIONID', 'last_token_update')")
+                conn.execute("DELETE FROM settings WHERE key IN ('li_at', 'JSESSIONID', 'last_token_update', ?)",
+                             (SESSION_ACCOUNT_KEY,))
                 conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('session_status', 'disconnected')")
         finally:
             conn.close()
+
+    def session_account(self) -> Optional[Dict[str, Any]]:
+        """The account the saved session belongs to, or None when the bridge did not say."""
+        conn = None
+        try:
+            conn = get_db()
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", (SESSION_ACCOUNT_KEY,)).fetchone()
+            value = json.loads(row["value"]) if row and row["value"] else None
+        except Exception:
+            value = None
+        finally:
+            if conn:
+                conn.close()
+        return value if isinstance(value, dict) and value.get("vanity") else None
 
     def build_headers(self, tokens: dict) -> dict:
         jsessionid = tokens.get("JSESSIONID", "")
@@ -920,14 +967,11 @@ class LinkedInClient:
         li_at = tokens.get("li_at", "")
         jsessionid = tokens.get("JSESSIONID", "")
 
-        # Determine member URN
-        if not author_urn:
-            author_urn = tokens.get("author_urn", "")
-            if not author_urn:
-                author_urn = "urn:li:person:current_creator"
-
-        if not author_urn.startswith("urn:li:person:"):
-            author_urn = f"urn:li:person:{author_urn}"
+        # The author is the member the bridge learnt on the creator's own
+        # profile, never a stand-in. This used to fall back to
+        # "urn:li:person:current_creator", which names nobody, so the request
+        # could not have worked for any account (BE-09).
+        author_urn = (author_urn or "").strip() or None
 
         payload = {
             "author": author_urn,
@@ -948,7 +992,9 @@ class LinkedInClient:
                 "scheduled_urn": f"urn:li:share:mock-sched-{scheduled_at_ms}",
                 "scheduled_at_ms": scheduled_at_ms,
                 "payload": payload,
-                "message": "Post pre-staged successfully into LinkedIn native scheduler (Mock Mode)"
+                # Mock mode sends nothing, and says so: it is for the suite and an
+                # air-gapped run, never an answer to a creator who pressed Send.
+                "message": "Mock mode: nothing was sent to LinkedIn."
             }
 
         if not self.circuit_breaker.can_execute():
@@ -975,16 +1021,37 @@ class LinkedInClient:
         if refusal is not None:
             return refusal
 
+        if not author_urn or not MEMBER_URN_PATTERN.fullmatch(author_urn):
+            return {
+                "status": "error",
+                "code": "author_unknown",
+                "message": (
+                    "Nothing was sent: the studio does not know your LinkedIn member id, which LinkedIn "
+                    "needs to name you as the author."
+                ),
+            }
+
         try:
             res = requests.post(url, json=payload, headers=headers, cookies=cookies, timeout=10)
+            # LinkedIn's own answer, kept for the send record whatever it was.
+            answer = (res.text or "")[:ANSWER_LIMIT]
             if res.status_code in (200, 201):
                 self.circuit_breaker.record_success()
-                data = res.json() if res.text else {}
+                try:
+                    data = res.json() if res.text else {}
+                except ValueError:
+                    data = {}
+                if not isinstance(data, dict):
+                    data = {}
+                value = data.get("value") if isinstance(data.get("value"), dict) else {}
                 return {
                     "status": "success",
                     "mode": "live",
-                    "scheduled_urn": data.get("value", {}).get("urn") or data.get("urn", ""),
+                    "scheduled_urn": value.get("urn") or data.get("urn", ""),
                     "scheduled_at_ms": scheduled_at_ms,
+                    "http_status": res.status_code,
+                    "answer": answer,
+                    "payload": payload,
                     "response": data
                 }
             else:
@@ -992,7 +1059,9 @@ class LinkedInClient:
                 return {
                     "status": "error",
                     "http_status": res.status_code,
-                    "error": res.text
+                    "error": res.text,
+                    "answer": answer,
+                    "payload": payload,
                 }
         except requests.exceptions.ReadTimeout:
             # The post went out and no answer came back. LinkedIn may already
@@ -1006,12 +1075,14 @@ class LinkedInClient:
                     "already be holding it. Check your scheduled posts on LinkedIn before you send "
                     "this again."
                 ),
+                "payload": payload,
             }
         except Exception as err:
             self.circuit_breaker.record_failure(reason=str(err))
             return {
                 "status": "error",
-                "error": str(err)
+                "error": str(err),
+                "payload": payload,
             }
 
     @staticmethod

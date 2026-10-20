@@ -163,9 +163,13 @@ def test_the_real_staging_path_still_exists():
     describing something that is no longer there.
     """
     app = _read(APP)
-    assert "/api/v1/scheduler/native/stage" in app, (
-        "the native staging endpoint is gone, so the gap this file documents no "
-        "longer exists and the notes referring to it are stale"
+    # BE-08 removed the unguarded duplicate, /api/v1/scheduler/native/stage.
+    # The guarded route is the staging path now, and it has to stay.
+    assert '@app.post("/api/v1/posts/{post_id}/stage-to-linkedin"' in app, (
+        "the staging endpoint is gone, so the notes referring to it are stale"
+    )
+    assert '@app.post("/api/v1/scheduler/native/stage"' not in app, (
+        "the unguarded staging route is back"
     )
 
 
