@@ -97,7 +97,7 @@ def optimize_db(db_path: Optional[str] = None) -> None:
     looks only at tables the same connection has queried, which on a fresh
     connection is none, so older builds run a bounded ANALYZE instead.
     """
-    conn = sqlite3.connect(db_path or get_db_path(), timeout=5.0)
+    conn = secure(sqlite3.connect(db_path or get_db_path(), timeout=5.0))
     try:
         conn.execute("PRAGMA busy_timeout = 5000;")
         conn.execute(f"PRAGMA analysis_limit = {ANALYSIS_LIMIT:d};")

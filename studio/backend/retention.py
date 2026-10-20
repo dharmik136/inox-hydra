@@ -47,7 +47,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import evidence_briefing, onboarding, paths, sqlite_open, support
+    from . import evidence_briefing, onboarding, paths, post_summary, sqlite_open, support
     from .crm import QUALIFIED_THRESHOLD, VIP_THRESHOLD, reverse_crm
     from .database import get_db
     from .migrations import SCHEMA_VERSION
@@ -56,6 +56,7 @@ except ImportError:  # top-level import mode
     import evidence_briefing
     import onboarding
     import paths
+    import post_summary
     import sqlite_open
     import support
     from crm import QUALIFIED_THRESHOLD, VIP_THRESHOLD, reverse_crm
@@ -953,6 +954,10 @@ def _scrub_database(path: str, lead_ids: List[str]) -> bool:
                 if table in tables:
                     conn.execute(f"DELETE FROM {table} WHERE lead_id IN {chosen}")
             conn.execute(f"DELETE FROM leads WHERE id IN {chosen}")
+            # A copy that has the per-post summary lists people by name in
+            # it: recompute the posts the deletes marked (batch R3's table).
+            if "post_engagement" in tables:
+                post_summary.refresh(conn)
             # The copy's own trigger noted them; that list belongs to the live studio only.
             if "forgotten_in_backups" in tables:
                 conn.execute(f"DELETE FROM forgotten_in_backups WHERE lead_id IN {chosen}")

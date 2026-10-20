@@ -633,6 +633,10 @@ class ReverseCRMManager:
 
                 cursor.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
                 lead_deleted = cursor.rowcount > 0
+                # The per-post summary lists people by name; the deletes
+                # marked their posts, so recompute them now, or the name
+                # stays in the file until a screen next reads those posts.
+                post_summary.refresh(conn)
         finally:
             conn.close()
 

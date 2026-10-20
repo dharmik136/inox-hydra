@@ -1416,6 +1416,9 @@ def remove_leads_not_on_your_posts(lead_ids: Any) -> Dict[str, Any]:
             for lead_id in chosen:
                 conn.execute("DELETE FROM lead_interactions WHERE lead_id = ?", (lead_id,))
                 conn.execute("DELETE FROM leads WHERE id = ?", (lead_id,))
+            # The per-post summary lists people by name: recompute the posts
+            # these deletes marked, so no removed name stays behind in it.
+            post_summary.refresh(conn)
     finally:
         conn.close()
     return {"status": "success", "removed": len(chosen), "kept": len(lead_ids) - len(chosen)}

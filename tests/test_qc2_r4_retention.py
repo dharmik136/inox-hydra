@@ -35,7 +35,7 @@ import pytest
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from studio.backend import database, migrations, paths, retention, support, today  # noqa: E402
+from studio.backend import database, migrations, paths, post_summary, retention, support, today  # noqa: E402
 
 NOW = datetime.now(timezone.utc)
 
@@ -474,6 +474,36 @@ def test_forgotten_people_can_be_removed_from_backups_too(home):
     assert support.inspect_backup(copy)["kind"] == "database"
     assert retention.scrub_pending()["people"] == 0
     assert [n for n in os.listdir(paths.get_backups_dir()) if n.startswith(".scrub-")] == []
+
+
+def test_a_forgotten_person_leaves_the_per_post_summary_in_the_file_and_in_backups(home):
+    """
+    Batch R3's per-post summary lists people by name. Forgetting someone
+    recomputes the posts they engaged with, in the studio's file and in each
+    backup the scrub rewrites, so the name is gone from both.
+    """
+    _silent_people()
+    conn = _db()
+    with conn:
+        post_summary.refresh(conn)
+    assert "Silent Sam" in conn.execute("SELECT people_json FROM post_engagement "
+                                        "WHERE post_urn = 'urn:li:activity:1'").fetchone()[0]
+    conn.close()
+    manual = support.create_backup("manual")
+    assert retention.forget_leads(["lead-silent"])["forgotten"] == 1
+    conn = _db()
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    stale = conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0]
+    conn.close()
+    assert stale == 0, "the forget left the summary to be recomputed later"
+    with open(paths.get_db_path(), "rb") as handle:
+        assert b"Silent Sam" not in handle.read(), "the studio's file still names the forgotten person"
+
+    assert retention.scrub_backups()["rewritten"] == 1
+    with zipfile.ZipFile(manual) as z:
+        data = z.read("data/linkedin_studio.db")
+    assert b"Silent Sam" not in data, "the scrubbed backup's summary still names the forgotten person"
+    assert b"Recent Rita" in data
 
 
 def test_a_forget_from_anywhere_can_be_removed_from_backups_too(home):
