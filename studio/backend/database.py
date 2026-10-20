@@ -70,7 +70,59 @@ def get_db() -> sqlite3.Connection:
     conn.execute("PRAGMA cache_size = -64000;")
     conn.execute("PRAGMA temp_store = MEMORY;")
     conn.execute("PRAGMA mmap_size = 268435456;")
+    _optimize_when_due(db_path)
     return conn
+
+
+# Planner statistics. Nothing ever ran ANALYZE, so SQLite chose every plan
+# without knowing how big a table was. Migration 20 runs it once; from then
+# on the statistics are refreshed after each migration run and once an hour
+# while the studio is open, in the background, bounded by analysis_limit so
+# a three year database costs well under a second.
+OPTIMIZE_EVERY_SECONDS = 3600
+ANALYSIS_LIMIT = 1000
+_optimize_due: Dict[str, float] = {}
+_optimize_lock = threading.Lock()
+
+
+def optimize_db(db_path: Optional[str] = None) -> None:
+    """
+    PRAGMA optimize, on a connection of its own.
+
+    From SQLite 3.46 the 0x10000 flag checks every table; before it, optimize
+    looks only at tables the same connection has queried, which on a fresh
+    connection is none, so older builds run a bounded ANALYZE instead.
+    """
+    conn = sqlite3.connect(db_path or get_db_path(), timeout=5.0)
+    try:
+        conn.execute("PRAGMA busy_timeout = 5000;")
+        conn.execute(f"PRAGMA analysis_limit = {ANALYSIS_LIMIT:d};")
+        if sqlite3.sqlite_version_info >= (3, 46, 0):
+            conn.execute("PRAGMA optimize = 0x10002;")
+        else:
+            conn.execute("ANALYZE;")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _optimize_when_due(db_path: str) -> None:
+    """Starts optimize_db in the background once an hour per database, never first thing."""
+    import time
+    now = time.monotonic()
+    with _optimize_lock:
+        due = _optimize_due.setdefault(db_path, now + OPTIMIZE_EVERY_SECONDS)
+        if now < due:
+            return
+        _optimize_due[db_path] = now + OPTIMIZE_EVERY_SECONDS
+
+    def run():
+        try:
+            optimize_db(db_path)
+        except Exception as exc:
+            logging.getLogger("studio.database").warning("PRAGMA optimize skipped: %s", exc)
+
+    threading.Thread(target=run, name="inox-optimize", daemon=True).start()
 
 
 def get_db_session():
@@ -426,6 +478,14 @@ def init_db() -> None:
         conn.close()
         raise
     conn.close()
+
+    # A migration changes what is indexed and how much there is of it, so the
+    # planner's statistics are refreshed straight after.
+    if report.get("applied"):
+        try:
+            optimize_db()
+        except sqlite3.Error as exc:
+            logging.getLogger("studio.database").warning("PRAGMA optimize after migrations skipped: %s", exc)
 
     print("Database initialized at:", get_db_path())
     if report.get("baselined"):

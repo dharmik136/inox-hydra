@@ -785,6 +785,22 @@ _MIGRATION_19_FORGET = (
 )
 
 
+_MIGRATION_20_INDEXES = (
+    # One post's engagers: the post's leads in Analytics, and every per-post
+    # count. Without it each was a scan of every interaction (386 ms for one
+    # post at 500,000 interactions).
+    "CREATE INDEX IF NOT EXISTS idx_interactions_post ON lead_interactions(post_urn, lead_id)",
+    # Today's people to reply to: engagements first seen in the last two
+    # weeks. The expression is the one today.py filters on, so the index
+    # serves it (424 ms at 500,000 interactions, from scanning every lead).
+    "CREATE INDEX IF NOT EXISTS idx_interactions_engaged ON lead_interactions(COALESCE(first_seen_at, interacted_at))",
+    # Statistics for the planner, once. Nothing had ever run ANALYZE, so it
+    # chose plans without knowing a single table's size. PRAGMA optimize keeps
+    # them current from here on (database.optimize_db).
+    "ANALYZE",
+)
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -808,6 +824,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (17, "A captured lead says how they engaged, and where their profile is", _migrate_lead_engagement_labels),
     (18, "Connections and archive imports, from LinkedIn's own data archive", _MIGRATION_18_ARCHIVE),
     (19, "Nothing about a forgotten lead outlives them", _MIGRATION_19_FORGET),
+    (20, "Index the interactions the main screens read, and give the planner statistics", _MIGRATION_20_INDEXES),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

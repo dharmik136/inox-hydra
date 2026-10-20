@@ -140,14 +140,23 @@ def _reply_to(conn) -> List[Dict[str, Any]]:
     # When an engagement happened is when the studio first saw it. last_seen_at
     # moves every time the post is reopened and the same comment read again,
     # which made a comment from 13 days ago read "JUST NOW" and jump the queue.
+    #
+    # The window is read through idx_interactions_engaged, and each row finds
+    # its lead by the leads primary key. Joined as l.id = i.lead_id, the
+    # INTEGER affinity of lead_interactions.lead_id made SQLite scan all
+    # 49,142 leads and probe each one's interactions: 424 ms for 9,780 rows.
+    # CAST(... AS TEXT) compares as text, which the key can serve, until the
+    # phase 3 rebuild gives the column its real type. The ORDER BY is the
+    # order that scan produced, so ties come out as they always did.
     rows = conn.execute(
         """
         SELECT i.lead_id, i.post_urn, i.comment_text, i.interaction_type,
                COALESCE(i.first_seen_at, i.interacted_at) AS engaged_at,
                COALESCE(i.last_seen_at, i.interacted_at) AS seen_at,
                COALESCE(l.full_name, l.name) AS name, l.headline, l.lead_status
-        FROM lead_interactions i JOIN leads l ON l.id = i.lead_id
+        FROM lead_interactions i JOIN leads l ON l.id = CAST(i.lead_id AS TEXT)
         WHERE COALESCE(i.first_seen_at, i.interacted_at) >= ?
+        ORDER BY l.rowid, i.interacted_at DESC, i.id
         """, (since,)).fetchall()
 
     people: Dict[str, Dict[str, Any]] = {}
