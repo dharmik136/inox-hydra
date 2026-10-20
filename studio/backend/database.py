@@ -1782,13 +1782,15 @@ DEMO_OWN_POSTS = (
 )
 
 # (name, headline, index into DEMO_OWN_POSTS, comment, or None for a reaction).
+# The first name comes first, because a drafted message greets by it: named
+# "Sample engager Anika", every demo draft opened "Hi Sample,".
 DEMO_ENGAGERS = (
-    ("Sample engager Anika (demo data)", "Head of Platform at Sample Cargo", 0, "This matches what we saw last year."),
-    ("Sample engager Rahul (demo data)", "Senior SRE at Sample Shipping", 1, "How do you stop the rota becoming a blame list?"),
-    ("Sample engager Meera (demo data)", "CTO at Sample Tracking", 0, None),
-    ("Sample engager Tom (demo data)", "Engineering Manager at Sample Logistics", 2, "Which part of dispatch moved the most?"),
-    ("Sample engager Fatima (demo data)", "Product Lead at Sample Haulage", 2, None),
-    ("Sample engager Kenji (demo data)", "Staff Engineer at Sample Routes", 4, "We track the same number."),
+    ("Anika Sample (demo data)", "Head of Platform at Sample Cargo", 0, "This matches what we saw last year."),
+    ("Rahul Sample (demo data)", "Senior SRE at Sample Shipping", 1, "How do you stop the rota becoming a blame list?"),
+    ("Meera Sample (demo data)", "CTO at Sample Tracking", 0, None),
+    ("Tom Sample (demo data)", "Engineering Manager at Sample Logistics", 2, "Which part of dispatch moved the most?"),
+    ("Fatima Sample (demo data)", "Product Lead at Sample Haulage", 2, None),
+    ("Kenji Sample (demo data)", "Staff Engineer at Sample Routes", 4, "We track the same number."),
 )
 DEMO_ENGAGER_URL = "https://www.linkedin.com/in/inox-hydra-sample-engager-"
 
@@ -1822,7 +1824,9 @@ def demo_creator_enabled() -> bool:
 
 
 def _demo_engager_url(name: str) -> str:
-    return DEMO_ENGAGER_URL + name.split()[2].lower()
+    # By first name, which is also the third word of the names an earlier
+    # build seeded ("Sample engager Anika"), so its rows are found too.
+    return DEMO_ENGAGER_URL + name.split()[0].lower()
 
 
 def seed_demo_identity() -> bool:
@@ -1895,8 +1899,11 @@ def purge_seeded_identity(
     """
     Remove the sample creator and the activity the demo wrote for them.
 
-    Only when the confirmed creator is the sample one, by its vanity, and then
-    only rows that carry the demo's own texts, names and addresses.
+    The rows carrying the demo's own texts, sample addresses and sample note
+    go whoever is confirmed: they stayed behind in a real profile when the
+    sample creator had been forgotten first, because this used to look only
+    while the sample creator was the confirmed one. The identity itself goes
+    only when it is the sample one, by its vanity.
     """
     owns = conn is None
     conn = conn or get_db()
@@ -1905,9 +1912,7 @@ def purge_seeded_identity(
         if not _has_table(conn, "creator_identity"):
             return report
         row = conn.execute("SELECT vanity FROM creator_identity WHERE id = 1").fetchone()
-        if not row or row["vanity"] != DEMO_VANITY:
-            return report
-        report["identity"] = True
+        report["identity"] = bool(row and row["vanity"] == DEMO_VANITY)
         texts = [text for _days, text, *_rest in DEMO_OWN_POSTS]
         report["own_posts"] = [r["activity_urn"] for r in conn.execute(
             f"SELECT activity_urn FROM own_posts WHERE text IN ({','.join('?' for _ in texts)})", texts)]
@@ -1939,13 +1944,14 @@ def purge_seeded_identity(
                         conn.execute(f"DELETE FROM {table} WHERE lead_id IN ({marks})", report["leads"])
                 conn.execute(f"DELETE FROM leads WHERE id IN ({marks})", report["leads"])
             conn.execute(f"DELETE FROM outbound_engagements WHERE {outbound[0]}", outbound[1])
-            # The sample creator's profile: the identity row and what
-            # confirming it wrote, as forgetting an identity removes it.
-            for table in ("creator_positions", "creator_education", "creator_skills"):
-                if _has_table(conn, table):
-                    conn.execute(f"DELETE FROM {table}")
-            conn.execute("DELETE FROM creator_identity WHERE id = 1")
-            onboarding._unfill_creator_settings(conn)
+            if report["identity"]:
+                # The sample creator's profile: the identity row and what
+                # confirming it wrote, as forgetting an identity removes it.
+                for table in ("creator_positions", "creator_education", "creator_skills"):
+                    if _has_table(conn, table):
+                        conn.execute(f"DELETE FROM {table}")
+                conn.execute("DELETE FROM creator_identity WHERE id = 1")
+                onboarding._unfill_creator_settings(conn)
         return report
     finally:
         if owns:
