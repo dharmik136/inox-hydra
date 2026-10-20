@@ -124,6 +124,62 @@ def test_another_program_on_a_port_is_not_the_studio(servers):
     assert desktop.probe_port(free) == ("free", None)
 
 
+def test_a_port_the_studio_just_left_is_free_again(servers, home, capsys):
+    """
+    [INS-08 send-back] Stopping the studio and starting it again at once moved
+    it to the next port with "in use by another program": the server's side
+    of each Connection: close request lingers in TIME_WAIT, and a plain bind
+    refuses the port though nothing listens and uvicorn would bind it.
+    """
+    import socket
+    import urllib.request
+
+    (port,) = _free_block(1)
+    server = servers(port, STUDIO_HEALTH, "application/json")
+    for _ in range(3):
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/api/v1/health", timeout=5).read()
+    server.close()
+
+    if sys.platform != "win32":
+        plain = socket.socket()
+        try:
+            plain.bind(("127.0.0.1", port))
+            lingering = False
+        except OSError:
+            lingering = True
+        finally:
+            plain.close()
+        assert lingering, "no TIME_WAIT left behind here, so this run proves nothing"
+
+    assert desktop.probe_port(port) == ("free", None)
+    started = []
+
+    def spawn(chosen):
+        started.append(chosen)
+        servers(chosen, STUDIO_HEALTH, "application/json")
+        return None
+
+    assert desktop.launch(ports=[port, port + 1], opener=_Recorder(), spawn=spawn, timeout=5) == desktop.LAUNCH_READY
+    assert started == [port]
+    assert "in use by another program" not in capsys.readouterr().out
+
+
+def test_a_real_listener_is_still_taken_however_it_was_bound():
+    """The probe binds the way the server will, which must not admit a second listener."""
+    import socket
+
+    (port,) = _free_block(1)
+    listener = socket.socket()
+    if sys.platform != "win32":
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", port))
+    listener.listen(1)
+    try:
+        assert desktop._can_bind(port) is False
+    finally:
+        listener.close()
+
+
 def test_the_studio_prefers_8000_and_the_range_is_small(monkeypatch):
     monkeypatch.delenv("INOX_HYDRA_PORT", raising=False)
     ports = desktop.candidate_ports()
