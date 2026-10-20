@@ -59,7 +59,7 @@ The first save creates a post in the studio's local database with the status dra
 
 There is no New draft button, no list of drafts, and no way to delete a post from the interface.
 
-After you use **Mark as published**, **Queue it** or **Send to LinkedIn**, the Composer keeps working on that same post. If you then type and press **Save**, you overwrite the text of the post you just recorded or queued. To start a fresh post, reload the page first. The Composer then reopens your most recent remaining draft, or opens empty. See [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md).
+After you use **Mark as published**, **Queue it** or **Send to LinkedIn**, the post leaves the draft list and the editor clears. Type the next post there: its first **Save** creates a new post, and the one you just recorded or queued is not touched. A queued post stays on the **Queue**, and a published one in **Analytics**. See [Start a new post or find an earlier one](start-a-new-post-or-find-an-earlier-one.md) and [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md).
 
 ## If it does not work
 
