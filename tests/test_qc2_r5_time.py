@@ -75,3 +75,19 @@ def test_posts_dates_read_as_dates_and_activity_figures_as_figures(studio):
     row = page.inner_text("main")
     assert "Reactions: 4,100" in row, row
     assert "Comments: not measured" in row, row
+
+
+def test_today_does_not_say_nothing_captured_beside_posts_it_holds(studio):
+    """D-10: "captured" counted the capture's runs, which a creator cannot see."""
+    client = studio["client"]
+    confirm_identity(client)
+    post = {"activity_urn": urn_days_ago(9, 1), "actor": ME, "text": "Nobody reads your roadmap.", "reactions": 12}
+    assert client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [post]}).status_code == 200
+    brief = client.get("/api/v1/today").json()
+    assert brief["freshness"]["posts_held"] == 1, brief["freshness"]
+    page = studio["page"]
+    page.goto(studio["url"] + "/#/today", wait_until="networkidle")
+    line = page.locator("article > p.studio-meta").first.inner_text()
+    assert "NOTHING CAPTURED YET" not in line, line
+    if not brief["freshness"]["last_capture_at"]:
+        assert "1 POST OF YOURS HELD" in line, line

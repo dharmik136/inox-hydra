@@ -326,6 +326,10 @@ def today_brief() -> Dict[str, Any]:
             "bridge": state["bridge"],
             "drifting": drifting,
             "last_capture_at": max((h["last_run_at"] for h in state["health"] if h["last_run_at"]), default=None),
+            # Your posts the studio holds, however they arrived. With none of
+            # the capture's runs recorded, the line read NOTHING CAPTURED YET
+            # beside twelve imported posts.
+            "posts_held": state["counts"]["posts"],
         },
         "reply_to": reply_to,
         "latest_post": latest,

@@ -466,10 +466,14 @@ function LatestPost({
 }
 
 function freshnessLine(brief: TodayBrief): string {
-  const { bridge, drifting, last_capture_at } = brief.freshness;
+  const { bridge, drifting, last_capture_at, posts_held: held = 0 } = brief.freshness;
   const parts = [
     bridge.connected ? "BRIDGE CONNECTED" : bridge.last_seen_at ? `BRIDGE LAST SEEN ${ago(bridge.last_seen_at)}` : "BRIDGE NOT SEEN YET",
-    last_capture_at ? `LAST CAPTURE ${ago(last_capture_at)}` : "NOTHING CAPTURED YET",
+    last_capture_at
+      ? `LAST CAPTURE ${ago(last_capture_at)}`
+      : held
+        ? `${held.toLocaleString()} ${held === 1 ? "POST" : "POSTS"} OF YOURS HELD`
+        : "NOTHING CAPTURED YET",
   ];
   if (drifting.length) parts.push(`${drifting.length} PART${drifting.length > 1 ? "S" : ""} OF THE CAPTURE NOT WORKING`);
   return parts.join(" · ");

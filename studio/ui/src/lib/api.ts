@@ -2129,7 +2129,7 @@ export interface TodayLatestPost {
 
 export interface TodayBrief {
   identity: { known: boolean; name: string | null };
-  freshness: { bridge: BridgeStatus; drifting: string[]; last_capture_at: string | null };
+  freshness: { bridge: BridgeStatus; drifting: string[]; last_capture_at: string | null; posts_held?: number };
   reply_to: TodayPerson[];
   latest_post: TodayLatestPost | null;
   queue: {
