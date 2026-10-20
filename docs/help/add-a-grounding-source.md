@@ -64,6 +64,7 @@ To change the provider, see [Connect your own AI provider](connect-your-own-ai-p
 | **NO SOURCES CONNECTED** although you added some | The list could not load, usually because the server is not running. See [The studio will not open](the-studio-will-not-open.md). |
 | *Name*: the command *X* was not found | The program is not installed, or not on the PATH the studio sees. Check the command runs in a terminal. |
 | *Name*: did not answer initialize within 10 s | The program started but never spoke MCP. The studio stopped it and everything it had started. |
+| *Name*: did not start, and it needs an API key or token of its own | A source is given only the basic system settings (folders, language, proxy and certificate settings such as `HTTPS_PROXY` and `NODE_EXTRA_CA_CERTS`), never the studio's own keys or any other variable. A key the source needs has to be set in its own `env` when it is added; the interface has no field for that yet. |
 | *Name*: skipped | The sources before it used the 30 seconds a preview or a draft allows. Switch off a slow one. |
 | A server named *X* already exists. | Names must be unique, ignoring case. Pick another. |
 | A server needs a plain name and a command given as a list of arguments. | The name must start with a letter or digit and use only letters, digits, spaces, `_`, `.` or `-`. |

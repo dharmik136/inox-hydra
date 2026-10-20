@@ -1,5 +1,5 @@
 # Send a post idea from your phone with Telegram
-If you create your own Telegram bot and set two environment variables before starting the studio, messages you send that bot arrive in the studio as drafts.
+If you create your own Telegram bot and set three environment variables before starting the studio (one of them turns on dev mode), messages you send that bot arrive in the studio as drafts.
 
 ## What it is, and what it is not
 

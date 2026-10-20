@@ -293,7 +293,7 @@ async def lifespan(app: FastAPI):
     # Maintainer only, like its routes (D4). A token in the environment alone
     # used to start it in a creator's install.
     if (os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN")) \
-            and devtools.env_allows_dev_mode():
+            and devtools.is_dev_mode():
         ingress_daemon.start_worker()
     yield
     shutdown_scheduler()
