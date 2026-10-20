@@ -603,13 +603,22 @@ function Dossier({
                 type="button"
                 onClick={() => {
                   // COPIED once the browser has taken the text, and not before.
+                  // The draft is above the message line, and a later copy that
+                  // works takes the refusal away; other messages stay.
+                  const refusal = "The browser refused the copy. Select the text above and copy it.";
+                  const refused = () => setActionError(refusal);
+                  if (!navigator.clipboard?.writeText) {
+                    refused();
+                    return;
+                  }
                   navigator.clipboard
                     .writeText(draft?.text ?? suggested ?? "")
                     .then(() => {
+                      setActionError((current) => (current === refusal ? null : current));
                       setCopied(true);
                       window.setTimeout(() => setCopied(false), 1600);
                     })
-                    .catch(() => setActionError("The browser refused the copy. Select the text below and copy it."));
+                    .catch(refused);
                 }}
                 className="studio-meta flex items-center gap-1 text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
               >
