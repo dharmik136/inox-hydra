@@ -40,8 +40,10 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import quote, unquote
 
 try:
+    from . import post_summary
     from .database import get_db
 except ImportError:
+    import post_summary
     from database import get_db
 
 # How recently the extension must have been heard from to count as connected.
@@ -918,6 +920,9 @@ def _record_observation(conn, activity_urn: str, source: str, metrics: Dict[str,
         (activity_urn, now.isoformat(), now.strftime("%Y-%m-%dT%H"), age, source,
          *[values[k] for k in METRIC_FIELDS]),
     )
+    # The post's summary row keeps its two day and latest readings; the
+    # trigger marked them, and they are recomputed here, in this transaction.
+    post_summary.refresh(conn, [activity_urn])
     return True
 
 

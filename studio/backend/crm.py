@@ -16,9 +16,11 @@ import json
 import logging
 
 try:
+    from . import post_summary
     from .database import get_db
     from .migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 except ImportError:
+    import post_summary
     from database import get_db
     from migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 
@@ -563,6 +565,10 @@ class ReverseCRMManager:
                     ]
                 )
                 cursor.execute("UPDATE leads SET icp_score = ? WHERE id = ?", (icp_score, lead_id))
+                # The triggers marked this post's summary, and the posts of a
+                # lead whose name or score moved; bring them current in the
+                # same transaction, so the capture leaves no stale row.
+                post_summary.refresh(conn)
         finally:
             conn.close()
 

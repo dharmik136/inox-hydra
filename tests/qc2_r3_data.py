@@ -42,7 +42,7 @@ def build(conn, seed=7, leads=360, posts=60, interactions=5000):
         own = [urn(n) for n in range(posts)]
         for n, u in enumerate(own):
             published = NOW - timedelta(days=200 - 3 * n, hours=r.randint(0, 5))
-            measured = r.random() < 0.8
+            measured = n == posts - 1 or r.random() < 0.8
             conn.execute(
                 "INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, reactions, comments, "
                 "reposts, impressions, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -54,7 +54,7 @@ def build(conn, seed=7, leads=360, posts=60, interactions=5000):
             # Readings: hourly in the first four days, with two equally close
             # to 48 hours, so the earlier one must win.
             if measured:
-                for age in list(range(1, 96, 1 if n % 3 else 6)) + [47.5, 48.5]:
+                for age in [a for a in range(1, 96, 1 if n % 3 else 6) if a != 48] + [47.5, 48.5]:
                     observed = published + timedelta(hours=age)
                     conn.execute(
                         "INSERT OR IGNORE INTO post_metric_observations (activity_urn, observed_at, observed_hour, "

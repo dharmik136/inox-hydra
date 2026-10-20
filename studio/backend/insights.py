@@ -20,16 +20,18 @@ Strict Invariants:
 - A count never read is shown as unknown, not as zero.
 """
 
+import json
 import statistics
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import contrast_engine, onboarding
+    from . import contrast_engine, onboarding, post_summary
     from .database import get_db
 except ImportError:
     import contrast_engine
     import onboarding
+    import post_summary
     from database import get_db
 
 # A post's reactions and comments have mostly arrived by a week. Before that
@@ -55,14 +57,18 @@ def posts_overview() -> Dict[str, Any]:
             "SELECT activity_urn, text, published_at, published_at_source, reactions, comments, reposts, impressions "
             "FROM own_posts ORDER BY published_at DESC")]
 
-        # Who engaged with each post: leads whose interactions name it.
-        engagers: Dict[str, List[Dict[str, Any]]] = {}
-        for row in conn.execute(
-            "SELECT i.post_urn, i.lead_id, i.interaction_type, i.comment_text, "
-            "COALESCE(l.full_name, l.name) AS name, l.lead_status "
-            "FROM lead_interactions i JOIN leads l ON l.id = i.lead_id WHERE i.post_urn IS NOT NULL"):
-            key = onboarding._activity_id(row["post_urn"])
-            engagers.setdefault(key, []).append(dict(row))
+        # Who engaged with each post, from the per-post summary. Every
+        # interaction used to be read into Python on every load: 1.9 s at
+        # 500,000. A post whose engagement was recorded under two spellings
+        # of its URN is counted from the raw rows, each person once.
+        summary = post_summary.current(conn)
+        spellings: Dict[str, List[str]] = {}
+        for urn, row in summary.items():
+            if row["people"]:
+                spellings.setdefault(onboarding._activity_id(urn), []).append(urn)
+        engagers: Dict[str, Dict[str, Any]] = {
+            key: (summary[urns[0]] if len(urns) == 1 else post_summary.combined(conn, urns))
+            for key, urns in spellings.items()}
     finally:
         conn.close()
 
@@ -82,14 +88,7 @@ def posts_overview() -> Dict[str, Any]:
     out = []
     for post in posts:
         age = _age_hours(post["published_at"])
-        people = engagers.get(onboarding._activity_id(post["activity_urn"]), [])
-        by_person: Dict[str, Dict[str, Any]] = {}
-        for p in people:
-            person = by_person.setdefault(str(p["lead_id"]), {
-                "lead_id": str(p["lead_id"]), "name": p["name"], "commented": False,
-                "status": p["lead_status"]})
-            if p["interaction_type"] == "COMMENT":
-                person["commented"] = True
+        engaged = engagers.get(onboarding._activity_id(post["activity_urn"]))
 
         ratios = {}
         for metric, (median, _n) in usual.items():
@@ -107,11 +106,12 @@ def posts_overview() -> Dict[str, Any]:
             "reposts": post["reposts"],
             "impressions": post["impressions"],
             "against_usual": ratios or None,
-            "people": sorted(by_person.values(), key=lambda p: (not p["commented"], p["name"] or ""))[:12],
-            "people_count": len(by_person),
+            # Commenters first, then by name, at most post_summary.TOP_PEOPLE.
+            "people": post_summary.people_of(engaged),
+            "people_count": engaged["people"] if engaged else 0,
             # People from this post the creator went on to talk to: Connected
             # or Meeting Booked. The question the Posts screen exists for.
-            "conversations": sum(1 for p in by_person.values() if (p["status"] or "") in ("ENGAGED", "CONVERTED")),
+            "conversations": engaged["conversations"] if engaged else 0,
             "url": f"https://www.linkedin.com/feed/update/{post['activity_urn']}/",
         })
 
@@ -142,13 +142,30 @@ def outbound_overview() -> Dict[str, Any]:
         own_ids = onboarding._own_activity_ids(conn)
         # People who engaged with your posts, by display name, and on how
         # many of them: a comment and a like on one post is one post, not two.
+        #
+        # Only the names of accounts you engaged with can be matched, so only
+        # leads with one of those names are looked up, and their interactions
+        # read by lead. Reading every interaction to build every name's set
+        # took 1.1 s at 500,000.
+        wanted = {_name_key(r["target_author"]) for r in rows if r["target_author"]}
+        named: Dict[str, str] = {}
+        if wanted:
+            for lead in conn.execute("SELECT id, COALESCE(full_name, name) AS name FROM leads"):
+                key = _name_key(lead["name"])
+                if key in wanted:
+                    named[lead["id"]] = key
         engaged_back: Dict[str, set] = {}
-        for row in conn.execute(
-            "SELECT COALESCE(l.full_name, l.name) AS name, i.post_urn FROM lead_interactions i "
-            "JOIN leads l ON l.id = i.lead_id WHERE i.post_urn IS NOT NULL"):
-            post = onboarding._activity_id(row["post_urn"])
-            if post in own_ids:
-                engaged_back.setdefault(_name_key(row["name"]), set()).add(post)
+        if named:
+            for row in conn.execute(
+                "SELECT CAST(lead_id AS TEXT) AS lead_id, post_urn FROM lead_interactions "
+                "WHERE lead_id IN (SELECT value FROM json_each(?)) AND post_urn IS NOT NULL",
+                (json.dumps(list(named)),)):
+                post = onboarding._activity_id(row["post_urn"])
+                if post in own_ids and row["lead_id"] in named:
+                    engaged_back.setdefault(named[row["lead_id"]], set()).add(post)
+        # Which of your posts the studio has read engagers on, for coverage.
+        read_posts = {onboarding._activity_id(urn) for urn, row in post_summary.current(conn).items()
+                      if row["people"]}
     finally:
         conn.close()
 
@@ -179,8 +196,6 @@ def outbound_overview() -> Dict[str, Any]:
     # would have been called one-way.
     conn = get_db()
     try:
-        read_posts = {onboarding._activity_id(r["post_urn"]) for r in conn.execute(
-            "SELECT DISTINCT post_urn FROM lead_interactions WHERE post_urn IS NOT NULL")}
         engaged_posts = [r["activity_urn"] for r in conn.execute(
             "SELECT activity_urn FROM own_posts WHERE COALESCE(reactions, 0) + COALESCE(comments, 0) > 0")]
     finally:
