@@ -8,19 +8,11 @@ import {
   type PatternFinding,
   type PatternsInsights,
   type ContrastInsights,
-  type ContrastFinding,
   type TopicAttributionInsights,
 } from "@/lib/api";
 import { useStudioBack } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
-
-/** A contrast as the route returns it, including one whose sides come from different periods. */
-type Contrast = Omit<ContrastFinding, "status"> & {
-  status: string;
-  typical_year_with?: number;
-  typical_year_without?: number;
-};
 
 /** A topic as the attribution route returns it: people counted once, and a rate only when someone was captured. */
 type TopicRow = Omit<TopicAttributionInsights["topics"][number], "lead_conversion_rate"> & {
@@ -83,6 +75,14 @@ export function PatternsSurface() {
   };
   const clean = patterns.patterns.filter((p) => !p.different_period);
   const confounded = patterns.patterns.filter((p) => p.different_period);
+  // The same seven forms were compared twice on this screen: here, with 3
+  // posts a side, and again below as "Binary feature comparisons", with 8 a
+  // side and the words ABSTAIN and PER ARM. One list now, and a line with
+  // fewer than the stricter count on a side says it is an early sign.
+  const firm = contrasts?.min_arm_size ?? null;
+  const early = new Set(
+    (contrasts?.contrasts ?? []).filter((c) => (c.status as string) === "not_enough_data").map((c) => c.key),
+  );
 
   return (
     // Focusable, because nothing else on this screen is: the page scrolls in
@@ -95,6 +95,7 @@ export function PatternsSurface() {
         Each line compares your posts that have a form with those that do not, by median reactions, across your{" "}
         {patterns.posts_compared} posts at least a week old with reactions recorded. These are differences between your
         posts, not causes: treat a large one as something to try, not a rule.
+        {firm !== null && ` A line marked early has fewer than ${firm} posts on one side, so it may not hold.`}
       </p>
       {/* Posts with no reactions recorded are left out because of that, not
           because of their age, and the screen says which. */}
@@ -103,7 +104,7 @@ export function PatternsSurface() {
           {unread.settled_without_reactions} MORE {unread.settled_without_reactions === 1 ? "POST IS" : "POSTS ARE"} LEFT
           OUT: NO REACTIONS ARE RECORDED FOR {unread.settled_without_reactions === 1 ? "IT" : "THEM"}
           {(unread.settled_without_reactions_from_archive ?? 0) > 0 ? ", AS LINKEDIN\u2019S ARCHIVE DOES NOT INCLUDE THEM" : ""}.
-          RUN &ldquo;POSTS YOU WROTE&rdquo; IN SETUP SO THE BRIDGE READS THEM.
+          PRESS IMPORT YOUR HISTORY IN SETUP SO THE BRIDGE READS THEM.
         </p>
       )}
 
@@ -112,7 +113,7 @@ export function PatternsSurface() {
         {clean.length ? (
           <ul className="flex flex-col divide-y divide-edge border-y border-edge">
             {clean.map((p) => (
-              <PatternRow key={p.key} pattern={p} />
+              <PatternRow key={p.key} pattern={p} early={early.has(p.key)} />
             ))}
           </ul>
         ) : confounded.length ? (
@@ -131,7 +132,7 @@ export function PatternsSurface() {
           </p>
           <ul className="flex flex-col divide-y divide-edge border-y border-edge">
             {confounded.map((p) => (
-              <PatternRow key={p.key} pattern={p} muted />
+              <PatternRow key={p.key} pattern={p} early={early.has(p.key)} muted />
             ))}
           </ul>
         </section>
@@ -183,29 +184,20 @@ export function PatternsSurface() {
         </div>
       </section>
 
-      {contrasts && contrasts.contrasts.length > 0 && (
-        <section className="mt-10">
-          <p className="studio-label">Feature Contrasts</p>
-          <h2 className="studio-title mt-2 text-[15px]">Binary feature comparisons</h2>
-          <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
-            Compares settled posts older than 7 days across structural forms. A difference counts only with at least{" "}
-            {contrasts.min_arm_size} posts on each side, from the same period; one whose sides come from different years
-            is shown muted and is not passed to the copilot.
-          </p>
-          <ul className="mt-4 flex flex-col divide-y divide-edge border-y border-edge">
-            {(contrasts.contrasts as Contrast[]).map((c) => (
-              <ContrastRow key={c.key} contrast={c} />
-            ))}
-          </ul>
-        </section>
-      )}
-
       {attribution && <TopicAttributionSection attribution={attribution} />}
     </article>
   );
 }
 
-function PatternRow({ pattern, muted = false }: { pattern: PatternFinding; muted?: boolean }) {
+function PatternRow({
+  pattern,
+  early = false,
+  muted = false,
+}: {
+  pattern: PatternFinding;
+  early?: boolean;
+  muted?: boolean;
+}) {
   const ratio = pattern.ratio ?? null;
   return (
     <li className="py-2.5">
@@ -226,45 +218,7 @@ function PatternRow({ pattern, muted = false }: { pattern: PatternFinding; muted
         MEDIAN {pattern.with_median} REACTIONS ON {pattern.with_posts} POSTS WITH IT, {pattern.without_median} ON{" "}
         {pattern.without_posts} WITHOUT
         {pattern.different_period && ` · MOSTLY ${pattern.typical_year_with} AGAINST MOSTLY ${pattern.typical_year_without}`}
-      </p>
-    </li>
-  );
-}
-
-function ContrastRow({ contrast }: { contrast: Contrast }) {
-  const isConclusive = contrast.status === "conclusive";
-  // Enough posts on both sides, but from different years, as under "Mixed up
-  // with when you posted" above. It was coloured as a finding here.
-  const isMixed = contrast.status === "different_period";
-  const ratio = contrast.ratio ?? null;
-
-  return (
-    <li className="py-2.5">
-      <div className="flex items-baseline justify-between gap-4">
-        <p className={cn("text-[13px]", isConclusive ? "text-ink-primary" : "text-ink-secondary")}>
-          {contrast.label}
-        </p>
-        {isConclusive && ratio !== null ? (
-          <p
-            className={cn(
-              "studio-meta shrink-0 text-[11px] tabular-nums",
-              ratio >= 1.25 ? "text-signal-green-text" : ratio <= 0.8 ? "text-signal-orange-text" : "text-ink-secondary"
-            )}
-          >
-            {ratio.toFixed(2)}x
-          </p>
-        ) : isMixed && ratio !== null ? (
-          <p className="studio-meta shrink-0 text-[11px] tabular-nums text-ink-muted">{ratio.toFixed(2)}x</p>
-        ) : (
-          <span className="studio-meta shrink-0 text-[10px] text-ink-muted">ABSTAIN (N &lt; 8)</span>
-        )}
-      </div>
-      <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
-        {isConclusive || isMixed
-          ? `MEDIAN ${contrast.median_with} REACTIONS ON ${contrast.n_with} POSTS WITH IT, ${contrast.median_without} ON ${contrast.n_without} WITHOUT`
-          : `CURRENT: ${contrast.n_with} WITH, ${contrast.n_without} WITHOUT (NEEDS AT LEAST ${contrast.min_required} PER ARM)`}
-        {isMixed &&
-          ` · MOSTLY ${contrast.typical_year_with} AGAINST MOSTLY ${contrast.typical_year_without}: MIXED UP WITH WHEN YOU POSTED, NOT A FINDING`}
+        {early && " · EARLY"}
       </p>
     </li>
   );
@@ -341,7 +295,10 @@ function MonthStrip({ months }: { months: { month: string; posts: number }[] }) 
   const peak = Math.max(1, ...months.map((m) => m.posts));
   return (
     <div className="mt-6">
-      <p className="studio-meta mb-1.5 text-[10px] text-ink-muted">POSTS BY MONTH, {months[0].month} TO {months[months.length - 1].month}</p>
+      <p className="studio-meta mb-1.5 text-[10px] text-ink-muted">
+        POSTS BY MONTH, {months[0].month} TO {months[months.length - 1].month}. THE TALLEST BAR IS {peak}{" "}
+        {peak === 1 ? "POST" : "POSTS"}
+      </p>
       <div className="flex h-16 items-end gap-px overflow-x-auto" role="img" aria-label="Posts per month" tabIndex={0}>
         {months.map((m) => (
           <div

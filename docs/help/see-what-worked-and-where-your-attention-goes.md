@@ -6,9 +6,9 @@ All three screens are built from your own imported history. Import your posts, c
 
 ## Posts
 
-The line under the title gives your usual: the median reactions, comments and impressions of your posts that are at least a week old. If your week-old posts have no figures, as posts imported from LinkedIn's archive do not, the line says how many and asks you to run **Posts you wrote** in **Setup**, so the bridge reads them.
+The line under the title gives your usual: the median reactions, comments and impressions of your posts that are at least a week old. If your week-old posts have no figures, as posts imported from LinkedIn's archive do not, the line says how many and asks you to press **Import your history** in **Setup**, so the bridge reads them.
 
-Each post shows its date, opening, and the reactions, comments and impressions last read on it. For a post at least a week old, each figure is followed by how it compares with your usual, for example "55 REACTIONS (1.8x)". Green is at least 1.2 times your usual, orange is 0.8 times or less. A post under a week old is marked **STILL GROWING** and not compared, because its numbers are still arriving.
+Each post shows its date (for example TUE 20 OCT), opening, and the reactions, comments and impressions last read on it. For a post at least a week old, each figure is followed by how it compares with your usual, for example "55 REACTIONS (1.8x)". Green is at least 1.2 times your usual, orange is 0.8 times or less. A post under a week old is marked **STILL GROWING** and not compared, because its numbers are still arriving.
 
 The two week-old posts furthest above your usual reactions are marked **WORTH REPURPOSING**: their form has already worked for your audience.
 
@@ -22,7 +22,9 @@ The forms compared are: a short opening line (60 characters or fewer), an openin
 
 When most posts on one side are from a different year than the other, the line is moved under **Mixed up with when you posted**. Your account and audience were different then, so the difference may be about the time rather than the form.
 
-**Feature Contrasts**, further down, make the same comparisons with at least eight posts on each side. The same rule applies there: a contrast whose sides come from different years is shown muted, marked **MIXED UP WITH WHEN YOU POSTED, NOT A FINDING**, and is not passed to the copilot as evidence.
+Each form is compared once. A line with fewer than eight posts on one side ends in **EARLY**: the difference may not hold as more posts arrive. Only a comparison with at least eight posts on each side, from the same period, is passed to the copilot as evidence.
+
+Under **Cadence**, **POSTS BY MONTH** draws one bar per month and says how many posts the tallest bar stands for.
 
 **Which topics bring qualified pipeline** groups your posts by the words and hashtags that recur across your own posts, up to six of them; a post goes under the first it mentions, and one that mentions none goes under **Other posts**. It is a keyword grouping, not a reading of what a post means. For each topic it counts the people captured on its posts, each person once, how many of them are qualified, and **Share qualified**, the qualified share of those people, which reads "not measured" when nobody was captured. The Obsidian export's `Topics/` notes use the same grouping.
 

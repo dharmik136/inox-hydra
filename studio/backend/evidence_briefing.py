@@ -180,6 +180,11 @@ def _posts(n: int) -> str:
     return f"{n} {'post' if n == 1 else 'posts'}"
 
 
+def _topic_posts(topic: str) -> str:
+    """A topic's posts, named once: "Croissant posts", but "Other posts", not "Other posts posts"."""
+    return topic if topic == OTHER_TOPIC else f"{topic} posts"
+
+
 def get_topic_attribution_map() -> Dict[str, Any]:
     """
     Computes CP4 Topic to Qualified-Lead Attribution Map.
@@ -269,12 +274,13 @@ def get_topic_attribution_map() -> Dict[str, Any]:
         top = topic_list[0]
         bottom = topic_list[-1]
         summary_sentence = (
-            f"Your {top['topic']} posts: {_people(top['qualified_leads'])} qualified from {_posts(top['posts_count'])}. "
-            f"{bottom['topic']}: {bottom['qualified_leads']} from {bottom['posts_count']}."
+            f"Your {_topic_posts(top['topic'])}: {_people(top['qualified_leads'])} qualified "
+            f"from {_posts(top['posts_count'])}. Your {_topic_posts(bottom['topic'])}: "
+            f"{_people(bottom['qualified_leads'])} qualified from {_posts(bottom['posts_count'])}."
         )
     elif topic_list:
         top = topic_list[0]
-        summary_sentence = (f"Your {top['topic']} posts: {_people(top['qualified_leads'])} qualified "
+        summary_sentence = (f"Your {_topic_posts(top['topic'])}: {_people(top['qualified_leads'])} qualified "
                             f"from {_posts(top['posts_count'])}.")
     else:
         summary_sentence = "No topic attribution available yet."
