@@ -1131,6 +1131,12 @@ def get_today():
     return today_module.today_brief()
 
 
+@app.post("/api/v1/today/demo-cleanup-notice/dismiss", tags=["Onboarding"])
+def dismiss_demo_cleanup_notice():
+    """Hides Today's note on removed demo content; the record of it is kept."""
+    return today_module.dismiss_demo_cleanup()
+
+
 @app.get("/api/v1/onboarding/state", tags=["Onboarding"])
 def get_onboarding_state():
     return onboarding.onboarding_state()

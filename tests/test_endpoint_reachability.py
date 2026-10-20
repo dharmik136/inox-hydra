@@ -157,8 +157,12 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # it (pingStudio in api.ts). No route added.
 # Reached moves 95 -> 96, unreachable drops 84 -> 83, total stays at 179.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 181
-REACHED_BY_INTERFACE = 98
+# Then /api/v1/today/demo-cleanup-notice/dismiss (batch F8), Today's Dismiss
+# on the note that says what the demo cleanup removed (TodaySurface, api.ts).
+# Reached moves 98 -> 99, unreachable stays at 83, total moves 181 -> 182.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 182
+REACHED_BY_INTERFACE = 99
 UNREACHABLE = 83
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

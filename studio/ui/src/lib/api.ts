@@ -2131,6 +2131,8 @@ export interface TodayBrief {
     due: { post_id: string; scheduled_for: string; content: string; excerpt: string }[];
   };
   open_next: { action: "open" | "setup"; url?: string; reason: string };
+  /** What the demo cleanup removed, until dismissed; null when there is nothing to say. */
+  demo_cleanup?: { removed: { kind: string; count: number }[]; backup: string | null; removed_at: string | null } | null;
 }
 
 export async function fetchToday(): Promise<TodayBrief> {
@@ -2521,4 +2523,10 @@ export async function updateLeadNotes(leadId: string, notes: string): Promise<st
  */
 export async function forgetLead(leadId: string): Promise<void> {
   await call(`/api/leads/${encodeURIComponent(leadId)}`, { method: "DELETE" });
+}
+
+/** Hides Today's note on removed demo content. The record of it is kept. */
+export async function dismissDemoCleanupNotice(): Promise<boolean> {
+  const res = await call<{ dismissed: boolean }>("/api/v1/today/demo-cleanup-notice/dismiss", { method: "POST" });
+  return res.dismissed;
 }

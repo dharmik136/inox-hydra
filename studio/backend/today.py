@@ -21,6 +21,7 @@ Strict Invariants:
 - No network request. Everything here is read from what the extension captured.
 """
 
+import json
 import statistics
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -253,6 +254,57 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
     return {"action": "setup", "reason": "No post of yours has been imported yet."}
 
 
+# What the demo cleanup removed, written by database.clean_up_demo_data with
+# "shown": false, for Today to say once.
+DEMO_CLEANUP_NOTICE_KEY = "demo_cleanup_notice"
+
+
+def _read_demo_cleanup(conn) -> Optional[Dict[str, Any]]:
+    """The stored notice as a dict, or None when absent or not a JSON object."""
+    row = conn.execute("SELECT value FROM settings WHERE key = ?", (DEMO_CLEANUP_NOTICE_KEY,)).fetchone()
+    if not row:
+        return None
+    try:
+        value = json.loads(row["value"] or "")
+    except (TypeError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _demo_cleanup(conn) -> Optional[Dict[str, Any]]:
+    """
+    The notice to show, or None. Read defensively, because nothing should
+    appear on Today from a value that does not say what was removed: absent,
+    malformed, already shown, or counting nothing all show nothing.
+    """
+    notice = _read_demo_cleanup(conn)
+    if not notice or notice.get("shown") is not False:
+        return None
+    counts = notice.get("removed") if isinstance(notice.get("removed"), dict) else notice
+    removed = [{"kind": kind, "count": count} for kind, count in counts.items()
+               if isinstance(count, int) and not isinstance(count, bool) and count > 0]
+    if not removed:
+        return None
+    backup = notice.get("backup")
+    return {"removed": removed, "backup": backup if isinstance(backup, str) and backup else None,
+            "removed_at": notice.get("removed_at") if isinstance(notice.get("removed_at"), str) else None}
+
+
+def dismiss_demo_cleanup() -> Dict[str, Any]:
+    """Marks the notice shown, keeping the record of what was removed and where the copy is."""
+    conn = get_db()
+    try:
+        notice = _read_demo_cleanup(conn)
+        if notice is None or notice.get("shown") is True:
+            return {"status": "success", "dismissed": False}
+        notice["shown"] = True
+        with conn:
+            conn.execute("UPDATE settings SET value = ? WHERE key = ?", (json.dumps(notice), DEMO_CLEANUP_NOTICE_KEY))
+    finally:
+        conn.close()
+    return {"status": "success", "dismissed": True}
+
+
 def today_brief() -> Dict[str, Any]:
     state = onboarding.onboarding_state()
     conn = get_db()
@@ -261,6 +313,7 @@ def today_brief() -> Dict[str, Any]:
         reply_to = _reply_to(conn) if state["steps"]["identity"] else []
         queue = _queue(conn)
         open_next = _open_next(state, latest, conn)
+        demo_cleanup = _demo_cleanup(conn)
     finally:
         conn.close()
 
@@ -278,4 +331,5 @@ def today_brief() -> Dict[str, Any]:
         "latest_post": latest,
         "queue": queue,
         "open_next": open_next,
+        "demo_cleanup": demo_cleanup,
     }

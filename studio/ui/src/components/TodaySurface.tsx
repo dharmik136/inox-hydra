@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, Check, CheckCheck, Copy, ExternalLink, Loader2 } from "lucide-react";
 import {
+  dismissDemoCleanupNotice,
   fetchToday,
   launchBridge,
   publishNow,
@@ -120,6 +121,8 @@ export function TodaySurface({
       <p className="studio-label">Today</p>
       <h1 className="studio-title mt-2">What to do in the next hour</h1>
       <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">{freshnessLine(brief)}</p>
+
+      {brief.demo_cleanup && <DemoCleanupNotice notice={brief.demo_cleanup} onDismissed={load} />}
 
       {/* First, because it has a time on it. A queued post is not posted by
           the studio: at its time it waits here and on the Queue. */}
@@ -281,6 +284,65 @@ export function TodaySurface({
         </dl>
       </Section>
     </article>
+  );
+}
+
+const REMOVED_NAMES: Record<string, [string, string]> = {
+  drafts: ["draft", "drafts"],
+  posts: ["post", "posts"],
+  leads: ["lead", "leads"],
+  analytics_days: ["day of analytics", "days of analytics"],
+  audience_rows: ["audience row", "audience rows"],
+};
+
+/**
+ * Said once, after the studio removed sample content an earlier version had
+ * seeded into every install. Rows a creator could see went, so the screen
+ * says what and where the copy from before is, until they dismiss it.
+ */
+function DemoCleanupNotice({
+  notice,
+  onDismissed,
+}: {
+  notice: NonNullable<TodayBrief["demo_cleanup"]>;
+  onDismissed: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [hidden, setHidden] = useState(false);
+  if (hidden) return null;
+  const counts = notice.removed
+    .map(({ kind, count }) => {
+      const [one, many] = REMOVED_NAMES[kind] ?? [kind.replace(/_/g, " "), kind.replace(/_/g, " ")];
+      return `${count} ${count === 1 ? one : many}`;
+    })
+    .join(", ");
+
+  async function dismiss() {
+    setError(null);
+    try {
+      await dismissDemoCleanupNotice();
+      setHidden(true);
+      onDismissed();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The studio did not record that. Try again.");
+    }
+  }
+
+  return (
+    <div role="status" className="mt-6 rounded-md border border-edge-strong bg-soft p-4">
+      <p className="text-[13px] leading-relaxed text-ink-secondary">
+        The studio removed sample content it had added in an earlier version: {counts}.
+        {notice.backup ? ` A copy of your database from before is at ${notice.backup}.` : ""}
+      </p>
+      <button
+        type="button"
+        onClick={() => void dismiss()}
+        className="mt-3 rounded-md border border-edge bg-canvas px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:text-ink-primary"
+      >
+        Dismiss
+      </button>
+      {error && <p role="alert" className="studio-meta mt-2 text-signal-orange-text">{error}</p>}
+    </div>
   );
 }
 
