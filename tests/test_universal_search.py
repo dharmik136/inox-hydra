@@ -166,11 +166,17 @@ def test_a_specimen_carries_the_id_the_swipe_file_renders():
     Opening a result means finding it on the surface. The Swipe File keys its
     cards by the id /api/inspirations returns, so search must return the same.
     """
-    rendered = {str(item["id"]) for item in client.get("/api/inspirations").json().get("inspirations", [])}
+    items = client.get("/api/inspirations").json().get("inspirations", [])
+    rendered = {str(item["id"]) for item in items}
     if not rendered:
         pytest.skip("no specimens in this sandbox")
-    found = _search("egress")["groups"]["specimens"] or _search("hook")["groups"]["specimens"]
-    assert found, "no specimen matched a common word"
+    # A word from a specimen the Swipe File shows. A new library holds the
+    # neutral starters only (R6, D-8), so a word from the engineering pack
+    # ("egress") matched only after another test had added that pack.
+    specimen = next(item for item in items if str(item["id"]).startswith("tpl-"))
+    word = max((w for w in specimen["content"].split() if w.isalpha()), key=len)
+    found = _search(word)["groups"]["specimens"]
+    assert found, f"no specimen matched {word!r}, a word of one the Swipe File shows"
     for item in found:
         assert item["id"] in rendered, f"{item['id']} is not an id the Swipe File renders"
 
