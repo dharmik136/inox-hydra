@@ -10,6 +10,7 @@ Send to LinkedIn's final button, opens a browser or leaves the machine.
 
 import json
 import os
+import re
 import shutil
 import socket
 import sys
@@ -203,3 +204,115 @@ def test_the_week_can_be_changed_from_the_queue(context, studio_url):
         )
         conn.commit()
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# D-1: a drafts list, New post, delete with confirmation, and no silent overwrite
+# ---------------------------------------------------------------------------
+
+def _composer(context, studio_url):
+    page = _open(context, studio_url, "composer")
+    editor = page.get_by_label("Post body")
+    editor.wait_for()
+    page.wait_for_timeout(300)
+    editor.fill("")
+    return page, editor
+
+
+def _save(page):
+    page.get_by_role("button", name="Save", exact=True).click()
+    page.get_by_role("status").filter(has_text=re.compile(r"SAVED \d")).first.wait_for()
+
+
+def _drafts(page):
+    page.get_by_role("button", name="Drafts", exact=True).click()
+    panel = page.get_by_role("dialog", name="Drafts")
+    panel.wait_for()
+    return panel
+
+
+def test_replacing_the_whole_text_and_saving_keeps_the_first_draft(context, studio_url):
+    page, editor = _composer(context, studio_url)
+    editor.fill(f"{PREFIX} DRAFT A about the hiring plan")
+    _save(page)
+
+    editor.click()
+    page.keyboard.press("Control+A")
+    page.keyboard.type(f"{PREFIX} DRAFT B, a different idea")
+    page.get_by_text("is kept as it was saved, in Drafts", exact=False).wait_for()
+    _save(page)
+
+    drafts = sorted(r["content"] for r in _rows("draft"))
+    assert drafts == [f"{PREFIX} DRAFT A about the hiring plan", f"{PREFIX} DRAFT B, a different idea"], drafts
+
+
+def test_emptying_the_editor_and_writing_again_makes_a_new_draft(context, studio_url):
+    page, editor = _composer(context, studio_url)
+    editor.fill(f"{PREFIX} the first post, kept")
+    _save(page)
+    editor.fill("")
+    editor.fill(f"{PREFIX} the second post")
+    _save(page)
+    assert len(_rows("draft")) == 2
+
+
+def test_the_drafts_list_opens_finds_and_starts_posts(context, studio_url):
+    page, editor = _composer(context, studio_url)
+    editor.fill(f"{PREFIX} Monday: the onboarding checklist")
+    _save(page)
+    page.get_by_role("button", name="New post", exact=True).click()
+    assert editor.input_value() == ""
+    editor.fill(f"{PREFIX} Tuesday: what the outage taught us")
+    _save(page)
+
+    panel = _drafts(page)
+    panel.get_by_text("Monday: the onboarding checklist", exact=False).wait_for()
+    panel.get_by_text("Tuesday: what the outage taught us", exact=False).wait_for()
+    panel.get_by_label("Find a draft").fill("outage")
+    panel.get_by_text("Monday: the onboarding checklist", exact=False).wait_for(state="detached")
+    panel.get_by_label("Find a draft").fill("")
+    panel.get_by_text("Monday: the onboarding checklist", exact=False).click()
+    panel.wait_for(state="detached")
+    assert editor.input_value() == f"{PREFIX} Monday: the onboarding checklist"
+
+
+def test_switching_drafts_over_unsaved_text_asks_first(context, studio_url):
+    page, editor = _composer(context, studio_url)
+    editor.fill(f"{PREFIX} the saved one")
+    _save(page)
+    page.get_by_role("button", name="New post", exact=True).click()
+    editor.fill(f"{PREFIX} typed and not saved")
+
+    asked = []
+    page.once("dialog", lambda dialog: (asked.append(dialog.message), dialog.dismiss()))
+    panel = _drafts(page)
+    panel.get_by_text("the saved one", exact=False).click()
+    page.wait_for_timeout(200)
+    assert asked and "unsaved changes" in asked[0]
+    page.keyboard.press("Escape")
+    assert editor.input_value() == f"{PREFIX} typed and not saved", "unsaved text was discarded without asking"
+
+
+def test_a_draft_is_deleted_only_after_confirming_and_can_be_brought_back(context, studio_url):
+    page, editor = _composer(context, studio_url)
+    editor.fill(f"{PREFIX} a draft to throw away")
+    _save(page)
+    panel = _drafts(page)
+    delete = panel.get_by_role("button", name=f"Delete draft: {PREFIX} a draft to throw away")
+
+    page.once("dialog", lambda dialog: dialog.dismiss())
+    delete.click()
+    page.wait_for_timeout(200)
+    assert len(_rows("draft")) == 1, "the draft was deleted without the author agreeing"
+
+    messages = []
+    page.once("dialog", lambda dialog: (messages.append(dialog.message), dialog.accept()))
+    delete.click()
+    panel.get_by_text("Deleted", exact=False).wait_for()
+    assert "a draft to throw away" in messages[0]
+    assert _rows("draft") == []
+    assert editor.input_value() == "", "the Composer still holds a deleted draft"
+
+    panel.get_by_role("button", name="Undo").click()
+    panel.get_by_text("is back in your drafts", exact=False).wait_for()
+    assert [r["content"] for r in _rows("draft")] == [f"{PREFIX} a draft to throw away"]

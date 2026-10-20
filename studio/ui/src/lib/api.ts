@@ -2606,6 +2606,26 @@ export async function moveToNextSlot(postId: string): Promise<{ scheduled_for: s
   );
 }
 
+/** A draft in the drafts list. `created_at` is when it was first saved, in UTC. */
+export interface DraftSummary {
+  id: string;
+  content: string;
+  created_at: string | null;
+}
+
+/** Every draft, newest first. */
+export async function fetchDrafts(): Promise<DraftSummary[]> {
+  const data = await call<{ posts?: PostRow[] }>("/api/posts?status=draft");
+  return (data.posts ?? [])
+    .map((row) => ({ id: row.id, content: row.content ?? "", created_at: row.created_at ?? null }))
+    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+}
+
+/** Deletes a draft. The server refuses a post that has gone out, and answers 404 for nothing. */
+export async function deleteDraft(id: string): Promise<void> {
+  await call(`/api/posts/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 /** A weekly slot as the creator sets it: a day (0 is Monday), a local time and an optional name. */
 export interface SlotChange {
   day_of_week?: number;

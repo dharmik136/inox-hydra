@@ -21,6 +21,7 @@ import { QueueSurface } from "@/components/QueueSurface";
 import { DocsSurface } from "@/components/DocsSurface";
 import { CommandSurface } from "@/components/CommandSurface";
 import { PublishDialog } from "@/components/PublishDialog";
+import { DraftsPanel, draftTitle } from "@/components/DraftsPanel";
 import { DevtoolsSurface } from "@/components/DevtoolsSurface";
 import { StudioStatusBanner } from "@/components/StudioStatusBanner";
 import { STUDIO_SECTIONS, sectionById, type SectionId } from "@/lib/navigation";
@@ -37,6 +38,7 @@ import {
   POSTED_STATUSES,
   updateDraft,
   fetchDraftById,
+  type DraftSummary,
   type GeneratedHook,
   type SearchResult,
 } from "@/lib/api";
@@ -155,7 +157,21 @@ export default function App() {
   }, [dockedInspector]);
   const [draft, setDraft] = useState("");
   const [draftId, setDraftId] = useState<string | null>(null);
+  const draftIdRef = useRef(draftId);
+  draftIdRef.current = draftId;
   const [saveState, setSaveState] = useState<SaveState>("idle");
+
+  // The drafts list, and a counter that tells an open list to read again
+  // after a save, a publish or a delete changed what it shows.
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const [draftsKey, setDraftsKey] = useState(0);
+
+  // The draft the Composer let go of when its text was cleared or replaced
+  // all at once. Clearing the editor and saving used to write the next post
+  // over that draft without a word; now the next save makes a new draft, the
+  // earlier one is kept, and the line under the bar says so, with a way back
+  // to writing over it on purpose.
+  const [detachedFrom, setDetachedFrom] = useState<{ id: string; title: string } | null>(null);
 
   // Text in the Composer that is not on disk. Registered once with the
   // unsaved-work registry, which asks before the page reloads or closes and
@@ -303,6 +319,9 @@ export default function App() {
   const [hookUndo, setHookUndo] = useState<{ opening: string; hook: string } | null>(null);
   const canUndoHook = hookUndo !== null && draft.startsWith(hookUndo.hook);
 
+  const detachedRef = useRef(detachedFrom);
+  detachedRef.current = detachedFrom;
+
   /** Whether the author has put anything into the editor this session. */
   const touched = useRef(false);
 
@@ -388,8 +407,24 @@ export default function App() {
     };
   }, [draft]);
 
-  const onChangeDraft = useCallback((next: string) => {
+  const onChangeDraft = useCallback((next: string, cleared = false) => {
     touched.current = true;
+    const held = draftIdRef.current;
+    if (cleared && held) {
+      // A different post is being started over this one. It is kept as it
+      // was saved, and the next save creates a new draft.
+      setDetachedFrom({ id: held, title: draftTitle(base.current?.id === held ? base.current.content : "") });
+      setDraftId(null);
+    } else if (!held && detachedRef.current && base.current?.id === detachedRef.current.id && next === base.current.content) {
+      // Undo brought the earlier draft's text back: this is that draft again.
+      setDraftId(detachedRef.current.id);
+      setDetachedFrom(null);
+      setDraft(next);
+      setSaveState("idle");
+      setSavedAt(null);
+      setSaveError(null);
+      return;
+    }
     setDraft(next);
     setSaveState("dirty");
     setSavedAt(null);
@@ -482,7 +517,9 @@ export default function App() {
         const created = await createDraft(draft);
         base.current = { id: created, content: draft };
         setDraftId(created);
+        setDetachedFrom(null);
       }
+      setDraftsKey((key) => key + 1);
       if (latestDraft.current !== draft) {
         // Typed into while the save was out: what is on screen is not what
         // was written, so it is not SAVED.
@@ -542,6 +579,8 @@ export default function App() {
       base.current = { id: created, content: draft };
       setDraftId(created);
       setPosted(null);
+      setDetachedFrom(null);
+      setDraftsKey((key) => key + 1);
       const current = latestDraft.current === draft;
       setSaveState(current ? "saved" : "dirty");
       setSavedAt(current ? clockTime() : null);
@@ -553,6 +592,59 @@ export default function App() {
       saving.current = false;
     }
   }, [draft]);
+
+  /**
+   * Puts a stored post into the Composer, or an empty page for a new post,
+   * with every per-post state reset. The callers ask about unsaved work
+   * first.
+   */
+  const adopt = useCallback((post: { id: string; content: string; status?: string } | null) => {
+    touched.current = true;
+    setDraft(post?.content ?? "");
+    setDraftId(post?.id ?? null);
+    base.current = post ? { id: post.id, content: post.content } : null;
+    setPosted(post?.status && POSTED_STATUSES.has(post.status) ? { id: post.id, status: post.status, agreed: false } : null);
+    setPostedRefused(false);
+    setChangedElsewhere(false);
+    setSaveState("idle");
+    setSavedAt(null);
+    setSaveError(null);
+    setGenerated(null);
+    setHookUndo(null);
+    setDetachedFrom(null);
+  }, []);
+
+  /** Whether unsaved text in the Composer may be discarded, asking when there is some. */
+  const mayDiscard = useCallback(
+    (doing: string) =>
+      !composerUnsaved.current ||
+      window.confirm(`The post in the Composer has unsaved changes. ${doing} and discard them?`),
+    [],
+  );
+
+  /** Opens a draft from the drafts list. Resolves false when the author chose to stay. */
+  const onOpenDraft = useCallback(
+    async (chosen: DraftSummary): Promise<boolean> => {
+      if (chosen.id === draftId) return true;
+      if (!mayDiscard("Open the other draft")) return false;
+      // Read fresh: the list may be older than another window's save.
+      const found = await fetchDraftById(chosen.id).catch(() => null);
+      adopt(found ? { ...found, status: "draft" } : { id: chosen.id, content: chosen.content, status: "draft" });
+      return true;
+    },
+    [draftId, mayDiscard, adopt],
+  );
+
+  /**
+   * An empty page for the next post. The post open now stays as it was
+   * saved, in the drafts list; unsaved changes to it are asked about.
+   */
+  const onNewPost = useCallback((): boolean => {
+    if (!draftId && !draft.trim()) return true;
+    if (!mayDiscard("Start a new post")) return false;
+    adopt(null);
+    return true;
+  }, [draftId, draft, mayDiscard, adopt]);
 
   /**
    * Opens a queued post from the Queue in the Composer, to correct its text.
@@ -576,21 +668,10 @@ export default function App() {
       }
       const found = await fetchPostById(postId).catch(() => null);
       if (!found) return;
-      touched.current = true;
-      setDraft(found.content);
-      setDraftId(found.id);
-      base.current = { id: found.id, content: found.content };
-      setPosted(POSTED_STATUSES.has(found.status) ? { id: found.id, status: found.status, agreed: false } : null);
-      setPostedRefused(false);
-      setChangedElsewhere(false);
-      setSaveState("idle");
-      setSavedAt(null);
-      setSaveError(null);
-      setGenerated(null);
-      setHookUndo(null);
+      adopt(found);
       navigate("composer", true);
     },
-    [draftId, navigate],
+    [draftId, navigate, adopt],
   );
 
   const saveActions: BarAction[] = [];
@@ -654,17 +735,7 @@ export default function App() {
           navigate("analytics", true);
           return;
         }
-        touched.current = true;
-        setDraft(found.content);
-        setDraftId(found.id);
-        base.current = { id: found.id, content: found.content };
-        setSaveState("idle");
-        setSavedAt(null);
-        setSaveError(null);
-        setGenerated(null);
-        setHookUndo(null);
-        setPosted(null);
-        setPostedRefused(false);
+        adopt({ ...found, status: "draft" });
         navigate("composer", true);
         return;
       }
@@ -673,7 +744,7 @@ export default function App() {
       else if (result.kind === "specimen") point("swipe", result.id);
       else if (result.kind === "help") point("docs", result.id, result.anchor_text ?? null);
     },
-    [draftId, navigate],
+    [draftId, navigate, adopt],
   );
 
   const focusFor = (target: SectionId) => (focus && focus.section === target ? focus.target : null);
@@ -730,9 +801,25 @@ export default function App() {
             }
             setPublishOpen(true);
           }}
+            onDrafts={() => setDraftsOpen(true)}
+            onNewPost={() => void onNewPost()}
           />
           {saveState === "failed" && saveError ? (
             <SaveReason reason={saveError} actions={saveActions} />
+          ) : detachedFrom && !draftId ? (
+            <SaveReason
+              tone="note"
+              reason={`This is a new post. Your draft "${detachedFrom.title}" is kept as it was saved, in Drafts. Save keeps this one as a separate draft.`}
+              actions={[
+                {
+                  label: "Write over that draft instead",
+                  onClick: () => {
+                    setDraftId(detachedFrom.id);
+                    setDetachedFrom(null);
+                  },
+                },
+              ]}
+            />
           ) : (
             holdsPosted &&
             posted && (
@@ -928,6 +1015,16 @@ export default function App() {
         </div>
       </div>
 
+      <DraftsPanel
+        open={draftsOpen}
+        onClose={() => setDraftsOpen(false)}
+        currentId={draftId}
+        refreshKey={draftsKey}
+        onOpen={(chosen) => onOpenDraft(chosen)}
+        onNewPost={onNewPost}
+        onDeletedCurrent={() => adopt(null)}
+      />
+
       <PublishDialog
         open={publishOpen}
         postId={draftId}
@@ -952,6 +1049,8 @@ export default function App() {
           setDraftId(null);
           setDraft("");
           setGenerated(null);
+          setDetachedFrom(null);
+          setDraftsKey((key) => key + 1);
           setSaveState("published");
           setSavedAt(message);
           setSaveError(null);
