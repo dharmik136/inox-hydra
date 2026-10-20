@@ -53,6 +53,18 @@ SNIPPET_RADIUS = 70
 QUOTES = "\"'`\u2018\u2019\u201a\u201b\u201c\u201d\u201e\u201f\u00ab\u00bb"
 
 
+def names_company(headline: str, company: str) -> bool:
+    """
+    Whether a headline already names the company, as whole words.
+
+    "Engineering Manager at Logiq" names Logiq; "Metadata engineer" does not
+    name Meta, which a substring test said it did, hiding the company.
+    """
+    if not company or not headline:
+        return False
+    return re.search(r"(?<!\w)" + re.escape(fold(company)) + r"(?!\w)", fold(headline)) is not None
+
+
 def fold(text: Any) -> str:
     """
     Text with case and accents folded, for comparing and nothing else.
@@ -516,7 +528,7 @@ def search_leads(terms: List[str], limit: int = 6, conn=None) -> List[Dict[str, 
             # The company is left out when the headline already names it:
             # "Engineering Manager at Logiq" and "Logiq" read "Logiq Logiq".
             headline, company = row["headline"] or "", row["company"] or ""
-            about = headline if company and fold(company) in fold(headline) else " ".join(
+            about = headline if names_company(headline, company) else " ".join(
                 part for part in (headline, company) if part)
             profile = " ".join(str(part or "") for part in (row["full_name"], row["name"], row["company"],
                                                             row["headline"], row["notes"]))

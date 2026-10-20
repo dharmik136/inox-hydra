@@ -23,3 +23,12 @@ def test_a_lead_result_names_its_stage_and_company_once(studio):
     hit = hits[0]
     assert hit["meta"] == "OUTREACH SENT", hit
     assert "Cargoline Cargoline" not in hit["snippet"], hit
+
+
+def test_a_company_inside_another_word_is_still_named():
+    """Review note: "Meta" was hidden because "Metadata engineer" contains it."""
+    import universal_search
+
+    assert universal_search.names_company("Engineering Manager at Logiq", "Logiq")
+    assert not universal_search.names_company("Metadata engineer", "Meta")
+    assert universal_search.names_company("Data engineer at Meta.", "Meta")
