@@ -877,6 +877,7 @@ export default function App() {
                   onChange={onChangeDraft}
                   onReHook={onReHook}
                   swapKey={swapKey}
+                  onSave={() => (holdsPosted ? onCorrectPosted() : void onSave())}
                 />
               )}
               {active === "setup" && <OnboardingSurface onOpenToday={() => navigate("today")} />}

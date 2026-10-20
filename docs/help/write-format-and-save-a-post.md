@@ -23,6 +23,8 @@ The 140 figure is the product's own approximation, and the studio's server-side 
 2. A small toolbar appears above the selection. The formatting buttons are icons; hover one to see its name.
 3. Press a button. The text stays selected, so you can apply more than one.
 
+From the keyboard, **Ctrl+B** applies bold, **Ctrl+I** italic and **Ctrl+U** underline to the selection (**Cmd** on a Mac).
+
 | Button | What it does |
 | --- | --- |
 | Bold | Swaps the letters for Unicode bold characters |
@@ -40,7 +42,7 @@ These are real Unicode characters, not markup, so they survive copy and paste. T
 
 ## Save
 
-Saving is manual. Press **Save** in the top bar. While a save is under way the button is greyed out, so a second press cannot make a second copy. If you reload, close the tab or leave the studio with text that is not saved, the browser asks before it lets the text go. Moving between screens in the studio keeps the Composer's text. The mark beside **Save** tells you where you stand:
+Saving is manual. Press **Save** in the top bar, or **Ctrl+S** (**Cmd+S** on a Mac) while you type. While a save is under way the button is greyed out, so a second press cannot make a second copy. If you reload, close the tab or leave the studio with text that is not saved, the browser asks before it lets the text go. Moving between screens in the studio keeps the Composer's text. The mark beside **Save** tells you where you stand:
 
 | Mark | Meaning |
 | --- | --- |
