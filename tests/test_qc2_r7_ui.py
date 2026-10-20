@@ -19,7 +19,7 @@ import time
 import pytest
 
 pytest.importorskip("playwright.sync_api")
-from playwright.sync_api import sync_playwright  # noqa: E402
+from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BACKEND = os.path.join(REPO_ROOT, "studio", "backend")
@@ -107,6 +107,19 @@ def page(browser, studio_url, fake):
     context.close()
 
 
+def _says(panel, text):
+    """
+    Waits for the panel to say `text`, then gives all of its text.
+
+    Verify and save shows the provider's message as soon as the check comes
+    back, and the summary above it on the reread that follows. Read once,
+    the summary is still the previous provider's on a machine slow enough to
+    render the message first, which is every slower runner.
+    """
+    expect(panel).to_contain_text(text, use_inner_text=True, timeout=15000)
+    return panel.inner_text()
+
+
 def _open_inspector_tab(page, name):
     page.click('button[aria-label="Composer"]')
     opener = page.locator('button[aria-label="Open inspector"]')
@@ -142,8 +155,7 @@ def test_choosing_openai_shows_what_leaves_before_saving_then_checks_the_key(pag
     page.click('section[aria-label="Image provider settings"] button:has-text("Verify and save")')
     page.wait_for_selector("text=OpenAI accepted the key. Model: gpt-image-1.")
 
-    text = panel.inner_text()
-    assert "..." + fakes.GOOD_KEY[-4:] in text
+    text = _says(panel, "..." + fakes.GOOD_KEY[-4:])
     assert fakes.GOOD_KEY not in text
     assert page.input_value('input[aria-label="Image provider API key"]') == ""
 
@@ -165,7 +177,7 @@ def test_a_local_web_ui_shows_its_model_and_that_nothing_leaves(page, fake):
     page.fill('input[aria-label="Web UI address"]', fake.url("a1111"))
     page.click('section[aria-label="Image provider settings"] button:has-text("Verify and save")')
     page.wait_for_selector("text=Model: sdxl_base.safetensors [31e35c80fc]")
-    assert "NONE, STAYS ON THIS COMPUTER" in panel.inner_text()
+    _says(panel, "NONE, STAYS ON THIS COMPUTER")
 
 
 def test_a_failed_generation_is_said_and_nothing_is_added(page, fake):
