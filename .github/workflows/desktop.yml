@@ -65,6 +65,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # studio/frontend_next is the built React interface, and it is gitignored,
+      # so a fresh checkout does not contain it. This workflow never built it,
+      # so every installer opened, after the splash, on the server's 503 "The
+      # studio interface has not been built". The portable release and CI both
+      # build it; the installers now do too, before the payload is staged.
+      - name: Set up Node Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: studio/ui/package-lock.json
+
+      - name: Build The Studio Interface
+        working-directory: studio/ui
+        shell: bash
+        run: |
+          npm ci
+          npm run build
+
       # Preinstalled on windows-latest along with the MSVC toolchain, so this
       # only pins and caches rather than installing a compiler.
       - name: Set up Rust Toolchain
@@ -91,6 +110,7 @@ jobs:
           $missing = @()
           foreach ($p in @(
             "desktop/payload/app/studio/backend/app.py",
+            "desktop/payload/app/studio/frontend_next/index.html",
             "desktop/payload/lib"
           )) { if (-not (Test-Path $p)) { $missing += $p } }
 

@@ -736,8 +736,28 @@ def assert_help_shipped(studio_dir):
         )
 
 
+def assert_interface_built(studio_dir):
+    """
+    Refuses an artifact whose window would open on a 503 instead of the studio.
+
+    studio/frontend_next is gitignored, and the server has no fallback page, so
+    a checkout that skipped `npm run build` copies cleanly and ships a product
+    that answers "The studio interface has not been built". The desktop
+    workflow did exactly that for every installer. Both channels copy the
+    application through copy_application, so the check sits here once.
+    """
+    index = os.path.join(studio_dir, "frontend_next", "index.html")
+    if not os.path.isfile(index):
+        raise SystemExit(
+            "REFUSING TO BUILD. The studio interface is missing from the artifact "
+            f"({os.path.relpath(index, os.path.dirname(studio_dir))}). Run "
+            "`npm --prefix studio/ui ci` and `npm --prefix studio/ui run build` first."
+        )
+
+
 def copy_application(app_dir):
     """Copies the studio package, excluding user state, tests, caches and secrets."""
+    assert_interface_built(os.path.join(REPO_ROOT, "studio"))
     target = os.path.join(app_dir, "studio")
     shutil.copytree(
         os.path.join(REPO_ROOT, "studio"), target,
@@ -758,6 +778,7 @@ def copy_application(app_dir):
     )
     assert_no_secrets(target)
     assert_help_shipped(target)
+    assert_interface_built(target)
     log("app", f"copied studio package, {sum(len(f) for _, _, f in os.walk(target))} files")
     return target
 
