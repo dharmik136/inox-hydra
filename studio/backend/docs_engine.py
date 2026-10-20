@@ -799,6 +799,12 @@ def help_sections(docs_dir=None):
     sections = []
     for section in HELP_SECTIONS:
         documents = [by_path[path] for path in section["paths"] if path in by_path]
+        # A packaged copy carries the help and not the project's own record,
+        # so its retired section is empty. Listing it would show a heading
+        # with nothing under it. A help section is always listed, because an
+        # empty one is a packaging defect the release gates must see.
+        if not documents and section_kind(section["id"]) != "help":
+            continue
         sections.append({
             "id": section["id"],
             "title": section["title"],

@@ -63,13 +63,19 @@ with TestClient(
           f"({len(r.text)} bytes)")
 
     r = c.get("/api/docs")
-    mods = r.json().get("modules", []) if r.status_code == 200 else []
-    check("lists documentation modules", len(mods) > 0, f"({len(mods)} modules)")
 
-    for mod in mods:
-        rr = c.get("/api/docs/" + str(mod["id"]))
+    # A packaged copy carries the help and nothing written for maintainers:
+    # the retired module manuals, the architecture notes and the quality
+    # records stay in the repository (prepare_package).
+    library = r.json().get("library", []) if r.status_code == 200 else []
+    internal = [e["path"] for e in library
+                if not e["path"].startswith("help/") and e["path"] != "strategy_playbook.md"]
+    check("ships no maintainer or retired documents", not internal, ", ".join(internal[:3]))
+
+    for entry in library[:3]:
+        rr = c.get("/api/docs/" + str(entry["id"]))
         body = rr.json().get("content", "") if rr.status_code == 200 else ""
-        check(f"serves doc {mod['id']}", len(body) > 500, f"({len(body)} bytes)")
+        check(f"serves doc {entry['id']}", len(body) > 500, f"({len(body)} bytes)")
 
     # Every help section has every document it lists. The help articles were
     # never packaged, and this gate checked only the seven modules, so every
