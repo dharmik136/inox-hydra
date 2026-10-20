@@ -18,6 +18,7 @@ Two kinds of test:
   computed, written out here as it was, on a history built to have ties.
 """
 
+import json
 import os
 import shutil
 import statistics
@@ -399,3 +400,77 @@ def test_todays_comparison_reads_the_same_readings(home):
         theirs = [r[metric] for r in usual if r[metric] is not None]
         assert entry["your_usual"] == statistics.median(theirs)
         assert entry["posts_compared"] == len(theirs)
+
+
+# ---------------------------------------------------------------------------
+# Reactions folded by the retention job (batch R4)
+# ---------------------------------------------------------------------------
+
+# Batch R4's table, as its migration creates it (branch qc2/r4, retention.py).
+REACTION_FOLDS = """
+    CREATE TABLE IF NOT EXISTS reaction_folds (
+        post_urn TEXT PRIMARY KEY,
+        reactions INTEGER NOT NULL DEFAULT 0,
+        folded_through TEXT,
+        updated_at TEXT NOT NULL
+    )
+"""
+
+
+def _fold(conn, ids):
+    """What retention._run_reactions does to one batch: count, then delete, in one transaction."""
+    marks = json.dumps(ids)
+    with conn:
+        for post, count in conn.execute(
+                "SELECT post_urn, COUNT(*) FROM lead_interactions WHERE id IN (SELECT value FROM json_each(?)) "
+                "GROUP BY post_urn", (marks,)).fetchall():
+            conn.execute("INSERT INTO reaction_folds (post_urn, reactions, folded_through, updated_at) "
+                         "VALUES (?, ?, '2024-01-01', '2026-10-20') ON CONFLICT(post_urn) DO UPDATE SET "
+                         "reactions = reaction_folds.reactions + excluded.reactions", (post, count))
+        conn.execute("DELETE FROM lead_interactions WHERE id IN (SELECT value FROM json_each(?))", (marks,))
+
+
+def test_folded_reactions_still_count_on_the_posts_screen(home):
+    """
+    A folded reaction loses its person, not its post: the Posts screen counts
+    the same people for a post after the fold as before it.
+    """
+    import insights
+    import post_summary
+    before = {p["activity_urn"]: p["people_count"] for p in insights.posts_overview()["posts"]}
+    conn = _db()
+    try:
+        conn.execute(REACTION_FOLDS)
+        # Likes whose person did nothing else on that post, so the count is exact.
+        ids = [r[0] for r in conn.execute("""
+            SELECT i.id FROM lead_interactions i WHERE i.interaction_type = 'LIKE' AND i.post_urn != ''
+              AND NOT EXISTS (SELECT 1 FROM lead_interactions o WHERE o.lead_id = i.lead_id
+                              AND o.post_urn = i.post_urn AND o.id != i.id)
+            ORDER BY i.id LIMIT 400""")]
+        _fold(conn, ids)
+        folded = dict(conn.execute("SELECT post_urn, reactions FROM reaction_folds").fetchall())
+        assert folded and conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0]
+        _consistent(conn)
+        rows = post_summary.current(conn)
+        assert all(rows[urn]["folded_reactions"] == n for urn, n in folded.items())
+    finally:
+        conn.close()
+    after = insights.posts_overview()["posts"]
+    assert {p["activity_urn"]: p["people_count"] for p in after} == before
+    assert sum(p["folded_reactions"] for p in after) == sum(n for urn, n in folded.items() if urn in home["own"]) > 300
+
+
+def test_a_post_with_only_folded_reactions_keeps_its_row(home):
+    import post_summary
+    post = home["own"][5]
+    conn = _db()
+    try:
+        conn.execute(REACTION_FOLDS)
+        with conn:
+            conn.execute("DELETE FROM post_metric_observations WHERE activity_urn = ?", (post,))
+        _fold(conn, [r[0] for r in conn.execute("SELECT id FROM lead_interactions WHERE post_urn = ?", (post,))])
+        row = post_summary.current(conn, [post])[post]
+        assert row["people"] == 0 and row["folded_reactions"] > 0
+        _consistent(conn)
+    finally:
+        conn.close()

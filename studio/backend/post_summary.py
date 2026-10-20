@@ -61,7 +61,7 @@ _SEP = "\x1f"
 _JSON_MARK = "\x1e"
 
 COLUMNS = ("post_urn", "people", "commenters", "vip", "qualified", "icp_known", "icp_sum",
-           "conversations", "people_json", "lead_ids", "reading_48h", "latest_reading")
+           "conversations", "folded_reactions", "people_json", "lead_ids", "reading_48h", "latest_reading")
 
 # lead_interactions.lead_id is declared INTEGER and leads.id is TEXT, so a
 # join written l.id = i.lead_id applies numeric affinity to leads.id and can
@@ -88,6 +88,7 @@ SCHEMA = (
         icp_known INTEGER NOT NULL DEFAULT 0,
         icp_sum REAL NOT NULL DEFAULT 0,
         conversations INTEGER NOT NULL DEFAULT 0,
+        folded_reactions INTEGER NOT NULL DEFAULT 0,
         people_json TEXT,
         lead_ids TEXT,
         reading_48h TEXT,
@@ -161,7 +162,7 @@ SCHEMA = (
 )
 
 _NO_ENGAGEMENT = {"people": 0, "commenters": 0, "vip": 0, "qualified": 0, "icp_known": 0, "icp_sum": 0.0,
-                  "conversations": 0, "people_json": None, "lead_ids": None}
+                  "conversations": 0, "folded_reactions": 0, "people_json": None, "lead_ids": None}
 _NO_READINGS = {"reading_48h": None, "latest_reading": None}
 
 # ---------------------------------------------------------------------------
@@ -235,6 +236,7 @@ def _engagement(people: List[sqlite3.Row]) -> Dict[str, Any]:
         "icp_known": len(known),
         "icp_sum": sum(known),
         "conversations": sum(1 for p in people if (p["status"] or "") in CONVERSATION_STATUSES),
+        "folded_reactions": 0,
         "people_json": json.dumps([[str(p["lead_id"]), p["name"], 1 if p["commented"] else 0, p["status"]]
                                    for p in ordered[:TOP_PEOPLE]]),
         "lead_ids": _encode_ids([str(p["lead_id"]) for p in people]),
@@ -281,7 +283,27 @@ def _engagements(conn, keys: Optional[List[str]]) -> Dict[str, Dict[str, Any]]:
         people.append(r)
     if people:
         rows[current] = _engagement(people)
+    for urn, count in _folded(conn, keys).items():
+        rows.setdefault(urn, dict(_NO_ENGAGEMENT))["folded_reactions"] = count
     return rows
+
+
+def _folded(conn, keys: Optional[List[str]]) -> Dict[str, int]:
+    """
+    Reactions the retention job (retention.py, batch R4) folded into counts:
+    reactions older than 24 months, whose rows are gone but which still
+    happened. The table exists once that migration has run.
+
+    The fold deletes the reaction rows in the same transaction as it adds the
+    count, and deleting them marks the post's summary stale, so the count is
+    read again whenever it moves.
+    """
+    if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'reaction_folds'").fetchone():
+        return {}
+    where, params = _in_clause(keys, "post_urn")
+    return {r["post_urn"]: int(r["reactions"] or 0)
+            for r in _rows(conn, f"SELECT post_urn, reactions FROM reaction_folds WHERE {where}", params)
+            if r["reactions"]}
 
 
 def compute(conn, keys: Optional[Iterable[str]] = None) -> Dict[str, Dict[str, Any]]:
@@ -316,7 +338,9 @@ def combined(conn, keys: Iterable[str]) -> Dict[str, Any]:
             people[r["lead_id"]] = dict(zip(r.keys(), tuple(r)))
         elif r["commented"]:
             person["commented"] = 1
-    return _engagement(list(people.values()))
+    engagement = _engagement(list(people.values()))
+    engagement["folded_reactions"] = sum(_folded(conn, [k for k in keys if k]).values())
+    return engagement
 
 
 
@@ -343,7 +367,8 @@ def _recompute(conn, marked: Dict[str, Dict[str, Any]]) -> Dict[str, Optional[Di
             new.update(engagements.get(urn, _NO_ENGAGEMENT))
         if row["stale"] & READINGS:
             new.update(readings.get(urn, _NO_READINGS))
-        out[urn] = new if (new["people"] or new["reading_48h"] or new["latest_reading"]) else None
+        out[urn] = new if (new["people"] or new["folded_reactions"] or new["reading_48h"]
+                           or new["latest_reading"]) else None
     return out
 
 

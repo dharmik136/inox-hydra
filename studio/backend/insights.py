@@ -64,7 +64,7 @@ def posts_overview() -> Dict[str, Any]:
         summary = post_summary.current(conn)
         spellings: Dict[str, List[str]] = {}
         for urn, row in summary.items():
-            if row["people"]:
+            if row["people"] or row["folded_reactions"]:
                 spellings.setdefault(onboarding._activity_id(urn), []).append(urn)
         engagers: Dict[str, Dict[str, Any]] = {
             key: (summary[urns[0]] if len(urns) == 1 else post_summary.combined(conn, urns))
@@ -108,7 +108,13 @@ def posts_overview() -> Dict[str, Any]:
             "against_usual": ratios or None,
             # Commenters first, then by name, at most post_summary.TOP_PEOPLE.
             "people": post_summary.people_of(engaged),
-            "people_count": engaged["people"] if engaged else 0,
+            # Reactions older than 24 months are kept as a count once the
+            # retention job folds them (retention.py), so they still count
+            # here: each was one person's reaction to this post. Someone who
+            # also commented on it is counted again, since the fold keeps no
+            # names; folded_reactions says how much of the count that is.
+            "people_count": (engaged["people"] + engaged["folded_reactions"]) if engaged else 0,
+            "folded_reactions": engaged["folded_reactions"] if engaged else 0,
             # People from this post the creator went on to talk to: Connected
             # or Meeting Booked. The question the Posts screen exists for.
             "conversations": engaged["conversations"] if engaged else 0,
@@ -165,7 +171,7 @@ def outbound_overview() -> Dict[str, Any]:
                     engaged_back.setdefault(named[row["lead_id"]], set()).add(post)
         # Which of your posts the studio has read engagers on, for coverage.
         read_posts = {onboarding._activity_id(urn) for urn, row in post_summary.current(conn).items()
-                      if row["people"]}
+                      if row["people"] or row["folded_reactions"]}
     finally:
         conn.close()
 
