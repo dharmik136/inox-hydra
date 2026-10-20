@@ -333,7 +333,7 @@ function DemoCleanupNotice({
 
   return (
     <div role="status" className="mt-6 rounded-md border border-edge-strong bg-soft p-4">
-      <p className="text-[13px] leading-relaxed text-ink-secondary">
+      <p className="text-[13px] leading-relaxed break-words text-ink-secondary">
         The studio removed sample content it had added in an earlier version: {counts}.
         {notice.backup ? ` A copy of your database from before is at ${notice.backup}.` : ""}
       </p>
