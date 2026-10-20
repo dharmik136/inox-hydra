@@ -30,6 +30,8 @@ const OLDER_EXTENSION: ImportEnding = { label: "Older extension, end not known",
 
 export function importEnding(entry: { outcome: string | null; started_at: string | null; finished_at: string | null }): ImportEnding {
   if (!entry.finished_at) {
+    // The extension waits while its LinkedIn tab is hidden, and says so.
+    if (entry.outcome === "paused_hidden") return { label: "Paused, LinkedIn tab hidden", tone: "partial" };
     return { label: entry.started_at ? "Running" : "Waiting for the page", tone: "running" };
   }
   return ENDINGS[entry.outcome ?? ""] ?? OLDER_EXTENSION;

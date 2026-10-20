@@ -876,6 +876,11 @@ function chainLine(chain: { sequence: SelfImportKind[]; current_kind: SelfImport
 // offered for deletion as strangers.
 function importLine(entry: SelfImport): string {
   const read = entry.items_seen ?? 0;
+  // The extension does not scroll a hidden tab, and says so; this read
+  // SCROLLING NOW while nothing moved.
+  if (!entry.finished_at && entry.outcome === "paused_hidden") {
+    return `PAUSED AT ${read}: BRING THE LINKEDIN TAB TO THE FRONT TO GO ON`;
+  }
   if (!entry.finished_at) return entry.started_at ? "SCROLLING NOW" : "WAITING FOR THE PAGE TO OPEN";
   if (entry.outcome === "end_of_list") return `READ TO THE END: ${read}`;
   if (entry.outcome === "stopped") return `STOPPED AT ${read}`;

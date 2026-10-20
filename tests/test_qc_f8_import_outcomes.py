@@ -48,6 +48,7 @@ for (const outcome of outcomes) {
 }
 out.__running = importEnding({ outcome: "pending", started_at: "2026-10-20 10:00:00", finished_at: null });
 out.__waiting = importEnding({ outcome: "pending", started_at: null, finished_at: null });
+out.__paused = importEnding({ outcome: "paused_hidden", started_at: "2026-10-20 10:00:00", finished_at: null });
 console.log(JSON.stringify(out));
 """
 
@@ -107,3 +108,9 @@ def test_the_imports_tab_renders_with_import_ending():
         source = handle.read()
     assert "importEnding(" in source
     assert not re.search(r"outcome\s*===\s*\"completed\"", source), "the tab still keys its colour on 'completed'"
+
+
+def test_an_import_paused_in_a_hidden_tab_says_so(endings):
+    """SETUP-15 rest: the extension reports the pause; the tab does not call it running."""
+    assert endings["__paused"]["tone"] == "partial"
+    assert "hidden" in endings["__paused"]["label"].lower()

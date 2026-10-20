@@ -1228,6 +1228,10 @@ def _own_activity_ids(conn) -> set:
 # end of the list; the others read part of it.
 IMPORT_OUTCOMES = ("end_of_list", "stalled", "round_limit", "stopped", "left_page")
 
+# Not an ending: what an open import holds while the extension waits for its
+# hidden LinkedIn tab to come to the front. Cleared when it resumes.
+IMPORT_PAUSED_HIDDEN = "paused_hidden"
+
 
 def _import_outcome(outcome: Any, items_seen: Optional[int]) -> str:
     """
@@ -1550,8 +1554,8 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
         request_id = int(request_id)
     except (TypeError, ValueError):
         raise RefusedCapture("unknown import request")
-    if event not in ("started", "finished"):
-        raise RefusedCapture("event must be started or finished")
+    if event not in ("started", "paused", "resumed", "finished"):
+        raise RefusedCapture("event must be started, paused, resumed or finished")
     conn = get_db()
     chain = None
     try:
@@ -1561,6 +1565,16 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
                 conn.execute(
                     "UPDATE self_import_requests SET started_at = COALESCE(started_at, ?) "
                     "WHERE id = ? AND finished_at IS NULL", (_now(), request_id),
+                )
+            elif event in ("paused", "resumed"):
+                # The extension stops scrolling while its LinkedIn tab is
+                # hidden. Held in outcome while the import is open, which
+                # nothing else reads before it finishes, so Setup can say it
+                # is paused and why rather than SCROLLING NOW.
+                conn.execute(
+                    "UPDATE self_import_requests SET outcome = ?, items_seen = COALESCE(?, items_seen) "
+                    "WHERE id = ? AND finished_at IS NULL",
+                    (IMPORT_PAUSED_HIDDEN if event == "paused" else None, _count(items_seen), request_id),
                 )
             else:
                 conn.execute(
