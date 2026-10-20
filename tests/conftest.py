@@ -42,6 +42,11 @@ if "INOX_HYDRA_HOME" not in os.environ:
 # fixtures to assert against, so the sandbox opts in explicitly. Any test that
 # cares about the un-seeded state must clear this and re-seed for itself.
 os.environ.setdefault("INOX_DEMO_DATA", "1")
+# Demo mode also confirms a sample creator (database.seed_demo_identity). The
+# suite's fixtures were written against a demo with nobody confirmed, and many
+# confirm a creator of their own, so the sample one is off here unless a test
+# turns it on (tests/test_qc2_r5_demo.py).
+os.environ.setdefault("INOX_DEMO_CREATOR", "0")
 
 
 def pytest_configure(config):

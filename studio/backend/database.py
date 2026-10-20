@@ -1671,6 +1671,213 @@ def purge_seeded_leads(
             conn.close()
 
 
+# ---------------------------------------------------------------------------
+# The demo creator
+# ---------------------------------------------------------------------------
+# Demo data never confirmed an identity, so Today, Posts, Patterns and
+# Outbound, which are all about the confirmed creator, showed only their empty
+# states in demo mode, and an audit of the demo never saw them with data. So
+# demo mode also confirms a sample creator and gives them a few posts of their
+# own, people who engaged with those posts and some outbound activity. It is
+# written through the same functions the bridge's routes call, so it lands in
+# the same tables in the same shape. Every name says it is a sample, and the
+# purge below removes exactly this and nothing a real capture could write.
+
+DEMO_VANITY = "inox-hydra-sample-creator-demo"
+DEMO_CREATOR = {
+    "display_name": "Sample creator (demo data)",
+    "headline": "Head of Operations at Sample Freight Co (demo data)",
+    "current_company": "Sample Freight Co",
+    "about": "A sample creator the demo seeds, not a real person.",
+}
+
+# (days ago, text, reactions, comments, reposts). Days ago becomes the post's
+# activity id, which is where the studio reads the publish time from. The
+# openings vary (questions, short and long lines, hashtags) so Patterns has
+# both sides of a comparison to show.
+_DEMO_BODY = "\n\nA sample post the demo seeds (demo data), not something anyone wrote."
+DEMO_OWN_POSTS = (
+    (2, "Most logistics outages start with a spreadsheet nobody owns." + _DEMO_BODY, 64, 12, 3),
+    (9, "Is your on-call rota a culture document?" + _DEMO_BODY, 41, 7, 1),
+    (16, "We cut dispatch time by a third over one quarter, and most of it came from deleting steps." + _DEMO_BODY + " #logistics", 88, 19, 5),
+    (23, "Who actually reads your roadmap?" + _DEMO_BODY, 27, 4, 0),
+    (30, "The one metric our drivers actually care about is not on any of our dashboards yet." + _DEMO_BODY + " #operations", 53, 9, 2),
+    (37, "What did a 2 a.m. page teach me?" + _DEMO_BODY, 35, 6, 1),
+    (44, "Freight is a data problem pretending to be a trucking problem, and the data is in email." + _DEMO_BODY + " #freight", 72, 14, 4),
+    (51, "A short note on saying no." + _DEMO_BODY, 22, 3, 0),
+)
+
+# (name, headline, index into DEMO_OWN_POSTS, comment, or None for a reaction).
+DEMO_ENGAGERS = (
+    ("Sample engager Anika (demo data)", "Head of Platform at Sample Cargo", 0, "This matches what we saw last year."),
+    ("Sample engager Rahul (demo data)", "Senior SRE at Sample Shipping", 1, "How do you stop the rota becoming a blame list?"),
+    ("Sample engager Meera (demo data)", "CTO at Sample Tracking", 0, None),
+    ("Sample engager Tom (demo data)", "Engineering Manager at Sample Logistics", 2, "Which part of dispatch moved the most?"),
+    ("Sample engager Fatima (demo data)", "Product Lead at Sample Haulage", 2, None),
+    ("Sample engager Kenji (demo data)", "Staff Engineer at Sample Routes", 4, "We track the same number."),
+)
+DEMO_ENGAGER_URL = "https://www.linkedin.com/in/inox-hydra-sample-engager-"
+
+DEMO_OUTBOUND_EXCERPT = "Sample post by someone else (demo data)."
+# (days ago, author, kind, my text)
+DEMO_OUTBOUND = (
+    (1, "Sample author Lucia (demo data)", "comment", "Sample comment (demo data). Nice write-up, we saw the same."),
+    (2, "Sample author Arjun (demo data)", "reaction", None),
+    (4, "Sample author Lucia (demo data)", "reaction", None),
+    (6, "Sample author Sanjay (demo data)", "comment", "Sample comment (demo data). Agreed on the batch jobs."),
+)
+
+
+def _demo_urn(days_ago: int, salt: int) -> str:
+    moment = datetime.now() - timedelta(days=days_ago, hours=3)
+    return f"urn:li:activity:{(int(moment.timestamp() * 1000) << 22) + salt}"
+
+
+DEMO_CREATOR_ENV = "INOX_DEMO_CREATOR"
+
+
+def demo_creator_enabled() -> bool:
+    """
+    Demo mode with the sample creator, which is the default for demo mode.
+
+    INOX_DEMO_CREATOR=0 keeps the older demo, with nobody confirmed. The test
+    suite sets it, because its fixtures were written against that demo and
+    many of them confirm a creator of their own.
+    """
+    return demo_data_enabled() and os.environ.get(DEMO_CREATOR_ENV, "").strip().lower() not in ("0", "false", "no", "off")
+
+
+def _demo_engager_url(name: str) -> str:
+    return DEMO_ENGAGER_URL + name.split()[2].lower()
+
+
+def seed_demo_identity() -> bool:
+    """
+    Confirms the sample creator and writes their demo activity, once.
+
+    Only in demo mode, and only while no creator is confirmed, so a real
+    identity is never replaced. Returns whether anything was written.
+    """
+    if not demo_creator_enabled():
+        return False
+    try:
+        from . import onboarding
+        from .crm import reverse_crm
+    except ImportError:
+        import onboarding
+        from crm import reverse_crm
+
+    conn = get_db()
+    try:
+        if not _has_table(conn, "creator_identity"):
+            return False
+        row = conn.execute("SELECT confirmed_at FROM creator_identity WHERE id = 1").fetchone()
+        if row and row["confirmed_at"]:
+            return False
+    finally:
+        conn.close()
+
+    onboarding.observe_profile({"vanity": DEMO_VANITY, "self_evidence": ["owner_edit_controls"], **DEMO_CREATOR})
+    onboarding.confirm_identity(DEMO_VANITY)
+    urns = [_demo_urn(days, i) for i, (days, *_rest) in enumerate(DEMO_OWN_POSTS)]
+    onboarding.ingest_own_posts(DEMO_VANITY, [
+        {"activity_urn": urn, "actor": DEMO_VANITY, "text": text,
+         "reactions": reactions, "comments": comments, "reposts": reposts}
+        for urn, (_days, text, reactions, comments, reposts) in zip(urns, DEMO_OWN_POSTS)
+    ])
+    for name, headline, post, comment in DEMO_ENGAGERS:
+        reverse_crm.ingest_interaction(
+            full_name=name,
+            linkedin_urn=_demo_engager_url(name),
+            headline=headline,
+            company=headline.split(" at ")[-1],
+            interaction_type="COMMENT" if comment else "LIKE",
+            comment_text=comment,
+            post_urn=urns[post],
+        )
+    conn = get_db()
+    try:
+        with conn:
+            # Said on the lead itself, as the four sample leads say it.
+            urls = [_demo_engager_url(name) for name, *_rest in DEMO_ENGAGERS]
+            conn.execute(
+                f"UPDATE leads SET notes = ? WHERE profile_url IN ({','.join('?' for _ in urls)})",
+                [_SAMPLE.strip()] + urls,
+            )
+    finally:
+        conn.close()
+    onboarding.ingest_outbound(DEMO_VANITY, [
+        {"target_activity_urn": _demo_urn(days, 50 + i), "target_author": author,
+         "target_excerpt": DEMO_OUTBOUND_EXCERPT, "kind": kind, "my_text": text, "reaction_kind": "LIKE"}
+        for i, (days, author, kind, text) in enumerate(DEMO_OUTBOUND)
+    ])
+    return True
+
+
+def purge_seeded_identity(
+    conn: Optional[sqlite3.Connection] = None,
+    dry_run: bool = True,
+) -> Dict[str, Any]:
+    """
+    Remove the sample creator and the activity the demo wrote for them.
+
+    Only when the confirmed creator is the sample one, by its vanity, and then
+    only rows that carry the demo's own texts, names and addresses.
+    """
+    owns = conn is None
+    conn = conn or get_db()
+    try:
+        report = {"identity": False, "own_posts": [], "leads": [], "outbound": 0, "dry_run": dry_run}
+        if not _has_table(conn, "creator_identity"):
+            return report
+        row = conn.execute("SELECT vanity FROM creator_identity WHERE id = 1").fetchone()
+        if not row or row["vanity"] != DEMO_VANITY:
+            return report
+        report["identity"] = True
+        texts = [text for _days, text, *_rest in DEMO_OWN_POSTS]
+        report["own_posts"] = [r["activity_urn"] for r in conn.execute(
+            f"SELECT activity_urn FROM own_posts WHERE text IN ({','.join('?' for _ in texts)})", texts)]
+        urls = [_demo_engager_url(name) for name, *_rest in DEMO_ENGAGERS]
+        report["leads"] = [r["id"] for r in conn.execute(
+            f"SELECT id FROM leads WHERE profile_url IN ({','.join('?' for _ in urls)}) AND notes = ?",
+            urls + [_SAMPLE.strip()])]
+        authors = sorted({author for _days, author, *_rest in DEMO_OUTBOUND})
+        outbound = (f"target_excerpt = ? AND target_author IN ({','.join('?' for _ in authors)})",
+                    [DEMO_OUTBOUND_EXCERPT] + authors)
+        report["outbound"] = conn.execute(
+            f"SELECT COUNT(*) FROM outbound_engagements WHERE {outbound[0]}", outbound[1]).fetchone()[0]
+        if dry_run:
+            return report
+
+        try:
+            from . import onboarding
+        except ImportError:
+            import onboarding
+        with conn:
+            if report["own_posts"]:
+                marks = ",".join("?" for _ in report["own_posts"])
+                conn.execute(f"DELETE FROM post_metric_observations WHERE activity_urn IN ({marks})", report["own_posts"])
+                conn.execute(f"DELETE FROM own_posts WHERE activity_urn IN ({marks})", report["own_posts"])
+            if report["leads"]:
+                marks = ",".join("?" for _ in report["leads"])
+                for table in ("lead_enrichments", "lead_interactions", "lead_stage_events"):
+                    if _has_table(conn, table):
+                        conn.execute(f"DELETE FROM {table} WHERE lead_id IN ({marks})", report["leads"])
+                conn.execute(f"DELETE FROM leads WHERE id IN ({marks})", report["leads"])
+            conn.execute(f"DELETE FROM outbound_engagements WHERE {outbound[0]}", outbound[1])
+            # The sample creator's profile: the identity row and what
+            # confirming it wrote, as forgetting an identity removes it.
+            for table in ("creator_positions", "creator_education", "creator_skills"):
+                if _has_table(conn, table):
+                    conn.execute(f"DELETE FROM {table}")
+            conn.execute("DELETE FROM creator_identity WHERE id = 1")
+            onboarding._unfill_creator_settings(conn)
+        return report
+    finally:
+        if owns:
+            conn.close()
+
+
 _DEMO_DRAFT_SEEDERS = (
     seed_day02_draft, seed_day03_draft, seed_day04_draft, seed_day05_draft,
     seed_day06_draft, seed_day07_draft, seed_day08_draft, seed_day09_draft,
@@ -2048,6 +2255,7 @@ def purge_all_seeded_data(
             "posts": purge_seeded_posts(conn, dry_run=dry_run),
             "leads": purge_seeded_leads(conn, dry_run=dry_run),
             "drafts": purge_seeded_drafts(conn, dry_run=dry_run),
+            "identity": purge_seeded_identity(conn, dry_run=dry_run),
             "dry_run": dry_run,
         }
     finally:
@@ -2063,10 +2271,11 @@ def _demo_rows_found(report: Dict[str, Any]) -> Dict[str, int]:
     def n(value: Any) -> int:
         return len(value) if isinstance(value, list) else int(value or 0)
 
+    identity = report.get("identity") or {}
     return {
-        "leads": n(report["leads"]["seeded"]),
+        "leads": n(report["leads"]["seeded"]) + n(identity.get("leads")),
         "drafts": n(report["drafts"]["seeded"]),
-        "posts": n(report["posts"]["seeded"]) + n(report["drafts"]["posts"]),
+        "posts": n(report["posts"]["seeded"]) + n(report["drafts"]["posts"]) + n(identity.get("own_posts")),
         "analytics_days": n(report["analytics"]["seeded"]),
         "audience_rows": n(report["demographics"]["seeded"]),
     }
@@ -2164,6 +2373,12 @@ def seed_initial_data():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, l)
         conn.commit()
+
+    # The sample creator, so the screens about the creator have something to
+    # show in demo mode. It writes through its own connections, so what is
+    # above is committed first.
+    conn.commit()
+    seed_demo_identity()
 
     # Fabricated observations are opt-in.
     #
