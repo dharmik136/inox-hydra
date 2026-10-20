@@ -73,3 +73,6 @@ studio = [
     # section with 0 documents.
     "docs/help/*.md",
 ]
+# The fonts quote overlays and watermarks are drawn with, and their licence
+# (BE-07). Without them a wheel draws every quote in a 10 px bitmap font.
+"studio.backend" = ["fonts/*.ttf", "fonts/OFL.txt"]
