@@ -1,0 +1,158 @@
+"""
+Writing and publishing, driven in the built interface (cycle 2, batch R6).
+=========================================================================
+
+Headless Chromium against the real app on a loopback port, with its own
+sandboxed home. Every context blocks service workers, because the studio's
+worker would otherwise answer requests the tests route. Nothing here presses
+Send to LinkedIn's final button, opens a browser or leaves the machine.
+"""
+
+import json
+import os
+import shutil
+import socket
+import sys
+import tempfile
+import threading
+import time
+from datetime import datetime, timedelta, timezone
+
+import pytest
+import uvicorn
+
+pytest.importorskip("playwright.sync_api")
+from playwright.sync_api import sync_playwright  # noqa: E402
+
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+BACKEND_DIR = os.path.join(REPO_ROOT, "studio", "backend")
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
+from app import app  # noqa: E402
+from database import get_db, init_db  # noqa: E402
+
+FRONTEND = os.path.join(REPO_ROOT, "studio", "frontend_next", "index.html")
+PREFIX = "QC2 R6"
+
+
+def _free_port():
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+@pytest.fixture(scope="module")
+def studio_url():
+    if not os.path.exists(FRONTEND):
+        pytest.skip("the interface is not built (npm --prefix studio/ui run build)")
+    home = tempfile.mkdtemp(prefix="inox_qc2_r6_ui_")
+    old_home = os.environ.get("INOX_HYDRA_HOME")
+    os.environ["INOX_HYDRA_HOME"] = home
+    init_db()
+    port = _free_port()
+    server = uvicorn.Server(uvicorn.Config(app=app, host="127.0.0.1", port=port, log_level="error", access_log=False))
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+    for _ in range(100):
+        try:
+            socket.create_connection(("127.0.0.1", port), timeout=0.1).close()
+            break
+        except OSError:
+            time.sleep(0.05)
+    yield f"http://127.0.0.1:{port}"
+    server.should_exit = True
+    thread.join(timeout=3.0)
+    if old_home is not None:
+        os.environ["INOX_HYDRA_HOME"] = old_home
+    else:
+        os.environ.pop("INOX_HYDRA_HOME", None)
+    shutil.rmtree(home, ignore_errors=True)
+
+
+@pytest.fixture(scope="module")
+def browser():
+    with sync_playwright() as p:
+        instance = p.chromium.launch(headless=True)
+        yield instance
+        instance.close()
+
+
+@pytest.fixture
+def context(browser, studio_url):
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800}, service_workers="block")
+    ctx.grant_permissions(["clipboard-read", "clipboard-write"], origin=studio_url)
+    yield ctx
+    ctx.close()
+
+
+def _rows(status=None):
+    conn = get_db()
+    try:
+        sql = "SELECT * FROM posts WHERE content LIKE ?" + (" AND status = ?" if status else "")
+        args = (PREFIX + "%",) + ((status,) if status else ())
+        return [dict(r) for r in conn.execute(sql, args)]
+    finally:
+        conn.close()
+
+
+@pytest.fixture(autouse=True)
+def clean_posts(studio_url):
+    yield
+    conn = get_db()
+    try:
+        conn.execute("DELETE FROM posts WHERE content LIKE ?", (PREFIX + "%",))
+        conn.execute("DELETE FROM settings WHERE key LIKE 'missed_post:qc2r6%'")
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _open(context, studio_url, address):
+    page = context.new_page()
+    page.goto(f"{studio_url}/#/{address}", wait_until="networkidle")
+    return page
+
+
+# ---------------------------------------------------------------------------
+# BE-02 / D-7: a missed post is shown on Today, with Post now and Move to next slot
+# ---------------------------------------------------------------------------
+
+def _missed(post_id, text, hours=5):
+    when = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    conn = get_db()
+    try:
+        conn.execute("INSERT INTO posts (id, content, status, scheduled_for) VALUES (?, ?, 'due', ?)", (post_id, text, when))
+        conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+            ("missed_post:" + post_id, json.dumps({"scheduled_for": when, "noticed_at": when, "late_minutes": hours * 60})),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def test_today_names_a_missed_post_and_moves_it_only_when_asked(context, studio_url):
+    _missed("qc2r6-missed-a", f"{PREFIX} the launch post missed at breakfast")
+    page = _open(context, studio_url, "today")
+    page.get_by_text("A POST WAS MISSED", exact=True).wait_for()
+    row = page.locator("li", has_text="the launch post missed at breakfast")
+    assert "MISSED, WAS DUE" in row.inner_text()
+    assert [r["status"] for r in _rows()] == ["due"], "the post moved before the creator chose"
+
+    row.get_by_role("button", name="Move to next slot").click()
+    page.get_by_text("It is queued again.", exact=False).wait_for()
+    assert [r["status"] for r in _rows()] == ["scheduled"]
+
+
+def test_post_now_copies_the_text_and_records_it_as_posted(context, studio_url):
+    text = f"{PREFIX} the exact words of the missed post"
+    _missed("qc2r6-missed-b", text)
+    page = _open(context, studio_url, "today")
+    row = page.locator("li", has_text="the exact words of the missed post")
+    row.get_by_role("button", name="Post now").click()
+    page.get_by_text("Copied and recorded as posted by you", exact=False).wait_for()
+    assert page.evaluate("() => navigator.clipboard.readText()") == text
+    assert [r["status"] for r in _rows()] == ["published"]

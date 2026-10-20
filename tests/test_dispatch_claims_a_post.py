@@ -123,8 +123,9 @@ def test_a_second_pass_over_a_published_post_reports_nothing():
 
 def test_a_stale_post_is_rolled_forward_once():
     """
-    Two rolls compute two different slots, and the second overwrites the
-    first after the creator has already been told about it.
+    A missed post is claimed once. It used to be rolled forward, and two rolls
+    computed two different slots; since BE-02 it is marked due at its own
+    time, and two cycles must still announce it only once.
     """
     post_id = PREFIX + "stale"
     stale_at = (datetime.now(timezone.utc) - timedelta(hours=6)).isoformat()
@@ -143,24 +144,17 @@ def test_a_stale_post_is_rolled_forward_once():
     for thread in threads:
         thread.join(timeout=20)
 
-    rolled = [
+    missed = [
         action
         for actions in results
         for action in (actions or [])
-        if action.get("post_id") == post_id and action.get("action") == "rolled_forward"
+        if action.get("post_id") == post_id and action.get("action") == "missed_due"
     ]
 
-    assert len(rolled) <= 1, (
-        f"{len(rolled)} cycles each announced a different new time for the "
-        f"same post"
-    )
+    assert len(missed) == 1, f"{len(missed)} cycles each announced the same missed post"
     status, scheduled_for = _status(post_id)
-    assert status == "scheduled"
-    if rolled:
-        assert scheduled_for == rolled[0]["new_scheduled_for"], (
-            "the announced time is not the one stored, so the creator was "
-            "told the wrong window"
-        )
+    assert status == "due"
+    assert scheduled_for == stale_at, "the missed post was moved off its own time"
 
 
 def test_a_single_cycle_still_dispatches_normally():

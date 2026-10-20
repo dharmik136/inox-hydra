@@ -4,13 +4,16 @@ import {
   dismissDemoCleanupNotice,
   fetchToday,
   launchBridge,
+  moveToNextSlot,
   publishNow,
   syncAllActivity,
   type MetricComparison,
   type TodayBrief,
+  type TodayDuePost,
   type TodayLatestPost,
   type TodayPerson,
 } from "@/lib/api";
+import { formatLocal } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 /**
@@ -114,10 +117,64 @@ export function TodaySurface({
     }
   }
 
+  // A post missed while the studio was closed or asleep: Post now copies its
+  // text and records it as posted by the creator, the same as Publish's Copy
+  // and mark posted. Nothing is recorded when the copy did not happen.
+  async function postNow(post: TodayDuePost) {
+    setOpening(post.post_id);
+    setNote(null);
+    try {
+      try {
+        await navigator.clipboard.writeText(post.content);
+      } catch {
+        setNote({
+          text: "This browser did not allow copying, so nothing was recorded. Open the Queue to copy the text.",
+          at: "due",
+          error: true,
+        });
+        return;
+      }
+      await publishNow(post.post_id);
+      setNote({
+        text: "Copied and recorded as posted by you. Paste it into LinkedIn and post it there.",
+        at: due.length > 1 ? "due" : "top",
+        error: false,
+      });
+      load();
+    } catch (caught) {
+      setNote({
+        text: `Copied, but not recorded: ${caught instanceof Error ? caught.message : "the studio refused."}`,
+        at: "due",
+        error: true,
+      });
+    } finally {
+      setOpening(null);
+    }
+  }
+
+  async function moveOn(postId: string) {
+    setOpening(postId);
+    setNote(null);
+    try {
+      const moved = await moveToNextSlot(postId);
+      setNote({
+        text: `Moved to ${formatLocal(moved.scheduled_for)}. It is queued again.`,
+        at: due.length > 1 ? "due" : "top",
+        error: false,
+      });
+      load();
+    } catch (caught) {
+      setNote({ text: caught instanceof Error ? caught.message : "The studio refused to move it.", at: "due", error: true });
+    } finally {
+      setOpening(null);
+    }
+  }
+
   if (failed && !brief) return <Centered>TODAY IS UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!brief) return <Centered>LOADING TODAY</Centered>;
   // Absent from a studio older than this screen; nothing is due then.
-  const due = brief.queue.due ?? [];
+  const due: TodayDuePost[] = brief.queue.due ?? [];
+  const missedCount = due.filter((post) => post.missed).length;
 
   return (
     <article className="mx-auto max-w-[72ch] px-8 py-8">
@@ -132,41 +189,78 @@ export function TodaySurface({
       {due.length > 0 && (
         <section className="mt-6 rounded-md border border-signal-orange p-4">
           <p className="studio-meta text-[10px] text-signal-orange-text">
-            {due.length === 1 ? "A POST IS DUE" : `${due.length} POSTS ARE DUE`}
+            {missedCount > 0
+              ? missedCount === 1
+                ? "A POST WAS MISSED"
+                : `${missedCount} POSTS WERE MISSED`
+              : due.length === 1
+                ? "A POST IS DUE"
+                : `${due.length} POSTS ARE DUE`}
           </p>
           <p className="mt-1.5 text-[14px] leading-snug text-ink-primary">
-            Its time has come. Copy the text, post it on LinkedIn yourself, then press I posted it.
+            {missedCount > 0 &&
+              "A post was missed while the studio was closed or asleep. It kept its time; nothing moved it. Post now copies the text and records it as posted by you. Move to next slot queues it again. "}
+            {due.length > missedCount &&
+              "Its time has come. Copy the text, post it on LinkedIn yourself, then press I posted it."}
           </p>
           <ul className="mt-3 flex flex-col divide-y divide-edge border-y border-edge">
             {due.map((post) => (
               <li key={post.post_id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2">
                 <span className="studio-meta shrink-0 text-[10px] text-signal-orange-text">
-                  DUE {formatWhen(post.scheduled_for).toUpperCase()}
+                  {post.missed
+                    ? `MISSED, WAS DUE ${formatLocal(post.scheduled_for).toUpperCase()}`
+                    : `DUE ${formatWhen(post.scheduled_for).toUpperCase()}`}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[13px] text-ink-secondary">{post.excerpt}</span>
-                <span className="flex shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void copyDue(post.content)}
-                    className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
-                  >
-                    <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                    Copy text
-                  </button>
-                  <button
-                    type="button"
-                    disabled={opening !== null}
-                    onClick={() => void markPosted(post.post_id)}
-                    className="flex items-center gap-1.5 rounded-md bg-signal-orange px-2.5 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
-                  >
-                    {opening === post.post_id ? (
-                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <CheckCheck className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                    )}
-                    I posted it
-                  </button>
-                </span>
+                {post.missed ? (
+                  <span className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={opening !== null}
+                      onClick={() => void moveOn(post.post_id)}
+                      className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                    >
+                      Move to next slot
+                    </button>
+                    <button
+                      type="button"
+                      disabled={opening !== null}
+                      onClick={() => void postNow(post)}
+                      className="flex items-center gap-1.5 rounded-md bg-signal-orange px-2.5 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+                    >
+                      {opening === post.post_id ? (
+                        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                      )}
+                      Post now
+                    </button>
+                  </span>
+                ) : (
+                  <span className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void copyDue(post.content)}
+                      className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+                    >
+                      <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                      Copy text
+                    </button>
+                    <button
+                      type="button"
+                      disabled={opening !== null}
+                      onClick={() => void markPosted(post.post_id)}
+                      className="flex items-center gap-1.5 rounded-md bg-signal-orange px-2.5 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+                    >
+                      {opening === post.post_id ? (
+                        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <CheckCheck className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                      )}
+                      I posted it
+                    </button>
+                  </span>
+                )}
               </li>
             ))}
           </ul>

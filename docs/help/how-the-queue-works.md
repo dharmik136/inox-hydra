@@ -45,7 +45,9 @@ Each has a label, such as Monday Morning Kickoff.
 While the studio server is running, it checks the queue every 30 seconds. For each queued post whose time has come:
 
 - **Up to 120 minutes late:** it becomes due and moves to **Due, waiting for you to post it**. It is not recorded as published, and it does not appear in **Analytics**. Nothing is posted.
-- **More than 120 minutes late** (for example, the studio was closed): it moves to the next free slot and stays queued.
+- **More than 120 minutes late** (for example, the computer was asleep or the studio was closed): it becomes due at its own time and is marked as missed. Nothing moves it to another time. **Today** shows it first, in a box headed A POST WAS MISSED, with the time it was due and two choices:
+  - **Post now** copies the post's exact text to your clipboard and records it as posted by you now. Paste it into LinkedIn and post it there; the studio does not post it.
+  - **Move to next slot** puts it back in the queue at the next free slot, and Today says which time.
 
 The Queue page does not refresh itself. Leave it and come back to see changes.
 
@@ -67,13 +69,13 @@ If you open the post on LinkedIn with the bridge running, it is linked to its Li
 
 1. Open **Queue**.
 2. Press **Check for due posts**.
-3. Read the note below the buttons: for example 1 POST MARKED DUE OR MOVED TO A LATER SLOT, or NOTHING WAS DUE.
+3. Read the note below the buttons: for example 1 POST MARKED DUE, or NOTHING WAS DUE.
 
 ## Pause the queue and Resume the queue
 
 Press **Pause the queue**. The studio stores the setting, reads it back, and shows THE QUEUE IS PAUSED. QUEUED POSTS STAY QUEUED AND ARE NOT MARKED DUE UNTIL YOU RESUME IT. The button becomes **Resume the queue**.
 
-While paused, the 30-second check skips every post and **Check for due posts** reports NOTHING WAS DUE even when posts are due. Pausing does not stop a post already handed to LinkedIn; LinkedIn publishes it. When you resume, posts more than 2 hours overdue move to the next slot.
+While paused, the 30-second check skips every post and **Check for due posts** reports NOTHING WAS DUE even when posts are due. Pausing does not stop a post already handed to LinkedIn; LinkedIn publishes it. When you resume, posts more than 2 hours overdue become due at their own time, marked as missed, as above.
 
 ## What the Queue cannot do
 
@@ -85,6 +87,6 @@ The Queue page has no controls to add, edit or remove slots, or to reschedule or
 | --- | --- |
 | QUEUE UNAVAILABLE | The studio server did not answer. See [The studio will not open or shows an error](the-studio-will-not-open.md). |
 | A sentence below the buttons after **Check for due posts** | The server refused the check, and the sentence says why. Try again, then check the server is running. |
-| A post moved to a later slot | It was more than 2 hours late when the studio checked it, usually because the studio was closed. |
+| A post shows MISSED, WAS DUE on Today | It was more than 2 hours late when the studio checked it, usually because the computer was asleep or the studio was closed. Press **Post now** or **Move to next slot**. |
 | `H CLEAR OF THE LAST POST` with no number | There is no queued, due or published post within about 900 hours (37 days) of the slot to measure against. |
 | A post is under Due and you already posted it | Press **I posted it**, or open the post on LinkedIn once with the bridge running. |

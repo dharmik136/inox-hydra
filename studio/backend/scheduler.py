@@ -9,8 +9,9 @@ Operationalizes Module 02 enterprise publishing cadence:
 3. Self-Healing Morning Grace Window Recovery:
    - Within 2-hour grace window (<= 120m overdue): Marks the post due, for the
      creator to post it, and notifies via SSE. Nothing is posted from here.
-   - Beyond grace window (> 120m overdue): Safely rolls forward to next
-     optimal peak engagement window and alerts creator.
+   - Beyond grace window (> 120m overdue): Marks the post due at its own
+     time and records that it was missed. Nothing moves it; Today offers
+     Post now and Move to next slot.
 4. Real-time SSE stream integration (schedule_recovery event).
 
 Strict Invariant: Zero em-dashes in all code, comments, and strings.
@@ -45,6 +46,11 @@ MIN_COOLDOWN_HOURS = 12.0
 # the one queued post that really is published when its time comes.
 LINKEDIN_HOLDS_KEY = "linkedin_holds:"
 GRACE_WINDOW_MINUTES = 120.0
+
+# A settings key, per post, for a queued post that was missed: more than the
+# grace window late, usually because the machine was asleep. It holds the time
+# the post was due and how late it was noticed, for Today's notice.
+MISSED_POST_KEY = "missed_post:"
 ON_TIME_THRESHOLD_MINUTES = 5.0
 
 DAY_NAMES = [
@@ -401,7 +407,7 @@ class NativeScheduler:
         Evaluates scheduled posts against the current timestamp:
         - On-time (<= 5m overdue): Marks the post due.
         - Grace window (5m to 120m overdue): Marks the post due, with a recovery alert.
-        - Stale (> 120m overdue): Safely rolls forward to next optimal window to protect reach.
+        - Missed (> 120m overdue): Marks the post due at its own time, noted as missed.
 
         Due, not published. Nothing here posts anything, and this used to write
         status 'published' with the slot's time: the post left the Queue,
@@ -528,57 +534,114 @@ class NativeScheduler:
                             "overdue_minutes": round(overdue_minutes, 1)
                         })
 
-                # Case 2: Stale post (> 2 hours late, workstation was shut down/asleep)
+                # Case 2: missed. More than two hours late, because the
+                # machine was asleep or the studio closed at its time.
+                #
+                # Due at its own time, never moved. This used to roll the post
+                # forward to the next free slot, so a creator who opened the
+                # studio at 11:00 for an 08:30 post found it quietly re-timed
+                # for the evening or another day, told only by a log line and
+                # an event nothing listens to. The post now waits as due with
+                # the time they chose, and a note that it was missed, which
+                # Today shows with Post now and Move to next slot.
                 else:
-                    next_slot = self.calculate_next_smart_slot(from_time=now, exclude_post_id=post_id)
-                    new_time = next_slot["slot_datetime"]
-
-                    # The same claim. Two cycles rolling the same stale post
-                    # forward would compute two different next slots and each
-                    # announce its own, so the creator is told twice where
-                    # their post went, to two different places.
                     cursor.execute(
-                        "UPDATE posts SET scheduled_for = ?, status = 'scheduled' "
+                        "UPDATE posts SET status = 'due' "
                         "WHERE id = ? AND status = 'scheduled' AND scheduled_for = ?",
-                        (new_time, post_id, post["scheduled_for"])
+                        (post_id, post["scheduled_for"])
                     )
+                    claimed = cursor.rowcount
+                    if claimed:
+                        cursor.execute(
+                            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+                            (MISSED_POST_KEY + post_id, json.dumps({
+                                "scheduled_for": post["scheduled_for"],
+                                "noticed_at": now_iso,
+                                "late_minutes": round(overdue_minutes, 1),
+                            })),
+                        )
                     conn.commit()
 
-                    if cursor.rowcount == 0:
-                        logger.info(
-                            "Post %s was already rolled forward by another cycle. Skipping.",
-                            post_id
-                        )
+                    if claimed == 0:
+                        logger.info("Post %s was already marked missed by another cycle. Skipping.", post_id)
                         continue
 
                     logger.warning(
-                        "Post %s missed window by %.1fm. Rolled forward to %s (%s).",
-                        post_id, overdue_minutes, next_slot["label"], new_time
+                        "Post %s missed its time by %.1fm. It is due, at its own time, for the creator to decide.",
+                        post_id, overdue_minutes
                     )
-                    recovery_payload = {
-                        "type": "rolled_forward",
+                    event_bus.publish_sync("schedule_recovery", {
+                        "type": "missed_due",
                         "post_id": post_id,
-                        "original_scheduled_for": sched_dt.isoformat(),
-                        "new_scheduled_for": new_time,
-                        "slot_label": next_slot["label"],
+                        "scheduled_for": sched_dt.isoformat(),
                         "overdue_minutes": round(overdue_minutes, 1),
                         "message": (
-                            f"Post missed window by {round(overdue_minutes / 60.0, 1)}h. "
-                            f"Safely rolled forward to {next_slot['label']} ({new_time})."
+                            f"This post was due {round(overdue_minutes / 60.0, 1)}h ago and was missed. "
+                            "It is waiting for you to post it or move it to the next slot."
                         )
-                    }
-                    event_bus.publish_sync("schedule_recovery", recovery_payload)
+                    })
                     actions.append({
                         "post_id": post_id,
-                        "action": "rolled_forward",
-                        "overdue_minutes": round(overdue_minutes, 1),
-                        "new_scheduled_for": new_time
+                        "action": "missed_due",
+                        "overdue_minutes": round(overdue_minutes, 1)
                     })
+
+            # A note about a post that is no longer due says nothing true, so
+            # it goes once the post is posted, moved or back in the drafts.
+            cursor.execute(
+                "DELETE FROM settings WHERE key LIKE ? AND substr(key, ?) NOT IN "
+                "(SELECT id FROM posts WHERE status = 'due')",
+                (MISSED_POST_KEY + "%", len(MISSED_POST_KEY) + 1)
+            )
+            conn.commit()
 
         finally:
             conn.close()
 
         return actions
+
+    def missed_notes(self, conn) -> Dict[str, Dict[str, Any]]:
+        """The missed note of every due post that has one, by post id."""
+        notes: Dict[str, Dict[str, Any]] = {}
+        for row in conn.execute(
+            "SELECT key, value FROM settings WHERE key LIKE ?", (MISSED_POST_KEY + "%",)
+        ).fetchall():
+            try:
+                value = json.loads(row["value"] or "")
+            except (TypeError, ValueError):
+                continue
+            if isinstance(value, dict) and value.get("scheduled_for"):
+                notes[row["key"][len(MISSED_POST_KEY):]] = value
+        return notes
+
+    def move_to_next_slot(self, post_id: str) -> Dict[str, Any]:
+        """
+        Queues a due post again, at the next free slot, on the creator's word.
+
+        The one way a missed post changes time: the creator chose Move to next
+        slot. Returns the slot, or raises LookupError for no such post and
+        ValueError for a post that is not due.
+        """
+        conn = get_db()
+        try:
+            row = conn.execute("SELECT status, scheduled_for FROM posts WHERE id = ?", (post_id,)).fetchone()
+            if not row:
+                raise LookupError(post_id)
+            if row["status"] != "due":
+                raise ValueError(row["status"])
+            slot = self.calculate_next_smart_slot(exclude_post_id=post_id)
+            with conn:
+                cursor = conn.execute(
+                    "UPDATE posts SET status = 'scheduled', scheduled_for = ? WHERE id = ? AND status = 'due'",
+                    (slot["slot_datetime"], post_id),
+                )
+                if cursor.rowcount == 0:
+                    raise ValueError("changed")
+                conn.execute("DELETE FROM settings WHERE key = ?", (MISSED_POST_KEY + post_id,))
+        finally:
+            conn.close()
+        return slot
 
     def get_cadence_overview(self) -> Dict[str, Any]:
         """Calculates global cadence health score and queue summary."""

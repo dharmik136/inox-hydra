@@ -82,7 +82,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
       const actions = await dispatchQueueNow();
       setDispatchNote(
         actions.length
-          ? `${actions.length} post${actions.length === 1 ? "" : "s"} marked due or moved to a later slot`
+          ? `${actions.length} post${actions.length === 1 ? "" : "s"} marked due`
           : "Nothing was due",
       );
       await load();

@@ -317,6 +317,30 @@ def reschedule_post(post_id: str, payload: ReschedulePayload):
 
 
 
+@router.post("/api/posts/{post_id}/move-to-next-slot")
+def move_post_to_next_slot(post_id: str):
+    """
+    A due post, usually one missed while the machine slept, queued again at
+    the next free slot. Only on the creator's word: the scheduler never moves
+    a post by itself.
+    """
+    try:
+        slot = native_scheduler.move_to_next_slot(post_id)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Post not found")
+    except ValueError:
+        raise HTTPException(
+            status_code=409,
+            detail="This post is not due any more, so it was not moved. Reload to see where it is now.",
+        )
+    return {
+        "status": "success",
+        "scheduled_for": slot["slot_datetime"],
+        "slot": slot,
+        "message": f"Moved to {slot['day_name']} {slot['time_slot']}.",
+    }
+
+
 @router.delete("/api/posts/{post_id}")
 def delete_post(post_id: str):
     conn = get_db()

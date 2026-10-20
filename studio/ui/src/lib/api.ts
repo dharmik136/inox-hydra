@@ -2564,3 +2564,30 @@ export async function dismissDemoCleanupNotice(): Promise<boolean> {
   const res = await call<{ dismissed: boolean }>("/api/v1/today/demo-cleanup-notice/dismiss", { method: "POST" });
   return res.dismissed;
 }
+
+// ---------------------------------------------------------------------------
+// Writing and publishing (cycle 2, R6)
+// ---------------------------------------------------------------------------
+
+/** A due post on Today, with the note the scheduler leaves when it was missed. */
+export interface TodayDuePost {
+  post_id: string;
+  scheduled_for: string;
+  content: string;
+  excerpt: string;
+  /** Present when the post was missed while the studio was closed or asleep. */
+  missed?: { scheduled_for: string; noticed_at: string | null; late_minutes: number | null } | null;
+}
+
+/**
+ * Queues a due post again at the next free slot, on the creator's word.
+ *
+ * The scheduler never moves a post by itself: a post missed while the machine
+ * slept stays due at its own time until the creator chooses this.
+ */
+export async function moveToNextSlot(postId: string): Promise<{ scheduled_for: string; message: string }> {
+  return call<{ scheduled_for: string; message: string }>(
+    `/api/posts/${encodeURIComponent(postId)}/move-to-next-slot`,
+    { method: "POST" },
+  );
+}

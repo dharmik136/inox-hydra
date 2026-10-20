@@ -161,8 +161,8 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # on the note that says what the demo cleanup removed (TodaySurface, api.ts).
 # Reached moves 98 -> 99, unreachable stays at 83, total moves 181 -> 182.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 182
-REACHED_BY_INTERFACE = 99
+TOTAL_API_PATHS = 183
+REACHED_BY_INTERFACE = 100
 UNREACHABLE = 83
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
