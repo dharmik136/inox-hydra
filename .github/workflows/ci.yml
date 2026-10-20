@@ -200,3 +200,15 @@ jobs:
       # which a normal test run can detect.
       - name: Verify The Distributable Actually Runs
         run: python tools/verify_package.py
+
+      # The release gate, run on every pull request. It was only ever run on a
+      # tag, so when the security gate started refusing its bare test client,
+      # nothing went red until the release itself could not publish.
+      - name: Build The Portable Artifact
+        run: |
+          pip install -r requirements.txt
+          python tools/build_portable.py
+
+      - name: Smoke Test The Portable Artifact
+        shell: bash
+        run: python tools/smoke_portable.py
