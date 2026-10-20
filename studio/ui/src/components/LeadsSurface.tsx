@@ -200,7 +200,7 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
             aria-label="Find a lead"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Name, company, headline or notes"
+            placeholder="Name, company or notes"
             className="min-w-0 flex-1 rounded-md border border-edge bg-ink px-2.5 py-1 text-[12px] text-ink-primary placeholder:text-ink-muted focus:border-edge-strong focus:outline-none"
           />
           <select
@@ -416,14 +416,21 @@ function Dossier({
   // comment there is nothing to draft from and the control says so.
   const commented = interactions.find((entry) => entry.comment_text) ?? null;
   const latestComment = commented?.comment_text ?? null;
-  // The post they engaged with, when the studio holds it: the one the comment
-  // was on, else the latest of yours they reacted to. The page shows it
+  // The post they commented on, when the studio holds it. The page shows it
   // ("ON YOUR POST: ..."), and the reply used to ask the creator to type it
   // again before it would draft anything.
+  const commentedPost = postNamed(commented?.post_origin === "yours" ? commented.post_excerpt : null);
+  // A comment on a post the studio does not hold: the reply asks for it
+  // rather than naming another post. It once named the latest post they had
+  // only reacted to, thanking them for a comment they never left there.
+  const commentPostUnknown = commented !== null && commentedPost === null;
+  // For the openers, which name a post they engaged with in any way: the
+  // commented one, else the latest of yours they reacted to.
   const knownPost =
-    postNamed(commented?.post_origin === "yours" ? commented.post_excerpt : null) ??
+    commentedPost ??
     postNamed(interactions.find((entry) => entry.post_origin === "yours" && entry.post_excerpt)?.post_excerpt);
   const aboutPost = topic.trim() || knownPost || "";
+  const replyPost = topic.trim() || commentedPost || "";
 
   // Left aligned against the stream rather than centred in the leftover space,
   // which on a wide window opens a gap between the two halves and makes the
@@ -626,7 +633,9 @@ function Dossier({
             value={topic}
             onChange={(event) => setTopic(event.target.value)}
             placeholder={
-              knownPost
+              commentPostUnknown
+                ? "Needed for Reply to their comment: the studio does not hold the post they commented on"
+                : knownPost
                 ? `Optional. Left blank, the draft names the post they engaged with: ${knownPost}`
                 : "Optional. Left blank, the draft says only “my recent post”"
             }
@@ -676,7 +685,7 @@ function Dossier({
             hint={latestComment ? undefined : "This lead has left no comment to reply to"}
             onPress={() =>
               void draftWith("reply", "Reply to their comment", () =>
-                generateLeadDm(lead.name, latestComment as string, aboutPost || undefined),
+                generateLeadDm(lead.name, latestComment as string, replyPost || undefined),
               )
             }
           />

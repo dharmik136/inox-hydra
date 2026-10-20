@@ -45,6 +45,38 @@ def test_a_post_typed_by_the_creator_still_wins(studio):
     assert "about on-call rotas" in draft, draft
 
 
+def test_a_comment_on_a_post_the_studio_lacks_never_borrows_another_post(studio):
+    """
+    Review send-back: the person reacted to a post the studio holds, then
+    commented on one it does not. The reply named the post they only liked.
+    """
+    from qc2_r5_live import ME, urn_days_ago
+
+    client = studio["client"]
+    urns = seed_creator(client, commenter=None)
+    person = {"full_name": "Meera Iyer", "profile_url": "https://www.linkedin.com/in/meera-iyer-x",
+              "headline": "CTO at Trackwise", "company": "Trackwise"}
+    liked = client.post("/api/v1/crm/interactions/ingest", json={
+        **person, "interaction_type": "LIKE", "post_urn": urns[1], "post_author": ME})
+    assert liked.status_code == 200, liked.text
+    commented = client.post("/api/v1/crm/interactions/ingest", json={
+        **person, "interaction_type": "COMMENT", "comment_text": "Great breakdown of the hiring freeze.",
+        "post_urn": urn_days_ago(1, 99), "post_author": ME})
+    assert commented.status_code == 200, commented.text
+
+    page = _open_person(studio, "Meera Iyer")
+    assert "Great breakdown of the hiring freeze." in page.inner_text("main")
+    sent = []
+    page.on("request", lambda request: "generate-dm" in request.url and sent.append(request.post_data_json))
+    page.get_by_role("button", name="Reply to their comment").click()
+    page.wait_for_selector("text=Say which post they commented on")
+    assert sent and not sent[0].get("post_topic"), sent
+    # No draft at all, rather than one about the post they only liked.
+    assert page.locator("p.whitespace-pre-wrap").count() == 0
+    placeholder = page.get_by_label("The post they engaged with").get_attribute("placeholder") or ""
+    assert "does not hold the post they commented on" in placeholder, placeholder
+
+
 def test_the_field_names_the_post_it_will_use(studio):
     """The creator sees which post the draft will name before pressing anything."""
     seed_creator(studio["client"])
