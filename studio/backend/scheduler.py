@@ -743,10 +743,17 @@ class NativeScheduler:
             logger.info("Local background cadence scheduler started.")
 
     def shutdown(self):
-        """Stops the APScheduler thread gracefully."""
+        """Stops the APScheduler thread gracefully, ready to be started again."""
         if self.scheduler.running:
             self.scheduler.shutdown()
             logger.info("Local cadence scheduler stopped.")
+            # A stopped APScheduler cannot be started again: shutdown closes
+            # its thread pool for good, and start() does not open a new one,
+            # so every later queue check failed to be submitted with
+            # "cannot schedule new futures after shutdown", every 30 seconds,
+            # and nothing checked the queue or took the daily backup. A second
+            # start in the same process now gets a scheduler that can run.
+            self.scheduler = BackgroundScheduler()
 
 
 # Global Singleton Instance

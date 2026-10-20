@@ -40,6 +40,27 @@ from studio.backend import database, migrations, paths, post_summary, retention,
 NOW = datetime.now(timezone.utc)
 
 
+def _has_dbstat() -> bool:
+    """
+    Whether this SQLite can measure a table's pages (the dbstat virtual table).
+
+    dbstat is a compile-time option (SQLITE_ENABLE_DBSTAT_VTAB). Debian's and
+    the Windows build have it; the python.org macOS build does not, so there
+    retention.sizes() says "not measured" by design and the panel says so.
+    """
+    probe = sqlite3.connect(":memory:")
+    try:
+        probe.execute("SELECT name, pgsize FROM dbstat").fetchone()
+        return True
+    except sqlite3.OperationalError:
+        return False
+    finally:
+        probe.close()
+
+
+HAS_DBSTAT = _has_dbstat()
+
+
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("INOX_HYDRA_HOME", str(tmp_path))
@@ -552,14 +573,24 @@ def test_compacting_returns_the_free_space(home):
 def test_sizes_cover_every_table_and_say_when_not_measured(home, monkeypatch):
     _post_readings(posts=1)
     measured = retention.sizes()
-    assert measured["measured"] is True
-    readings = next(c for c in measured["categories"] if c["key"] == "readings")
-    assert readings["bytes"] > 0 and readings["rows"] > 0
-    conn = database.get_db()
-    pages = conn.execute("PRAGMA page_count").fetchone()[0] * conn.execute("PRAGMA page_size").fetchone()[0]
-    conn.close()
-    assert sum(c["bytes"] for c in measured["categories"]) == pages - measured["free_bytes"], \
-        "a table's pages were not counted in any category"
+    if HAS_DBSTAT:
+        assert measured["measured"] is True
+        readings = next(c for c in measured["categories"] if c["key"] == "readings")
+        assert readings["bytes"] > 0 and readings["rows"] > 0
+        conn = database.get_db()
+        pages = conn.execute("PRAGMA page_count").fetchone()[0] * conn.execute("PRAGMA page_size").fetchone()[0]
+        conn.close()
+        assert sum(c["bytes"] for c in measured["categories"]) == pages - measured["free_bytes"], \
+            "a table's pages were not counted in any category"
+    else:
+        # Without dbstat (the python.org macOS build) no category can be
+        # measured, so each one says so and nothing is invented. The rows and
+        # the file sizes are still counted, and that is what the panel shows.
+        assert measured["measured"] is False
+        assert all(c["bytes"] is None for c in measured["categories"]), "an unmeasured size was shown as a number"
+        readings = next(c for c in measured["categories"] if c["key"] == "readings")
+        assert readings["rows"] > 0
+        assert measured["database_bytes"] > 0
 
     real_get_db = retention.get_db
 
