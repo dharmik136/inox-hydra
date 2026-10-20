@@ -127,3 +127,53 @@ def test_export_memory_does_not_grow_with_the_data(home):
             info.file_size for info in zipfile.ZipFile(path).infolist())
         assert written > 24_000_000
         assert peak < 8_000_000, f"{fmt} export peaked at {peak / 1e6:.1f} MB for {written / 1e6:.0f} MB of data"
+
+
+@pytest.mark.parametrize("fmt", ["json", "csv"])
+def test_a_failed_export_leaves_nothing_that_looks_finished(home, monkeypatch, fmt):
+    """A disk filling up after five tables used to leave a truncated file under the export's own name."""
+    import support
+    real = support._row_batches
+    seen = []
+
+    def failing(conn, table):
+        seen.append(table)
+        if len(seen) > 5:
+            raise OSError(28, "No space left on device (simulated)")
+        yield from real(conn, table)
+
+    monkeypatch.setattr(support, "_row_batches", failing)
+    folder = os.path.join(home, "out")
+    os.makedirs(folder)
+    destination = os.path.join(folder, f"inox_export_failed.{'json' if fmt == 'json' else 'zip'}")
+    with pytest.raises(OSError):
+        support.export_data(destination, fmt=fmt)
+    assert os.listdir(folder) == [], os.listdir(folder)
+
+
+def test_an_export_reads_one_moment_of_the_database(home, monkeypatch):
+    """A row written while the export runs is in all of it or none of it."""
+    import support
+    from database import get_db
+    real = support._row_batches
+    wrote = []
+
+    def writing_meanwhile(conn, table):
+        if table == "leads" and not wrote:
+            other = get_db()
+            with other:
+                other.execute("INSERT INTO leads (id, name, status, lead_status) "
+                              "VALUES ('lead-meanwhile', 'Meanwhile', 'New Lead', 'NEW')")
+                other.execute("INSERT INTO lead_interactions (lead_id, interaction_type, comment_key) "
+                              "VALUES ('lead-meanwhile', 'LIKE', 'mw')")
+            other.close()
+            wrote.append(table)
+        yield from real(conn, table)
+
+    monkeypatch.setattr(support, "_row_batches", writing_meanwhile)
+    path = support.export_data(os.path.join(home, "moment.json"), fmt="json")
+    with open(path, encoding="utf-8") as handle:
+        tables = json.load(handle)["tables"]
+    assert wrote
+    assert not any(r["id"] == "lead-meanwhile" for r in tables["leads"])
+    assert not any(r["lead_id"] == "lead-meanwhile" for r in tables["lead_interactions"])
