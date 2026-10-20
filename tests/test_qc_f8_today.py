@@ -152,7 +152,11 @@ def test_today_shows_a_due_post_and_i_posted_it_takes_it_off(studio_url):
             copied = page.evaluate("() => navigator.clipboard.readText()").replace("\r\n", "\n")
             assert copied == "Time to post this one.\n\nBody."
             row.get_by_role("button", name="I posted it").click()
-            expect(page.get_by_text("Time to post this one.")).to_have_count(0, timeout=10000)
+            # Off the due list. Since cycle 2 (D-9) Today names it under Your
+            # latest post as marked published, until the bridge sees it.
+            expect(page.locator("li", has_text="Time to post this one.")).to_have_count(0, timeout=10000)
+            expect(page.locator("section", has_text="Your latest post")).to_contain_text(
+                "as published", timeout=10000)
         finally:
             browser.close()
     conn = get_db()
