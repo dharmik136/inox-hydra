@@ -63,6 +63,10 @@ def _in_profile(profile_id: Optional[str]):
 
 TELEMETRY_DB_FILENAME = "analytics_telemetry.db"
 
+# The largest payload kept, in characters. An analytics reading or a page of
+# feed updates is a few kilobytes; anything near this is not one.
+MAX_PAYLOAD_CHARS = 64 * 1024
+
 
 def get_telemetry_db_path() -> str:
     """Returns the absolute path to the telemetry shard database."""
@@ -299,6 +303,13 @@ class TelemetryBuffer:
             payload_str = json.dumps(payload, default=str) if not isinstance(payload, str) else payload
         except Exception:
             payload_str = "{}"
+        # Every payload the bridge sent was kept whole, so one request with an
+        # extra 10 MB field added 10 MB to this file, which nothing reads. A
+        # payload over the cap is recorded as having arrived, with its size,
+        # and its content is not kept.
+        if len(payload_str) > MAX_PAYLOAD_CHARS:
+            payload_str = json.dumps({"payload_not_kept": "larger than the telemetry cap",
+                                      "characters": len(payload_str)})
 
         safe_event_type = str(event_type or "unknown")[:100]
         safe_source = str(source or "extension")[:50]

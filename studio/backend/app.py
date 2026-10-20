@@ -289,6 +289,14 @@ async def lifespan(app: FastAPI):
     yield
     shutdown_scheduler()
     ingress_daemon.stop_worker()
+    # Up to a batch of events waits in memory between flushes, and every stop
+    # lost it. Written out now, while the files are still there to write to.
+    if telemetry_buffer is not None:
+        try:
+            telemetry_buffer.flush()
+        except Exception:
+            logging.getLogger("studio.telemetry_shard").warning("Telemetry was not flushed at shutdown.",
+                                                                exc_info=True)
 
 
 # The interactive documentation is a maintainer tool, so it follows the same
@@ -794,16 +802,17 @@ class ImageGenerateRequest(BaseModel):
 
 
 class CreatorProfilePayload(BaseModel):
-    name: Optional[str] = ""
-    headline: Optional[str] = ""
-    company: Optional[str] = ""
-    brand_watermark_text: Optional[str] = ""
-    brand_watermark_position: Optional[str] = "bottom_right"
-    brand_watermark_style: Optional[str] = "glass_pill"
+    # Bounded: a 10 MB name was stored and then returned by every later read.
+    name: Optional[str] = Field("", max_length=200)
+    headline: Optional[str] = Field("", max_length=500)
+    company: Optional[str] = Field("", max_length=200)
+    brand_watermark_text: Optional[str] = Field("", max_length=200)
+    brand_watermark_position: Optional[str] = Field("bottom_right", max_length=64)
+    brand_watermark_style: Optional[str] = Field("glass_pill", max_length=64)
     brand_watermark_enabled: Optional[bool] = True
     eliminate_provider_watermark_default: Optional[bool] = True
-    default_aspect_ratio: Optional[str] = "1:1"
-    default_visual_style: Optional[str] = "photorealistic"
+    default_aspect_ratio: Optional[str] = Field("1:1", max_length=16)
+    default_visual_style: Optional[str] = Field("photorealistic", max_length=64)
 
 
 class CopilotRequest(BaseModel):
