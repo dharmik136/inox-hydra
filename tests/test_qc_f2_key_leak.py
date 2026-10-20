@@ -41,7 +41,8 @@ def _offline_getaddrinfo(host, *args, **kwargs):
 
 
 @pytest.fixture
-def offline(monkeypatch):
+def offline(monkeypatch, request):
+    request.node.add_marker(pytest.mark.simulates_offline)
     monkeypatch.setattr(socket, "getaddrinfo", _offline_getaddrinfo)
     for name in ("INOX_NO_EGRESS", "INOX_ALLOW_MODEL_EGRESS", "INOX_ALLOW_IMAGE_EGRESS"):
         monkeypatch.delenv(name, raising=False)

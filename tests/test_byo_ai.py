@@ -54,7 +54,7 @@ client = TestClient(app)
 
 
 @pytest.fixture(autouse=True)
-def offline(monkeypatch):
+def offline(monkeypatch, request):
     """
     Name resolution is refused for every host that is not loopback.
 
@@ -64,6 +64,7 @@ def offline(monkeypatch):
     """
     import socket
 
+    request.node.add_marker(pytest.mark.simulates_offline)
     real_getaddrinfo = socket.getaddrinfo
 
     def refuse(host, *args, **kwargs):

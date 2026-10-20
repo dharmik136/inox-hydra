@@ -28,6 +28,103 @@ if _BACKEND_DIR not in sys.path:
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+# ---------------------------------------------------------------------------
+# No test reaches the network
+#
+# The studio's AI, image, update and LinkedIn paths each have their own HTTP
+# client, and a test that forgets to patch one of them sends a real request:
+# an image test once called the public image generator from every run. So for
+# the whole session every socket connection that is not to the loopback
+# interface, and every name lookup for a host that is not loopback, is refused
+# before it is made. Installed at import, before any test module loads a
+# client, so nothing can hold a reference to the unguarded functions.
+# ---------------------------------------------------------------------------
+import socket as _socket
+
+_LOOPBACK = ("127.", "::1", "localhost", "0.0.0.0")
+_real_connect = _socket.socket.connect
+_real_connect_ex = _socket.socket.connect_ex
+_real_create_connection = _socket.create_connection
+_real_getaddrinfo = _socket.getaddrinfo
+
+
+class NetworkRefusedInTests(ConnectionRefusedError):
+    """A test tried to reach a host that is not this machine."""
+
+
+# Every refusal is recorded as well as raised, because the code under test
+# usually catches a connection error and carries on, so a test that reached
+# for the network would otherwise still pass. The autouse fixture below fails
+# such a test by name, with the host it tried.
+_refused_hosts = []
+
+
+def _refuse(host, what):
+    _refused_hosts.append(host)
+    if what == "lookup":
+        return _socket.gaierror(f"test suite: name lookup for {host} refused")
+    return NetworkRefusedInTests(f"test suite: outbound connection to {host} refused")
+
+
+def _host_of(address):
+    return str(address[0] if isinstance(address, tuple) else address)
+
+
+def _is_loopback(host):
+    return host.startswith(_LOOPBACK)
+
+
+def _guarded_connect(self, address):
+    if self.family in (_socket.AF_INET, _socket.AF_INET6) and not _is_loopback(_host_of(address)):
+        raise _refuse(_host_of(address), "connect")
+    return _real_connect(self, address)
+
+
+def _guarded_connect_ex(self, address):
+    if self.family in (_socket.AF_INET, _socket.AF_INET6) and not _is_loopback(_host_of(address)):
+        raise _refuse(_host_of(address), "connect")
+    return _real_connect_ex(self, address)
+
+
+def _guarded_create_connection(address, *args, **kwargs):
+    if not _is_loopback(_host_of(address)):
+        raise _refuse(_host_of(address), "connect")
+    return _real_create_connection(address, *args, **kwargs)
+
+
+def _guarded_getaddrinfo(host, *args, **kwargs):
+    name = host.decode() if isinstance(host, bytes) else str(host or "")
+    if name and not _is_loopback(name):
+        raise _refuse(name, "lookup")
+    return _real_getaddrinfo(host, *args, **kwargs)
+
+
+_socket.socket.connect = _guarded_connect
+_socket.socket.connect_ex = _guarded_connect_ex
+_socket.create_connection = _guarded_create_connection
+_socket.getaddrinfo = _guarded_getaddrinfo
+
+
+@pytest.fixture(autouse=True)
+def no_network(request):
+    """
+    Fails a test that tried to leave this machine, even if the code swallowed
+    the refusal. A test whose point is the offline machine says so with
+    @pytest.mark.simulates_offline: its attempts are still refused, and only
+    the failure is waived.
+    """
+    already = len(_refused_hosts)
+    yield
+    tried = _refused_hosts[already:]
+    if tried and request.node.get_closest_marker("simulates_offline") is None:
+        pytest.fail(
+            "this test tried to reach the network ("
+            + ", ".join(sorted(set(tried)))
+            + "); stub the client instead",
+            pytrace=False,
+        )
+
+
 # Track the sandboxed home created for the pytest session
 _SESSION_TEST_HOME = None
 
@@ -46,6 +143,10 @@ os.environ.setdefault("INOX_DEMO_DATA", "1")
 
 def pytest_configure(config):
     """Initializes and seeds the sandboxed database before test execution."""
+    config.addinivalue_line(
+        "markers",
+        "simulates_offline: the test relies on the suite refusing the network, so a refused attempt is expected",
+    )
     if _SESSION_TEST_HOME and os.environ.get("INOX_HYDRA_HOME") == _SESSION_TEST_HOME:
         try:
             from database import init_db, seed_initial_data

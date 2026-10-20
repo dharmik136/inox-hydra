@@ -151,6 +151,7 @@ def test_the_repurposer_has_no_provider_bypassing_fallback():
         assert marker not in source, f"a provider bypass survives: {marker!r}"
 
 
+@pytest.mark.simulates_offline
 def test_a_configured_provider_is_the_only_one_consulted(monkeypatch):
     """
     With a Gemini key present in the environment and a different provider
