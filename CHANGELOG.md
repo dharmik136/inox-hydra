@@ -7,6 +7,24 @@ released. Version numbers follow `studio/__version__.py`.
 
 ## 2.6.0 (not yet released)
 
+### Before you use 2.6.0: four things to do once
+
+- **Reload the extension** on your browser's extensions page
+  (brave://extensions, edge://extensions or chrome://extensions). A browser
+  keeps running the old extension until then, and the old one reports some
+  things the studio now refuses (it may still say "synced").
+- **Open your own profile once** at https://www.linkedin.com/in/me/ in the
+  bridge browser. Analytics are now kept only when the browser is signed in to
+  the LinkedIn account you confirmed in Setup, and this is how the extension
+  learns which account that is.
+- **Run one posts import** from Setup with the reloaded extension. Imports the
+  old extension called complete can no longer be shown to have reached the end,
+  so Today and the Leads review wait for one that does. Nothing is deleted.
+- **Sample drafts from 2.5.1 are removed.** The 16 Launch Kit drafts an earlier
+  version put into every install are removed on the first start, but only those
+  you never edited, queued or published, and only after a backup of your
+  database. Today tells you once what was removed and where the copy is.
+
 ### One name
 - **The product is Inox Hydra**, and the extension is **Inox Hydra Bridge**.
   Before, it went by five names, one borrowing a competitor's mark.
@@ -101,6 +119,382 @@ released. Version numbers follow `studio/__version__.py`.
   with file or directory name __pycache__". The packaging script lived in the
   extension folder, and running the tests left a Python cache beside the
   manifest; it now lives in `tools/`.
+
+### Fixed before release
+
+A quality cycle before the first paid release: six audits used the studio the
+way a new customer would, 160 findings were triaged to 142 real defects
+(26 very high, 50 high, 66 medium), and every fix was independently reviewed
+and carries a test. The register is in docs/quality/BUG_REGISTER_2026-10.md.
+
+#### Setup and your LinkedIn history
+- The archive preview says whose archive it is, and an archive in someone
+  else's name, or imported before you confirm your profile, is imported only
+  when you tick a box naming you both.
+- Importing LinkedIn's first, basic archive no longer ends the archive step:
+  Setup keeps looking for the complete archive with your posts, and an account
+  with no posts can say so.
+- Importing a large LinkedIn archive takes seconds rather than a minute,
+  drafts and bridge captures keep saving while it runs, and an import cut off
+  part way can be removed.
+- Posts with the same words on different days import as separate posts, and
+  image, video or document posts without a caption are imported instead of
+  dropped.
+- An archive Safari unpacked into a folder is found in your Downloads folder,
+  and Setup's archive step can be pointed at a folder with Choose the folder.
+- What an archive import added can be removed from the archive step, even
+  before you confirm your profile, and what the bridge has read since is kept.
+- On Windows, Setup looks for the archive in your Downloads folder even after
+  you moved it to another drive or into OneDrive, and says which folder it is
+  watching.
+- A LinkedIn archive still downloading is shown as STILL DOWNLOADING instead
+  of being offered and then refused as a broken file.
+- The archive import result names what it filled in plain words and says why
+  rows were skipped.
+- Setup now recognises your profile when your LinkedIn address contains
+  accented or non-Latin letters (for example josé, müller, 王伟, राहुल).
+- Leads who commented on posts brought in from your LinkedIn archive are
+  recognised as yours and are no longer offered for removal as 'engaged only
+  with other people's posts'.
+- A history import that stalls, hits its limit or reads nothing is recorded as
+  partial, and Setup says so; only an import that reaches the end of your
+  posts lets Leads call anyone 'not on your posts'. If your browser still runs
+  the extension from before the update, Setup and Today say to reload it on
+  the browser's extensions page before importing again.
+- Deleting everything the studio holds about you now shows what will be
+  deleted, says whether a backup exists, offers one, and asks you to type
+  'delete' first.
+- Removing the wrong account in Setup now also clears the name, headline and
+  company it filled in Brand Studio, unless you changed them.
+- Opening your own profile no longer cuts the skills and roles read from your
+  archive or the full lists down to the few the profile page shows.
+- Import all three now says what actually happened: which browser opened, in
+  what order the imports run, or why nothing could start.
+- Setup's 'Your history' step now ticks only once your posts have been read to
+  the end of the list, so Today never sends you to a Setup that looks
+  finished.
+- In Setup and Today, the result of a click, including errors, now appears
+  next to the button you pressed.
+- An import you asked for more than 30 minutes ago now reads 'Expired, click
+  Import again' instead of waiting forever.
+- Import all three carries on through comments and reactions even if the
+  studio restarts mid-import, and Setup shows which import is running.
+- Capture health no longer lists two network-reading rows that stay 'not seen
+  yet' unless you turned network reading on.
+- Setup's 'Sync All Activity' is now 'Import all three', with a plain
+  description, and the help explains it.
+- With only Chrome installed, Setup's first step shows the extension folder
+  and how to load it by hand; with no suitable browser it says to install Edge
+  or Brave.
+- A history import no longer turns a new draft that reuses an old post's
+  opening into that old published post.
+- The Activity screen's Leads list now shows the people just captured first.
+- Today's Reply to shows when someone commented rather than when the comment
+  was last re-read, and leaves out people who only reacted.
+
+#### The browser extension
+- Opening the reactions list of someone else's post in your feed no longer
+  files its reactors as your leads; a list whose post the bridge cannot tell
+  is not saved.
+- In LinkedIn's rebuilt comment layout, commenters on other people's posts are
+  no longer filed under your post.
+- On a German, Italian, French or other non-English LinkedIn, followers and
+  impressions are read correctly (8.210 is 8210), and a figure the bridge
+  cannot read with certainty is no longer saved.
+- Analytics read with LinkedIn's 'Past 365 days' (or a range in another
+  language) are no longer saved and charted as today's figure.
+- Analytics and follower counts are saved only when the browser is signed in
+  to the LinkedIn account confirmed in Setup; open
+  https://www.linkedin.com/in/me/ once in the bridge browser so it knows which
+  account that is.
+- Insert into LinkedIn Composer no longer types your draft into an open
+  comment box or a message.
+- A stranger's comment you replied to is no longer saved as your own comment.
+- A post you reposted is no longer imported as one you wrote.
+- Setup's 'Connect the browser' step no longer unticks while you read Setup
+  with LinkedIn in the tab beside it.
+- A post that mentions a number of impressions or comments no longer has that
+  number stored as its own figures.
+- Your follower count is saved whatever range LinkedIn's analytics page shows.
+- The extension help no longer says leads are captured on your activity pages.
+- The analytics notice on LinkedIn no longer says 'synced' when the studio was
+  closed, unpaired or refused the figures.
+- With network reading on, the exact analytics figures are no longer dropped
+  on a busy LinkedIn page.
+- The extension popup's LinkedIn Session line shows whether the studio holds a
+  session, and its side panel button says when the panel could not open.
+- A short reactions list that finishes loading just after it opens is now
+  captured.
+- Engagers seen while the studio was not running are captured once it is back,
+  without reloading the page.
+- A post whose LinkedIn card shows only a document or share id is no longer
+  saved under an id LinkedIn never issued.
+- Opening a repost of your post no longer links the repost to your studio post
+  in place of the real one.
+- The bridge's notices on LinkedIn are announced to screen readers and stay on
+  screen longer.
+- Captured analytics days no longer report a members reached of 0 that was
+  never read.
+
+#### Writing and publishing
+- Reloading or closing the studio with unsaved writing in the Composer now
+  asks before the text is lost.
+- Applying a hook no longer replaces the whole post when blank lines hold a
+  space or LinkedIn's blank spacer, and a new Undo button puts your opening
+  back.
+- Typing a Windows Alt code such as Alt+0149, or Alt and a number in another
+  field, no longer applies a hook over your opening.
+- Saving a draft that was changed in another window since you opened it is now
+  refused with an explanation, and Keep this version lets you replace it on
+  purpose.
+- Double-clicking Save on a new post no longer creates duplicate drafts.
+- Words typed while Bold, Italic or Clean is still working are no longer
+  thrown away.
+- Clean formatting no longer turns ranges like Mon-Fri into lists, flattens
+  indentation, or glues '.env' to the word before it.
+- The Composer's character count now shows LinkedIn's 3,000 limit and agrees
+  with the Audit for Hindi, Gujarati and emoji.
+- When a save fails, the Composer now says why on screen instead of in a hover
+  tooltip.
+- Every studio screen now has its own address, so reloading keeps your place,
+  links open the right screen, and Back moves between screens.
+- The studio now follows your computer's light or dark setting, remembers your
+  choice, and has a theme button in the top bar.
+- The header no longer shows a fixed DRAFT 01 or a green 'live' dot when the
+  bridge has not been seen.
+- At phone width the header's Search button and the Composer's fold label stay
+  on screen.
+- Deleting a media file now asks first and reports a failure, and the Composer
+  no longer suggests it can attach files or show carousel slides.
+- A queued post's text can be corrected from the Queue with Edit text, and a
+  save over a queued or published post now asks before changing it or saves
+  your text as a new draft, instead of overwriting it by accident.
+- With the studio open in two windows, switching profile in one now tells the
+  other, and the other's saves are refused instead of landing in the wrong
+  creator's profile.
+- After Publish the Composer clears for the next post; writing the next post
+  no longer overwrites the one you just published or queued.
+- Publish saves what is on screen first, so Queue it and Send to LinkedIn act
+  on the text you see, and the dialog shows which post it is acting on.
+- Publish on an empty or unsavable draft explains why in the status strip
+  instead of opening a dialog with no way out.
+- The Queue no longer records a post as published when its time comes: it
+  moves to Due on the Queue for you to post, and counts as published once you
+  press I posted it or the bridge sees it on LinkedIn.
+- Inserting a post from the side panel no longer records it as published
+  before you post it, and no longer makes a second copy of a queued post.
+- A post you marked as published, queued or sent to LinkedIn from the studio
+  is now linked to its LinkedIn post when you open it, so its engagers are
+  attributed.
+- Posts written in Hindi, Gujarati, Chinese, Arabic, Russian or any other
+  script can now be linked to their LinkedIn post, and the side panel says
+  when a post cannot be identified.
+- The Queue lists posts at your local time, matching the Composer and Today.
+- Errors such as a wrong AI key or a refused Send to LinkedIn now show the
+  reason instead of a bare '400' or '502'.
+- When the studio stops answering, every screen says so in one line instead of
+  'Failed to fetch', and the line goes away when it is back.
+- The side panel's queue no longer invents a time for an unscheduled post, and
+  shows text in angle brackets as written.
+- The side panel's Fold Safe verdict and character count now agree with the
+  studio's.
+- If LinkedIn does not answer a Send to LinkedIn, the studio says the post may
+  already be scheduled and holds back a second send until you have checked.
+- The Publish dialog keeps keyboard focus while open and returns it to Publish
+  when closed.
+- The Publish dialog says plainly that Send to LinkedIn sends the post's text
+  and uses your saved LinkedIn session.
+
+#### Your own AI provider
+- Your AI provider key no longer appears in the Local security data, the
+  server log, error messages or the diagnostics bundle; Gemini's key is sent
+  in a header instead of the address.
+- With no AI provider set up, nothing is written for you that you did not say:
+  Re-Hook offers fill-in templates with a [bracket] for each fact of yours,
+  and Command says a model is needed.
+- The Prompt tab now lists exactly what goes to your AI provider, including
+  the parts of your profile and posts sent to match your voice, and each
+  Command answer says what was sent with it.
+- When your AI provider refuses your key, runs out of credit or fails, Re-Hook
+  and Command now tell you why instead of quietly showing templates, and the
+  Prompt tab shows the last failure.
+- A stalled AI provider can no longer freeze the studio: requests stop after
+  40 seconds, Re-Hook shows that it is working, and pressing it again while it
+  runs does nothing.
+- Claude can be connected from the Prompt tab again, with current models, and
+  you can now choose the model there for any provider.
+- The Command console shows the model's answer as text, not JSON, and can
+  include your Composer draft when you tick the box.
+- Carousel slide titles and text now show in the theme's colours instead of
+  black.
+- Carousel slides are no longer headed ARCHITECTURE or signed 'Creator' when
+  you have not given a tag or a name.
+- Generated images no longer put stock quotes under famous names or sign
+  quotes 'Leadership'; only words you typed are drawn.
+- The Audit tab no longer scores an empty draft, and its checks read as advice
+  (WORTH A LOOK) without team-role jargon.
+- The Linux and macOS source launcher now keeps its log in the app's logs
+  folder, where the diagnostics bundle finds it, and tells you if the server
+  did not start.
+- The Prompt tab says plainly when no AI model is set up, instead of showing
+  an internal engine name.
+
+#### Leads, messages and your Obsidian vault
+- Lead drafts no longer claim an architecture blueprint, an engineering
+  background or a tech stack: they use only the person's record and what you
+  type, and Offer something offers only what you name.
+- Forgetting a lead now removes their stage history too, from the studio and
+  every export, and it no longer comes back if the same person engages again.
+- Exporting to Obsidian again never overwrites a note you wrote or edited: a
+  generated note that would take its name is written under another name, and
+  the export says so.
+- In an Obsidian vault, each note stays with the same person or post across
+  exports, so your notes no longer move to someone else when a namesake is
+  added or removed, and a renamed person or draft moves to the new name with
+  your notes.
+- The Leads CSV shows a commenter's name or headline that starts with = or @
+  as text instead of running it as a spreadsheet formula, and its Status
+  column matches the screen.
+- In a lead's dossier you can now edit your notes and forget the person, which
+  removes them and everything the studio recorded about them.
+- Demo data no longer stays once the studio starts without INOX_DEMO_DATA:
+  untouched sample people, drafts, posts and figures are removed after a copy
+  of the database is saved to the backups folder, and anything you queued,
+  published or edited is kept.
+- Export to Obsidian in Brand Studio now refreshes the same vault each time,
+  keeping what you wrote in it, and says what it kept.
+- The lead dossier shows times and dates in your own time zone.
+- A lead scored 0 now shows 0 and its tier instead of 'Not scored'.
+- A post's VIP lead count uses the same 80-point rule as the rest of the
+  studio.
+- The lead stream can be searched by name, company, headline or notes and
+  filtered by stage, and long lists load 200 at a time.
+- On a phone-sized window, choosing a lead opens their dossier full width,
+  with a way back to the list.
+
+#### Analytics, patterns and search
+- Analytics no longer reports a rise such as +650% when the previous period
+  was barely captured: a change is shown only when both periods have at least
+  80% of their days, compared per captured day, and the screen says how many
+  days each has.
+- Figures LinkedIn rounded (1.2K) are marked approximate on Analytics, and a
+  change smaller than that rounding is not reported.
+- Analytics' Post comparison now lists your posts imported from LinkedIn, and
+  a figure nobody read shows 'not measured' instead of 0 or 0%.
+- Analytics opens quickly with thousands of posts and no longer goes blank
+  when you change the range.
+- Search finds people whose names have accents or umlauts however you type
+  them, ignores quotes around a word, and no longer offers unrelated help for
+  such names.
+- Search now finds words in your posts imported from LinkedIn.
+- Patterns counts each person once per topic, and its qualified share can no
+  longer read above 100%; Outbound's 'On your posts' counts posts, not
+  interactions.
+- Patterns no longer calls a comparison conclusive, or passes it to the
+  copilot, when its two sides come from different years.
+- Patterns' topics are now the words and hashtags your own posts share, not a
+  fixed software vocabulary, and the screen says they are a keyword grouping.
+- The Patterns page can be scrolled with the keyboard.
+- After an archive import, Outbound says how many reactions and comments were
+  imported and how to add their authors, instead of saying none were imported.
+- After an archive import, Posts and Patterns say your imported posts have no
+  figures yet and how to read them, instead of saying they are too new.
+
+#### Profiles, licence, backups and installing
+- Restore works when the studio's database is damaged: the damaged file is
+  kept in the safety backup and the good backup goes in.
+- When an Agency licence ends, profiles beyond the free tier stay on disk and
+  listed but closed until it is renewed; they can still be backed up, exported
+  or deleted, and your first profile always works.
+- Deleting a creator profile while an image generation or other work for it is
+  running no longer leaves its folder behind.
+- The automatic database copy taken before an upgrade can now be restored with
+  the restore command.
+- A restore that fails part way now changes nothing and tells you where the
+  safety backup is.
+- Restoring a backup made by a newer version is refused with a message to
+  update the studio first, instead of leaving a studio that will not start.
+- Large media uploads no longer load the whole file into memory, and files
+  over the size limit are refused with a clear message.
+- On Linux, autostart and the desktop shortcut now work when the studio is
+  installed in a folder whose path has a space.
+- The update command no longer tells a portable-mode user to delete the folder
+  that holds their data.
+- `reset` now clears only the AI setup and the LinkedIn session; a paused
+  queue stays paused and the Brand Studio profile is kept.
+- Switching to a profile written by a newer version now says why it cannot
+  open, instead of a server error.
+- Brand Studio's backups list now shows your newest backups first.
+- Update checks now report only versions that have actually been released.
+- A creator profile can no longer be given an id Windows cannot use as a
+  folder name, such as 'con' or 'aux'.
+- The diagnostics bundle no longer contains your computer account's folder
+  name, or a copy of the previous bundle.
+- The command-line backup, export, restore and doctor now say which creator
+  profile they used, and take --profile, with --all for backup and export.
+- Setting the computer's clock back no longer brings an ended licence back,
+  and a clock that was once set far ahead no longer locks out a valid licence.
+- Command-line commands run before the studio's first start now explain that
+  there is no data yet, instead of crashing or writing an empty backup.
+- In the Windows tray, Exit now also stops the studio server the tray started.
+- The packaged studio now ships its help articles; every help section in Docs
+  is filled.
+- The profile switcher now shows the right number of drafts for each profile.
+
+#### Across the studio
+- Copy the folder path on an empty Leads screen no longer says 'Copied' when
+  the clipboard was unreachable; it shows why and selects the path. The lead
+  dossier's COPY and Activity's copy URN confirm only once the copy happened.
+- Open the post on Posts and Open in Bridge Browser on Activity now show that
+  they are working and then say which browser opened, or why none could.
+- The profile switcher opened from the navigation tray now opens below the
+  profile card instead of above the top of the window.
+- The navigation tray scrolls on short laptop screens, so Docs and Brand
+  Studio are reachable, and Brand Studio's tabs wrap on a phone instead of
+  running off screen.
+- The command palette, navigation tray and profile switcher now keep keyboard
+  focus while open, close with Escape one layer at a time, and give focus back
+  to what opened them.
+- On a licence with no room for another creator profile, the profile switcher
+  explains the limit instead of offering a form that is refused after you fill
+  it in.
+- Brand Studio's Local security no longer says drafts and the LinkedIn session
+  never leave this machine; it lists what stays and exactly which actions send
+  what, and where.
+- The inspector no longer says Brand Studio is not built, the Command screen
+  no longer opens with an internal engine codename, and the Activity screen is
+  called Activity everywhere it is linked.
+- Switching profile with unsaved Brand Studio edits now asks first, and says
+  which unsaved work would be lost.
+- Help articles in Docs are readable on a phone-width window; before, opening
+  one changed nothing on screen.
+- Typing a search on the Docs home screen keeps every letter; it used to keep
+  only the first.
+- The LOCAL shield on the rail no longer says all processing is local: it says
+  your work is kept on this machine and where to see what leaves it.
+- Activity's Imports tab says how each import ended in words, and shows only
+  an import read to the end as complete.
+- Activity says when the studio last answered instead of "Live updates on",
+  says so when the studio stops answering, and the header button is called
+  Activity.
+- With an AI provider connected, hooks are no longer written for "Engineering
+  & Product Leaders" unless you asked for that audience.
+- The Distribution audit no longer quotes reach penalties nobody measured,
+  such as "-40% algorithmic reach penalty"; it says what it found in your
+  draft.
+- The command-line reference describes what reset clears today: the AI
+  provider settings and the LinkedIn session, nothing else.
+- The release notes no longer tell a portable-mode user to delete the folder
+  that holds their data.
+- The README, the docs and the command-line help name only Claude models
+  Anthropic still serves.
+- An import that pauses because its LinkedIn tab is hidden now says so in
+  Setup, and that the tab must be in front, instead of SCROLLING NOW.
+- Today shows posts that are due to post now, with Copy text and I posted it.
+- After the studio removes sample content an earlier version added, Today says
+  once what it removed and where the copy of your database from before is.
+- In a lead's dossier, a copy the browser refuses now points to the text above
+  it, and the message goes once a copy works.
 
 ### For developers
 - The repository no longer holds the owner's own posts, figures, post

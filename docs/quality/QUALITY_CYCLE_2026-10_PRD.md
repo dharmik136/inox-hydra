@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| Status | In delivery |
+| Status | Delivered, awaiting release |
 | Owner | Dharmik Shingala |
 | Started | 2026-10-19 |
 | Release | 2.6.0 (unreleased) |
@@ -105,4 +105,30 @@ nothing personal enters it.
 
 ## 9. Results
 
-Filled in at the end of the cycle; see the register for the line items.
+| | Target | Found and accepted | Fixed | Partly fixed |
+|---|---|---|---|---|
+| S1, very high | 30 | 26 | 26 | 0 |
+| S2, high | 50 | 50 | 49 | 1 |
+| S3, medium | 70 | 66 | 64 | 2 |
+| Found while fixing | | 16 | 15 | 1 open |
+
+- 160 raw findings from six audits; 18 were the same defect seen twice, and
+  148 were reproduced in a sandbox rather than read from the code.
+- Six were re-rated at triage, each with its reason in the register.
+- Ten fix batches ran in parallel, one owner per file. Each fix has a test
+  that fails on the old code. An independent reviewer per batch sent 19 fixes
+  back; each was fixed again and verified by a separate verifier.
+- The suite went from 1470 to 2198 passing tests, and the UI audit of 56
+  screens in both themes at desktop and phone width shows no blocking finding.
+- The S1 and S3 targets were not reached. The auditors reported what they
+  could prove rather than pad, and the register keeps the true count.
+
+Process lessons for the next cycle:
+- A route that starts a browser must be inert in every sandbox and test. One
+  test and one audit script started real browser windows before the suite's
+  guard and the sandbox wrapper existed.
+- A destructive cleanup is dry-run against a copy of a real database before
+  it ships. Doing so here showed the demo cleanup would remove 16 drafts from
+  a real install, and it now backs up first and says so.
+- Keep coordination files out of /tmp: a restart wiped them mid-cycle, and
+  they were rebuilt from the agents' transcripts.
