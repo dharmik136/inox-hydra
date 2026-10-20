@@ -793,6 +793,8 @@ export interface DocSection {
   blurb: string;
   /** Help for the user, reference for a maintainer, or retired material kept for the record. */
   kind: "help" | "reference" | "retired";
+  /** Left out of the Docs home and of search: maintainer and retired documents, unless dev mode is on. */
+  hidden?: boolean;
   count: number;
   words: number;
   document_ids: string[];

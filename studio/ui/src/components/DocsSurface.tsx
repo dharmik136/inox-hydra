@@ -329,6 +329,13 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
   }, [sections]);
 
   /**
+   * The sections a reader is offered: maintainer and retired documents are
+   * left out unless dev mode is on, as search leaves them out. They still
+   * open by id, so a help article that links to one keeps working.
+   */
+  const shownSections = useMemo(() => sections.filter((section) => !section.hidden), [sections]);
+
+  /**
    * Documents whose name matches, help first.
    *
    * The server groups passage results by kind, and this list is filtered here
@@ -350,6 +357,7 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
     if (!term) return [];
     const order: Record<string, number> = { help: 0, reference: 1, retired: 2 };
     return library
+      .filter((entry) => !sectionOf.get(entry.section)?.hidden)
       .filter((entry) => entry.title.toLowerCase().includes(term) || entry.path.toLowerCase().includes(term))
       .map((entry, index) => ({ entry, index, rank: order[sectionOf.get(entry.section)?.kind ?? "help"] }))
       .sort((a, b) => a.rank - b.rank || a.index - b.index)
@@ -370,7 +378,7 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       <LibraryRail
-        sections={sections}
+        sections={shownSections}
         library={byId}
         modules={modules}
         openId={view === "document" ? openId : null}
@@ -473,7 +481,7 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
           )
         ) : (
           <HelpHome
-            sections={sections}
+            sections={shownSections}
             library={byId}
             query={query}
             onQuery={onQuery}

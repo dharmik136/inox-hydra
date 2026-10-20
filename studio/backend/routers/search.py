@@ -18,7 +18,10 @@ try:
         section_meta,
         section_kind,
         help_sections,
-        search_docs_fts
+        search_docs_fts,
+        section_hidden,
+        hidden_document_paths,
+        internal_documents_shown
     )
     from .. import universal_search
     from ..intelligence_sync import intelligence_sync_engine
@@ -30,7 +33,10 @@ except (ImportError, ValueError):
         section_meta,
         section_kind,
         help_sections,
-        search_docs_fts
+        search_docs_fts,
+        section_hidden,
+        hidden_document_paths,
+        internal_documents_shown
     )
     import universal_search
     from intelligence_sync import intelligence_sync_engine
@@ -190,6 +196,7 @@ def list_docs_modules():
             "title": section["title"],
             "blurb": section["blurb"],
             "kind": section["kind"],
+            "hidden": section["hidden"],
             "count": section["count"],
             "words": section["words"],
             "document_ids": [catalogue[by_path[entry["path"]]]["id"] for entry in section["documents"]],
@@ -216,9 +223,15 @@ def search_documentation(q: str, limit: int = 10):
     except (TypeError, ValueError):
         safe_limit = 10
 
-    results = search_docs_fts(safe_q, limit=min(100, max(safe_limit * 4, 40)))
+    # Maintainer and retired documents are not answers for a creator; see
+    # docs_engine.section_hidden. Left out in the query, and any hit from a
+    # hidden section that is not in the written table is dropped below.
+    shown = internal_documents_shown()
+    results = search_docs_fts(safe_q, limit=min(100, max(safe_limit * 4, 40)),
+                              skip_files=hidden_document_paths(shown))
 
     catalogue, by_path = _docs_catalogue()
+    kept = []
     for hit in results:
         filename = str(hit.get("filename") or "").replace("\\", "/")
         hit["filename"] = filename
@@ -227,6 +240,9 @@ def search_documentation(q: str, limit: int = 10):
         hit["document_title"] = record["title"] if record else filename
         hit["help_section"] = section_meta(record["section"])["title"] if record else ""
         hit["kind"] = section_kind(record["section"]) if record else "help"
+        if not (record and section_hidden(record["section"], shown)):
+            kept.append(hit)
+    results = kept
 
     rank = {"help": 0, "reference": 1, "retired": 2}
     how = {"word": 0, "prefix": 1}
