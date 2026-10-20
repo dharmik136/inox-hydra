@@ -1,14 +1,29 @@
 name: Inox Hydra Release
 
-# Builds the portable Windows distributable and attaches it to a GitHub Release.
+# The one workflow that publishes a release, and it publishes all of it or
+# nothing.
 #
-# Runs on a Windows runner deliberately. The artifact embeds compiled wheels
-# (pymupdf, pillow, pydantic-core), which are ABI specific, so building it on
-# Linux would produce a ZIP that cannot import its own dependencies.
+# Three jobs:
+#   build-portable  the portable Windows ZIP and latest.json
+#   build-desktop   the desktop installers (desktop.yml, called here)
+#   publish         runs only when both succeeded: checks the set is complete,
+#                   creates the release as a DRAFT, uploads every asset, checks
+#                   they all arrived, and only then makes it public.
+#
+# It used to be two workflows attaching to the same tag independently, so a
+# failed smoke test left a public "latest" release holding a desktop installer
+# and no ZIP and no latest.json. A draft is invisible to releases/latest, so an
+# upload that fails half way leaves nothing a creator or an update check sees.
+#
+# The portable ZIP is built on a Windows runner deliberately. It embeds
+# compiled wheels (pymupdf, pillow, pydantic-core), which are ABI specific, so
+# building it on another OS would produce a ZIP that cannot import its own
+# dependencies.
 #
 # Trigger by pushing a tag that matches the version in studio/__version__.py,
-# for example: git tag v2.5.0 && git push origin v2.5.0
-# Or run it manually from the Actions tab to produce a test artifact.
+# for example: git tag v2.6.0 && git push origin v2.6.0
+# Run it from the Actions tab (workflow_dispatch) for a dry run: every build
+# runs and its files are kept on the run, and nothing is published.
 
 on:
   push:
@@ -17,7 +32,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+# Two pushes of the same tag must not race each other to the release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build-portable:
@@ -33,7 +53,7 @@ jobs:
       - name: Set up Python Runtime
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.13.15"
           cache: "pip"
 
       - name: Install Build Tooling
@@ -109,6 +129,20 @@ jobs:
       - name: Verify The Distributable Actually Runs
         run: python tools/verify_package.py
 
+      # Pillow's Windows wheels load FriBiDi at run time and do not ship it;
+      # without it raqm is off and Hindi and Gujarati overlays are left off
+      # generated images (R7-N1). vcpkg is preinstalled on Windows runners and
+      # builds it from source; the builder copies the DLL and its LGPL licence
+      # beside python.exe and refuses a runtime where raqm does not load.
+      - name: Build FriBiDi For Complex Text Layout
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install fribidi:x64-windows
+          $dll = Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin" -Filter "*fribidi*.dll" | Select-Object -First 1
+          if (-not $dll) { throw "vcpkg did not produce a FriBiDi DLL" }
+          "INOX_FRIBIDI_DLL=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "FriBiDi: $($dll.FullName)"
+
       - name: Build The Portable Artifact
         run: python tools/build_portable.py
 
@@ -118,42 +152,149 @@ jobs:
         shell: bash
         run: python tools/smoke_portable.py
 
+
+      # Gathered into one flat folder, so the publish job receives the files
+      # under the names they will have on the release.
+      - name: Gather The Release Files
+        shell: bash
+        run: |
+          mkdir -p dist/release
+          cp dist/portable/*.zip dist/release/
+          # latest.json is what installed copies read to learn of a release,
+          # from releases/latest/download, so it is published with it.
+          cp release/latest.json dist/release/
+
       - name: Upload Build Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: InoxHydra-portable-win64
-          path: dist/portable/*.zip
+          name: release-portable
+          path: dist/release/
           if-no-files-found: error
           retention-days: 30
 
-      - name: Attach To GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+  build-desktop:
+    name: Build Desktop Installers
+    uses: ./.github/workflows/desktop.yml
+    secrets: inherit
+
+  publish:
+    name: Publish The Release (every asset or none)
+    # needs on both: a failure in either build, or in any step that guards
+    # them, means this job never starts and nothing is published.
+    needs: [build-portable, build-desktop]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+
+    steps:
+      # release-* only. The macOS and Linux desktop builds upload preview-*
+      # artifacts, kept on the run for testing and never published, until
+      # their runtime and signing are proven (phase 3).
+      - name: Collect Every Built Asset
+        uses: actions/download-artifact@v4
         with:
-          # latest.json is what installed copies read to learn of a release,
-          # from releases/latest/download, so it is published with it.
-          files: |
-            dist/portable/*.zip
-            release/latest.json
-          # A release without latest.json would leave every installed copy's
-          # update check answering 404, so a missing file fails the job.
-          fail_on_unmatched_files: true
-          generate_release_notes: true
-          body: |
-            ## Inox Hydra ${{ github.ref_name }}
+          pattern: release-*
+          path: assets
+          merge-multiple: true
 
-            Download the ZIP below, extract it anywhere, and double click `InoxHydra.bat`.
-            No Python installation and no administrator rights are required.
+      # A release without latest.json leaves every installed copy's update
+      # check answering 404, and a release without the ZIP sends the README's
+      # download link to nothing. Either missing fails here, before anything
+      # exists on GitHub.
+      - name: Check The Asset Set Is Complete
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd assets
+          ls -la
+          version="${TAG#v}"
+          missing=()
+          [ -f "InoxHydra-${version}-win64.zip" ] || missing+=("InoxHydra-${version}-win64.zip")
+          [ -f "latest.json" ] || missing+=("latest.json")
+          [ -f "InoxHydra-${version}-win64-setup.exe" ] || missing+=("InoxHydra-${version}-win64-setup.exe")
+          if [ -f "latest-desktop.json" ] && [ ! -f "InoxHydra-${version}-win64-setup.exe.sig" ]; then
+            missing+=("InoxHydra-${version}-win64-setup.exe.sig")
+          fi
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error title=Release not published::Missing: ${missing[*]}"
+            exit 1
+          fi
+          manifest="$(python3 -c 'import json; print(json.load(open("latest.json"))["version"])')"
+          if [ "$manifest" != "$version" ]; then
+            echo "::error title=Release not published::latest.json says $manifest and the tag says $version."
+            exit 1
+          fi
+          echo "Complete: $(ls | tr '\n' ' ')"
 
-            **Where your data is.** By default, drafts, leads and analytics live in
-            `%LOCALAPPDATA%\InoxHydra`, outside the application folder. In true portable
-            mode (a folder named `data` inside `app\studio`) they live inside the folder.
-            A timestamped database backup is taken automatically before any schema upgrade.
+      - name: Write The Release Notes
+        shell: bash
+        run: |
+          cat > notes.md <<'NOTES'
+          ## Inox Hydra ${{ github.ref_name }}
 
-            To upgrade:
-            1. Back up every creator profile: `InoxHydra-CLI.bat backup --all`.
-            2. Run `InoxHydra-CLI.bat doctor`. It prints where your data is.
-            3. If that is outside the Inox Hydra folder, delete the old folder and extract
-               the new one. If it is inside (true portable mode), do not delete the folder:
-               replace only the program files, as the help article
-               "Check your version and update the studio" describes.
+          **Windows.** Download the file ending in `-win64.zip` below. Before you
+          extract it, right click it, choose Properties, tick Unblock, and click OK.
+          Extract it anywhere and double click `InoxHydra.bat`. No Python installation
+          and no administrator rights are required. The launcher checks that the studio
+          really started before it opens a window, and tells you if another program
+          holds port 8000.
+
+          The file ending in `-win64-setup.exe` is the desktop app, an alternative to
+          the ZIP. It is not code signed yet, so Windows asks before it runs.
+
+          **macOS and Linux.** Run the studio from source for now; see the README.
+
+          **Where your data is.** By default, drafts, leads and analytics live in
+          `%LOCALAPPDATA%\InoxHydra`, outside the application folder. In true portable
+          mode (a folder named `data` inside `app\studio`) they live inside the folder.
+          A timestamped database backup is taken automatically before any schema upgrade.
+
+          To upgrade:
+          1. Back up every creator profile: `InoxHydra-CLI.bat backup --all`.
+          2. Run `InoxHydra-CLI.bat doctor`. It prints where your data is.
+          3. If that is outside the Inox Hydra folder, delete the old folder and extract
+             the new one. If it is inside (true portable mode), do not delete the folder:
+             replace only the program files, as the help article
+             "Check your version and update the studio" describes.
+          NOTES
+
+      # A draft is invisible to releases/latest, so nothing below is seen by a
+      # creator or an update check until the last step. A draft left by an
+      # earlier failed run of this tag is replaced; a published one never is.
+      - name: Create The Release As A Draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          state="$(gh release view "$TAG" --json isDraft --jq '.isDraft' 2>/dev/null || echo absent)"
+          if [ "$state" = "false" ]; then
+            echo "::error title=Already published::$TAG is already a published release. Not replacing it."
+            exit 1
+          fi
+          if [ "$state" = "true" ]; then
+            gh release delete "$TAG" --yes
+          fi
+          gh release create "$TAG" --draft --verify-tag \
+            --title "Inox Hydra $TAG" --notes-file notes.md --generate-notes \
+            assets/*
+
+      - name: Confirm Every Asset Reached The Draft
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="$(cd assets && ls | sort)"
+          uploaded="$(gh release view "$TAG" --json assets --jq '.assets[].name' | sort)"
+          if [ "$expected" != "$uploaded" ]; then
+            echo "::error title=Release not published::The draft does not hold every asset."
+            diff <(echo "$expected") <(echo "$uploaded") || true
+            exit 1
+          fi
+          echo "All $(echo "$expected" | wc -l | tr -d ' ') assets are on the draft."
+
+      - name: Publish The Draft
+        shell: bash
+        run: gh release edit "$TAG" --draft=false --latest

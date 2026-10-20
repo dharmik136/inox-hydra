@@ -20,11 +20,15 @@ Open `http://127.0.0.1:8000/api/v1/health` in your browser. This address needs n
 | The launcher says "The build finished but produced no interface." | The build failed | Scroll up in the launcher window to the npm error |
 | "This server answers on loopback only." | You reached the studio through a name other than a loopback address such as `127.0.0.1` or `localhost`, for example an alias that points at this computer | Use `http://127.0.0.1:8000` |
 | "Missing or invalid studio token." | The page lost its token cookie, or the token was reset | Reload `http://127.0.0.1:8000`, which sets the cookie again |
-| A different app appears at port 8000 | Another program holds the port. The launcher treats anything on port 8000 as the studio and opens the browser anyway | Close that program, or stop it, then run the launcher again |
+| A different app appears at port 8000 | Another program holds the port. `launch_studio.bat` treats anything on port 8000 as the studio and opens the browser anyway | Close that program, or stop it, then run the launcher again |
+| The portable launcher says "Port 8000 is in use by another program, not Inox Hydra." | Another program holds the port, so the studio started on the next free port, 8001 to 8009, which the launcher names | Use the address it gives. The browser extension only connects on port 8000: to capture again, close the other program, close the **Inox Hydra Engine** window and start `InoxHydra.bat` again |
+| The portable launcher says "The studio engine stopped while it was starting." and stays open | The server exited during start-up | Read the log lines it shows, and send `logs\engine.log` from your data folder with the report below |
 
 ## Read the server's own error
 
-`launch_studio.bat` starts the server in a minimized window titled **Inox Hydra Backend**, then opens the browser three seconds later without checking that it worked. The portable `InoxHydra.bat` does the same with a window titled **Inox Hydra Engine**.
+`launch_studio.bat` starts the server in a minimized window titled **Inox Hydra Backend**, then opens the browser three seconds later without checking that it worked.
+
+The portable `InoxHydra.bat` starts it in a window titled **Inox Hydra Engine** and waits until it answers. When it does not, the launcher window stays open with the last lines of the engine's log and the path of the whole log, `logs\engine.log` in your data folder (`%LOCALAPPDATA%\InoxHydra` unless you chose another). That log is the server's own error; the steps below are for a source checkout.
 
 1. Restore the **Inox Hydra Backend** window from the taskbar. If the window is gone, the server exited straight away.
 2. If you cannot see an error, start the server by hand in a terminal opened in the checkout folder, the one that holds `launch_studio.bat`:

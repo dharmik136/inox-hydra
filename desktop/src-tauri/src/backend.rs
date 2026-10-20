@@ -380,8 +380,12 @@ pub fn start(resources: &Path) -> Result<Backend, String> {
         ));
     }
 
+    // -s keeps the user's own site-packages (~/.local on Linux and macOS)
+    // off the path, so a package installed there cannot shadow the vendored
+    // copy in lib/. The runtime carries no pyvenv.cfg to do it.
     let mut command = Command::new(&python);
     command
+        .arg("-s")
         .arg("-m")
         .arg("uvicorn")
         .arg("studio.backend.app:app")

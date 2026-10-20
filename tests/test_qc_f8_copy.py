@@ -117,7 +117,8 @@ def test_cli_reference_describes_the_narrow_reset():
 def _release_body():
     with open(os.path.join(REPO_ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as handle:
         workflow = handle.read()
-    return workflow[workflow.index("body: |"):]
+    notes = workflow[workflow.index("cat > notes.md"):]
+    return notes[:notes.index("\n          NOTES\n")]
 
 
 def test_release_notes_do_not_tell_every_user_to_delete_the_folder():
@@ -139,6 +140,7 @@ def test_release_notes_yaml_still_parses():
 
     with open(os.path.join(REPO_ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as handle:
         parsed = yaml.safe_load(handle.read())
-    steps = parsed["jobs"]["build-portable"]["steps"]
-    attach = next(s for s in steps if s.get("name") == "Attach To GitHub Release")
-    assert "do not delete the folder" in attach["with"]["body"]
+    # The notes are written by the one publish job (INS-04).
+    steps = parsed["jobs"]["publish"]["steps"]
+    notes = next(s for s in steps if s.get("name") == "Write The Release Notes")
+    assert "do not delete the folder" in notes["run"]

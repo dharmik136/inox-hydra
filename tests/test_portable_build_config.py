@@ -95,8 +95,12 @@ def test_launcher_uses_the_bundled_interpreter(builder):
     launcher = match.group(1)
 
     assert r"%~dp0runtime\python.exe" in launcher, "launcher does not use the bundled runtime"
-    assert "studio.backend.app:app" in launcher
-    assert "127.0.0.1" in launcher, "server must bind loopback only"
+    # The launcher hands over to the studio's own launch code (INS-07), which
+    # starts the same app, on loopback only.
+    assert "-m studio.backend.desktop launch" in launcher
+    desktop_source = read(os.path.join(REPO_ROOT, "studio", "backend", "desktop.py"))
+    assert '"studio.backend.app:app"' in desktop_source
+    assert 'STUDIO_HOST = "127.0.0.1"' in desktop_source, "server must bind loopback only"
     assert not re.search(r"^\s*start .*[^\\]\bpython(w)?\.exe", launcher, re.MULTILINE), (
         "launcher appears to invoke a system interpreter"
     )
@@ -116,10 +120,13 @@ def test_release_workflow_builds_on_windows(workflow):
     Compiled wheels are ABI specific. A Linux runner would produce a ZIP that
     cannot import pymupdf, pillow or pydantic-core, and would still pass.
     """
-    assert "runs-on: windows-latest" in workflow, (
+    # The build job only: the publish job (INS-04) builds nothing and runs on
+    # Linux, and the desktop installers are built by desktop.yml.
+    job = workflow[workflow.index("\n  build-portable:\n"):workflow.index("\n  build-desktop:\n")]
+    assert "runs-on: windows-latest" in job, (
         "the portable artifact must be built on a Windows runner"
     )
-    assert "ubuntu" not in workflow.lower(), "a Linux runner would produce a broken artifact"
+    assert "ubuntu" not in job.lower(), "a Linux runner would produce a broken artifact"
 
 
 def test_release_workflow_gates_on_verification(workflow):

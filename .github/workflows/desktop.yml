@@ -13,22 +13,25 @@ name: Inox Hydra Desktop Shell
 # The runner already carries all of it. Release artifacts should not be built
 # on a developer laptop anyway, because nobody can reproduce what was on it.
 #
-# Trigger by pushing a v*.*.* tag, or manually from the Actions tab.
+# This workflow builds and never publishes. A tag runs it through release.yml,
+# whose publish job attaches the Windows installer together with the portable
+# ZIP and latest.json, or nothing. It used to attach to the release itself, on
+# the same tag and independently, so a release could go live with only some of
+# its files. Run it from the Actions tab, or on a pull request, to build.
 
 on:
-  push:
-    tags:
-      - "v*.*.*"
+  workflow_call:
   workflow_dispatch:
   pull_request:
     paths:
       - "desktop/**"
       - "tools/stage_desktop_payload.py"
       - "tools/build_portable.py"
+      - "tools/smoke_portable.py"
       - ".github/workflows/desktop.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-desktop:
@@ -36,9 +39,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        # release: whether this leg's installer is published. Windows only,
+        # for now. The macOS and Linux legs build and smoke test, and their
+        # output is kept on the run as a preview, until their runtime is
+        # proven on a clean machine and macOS signing exists (phase 3).
+        include:
+          - os: windows-latest
+            release: true
+          - os: macos-latest
+            release: false
+          - os: ubuntu-latest
+            release: false
     # Matrix builds across platforms (previously runs-on: windows-latest):
     runs-on: ${{ matrix.os }}
+    # A preview leg that fails is reported on the run and does not hold back
+    # the Windows release; the Windows leg failing fails the workflow.
+    continue-on-error: ${{ !matrix.release }}
 
     steps:
       - name: Checkout Source Code
@@ -49,7 +65,7 @@ jobs:
       - name: Set up Python Runtime
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.13.15"
           cache: "pip"
 
       # Linux requires webkit2gtk-4.1 and related development packages to
@@ -64,6 +80,25 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      # studio/frontend_next is the built React interface, and it is gitignored,
+      # so a fresh checkout does not contain it. This workflow never built it,
+      # so every installer opened, after the splash, on the server's 503 "The
+      # studio interface has not been built". The portable release and CI both
+      # build it; the installers now do too, before the payload is staged.
+      - name: Set up Node Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: studio/ui/package-lock.json
+
+      - name: Build The Studio Interface
+        working-directory: studio/ui
+        shell: bash
+        run: |
+          npm ci
+          npm run build
 
       # Preinstalled on windows-latest along with the MSVC toolchain, so this
       # only pins and caches rather than installing a compiler.
@@ -80,6 +115,21 @@ jobs:
       - name: Generate Application Icons
         run: python tools/generate_icons.py
 
+      # Pillow's Windows wheels load FriBiDi at run time and do not ship it;
+      # without it raqm is off and Hindi and Gujarati overlays are left off
+      # generated images (R7-N1). vcpkg is preinstalled on Windows runners and
+      # builds it from source; the builder copies the DLL and its LGPL licence
+      # beside python.exe and refuses a runtime where raqm does not load.
+      - name: Build FriBiDi For Complex Text Layout
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install fribidi:x64-windows
+          $dll = Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin" -Filter "*fribidi*.dll" | Select-Object -First 1
+          if (-not $dll) { throw "vcpkg did not produce a FriBiDi DLL" }
+          "INOX_FRIBIDI_DLL=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "FriBiDi: $($dll.FullName)"
+
       - name: Stage The Python Payload
         run: python tools/stage_desktop_payload.py
 
@@ -91,6 +141,7 @@ jobs:
           $missing = @()
           foreach ($p in @(
             "desktop/payload/app/studio/backend/app.py",
+            "desktop/payload/app/studio/frontend_next/index.html",
             "desktop/payload/lib"
           )) { if (-not (Test-Path $p)) { $missing += $p } }
 
@@ -115,6 +166,14 @@ jobs:
             throw "Payload is incomplete: $($missing -join ', ')"
           }
           "Payload layout verified."
+
+      # The layout check above only proves files exist. This copies the
+      # payload to a new folder and drives it with its own interpreter and a
+      # scrubbed environment, the way an installed copy runs: it fails on a
+      # runtime that borrows the runner's Python, and on a missing interface.
+      - name: Smoke Test The Staged Payload
+        shell: bash
+        run: python tools/smoke_portable.py --payload desktop/payload
 
       - name: Install Tauri CLI
         run: npm install --global @tauri-apps/cli@^2
@@ -313,8 +372,24 @@ jobs:
             }
           }
           if (-not $file) { throw "No package artifact was produced for $env:RUNNER_OS under $bundleDir. Check bundle step output." }
-          "path=$($file.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "Built $($file.Name), $([math]::Round($file.Length / 1MB, 1)) MB"
+          $path = $file.FullName
+
+          # The published installer gets the release's own name, with no
+          # spaces. Tauri names it "Inox Hydra_<v>_x64-setup.exe"; GitHub
+          # rewrites the space when it stores an asset, so an update manifest
+          # built from the original name pointed at a file that did not exist.
+          if ($env:RUNNER_OS -eq "Windows") {
+            $version = (Get-Content "studio/__version__.py" -Raw | Select-String -Pattern '__version__\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+            New-Item -ItemType Directory -Force -Path "desktop/dist" | Out-Null
+            $path = Join-Path (Resolve-Path "desktop/dist").Path "InoxHydra-$version-win64-setup.exe"
+            Copy-Item -LiteralPath $file.FullName -Destination $path
+            if (Test-Path -LiteralPath "$($file.FullName).sig") {
+              Copy-Item -LiteralPath "$($file.FullName).sig" -Destination "$path.sig"
+            }
+            "Published as $([System.IO.Path]::GetFileName($path))"
+          }
+          "path=$path" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       # The check that matters. A signCommand that silently did nothing, an
       # expired certificate, or a credential without the signer role all
@@ -383,7 +458,7 @@ jobs:
             }
           }
 
-          $out = "desktop/latest-desktop.json"
+          $out = "desktop/dist/latest-desktop.json"
           $manifest | ConvertTo-Json -Depth 8 | Out-File -FilePath $out -Encoding utf8
           "path=$((Resolve-Path $out).Path)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "sig=$sigPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -391,23 +466,23 @@ jobs:
           "Update manifest for $version:"
           Get-Content $out
 
-      - name: Upload The Installer
+      # release-* is what release.yml's publish job collects: the installer,
+      # and the update manifest with its .sig when updates are configured.
+      # They go up together or not at all, so a release can never carry a
+      # manifest pointing at an installer that is not there.
+      - name: Upload The Installer For Release
+        if: matrix.release
         uses: actions/upload-artifact@v4
         with:
-          name: LinkedIn-Studio-${{ matrix.os }}
-          path: ${{ steps.artifact.outputs.path }}
+          name: release-desktop-windows
+          path: desktop/dist/
           if-no-files-found: error
 
-      # The manifest and the .sig go up with the installer or not at all.
-      # A release carrying a manifest that points at an installer which is not
-      # there yet would have every client download a 404 and report a failed
-      # update.
-      - name: Attach To The Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+      - name: Upload The Preview Build
+        if: ${{ !matrix.release }}
+        uses: actions/upload-artifact@v4
         with:
-          files: |
-            ${{ steps.artifact.outputs.path }}
-            ${{ steps.updatefile.outputs.sig }}
-            ${{ steps.updatefile.outputs.path }}
-          fail_on_unmatched_files: false
+          name: preview-desktop-${{ matrix.os }}
+          path: ${{ steps.artifact.outputs.path }}
+          if-no-files-found: error
+          retention-days: 14

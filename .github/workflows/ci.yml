@@ -200,3 +200,29 @@ jobs:
       # which a normal test run can detect.
       - name: Verify The Distributable Actually Runs
         run: python tools/verify_package.py
+
+      # The release gate, run on every pull request. It was only ever run on a
+      # tag, so when the security gate started refusing its bare test client,
+      # nothing went red until the release itself could not publish.
+      # Pillow's Windows wheels load FriBiDi at run time and do not ship it;
+      # without it raqm is off and Hindi and Gujarati overlays are left off
+      # generated images (R7-N1). vcpkg is preinstalled on Windows runners and
+      # builds it from source; the builder copies the DLL and its LGPL licence
+      # beside python.exe and refuses a runtime where raqm does not load.
+      - name: Build FriBiDi For Complex Text Layout
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install fribidi:x64-windows
+          $dll = Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows\bin" -Filter "*fribidi*.dll" | Select-Object -First 1
+          if (-not $dll) { throw "vcpkg did not produce a FriBiDi DLL" }
+          "INOX_FRIBIDI_DLL=$($dll.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "FriBiDi: $($dll.FullName)"
+
+      - name: Build The Portable Artifact
+        run: |
+          pip install -r requirements.txt
+          python tools/build_portable.py
+
+      - name: Smoke Test The Portable Artifact
+        shell: bash
+        run: python tools/smoke_portable.py

@@ -60,16 +60,22 @@ Usage:
 
 Strict Invariants:
 - Zero em-dashes.
-- The building interpreter must match the embedded runtime's version, because
-  compiled wheels are ABI specific.
+- The building interpreter must match the embedded runtime's major and minor
+  version, because compiled wheels are ABI specific. fetch_runtime refuses a
+  mismatch, and assert_runtime_self_contained checks the staged interpreter.
+- No fallback runtime. A runtime that cannot be fetched and verified stops the
+  build; it is never assembled from the build machine's own Python.
 """
 
+import hashlib
+import json
 import os
 import platform
 import shutil
 import subprocess
 import sys
 import tarfile
+import tempfile
 import urllib.request
 import zipfile
 
@@ -83,6 +89,19 @@ EMBED_URL = (
     f"https://www.python.org/ftp/python/{PYTHON_VERSION}/"
     f"python-{PYTHON_VERSION}-embed-amd64.zip"
 )
+
+# macOS and Linux ship python-build-standalone's relocatable CPython, pinned to
+# one exact build. The release tag and the Python version together name a file,
+# so both are fixed here rather than taken from the runner: the old pair
+# (release 20241016 with the runner's patch version) named a file that exists
+# only for 3.13.0, and every later patch fell back to copying the build
+# machine's interpreter without its standard library.
+#
+# Bump both together, to a pair the release really contains, and the
+# python-version pin in release.yml and desktop.yml with them.
+STANDALONE_PYTHON = "3.13.15"
+STANDALONE_RELEASE = "20260929"
+STANDALONE_BASE_URL = "https://github.com/astral-sh/python-build-standalone/releases/download"
 
 # Directories under studio/ that hold the BUILDER's own state rather than the
 # product. In a source checkout paths.get_app_home() resolves to studio/,
@@ -202,7 +221,7 @@ cd /d "%~dp0"
 
 echo ==========================================================
 echo   Inox Hydra - Local Creator Engine
-echo   100%% local. Zero cloud egress. Port 8000.
+echo   Runs on this computer, on port 8000 when it is free.
 echo ==========================================================
 echo.
 
@@ -213,28 +232,19 @@ echo.
 :: the annotation ledger visible to a paying creator.
 set INOX_DEV_MODE=
 
-:: Already running? Reuse the existing server rather than starting a second.
-powershell -NoProfile -Command "$c = Test-NetConnection -ComputerName 127.0.0.1 -Port 8000 -InformationLevel Quiet -WarningAction SilentlyContinue; if ($c) { exit 0 } else { exit 1 }" >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-    echo [*] Already running on http://127.0.0.1:8000
-) else (
-    echo [*] Starting local engine...
-    start /min "Inox Hydra Engine" "%~dp0runtime\python.exe" -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000
-    timeout /t 4 /nobreak >nul
+:: Everything else is decided by the studio itself (studio\backend\desktop.py):
+:: whether the program on port 8000 is really Inox Hydra, a free port when it
+:: is not, an engine that is answering before any window opens, and a plain
+:: message, with the engine log, when it is not. Batch used to decide this, and
+:: treated any program on the port as the studio and a fixed wait as started.
+"%~dp0runtime\python.exe" -s -m studio.backend.desktop launch
+
+:: Anything but a clean start on port 8000 leaves this window open, so its
+:: message can be read.
+if errorlevel 1 (
+    echo.
+    pause
 )
-
-set CHROME="C:\Program Files\Google\Chrome\Application\chrome.exe"
-if not exist %CHROME% set CHROME="C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
-
-if exist %CHROME% (
-    echo [*] Opening the studio...
-    start "" %CHROME% --app="http://127.0.0.1:8000" --window-size=1440,920
-) else (
-    echo [*] Chrome not found. Opening your default browser instead.
-    start http://127.0.0.1:8000
-)
-
-echo [*] Ready.
 exit /b 0
 """
 
@@ -259,61 +269,26 @@ if "%~1"=="" (
 UNIX_LAUNCHER = r"""#!/usr/bin/env bash
 # ==========================================================
 #   Inox Hydra - Local Creator Engine
-#   100% local. Zero cloud egress. Port 8000.
+#   Runs on this computer, on port 8000 when it is free.
 # ==========================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-export INOX_DEV_MODE=""
+unset INOX_DEV_MODE
 
-# Already running? Reuse existing server
-SERVER_RUNNING=0
-if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 8000 >/dev/null 2>&1; then
-    SERVER_RUNNING=1
-elif command -v curl >/dev/null 2>&1 && curl -s http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
-    SERVER_RUNNING=1
+# The bundled interpreter only. Falling back to a python3 on PATH would run
+# the studio on whatever Python this machine has, without its dependencies.
+PYTHON_EXE="$SCRIPT_DIR/runtime/bin/python3"
+if [ ! -x "$PYTHON_EXE" ]; then
+    echo "[!] The bundled Python is missing at $PYTHON_EXE."
+    echo "    Extract the whole archive again, keeping the runtime folder."
+    exit 1
 fi
 
-if [ "$SERVER_RUNNING" -eq 1 ]; then
-    echo "[*] Already running on http://127.0.0.1:8000"
-else
-    echo "[*] Starting local engine..."
-    PYTHON_EXE="$SCRIPT_DIR/runtime/bin/python3"
-    if [ ! -x "$PYTHON_EXE" ]; then
-        PYTHON_EXE="$SCRIPT_DIR/runtime/python"
-    fi
-    if [ ! -x "$PYTHON_EXE" ]; then
-        PYTHON_EXE="python3"
-    fi
-    nohup "$PYTHON_EXE" -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000 >/dev/null 2>&1 &
-    sleep 3
-fi
-
-# Open browser
-BROWSER=""
-for b in google-chrome google-chrome-stable chromium chromium-browser brave-browser brave; do
-    if command -v "$b" >/dev/null 2>&1; then
-        BROWSER="$b"
-        break
-    fi
-done
-
-if [ -n "$BROWSER" ]; then
-    echo "[*] Opening the studio in app mode..."
-    nohup "$BROWSER" --app="http://127.0.0.1:8000" --window-size=1440,920 >/dev/null 2>&1 &
-elif command -v xdg-open >/dev/null 2>&1; then
-    echo "[*] Opening default browser via xdg-open..."
-    xdg-open http://127.0.0.1:8000 >/dev/null 2>&1 &
-elif command -v open >/dev/null 2>&1; then
-    echo "[*] Opening default browser via open (macOS)..."
-    open http://127.0.0.1:8000 >/dev/null 2>&1 &
-else
-    echo "[*] Studio running at http://127.0.0.1:8000"
-fi
-
-echo "[*] Ready."
-exit 0
+# Port, readiness, the engine log and the window are decided by the studio
+# itself (studio/backend/desktop.py), the same rule on every platform.
+exec "$PYTHON_EXE" -s -m studio.backend.desktop launch
 """
 
 UNIX_CLI_LAUNCHER = r"""#!/usr/bin/env bash
@@ -330,9 +305,9 @@ if [ ! -x "$PYTHON_EXE" ]; then
 fi
 
 if [ "$#" -eq 0 ]; then
-    exec "$PYTHON_EXE" -m studio.cli --help
+    exec "$PYTHON_EXE" -s -m studio.cli --help
 else
-    exec "$PYTHON_EXE" -m studio.cli "$@"
+    exec "$PYTHON_EXE" -s -m studio.cli "$@"
 fi
 """
 
@@ -345,7 +320,9 @@ QUICK START
    "Unblock" near the bottom, then click OK. See the next section for why.
 2. Extract the folder anywhere you like. A USB stick is fine.
 3. Double click InoxHydra.bat.
-4. The studio opens in its own window.
+4. The launcher starts the studio, waits until it answers, then opens it: in a
+   Chrome app window if Google Chrome is installed, otherwise in your default
+   browser. If anything stops it, the launcher window stays open and says why.
 
 No Python installation is required. Nothing is sent to any server.
 
@@ -355,9 +332,8 @@ IF WINDOWS BLOCKS IT
 This is expected, and it is not a sign that anything is wrong.
 
 Windows attaches a "downloaded from the internet" mark to every file inside a
-ZIP you download. This software is not code signed, because a signing
-certificate costs several hundred dollars a year and this is a local tool that
-never talks to a server. So Windows treats it with suspicion.
+ZIP you download, and this build is not code signed yet. So Windows treats it
+with suspicion.
 
 What you may see, and what to do:
 
@@ -380,9 +356,17 @@ application is plain Python source under app\\studio\\, readable in Notepad.
 
 IF IT STILL WILL NOT START
 --------------------------
-  Something else is using port 8000
-      Close the other application, or close any earlier copy of Inox Hydra
-      still running in the background, then try again.
+  "Port 8000 is in use by another program"
+      The launcher checks that the program on port 8000 really is Inox Hydra.
+      When it is not, the studio starts on the next free port (8001 to 8009)
+      and the launcher says which. The browser extension only connects on port
+      8000, so to capture leads and analytics, close the other program, close
+      the "Inox Hydra Engine" window, and start InoxHydra.bat again.
+
+  "The studio engine stopped while it was starting"
+      The launcher shows the last lines of the engine's log, and the path of
+      the whole log (logs\\engine.log in the data folder below). Send that file
+      with the report described under "Anything else".
 
   Chrome is not installed
       Not a problem. The studio opens in your default browser instead. It will
@@ -430,12 +414,14 @@ Your data is untouched, and any database schema changes are applied
 automatically on first launch.
 
 
-CHROME EXTENSION
-----------------
-The extension/ folder contains the browser bridge. Install it from the Chrome
-Web Store link in the documentation rather than loading it unpacked. Recent
-Chrome versions disable unpacked and sideloaded extensions after a browser
-update, so a store install is the only version that keeps working.
+BROWSER EXTENSION
+-----------------
+The extension\\ folder contains the browser bridge that captures leads and
+analytics. It is not in a browser store yet. Open the studio's Docs screen and
+follow "Install the browser extension that captures leads and analytics": the
+studio's Setup screen can open Edge or Brave with it loaded, or you can load
+this folder yourself with Developer mode. Keep this folder where it is: the
+browser loads the extension from it.
 
 
 SUPPORT TOOLKIT
@@ -465,46 +451,35 @@ newer release exists. It never installs anything by itself.
 """
 
 
+UNIX_README = """Inox Hydra (Portable, macOS and Linux preview)
+=======================================
+
+This is a preview build. The supported way to run the studio on macOS and
+Linux today is from source; see the project README.
+
+QUICK START
+-----------
+1. Extract the archive anywhere.
+2. Run ./InoxHydra.sh from a terminal in the extracted folder.
+3. The launcher starts the studio, waits until it answers, and opens it in
+   your browser. If anything stops it, it says why and where the log is.
+
+The studio uses port 8000. When another program holds it, the studio starts on
+the next free port (8001 to 8009) and the launcher says which. The browser
+extension only connects on port 8000.
+
+WHERE YOUR DATA LIVES
+---------------------
+macOS:  ~/Library/Application Support/InoxHydra
+Linux:  $XDG_DATA_HOME/inox-hydra, or ~/.local/share/inox-hydra
+
+Run ./InoxHydra-CLI.sh with no arguments to list the support commands
+(backup, restore, export, doctor).
+"""
+
+
 def log(step, message):
     print(f"[{step}] {message}")
-
-
-def _synthesize_local_runtime_archive(target_archive):
-    """
-    Assembles a portable standalone runtime from the building interpreter.
-    Used when downloading is skipped or unavailable on macOS and Linux.
-    """
-    import tempfile
-    staging = tempfile.mkdtemp(prefix="inox_runtime_")
-    try:
-        bin_dir = os.path.join(staging, "bin")
-        os.makedirs(bin_dir, exist_ok=True)
-        py_target = os.path.join(bin_dir, "python3")
-        shutil.copy2(sys.executable, py_target)
-        try:
-            os.chmod(py_target, 0o755)
-        except OSError:
-            pass
-
-        py_ver = f"python{sys.version_info.major}.{sys.version_info.minor}"
-        src_lib = os.path.join(sys.prefix, "lib", py_ver)
-        dst_lib = os.path.join(staging, "lib", py_ver)
-        if os.path.isdir(src_lib):
-            shutil.copytree(
-                src_lib, dst_lib,
-                ignore=shutil.ignore_patterns("site-packages", "test", "tests", "__pycache__", "*.pyc"),
-            )
-        else:
-            os.makedirs(dst_lib, exist_ok=True)
-
-        os.makedirs(os.path.join(dst_lib, "site-packages"), exist_ok=True)
-
-        with tarfile.open(target_archive, "w:gz") as tar:
-            for item in os.listdir(staging):
-                tar.add(os.path.join(staging, item), arcname=item)
-        log("runtime", f"synthesized runtime archive ({os.path.getsize(target_archive):,} bytes)")
-    finally:
-        shutil.rmtree(staging, ignore_errors=True)
 
 
 def extract_runtime(archive_path, runtime_dir):
@@ -520,7 +495,6 @@ def extract_runtime(archive_path, runtime_dir):
                 for m in members if m.name
             )
             if has_single_root:
-                import tempfile
                 tmp = tempfile.mkdtemp(prefix="inox_extract_")
                 try:
                     t.extractall(tmp)
@@ -554,16 +528,80 @@ def get_runtime_interpreter(runtime_dir):
     return os.path.join(runtime_dir, "bin", "python3")
 
 
+def standalone_runtime_name(system, machine):
+    """The python-build-standalone archive for this platform, at the pinned build."""
+    arch = "aarch64" if machine.lower() in ("arm64", "aarch64") else "x86_64"
+    target = "apple-darwin" if system == "Darwin" else "unknown-linux-gnu"
+    return f"cpython-{STANDALONE_PYTHON}+{STANDALONE_RELEASE}-{arch}-{target}-install_only.tar.gz"
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _download_verified(url, sums_url, name, target):
+    """
+    Downloads one archive and checks it against its release's SHA256SUMS.
+
+    Anything short of a verified file stops the build and leaves nothing in the
+    cache, so a truncated or substituted download cannot be picked up by the
+    next build as "using cached".
+    """
+    partial = target + ".partial"
+    sums = target + ".SHA256SUMS"
+    try:
+        log("runtime", f"downloading {url}")
+        urllib.request.urlretrieve(url, partial)
+        urllib.request.urlretrieve(sums_url, sums)
+        with open(sums, encoding="utf-8") as handle:
+            published = {
+                parts[1].lstrip("*"): parts[0].lower()
+                for parts in (line.split() for line in handle) if len(parts) == 2
+            }
+        expected = published.get(name)
+        if not expected:
+            raise SystemExit(f"REFUSING TO BUILD. {name} is not listed in {sums_url}")
+        actual = _sha256(partial)
+        if actual != expected:
+            raise SystemExit(
+                f"REFUSING TO BUILD. {name} does not match its published checksum "
+                f"(expected {expected}, downloaded {actual})."
+            )
+        os.replace(partial, target)
+        log("runtime", f"downloaded and verified {os.path.getsize(target):,} bytes, sha256 {actual}")
+        return target
+    except SystemExit:
+        raise
+    except Exception as err:
+        raise SystemExit(
+            f"REFUSING TO BUILD. The runtime could not be downloaded ({err}). "
+            f"Nothing falls back to the build machine's Python. URL: {url}"
+        )
+    finally:
+        for leftover in (partial, sums):
+            if os.path.exists(leftover):
+                os.remove(leftover)
+
+
 def fetch_runtime(skip_download=False):
     """
-    Downloads or stages an embeddable or standalone CPython distribution,
-    caching it between builds in build_artifacts/runtime_cache.
+    Downloads an embeddable or standalone CPython distribution, caching it
+    between builds in build_artifacts/runtime_cache.
 
-    On Windows: downloads python-{version}-embed-amd64.zip from python.org.
-    On macOS: downloads python-build-standalone for apple-darwin.
-    On Linux: downloads python-build-standalone for unknown-linux-gnu.
-    When offline or skip_download is passed without a cache, assembles an
-    isolated runtime from the building interpreter.
+    On Windows: python-{version}-embed-amd64.zip from python.org, at the
+    building interpreter's own version.
+    On macOS and Linux: the pinned python-build-standalone build, verified
+    against its release's SHA256SUMS.
+
+    There is no fallback. When the runtime cannot be fetched, or
+    --skip-download is passed without a cached copy, the build stops. It used
+    to assemble a "runtime" from the building interpreter, which in a virtual
+    environment meant a binary with no standard library that only ran on the
+    machine that built it.
     """
     os.makedirs(CACHE_DIR, exist_ok=True)
     system = platform.system()
@@ -580,41 +618,194 @@ def fetch_runtime(skip_download=False):
         log("runtime", f"downloaded {os.path.getsize(cached):,} bytes")
         return cached
 
-    machine = platform.machine().lower()
-    arch_tag = "aarch64" if machine in ("arm64", "aarch64") else "x86_64"
-
-    if system == "Darwin":
-        archive_name = f"cpython-{PYTHON_VERSION}-{arch_tag}-apple-darwin.tar.gz"
-        url = (
-            f"https://github.com/astral-sh/python-build-standalone/releases/download/"
-            f"20241016/cpython-{PYTHON_VERSION}+20241016-{arch_tag}-apple-darwin-install_only.tar.gz"
-        )
-    else:
-        archive_name = f"cpython-{PYTHON_VERSION}-{arch_tag}-unknown-linux-gnu.tar.gz"
-        url = (
-            f"https://github.com/astral-sh/python-build-standalone/releases/download/"
-            f"20241016/cpython-{PYTHON_VERSION}+20241016-{arch_tag}-unknown-linux-gnu-install_only.tar.gz"
+    # Compiled wheels are vendored by the building interpreter, so it and the
+    # runtime have to agree on major and minor, or nothing in lib/ imports.
+    builder = f"{sys.version_info.major}.{sys.version_info.minor}"
+    pinned = ".".join(STANDALONE_PYTHON.split(".")[:2])
+    if builder != pinned:
+        raise SystemExit(
+            f"REFUSING TO BUILD. The build interpreter is Python {builder} and the bundled "
+            f"runtime is {STANDALONE_PYTHON}. Compiled wheels are ABI specific: build with "
+            f"Python {pinned}, or move STANDALONE_PYTHON and STANDALONE_RELEASE together."
         )
 
-    cached = os.path.join(CACHE_DIR, archive_name)
+    name = standalone_runtime_name(system, platform.machine())
+    cached = os.path.join(CACHE_DIR, name)
     if os.path.exists(cached) and os.path.getsize(cached) > 0:
-        log("runtime", f"using cached {os.path.basename(cached)}")
+        log("runtime", f"using cached {name}")
         return cached
 
     if skip_download:
-        log("runtime", f"--skip-download passed. Assembling standalone runtime from {sys.prefix}")
-        _synthesize_local_runtime_archive(cached)
-        return cached
+        raise SystemExit(
+            f"--skip-download was passed but no cached runtime exists at {cached}. "
+            "Nothing falls back to the build machine's Python."
+        )
 
+    base = f"{STANDALONE_BASE_URL}/{STANDALONE_RELEASE}"
+    return _download_verified(f"{base}/{name.replace('+', '%2B')}", f"{base}/SHA256SUMS", name, cached)
+
+
+# Run by the staged interpreter, from an unrelated folder, with nothing in the
+# environment that could point it back at the build machine's Python.
+_RUNTIME_PROBE = r"""
+import json, sys, encodings, sqlite3, ssl
+print(json.dumps({
+    "version": "%d.%d.%d" % sys.version_info[:3],
+    "base_prefix": sys.base_prefix,
+    "stdlib": encodings.__file__,
+}))
+"""
+
+
+def assert_runtime_self_contained(runtime_dir):
+    """
+    Refuses a runtime that only runs because the build machine has Python.
+
+    Runs the staged interpreter with a scrubbed environment from a temporary
+    folder and checks where it found its standard library. Copying a binary
+    out of a virtual environment produces one that reports a prefix under the
+    host's /usr; that is the case this exists for. Returns what was measured.
+    """
+    interpreter = get_runtime_interpreter(runtime_dir)
+    env = {k: v for k, v in os.environ.items()
+           if not k.upper().startswith("PYTHON") and k.upper() not in {"VIRTUAL_ENV", "CONDA_PREFIX"}}
+    if os.name == "nt":
+        system_root = os.environ.get("SystemRoot", r"C:\Windows")
+        env["PATH"] = os.pathsep.join([os.path.join(system_root, "System32"), system_root])
+    else:
+        env["PATH"] = "/usr/bin:/bin"
+    elsewhere = tempfile.mkdtemp(prefix="inox_runtime_probe_")
     try:
-        log("runtime", f"downloading standalone runtime from {url}")
-        urllib.request.urlretrieve(url, cached)
-        log("runtime", f"downloaded {os.path.getsize(cached):,} bytes")
-        return cached
-    except Exception as err:
-        log("runtime", f"download failed ({err}). Falling back to local interpreter runtime synthesis.")
-        _synthesize_local_runtime_archive(cached)
-        return cached
+        result = subprocess.run([interpreter, "-s", "-c", _RUNTIME_PROBE], cwd=elsewhere, env=env,
+                                capture_output=True, text=True, timeout=120)
+    except OSError as err:
+        raise SystemExit(f"REFUSING TO BUILD. The staged interpreter does not run: {err}")
+    finally:
+        shutil.rmtree(elsewhere, ignore_errors=True)
+    if result.returncode != 0:
+        raise SystemExit("REFUSING TO BUILD. The staged interpreter does not start on its own:\n"
+                         + (result.stderr or result.stdout)[-2000:])
+
+    report = json.loads(result.stdout.strip().splitlines()[-1])
+    root = os.path.normcase(os.path.realpath(runtime_dir))
+    borrowed = [label for label, path in (("prefix", report["base_prefix"]), ("standard library", report["stdlib"]))
+                if not os.path.normcase(os.path.realpath(path)).startswith(root)]
+    if borrowed:
+        raise SystemExit(
+            "REFUSING TO BUILD. The runtime is not self-contained: its "
+            + " and ".join(borrowed) + f" come from outside {runtime_dir} "
+            f"(prefix {report['base_prefix']}, standard library {report['stdlib']}). "
+            "It would run only on a machine that already has this Python."
+        )
+    builder = f"{sys.version_info.major}.{sys.version_info.minor}"
+    if not report["version"].startswith(builder + "."):
+        raise SystemExit(f"REFUSING TO BUILD. The runtime is Python {report['version']} and the "
+                         f"vendored wheels are for {builder}.")
+    log("runtime", f"self-contained Python {report['version']}, standard library inside runtime/")
+    return report
+
+
+# Pillow's Windows wheels include raqm, its complex text layout engine, and
+# load FriBiDi from the DLL search order at run time without shipping it. With
+# no FriBiDi, features.check("raqm") is False and the image studio leaves Hindi
+# and Gujarati overlays off generated images (R7-N1). Any of these names is
+# found; the application directory, beside python.exe, is searched first.
+FRIBIDI_NAMES = ("fribidi-0.dll", "libfribidi-0.dll", "fribidi.dll")
+
+
+def _scrubbed_env():
+    env = {k: v for k, v in os.environ.items()
+           if not k.upper().startswith("PYTHON") and k.upper() not in {"VIRTUAL_ENV", "CONDA_PREFIX"}}
+    if os.name == "nt":
+        system_root = os.environ.get("SystemRoot", r"C:\Windows")
+        env["PATH"] = os.pathsep.join([os.path.join(system_root, "System32"), system_root])
+    else:
+        env["PATH"] = "/usr/bin:/bin"
+    return env
+
+
+def bundle_fribidi(runtime_dir):
+    """
+    Copies a FriBiDi DLL, and its licence, beside the Windows python.exe.
+
+    The DLL comes from INOX_FRIBIDI_DLL (CI builds it with the runner's vcpkg:
+    `vcpkg install fribidi:x64-windows`), or from runtime_cache. FriBiDi is
+    LGPL-2.1, shipped as a separate replaceable DLL, so its licence ships with
+    it and a DLL with no licence beside it is refused. Off Windows, Pillow's
+    wheels carry FriBiDi themselves and nothing is copied.
+    """
+    if platform.system() != "Windows":
+        return None
+
+    source = os.environ.get("INOX_FRIBIDI_DLL", "").strip()
+    if not source:
+        source = next((os.path.join(CACHE_DIR, name) for name in FRIBIDI_NAMES
+                       if os.path.isfile(os.path.join(CACHE_DIR, name))), "")
+    if not source or not os.path.isfile(source):
+        raise SystemExit(
+            "REFUSING TO BUILD. No FriBiDi DLL for Pillow's complex text layout, so Hindi and "
+            "Gujarati overlays would be left off generated images. Build it with "
+            "`vcpkg install fribidi:x64-windows` and set INOX_FRIBIDI_DLL to the fribidi-0.dll it "
+            f"produces, or put one of {', '.join(FRIBIDI_NAMES)} in {CACHE_DIR}."
+        )
+
+    bin_dir = os.path.dirname(os.path.abspath(source))
+    licence = next((path for path in (
+        os.environ.get("INOX_FRIBIDI_LICENSE", "").strip(),
+        os.path.join(bin_dir, "..", "share", "fribidi", "copyright"),
+        os.path.join(bin_dir, "FRIBIDI-LICENSE.txt"),
+        os.path.join(bin_dir, "COPYING"),
+    ) if path and os.path.isfile(path)), None)
+    if not licence:
+        raise SystemExit(
+            f"REFUSING TO BUILD. {source} has no licence beside it. FriBiDi is LGPL-2.1 and its "
+            "licence ships with the DLL; set INOX_FRIBIDI_LICENSE to its COPYING file."
+        )
+
+    target = os.path.join(runtime_dir, os.path.basename(source))
+    shutil.copy2(source, target)
+    shutil.copy2(licence, os.path.join(runtime_dir, "FRIBIDI-LICENSE.txt"))
+    log("runtime", f"bundled {os.path.basename(source)} for complex text layout, with its licence")
+    return target
+
+
+_TEXT_LAYOUT_PROBE = r"""
+import json
+from PIL import features
+try:
+    fribidi = features.version("fribidi")
+except Exception:
+    fribidi = None
+print(json.dumps({"raqm": bool(features.check("raqm")), "fribidi": fribidi}))
+"""
+
+
+def assert_complex_text_layout(runtime_dir):
+    """
+    Asks the bundled runtime, with lib/ vendored, whether Pillow's raqm loads.
+
+    Required on Windows, where the DLL is ours to ship; reported elsewhere.
+    """
+    interpreter = get_runtime_interpreter(runtime_dir)
+    elsewhere = tempfile.mkdtemp(prefix="inox_text_layout_probe_")
+    try:
+        result = subprocess.run([interpreter, "-s", "-c", _TEXT_LAYOUT_PROBE], cwd=elsewhere,
+                                env=_scrubbed_env(), capture_output=True, text=True, timeout=120)
+    finally:
+        shutil.rmtree(elsewhere, ignore_errors=True)
+    if result.returncode != 0:
+        raise SystemExit("REFUSING TO BUILD. Pillow does not import in the bundled runtime:\n"
+                         + (result.stderr or result.stdout)[-2000:])
+    report = json.loads(result.stdout.strip().splitlines()[-1])
+    if platform.system() == "Windows" and not report["raqm"]:
+        raise SystemExit(
+            "REFUSING TO BUILD. PIL.features.check('raqm') is False in the bundled runtime, so "
+            "Hindi and Gujarati overlays would be left off generated images. The FriBiDi DLL "
+            "beside python.exe did not load."
+        )
+    log("runtime", f"complex text layout: raqm {'on' if report['raqm'] else 'OFF'}, "
+                   f"fribidi {report['fribidi'] or 'not found'}")
+    return report
 
 
 def write_path_file(runtime_dir):
@@ -680,11 +871,12 @@ def write_path_file(runtime_dir):
         with open(sc_path, "w", encoding="utf-8", newline="\n") as f:
             f.write(sc_content)
 
-        cfg_path = os.path.join(runtime_dir, "pyvenv.cfg")
-        if not os.path.exists(cfg_path):
-            with open(cfg_path, "w", encoding="utf-8", newline="\n") as f:
-                f.write(f"home = .\ninclude-system-site-packages = false\nversion = {PYTHON_VERSION}\n")
-
+        # No pyvenv.cfg. A standalone runtime finds its own library next to its
+        # binary. The "home = ." this wrote was read relative to the working
+        # directory, so where the launcher was started from decided where the
+        # interpreter looked ("Could not find platform dependent libraries").
+        # The user site that it also switched off is kept out by -s on every
+        # command line that starts this interpreter.
         log("runtime", f"configured Unix runtime paths in {os.path.relpath(target_sp, runtime_dir)}")
 
 
@@ -693,7 +885,8 @@ def vendor_dependencies(lib_dir):
     Installs runtime dependencies into lib/ as a flat directory.
 
     Uses the building interpreter, so the compiled wheels match the embedded
-    runtime's ABI. main() asserts those versions agree before we get here.
+    runtime's ABI. fetch_runtime refuses a runtime of another major or minor
+    version, and assert_runtime_self_contained checks the staged one.
     """
     log("deps", "installing runtime dependencies into lib/")
     result = subprocess.run(
@@ -736,8 +929,28 @@ def assert_help_shipped(studio_dir):
         )
 
 
+def assert_interface_built(studio_dir):
+    """
+    Refuses an artifact whose window would open on a 503 instead of the studio.
+
+    studio/frontend_next is gitignored, and the server has no fallback page, so
+    a checkout that skipped `npm run build` copies cleanly and ships a product
+    that answers "The studio interface has not been built". The desktop
+    workflow did exactly that for every installer. Both channels copy the
+    application through copy_application, so the check sits here once.
+    """
+    index = os.path.join(studio_dir, "frontend_next", "index.html")
+    if not os.path.isfile(index):
+        raise SystemExit(
+            "REFUSING TO BUILD. The studio interface is missing from the artifact "
+            f"({os.path.relpath(index, os.path.dirname(studio_dir))}). Run "
+            "`npm --prefix studio/ui ci` and `npm --prefix studio/ui run build` first."
+        )
+
+
 def copy_application(app_dir):
     """Copies the studio package, excluding user state, tests, caches and secrets."""
+    assert_interface_built(os.path.join(REPO_ROOT, "studio"))
     target = os.path.join(app_dir, "studio")
     shutil.copytree(
         os.path.join(REPO_ROOT, "studio"), target,
@@ -758,6 +971,7 @@ def copy_application(app_dir):
     )
     assert_no_secrets(target)
     assert_help_shipped(target)
+    assert_interface_built(target)
     log("app", f"copied studio package, {sum(len(f) for _, _, f in os.walk(target))} files")
     return target
 
@@ -768,7 +982,8 @@ def main():
     if platform.system() == "Windows":
         platform_tag = "win64"
     elif platform.system() == "Darwin":
-        platform_tag = "darwin-universal"
+        # One architecture per build: the runtime is the runner's, not universal.
+        platform_tag = f"macos-{platform.machine()}"
     else:
         platform_tag = f"linux-{platform.machine()}"
 
@@ -803,10 +1018,13 @@ def main():
         except OSError:
             pass
     write_path_file(runtime_dir)
+    assert_runtime_self_contained(runtime_dir)
 
     lib_dir = os.path.join(staging, "lib")
     os.makedirs(lib_dir)
     vendor_dependencies(lib_dir)
+    bundle_fribidi(runtime_dir)
+    assert_complex_text_layout(runtime_dir)
 
     app_dir = os.path.join(staging, "app")
     os.makedirs(app_dir)
@@ -842,7 +1060,7 @@ def main():
         os.chmod(sh_shortcut, 0o755)
 
     with open(os.path.join(staging, "README.txt"), "w", encoding="utf-8", newline="\r\n") as f:
-        f.write(README)
+        f.write(README if platform.system() == "Windows" else UNIX_README)
 
     shutil.copy2(os.path.join(REPO_ROOT, "create_desktop_shortcut.vbs"), staging)
     shutil.copy2(os.path.join(REPO_ROOT, "LICENSE"), staging)

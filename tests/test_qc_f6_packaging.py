@@ -36,12 +36,15 @@ def test_the_update_check_reads_the_latest_release_not_a_branch():
 def test_every_release_carries_the_manifest_the_check_reads():
     with open(os.path.join(REPO_ROOT, ".github", "workflows", "release.yml"), encoding="utf-8") as handle:
         workflow = handle.read()
-    attach = workflow[workflow.index("Attach To GitHub Release"):]
-    files = attach[attach.index("files:"):attach.index("generate_release_notes")]
-    assert "release/latest.json" in files, "the release does not attach latest.json"
-    assert re.search(r"dist/portable/\*\.zip", files)
-    step = attach[:attach.index("body:")]
-    assert re.search(r"fail_on_unmatched_files:\s*true", step), "a release without latest.json would still publish"
+    # The portable job hands latest.json to the one publish job with the ZIP,
+    # and the publish job refuses to start a release without it (INS-04).
+    gather = workflow[workflow.index("Gather The Release Files"):workflow.index("Upload Build Artifact")]
+    assert "release/latest.json" in gather, "the release does not carry latest.json"
+    assert re.search(r"dist/portable/\*\.zip", gather)
+    check = workflow[workflow.index("Check The Asset Set Is Complete"):workflow.index("Write The Release Notes")]
+    assert '[ -f "latest.json" ] || missing+=' in check and "exit 1" in check, (
+        "a release without latest.json would still publish"
+    )
 
 
 # ---------------------------------------------------------------------------

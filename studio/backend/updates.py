@@ -8,9 +8,10 @@ caching so an unchanged file transfers zero bytes and costs zero dollars.
 Two rules govern this module, and they are not negotiable:
 
   1. **Off by default.** A product whose headline promise is zero cloud egress
-     cannot quietly contact a server. The user is asked once, the answer is
-     stored, and the answer is honoured. Disabled means no request is made, not
-     that the result is hidden.
+     cannot quietly contact a server. Checks stay off until the user turns them
+     on (`update enable` today; no screen asks yet), the answer is stored, and
+     the answer is honoured. Disabled means no request is made, not that the
+     result is hidden.
 
   2. **It reports, it never acts.** This module returns a version string and a
      link. It does not download, unpack, execute, or modify anything. A failed
