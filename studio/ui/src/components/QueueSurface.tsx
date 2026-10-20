@@ -411,7 +411,7 @@ function WeeklySlots({ slots, onChanged }: { slots: QueueSlot[]; onChanged: () =
             {slots.map((slot) => {
               const value = edited(slot);
               const changed = value.time !== slot.time_slot || value.label !== (slot.label ?? "");
-              const name = `${DAY_NAMES[slot.day_of_week]} ${formatSlotTime(slot.time_slot)}`;
+              const name = `${DAY_NAMES[slot.day_of_week]} ${slot.time_slot}`;
               return (
                 <li key={slot.id} className="flex flex-wrap items-center gap-2 py-2">
                   <span className="w-24 shrink-0 text-[12px] text-ink-primary">{DAY_NAMES[slot.day_of_week]}</span>

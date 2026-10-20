@@ -200,7 +200,10 @@ export function LeadsSurface({ focus = null }: { focus?: SearchFocus | null } = 
             aria-label="Find a lead"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Name, company, headline or notes"
+            // The box holds 151 px at this width; the notes are searched too,
+            // which the tooltip says (R3 search, R5 fit).
+            placeholder="Name, company, headline"
+            title="Searches each lead's name, company, headline and notes"
             className="min-w-0 flex-1 rounded-md border border-edge bg-ink px-2.5 py-1 text-[12px] text-ink-primary placeholder:text-ink-muted focus:border-edge-strong focus:outline-none"
           />
           <select
