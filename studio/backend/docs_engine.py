@@ -35,8 +35,11 @@ MAX_DOCS_SEARCH_QUERY_LENGTH = 300
 
 # Words are stemmed, so "folds" and "folding" find "fold", and "folder" does
 # not, because it stems to itself. See search_docs_fts for why this replaced
-# prefix matching on every word.
-DOCS_TOKENIZER = "porter unicode61"
+# prefix matching on every word. Accents are removed the way universal
+# search removes them (remove_diacritics 2 also folds letters with more than
+# one mark, which the default 1 kept), so the help and the rest of the
+# palette agree on what a folded word is.
+DOCS_TOKENIZER = "porter unicode61 remove_diacritics 2"
 
 
 # The signature of the corpus the live index was built from.
@@ -191,7 +194,7 @@ def init_docs_search_index(conn: Optional[sqlite3.Connection] = None, docs_dir: 
             definition = cur.execute(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name='docs_index'"
             ).fetchone()
-            stemmed = bool(definition and DOCS_TOKENIZER.split()[0] in str(definition[0]).lower())
+            stemmed = bool(definition and DOCS_TOKENIZER in str(definition[0]).lower())
             if not {"filename", "section", "content"}.issubset(existing) or not stemmed:
                 cur.execute("DROP TABLE IF EXISTS docs_index")
 
@@ -533,6 +536,14 @@ def document_library(docs_dir=None):
     if not os.path.isdir(target_dir):
         return []
 
+    # Every search lists the library to name its hits, and describing 78
+    # files took 16 ms of each one. Kept until a file's size or time moves,
+    # the same gate corpus_signature uses.
+    key = (os.path.abspath(target_dir), corpus_stat(target_dir))
+    cached = _library_cache.get(key[0])
+    if cached and cached[0] == key[1]:
+        return [dict(entry) for entry in cached[1]]
+
     entries = []
     seen = set()
     for root, _, files in os.walk(target_dir):
@@ -552,7 +563,11 @@ def document_library(docs_dir=None):
             entries.append(described)
 
     entries.sort(key=lambda entry: (entry["folder"], entry["path"]))
+    _library_cache[key[0]] = (key[1], [dict(entry) for entry in entries])
     return entries
+
+
+_library_cache: Dict[str, Any] = {}
 
 
 # ---------------------------------------------------------------------------
