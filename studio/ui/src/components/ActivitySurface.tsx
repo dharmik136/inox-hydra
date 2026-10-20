@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  Activity,
   ArrowUpRight,
   Check,
   Copy,
+  Download,
   ExternalLink,
   Loader2,
   Radio,
@@ -83,7 +83,7 @@ export function ActivitySurface({
       setSyncNotice(response.message);
       await loadData();
     } catch (err) {
-      setSyncNotice(err instanceof Error ? err.message : "Sync could not be started.");
+      setSyncNotice(err instanceof Error ? err.message : "The import could not be started.");
     } finally {
       setSyncing(false);
     }
@@ -185,7 +185,7 @@ export function ActivitySurface({
                 className={cn("size-1.5 rounded-full", bridgeOnline ? "bg-signal-green" : "bg-ink-muted")}
                 aria-hidden="true"
               />
-              {bridgeOnline ? "Bridge running" : "Bridge idle"}
+              {bridgeOnline ? "Bridge connected" : "Bridge not connected"}
             </span>
           </div>
           <h1 className="studio-title mt-1.5">What the bridge has read</h1>
@@ -255,7 +255,7 @@ export function ActivitySurface({
             </div>
             {summary.active_sync_chain && (
               <p className="mt-1 text-[11px] text-signal-orange-text">
-                Sync in progress: step {summary.active_sync_chain.current_index + 1} of{" "}
+                Import in progress: step {summary.active_sync_chain.current_index + 1} of{" "}
                 {summary.active_sync_chain.sequence.length} ({summary.active_sync_chain.sequence[summary.active_sync_chain.current_index]})
               </p>
             )}
@@ -273,9 +273,9 @@ export function ActivitySurface({
             {syncing ? (
               <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
             ) : (
-              <Activity className="size-3.5" strokeWidth={2} aria-hidden="true" />
+              <Download className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
             )}
-            <span>Sync All Activity</span>
+            <span>Import your history</span>
           </button>
         </div>
       </section>
@@ -372,7 +372,7 @@ export function ActivitySurface({
           <div className="flex flex-col divide-y divide-edge border-y border-edge">
             {stream.recent_posts.length === 0 ? (
               <p className="py-8 text-center text-[12px] text-ink-muted">
-                No authored posts have been loaded yet. Run a sync or browse your posts in LinkedIn to ingest.
+                None of your posts have been read yet. Press Import your history, or open your posts on LinkedIn in the bridge browser.
               </p>
             ) : (
               stream.recent_posts.map((post) => (

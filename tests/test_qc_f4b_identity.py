@@ -252,11 +252,11 @@ def test_the_import_all_button_is_described_in_the_help():
     with open(HELP, encoding="utf-8") as handle:
         help_text = handle.read()
     assert "Automates sequential ingestion" not in screen
-    assert "Import all three" in screen
+    assert "Import your history" in screen
     step_five = help_text.split("## 5. Your history")[1].split("\n## ")[0]
-    assert "**Import all three**" in step_five
+    assert "**Import your history**" in step_five
     assert "one after another" in step_five and "by itself" in step_five
-    assert "only after you click **Import**." not in step_five, "the note leaves out Import all three"
+    assert "only after you click **Import**." not in step_five, "the note leaves out Import your history"
 
 
 # ---------------------------------------------------------------------------

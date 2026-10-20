@@ -86,12 +86,14 @@ Click **Import**. The bridge browser opens that activity page, and the extension
 - Only an import of your posts that read to the end counts as your whole post history. Until one has, **Leads** never calls anyone "engaged only with other people's posts", and never offers to remove them on that ground. Posts from your archive count as yours too.
 - An import you asked for is picked up only within 30 minutes. After that its row reads **EXPIRED, CLICK IMPORT AGAIN**; click **Import** again.
 
-**Import all three** does the three imports one after another. It opens your posts page; when that import ends, the bridge moves to your comments page by itself, then to your reactions page, and scrolls each one the same way. The line under it reads, for example, "IMPORTING ONE AFTER ANOTHER: POSTS NOW, THEN COMMENTS AND REACTIONS", and the studio remembers where it is if it restarts. **Stop** on any page, leaving the page, or clicking one of the single **Import** buttons ends it. If no browser that can carry the bridge opens, nothing is imported and the step says why.
+**Import your history** does the three imports one after another. It is the same button, under the same name, on **Today** and on **Activity**. It opens your posts page; when that import ends, the bridge moves to your comments page by itself, then to your reactions page, and scrolls each one the same way. The line under it reads, for example, "IMPORTING ONE AFTER ANOTHER: POSTS NOW, THEN COMMENTS AND REACTIONS", and the studio remembers where it is if it restarts. **Stop** on any page, leaving the page, or clicking one of the single **Import** buttons ends it. If no browser that can carry the bridge opens, nothing is imported and the step says why.
 
 Your comments and reactions are kept as your own activity. They never become leads.
 
+When every step is ticked, a line under step 5 says Setup is done, with a **Go to Today** button.
+
 > [!NOTE]
-> Scrolling is the one thing the studio does on LinkedIn on your behalf, and only on your own activity pages, only after you click **Import** or **Import all three**. With **Import all three**, the bridge also moves from one of your activity pages to the next by itself. It reads what the page shows. The extension makes no requests to LinkedIn of its own.
+> Scrolling is the one thing the studio does on LinkedIn on your behalf, and only on your own activity pages, only after you click **Import** or **Import your history**. With **Import your history**, the bridge also moves from one of your activity pages to the next by itself. It reads what the page shows. The extension makes no requests to LinkedIn of its own.
 
 ## Check the capture is still working
 

@@ -879,7 +879,7 @@ export default function App() {
                   swapKey={swapKey}
                 />
               )}
-              {active === "setup" && <OnboardingSurface />}
+              {active === "setup" && <OnboardingSurface onOpenToday={() => navigate("today")} />}
               {active === "today" && (
                 <TodaySurface
                   onOpenSetup={() => navigate("setup")}

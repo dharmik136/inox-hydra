@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Activity, Check, CheckCheck, Copy, ExternalLink, Loader2 } from "lucide-react";
+import { Activity, CheckCheck, Copy, Download, ExternalLink, Loader2 } from "lucide-react";
 import {
   dismissDemoCleanupNotice,
   fetchToday,
@@ -79,7 +79,7 @@ export function TodaySurface({
       setNote({ text: res.message, at: "top", error: false });
       load();
     } catch (caught) {
-      setNote({ text: caught instanceof Error ? caught.message : "Sync could not be started.", at: "top", error: true });
+      setNote({ text: caught instanceof Error ? caught.message : "The import could not be started.", at: "top", error: true });
     } finally {
       setOpening(null);
     }
@@ -221,9 +221,13 @@ export function TodaySurface({
             {opening === "sync-all" ? (
               <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
             ) : (
-              <Check className="size-3.5" strokeWidth={2} aria-hidden="true" />
+              <Download className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
             )}
-            Sync Activity via Bridge
+            {/* One name for the one action, as on Setup and Activity. It
+                was "Sync Activity via Bridge" here, "Import all three" on
+                Setup and "Sync All Activity" on Activity, with a tick that
+                read as done on a button that starts work. */}
+            Import your history
           </button>
           {onOpenActivity && (
             <button

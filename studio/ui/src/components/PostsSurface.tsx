@@ -114,7 +114,7 @@ function noUsualReason(data: PostsInsights & Unmeasured): string {
   return (
     `No usual yet: ${unmeasured} of your posts older than ${data.settled_after_days} days have no reactions, ` +
     `comments or impressions recorded${archive ? ", because LinkedIn's archive does not include them" : ""}. ` +
-    `Run "Posts you wrote" in Setup so the bridge reads their figures.`
+    `Press Import your history in Setup so the bridge reads their figures.`
   );
 }
 
