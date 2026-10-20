@@ -676,6 +676,7 @@ HELP_SECTIONS = [
             "DEEP_QA_BRIEF.md",
             "quality/QUALITY_CYCLE_2026-10_PRD.md",
             "quality/BUG_REGISTER_2026-10.md",
+            "quality/CYCLE2_2026-10_PRD.md",
             "UI_CONVENTIONS.md",
             "ICON_SYSTEM.md",
             "UI_AGENT_WORKFLOW.md",
