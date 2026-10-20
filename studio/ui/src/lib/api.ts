@@ -1531,6 +1531,8 @@ export interface BackupArchive {
   modified: string;
   /** Whether the studio can restore it: a ZIP backup or a database copy. */
   restorable?: boolean;
+  /** "backup" for a ZIP of database and media, "database" for a database copy alone. */
+  kind?: string;
 }
 
 export interface BackupListing {
@@ -2751,6 +2753,8 @@ export interface RestoreOutcome {
   restoredFrom: string;
   safetyBackup: string | null;
   safetyNote: string;
+  /** People forgotten since the backup was made, forgotten again after it. */
+  forgottenAgain: number;
 }
 
 /**
@@ -2761,7 +2765,7 @@ export interface RestoreOutcome {
  * way names the safety backup.
  */
 export async function restoreBackup(name: string): Promise<RestoreOutcome> {
-  const data = await call<{ restored_from?: string; safety_backup?: string | null; safety_note?: string }>(
+  const data = await call<{ restored_from?: string; safety_backup?: string | null; safety_note?: string; forgotten_again?: number }>(
     "/api/v1/support/restore",
     { method: "POST", body: JSON.stringify({ name }) },
   );
@@ -2769,6 +2773,7 @@ export async function restoreBackup(name: string): Promise<RestoreOutcome> {
     restoredFrom: data.restored_from ?? name,
     safetyBackup: data.safety_backup ?? null,
     safetyNote: data.safety_note ?? "",
+    forgottenAgain: data.forgotten_again ?? 0,
   };
 }
 

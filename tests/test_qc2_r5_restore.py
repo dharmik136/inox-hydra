@@ -77,8 +77,8 @@ def test_the_restored_database_is_brought_up_to_this_build(client, monkeypatch):
     """A backup from an older build is migrated in place, so the running studio can read it."""
     archive = support.create_backup("manual")
     called = []
-    real = database.init_db
-    monkeypatch.setattr(database, "init_db", lambda: (called.append(1), real())[1])
+    real = app_module.init_db
+    monkeypatch.setattr(app_module, "init_db", lambda: (called.append(1), real())[1])
     assert client.post(ROUTE, json={"name": os.path.basename(archive)}).status_code == 200
     assert called, "the restored database was not brought up to the current schema"
     conn = sqlite3.connect(paths.get_db_path())
@@ -138,6 +138,80 @@ def test_a_failed_restore_names_the_safety_backup(client, monkeypatch):
     answer = client.post(ROUTE, json={"name": os.path.basename(archive)})
     assert answer.status_code == 500
     assert "inox_backup_pre_restore_x.zip" in answer.json()["detail"]
+
+
+def _lead(name):
+    from studio.backend.crm import reverse_crm
+
+    reverse_crm.ingest_interaction(full_name=name, linkedin_urn=f"https://www.linkedin.com/in/{name.lower()}-x",
+                                   headline="Engineer at Example", company="Example",
+                                   interaction_type="COMMENT", comment_text="Good one.")
+    conn = sqlite3.connect(paths.get_db_path())
+    try:
+        return conn.execute("SELECT id FROM leads WHERE full_name = ? OR name = ?", (name, name)).fetchone()[0]
+    finally:
+        conn.close()
+
+
+def _lead_ids():
+    conn = sqlite3.connect(paths.get_db_path())
+    try:
+        return {row[0] for row in conn.execute("SELECT id FROM leads")}
+    finally:
+        conn.close()
+
+
+def test_a_person_forgotten_since_the_backup_stays_forgotten(client):
+    """Review: restoring an older backup brought back someone forgotten after it was made."""
+    from studio.backend.crm import reverse_crm
+
+    kept, gone = _lead("Keptperson"), _lead("Goneperson")
+    archive = support.create_backup("manual")
+    assert reverse_crm.purge_lead(gone)["lead_deleted"]
+
+    answer = client.post(ROUTE, json={"name": os.path.basename(archive)})
+    assert answer.status_code == 200, answer.text
+    assert answer.json()["forgotten_again"] == 1, answer.json()
+    assert gone not in _lead_ids(), "the restore brought back a person forgotten since the backup"
+    assert kept in _lead_ids()
+    conn = sqlite3.connect(paths.get_db_path())
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM lead_interactions WHERE lead_id = ?", (gone,)).fetchone()[0] == 0
+        # Still noted for removal from the other backups that hold them.
+        assert conn.execute("SELECT COUNT(*) FROM forgotten_in_backups WHERE lead_id = ?", (gone,)).fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_the_button_and_safe_mode_finish_a_restore_the_same_way(client, monkeypatch):
+    """Keys re-sealed and the docs index rebuilt, by the one function safe mode also uses."""
+    archive = support.create_backup("manual")
+    done = []
+    monkeypatch.setattr(app_module, "_seal_plaintext_secrets", lambda: done.append("seal"))
+    monkeypatch.setattr(app_module, "init_docs_search_index", lambda *a, **k: done.append("docs"))
+    assert client.post(ROUTE, json={"name": os.path.basename(archive)}).status_code == 200
+    assert "seal" in done and "docs" in done, done
+    import inspect
+
+    assert "_bring_up_restored(" in inspect.getsource(app_module._open_after_restore)
+    assert "_bring_up_restored(" in inspect.getsource(app_module.restore_support_backup)
+
+
+def test_another_profiles_backup_points_to_the_switcher_not_the_command_line(client, monkeypatch):
+    archive = support.create_backup("manual")
+    real = support.inspect_backup
+    monkeypatch.setattr(support, "inspect_backup",
+                        lambda path: dict(real(path), manifest=dict(real(path).get("manifest") or {}, profile="client-a")))
+    detail = client.post(ROUTE, json={"name": os.path.basename(archive)}).json()["detail"]
+    assert "on purpose" not in detail and "profile switcher" in detail, detail
+
+
+def test_the_question_names_everything_a_restore_replaces():
+    with open(os.path.join(REPO_ROOT, "studio", "ui", "src", "components", "BrandStudioSurface.tsx"), encoding="utf-8") as handle:
+        surface = handle.read()
+    question = surface.split("const question", 1)[1].split("window.confirm", 1)[0]
+    for part in ("identity", "settings and stored keys", "media", "people you forgot", "forgotten again"):
+        assert part in question, f"the question does not say a restore replaces {part!r}"
 
 
 def test_brand_studio_offers_restore_on_each_restorable_archive():

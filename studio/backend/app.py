@@ -233,8 +233,34 @@ def _seal_plaintext_secrets() -> None:
         logging.getLogger("studio.vault").warning("Could not seal stored secrets at startup.", exc_info=True)
 
 
-def _open_after_restore() -> None:
-    """What a normal start does with the database, run again once safe mode has restored one."""
+def _forgotten_before_restore() -> list:
+    """
+    The people forgotten in the live database whom backups may still hold.
+
+    Read before a restore replaces that database: the lead_forgotten trigger
+    notes each forgotten id in forgotten_in_backups until the creator removes
+    them from backups too. A database too damaged to read has nothing to say.
+    """
+    try:
+        conn = get_db()
+        try:
+            return [row[0] for row in conn.execute("SELECT lead_id FROM forgotten_in_backups")]
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return []
+
+
+def _bring_up_restored(forgotten=()) -> int:
+    """
+    What a normal start does with the database, run once a restore has put
+    one in place, by Brand Studio's Restore and by safe mode's alike.
+
+    Brings it up to this build's schema, seals any key stored in plain text,
+    and rebuilds the documentation index. Then forgets again everyone in
+    `forgotten` the restored backup still holds: a backup made before someone
+    was forgotten brought them back. Returns how many were forgotten again.
+    """
     init_db()
     seed_initial_data()
     _seal_plaintext_secrets()
@@ -242,6 +268,18 @@ def _open_after_restore() -> None:
         init_docs_search_index()
     except Exception:
         logging.getLogger("studio.docs").warning("The documentation search index did not build.", exc_info=True)
+    again = 0
+    for lead_id in forgotten:
+        # The one removal path every forget uses, whose trigger notes them for
+        # removal from backups again.
+        if reverse_crm.purge_lead(lead_id)["lead_deleted"]:
+            again += 1
+    return again
+
+
+def _open_after_restore() -> None:
+    """What a normal start does with the database, run again once safe mode has restored one."""
+    _bring_up_restored()
     start_scheduler()
 
 
@@ -2886,26 +2924,30 @@ def restore_support_backup(payload: Optional[Dict[str, Any]] = None):
     if not name or name not in os.listdir(directory) or not os.path.isfile(os.path.join(directory, name)):
         raise HTTPException(status_code=404, detail="That backup is not in the backups folder.")
     archive = os.path.join(directory, name)
+    forgotten = _forgotten_before_restore()
     try:
         result = support_tools.restore_backup(archive)
-    except support_tools.ProfileMismatch as mismatch:
-        raise HTTPException(status_code=409, detail=f"Not restored. {mismatch}")
+    except support_tools.ProfileMismatch:
+        # The command line can restore into another profile on purpose; this
+        # button cannot, so it says what the creator can do from here.
+        origin = (support_tools.inspect_backup(archive).get("manifest") or {}).get("profile") or "another profile"
+        raise HTTPException(status_code=409, detail=(
+            f"Not restored. This backup is of creator profile '{origin}', and this window is on "
+            f"'{paths_module.get_active_profile_id()}'. Switch to '{origin}' with the profile switcher, "
+            f"then restore it there. Nothing was changed."))
     except support_tools.RestoreFailed as failed:
         safety = f" A safety backup of your state from just before is at {failed.safety_backup}." if failed.safety_backup else ""
         raise HTTPException(status_code=500, detail=f"Not restored. {failed}{safety}")
     except ValueError as refused:
         raise HTTPException(status_code=400, detail=f"Not restored. {refused}")
-    try:
-        from .database import init_db as _bring_up_to_date
-    except ImportError:
-        from database import init_db as _bring_up_to_date
-    _bring_up_to_date()
+    forgotten_again = _bring_up_restored(forgotten)
     return {
         "status": "success",
         "restored_from": name,
         "safety_backup": result.get("safety_backup"),
         "safety_note": result.get("safety_note") or "",
         "assets_restored": result.get("assets_restored", 0),
+        "forgotten_again": forgotten_again,
     }
 
 
