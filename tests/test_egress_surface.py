@@ -42,6 +42,12 @@ KNOWN_HOSTS = {
     "api.groq.com": "a provider key you configured",
     "generativelanguage.googleapis.com": "a provider key you configured",
     "image.pollinations.ai": "generating an image",
+    # The image providers a creator can choose in the Prompt tab (R7), each
+    # reached only when chosen and Generate is pressed, under the image category.
+    "api.stability.ai": "an image provider key you configured",
+    "api.replicate.com": "an image provider key you configured",
+    "fal.run": "an image provider key you configured",
+    "api.together.xyz": "an image provider key you configured",
     "api.telegram.org": "the ingress bridge, off unless TELEGRAM_BOT_TOKEN is set",
     "raw.githubusercontent.com": "update checks and the template bundle",
     "github.com": "update checks",

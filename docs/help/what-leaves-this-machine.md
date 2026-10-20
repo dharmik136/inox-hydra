@@ -14,7 +14,7 @@ Your drafts, posts, leads, analytics, settings and media are one SQLite database
 | Category | What triggers it | What is sent | Where it goes | On by default? | Flag |
 | --- | --- | --- | --- | --- | --- |
 | `model` | Re-Hook, Command, other writing actions and the prompt-writing step of **Generate**, only after you configure an AI provider | Text from your draft or command, inside a prompt the studio writes | Your configured AI provider. Ollama runs on this computer, but its requests are still counted here | Yes | `INOX_ALLOW_MODEL_EGRESS` |
-| `image` | Pressing **Generate** in the Media tab | A prompt built from your image description, and the size | OpenAI if it is your AI provider, Gemini if a Gemini key is set, and Pollinations if neither is set or both fail | Yes | `INOX_ALLOW_IMAGE_EGRESS` |
+| `image` | Pressing **Generate** in the Media tab | A prompt built from your image description, and the size | The image provider chosen under **Images** in the **Prompt** tab, and only that one: image.pollinations.ai by default. A web UI on this computer is not counted, because nothing leaves it | Yes | `INOX_ALLOW_IMAGE_EGRESS` |
 | `linkedin` | **Send to LinkedIn**, and session or profile checks against LinkedIn | Your post text, its scheduled time and your LinkedIn session cookies | LinkedIn | No | `INOX_ALLOW_LINKEDIN_EGRESS` |
 | `library` | A hook template sync. No button in the interface triggers it | A request for a template file | GitHub | Yes | `INOX_ALLOW_LIBRARY_EGRESS` |
 | `updates` | `python -m studio.cli update`, after you opt in with `update enable`. No button in the interface triggers it | A request for a version file | GitHub | Yes, but opt-in first | `INOX_ALLOW_UPDATE_EGRESS` |
@@ -38,7 +38,7 @@ The counters are held in memory. They start at zero each time the studio starts,
 
 Set `INOX_NO_EGRESS=1` before you start the studio. Every category is then refused, including the ones on by default, and the ledger shows "INOX_NO_EGRESS IS SET. NOTHING MAY OPEN A CONNECTION."
 
-A refusal does not always look like an error. A refused **Send to LinkedIn** fails with a message naming the flag. A refused writing action or **Generate** falls back to local output instead: template text, or a drawn placeholder image. The ledger's `refused` count is where that shows.
+A refusal does not always look like an error. A refused **Send to LinkedIn** fails with a message naming the flag. A refused **Generate** fails, saying nothing was sent and which flag blocked it. A refused writing action falls back to local output instead: template text. The ledger's `refused` count is where that shows.
 
 To switch a single category, set its flag from the table to `1` (allow) or `0` (refuse). These are environment variables of the server process, so set them in the terminal before starting it. `launch_studio.bat` sets none of them. The studio reads them on every request, but a variable set in another window does not reach a server that is already running.
 

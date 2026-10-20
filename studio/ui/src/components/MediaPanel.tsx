@@ -3,10 +3,12 @@ import { FileImage, FileText, FileVideo, Loader2, Sparkles, Trash2, Upload } fro
 import {
   deleteMedia,
   fetchImageProgress,
+  fetchImageProvider,
   fetchMedia,
   startImageGeneration,
   synthesizeImagePrompt,
   uploadMedia,
+  type ImageProviderConfig,
   type MediaAsset,
 } from "@/lib/api";
 import { formatDimensions } from "@/lib/media";
@@ -35,8 +37,8 @@ function iconFor(asset: MediaAsset) {
  * The media inspector (blueprint section 10).
  *
  * Accepts a drop, lists what is in the local library, and can ask the image
- * studio for a new asset. Everything here stays on this machine unless a cloud
- * model provider is configured, in which case the concept text reaches it.
+ * studio for a new asset. Uploads stay on this machine. Generate sends a
+ * prompt to the image provider chosen in the Prompt tab, and says which.
  */
 export function MediaPanel() {
   const [assets, setAssets] = useState<MediaAsset[] | null>(null);
@@ -222,7 +224,17 @@ function ImageStudio({ onDone }: { onDone: () => Promise<void> }) {
   const [percent, setPercent] = useState(0);
   const [stage, setStage] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  // Who will make the image, read when the tab opens, so the creator sees it
+  // before pressing Generate rather than after.
+  const [maker, setMaker] = useState<ImageProviderConfig | null>(null);
+
+  useEffect(() => {
+    fetchImageProvider()
+      .then((state) => setMaker(state.config))
+      .catch(() => setMaker(null));
+  }, []);
 
   useEffect(() => {
     if (!taskId) return;
@@ -239,6 +251,9 @@ function ImageStudio({ onDone }: { onDone: () => Promise<void> }) {
           window.clearInterval(timer);
           setTaskId(null);
           setConcept("");
+          // Said, not only shown: a quote that could not be drawn is part of
+          // the outcome, and the bar alone said only that it finished.
+          setDone(progress.notice ? `Added to the library. ${progress.notice}` : "Added to the library.");
           await onDone();
         } else if (progress.status === "failed" || progress.error_message) {
           window.clearInterval(timer);
@@ -263,6 +278,7 @@ function ImageStudio({ onDone }: { onDone: () => Promise<void> }) {
   async function onGenerate() {
     if (!concept.trim() || taskId) return;
     setError(null);
+    setDone(null);
     setPercent(0);
     setStage("");
     try {
@@ -275,6 +291,21 @@ function ImageStudio({ onDone }: { onDone: () => Promise<void> }) {
   return (
     <div className="flex flex-col gap-2 border-t border-edge pt-4">
       <p className="studio-label">Generate an image</p>
+      {maker && (
+        <p className="text-[11px] leading-snug text-ink-muted">
+          {maker.kind === "off"
+            ? "Image generation is off."
+            : `Made by ${maker.name}${maker.model ? `, ${maker.model}` : ""}. ${
+                maker.disclosure.leaves ? `The prompt goes to ${maker.disclosure.to}` : "The prompt stays on this computer."
+              }`}{" "}
+          Change it in the Prompt tab.
+        </p>
+      )}
+      {maker?.not_ready && (
+        <p role="status" className="studio-meta leading-snug text-signal-orange-text">
+          {maker.not_ready}
+        </p>
+      )}
       <textarea
         value={concept}
         onChange={(event) => setConcept(event.target.value)}
@@ -307,7 +338,7 @@ function ImageStudio({ onDone }: { onDone: () => Promise<void> }) {
         <button
           type="button"
           onClick={onGenerate}
-          disabled={Boolean(taskId) || !concept.trim()}
+          disabled={Boolean(taskId) || !concept.trim() || Boolean(maker?.not_ready)}
           className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
         >
           <Sparkles className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
@@ -339,6 +370,12 @@ function ImageStudio({ onDone }: { onDone: () => Promise<void> }) {
       {error && (
         <p role="status" className="studio-meta leading-snug text-signal-orange-text">
           {error}
+        </p>
+      )}
+
+      {done && (
+        <p role="status" className="text-[12px] leading-snug text-ink-secondary">
+          {done}
         </p>
       )}
     </div>

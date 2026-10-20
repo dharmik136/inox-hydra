@@ -1,19 +1,22 @@
 """
 AI Image Studio Orchestrator & Background Task Engine
 =====================================================
-Orchestrates generative image creation using Agno prompt engineering,
-dual-provider execution (Gemini Imagen / Pollinations high-res fallback),
-and real-time 1% to 100% progress tracking.
+Orchestrates generative image creation using Agno prompt engineering, the
+image provider the creator chose (image_providers.py), and real-time 1% to
+100% progress tracking.
+
+A generation either produces the provider's image or fails with the reason.
+It never stands in a drawn placeholder for a failed or refused request, and
+nothing reaches the media library unless the provider made it (BE-06).
 """
 
 import os
 import time
+import io
 import uuid
 import json
-import urllib.parse
 import contextvars
 import threading
-import requests
 
 try:  # the shared egress chokepoint
     from . import egress as _egress
@@ -24,18 +27,21 @@ from typing import Dict, Any, Optional
 try:
     from .database import get_db
     from .agno_agentos import orchestrator, ImagePromptInput
-    from .quote_renderer import remove_watermark_crop, render_typographic_quote, apply_personal_brand_watermark
+    from .quote_renderer import render_typographic_quote, apply_personal_brand_watermark, TextNotDrawn
+    from . import image_providers
 except ImportError:
     try:
         from database import get_db
         from agno_agentos import orchestrator, ImagePromptInput
-        from quote_renderer import remove_watermark_crop, render_typographic_quote, apply_personal_brand_watermark
+        from quote_renderer import render_typographic_quote, apply_personal_brand_watermark, TextNotDrawn
+        import image_providers
     except ImportError:
         get_db = None
         orchestrator = None
-        remove_watermark_crop = None
         render_typographic_quote = None
         apply_personal_brand_watermark = None
+        TextNotDrawn = Exception
+        image_providers = None
 
 try:
     from .paths import get_generated_dir
@@ -121,6 +127,7 @@ class ImageStudioManager:
             "result_url": None,
             "prompt_used": None,
             "error_message": None,
+            "notice": None,
             "created_at": time.time(),
             "updated_at": time.time()
         }
@@ -220,10 +227,13 @@ class ImageStudioManager:
             "status_message": task.get("status_message", ""),
             "result_url": task.get("result_url"),
             "prompt_used": task.get("prompt_used"),
-            "error_message": task.get("error_message")
+            "error_message": task.get("error_message"),
+            # What the creator should know about a finished image, such as a
+            # quote that was not drawn. Also in status_message, which is kept.
+            "notice": task.get("notice"),
         }
 
-    def _update_task(self, task_id: str, percent: int, message: str, status: str = "processing", result_url: str = None, error: str = None, prompt_used: str = None):
+    def _update_task(self, task_id: str, percent: int, message: str, status: str = "processing", result_url: str = None, error: str = None, prompt_used: str = None, notice: str = None):
         """Thread-safe update of task status in memory and SQLite."""
         clamped_percent = max(0, min(int(percent) if isinstance(percent, (int, float)) else 0, 100))
         with self._lock:
@@ -238,6 +248,8 @@ class ImageStudioManager:
                     self._tasks[task_id]["error_message"] = error
                 if prompt_used:
                     self._tasks[task_id]["prompt_used"] = prompt_used
+                if notice:
+                    self._tasks[task_id]["notice"] = notice
 
         if get_db:
             conn = None
@@ -259,11 +271,14 @@ class ImageStudioManager:
                     except Exception:
                         pass
 
+    def _fail(self, task_id: str, reason: str):
+        """Ends a task as failed, with the reason in words. Nothing is saved."""
+        reason = _egress.redact(reason)
+        print(f"[ImageStudio] Generation failed: {reason}")
+        self._update_task(task_id, 100, f"Generation failed: {reason}", status="failed", error=reason)
+
     def _run_generation_worker(self, task_id: str, options: Dict[str, Any]):
         """Executes the multi-stage image generation workflow."""
-        is_testing = bool(os.environ.get("PYTEST_CURRENT_TEST") or os.environ.get("TESTING"))
-        delay = 0.02 if is_testing else 0.3
-
         acquired = self._worker_semaphore.acquire(timeout=60)
         if not acquired:
             self._update_task(
@@ -275,9 +290,16 @@ class ImageStudioManager:
             return
 
         try:
-            # Stage 1: Agno Prompt Synthesis (1% -> 20%)
-            self._update_task(task_id, 8, "Decomposing creative concept into artistic dimensions...")
-            time.sleep(delay)
+            # Read first: a provider that is off or missing its key fails here,
+            # before the description goes to an AI provider to be worked on.
+            provider = image_providers.current_config()
+            not_ready = provider.not_ready()
+            if not_ready:
+                self._fail(task_id, not_ready)
+                return
+
+            # Stage 1: the prompt (1% -> 28%)
+            self._update_task(task_id, 8, "Reading your description...")
 
             raw_concept = options.get("concept", "Enterprise Software Architecture")
             concept = (raw_concept or "").strip() if isinstance(raw_concept, str) else ""
@@ -296,10 +318,12 @@ class ImageStudioManager:
                 custom_quote_author=options.get("custom_quote_author")
             )
 
-            self._update_task(task_id, 18, "Synthesizing master prompt blueprint via Agno AgentOS...")
+            self._update_task(task_id, 18, "Writing the image prompt...")
+            negative_prompt = ""
             if orchestrator:
                 synthesized = orchestrator.synthesize_image_prompt(prompt_input.model_dump())
                 master_prompt = synthesized.master_prompt
+                negative_prompt = synthesized.negative_prompt
                 width = synthesized.width
                 height = synthesized.height
                 quote_text = synthesized.quote_text
@@ -311,65 +335,47 @@ class ImageStudioManager:
                 quote_text = options.get("custom_quote_text")
                 quote_author = options.get("custom_quote_author")
 
-            self._update_task(task_id, 28, "Master prompt formulated. Selecting AI generation provider...", prompt_used=master_prompt)
-            time.sleep(delay)
+            self._update_task(task_id, 28, "Prompt ready.", prompt_used=master_prompt)
 
-            # Stage 2: Latent Diffusion / Model Query (29% -> 60%)
-            self._update_task(task_id, 42, "Initializing diffusion latent space and geometry...")
-            time.sleep(delay)
+            # Stage 2: the chosen provider, and only it (29% -> 75%)
+            #
+            # This used to try OpenAI, then Gemini, then Pollinations, catch
+            # every failure and refusal, and finally draw a grey grid labelled
+            # AI STUDIO GENERATION that was saved as generated media and
+            # reported "complete and verified" (BE-06). A failure now ends the
+            # task as failed with the provider's reason, and nothing is saved.
+            self._update_task(task_id, 40, f"Sending the prompt to {provider.name}...")
+            try:
+                image_bytes = image_providers.generate(
+                    provider, master_prompt, negative_prompt, width, height,
+                    eliminate_watermark=options.get("eliminate_provider_watermark", True),
+                )
+            except image_providers.ImageProviderError as failure:
+                self._fail(task_id, str(failure))
+                return
 
-            image_bytes = None
+            # Every provider's image at the size the prompt asked for, as JPEG,
+            # whatever size and format it came back in.
+            image_bytes = _fit_jpeg(image_bytes, width, height)
+            self._update_task(task_id, 75, f"Image received from {provider.name}.")
 
-            if not is_testing:
-                ai_config = orchestrator.get_ai_config() if orchestrator else None
-
-                # Provider 1: OpenAI DALL-E 3 (if OpenAI provider configured)
-                if ai_config and ai_config.provider == "openai" and ai_config.api_key:
-                    self._update_task(task_id, 55, "Querying OpenAI DALL-E 3 neural engine...")
-                    try:
-                        image_bytes = self._call_openai_dalle3(master_prompt, ai_config.api_key, width, height)
-                    except Exception as e:
-                        print(f"[ImageStudio] OpenAI DALL-E 3 failed: {_egress.redact(e)}. Moving to fallback.")
-
-                # Provider 2: Gemini Imagen 3 (if Gemini provider configured or gemini key present)
-                if not image_bytes:
-                    gemini_api_key = orchestrator.get_gemini_api_key() if orchestrator else None
-                    if (ai_config and ai_config.provider == "gemini" and ai_config.api_key) or gemini_api_key:
-                        key_to_use = (ai_config.api_key if ai_config and ai_config.provider == "gemini" else None) or gemini_api_key
-                        self._update_task(task_id, 55, "Querying Gemini Imagen 3 neural engine...")
-                        try:
-                            image_bytes = self._call_gemini_imagen(master_prompt, key_to_use, width, height)
-                        except Exception as e:
-                            print(f"[ImageStudio] Gemini Imagen failed: {_egress.redact(e)}. Moving to high-res fallback.")
-
-                # Provider 3: Pollinations High-Res Engine (Open-Access Zero-Key Fallback)
-                if not image_bytes:
-                    eliminate_pw = options.get("eliminate_provider_watermark", True)
-                    self._update_task(task_id, 65, "Rendering through Pollinations generative engine...")
-                    try:
-                        image_bytes = self._call_pollinations(master_prompt, width, height, eliminate_watermark=eliminate_pw)
-                    except Exception as e:
-                        print(f"[ImageStudio] Pollinations fallback failed: {_egress.redact(e)}")
-
-            # Provider 4: Deterministic fallback canvas generator (guaranteed test & offline safety)
-            if not image_bytes:
-                self._update_task(task_id, 75, "Constructing studio visual canvas asset...")
-                image_bytes = self._create_local_canvas_image(width, height, concept, options.get("visual_style", "style"))
+            notices = []
 
             # Stage 3: Typographic Quote Compositing & Personal Watermarking (80% -> 95%)
             # Step A: Typographic Quote Overlay
             if quote_text and options.get("render_quote_overlay", True) and render_typographic_quote and image_bytes:
-                self._update_task(task_id, 82, f"Compositing typographic quote overlay ({quote_author or 'Quote'})...")
+                self._update_task(task_id, 82, "Drawing the quote...")
                 try:
-                    import io
                     from PIL import Image
                     raw_pil = Image.open(io.BytesIO(image_bytes))
-                    quoted_pil = render_typographic_quote(raw_pil, quote_text, quote_author)
+                    quoted_pil = render_typographic_quote(raw_pil, quote_text, quote_author, notes=notices)
                     buf = io.BytesIO()
                     quoted_pil.save(buf, format="JPEG", quality=95)
                     image_bytes = buf.getvalue()
+                except TextNotDrawn as why:
+                    notices.append(f"The quote was not drawn: {why}.")
                 except Exception as e:
-                    print(f"[ImageStudio] Quote overlay compositing notice: {e}")
+                    notices.append(f"The quote was not drawn: {_egress.redact(e)}.")
 
             # Step B: Personal Brand Watermark (Creator Handle & Corner Badge)
             apply_brand = options.get("apply_personal_watermark")
@@ -453,26 +459,22 @@ class ImageStudioManager:
             if apply_brand and apply_personal_brand_watermark and image_bytes:
                 self._update_task(task_id, 86, f"Stamping personal brand watermark ({brand_text})...")
                 try:
-                    import io
                     from PIL import Image
                     raw_pil = Image.open(io.BytesIO(image_bytes))
                     stamped_pil = apply_personal_brand_watermark(
                         raw_pil,
                         brand_text=brand_text,
                         position=brand_pos,
-                        style=brand_style
+                        style=brand_style,
+                        notes=notices,
                     )
                     buf = io.BytesIO()
                     stamped_pil.save(buf, format="JPEG", quality=95)
                     image_bytes = buf.getvalue()
+                except TextNotDrawn as why:
+                    notices.append(f"The watermark was not drawn: {why}.")
                 except Exception as e:
-                    print(f"[ImageStudio] Personal watermark compositing notice: {e}")
-
-            if options.get("eliminate_provider_watermark", True):
-                self._update_task(task_id, 90, "Verifying watermark clearance and pixel fidelity...")
-            else:
-                self._update_task(task_id, 90, "Preserving raw canvas format (provider watermark retained)...")
-            time.sleep(delay)
+                    notices.append(f"The watermark was not drawn: {_egress.redact(e)}.")
 
             generated_dir = get_generated_dir()
             filename = f"gen_{uuid.uuid4().hex[:10]}.jpg"
@@ -484,7 +486,7 @@ class ImageStudioManager:
             size_bytes = len(image_bytes)
             relative_url = f"/assets/generated/{filename}"
 
-            self._update_task(task_id, 95, "Registering media asset in local SQLite vault...")
+            self._update_task(task_id, 95, "Saving to the media library...")
 
             # Persist in media_assets table
             if get_db:
@@ -494,7 +496,7 @@ class ImageStudioManager:
                     with conn:
                         cursor = conn.cursor()
                         cursor.execute("""
-                        INSERT OR REPLACE INTO media_assets 
+                        INSERT OR REPLACE INTO media_assets
                         (id, filename, storage_path, media_type, mime_type, size_bytes, dimensions, prompt)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """, (
@@ -508,7 +510,13 @@ class ImageStudioManager:
                             master_prompt
                         ))
                 except Exception as e:
-                    print(f"[ImageStudio] media_assets insert error: {e}")
+                    # A file nobody can find in the library is not a success.
+                    try:
+                        os.remove(file_path)
+                    except OSError:
+                        pass
+                    self._fail(task_id, f"The image could not be added to the media library: {e}")
+                    return
                 finally:
                     if conn:
                         try:
@@ -516,199 +524,52 @@ class ImageStudioManager:
                         except Exception:
                             pass
 
-            # Stage 4: 100% Completion
-            time.sleep(0.2)
+            # Stage 4: 100% Completion. Says what happened, and nothing it
+            # did not check.
+            notice = " ".join(notices) or None
             self._update_task(
                 task_id,
                 100,
-                "Image rendering complete and verified!",
+                f"Image ready from {provider.name}. It is in the media library."
+                + (f" {notice}" if notice else ""),
                 status="completed",
                 result_url=relative_url,
-                prompt_used=master_prompt
+                prompt_used=master_prompt,
+                notice=notice,
             )
 
         except Exception as e:
             # Redacted on the way to the log and to the progress endpoint.
-            reason = _egress.redact(e)
-            print(f"[ImageStudio] Worker error: {reason}")
-            self._update_task(task_id, 100, f"Generation failed: {reason}", status="failed", error=reason)
+            self._fail(task_id, _plain_failure(e))
         finally:
             self._worker_semaphore.release()
 
-    def _call_openai_dalle3(self, prompt: str, api_key: str, width: int, height: int) -> Optional[bytes]:
-        """Invokes OpenAI DALL-E 3 image generation API."""
-        _egress.remember_secret(api_key)
-        import base64
-        url = "https://api.openai.com/v1/images/generations"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        if width > height:
-            size = "1792x1024"
-        elif height > width:
-            size = "1024x1792"
-        else:
-            size = "1024x1024"
 
-        payload = {
-            "model": "dall-e-3",
-            "prompt": prompt[:1000],
-            "n": 1,
-            "size": size,
-            "response_format": "b64_json"
-        }
-        # Refuses rather than connecting when this category is off. See egress.py.
-        _egress.require(url, "image")
-        res = requests.post(url, headers=headers, json=payload, timeout=35)
-        if res.status_code == 200:
-            data = res.json()
-            items = data.get("data", [])
-            if items:
-                b64 = items[0].get("b64_json")
-                if b64:
-                    return base64.b64decode(b64)
-                img_url = items[0].get("url")
-                if img_url:
-                    # Refuses rather than connecting when this category is off. See egress.py.
-                    _egress.require(img_url, "image")
-                    img_res = requests.get(img_url, timeout=20)
-                    if img_res.status_code == 200:
-                        return img_res.content
-        return None
+def _plain_failure(error: Exception) -> str:
+    """A sentence for an unexpected failure, without a library's internals."""
+    text = _egress.redact(error)
+    if "validation error" in text or "pydantic" in text:
+        return "The description could not be used. Write at least three characters."
+    return text
 
-    def _call_gemini_imagen(self, prompt: str, api_key: str, width: int, height: int) -> Optional[bytes]:
-        """Invokes Google Gemini Imagen API."""
-        _egress.remember_secret(api_key)
-        # The key goes in a header. In the URL it was printed with every
-        # connection error and stored in the egress ledger.
-        url = "https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict"
-        headers = {"Content-Type": "application/json", "x-goog-api-key": api_key}
-        payload = {
-            "instances": [{"prompt": prompt}],
-            "parameters": {
-                "sampleCount": 1,
-                "aspectRatio": "1:1" if width == height else ("16:9" if width > height else "4:5")
-            }
-        }
-        # Refuses rather than connecting when this category is off. See egress.py.
-        _egress.require(url, "image")
-        res = requests.post(url, headers=headers, json=payload, timeout=25)
-        if res.status_code == 200:
-            import base64
-            data = res.json()
-            predictions = data.get("predictions", [])
-            if predictions:
-                b64 = predictions[0].get("bytesBase64Encoded")
-                if b64:
-                    return base64.b64decode(b64)
-        return None
 
-    def _call_pollinations(self, prompt: str, width: int, height: int, eliminate_watermark: bool = True) -> Optional[bytes]:
-        """
-        Calls Pollinations AI generative engine.
-        If eliminate_watermark is True, applies height oversampling to position the watermark
-        in a bottom discard buffer and cleanly slices it off.
-        If False, requests exact target dimensions without any cropping.
-        """
-        # Clamp dimensions to safe bounds
-        width = max(MIN_DIMENSION, min(int(width) if width else 1080, MAX_DIMENSION))
-        height = max(MIN_DIMENSION, min(int(height) if height else 1080, MAX_DIMENSION))
+def _fit_jpeg(data: bytes, width: int, height: int) -> bytes:
+    """
+    The image at exactly width x height, as JPEG.
 
-        prompt = (prompt or "Abstract architectural technology concept").strip()
-        encoded_prompt = urllib.parse.quote(prompt[:450])
-        seed = int(time.time()) % 1000000
+    Providers answer in their own sizes (1024x1024, 1536x1024...) and
+    formats (PNG, WebP). Scaled to cover and centre-cropped, so nothing is
+    stretched, then saved as the .jpg the library names it.
+    """
+    from PIL import Image, ImageOps
 
-        if eliminate_watermark:
-            # Calculate oversampled dimensions so bottom watermark lands in the discard strip
-            target_ratio = float(width) / float(height) if height > 0 else 1.0
-            if target_ratio >= 1.5:
-                # 16:9 Landscape
-                req_w = 1080
-                req_h = 688  # 1080 / (16/9) = 608 + 80px bottom buffer
-            elif target_ratio <= 0.85:
-                # 4:5 Portrait
-                req_w = 768
-                req_h = 1080  # 768 / 0.8 = 960 + 120px bottom buffer
-            else:
-                # 1:1 Square
-                req_w = 768
-                req_h = 864  # 768 + 96px bottom buffer
-        else:
-            # Exact dimensions: preserve raw canvas format
-            req_w = width
-            req_h = height
-
-        # enhance=false prevents Pollinations internal LLM from hallucinating portraits over scene descriptions
-        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width={req_w}&height={req_h}&seed={seed}&nologo=true"
-        try:
-            # Refuses rather than connecting when this category is off. See egress.py.
-            _egress.require(url, "image")
-            res = requests.get(url, timeout=30)
-            if res.status_code == 200 and len(res.content) > 5000:
-                if eliminate_watermark and remove_watermark_crop:
-                    try:
-                        clean_bytes, _ = remove_watermark_crop(res.content, width, height)
-                        return clean_bytes
-                    except Exception as e:
-                        print(f"[ImageStudio] Watermark removal crop error: {e}")
-                return res.content
-        except _egress.EgressRefused:
-            # A refusal is not a provider failure, and must not become a
-            # drawn placeholder with nothing said. Caught by the handler
-            # below, it returned None and the worker fell through to
-            # _create_local_canvas_image, so under INOX_NO_EGRESS=1 the
-            # creator got a generated-looking image and no statement that
-            # anything had been declined. Re-raised so the worker can record
-            # it.
-            raise
-        except Exception as e:
-            print(f"[ImageStudio] Pollinations network error: {_egress.redact(e)}")
-        return None
-
-    def _create_local_canvas_image(self, width: int, height: int, title: Optional[str], style: Optional[str]) -> bytes:
-        """Local PIL image generator ensuring 100% offline reliability."""
-        from PIL import Image, ImageDraw, ImageFont
-
-        # Clamp dimensions to safe bounds
-        width = max(MIN_DIMENSION, min(int(width) if isinstance(width, (int, float)) and width > 0 else 1080, MAX_DIMENSION))
-        height = max(MIN_DIMENSION, min(int(height) if isinstance(height, (int, float)) and height > 0 else 1080, MAX_DIMENSION))
-
-        title = (title or "Concept").strip()
-        style = (style or "style").strip()
-
-        img = Image.new("RGB", (width, height), color=(11, 15, 25))
-        draw = ImageDraw.Draw(img)
-
-        # Draw tech grid pattern
-        grid_color = (25, 35, 55)
-        for x in range(0, width, 40):
-            draw.line([(x, 0), (x, height)], fill=grid_color, width=1)
-        for y in range(0, height, 40):
-            draw.line([(0, y), (width, y)], fill=grid_color, width=1)
-
-        # Draw decorative glowing center card
-        card_w = max(20, min(width - 4, int(width * 0.75)))
-        card_h = max(20, min(height - 4, int(height * 0.5)))
-        x0 = max(0, (width - card_w) // 2)
-        y0 = max(0, (height - card_h) // 2)
-        radius = max(2, min(16, card_w // 4, card_h // 4))
-        draw.rounded_rectangle([x0, y0, min(width, x0 + card_w), min(height, y0 + card_h)], radius=radius, fill=(15, 23, 42), outline=(99, 102, 241), width=2)
-
-        # Text labels
-        try:
-            font = ImageFont.load_default()
-        except Exception:
-            font = None
-
-        draw.text((x0 + 30, y0 + 30), "AI STUDIO GENERATION", fill=(56, 189, 248), font=font)
-        draw.text((x0 + 30, y0 + 70), title[:45], fill=(248, 250, 252), font=font)
-        draw.text((x0 + 30, y0 + 110), f"Style: {style} | {width}x{height}", fill=(148, 163, 184), font=font)
-
-        import io
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=90)
-        return buf.getvalue()
+    with Image.open(io.BytesIO(data)) as source:
+        image = source.convert("RGB")
+    if image.size != (width, height):
+        image = ImageOps.fit(image, (width, height), method=Image.Resampling.LANCZOS)
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG", quality=95)
+    return buf.getvalue()
 
 
 # Singleton image studio manager

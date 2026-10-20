@@ -190,14 +190,20 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # send, which nothing called (BE-08).
 # Reached moves 99 -> 104, unreachable drops 83 -> 82, total moves 182 -> 186.
 # ---------------------------------------------------------------------------
-# Reconciled at integration (cycle 2), each batch from the 182 / 99 / 83 base:
+# Then /api/image/provider (batch R7, GET and POST on one path): the image
+# provider setting in the Prompt tab (ImageProviderSettings, api.ts).
+# Reached moves 99 -> 100, unreachable stays at 83, total moves 182 -> 183.
+# ---------------------------------------------------------------------------
+# Reconciled at integration (cycle 2), each batch from the 182 / 99 / 83 base,
+# to 167 paths, 114 reached and 53 unreachable:
 #   R2: 30 paths removed (reached -1, unreachable -29).
 #   R4: 9 Storage and privacy paths added, all reached (+9).
 #   R5: /api/v1/support/restore added, reached (+1).
 #   R6: 5 paths added and reached, native/stage removed (unreachable -1).
+#   R7: /api/image/provider added, reached (+1).
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 166
-REACHED_BY_INTERFACE = 113
+TOTAL_API_PATHS = 167
+REACHED_BY_INTERFACE = 114
 UNREACHABLE = 53
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

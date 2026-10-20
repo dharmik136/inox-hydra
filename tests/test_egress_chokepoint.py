@@ -236,27 +236,19 @@ def test_the_linkedin_counters_are_the_same_object_the_client_exposes():
     assert linkedin_client.egress_stats is egress.stats_for("linkedin")
 
 
-def test_refusing_egress_does_not_break_image_generation(no_egress):
+def test_refusing_egress_fails_image_generation_with_the_reason(no_egress):
     """
-    The switch costs a provider, not the feature.
+    The switch costs the provider, and says so. [BE-06]
 
-    image_studio tries three remote providers and then falls back to a
-    typographic renderer that runs here. With egress refused, the remote
-    attempts raise EgressRefused, each is caught by the handler already around
-    them, and the local path produces a real file.
+    This test used to assert the opposite: that with egress refused,
+    generation still "completed", because image_studio fell back to a locally
+    drawn placeholder. That placeholder was filed in the media library as a
+    generated image and reported "complete and verified", which is the defect.
+    It also skipped every provider under pytest, so the refusal it described
+    was never exercised here.
 
-    This is the behaviour that makes the master switch usable rather than
-    theoretical, and it was found by running it rather than by reading: a first
-    probe sampled the counters too early, read zero refusals, and looked like
-    the guard had been bypassed.
-
-    What this asserts in process is that generation completes and nothing
-    reached the network. It deliberately does not assert a refusal was counted,
-    because image_studio skips the whole provider block when it detects a test
-    run, so the remote path is never attempted here and there is nothing to
-    refuse. The refusal itself was verified against a running server with
-    INOX_NO_EGRESS=1 set: image performed=0, refused=1, and a real file at
-    /assets/generated. Asserting it here would pass for the wrong reason.
+    Now the chosen provider is asked under pytest too, the guard refuses it
+    before a socket opens, and the task fails naming the switch.
     """
     import image_studio
 
@@ -267,10 +259,10 @@ def test_refusing_egress_does_not_break_image_generation(no_egress):
         progress = manager.get_progress(task_id)
         if progress.get("status") in ("completed", "failed"):
             break
-        time.sleep(0.5)
+        time.sleep(0.1)
 
-    assert progress.get("status") == "completed", (
-        f"generation did not finish under a refusal: {progress}"
-    )
-    assert progress.get("result_url"), "no image was produced"
+    assert progress.get("status") == "failed", f"a refused generation did not fail: {progress}"
+    assert egress.MASTER_OFF_FLAG in (progress.get("error_message") or "")
+    assert not progress.get("result_url"), "an image was produced although nothing was sent"
+    assert egress.stats_for("image")["refused"] >= 1
     assert egress.stats_for("image")["performed"] == 0, "something reached the network"

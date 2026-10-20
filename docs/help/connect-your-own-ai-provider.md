@@ -43,7 +43,7 @@ Once connected, this is what reaches the provider:
 | **Re-Hook** on a selection | A prompt built from the first line of your selection |
 | **Command** console | Your instruction, and your Composer draft only when **Include my Composer draft** is ticked |
 | **Media** tab, **Preview prompt** and **Generate** | Your image description, so the model can describe the scene |
-| **Media** tab **Generate**, with `openai` or `gemini` | The image prompt, to DALL-E 3 or Imagen 3 |
+| **Media** tab **Generate**, with `openai` or `gemini` and no image provider chosen | The image prompt, to OpenAI Images or Google Imagen with this key. Choose another under **Images** in the **Prompt** tab |
 | **Audit** tab, and message drafts on **Leads** | Nothing. These always run locally. |
 
 Re-Hook and Command also send what the studio knows about how you write, so the model matches your voice rather than a generic one. It is read from your own profile and posts, and only the parts the studio has go:

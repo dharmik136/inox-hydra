@@ -63,7 +63,7 @@ try:
                             is_queue_paused, set_queue_paused, LINKEDIN_HOLDS_KEY)
     from .agno_agent import agno_orchestrator
     from .agno_agentos import orchestrator
-    from .image_studio import image_studio_manager
+    from .image_studio import image_studio_manager, image_providers
     from .event_bus import event_bus
     from .ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
     from .crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
@@ -135,7 +135,7 @@ except ImportError:
                            is_queue_paused, set_queue_paused, LINKEDIN_HOLDS_KEY)
     from agno_agent import agno_orchestrator
     from agno_agentos import orchestrator
-    from image_studio import image_studio_manager
+    from image_studio import image_studio_manager, image_providers
     from event_bus import event_bus
     from ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
     from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
@@ -1206,7 +1206,13 @@ def generate_ai_image(req: ImageGenerateRequest):
     """
     Launches asynchronous AI image generation task with live 1%..100% progress tracking.
     Poll /api/image/progress/{task_id} for live progress updates.
+
+    Refused at once, with the reason, when the image provider is off or is
+    missing its key, rather than starting a task that can only fail.
     """
+    not_ready = image_providers.current_config().not_ready()
+    if not_ready:
+        raise HTTPException(status_code=409, detail=not_ready)
     task_id = image_studio_manager.start_task(req.model_dump())
     return {
         "status": "started",
@@ -1227,6 +1233,47 @@ def synthesize_image_prompt(req: ImageGenerateRequest):
     result = orchestrator.synthesize_image_prompt(req.model_dump())
     dump = result.model_dump()
     return {"status": "success", "synthesized": dump, **dump}
+
+
+class ImageProviderRequest(BaseModel):
+    provider: str = Field(..., max_length=40)
+    api_key: Optional[str] = Field(default="", max_length=500)
+    model: Optional[str] = Field(default="", max_length=200)
+    base_url: Optional[str] = Field(default="", max_length=500)
+
+
+@app.get("/api/image/provider", tags=["AI Image Studio"])
+def get_image_provider():
+    """
+    The image provider Generate uses for this profile, and every one it could.
+
+    Each carries what leaves this machine with it. The key is never returned;
+    api_key_masked holds its last four characters at most.
+    """
+    ai = orchestrator.get_ai_config()
+    return {
+        "config": image_providers.current_config().to_public(),
+        "providers": image_providers.catalogue(),
+        # So the Prompt tab can offer the AI provider's key for the same company.
+        "ai_provider": ai.provider if ai.api_key else None,
+        "image_egress_allowed": egress_policy.allowed("image"),
+    }
+
+
+@app.post("/api/image/provider", tags=["AI Image Studio"])
+def save_image_provider(req: ImageProviderRequest):
+    """
+    Checks an image provider without making an image and, if it works, saves it.
+
+    A failed check answers 400 with the reason and leaves the saved setup as
+    it was. fal.ai has no check that does not bill an image, so it is saved
+    unchecked, and the answer says so.
+    """
+    try:
+        saved = image_providers.save(req.provider, req.api_key or "", req.model or "", req.base_url or "")
+    except image_providers.ImageProviderError as failure:
+        raise HTTPException(status_code=400, detail=str(failure))
+    return {"status": "success", **saved}
 
 
 # Backwards compatibility stub for legacy carousel call

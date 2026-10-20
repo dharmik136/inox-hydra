@@ -13,7 +13,7 @@ Whether you run cutting-edge frontier models from OpenAI, Google, or Anthropic, 
 1. **Vendor Agnosticism**: No hardcoded dependencies on any single cloud provider.
 2. **Active Ping Verification**: The CLI and API actively test connection health and credentials before saving to prevent workflow interruptions.
 3. **Graceful Fallback**: If an external API is temporarily unavailable or credentials expire, the system automatically drops down to the local deterministic engine without throwing 500 errors.
-4. **Multimodal Routing**: Image generation automatically selects DALL-E 3 (OpenAI), Imagen 3 (Gemini), Pollinations AI (free high-res engine), or local canvas generation.
+4. **Bring your own image provider**: Image generation uses the provider chosen in the Prompt tab (`studio/backend/image_providers.py`): the free public generator at image.pollinations.ai (the default), OpenAI Images, Google Imagen, Stability AI, Replicate, fal.ai, Together AI, or a local AUTOMATIC1111, Forge or ComfyUI web UI, or Off. Only that provider is asked; if it fails, the generation fails with its reason. Nothing is drawn in its place.
 5. **Zero Cloud Egress Default**: Completely functional out of the box with zero external keys or network calls.
 
 ---
@@ -110,7 +110,7 @@ python studio_cli.py ai reset
 When an AI provider is configured, the `AgnoAgentOSOrchestrator` routes completions through the active model across all core workflows:
 
 1. **LinkedIn Content Copilot (`optimize_content`)**: Synthesizes scroll-stopping hooks and structures drafts for maximum mobile dwell time.
-2. **AI Image Studio (`synthesize_image_prompt` & `start_task`)**: Formulates cinematic prompts and routes image rendering to DALL-E 3 or Imagen 3.
+2. **AI Image Studio (`synthesize_image_prompt` & `start_task`)**: Formulates cinematic prompts and sends them to the image provider chosen in the Prompt tab.
 3. **CRM Inbound Lead Research & Icebreakers (`enrich_lead`)**: Dissects prospect tech stacks and generates 3 tailored warm outreach angles.
 4. **Viral Swipe File Harvester (`analyze_swipe`)**: Deconstructs viral LinkedIn posts into reusable formulas.
 5. **Content Repurposer (`repurpose_content`)**: Transforms raw thoughts into 5 proven content frameworks.

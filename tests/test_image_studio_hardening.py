@@ -6,10 +6,9 @@ Validates:
 2. Length truncation of oversized concepts in start_task.
 3. Fast API-boundary 422 validation on empty or whitespace concepts.
 4. Fast API-boundary 422 validation on oversized concepts (>2000 chars).
-5. ZeroDivisionError prevention in _call_pollinations with height=0 or width=0.
+5. ZeroDivisionError prevention in the Pollinations call with height=0 or width=0.
 6. ZeroDivisionError prevention in remove_watermark_crop with zero dimensions.
-7. Graceful handling of None title and style in _create_local_canvas_image.
-8. Safe boundary clamping for small and extreme dimensions in local canvas.
+7. (The local placeholder canvas and its two tests are gone with it: BE-06.)
 9. Bounded in-memory task dictionary pruning to prevent memory leaks.
 10. Strict zero em-dash compliance across all modified files.
 """
@@ -32,7 +31,6 @@ from image_studio import (
     image_studio_manager,
     MAX_CONCEPT_LENGTH,
     MIN_DIMENSION,
-    MAX_DIMENSION,
     MAX_STORED_TASKS,
 )
 from quote_renderer import remove_watermark_crop
@@ -40,8 +38,12 @@ from quote_renderer import remove_watermark_crop
 client = TestClient(app)
 
 
+from test_qc2_r7_images import fake, studio  # noqa: E402,F401
+
+
 @pytest.fixture(autouse=True)
-def setup_db():
+def setup_db(studio):
+    """The database, and image providers answering from a fake on this machine."""
     init_db()
 
 
@@ -81,32 +83,26 @@ def test_api_oversized_concept_rejected_422():
     assert resp.status_code == 422
 
 
-def test_pollinations_zero_dimensions_safe(monkeypatch):
-    """Verifies that _call_pollinations guards against zero or negative dimensions."""
-    import image_studio
+def test_pollinations_zero_dimensions_safe(fake):
+    """The Pollinations call guards against zero or negative dimensions. Answered by the fake."""
+    import image_providers
 
-    # The request is answered here: this test once called the public image
-    # service on every run, and the suite refuses the network now.
-    asked = []
+    # The request is answered by the fake on this machine: this test once
+    # called the public image service on every run, and the suite refuses
+    # the network now.
+    config = image_providers.ImageProviderConfig("pollinations")
+    res = image_providers.generate(config, "Prompt test", "", width=1080, height=0)
+    assert isinstance(res, bytes)
 
-    def no_service(url, timeout=None, **_kwargs):
-        asked.append(url)
-        return type("Answer", (), {"status_code": 503, "content": b""})()
-
-    monkeypatch.setattr(image_studio.requests, "get", no_service)
-
-    # height=0 must not trigger ZeroDivisionError
-    res = image_studio_manager._call_pollinations("Prompt test", width=1080, height=0)
-    assert res is None
-
-    # Negative dimensions must not crash
-    res_neg = image_studio_manager._call_pollinations("Prompt test", width=-100, height=-50)
-    assert res_neg is None
+    res_neg = image_providers.generate(config, "Prompt test", "", width=-100, height=-50)
+    assert isinstance(res_neg, bytes)
 
     # Both reached the request with real, positive dimensions.
+    asked = [r for r in fake.requests if r["prefix"] == "pollinations"]
     assert len(asked) == 2
-    for url in asked:
-        assert "width=0" not in url and "height=0" not in url and "=-" not in url
+    for record in asked:
+        for side in ("width", "height"):
+            assert int(record["query"][side][0]) > 0, record["query"]
 
 
 def test_remove_watermark_crop_zero_dimensions_safe():
@@ -122,32 +118,6 @@ def test_remove_watermark_crop_zero_dimensions_safe():
     assert isinstance(clean_bytes, bytes)
     assert pil_img.size[0] >= MIN_DIMENSION
     assert pil_img.size[1] >= MIN_DIMENSION
-
-
-def test_local_canvas_none_title_and_style_safe():
-    """Verifies that _create_local_canvas_image handles None title and style without TypeError."""
-    img_bytes = image_studio_manager._create_local_canvas_image(1080, 1080, None, None)
-    assert isinstance(img_bytes, bytes)
-    assert len(img_bytes) > 500
-
-    # Verify generated image can be opened by PIL
-    pil_img = Image.open(io.BytesIO(img_bytes))
-    assert pil_img.size == (1080, 1080)
-
-
-def test_local_canvas_small_and_extreme_dimensions_clamped():
-    """Verifies that _create_local_canvas_image clamps dimensions to [MIN_DIMENSION, MAX_DIMENSION]."""
-    # Extremely small dimensions (e.g. 5x5) must be clamped to MIN_DIMENSION (64)
-    small_bytes = image_studio_manager._create_local_canvas_image(5, 5, "Small", "Blueprint")
-    pil_small = Image.open(io.BytesIO(small_bytes))
-    assert pil_small.size[0] == MIN_DIMENSION
-    assert pil_small.size[1] == MIN_DIMENSION
-
-    # Extremely large dimensions must be clamped to MAX_DIMENSION (4096)
-    large_bytes = image_studio_manager._create_local_canvas_image(99999, 99999, "Large", "Blueprint")
-    pil_large = Image.open(io.BytesIO(large_bytes))
-    assert pil_large.size[0] == MAX_DIMENSION
-    assert pil_large.size[1] == MAX_DIMENSION
 
 
 def test_task_memory_bounded_pruning():

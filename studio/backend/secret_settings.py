@@ -27,7 +27,7 @@ try:
 except ImportError:
     from vault import DPAPI_PREFIX, LOCAL_ENC_PREFIX, LOCAL_ENC_V2_PREFIX, decrypt_token, encrypt_token
 
-SECRET_SETTING_KEYS = frozenset({"ai_api_key", "gemini_api_key"})
+SECRET_SETTING_KEYS = frozenset({"ai_api_key", "gemini_api_key", "ai_image_api_key"})
 
 _SEALED_PREFIXES = (DPAPI_PREFIX, LOCAL_ENC_V2_PREFIX, LOCAL_ENC_PREFIX)
 
