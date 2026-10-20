@@ -785,6 +785,63 @@ _MIGRATION_19_FORGET = (
 )
 
 
+def _migrate_retention(cursor: sqlite3.Cursor) -> None:
+    """
+    Empty structures for retention (studio/backend/retention.py), and nothing else.
+
+    No row is removed here. A cleanup runs later, after a backup, and on a
+    database that already holds readings or reactions only once the creator
+    has confirmed its preview: so the starting state of those two rules is
+    "ask" there, and "on" for a new install, which has nothing to lose.
+    """
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS reaction_folds (
+        post_urn TEXT PRIMARY KEY,
+        reactions INTEGER NOT NULL DEFAULT 0,
+        folded_through TEXT,
+        updated_at TEXT NOT NULL
+    )
+    """)
+    # No foreign key: a later rebuild of leads would cascade into it. The
+    # trigger below removes a forgotten lead's row instead.
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS lead_retention_keeps (
+        lead_id TEXT PRIMARY KEY,
+        kept_at TEXT NOT NULL
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS retention_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        job TEXT NOT NULL,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        outcome TEXT NOT NULL,
+        removed INTEGER NOT NULL DEFAULT 0,
+        backup TEXT,
+        detail TEXT
+    )
+    """)
+    # Migration 19's trigger, now covering the keep list too.
+    cursor.execute("DROP TRIGGER IF EXISTS lead_forgotten")
+    cursor.execute("""
+    CREATE TRIGGER lead_forgotten AFTER DELETE ON leads
+    BEGIN
+        DELETE FROM lead_stage_events WHERE lead_id = OLD.id;
+        DELETE FROM lead_interactions WHERE lead_id = OLD.id;
+        DELETE FROM lead_enrichments WHERE lead_id = OLD.id;
+        DELETE FROM lead_retention_keeps WHERE lead_id = OLD.id;
+    END
+    """)
+    starting = (
+        ("retention_readings", "SELECT EXISTS (SELECT 1 FROM post_metric_observations)"),
+        ("retention_fold_reactions", "SELECT EXISTS (SELECT 1 FROM lead_interactions WHERE interaction_type = 'LIKE')"),
+    )
+    for key, holds_data in starting:
+        state = "ask" if cursor.execute(holds_data).fetchone()[0] else "on"
+        cursor.execute("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)", (key, state))
+
+
 # Migration = (version, description, payload)
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
@@ -808,6 +865,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (17, "A captured lead says how they engaged, and where their profile is", _migrate_lead_engagement_labels),
     (18, "Connections and archive imports, from LinkedIn's own data archive", _MIGRATION_18_ARCHIVE),
     (19, "Nothing about a forgotten lead outlives them", _MIGRATION_19_FORGET),
+    (20, "Retention: reaction folds, the lead keep list and a cleanup log", _migrate_retention),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

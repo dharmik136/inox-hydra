@@ -666,6 +666,24 @@ class NativeScheduler:
                 id="queue_checker",
                 replace_existing=True
             )
+            # The daily backup, its rotation and the retention cleanups, for
+            # every profile. Checked hourly, so a studio opened for an hour a
+            # day still gets its backup; the first check waits ten minutes so
+            # starting up stays quick. retention.py decides what is due.
+            try:
+                from . import retention
+            except ImportError:
+                import retention
+            self.scheduler.add_job(
+                retention.run_for_every_profile,
+                "interval",
+                hours=1,
+                next_run_time=datetime.now() + timedelta(minutes=10),
+                id="daily_backup_and_retention",
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+            )
             self.scheduler.start()
             logger.info("Local background cadence scheduler started.")
 
