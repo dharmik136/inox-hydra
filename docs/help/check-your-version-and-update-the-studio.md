@@ -27,10 +27,13 @@ A check prints `Installed:` and `Latest:`, then either "You are up to date." or 
 
 ## Upgrade a portable copy
 
-1. Take a backup. See [Back up, restore and export](back-up-restore-and-export.md).
-2. Close the minimised **Inox Hydra Engine** window. See [Stop the studio, and use the tray icon](stop-the-studio-and-use-the-tray-icon.md).
-3. Delete the Inox Hydra folder and extract the new ZIP in its place.
-4. Start the studio as usual.
+1. Download the new file ending in `-win64.zip` from the latest release. Before you extract it, right-click it, choose **Properties**, tick **Unblock** and click **OK**.
+2. Take a backup of every creator profile: `InoxHydra-CLI.bat backup --all`. See [Back up, restore or export your data](back-up-restore-and-export.md).
+3. Close the minimised **Inox Hydra Engine** window. See [Stop the studio, and use the tray icon](stop-the-studio-and-use-the-tray-icon.md).
+4. Delete the Inox Hydra folder and extract the new ZIP in its place.
+5. Start the studio as usual, with `InoxHydra.bat` in the new folder.
+6. If you loaded the browser extension by hand, load it again from the new folder's `extension` folder. See [After an update, reload the browser extension](after-an-update-reload-the-extension.md).
+7. If you made a desktop shortcut, make it again: the folder's name includes the version, so the old shortcut points at a folder that is gone. See [Put a studio shortcut on your desktop](put-the-studio-on-your-desktop.md).
 
 A portable copy keeps your data in `%LOCALAPPDATA%\InoxHydra`, outside the folder, so this is safe by default.
 

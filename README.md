@@ -86,20 +86,60 @@ inox-hydra/
 
 ## 📦 Install
 
-### Option A: Download and run (recommended, no Python required)
+### Windows: download and run (recommended, no Python required)
 
 1. Download the `InoxHydra-<version>-win64.zip` asset from [the latest release](https://github.com/dharmik136/inox-hydra/releases/latest).
-2. Extract it anywhere. A USB stick is fine.
-3. Double-click **`InoxHydra.bat`**.
+2. Before you extract it, right-click the ZIP, choose **Properties**, tick
+   **Unblock** and click **OK**. The build is not code signed yet, so Windows
+   treats it with suspicion; if it still shows "Windows protected your PC",
+   click **More info**, then **Run anyway**.
+3. Extract it anywhere. A USB stick is fine.
+4. Double-click **`InoxHydra.bat`**.
 
-The studio opens in its own window. No installer, no administrator rights, and
-no Python installation: the ZIP embeds its own CPython runtime.
+No installer, no administrator rights, and no Python installation: the ZIP
+embeds its own CPython runtime. The launcher starts the studio, waits until it
+answers as Inox Hydra, then opens it: in a Chrome app window when Google Chrome
+is installed, otherwise in your default browser. The engine keeps running in a
+minimised window titled **Inox Hydra Engine**; close that window to stop the
+studio.
 
-**To upgrade**, delete the folder and extract the newer one. Your data lives in
-`%LOCALAPPDATA%\InoxHydra`, so it is untouched, and any database schema changes
-are applied automatically on first launch with a timestamped backup taken first.
+- **Port 8000 in use.** If another program holds port 8000, the launcher says
+  so and starts the studio on the next free port, 8001 to 8009. The browser
+  extension only connects on port 8000, so to capture leads and analytics,
+  close the other program and start the studio again.
+- **It will not start.** The launcher window stays open with the reason, the
+  last lines of the engine's log, and where the whole log is
+  (`%LOCALAPPDATA%\InoxHydra\logs\engine.log`).
+- **A desktop shortcut.** Double-click `create_desktop_shortcut.vbs` in the
+  folder.
 
-### Option B: Run from source (developers)
+The same release also carries `InoxHydra-<version>-win64-setup.exe`, the
+desktop app, as an alternative to the ZIP. It is not code signed yet either.
+
+**To upgrade**, back up every creator profile (`InoxHydra-CLI.bat backup --all`),
+close the **Inox Hydra Engine** window, delete the folder and extract the newer
+one. Your data lives in `%LOCALAPPDATA%\InoxHydra`, so it is untouched, and any
+database schema changes are applied automatically on first launch with a
+timestamped backup taken first. Then reload the browser extension from the new
+folder and make the shortcut again, because the folder name carries the
+version. If you created `app\studio\data` (true portable mode), your data is
+inside the folder: copy it out before deleting anything.
+
+**To remove it**, there is no uninstaller for the ZIP: stop the studio, delete
+the folder, then delete `%LOCALAPPDATA%\InoxHydra`, which also holds your
+backups and the bridge browser profile. The in-app help article "Remove the
+studio and everything it stored" lists every other place it may have written.
+
+### macOS and Linux: run from source for now
+
+Packaged macOS and Linux builds are not released yet; they follow once their
+bundled runtime and macOS signing are proven. Until then, follow the source
+steps below on macOS or Linux (Python 3.10 or newer, Node 22 or newer), then
+start the studio with `./launch_studio.sh` from the checkout. It builds the
+interface if it is missing, starts the server, waits for it, and opens the
+studio in your browser. Your data stays in the checkout's `studio/data`.
+
+### Run from source (developers, any platform)
 
 ```bash
 git clone https://github.com/dharmik136/inox-hydra.git

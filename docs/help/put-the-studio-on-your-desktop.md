@@ -1,12 +1,12 @@
 # Put a studio shortcut on your desktop
-Which shortcut you can make depends on how you run the studio, and only a source checkout has a ready-made script for it.
+Which shortcut you can make depends on how you run the studio; the portable folder and a source checkout each have a ready-made script for it.
 
 ## Pick your case
 
 | How you run the studio | What to use |
 | --- | --- |
 | Source checkout, started with `launch_studio.bat` | The bundled `create_desktop_shortcut.vbs` script |
-| Portable folder, started with `InoxHydra.bat` | An ordinary Windows shortcut to `InoxHydra.bat` |
+| Portable folder, started with `InoxHydra.bat` | The same `create_desktop_shortcut.vbs` script, in the portable folder |
 | Desktop app | The app's own entry |
 | Edge or Chrome, with the server already running | The browser's own install option |
 
@@ -22,13 +22,14 @@ To start the tray icon instead, add `--tray` after the target in the shortcut's 
 
 ## Portable folder
 
-The portable folder includes `create_desktop_shortcut.vbs`, but it does not work there: it looks for `launch_studio.bat`, which the portable folder does not have, and stops with "Could not find launch_studio.bat next to this script."
-
-Make an ordinary Windows shortcut instead. This is a Windows feature, not part of the studio.
-
 1. Open the portable folder.
-2. Right-click `InoxHydra.bat` and choose **Send to**, then **Desktop (create shortcut)**. On Windows 11 you may need **Show more options** first.
-3. Rename the shortcut if you like.
+2. Double-click `create_desktop_shortcut.vbs`.
+3. A message reads "Shortcut created on Desktop, pointing at:" followed by the path to `InoxHydra.bat`.
+4. Double-click **Inox Hydra** on your desktop to start the studio. The shortcut wears the studio's icon.
+
+What happens: the shortcut runs `InoxHydra.bat`, which waits until the studio answers before it opens a window, and tells you when port 8000 is taken by another program. See [Open the studio for the first time](open-the-studio-for-the-first-time.md).
+
+You can also make an ordinary Windows shortcut: right-click `InoxHydra.bat` and choose **Send to**, then **Desktop (create shortcut)**. On Windows 11 you may need **Show more options** first.
 
 The portable folder's name includes the version, for example `InoxHydra-2.6.0-win64`. After an upgrade, the shortcut points at a folder that no longer exists, so make it again.
 
@@ -57,6 +58,6 @@ The studio can add an `Inox Hydra.lnk` entry (`LinkedIn Studio.lnk` if you turne
 
 | What you see | What to do |
 | --- | --- |
-| "Could not find launch_studio.bat next to this script." | You are in a portable folder, or the script was moved. Use the portable steps above, or keep the script in the checkout's top folder. |
+| "Could not find InoxHydra.bat or launch_studio.bat next to this script." | The script was moved out of the folder it came in. Keep it in the portable folder, or in the checkout's top folder, and run it from there. |
 | The shortcut opens a page that cannot connect | The server is not running. See [The studio will not open or shows an error](the-studio-will-not-open.md). |
 | The shortcut does nothing after an upgrade | It points at the old folder. Make it again. |

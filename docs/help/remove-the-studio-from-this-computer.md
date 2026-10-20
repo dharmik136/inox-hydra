@@ -1,5 +1,5 @@
 # Remove the studio and everything it stored
-There is no uninstaller or uninstall command, so removing the studio means stopping it and deleting a known list of folders and entries yourself.
+The portable folder has no uninstaller and the desktop app's uninstaller keeps your data, so removing the studio means stopping it and deleting a known list of folders and entries yourself.
 
 The command-line `reset` only clears configuration and keeps your content.
 
@@ -35,8 +35,8 @@ The last row is called the platform folder below. `paths` does not list `backups
 ## Remove it by install type
 
 - **Source checkout.** Delete the checkout folder; your state is in its `studio` folder. Then check the platform folder (`%LOCALAPPDATA%\InoxHydra` on Windows), which holds the bridge browser profile even for a checkout.
-- **Portable folder.** Delete the folder, then `%LOCALAPPDATA%\InoxHydra`. In true portable mode (you created `app\studio\data`), your data was inside the folder, but the browser profile is still in `%LOCALAPPDATA%\InoxHydra`.
-- **Desktop app.** Remove Inox Hydra the way your system removes apps (on Windows it installs for the current user only), then delete the platform folder, `%LOCALAPPDATA%\InoxHydra` on Windows. Nothing in the studio deletes that folder, and this project does not define what the uninstaller removes.
+- **Portable folder.** Close the minimised **Inox Hydra Engine** window, delete the folder, then delete `%LOCALAPPDATA%\InoxHydra`. In true portable mode (you created `app\studio\data`), your data was inside the folder, but the browser profile is still in `%LOCALAPPDATA%\InoxHydra`. If you made a desktop shortcut, delete **Inox Hydra** from your Desktop too.
+- **Desktop app.** On Windows, open **Settings**, then **Apps**, then **Installed apps**, and uninstall **Inox Hydra** (it installs for the current user only). Then delete the platform folder, `%LOCALAPPDATA%\InoxHydra`. Nothing in the studio deletes that folder, and this project does not define what the uninstaller removes.
 
 ## Things outside the data home
 
