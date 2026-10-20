@@ -21,8 +21,19 @@ from database import init_db
 client = TestClient(app)
 
 
+from test_qc2_r7_images import fake, studio  # noqa: E402,F401
+
+
 @pytest.fixture(autouse=True)
-def setup_db():
+def setup_db(studio):
+    """
+    The database, and image providers answering from a fake on this machine.
+
+    Generation used to skip every provider under pytest and draw a local
+    placeholder, which is what made a placeholder look like success (BE-06).
+    It now always asks the chosen provider, so the tests give it one that
+    cannot reach the network.
+    """
     init_db()
 
 

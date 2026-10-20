@@ -45,8 +45,11 @@ So the policy is per category, and the defaults match how each call is reached:
              the reasoning that put it there has not changed.
   model      allowed. Reached only when you have configured a provider key,
              and that key is the consent.
-  image      allowed. Reached only when you press Generate.
-  library    allowed. Reached only when you sync or import a bundle.
+  image      allowed. Reached only when you press Generate, and only for the
+             image provider chosen in the Prompt tab. A web UI you run on
+             this computer (ComfyUI, AUTOMATIC1111) is not egress: see
+             on_this_machine().
+  library   allowed. Reached only when you sync or import a bundle.
   updates    allowed here, and already off by default one level up in
              updates.py, which asks before it ever checks.
   ingress    allowed here, and inert unless TELEGRAM_BOT_TOKEN is set.
@@ -123,6 +126,36 @@ def allowed(category: str) -> bool:
     if override is None or not override.strip():
         return default
     return _truthy(override)
+
+
+def on_this_machine(destination: str) -> bool:
+    """
+    True when a URL names this computer: 127.x, ::1 or localhost.
+
+    A request there does not leave the machine, so it is not egress and no
+    switch here refuses it, INOX_NO_EGRESS included. That is what lets a
+    creator who turned everything off still render images with a web UI they
+    run themselves. A private address on the local network (192.168.x) is
+    another machine and is not covered: it goes through require() like
+    anything else.
+
+    Callers decide when this applies. The image studio uses it only for the
+    providers whose whole purpose is a local address, never for a cloud
+    provider, so a cloud endpoint pointed at loopback by a test still meets
+    the guard.
+    """
+    import ipaddress
+
+    try:
+        host = urlsplit(str(destination or "")).hostname or ""
+    except ValueError:
+        return False
+    if host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 def public_destination(destination: str) -> str:
