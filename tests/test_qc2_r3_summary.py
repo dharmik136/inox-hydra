@@ -402,6 +402,53 @@ def test_todays_comparison_reads_the_same_readings(home):
         assert entry["posts_compared"] == len(theirs)
 
 
+def _old_lead_review(onboarding):
+    """onboarding.lead_review before R3: every interaction classified one by one."""
+    conn = _db()
+    try:
+        own_ids = onboarding._own_activity_ids(conn)
+        complete = onboarding.post_history_complete(conn)
+        leads = {r["id"]: dict(r) for r in conn.execute(
+            "SELECT id, COALESCE(full_name, name) AS name, headline, created_at FROM leads")}
+        origins = {lead_id: [] for lead_id in leads}
+        for row in conn.execute("SELECT lead_id, post_urn FROM lead_interactions"):
+            if str(row["lead_id"]) in origins:
+                origins[str(row["lead_id"])].append(onboarding._origin(row["post_urn"], own_ids, complete))
+    finally:
+        conn.close()
+    groups = {"yours": [], "not_yours": [], "unknown": []}
+    for lead_id, seen in origins.items():
+        verdict = ("yours" if "yours" in seen else
+                   "not_yours" if seen and all(o == "not_yours" for o in seen) else "unknown")
+        groups[verdict].append({**leads[lead_id], "interactions": len(seen)})
+    return {"status": "success", "history_complete": complete, "counts": {k: len(v) for k, v in groups.items()},
+            "not_yours": sorted(groups["not_yours"], key=lambda l: l.get("created_at") or "")}
+
+
+@pytest.mark.parametrize("complete", [False, True])
+def test_the_leads_review_is_the_same(home, monkeypatch, complete):
+    import onboarding
+    monkeypatch.setattr(onboarding, "post_history_complete", lambda conn: complete)
+    conn = _db()
+    try:
+        with conn:
+            # People who engaged only with someone else's post, some of them also without a post.
+            for n in range(12):
+                conn.execute("INSERT INTO leads (id, name, full_name, status, lead_status, created_at) "
+                             "VALUES (?, ?, ?, 'New Lead', 'NEW', '2026-01-01 00:00:00')",
+                             (f"lead-away-{n}", f"Away {n}", f"Away {n}"))
+                conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, comment_key) "
+                             "VALUES (?, 'urn:li:activity:123456789', 'LIKE', '')", (f"lead-away-{n}",))
+                if n % 3 == 0:
+                    conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, comment_key) "
+                                 "VALUES (?, NULL, 'LIKE', '')", (f"lead-away-{n}",))
+    finally:
+        conn.close()
+    new = onboarding.lead_review()
+    assert new == _old_lead_review(onboarding)
+    assert bool(new["not_yours"]) == complete and new["counts"]["yours"] > 100
+
+
 # ---------------------------------------------------------------------------
 # Reactions folded by the retention job (batch R4)
 # ---------------------------------------------------------------------------

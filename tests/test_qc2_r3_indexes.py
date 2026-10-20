@@ -279,3 +279,69 @@ def test_optimize_db_runs_on_this_sqlite(home):
         assert conn.execute("SELECT COUNT(*) FROM sqlite_stat1").fetchone()[0] > 0
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Activity: the most recently engaged leads
+# ---------------------------------------------------------------------------
+
+OLD_ACTIVITY_SQL = """
+    SELECT l.id FROM leads l
+    ORDER BY COALESCE(
+        (SELECT MAX(COALESCE(i.first_seen_at, i.interacted_at)) FROM lead_interactions i WHERE i.lead_id = l.id),
+        l.created_at) DESC, l.created_at DESC
+    LIMIT ?
+"""
+
+
+def _keyed(conn, ids):
+    """Each lead's place in the old order: (key, created_at), which decides it up to exact ties."""
+    return [tuple(conn.execute(
+        "SELECT COALESCE((SELECT MAX(COALESCE(i.first_seen_at, i.interacted_at)) FROM lead_interactions i "
+        "WHERE i.lead_id = l.id), l.created_at), l.created_at FROM leads l WHERE l.id = ?", (i,)).fetchone())
+        for i in ids]
+
+
+@pytest.mark.parametrize("limit", [1, 5, 25, 50, 400])
+def test_activity_lists_the_same_recent_leads(home, limit):
+    from fastapi.testclient import TestClient
+    import app as app_module
+    from database import get_db
+    conn = get_db()
+    try:
+        with conn:
+            # Leads who never engaged, newer than everyone, and one whose
+            # engagement has no time at all.
+            for n in range(8):
+                conn.execute("INSERT INTO leads (id, name, status, lead_status, created_at) "
+                             "VALUES (?, ?, 'New Lead', 'NEW', datetime('now', '+1 day'))", (f"lead-new-{n}", f"N{n}"))
+            conn.execute("INSERT INTO lead_interactions (lead_id, interaction_type, interacted_at, comment_key) "
+                         "VALUES ('lead-0007', 'LIKE', NULL, 'nt')")
+        body = TestClient(app_module.app).get("/api/v1/self/activity-stream", params={"limit": limit}).json()
+        new = [lead["id"] for lead in body["recent_leads"]]
+        old = [r[0] for r in conn.execute(OLD_ACTIVITY_SQL, (limit,))]
+        assert len(new) == len(old)
+        assert _keyed(conn, new) == _keyed(conn, old)
+        if limit >= 5:
+            assert set(new[:5]) <= {f"lead-new-{n}" for n in range(8)}
+    finally:
+        conn.close()
+
+
+def test_activity_does_not_rank_every_lead(home, monkeypatch):
+    from fastapi.testclient import TestClient
+    import app as app_module
+    import database
+    seen = []
+    real = database.get_db
+
+    def traced():
+        conn = real()
+        conn.set_trace_callback(seen.append)
+        return conn
+
+    import routers.browser as browser_router
+    monkeypatch.setattr(browser_router, "get_db", traced)
+    TestClient(app_module.app).get("/api/v1/self/activity-stream", params={"limit": 25})
+    ranked = [s for s in seen if "SELECT MAX(COALESCE" in s]
+    assert ranked and all("json_each" in s for s in ranked), "every lead was ranked"

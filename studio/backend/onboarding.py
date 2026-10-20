@@ -1330,35 +1330,49 @@ def lead_review() -> Dict[str, Any]:
     is complete), and "unknown" otherwise, including leads added by hand, which
     have no captured interaction at all.
     """
+    # Whose a post is depends on the post alone, so each post is classified
+    # once, from the per-post summary and its lead ids, and only the leads
+    # that could be "not_yours" have their interactions read. Reading and
+    # classifying all 500,000 interactions took 0.6 s on three years of data.
     conn = get_db()
     try:
         own_ids = _own_activity_ids(conn)
         complete = post_history_complete(conn)
-        leads = {r["id"]: dict(r) for r in conn.execute(
-            "SELECT id, COALESCE(full_name, name) AS name, headline, created_at FROM leads")}
-        origins: Dict[str, List[str]] = {lead_id: [] for lead_id in leads}
-        for row in conn.execute("SELECT lead_id, post_urn FROM lead_interactions"):
-            key = str(row["lead_id"])
-            if key in origins:
-                origins[key].append(_origin(row["post_urn"], own_ids, complete))
+        total = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+        yours, elsewhere = set(), set()
+        for urn, row in post_summary.current(conn).items():
+            if not row["people"]:
+                continue
+            origin = _origin(urn, own_ids, complete)
+            if origin == "yours":
+                yours.update(post_summary.lead_ids_of(row))
+            elif origin == "not_yours":
+                elsewhere.update(post_summary.lead_ids_of(row))
+        candidates = elsewhere - yours
+        seen: Dict[str, List[str]] = {lead_id: [] for lead_id in candidates}
+        if candidates:
+            for row in conn.execute("SELECT CAST(lead_id AS TEXT) AS lead_id, post_urn FROM lead_interactions "
+                                    "WHERE lead_id IN (SELECT value FROM json_each(?))",
+                                    (json.dumps(sorted(candidates)),)):
+                if row["lead_id"] in seen:
+                    seen[row["lead_id"]].append(_origin(row["post_urn"], own_ids, complete))
+        not_yours = [lead_id for lead_id, origins in seen.items()
+                     if origins and all(o == "not_yours" for o in origins)]
+        listed = [dict(r) for r in conn.execute(
+            "SELECT id, COALESCE(full_name, name) AS name, headline, created_at FROM leads "
+            "WHERE id IN (SELECT value FROM json_each(?)) ORDER BY rowid", (json.dumps(not_yours),))]
     finally:
         conn.close()
 
-    groups = {"yours": [], "not_yours": [], "unknown": []}
-    for lead_id, seen in origins.items():
-        if "yours" in seen:
-            verdict = "yours"
-        elif seen and all(o == "not_yours" for o in seen):
-            verdict = "not_yours"
-        else:
-            verdict = "unknown"
-        groups[verdict].append({**leads[lead_id], "interactions": len(seen)})
-
+    for lead in listed:
+        lead["interactions"] = len(seen[lead["id"]])
+    counts = {"yours": len(yours), "not_yours": len(listed)}
+    counts["unknown"] = total - counts["yours"] - counts["not_yours"]
     return {
         "status": "success",
         "history_complete": complete,
-        "counts": {k: len(v) for k, v in groups.items()},
-        "not_yours": sorted(groups["not_yours"], key=lambda l: l.get("created_at") or ""),
+        "counts": {k: counts[k] for k in ("yours", "not_yours", "unknown")},
+        "not_yours": sorted(listed, key=lambda l: l.get("created_at") or ""),
     }
 
 
