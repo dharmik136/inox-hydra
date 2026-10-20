@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { CalendarClock, CheckCheck, Loader2, Send } from "lucide-react";
+import { CalendarClock, CheckCheck, Copy, Loader2, Send } from "lucide-react";
 import {
   fetchNextSlot,
   publishNow,
@@ -11,6 +11,7 @@ import {
   type CadenceVerdict,
   type NextSlot,
 } from "@/lib/api";
+import { formatLocal } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const FOCUSABLE = "button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex='-1'])";
@@ -20,6 +21,8 @@ interface PublishDialogProps {
   postId: string | null;
   /** The first line of the stored post, which is what every choice acts on. */
   opening: string;
+  /** The stored post's whole text, which Copy and mark posted copies exactly. */
+  content: string;
   onClose: () => void;
   onDone: (message: string) => void;
 }
@@ -45,11 +48,17 @@ interface PublishDialogProps {
  * the author publishes themselves is still recorded with "mark", which is the
  * ordinary case and the honest verb for it.
  *
+ * That ordinary case is the main action, Copy and mark posted: the exact text
+ * goes to the clipboard first, and only then is the post recorded, so the
+ * record never claims a post the creator could not paste. Mark as published
+ * used to be the default with nothing to copy, and a post recorded as posted
+ * that was never posted was the result.
+ *
  * The scheduling path validates the cadence before committing, because the
  * write rejects an invalid time with a 400 and a rejection after the click
  * reads as a broken control rather than as the twelve hour rule it is.
  */
-export function PublishDialog({ open, postId, opening, onClose, onDone }: PublishDialogProps) {
+export function PublishDialog({ open, postId, opening, content, onClose, onDone }: PublishDialogProps) {
   const [slot, setSlot] = useState<NextSlot | null>(null);
   const [verdict, setVerdict] = useState<CadenceVerdict | null>(null);
   const [busy, setBusy] = useState(false);
@@ -61,6 +70,9 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
   // An earlier send got no answer from LinkedIn. Sending again is offered only
   // once the studio has said so, and only as its own, named control.
   const [resendOffered, setResendOffered] = useState(false);
+  // The clipboard refused, so nothing was recorded. Marking it posted without
+  // the copy is then offered, for a creator who copied the text another way.
+  const [copyRefused, setCopyRefused] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -69,6 +81,7 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
     setVerdict(null);
     setConfirmingSend(false);
     setResendOffered(false);
+    setCopyRefused(false);
     fetchNextSlot()
       .then(async (next) => {
         if (!live) return;
@@ -135,14 +148,28 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
     };
   }, [open]);
 
-  async function run(action: "now" | "schedule" | "send" | "resend") {
+  async function run(action: "copy" | "now" | "schedule" | "send" | "resend") {
     if (!postId) return;
     setBusy(true);
     setError(null);
     try {
-      if (action === "now") {
+      if (action === "copy") {
+        // Copied first, and recorded only once the copy landed: a post marked
+        // as posted with nothing on the clipboard is the creator's record of
+        // something they cannot then do.
+        try {
+          await navigator.clipboard.writeText(content);
+        } catch {
+          setCopyRefused(true);
+          throw new Error(
+            "This browser did not allow copying, so nothing was recorded. Select the text in the Composer and copy it yourself, then press Mark posted without copying.",
+          );
+        }
         await publishNow(postId);
-        onDone("Marked as published");
+        onDone("Copied and marked as posted");
+      } else if (action === "now") {
+        await publishNow(postId);
+        onDone("Marked as posted");
       } else if (action === "send" || action === "resend") {
         if (!slot) throw new Error("No slot is available to send into.");
         const staged = await stageToLinkedIn(postId, slot.slot_datetime, action === "resend");
@@ -152,7 +179,7 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
       } else {
         if (!slot) throw new Error("No slot is available to schedule into.");
         await schedulePost(postId, slot.slot_datetime);
-        onDone(`Scheduled for ${slot.day_name} ${slot.time_slot}`);
+        onDone(`Queued for ${formatLocal(slot.local_datetime)}`);
       }
       onClose();
     } catch (caught) {
@@ -221,20 +248,36 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
                     {opening}
                   </p>
                 )}
-                <p className="mt-3 text-[13px] leading-relaxed text-ink-secondary">
-                  Mark this as published in your record, or put it in the local queue, which lists
-                  it as due at the slot for you to post on LinkedIn yourself.
-                </p>
+                {/* What each of the two local actions does, in full, before
+                    either is pressed. Mark as published used to be the
+                    orange default, and it recorded a post nobody had posted
+                    while nothing helped the creator post it. */}
+                <dl className="mt-3 flex flex-col gap-2 text-[13px] leading-relaxed">
+                  <div>
+                    <dt className="font-medium text-ink-primary">Copy and mark posted</dt>
+                    <dd className="text-ink-secondary">
+                      Copies this post&apos;s exact text to your clipboard, then records it in the studio as
+                      posted by you, now. Paste it into LinkedIn and post it there: the studio does not post it.
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="font-medium text-ink-primary">Queue it</dt>
+                    <dd className="text-ink-secondary">
+                      Puts it in the studio&apos;s queue for the next slot below. At that time it shows as due on
+                      Today and the Queue, for you to copy and post.
+                    </dd>
+                  </div>
+                </dl>
                 <p className="studio-meta mt-2 leading-snug text-ink-muted">
                   NEITHER OF THOSE TWO SENDS ANYTHING. BOTH WRITE TO THIS MACHINE ONLY,
-                  SO THE POST ITSELF IS STILL YOURS TO MAKE.
+                  SO THE POST ITSELF IS STILL YOURS TO MAKE ON LINKEDIN.
                 </p>
 
                 {slot && (
                   <div className="mt-4 rounded-md border border-edge bg-ink p-3">
                     <p className="studio-meta text-[10px]">NEXT SLOT</p>
                     <p className="mt-1 text-[13px] text-ink-primary">
-                      {slot.day_name} {slot.time_slot}
+                      {formatLocal(slot.local_datetime)}
                       <span className="mx-2 text-ink-muted">·</span>
                       <span className="text-ink-secondary">{slot.label}</span>
                     </p>
@@ -257,6 +300,51 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
                   </p>
                 )}
 
+                <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="rounded-md px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+                  >
+                    Cancel
+                  </button>
+                  {copyRefused && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => run("now")}
+                      className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                    >
+                      <CheckCheck className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                      Mark posted without copying
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={busy || !slot || verdict?.valid === false}
+                    onClick={() => run("schedule")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary",
+                      "transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40",
+                    )}
+                  >
+                    <CalendarClock className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                    Queue it
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => run("copy")}
+                    className="flex items-center gap-1.5 rounded-md bg-signal-orange px-3 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+                  >
+                    {busy ? (
+                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                    )}
+                    Copy and mark posted
+                  </button>
+                </div>
                 {/* Below a rule and after the two local actions, because it is
                     not one of them. The label names LinkedIn, the confirm step
                     names what cannot be undone, and the slot it would use is
@@ -283,7 +371,7 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
                       <p className="text-[13px] leading-relaxed text-signal-orange-text">
                         This sends the post&apos;s text to LinkedIn, signed in with your saved
                         LinkedIn session, for{" "}
-                        {slot ? `${slot.day_name} ${slot.time_slot}` : "the selected slot"}.
+                        {slot ? formatLocal(slot.local_datetime) : "the selected slot"}.
                         It cannot be undone from here: after this, changing it means going
                         to LinkedIn.
                       </p>
@@ -326,40 +414,6 @@ export function PublishDialog({ open, postId, opening, onClose, onDone }: Publis
                   )}
                 </div>
 
-                <div className="mt-5 flex items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="rounded-md px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || !slot || verdict?.valid === false}
-                    onClick={() => run("schedule")}
-                    className={cn(
-                      "flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary",
-                      "transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40",
-                    )}
-                  >
-                    <CalendarClock className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                    Queue it
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => run("now")}
-                    className="flex items-center gap-1.5 rounded-md bg-signal-orange px-3 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
-                  >
-                    {busy ? (
-                      <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                    ) : (
-                      <CheckCheck className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                    )}
-                    Mark as published
-                  </button>
-                </div>
               </>
             )}
           </motion.div>

@@ -1,4 +1,5 @@
-import { Check, FilePlus2, Files, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, Copy, FilePlus2, Files, Loader2 } from "lucide-react";
 import { POST_LIMIT_CHARS } from "@/lib/text";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,8 @@ interface ContextBarProps {
   onDrafts: () => void;
   /** Starts an empty post; the post open now stays in the drafts list. */
   onNewPost: () => void;
+  /** Copies the text in the editor exactly. Resolves whether the clipboard took it. */
+  onCopy: () => Promise<boolean>;
 }
 
 /**
@@ -51,7 +54,15 @@ export function ContextBar({
   onPublish,
   onDrafts,
   onNewPost,
+  onCopy,
 }: ContextBarProps) {
+  // What the last Copy did, said on the button for a few seconds.
+  const [copied, setCopied] = useState<"copied" | "refused" | null>(null);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = window.setTimeout(() => setCopied(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [copied]);
   return (
     <header className="flex h-12 shrink-0 items-center gap-3 border-b border-edge bg-ink px-3 sm:gap-4 sm:px-4">
       {/* flex-1 with min-w-0, so the title is what gives way on a narrow
@@ -102,7 +113,7 @@ export function ContextBar({
           {saveState === "published" && (
             <span className="flex items-center gap-1.5 text-signal-green-text">
               <Check className="size-3" aria-hidden="true" />
-              {(savedAt ?? "MARKED AS PUBLISHED").toUpperCase()}
+              {(savedAt ?? "MARKED AS POSTED").toUpperCase()}
             </span>
           )}
           {saveState === "failed" && (
@@ -143,6 +154,27 @@ export function ContextBar({
         >
           <FilePlus2 className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
           <span className="max-lg:sr-only">New post</span>
+        </button>
+
+        {/* The text exactly as written, for pasting into LinkedIn. No
+            screen that showed a post used to offer this. */}
+        <button
+          type="button"
+          onClick={() => void onCopy().then((ok) => setCopied(ok ? "copied" : "refused"))}
+          className={cn(
+            "flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium",
+            copied === "refused" ? "text-signal-orange-text" : "text-ink-secondary",
+            "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard) hover:bg-soft hover:text-ink-primary",
+          )}
+        >
+          {copied === "copied" ? (
+            <Check className="size-3.5 text-signal-green-text" aria-hidden="true" />
+          ) : (
+            <Copy className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          )}
+          <span className="max-lg:sr-only">
+            {copied === "copied" ? "Copied" : copied === "refused" ? "Copy refused" : "Copy"}
+          </span>
         </button>
 
         {/* Disabled while a save is out, so a second press cannot start a

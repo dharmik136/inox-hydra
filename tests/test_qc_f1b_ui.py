@@ -196,8 +196,9 @@ def test_publish_after_a_refused_save_shows_the_reason_and_opens_no_dialog(conte
 # WRITE-02 / UX-01: the next post does not overwrite the one just published
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("choice, status", [("Mark as published", "published"), ("Queue it", "scheduled")])
+@pytest.mark.parametrize("choice, status", [("Copy and mark posted", "published"), ("Queue it", "scheduled")])
 def test_the_next_post_is_a_new_post(context, studio_url, choice, status):
+    context.grant_permissions(["clipboard-read", "clipboard-write"], origin=studio_url)
     page, editor = _composer(context, studio_url)
     first = f"QC F1B post A about hiring juniors ({status})."
     editor.fill(first)

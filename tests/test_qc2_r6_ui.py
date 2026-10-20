@@ -316,3 +316,73 @@ def test_a_draft_is_deleted_only_after_confirming_and_can_be_brought_back(contex
     panel.get_by_role("button", name="Undo").click()
     panel.get_by_text("is back in your drafts", exact=False).wait_for()
     assert [r["content"] for r in _rows("draft")] == [f"{PREFIX} a draft to throw away"]
+
+
+# ---------------------------------------------------------------------------
+# D-2: Publish's main action copies the exact text and records it as posted
+# ---------------------------------------------------------------------------
+
+def _publish(page):
+    page.get_by_role("button", name="Publish", exact=True).click()
+    dialog = page.get_by_role("dialog", name="Publish")
+    dialog.get_by_role("button", name="Queue it").wait_for()
+    return dialog
+
+
+def test_copy_and_mark_posted_copies_the_exact_text_then_records_it(context, studio_url):
+    page, editor = _composer(context, studio_url)
+    text = f"{PREFIX} The exact words.\n\nWith \U0001d5ef\U0001d5fc\U0001d5f9\U0001d5f1 and a second paragraph."
+    editor.fill(text)
+    dialog = _publish(page)
+
+    primary = dialog.get_by_role("button", name="Copy and mark posted")
+    assert "bg-signal-orange" in (primary.get_attribute("class") or ""), "Copy and mark posted is not the main action"
+    assert "bg-signal-orange" not in (dialog.get_by_role("button", name="Queue it").get_attribute("class") or "")
+
+    primary.click()
+    dialog.wait_for(state="detached")
+    assert page.evaluate("() => navigator.clipboard.readText()").replace("\r\n", "\n") == text
+    assert [r["status"] for r in _rows()] == ["published"]
+    page.get_by_text("COPIED AND MARKED AS POSTED").wait_for()
+    assert editor.input_value() == ""
+
+
+def test_the_dialog_says_exactly_what_each_action_does(context, studio_url):
+    page, editor = _composer(context, studio_url)
+    editor.fill(f"{PREFIX} a post to read the dialog with")
+    dialog = _publish(page)
+    text = " ".join(dialog.inner_text().split())
+    assert "Copies this post's exact text to your clipboard, then records it in the studio as posted by you, now." in text
+    assert "the studio does not post it" in text
+    assert "Puts it in the studio's queue for the next slot below." in text
+    assert "NEITHER OF THOSE TWO SENDS ANYTHING" in text
+    dialog.get_by_role("button", name="Queue it").click()
+    dialog.wait_for(state="detached")
+    assert [r["status"] for r in _rows()] == ["scheduled"]
+
+
+def test_a_refused_copy_records_nothing(browser, studio_url):
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800}, service_workers="block")
+    ctx.add_init_script("navigator.clipboard.writeText = () => Promise.reject(new Error('denied'));")
+    try:
+        page, editor = _composer(ctx, studio_url)
+        editor.fill(f"{PREFIX} the copy is refused")
+        dialog = _publish(page)
+        dialog.get_by_role("button", name="Copy and mark posted").click()
+        dialog.get_by_text("nothing was recorded", exact=False).wait_for()
+        assert [r["status"] for r in _rows()] == ["draft"]
+        dialog.get_by_role("button", name="Mark posted without copying").click()
+        dialog.wait_for(state="detached")
+        assert [r["status"] for r in _rows()] == ["published"]
+    finally:
+        ctx.close()
+
+
+def test_the_composer_copies_the_text_as_written(context, studio_url):
+    page, editor = _composer(context, studio_url)
+    text = f"{PREFIX} copy me\n\nexactly as I am"
+    editor.fill(text)
+    page.get_by_role("button", name="Copy", exact=True).click()
+    page.get_by_role("button", name="Copied").wait_for()
+    assert page.evaluate("() => navigator.clipboard.readText()").replace("\r\n", "\n") == text
+    assert _rows() == [], "copying saved or recorded something"
