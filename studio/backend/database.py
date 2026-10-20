@@ -75,9 +75,16 @@ def get_db() -> sqlite3.Connection:
         conn.row_factory = sqlite3.Row
         # A delete overwrites the freed bytes, so a forgotten person is gone from the file (DATA-01).
         secure(conn)
-        conn.execute("PRAGMA journal_mode = WAL;")
-        conn.execute("PRAGMA synchronous = NORMAL;")
         conn.execute("PRAGMA busy_timeout = 5000;")
+        # WAL is written into the database file, so it holds for every later
+        # connection. Setting it takes a brief exclusive lock, and setting it
+        # on every open meant a connection opened while another was writing
+        # could fail with "database is locked" however long it waited: CI's
+        # Windows runner did exactly that under a thousand captures. Asking
+        # first is a read, and the answer is almost always already WAL.
+        if str(conn.execute("PRAGMA journal_mode;").fetchone()[0]).lower() != "wal":
+            conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.execute("PRAGMA cache_size = -64000;")
         conn.execute("PRAGMA temp_store = MEMORY;")
