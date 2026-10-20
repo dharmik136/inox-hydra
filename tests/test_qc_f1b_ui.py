@@ -8,6 +8,7 @@ worker would otherwise answer requests the tests route.
 """
 
 import os
+import re
 import shutil
 import socket
 import sys
@@ -19,7 +20,7 @@ import pytest
 import uvicorn
 
 pytest.importorskip("playwright.sync_api")
-from playwright.sync_api import sync_playwright  # noqa: E402
+from playwright.sync_api import expect, sync_playwright  # noqa: E402
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 BACKEND_DIR = os.path.join(REPO_ROOT, "studio", "backend")
@@ -155,11 +156,21 @@ def _publish_dialog(page):
     return page.get_by_role("dialog", name="Publish")
 
 
+# The strip says UNSAVED, SAVING, SAVED or SAVE FAILED. "SAVED" as a substring
+# also matches UNSAVED, so waiting for it returned at once, before the save
+# had even been sent: the next click then landed while the save was still out.
+SAVED = re.compile(r"\bSAVED\b")
+
+
+def _wait_until_saved(page):
+    expect(page.locator("header [role=status]").first).to_contain_text(SAVED)
+
+
 def test_publish_queues_the_text_on_screen_not_the_last_saved_one(context, studio_url):
     page, editor = _composer(context, studio_url)
     editor.fill("QC F1B version one of the post, saved.")
     page.get_by_role("button", name="Save", exact=True).click()
-    page.get_by_text("SAVED", exact=False).first.wait_for()
+    _wait_until_saved(page)
     editor.fill("QC F1B version two, the one on screen, with the typo fixed. Not saved.")
     page.get_by_text("UNSAVED").wait_for()
 
@@ -171,6 +182,38 @@ def test_publish_queues_the_text_on_screen_not_the_last_saved_one(context, studi
 
     queued = [r for r in _rows("scheduled") if (r["content"] or "").startswith("QC F1B")]
     assert [r["content"] for r in queued] == ["QC F1B version two, the one on screen, with the typo fixed. Not saved."]
+
+
+def test_publish_while_a_save_is_still_out_opens_the_dialog(context, studio_url):
+    """
+    A Publish click that landed while a save was on its way did nothing at
+    all: no dialog and no reason, though Publish is not disabled while a save
+    runs. On a slow machine the save is out for most of a second after every
+    Save gesture, which is how the Windows job lost this dialog for 30 s and
+    then failed. The save is held here until the test lets it go, so no clock
+    decides the outcome.
+    """
+    page, editor = _composer(context, studio_url)
+    editor.fill("QC F1B published while the save was still out.")
+    page.evaluate(
+        """() => { const real = window.fetch;
+                   const held = new Promise((resolve) => { window.__letTheSaveGo = resolve; });
+                   window.fetch = (input, init) => (init && init.method === 'POST' && String(input).endsWith('/api/posts'))
+                     ? held.then(() => real(input, init)) : real(input, init); }"""
+    )
+    page.get_by_role("button", name="Save", exact=True).click()
+    expect(page.locator("header [role=status]").first).to_contain_text("SAVING")
+
+    page.get_by_role("button", name="Publish", exact=True).click()
+    page.evaluate("() => window.__letTheSaveGo()")
+
+    dialog = _publish_dialog(page)
+    dialog.wait_for()
+    assert "while the save was still out" in dialog.inner_text()
+    dialog.get_by_role("button", name="Queue it").click()
+    dialog.wait_for(state="detached")
+    queued = [r["content"] for r in _rows("scheduled") if (r["content"] or "").startswith("QC F1B published while")]
+    assert queued == ["QC F1B published while the save was still out."]
 
 
 def test_publish_with_nothing_written_explains_and_opens_no_dialog(context, studio_url):
@@ -211,7 +254,7 @@ def test_the_next_post_is_a_new_post(context, studio_url, choice, status):
     assert editor.input_value() == ""
     editor.fill("QC F1B post B, a completely different idea.")
     page.get_by_role("button", name="Save", exact=True).click()
-    page.get_by_text("SAVED", exact=False).first.wait_for()
+    _wait_until_saved(page)
 
     gone_out = [r for r in _rows(status) if (r["content"] or "").startswith("QC F1B post A")]
     assert [r["content"] for r in gone_out] == [first], "the published or queued post was overwritten"
