@@ -57,7 +57,7 @@ def _first_line_height(image):
 def test_the_quote_is_drawn_at_its_intended_size(width):
     """Glyphs at least 0.03 x the image width tall; the bitmap fallback drew 10 px."""
     base = Image.new("RGB", (width, 1080), CARD)
-    drawn = render_typographic_quote(base, LATIN, "Dharmik")
+    drawn = render_typographic_quote(base, LATIN, "Sample Author")
     height = _first_line_height(drawn)
     assert height >= 0.03 * width, f"quote glyphs are {height} px on a {width} px image"
 
