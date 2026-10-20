@@ -11,6 +11,7 @@ Lifecycle States:
 - Meeting Booked: Collaboration, consulting, or client discussion scheduled.
 """
 
+import json
 import uuid
 import re
 from typing import List, Dict, Optional, Any
@@ -18,8 +19,10 @@ from datetime import datetime, timezone
 
 try:
     from .crm import qualification_tier, reverse_crm
+    from . import universal_search
 except ImportError:
     from crm import qualification_tier, reverse_crm
+    import universal_search
 
 try:
     from .database import get_db
@@ -78,6 +81,75 @@ def list_leads(status: Optional[str] = None, search: Optional[str] = None) -> Li
         return rows
     finally:
         conn.close()
+
+
+# The Leads list reads a page at a time. All 49,142 leads of three years were
+# one 24 MB response (0.8 s, most of it serialising), drawn 200 at a time.
+LEADS_PAGE_DEFAULT = 200
+LEADS_PAGE_MAX = 2000
+
+
+def _leads_cursor(row) -> str:
+    return json.dumps([row["created_at"] or "", row["rowid"]])
+
+
+def page_leads(status: Optional[str] = None, query: Optional[str] = None, limit: int = LEADS_PAGE_DEFAULT,
+               cursor: Optional[str] = None) -> Dict[str, Any]:
+    """
+    One page of the Leads list, newest first, filtered on the server.
+
+    status is the stage the list shows (leads.status). query is the search
+    box: every word must be the start of a word in the person's name,
+    company, headline or notes, accents and case folded, through the search
+    index (universal_search.lead_filter). The order is list_leads' order,
+    created_at newest first, with ties in the order the table holds them, and
+    cursor is the next_cursor of the page before.
+
+    Returns the page, how many leads match, how many there are in all, and
+    the cursor for the next page (None on the last).
+    """
+    try:
+        limit = max(1, min(int(limit), LEADS_PAGE_MAX))
+    except (TypeError, ValueError):
+        limit = LEADS_PAGE_DEFAULT
+    where, params = [], []
+    if status and status != "All":
+        where.append("l.status = ?")
+        params.append(status)
+    terms = universal_search.terms_of(query)
+    conn = get_db()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+        if terms:
+            found = universal_search.lead_filter(terms)
+            if found is None:
+                return {"leads": [], "matching": 0, "total": total, "next_cursor": None}
+            where.append(found[0])
+            params += found[1]
+        condition = " AND ".join(where) or "1=1"
+        matching = conn.execute(f"SELECT COUNT(*) FROM leads l WHERE {condition}", params).fetchone()[0]
+        page_where, page_params = condition, list(params)
+        if cursor:
+            try:
+                created, rowid = json.loads(cursor)
+                page_where += " AND (COALESCE(l.created_at, '') < ? OR (COALESCE(l.created_at, '') = ? AND l.rowid > ?))"
+                page_params += [str(created), str(created), int(rowid)]
+            except (TypeError, ValueError):
+                pass
+        rows = conn.execute(
+            f"SELECT l.rowid AS rowid, l.* FROM leads l WHERE {page_where} "
+            f"ORDER BY COALESCE(l.created_at, '') DESC, l.rowid LIMIT ?", (*page_params, limit + 1)).fetchall()
+    finally:
+        conn.close()
+    more = len(rows) > limit
+    rows = rows[:limit]
+    leads = []
+    for r in rows:
+        lead = dict(r)
+        lead.pop("rowid", None)
+        leads.append(lead)
+    return {"leads": leads, "matching": matching, "total": total,
+            "next_cursor": _leads_cursor(rows[-1]) if more and rows else None}
 
 
 def add_lead(lead_data: Dict) -> Dict:
