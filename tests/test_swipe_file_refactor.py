@@ -20,17 +20,21 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from app import app
 from database import get_db, init_db, seed_initial_data
-from intelligence_sync import IntelligenceSyncEngine, intelligence_sync_engine, FALLBACK_TEMPLATES
+from intelligence_sync import IntelligenceSyncEngine, intelligence_sync_engine, ENGINEERING_PACK
 from migrations import _migrate_inspirations, MIGRATIONS, SCHEMA_VERSION, BASELINE_VERSION
 
 client = TestClient(app)
 
 
 def test_fallback_templates_count_and_taxonomies():
-    """Asserts that FALLBACK_TEMPLATES contains 36 blueprints across 6 distinct taxonomies."""
-    assert len(FALLBACK_TEMPLATES) == 36
+    """
+    Asserts that the opt-in engineering creator pack holds 36 blueprints
+    across 6 taxonomies. It was the library every new creator started on; since
+    cycle 2 (D-8) a new library holds neutral starter forms instead.
+    """
+    assert len(ENGINEERING_PACK) == 36
 
-    taxonomies = set(t["archetype"] for t in FALLBACK_TEMPLATES)
+    taxonomies = set(t["archetype"] for t in ENGINEERING_PACK)
     expected_taxonomies = {
         "Contrarian Truths",
         "Architecture",
@@ -43,11 +47,11 @@ def test_fallback_templates_count_and_taxonomies():
 
     # Ensure 6 blueprints per taxonomy
     for tax in expected_taxonomies:
-        count = sum(1 for t in FALLBACK_TEMPLATES if t["archetype"] == tax)
+        count = sum(1 for t in ENGINEERING_PACK if t["archetype"] == tax)
         assert count == 6, f"Expected 6 blueprints for {tax}, found {count}"
 
     # Ensure all have non-empty hook_text, pacing_style, and velocity_score
-    for t in FALLBACK_TEMPLATES:
+    for t in ENGINEERING_PACK:
         assert t["hook_text"].strip()
         assert t["pacing_style"].strip()
         assert 8.0 <= float(t["velocity_score"]) <= 10.0
@@ -57,7 +61,7 @@ def test_fallback_templates_count_and_taxonomies():
 def test_intelligence_templates_endpoint_and_filtering():
     """Verifies /api/v1/intelligence/templates listing, search, and archetype filtering."""
     init_db()
-    intelligence_sync_engine.seed_offline_templates()
+    intelligence_sync_engine.seed_offline_templates(templates=ENGINEERING_PACK)
     res = client.get("/api/v1/intelligence/templates?limit=100")
     assert res.status_code == 200
     data = res.json()
@@ -66,9 +70,11 @@ def test_intelligence_templates_endpoint_and_filtering():
     assert data["total_vaulted"] >= 36
     assert len(data["templates"]) >= 36
 
-    # Verify descending velocity sorting
+    # Verify descending velocity sorting; unrated starter forms come last
     velocities = [t["velocity_score"] for t in data["templates"]]
-    assert velocities == sorted(velocities, reverse=True)
+    rated = [v for v in velocities if v is not None]
+    assert rated == sorted(rated, reverse=True)
+    assert velocities[: len(rated)] == rated
 
     # Filter by archetype
     res_filtered = client.get("/api/v1/intelligence/templates?archetype=Contrarian")

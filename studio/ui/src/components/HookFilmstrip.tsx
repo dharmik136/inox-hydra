@@ -106,7 +106,9 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
         text: template.hook_text,
         // Typed by whoever wrote the template, not measured, so it is not
         // called velocity: that name read as a rate someone had observed.
-        score: { label: "EDITOR'S RATING", value: template.velocity_score },
+        // A starter form carries none, and none is shown.
+        score:
+          template.velocity_score === null ? null : { label: "EDITOR'S RATING", value: template.velocity_score },
         fits: null,
       })) ?? null;
 

@@ -96,7 +96,13 @@ def is_allowed_cdn_host(hostname):
     configured = urllib.parse.urlparse(DEFAULT_CDN_URL).hostname
     return bool(configured) and candidate == configured.strip().lower()
 
-FALLBACK_TEMPLATES = [
+# The "engineering creator" pack: the original author's own hook library,
+# written for a software engineering audience. Opt-in. Many of these are
+# first-person claims ("I spent $2,400...", "cut our tail latency from 850ms
+# to 4ms") that are only true of the person who wrote them, and every new
+# creator used to start on them, one Alt+1 away from their opening line, with
+# an editor's rating of 9.8 beside each.
+ENGINEERING_PACK = [
     # Taxonomy 1: Contrarian Truths & Paradigm Shifts
     {
         "archetype": "Contrarian Truths",
@@ -399,6 +405,56 @@ FALLBACK_TEMPLATES = [
 ]
 
 
+def _starter(archetype: str, number: int, hook_text: str, pacing_style: str) -> Dict[str, Any]:
+    return {
+        "archetype": archetype,
+        "hook_text": hook_text,
+        # No rating: nobody measured these, and a number beside a form reads
+        # as a forecast of how it will do.
+        "velocity_score": None,
+        "engagement_multiplier": None,
+        "pacing_style": pacing_style,
+        "example_post_id": f"starter-{archetype.lower().replace(' ', '-')}-{number:02d}",
+    }
+
+
+# What a new creator starts with: fill-in forms in plain shapes that suit any
+# subject. Each one claims nothing until the creator fills in the brackets.
+STARTER_TEMPLATES = [
+    _starter("Lesson", 1, "[Number] years of [your work] taught me one thing about [topic]:",
+             "One-line setup, then the lesson, then one example from your own work"),
+    _starter("Lesson", 2, "What I wish I had known before [a milestone]:",
+             "Name the moment, list three things, end with the one that mattered most"),
+    _starter("How-to", 1, "How to [get a result] without [a common cost], in [number] steps:",
+             "Promise in the first line, numbered steps, one sentence each"),
+    _starter("How-to", 2, "A simple way to [do a task] that takes [time]:",
+             "The method in one line, then why it works, then a first step to try today"),
+    _starter("List", 1, "[Number] [things] I use every week for [a goal]:",
+             "Short numbered list, one line on why for each"),
+    _starter("List", 2, "[Number] mistakes I see in [topic], and what to do instead:",
+             "Mistake, then the fix, repeated; close with the one you made yourself"),
+    _starter("Contrarian", 1, "Most advice about [topic] says [the common view]. Here is where I disagree:",
+             "State the common view fairly, then your view, then the evidence you have"),
+    _starter("Contrarian", 2, "[A popular practice] is not the problem. [The real cause] is.",
+             "Two short lines, then a story that shows the real cause"),
+    _starter("Story", 1, "Last [time period], [something happened]. It changed how I think about [topic].",
+             "What happened, what you expected, what you learned"),
+    _starter("Story", 2, "A [customer, colleague or friend] asked me [a question]. My answer surprised them:",
+             "The question, your answer, why you answer it that way"),
+    _starter("Question", 1, "What is one thing about [topic] you changed your mind on this year?",
+             "Ask, give your own answer first, invite theirs in the comments"),
+    _starter("Question", 2, "If you could keep only one [tool, habit or rule] for [a goal], which would it be?",
+             "Ask, name yours and why, keep it short"),
+]
+
+# What a new library is seeded with. The engineering pack is added only when
+# the creator asks for it (set_engineering_pack).
+FALLBACK_TEMPLATES = STARTER_TEMPLATES
+
+# How a row from the engineering pack is recognised: its example id.
+ENGINEERING_PACK_PREFIX = "blueprint-"
+
+
 class IntelligenceSyncEngine:
     """
     Engine orchestrating asymmetric intelligence synchronization with GitHub CDN.
@@ -440,8 +496,12 @@ class IntelligenceSyncEngine:
                 except Exception:
                     pass
 
-    def seed_offline_templates(self, conn: Optional[sqlite3.Connection] = None) -> int:
-        """Inserts built-in fallback viral templates idempotently into the local SQLite store."""
+    def seed_offline_templates(self, conn: Optional[sqlite3.Connection] = None,
+                               templates: Optional[List[Dict[str, Any]]] = None) -> int:
+        """
+        Inserts built-in templates idempotently: the neutral starters unless
+        `templates` names another set, such as the engineering pack.
+        """
         should_close = False
         if conn is None:
             conn = get_db()
@@ -451,7 +511,7 @@ class IntelligenceSyncEngine:
             cursor.execute("SELECT hook_text FROM viral_templates")
             existing_hooks = {row[0] for row in cursor.fetchall()}
             inserted = 0
-            for t in FALLBACK_TEMPLATES:
+            for t in (FALLBACK_TEMPLATES if templates is None else templates):
                 if t["hook_text"] not in existing_hooks:
                     cursor.execute("""
                     INSERT INTO viral_templates (
@@ -473,6 +533,29 @@ class IntelligenceSyncEngine:
         finally:
             if should_close:
                 conn.close()
+
+    def set_engineering_pack(self, enabled: bool) -> Dict[str, Any]:
+        """
+        Adds or removes the engineering creator pack. Removing takes only the
+        pack's own rows as shipped; a starter, a synced form or anything the
+        creator imported stays.
+        """
+        if enabled:
+            return {"status": "success", "enabled": True,
+                    "added": self.seed_offline_templates(templates=ENGINEERING_PACK)}
+        conn = get_db()
+        try:
+            with conn:
+                cursor = conn.execute(
+                    "DELETE FROM viral_templates WHERE example_post_id LIKE ? "
+                    "AND (origin = 'shipped' OR origin IS NULL) AND hook_text IN (%s)"
+                    % ",".join("?" for _ in ENGINEERING_PACK),
+                    (ENGINEERING_PACK_PREFIX + "%", *[t["hook_text"] for t in ENGINEERING_PACK]),
+                )
+                removed = cursor.rowcount
+        finally:
+            conn.close()
+        return {"status": "success", "enabled": False, "removed": removed}
 
     def get_cached_etag(self) -> Optional[str]:
         """Reads cached ETag from local filesystem."""

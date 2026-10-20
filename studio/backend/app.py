@@ -1375,7 +1375,10 @@ def search_inspirations(query: Optional[str] = None, topic: Optional[str] = None
                     "archetype": t.get("archetype", "Engineering"),
                     "velocity_score": t.get("velocity_score", 8.0),
                     "engagement_multiplier": t.get("engagement_multiplier", "2.0x"),
-                    "pacing_style": t.get("pacing_style", "")
+                    "pacing_style": t.get("pacing_style", ""),
+                    # Which opt-in pack a form came from, so the wall can say
+                    # whether the engineering creator pack is in the library.
+                    "pack": "engineering" if str(t.get("example_post_id") or "").startswith("blueprint-") else None,
                 }
                 for idx, t in enumerate(templates)
             ]
@@ -2272,6 +2275,20 @@ def get_viral_templates(archetype: Optional[str] = None, query: Optional[str] = 
         "count": len(templates),
         "total_vaulted": total_vaulted
     }
+
+
+class HookPackRequest(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/v1/intelligence/packs/engineering", tags=["Intelligence Sync & Radar"])
+def set_engineering_hook_pack(req: HookPackRequest):
+    """
+    Adds or removes the opt-in engineering creator pack: the original
+    author's hook forms for a software engineering audience. A new library
+    holds neutral fill-in forms only.
+    """
+    return intelligence_sync_engine.set_engineering_pack(req.enabled)
 
 
 @app.get("/api/v1/intelligence/status", tags=["Intelligence Sync & Radar"])

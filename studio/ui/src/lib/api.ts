@@ -276,7 +276,8 @@ export interface HookTemplate {
   id: number;
   archetype: string;
   hook_text: string;
-  velocity_score: number;
+  /** Null for a neutral starter form, which nobody rated. */
+  velocity_score: number | null;
   engagement_multiplier: string | null;
   pacing_style: string | null;
 }
@@ -560,11 +561,13 @@ export interface Inspiration {
    */
   likes_count: number | null;
   comments_count: number | null;
-  /** A real stored rating of the form, unlike the two fields above. */
-  velocity_score: number;
+  /** A stored rating typed by the form's author; null for a starter form nobody rated. */
+  velocity_score: number | null;
   pacing_style: string | null;
   /** 'shipped' came in the box, 'captured' was saved by the creator. */
   origin: string | null;
+  /** "engineering" for a form from the opt-in engineering creator pack. */
+  pack?: string | null;
 }
 
 export async function fetchInspirations(): Promise<Inspiration[]> {
@@ -2585,6 +2588,17 @@ export interface TodayDuePost {
  * The scheduler never moves a post by itself: a post missed while the machine
  * slept stays due at its own time until the creator chooses this.
  */
+/**
+ * Adds or removes the opt-in engineering creator pack in the hook library.
+ * A new library holds neutral fill-in forms only.
+ */
+export async function setEngineeringPack(enabled: boolean): Promise<{ added?: number; removed?: number }> {
+  return call<{ added?: number; removed?: number }>("/api/v1/intelligence/packs/engineering", {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 export async function moveToNextSlot(postId: string): Promise<{ scheduled_for: string; message: string }> {
   return call<{ scheduled_for: string; message: string }>(
     `/api/posts/${encodeURIComponent(postId)}/move-to-next-slot`,

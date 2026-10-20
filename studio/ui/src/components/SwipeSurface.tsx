@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import { AlertTriangle, Search } from "lucide-react";
-import { fetchInspirations, type Inspiration } from "@/lib/api";
+import { fetchInspirations, setEngineeringPack, type Inspiration } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { SearchFocus } from "@/lib/search";
 
@@ -132,6 +132,15 @@ export function SwipeSurface({ focus = null }: { focus?: SearchFocus | null } = 
           </p>
         </div>
 
+        <EngineeringPack
+          present={specimens.some((specimen) => specimen.pack === "engineering")}
+          onChanged={() =>
+            fetchInspirations()
+              .then(setSpecimens)
+              .catch(() => setFailed(true))
+          }
+        />
+
         <ul className="mt-3 flex flex-wrap gap-1">
           {archetypes.map((candidate) => (
             <li key={candidate}>
@@ -253,7 +262,17 @@ function Specimen({ specimen, highlighted = false }: { specimen: Inspiration; hi
           </>
         )}
         {/* A rating typed by the template's author, not a measured rate. */}
-        EDITOR&rsquo;S RATING {specimen.velocity_score.toFixed(1)}
+        {specimen.velocity_score !== null ? (
+          <>EDITOR&rsquo;S RATING {specimen.velocity_score.toFixed(1)}</>
+        ) : (
+          "STARTER FORM, NOT RATED"
+        )}
+        {specimen.pack === "engineering" && (
+          <>
+            <span className="mx-1.5 text-ink-muted">·</span>
+            ENGINEERING PACK
+          </>
+        )}
         {specimen.origin && specimen.origin !== "shipped" && (
           <>
             <span className="mx-1.5 text-ink-muted">·</span>
@@ -262,6 +281,58 @@ function Specimen({ specimen, highlighted = false }: { specimen: Inspiration; hi
         )}
       </p>
     </motion.article>
+  );
+}
+
+/**
+ * The opt-in engineering creator pack. A new library holds neutral fill-in
+ * forms; this adds the original author's 36 forms for a software engineering
+ * audience, or takes them out again. Several are first-person claims that
+ * are true only of whoever makes them true, which the line says.
+ */
+function EngineeringPack({ present, onChanged }: { present: boolean; onChanged: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  async function toggle() {
+    setBusy(true);
+    setNote(null);
+    try {
+      const result = await setEngineeringPack(!present);
+      await onChanged();
+      setNote(
+        present
+          ? `Removed ${result.removed ?? 0} forms from the engineering creator pack.`
+          : `Added ${result.added ?? 0} forms from the engineering creator pack.`,
+      );
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "The studio refused the change.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <p className="min-w-0 flex-1 basis-72 text-[12px] leading-snug text-ink-secondary">
+        {present
+          ? "The engineering creator pack is in your library. Its forms make first-person claims, such as costs and benchmarks, that are true only once you make them true."
+          : "Writing for a software engineering audience? The engineering creator pack adds 36 hook forms in that voice. Several make first-person claims you would have to make true."}
+      </p>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void toggle()}
+        className="shrink-0 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+      >
+        {present ? "Remove the engineering pack" : "Add the engineering pack"}
+      </button>
+      {note && (
+        <p role="status" className="basis-full text-[12px] text-ink-secondary">
+          {note}
+        </p>
+      )}
+    </div>
   );
 }
 
