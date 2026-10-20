@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { reportBridge } from "@/lib/bridgeState";
 import { useRefresh } from "@/lib/refresh";
+import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 /**
@@ -143,7 +144,7 @@ export function TodaySurface({
             {due.map((post) => (
               <li key={post.post_id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-2">
                 <span className="studio-meta shrink-0 text-[10px] text-signal-orange-text">
-                  DUE {formatWhen(post.scheduled_for).toUpperCase()}
+                  DUE {formatLocal(post.scheduled_for).toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-[13px] text-ink-secondary">{post.excerpt}</span>
                 <span className="flex shrink-0 items-center gap-2">
@@ -276,7 +277,7 @@ export function TodaySurface({
             label="Next to go out"
             value={
               brief.queue.next_scheduled
-                ? `${formatWhen(brief.queue.next_scheduled.scheduled_for)}: ${brief.queue.next_scheduled.excerpt}`
+                ? `${formatLocal(brief.queue.next_scheduled.scheduled_for)}: ${brief.queue.next_scheduled.excerpt}`
                 : "Nothing scheduled"
             }
           />
@@ -284,7 +285,7 @@ export function TodaySurface({
             label="Next open slot"
             value={
               brief.queue.next_open_slot
-                ? `${brief.queue.next_open_slot.day_name} ${brief.queue.next_open_slot.time_slot}${
+                ? `${brief.queue.next_open_slot.day_name} ${formatSlotTime(brief.queue.next_open_slot.time_slot)}${
                     brief.queue.next_open_slot.label ? `, ${brief.queue.next_open_slot.label}` : ""
                   }`
                 : "No slot found"
@@ -481,11 +482,6 @@ function ago(iso: string): string {
   if (seconds < 5400) return `${Math.round(seconds / 60)} MIN AGO`;
   if (seconds < 172800) return `${Math.round(seconds / 3600)} H AGO`;
   return `${Math.round(seconds / 86400)} DAYS AGO`;
-}
-
-function formatWhen(iso: string): string {
-  const when = new Date(iso);
-  return Number.isNaN(when.getTime()) ? iso : when.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {

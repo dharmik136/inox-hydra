@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Activity, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
 import { fetchPostsInsights, launchBridge, type PostInsight, type PostsInsights } from "@/lib/api";
 import { useRefresh } from "@/lib/refresh";
+import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 
@@ -136,7 +137,7 @@ function PostRow({
       <button type="button" onClick={onToggle} aria-expanded={expanded} className="w-full text-left">
         <div className="flex items-baseline justify-between gap-4">
           <p className="studio-meta text-[10px] text-ink-muted">
-            {post.published_at ? post.published_at.slice(0, 10) : "DATE UNKNOWN"}
+            {formatLocalDay(post.published_at, "Date unknown").toUpperCase()}
             {!post.settled && " · STILL GROWING"}
             {best && <span className="ml-2 text-signal-green-text">WORTH REPURPOSING</span>}
           </p>

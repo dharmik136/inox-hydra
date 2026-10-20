@@ -32,6 +32,15 @@ function ago(iso: string): string {
   return `${Math.round(seconds / 86400)}d ago`;
 }
 
+/**
+ * A figure as Posts writes it, "4,100", and "not measured" when the bridge
+ * never read it. A missing count used to read 0 here, and impressions read
+ * "4100" beside Posts' "4,100".
+ */
+function measured(value: number | null | undefined): string {
+  return value === null || value === undefined ? "not measured" : value.toLocaleString();
+}
+
 export function ActivitySurface({
   onOpenLead,
 }: {
@@ -413,15 +422,15 @@ export function ActivitySurface({
                   </div>
 
                   <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-ink-muted">
-                    <span className="tabular-nums">Reactions: {post.reactions ?? 0}</span>
+                    <span className="tabular-nums">Reactions: {measured(post.reactions)}</span>
                     <span aria-hidden="true">·</span>
-                    <span className="tabular-nums">Comments: {post.comments ?? 0}</span>
+                    <span className="tabular-nums">Comments: {measured(post.comments)}</span>
                     <span aria-hidden="true">·</span>
-                    <span className="tabular-nums">Reposts: {post.reposts ?? 0}</span>
+                    <span className="tabular-nums">Reposts: {measured(post.reposts)}</span>
                     {post.impressions !== null && (
                       <>
                         <span aria-hidden="true">·</span>
-                        <span className="tabular-nums">Impressions: {post.impressions}</span>
+                        <span className="tabular-nums">Impressions: {measured(post.impressions)}</span>
                       </>
                     )}
                     <span aria-hidden="true">·</span>
