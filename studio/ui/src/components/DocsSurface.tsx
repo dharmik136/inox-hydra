@@ -13,6 +13,7 @@ import { parseMarkdown, slugify, type Block, type Outline } from "@/lib/markdown
 import { DocumentView, InlineText, type ResolvedLink } from "@/components/DocumentView";
 import { readableInline, readablePlain } from "@/lib/snippet";
 import { HelpHome, ResultsView, SectionView } from "@/components/HelpCentre";
+import { useStudioBack } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import type { SearchFocus } from "@/lib/search";
 
@@ -65,6 +66,9 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
   const [library, setLibrary] = useState<DocLibraryEntry[]>([]);
   const [sections, setSections] = useState<DocSection[]>([]);
   const [failed, setFailed] = useState(false);
+  // Read again when the studio answers after an outage, so the library does
+  // not stay "could not be read" once it is back.
+  const back = useStudioBack();
 
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<DocHit[] | null>(null);
@@ -108,12 +112,13 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
         setModules(result.modules);
         setLibrary(result.library);
         setSections(result.sections);
+        setFailed(false);
       })
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, []);
+  }, [back]);
 
   // Search after the typing settles. Each keystroke is a query against the
   // FTS5 index, and the index is fast enough that the delay is about intent
@@ -364,7 +369,7 @@ export function DocsSurface({ focus = null }: { focus?: SearchFocus | null } = {
       .map(({ entry }) => entry);
   }, [library, query, sectionOf]);
 
-  if (failed) return <Centered>THE DOCUMENTATION LIBRARY COULD NOT BE READ</Centered>;
+  if (failed && !library.length) return <Centered>THE DOCUMENTATION LIBRARY COULD NOT BE READ</Centered>;
   if (!library.length) return <Centered>OPENING THE LIBRARY</Centered>;
 
   const currentSection = sections.find((section) => section.id === sectionId) ?? null;

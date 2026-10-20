@@ -118,3 +118,12 @@ def test_activity_does_not_poll_a_hidden_window(studio):
     page.clock.run_for("01:00")
     page.wait_for_timeout(300)
     assert len(reads) - start == 0, f"Activity read {len(reads) - start} times in a hidden minute"
+
+
+def test_the_help_recovers_by_itself_when_the_studio_returns(studio):
+    page = studio["page"]
+    _studio_down(page)
+    page.goto(studio["url"] + "/#/docs")
+    page.wait_for_selector("text=THE DOCUMENTATION LIBRARY COULD NOT BE READ")
+    _studio_back(page)
+    page.wait_for_selector("text=Get started", timeout=12000)
