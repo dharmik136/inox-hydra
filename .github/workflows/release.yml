@@ -22,8 +22,10 @@ name: Inox Hydra Release
 #
 # Trigger by pushing a tag that matches the version in studio/__version__.py,
 # for example: git tag v2.6.0 && git push origin v2.6.0
-# Run it from the Actions tab (workflow_dispatch) for a dry run: every build
-# runs and its files are kept on the run, and nothing is published.
+# Run it from the Actions tab (workflow_dispatch), from any branch or tag, for
+# a dry run: every build and every publish check runs, and it stops at a
+# draft named v<version>-dryrun.<run> that nobody sees. Only a tag push
+# publishes.
 
 on:
   push:
@@ -43,6 +45,8 @@ jobs:
   build-portable:
     name: Build Portable Windows Distributable
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.declared.outputs.version }}
 
     steps:
       - name: Checkout Source Code
@@ -69,6 +73,12 @@ jobs:
 
       - name: Verify Version Consistency Across Surfaces
         run: python tools/sync_version.py --check
+
+      - name: Record The Declared Version
+        id: declared
+        shell: bash
+        run: |
+          echo "version=$(python -c "import sys; sys.path.insert(0,'.'); from studio.__version__ import __version__; print(__version__)")" >> "$GITHUB_OUTPUT"
 
       - name: Confirm The Tag Matches The Declared Version
         if: startsWith(github.ref, 'refs/tags/v')
@@ -181,15 +191,24 @@ jobs:
     name: Publish The Release (every asset or none)
     # needs on both: a failure in either build, or in any step that guards
     # them, means this job never starts and nothing is published.
+    #
+    # Only a tag push publishes. A workflow_dispatch, started from any branch
+    # or tag in the Actions tab, is the dry run: it runs every check below and
+    # stops at a draft named v<version>-dryrun.<run>, which nobody sees and
+    # which creates no tag. A dispatch from a tag ref used to publish, because
+    # this job looked only at github.ref.
     needs: [build-portable, build-desktop]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
-      TAG: ${{ github.ref_name }}
+      EVENT: ${{ github.event_name }}
+      REF_NAME: ${{ github.ref_name }}
+      DECLARED: ${{ needs.build-portable.outputs.version }}
+      RUN_NUMBER: ${{ github.run_number }}
 
     steps:
       # release-* only. The macOS and Linux desktop builds upload preview-*
@@ -202,6 +221,22 @@ jobs:
           path: assets
           merge-multiple: true
 
+      - name: Decide Whether This Run Publishes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "push" ]; then
+            echo "TAG=$REF_NAME" >> "$GITHUB_ENV"
+            echo "VERSION=${REF_NAME#v}" >> "$GITHUB_ENV"
+            echo "MODE=publish" >> "$GITHUB_ENV"
+            echo "Tag push: $REF_NAME will be published once every asset is on its draft."
+          else
+            echo "TAG=v${DECLARED}-dryrun.${RUN_NUMBER}" >> "$GITHUB_ENV"
+            echo "VERSION=${DECLARED}" >> "$GITHUB_ENV"
+            echo "MODE=draft" >> "$GITHUB_ENV"
+            echo "Dry run ($EVENT from $REF_NAME): a draft only, v${DECLARED}-dryrun.${RUN_NUMBER}. Nothing is published."
+          fi
+
       # A release without latest.json leaves every installed copy's update
       # check answering 404, and a release without the ZIP sends the README's
       # download link to nothing. Either missing fails here, before anything
@@ -212,7 +247,7 @@ jobs:
           set -euo pipefail
           cd assets
           ls -la
-          version="${TAG#v}"
+          version="$VERSION"
           missing=()
           [ -f "InoxHydra-${version}-win64.zip" ] || missing+=("InoxHydra-${version}-win64.zip")
           [ -f "latest.json" ] || missing+=("latest.json")
@@ -278,9 +313,17 @@ jobs:
           if [ "$state" = "true" ]; then
             gh release delete "$TAG" --yes
           fi
-          gh release create "$TAG" --draft --verify-tag \
-            --title "Inox Hydra $TAG" --notes-file notes.md --generate-notes \
-            assets/*
+          if [ "$MODE" = "publish" ]; then
+            gh release create "$TAG" --draft --verify-tag \
+              --title "Inox Hydra $TAG" --notes-file notes.md --generate-notes \
+              assets/*
+          else
+            # No --verify-tag: a draft's tag is created only if it is ever
+            # published, and a dry run never is.
+            gh release create "$TAG" --draft --target "$GITHUB_SHA" \
+              --title "DRY RUN, not a release: Inox Hydra $VERSION" --notes-file notes.md \
+              assets/*
+          fi
 
       - name: Confirm Every Asset Reached The Draft
         shell: bash
@@ -296,5 +339,6 @@ jobs:
           echo "All $(echo "$expected" | wc -l | tr -d ' ') assets are on the draft."
 
       - name: Publish The Draft
+        if: github.event_name == 'push' && env.MODE == 'publish'
         shell: bash
         run: gh release edit "$TAG" --draft=false --latest

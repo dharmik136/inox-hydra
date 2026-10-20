@@ -67,11 +67,17 @@ def test_the_desktop_build_no_longer_runs_on_a_tag_by_itself():
     assert "uses: ./.github/workflows/desktop.yml" in _read("release.yml")
 
 
-def test_the_publish_job_needs_every_build_and_runs_only_on_a_tag():
+def test_the_publish_job_needs_every_build_and_publishes_only_on_a_tag_push():
     publish = _job(_read("release.yml"), "publish")
     assert re.search(r"needs:\s*\[build-portable,\s*build-desktop\]", publish)
-    assert "if: startsWith(github.ref, 'refs/tags/v')" in publish
+    assert ("if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) "
+            "|| github.event_name == 'workflow_dispatch'") in publish
     assert "contents: write" in publish
+    # Making a release public is gated on the event itself, not on the ref:
+    # a dispatch started from a tag ref used to publish.
+    go_live = _step(publish, "Publish The Draft")
+    assert PUBLISH_IF in go_live
+    assert publish.count("--draft=false") == 1
 
 
 def test_the_set_is_checked_before_anything_exists_on_github():
@@ -175,7 +181,15 @@ def _fake_gh(bin_dir, log, state):
     gh.chmod(0o755)
 
 
-def _publish(tmp_path, files, state="absent"):
+PUBLISH_IF = "if: github.event_name == 'push' && env.MODE == 'publish'"
+
+
+def _publish(tmp_path, files, state="absent", event="push", ref="v2.6.0"):
+    """
+    Runs the publish job's steps in order, as the runner would: the job env,
+    $GITHUB_ENV carried between steps, and the last step's `if`, which this
+    harness evaluates (the test below pins its exact text).
+    """
     publish = _job(_read("release.yml"), "publish")
     assets = tmp_path / "assets"
     assets.mkdir()
@@ -187,10 +201,20 @@ def _publish(tmp_path, files, state="absent"):
     state_file.write_text(state, encoding="utf-8")
     _fake_gh(bin_dir, log, state_file)
     (tmp_path / "notes.md").write_text("notes", encoding="utf-8")
-    env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "TAG": "v2.6.0", "HOME": str(tmp_path)}
-    for name in ("Check The Asset Set Is Complete", "Create The Release As A Draft",
-                 "Confirm Every Asset Reached The Draft", "Publish The Draft"):
+    github_env = tmp_path / "github_env"
+    github_env.write_text("", encoding="utf-8")
+    env = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}", "HOME": str(tmp_path),
+           "EVENT": event, "REF_NAME": ref, "DECLARED": "2.6.0", "RUN_NUMBER": "41",
+           "GITHUB_ENV": str(github_env), "GITHUB_SHA": "0123abc"}
+    for name in ("Decide Whether This Run Publishes", "Check The Asset Set Is Complete",
+                 "Create The Release As A Draft", "Confirm Every Asset Reached The Draft",
+                 "Publish The Draft"):
+        for line in github_env.read_text(encoding="utf-8").splitlines():
+            key, _, value = line.partition("=")
+            env[key] = value
         step = _step(publish, name)
+        if PUBLISH_IF in step and not (event == "push" and env.get("MODE") == "publish"):
+            continue
         script = _run_block(step) if "run: |" in step else step.split("run: ", 1)[1]
         result = subprocess.run(["bash", "-c", script], cwd=tmp_path, env=env,
                                 capture_output=True, text=True, timeout=60)
@@ -244,6 +268,25 @@ def test_a_published_release_is_never_replaced(tmp_path):
     assert failed == "Create The Release As A Draft"
     assert "already a published release" in result.stdout
     assert "release delete" not in calls and "release create" not in calls
+
+
+@runs_bash
+@pytest.mark.parametrize("ref", ["main", "v2.6.0"])
+def test_a_dispatch_from_any_ref_stops_at_a_draft(tmp_path, ref):
+    failed, result, calls = _publish(tmp_path, COMPLETE, event="workflow_dispatch", ref=ref)
+    assert failed is None, (failed, result and result.stdout, result and result.stderr)
+    assert "gh release create v2.6.0-dryrun.41 --draft --target 0123abc" in calls
+    assert "--verify-tag" not in calls, "a dry run must not need, or touch, a real tag"
+    assert "--draft=false" not in calls and "release edit" not in calls, "a dispatch published"
+    assert "release create v2.6.0 " not in calls
+
+
+@runs_bash
+def test_a_dispatch_still_refuses_an_incomplete_set(tmp_path):
+    files = {k: v for k, v in COMPLETE.items() if k != "latest.json"}
+    failed, _, calls = _publish(tmp_path, files, event="workflow_dispatch", ref="main")
+    assert failed == "Check The Asset Set Is Complete"
+    assert "release create" not in calls
 
 
 @runs_bash
