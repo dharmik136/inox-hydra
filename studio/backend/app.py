@@ -1949,7 +1949,10 @@ def preview_mcp_grounding():
         "status": "success",
         "egress": gathered["egress"],
         "material": gathered["material"],
-        "errors": gathered["errors"],
+        # Sentences, "notes: did not start", which the interface shows as
+        # they are. They were objects, and it showed "[object Object]".
+        "errors": [f"{e.get('server')}: {e.get('error')}" if isinstance(e, dict) else str(e)
+                   for e in gathered["errors"]],
         "bytes_used": gathered["bytes_used"],
         "bytes_budget": gathered["bytes_budget"],
     }
