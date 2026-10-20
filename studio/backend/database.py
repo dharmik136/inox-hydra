@@ -104,9 +104,14 @@ def init_db() -> None:
     # A database this call creates holds nothing yet, so the copy taken before
     # its first migrations would be an empty file listed as a backup: on a
     # fresh install it was the only one, and recovery advice pointed at it.
-    db_path = get_db_path()
-    created_now = not os.path.exists(db_path) or os.path.getsize(db_path) == 0
+    # Judged by the schema, not the file: opening a connection elsewhere at
+    # startup leaves a file with a header and no tables.
     conn = get_db()
+    try:
+        created_now = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table'").fetchone()[0] == 0
+    except Exception:
+        conn.close()
+        raise
 
     # Refuse a database this build does not understand BEFORE touching it.
     #

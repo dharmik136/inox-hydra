@@ -238,6 +238,10 @@ def _open_after_restore() -> None:
     init_db()
     seed_initial_data()
     _seal_plaintext_secrets()
+    try:
+        init_docs_search_index()
+    except Exception:
+        logging.getLogger("studio.docs").warning("The documentation search index did not build.", exc_info=True)
     start_scheduler()
 
 
@@ -270,8 +274,10 @@ async def lifespan(app: FastAPI):
     # search happened to run first. It was imported into this module and never
     # called, so the index was a snapshot of the corpus as it stood the first
     # time anyone searched, for the life of the database. Cheap: 38 files.
+    # Not in safe mode: the index lives in the damaged file.
     try:
-        init_docs_search_index()
+        if not safe_mode.is_active():
+            init_docs_search_index()
     except Exception:
         # A documentation index that cannot build is not a reason to refuse to
         # start. search_docs_fts retries, and the reader opens documents from
