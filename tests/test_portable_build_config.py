@@ -95,8 +95,12 @@ def test_launcher_uses_the_bundled_interpreter(builder):
     launcher = match.group(1)
 
     assert r"%~dp0runtime\python.exe" in launcher, "launcher does not use the bundled runtime"
-    assert "studio.backend.app:app" in launcher
-    assert "127.0.0.1" in launcher, "server must bind loopback only"
+    # The launcher hands over to the studio's own launch code (INS-07), which
+    # starts the same app, on loopback only.
+    assert "-m studio.backend.desktop launch" in launcher
+    desktop_source = read(os.path.join(REPO_ROOT, "studio", "backend", "desktop.py"))
+    assert '"studio.backend.app:app"' in desktop_source
+    assert 'STUDIO_HOST = "127.0.0.1"' in desktop_source, "server must bind loopback only"
     assert not re.search(r"^\s*start .*[^\\]\bpython(w)?\.exe", launcher, re.MULTILINE), (
         "launcher appears to invoke a system interpreter"
     )

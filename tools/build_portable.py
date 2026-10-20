@@ -221,7 +221,7 @@ cd /d "%~dp0"
 
 echo ==========================================================
 echo   Inox Hydra - Local Creator Engine
-echo   100%% local. Zero cloud egress. Port 8000.
+echo   Runs on this computer, on port 8000 when it is free.
 echo ==========================================================
 echo.
 
@@ -232,28 +232,19 @@ echo.
 :: the annotation ledger visible to a paying creator.
 set INOX_DEV_MODE=
 
-:: Already running? Reuse the existing server rather than starting a second.
-powershell -NoProfile -Command "$c = Test-NetConnection -ComputerName 127.0.0.1 -Port 8000 -InformationLevel Quiet -WarningAction SilentlyContinue; if ($c) { exit 0 } else { exit 1 }" >nul 2>&1
-if %ERRORLEVEL% EQU 0 (
-    echo [*] Already running on http://127.0.0.1:8000
-) else (
-    echo [*] Starting local engine...
-    start /min "Inox Hydra Engine" "%~dp0runtime\python.exe" -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000
-    timeout /t 4 /nobreak >nul
+:: Everything else is decided by the studio itself (studio\backend\desktop.py):
+:: whether the program on port 8000 is really Inox Hydra, a free port when it
+:: is not, an engine that is answering before any window opens, and a plain
+:: message, with the engine log, when it is not. Batch used to decide this, and
+:: treated any program on the port as the studio and a fixed wait as started.
+"%~dp0runtime\python.exe" -s -m studio.backend.desktop launch
+
+:: Anything but a clean start on port 8000 leaves this window open, so its
+:: message can be read.
+if errorlevel 1 (
+    echo.
+    pause
 )
-
-set CHROME="C:\Program Files\Google\Chrome\Application\chrome.exe"
-if not exist %CHROME% set CHROME="C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
-
-if exist %CHROME% (
-    echo [*] Opening the studio...
-    start "" %CHROME% --app="http://127.0.0.1:8000" --window-size=1440,920
-) else (
-    echo [*] Chrome not found. Opening your default browser instead.
-    start http://127.0.0.1:8000
-)
-
-echo [*] Ready.
 exit /b 0
 """
 
@@ -278,61 +269,26 @@ if "%~1"=="" (
 UNIX_LAUNCHER = r"""#!/usr/bin/env bash
 # ==========================================================
 #   Inox Hydra - Local Creator Engine
-#   100% local. Zero cloud egress. Port 8000.
+#   Runs on this computer, on port 8000 when it is free.
 # ==========================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-export INOX_DEV_MODE=""
+unset INOX_DEV_MODE
 
-# Already running? Reuse existing server
-SERVER_RUNNING=0
-if command -v nc >/dev/null 2>&1 && nc -z 127.0.0.1 8000 >/dev/null 2>&1; then
-    SERVER_RUNNING=1
-elif command -v curl >/dev/null 2>&1 && curl -s http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
-    SERVER_RUNNING=1
+# The bundled interpreter only. Falling back to a python3 on PATH would run
+# the studio on whatever Python this machine has, without its dependencies.
+PYTHON_EXE="$SCRIPT_DIR/runtime/bin/python3"
+if [ ! -x "$PYTHON_EXE" ]; then
+    echo "[!] The bundled Python is missing at $PYTHON_EXE."
+    echo "    Extract the whole archive again, keeping the runtime folder."
+    exit 1
 fi
 
-if [ "$SERVER_RUNNING" -eq 1 ]; then
-    echo "[*] Already running on http://127.0.0.1:8000"
-else
-    echo "[*] Starting local engine..."
-    PYTHON_EXE="$SCRIPT_DIR/runtime/bin/python3"
-    if [ ! -x "$PYTHON_EXE" ]; then
-        PYTHON_EXE="$SCRIPT_DIR/runtime/python"
-    fi
-    if [ ! -x "$PYTHON_EXE" ]; then
-        PYTHON_EXE="python3"
-    fi
-    nohup "$PYTHON_EXE" -m uvicorn studio.backend.app:app --host 127.0.0.1 --port 8000 >/dev/null 2>&1 &
-    sleep 3
-fi
-
-# Open browser
-BROWSER=""
-for b in google-chrome google-chrome-stable chromium chromium-browser brave-browser brave; do
-    if command -v "$b" >/dev/null 2>&1; then
-        BROWSER="$b"
-        break
-    fi
-done
-
-if [ -n "$BROWSER" ]; then
-    echo "[*] Opening the studio in app mode..."
-    nohup "$BROWSER" --app="http://127.0.0.1:8000" --window-size=1440,920 >/dev/null 2>&1 &
-elif command -v xdg-open >/dev/null 2>&1; then
-    echo "[*] Opening default browser via xdg-open..."
-    xdg-open http://127.0.0.1:8000 >/dev/null 2>&1 &
-elif command -v open >/dev/null 2>&1; then
-    echo "[*] Opening default browser via open (macOS)..."
-    open http://127.0.0.1:8000 >/dev/null 2>&1 &
-else
-    echo "[*] Studio running at http://127.0.0.1:8000"
-fi
-
-echo "[*] Ready."
-exit 0
+# Port, readiness, the engine log and the window are decided by the studio
+# itself (studio/backend/desktop.py), the same rule on every platform.
+exec "$PYTHON_EXE" -s -m studio.backend.desktop launch
 """
 
 UNIX_CLI_LAUNCHER = r"""#!/usr/bin/env bash
@@ -364,7 +320,9 @@ QUICK START
    "Unblock" near the bottom, then click OK. See the next section for why.
 2. Extract the folder anywhere you like. A USB stick is fine.
 3. Double click InoxHydra.bat.
-4. The studio opens in its own window.
+4. The launcher starts the studio, waits until it answers, then opens it: in a
+   Chrome app window if Google Chrome is installed, otherwise in your default
+   browser. If anything stops it, the launcher window stays open and says why.
 
 No Python installation is required. Nothing is sent to any server.
 
@@ -374,9 +332,8 @@ IF WINDOWS BLOCKS IT
 This is expected, and it is not a sign that anything is wrong.
 
 Windows attaches a "downloaded from the internet" mark to every file inside a
-ZIP you download. This software is not code signed, because a signing
-certificate costs several hundred dollars a year and this is a local tool that
-never talks to a server. So Windows treats it with suspicion.
+ZIP you download, and this build is not code signed yet. So Windows treats it
+with suspicion.
 
 What you may see, and what to do:
 
@@ -399,9 +356,17 @@ application is plain Python source under app\\studio\\, readable in Notepad.
 
 IF IT STILL WILL NOT START
 --------------------------
-  Something else is using port 8000
-      Close the other application, or close any earlier copy of Inox Hydra
-      still running in the background, then try again.
+  "Port 8000 is in use by another program"
+      The launcher checks that the program on port 8000 really is Inox Hydra.
+      When it is not, the studio starts on the next free port (8001 to 8009)
+      and the launcher says which. The browser extension only connects on port
+      8000, so to capture leads and analytics, close the other program, close
+      the "Inox Hydra Engine" window, and start InoxHydra.bat again.
+
+  "The studio engine stopped while it was starting"
+      The launcher shows the last lines of the engine's log, and the path of
+      the whole log (logs\\engine.log in the data folder below). Send that file
+      with the report described under "Anything else".
 
   Chrome is not installed
       Not a problem. The studio opens in your default browser instead. It will
@@ -449,12 +414,14 @@ Your data is untouched, and any database schema changes are applied
 automatically on first launch.
 
 
-CHROME EXTENSION
-----------------
-The extension/ folder contains the browser bridge. Install it from the Chrome
-Web Store link in the documentation rather than loading it unpacked. Recent
-Chrome versions disable unpacked and sideloaded extensions after a browser
-update, so a store install is the only version that keeps working.
+BROWSER EXTENSION
+-----------------
+The extension\\ folder contains the browser bridge that captures leads and
+analytics. It is not in a browser store yet. Open the studio's Docs screen and
+follow "Install the browser extension that captures leads and analytics": the
+studio's Setup screen can open Edge or Brave with it loaded, or you can load
+this folder yourself with Developer mode. Keep this folder where it is: the
+browser loads the extension from it.
 
 
 SUPPORT TOOLKIT
@@ -481,6 +448,33 @@ Off by default. Nothing is sent anywhere unless you turn them on with:
 
 Even then, the check only downloads a small version file and tells you whether a
 newer release exists. It never installs anything by itself.
+"""
+
+
+UNIX_README = """Inox Hydra (Portable, macOS and Linux preview)
+=======================================
+
+This is a preview build. The supported way to run the studio on macOS and
+Linux today is from source; see the project README.
+
+QUICK START
+-----------
+1. Extract the archive anywhere.
+2. Run ./InoxHydra.sh from a terminal in the extracted folder.
+3. The launcher starts the studio, waits until it answers, and opens it in
+   your browser. If anything stops it, it says why and where the log is.
+
+The studio uses port 8000. When another program holds it, the studio starts on
+the next free port (8001 to 8009) and the launcher says which. The browser
+extension only connects on port 8000.
+
+WHERE YOUR DATA LIVES
+---------------------
+macOS:  ~/Library/Application Support/InoxHydra
+Linux:  $XDG_DATA_HOME/inox-hydra, or ~/.local/share/inox-hydra
+
+Run ./InoxHydra-CLI.sh with no arguments to list the support commands
+(backup, restore, export, doctor).
 """
 
 
@@ -961,7 +955,7 @@ def main():
         os.chmod(sh_shortcut, 0o755)
 
     with open(os.path.join(staging, "README.txt"), "w", encoding="utf-8", newline="\r\n") as f:
-        f.write(README)
+        f.write(README if platform.system() == "Windows" else UNIX_README)
 
     shutil.copy2(os.path.join(REPO_ROOT, "create_desktop_shortcut.vbs"), staging)
     shutil.copy2(os.path.join(REPO_ROOT, "LICENSE"), staging)

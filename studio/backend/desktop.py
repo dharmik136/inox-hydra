@@ -417,3 +417,402 @@ def describe() -> Dict[str, Any]:
         "autostart_available": bool(launcher) and supported,
         "startup_shortcut_path": get_startup_shortcut_path(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Starting the studio: what the portable launchers run
+# ---------------------------------------------------------------------------
+#
+# InoxHydra.bat and InoxHydra.sh used to decide everything in batch and shell:
+# any program answering on port 8000 counted as "Already running", and a fixed
+# four second wait counted as started. So another app on 8000 was opened in
+# place of the studio, and an engine that died at once still printed "Ready."
+# and opened a page that could not connect, with no log anywhere.
+#
+# Both launchers now run `python -m studio.backend.desktop launch`, which holds
+# one readiness rule, the desktop shell's: the studio is up when
+# /api/v1/health answers with this application's own name.
+#
+# The port. The browser extension talks to 8000 and nothing else, so 8000 is
+# always tried first. When another program holds it, the studio starts on the
+# next free port of a small range, and the launcher says plainly that capture
+# through the extension needs 8000. Moving the port for good waits for the
+# store extension, which can probe the range (phase 3).
+
+STUDIO_HOST = "127.0.0.1"
+EXTENSION_PORT = 8000
+PORT_RANGE_SIZE = 10
+READY_TIMEOUT_SECONDS = 45
+ENGINE_WINDOW_TITLE = "Inox Hydra Engine"
+ENGINE_LOG_MAX_BYTES = 2 * 1024 * 1024
+
+# Exit codes the launchers read. Anything but 0 keeps the Windows window open
+# so its message can be read.
+LAUNCH_READY = 0
+LAUNCH_FAILED = 1
+LAUNCH_READY_ELSEWHERE = 3
+
+# What uvicorn's bind failure says, on Linux, macOS and Windows (10048 in use,
+# 10013 a port Windows has reserved).
+_PORT_IN_USE_MARKERS = ("address already in use", "only one usage of each socket address",
+                        "10048", "10013", "forbidden by its access permissions")
+
+
+def preferred_port() -> int:
+    """8000, unless INOX_HYDRA_PORT names another port to try first."""
+    raw = os.environ.get("INOX_HYDRA_PORT", "").strip()
+    try:
+        port = int(raw)
+    except ValueError:
+        return EXTENSION_PORT
+    return port if 1024 <= port <= 65535 - PORT_RANGE_SIZE else EXTENSION_PORT
+
+
+def candidate_ports(first: Optional[int] = None):
+    first = preferred_port() if first is None else first
+    return list(range(first, first + PORT_RANGE_SIZE))
+
+
+def studio_url(port: int) -> str:
+    return f"http://{STUDIO_HOST}:{port}"
+
+
+def _can_bind(port: int) -> bool:
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        if is_windows() and hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        sock.bind((STUDIO_HOST, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
+def probe_port(port: int, timeout: float = 1.5):
+    """
+    What is on a port: ("studio", version), ("free", None) or ("taken", None).
+
+    "studio" means /api/v1/health answered 200 with this application's name,
+    the same test the desktop shell applies. Anything else that answers, or a
+    port that refuses a connection and also cannot be bound (one Windows has
+    reserved, say), is "taken".
+    """
+    import http.client
+    import json
+
+    connection = http.client.HTTPConnection(STUDIO_HOST, port, timeout=timeout)
+    try:
+        connection.request("GET", "/api/v1/health", headers={"Connection": "close"})
+        response = connection.getresponse()
+        body = response.read(8192)
+    except ConnectionRefusedError:
+        return ("free", None) if _can_bind(port) else ("taken", None)
+    except (OSError, http.client.HTTPException):
+        return ("taken", None)
+    finally:
+        connection.close()
+
+    try:
+        payload = json.loads(body.decode("utf-8", errors="replace"))
+    except ValueError:
+        payload = None
+    if response.status == 200 and isinstance(payload, dict) and payload.get("app") == "inox-hydra":
+        return ("studio", str(payload.get("version") or ""))
+    return ("taken", None)
+
+
+def engine_log_path() -> str:
+    """logs/engine.log in the app home: the file the desktop shell writes and the diagnostics bundle reads."""
+    try:
+        from . import paths
+    except ImportError:
+        import paths
+    return os.path.join(paths.get_logs_dir(), "engine.log")
+
+
+def _log_tail(path: str, lines: int = 12) -> str:
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            handle.seek(max(0, handle.tell() - 16384))
+            text = handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+    marker = text.rfind("--- engine launch at")
+    return "\n".join(text[marker if marker != -1 else 0:].strip().splitlines()[-lines:])
+
+
+def _engine_command(port: int):
+    # -s: the user's own site-packages never shadows what the studio ships.
+    return [sys.executable, "-s", "-m", "studio.backend.desktop", "serve", "--port", str(port)]
+
+
+def spawn_engine(port: int):
+    """
+    Starts the engine in a process that outlives this launcher.
+
+    On Windows it gets a minimised console window of its own, titled "Inox
+    Hydra Engine", because closing that window is how a portable copy is
+    stopped. Elsewhere it runs detached in a new session.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "INOX_DEV_MODE"}
+    if is_windows():
+        startup = subprocess.STARTUPINFO()
+        startup.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startup.wShowWindow = 7  # SW_SHOWMINNOACTIVE: minimised, focus stays here
+        return subprocess.Popen(_engine_command(port), cwd=_REPO_ROOT, env=env, startupinfo=startup,
+                                creationflags=subprocess.CREATE_NEW_CONSOLE)
+    return subprocess.Popen(_engine_command(port), cwd=_REPO_ROOT, env=env, stdin=subprocess.DEVNULL,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+def wait_for_studio(port: int, process, timeout: float = READY_TIMEOUT_SECONDS) -> str:
+    """"ready", "exited" (the engine died), "taken" (someone else answers) or "timeout"."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if process is not None and process.poll() is not None:
+            return "exited"
+        state, _ = probe_port(port, timeout=1.0)
+        if state == "studio":
+            return "ready"
+        time.sleep(0.25)
+    if process is not None and process.poll() is not None:
+        return "exited"
+    return "timeout"
+
+
+def open_studio_window(url: str) -> Optional[str]:
+    """
+    Opens the studio the way the launchers always have: a Chrome app window
+    when Chrome is in its usual place, otherwise the default browser. Returns
+    what was used, or None when nothing could be opened.
+    """
+    import shutil
+
+    def detached(argv):
+        kwargs = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+        if not is_windows():
+            kwargs["start_new_session"] = True
+        subprocess.Popen(argv, **kwargs)
+
+    app_args = [f"--app={url}", "--window-size=1440,920"]
+    if is_windows():
+        for chrome in (r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                       r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"):
+            if os.path.isfile(chrome):
+                detached([chrome, *app_args])
+                return "a Chrome app window"
+        try:
+            os.startfile(url)
+            return "your default browser"
+        except OSError:
+            return None
+
+    candidates = ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser",
+                  "brave-browser", "brave"]
+    for name in candidates:
+        found = shutil.which(name)
+        if found:
+            detached([found, *app_args])
+            return f"an app window ({name})"
+    if is_macos():
+        for app in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+                    "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"):
+            if os.path.isfile(app):
+                detached([app, *app_args])
+                return "an app window"
+    for opener in ("xdg-open", "open"):
+        found = shutil.which(opener)
+        if found:
+            detached([found, url])
+            return "your default browser"
+    return None
+
+
+def _say(message: str = "") -> None:
+    print(message, flush=True)
+
+
+def _port_notice(port: int, states) -> None:
+    """Says so whenever the studio is not on the one port the extension talks to."""
+    if port == EXTENSION_PORT:
+        return
+    held = states.get(EXTENSION_PORT) == "taken"
+    if held:
+        _say(f"[!] Port {EXTENSION_PORT} is in use by another program, so the studio is on port {port} this time.")
+    else:
+        _say(f"[!] The studio is on port {port}, not {EXTENSION_PORT}.")
+    _say(f"    The browser extension only connects on port {EXTENSION_PORT}, so it cannot capture leads or")
+    _say("    analytics until the studio runs there.")
+    if held:
+        _say(f"    To fix it, close the program using port {EXTENSION_PORT}, stop the studio, and start it again.")
+    elif states.get(EXTENSION_PORT) == "free":
+        _say(f"    Port {EXTENSION_PORT} is free now: stop the studio and start it again to move it there.")
+
+
+def _opened(port: int, opener) -> None:
+    url = studio_url(port)
+    used = opener(url)
+    if used:
+        _say(f"[*] Opened {url} in {used}.")
+    else:
+        _say(f"[*] Open {url} in your browser.")
+
+
+def launch(ports=None, opener=None, spawn=None, timeout: float = READY_TIMEOUT_SECONDS) -> int:
+    """
+    Starts the studio, or finds the one already running, and opens it.
+
+    Returns LAUNCH_READY, LAUNCH_READY_ELSEWHERE (running, on a port other
+    than the first one tried) or LAUNCH_FAILED, after saying why.
+    """
+    ports = list(ports) if ports else candidate_ports()
+    opener = opener or open_studio_window
+    spawn = spawn or spawn_engine
+
+    # A studio already running anywhere in the range is the one to open. A
+    # second engine on the same data would run a second scheduler.
+    states = {}
+    for port in ports:
+        state, version = probe_port(port)
+        states[port] = state
+        if state == "studio":
+            _say(f"[*] Inox Hydra {version} is already running on {studio_url(port)}.".replace("  ", " "))
+            _port_notice(port, states)
+            _opened(port, opener)
+            return LAUNCH_READY if port == ports[0] else LAUNCH_READY_ELSEWHERE
+
+    log = engine_log_path()
+    taken = []
+    for port in ports:
+        if states[port] != "free":
+            taken.append(port)
+            _say(f"[!] Port {port} is in use by another program, not Inox Hydra.")
+            continue
+
+        _say(f"[*] Starting the studio engine on port {port}...")
+        process = spawn(port)
+        outcome = wait_for_studio(port, process, timeout)
+        if outcome == "ready":
+            _say(f"[*] The studio is ready at {studio_url(port)}.")
+            for held in taken:
+                states[held] = "taken"
+            _port_notice(port, states)
+            _opened(port, opener)
+            if is_windows():
+                _say(f'[*] To stop the studio, close the minimised "{ENGINE_WINDOW_TITLE}" window.')
+            _say(f"    Engine log: {log}")
+            return LAUNCH_READY if port == ports[0] else LAUNCH_READY_ELSEWHERE
+
+        tail = _log_tail(log)
+        if outcome == "exited" and any(marker in tail.lower() for marker in _PORT_IN_USE_MARKERS):
+            # Taken between the check and the start. Try the next one.
+            taken.append(port)
+            _say(f"[!] Port {port} was taken by another program as the engine started.")
+            continue
+        if outcome == "taken":
+            _say(f"[!] Another program answered on port {port} while the engine was starting.")
+        elif outcome == "exited":
+            _say("[!] The studio engine stopped while it was starting. No window was opened.")
+        else:
+            _say(f"[!] The studio engine did not answer within {int(timeout)} seconds. No window was opened.")
+            _say(f"    It may still be starting: wait a minute, then open {studio_url(port)}.")
+        if tail:
+            _say("    Last lines of its log:")
+            for line in tail.splitlines():
+                _say("      " + line)
+        _say(f"    Full log: {log}")
+        return LAUNCH_FAILED
+
+    _say(f"[!] Ports {ports[0]} to {ports[-1]} are all in use by other programs, so the studio was not started.")
+    _say("    Close one of them, or restart this computer, then start Inox Hydra again.")
+    return LAUNCH_FAILED
+
+
+class _Tee:
+    """Writes to the console, when there is one, and to the engine log."""
+
+    def __init__(self, console, log):
+        self._console = console
+        self._log = log
+
+    def write(self, text):
+        for stream in (self._console, self._log):
+            if stream is None:
+                continue
+            try:
+                stream.write(text)
+                stream.flush()
+            except (OSError, ValueError):
+                pass
+        return len(text)
+
+    def flush(self):
+        pass
+
+    def isatty(self):
+        return False
+
+
+def serve(port: int) -> int:
+    """
+    The engine itself: uvicorn on loopback, its output in the console and in
+    logs/engine.log. On Windows this is the "Inox Hydra Engine" window.
+    """
+    import time
+
+    if is_windows():
+        try:
+            import ctypes
+
+            ctypes.windll.kernel32.SetConsoleTitleW(ENGINE_WINDOW_TITLE)
+        except Exception:
+            pass
+    os.environ.pop("INOX_DEV_MODE", None)
+
+    log_path = engine_log_path()
+    try:
+        if os.path.getsize(log_path) > ENGINE_LOG_MAX_BYTES:
+            os.remove(log_path)
+    except OSError:
+        pass
+    try:
+        log = open(log_path, "a", encoding="utf-8", errors="replace")
+        log.write(f"\n--- engine launch at unix time {int(time.time())} ---\n")
+    except OSError:
+        log = None
+    sys.stdout = _Tee(sys.stdout, log)
+    sys.stderr = _Tee(sys.stderr, log)
+
+    print(f"Inox Hydra is starting at {studio_url(port)}")
+    if is_windows():
+        print("Close this window to stop the studio.")
+    print(f"Log: {log_path}")
+    print()
+
+    import uvicorn
+
+    uvicorn.run("studio.backend.app:app", host=STUDIO_HOST, port=port, log_level="info")
+    return 0
+
+
+def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    command = argv[0] if argv else "launch"
+    if command == "serve":
+        port = int(argv[argv.index("--port") + 1]) if "--port" in argv else preferred_port()
+        return serve(port)
+    if command == "launch":
+        return launch()
+    print("usage: python -m studio.backend.desktop [launch | serve --port N]", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
