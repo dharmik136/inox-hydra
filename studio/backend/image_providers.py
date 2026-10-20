@@ -102,7 +102,14 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         "models": ["gpt-image-1", "dall-e-3"],
         "sends": _PROMPT_SENT + ", with your key.",
         "to": "api.openai.com (OpenAI).",
-        "account": "Your OpenAI account, billed per image. gpt-image-1 may ask you to verify your organisation first.",
+        "account": "Your OpenAI account, billed per image.",
+        # What Generate used with an OpenAI AI key before this setting existed.
+        # A creator who has not chosen here keeps it (R7 review).
+        "legacy_model": "dall-e-3",
+        "model_notes": {
+            "gpt-image-1": "Newer. OpenAI asks you to verify your organisation before it works, and prices it differently from dall-e-3.",
+            "dall-e-3": "The model the studio used with an OpenAI key before this setting existed.",
+        },
         "key_hint": "Create a key in your OpenAI account, under API keys.",
         "check": "key",
     },
@@ -121,6 +128,13 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         "sends": _PROMPT_SENT + ", with your key.",
         "to": "generativelanguage.googleapis.com (Google).",
         "account": "Your Google AI Studio key. Imagen needs billing turned on for that key.",
+        "legacy_model": "imagen-3.0-generate-002",
+        "model_notes": {
+            "imagen-4.0-generate-001": "Newer, and priced differently from Imagen 3.",
+            "imagen-4.0-fast-generate-001": "Newer, faster and cheaper than Imagen 4, with less detail.",
+            "imagen-4.0-ultra-generate-001": "Newer, and the most expensive Imagen model.",
+            "imagen-3.0-generate-002": "The model the studio used with a Gemini key before this setting existed.",
+        },
         "key_hint": "Create a key in Google AI Studio.",
         "check": "key",
     },
@@ -355,7 +369,12 @@ def current_config() -> ImageProviderConfig:
     # this setting existed; otherwise the free public generator.
     ai = _ai_config()
     if ai.provider in _SHARES_AI_KEY and ai.api_key:
-        return ImageProviderConfig(ai.provider, "", ai.api_key, source="ai_provider", key_from="ai_provider")
+        # The model it used then, not the newest: a newer model is priced
+        # differently and gpt-image-1 needs organisation verification, so
+        # moving a creator onto it unasked would change their bill and could
+        # break Generate (R7 review). Choosing a model here changes it.
+        legacy = PROVIDERS[ai.provider].get("legacy_model", "")
+        return ImageProviderConfig(ai.provider, legacy, ai.api_key, source="ai_provider", key_from="ai_provider")
     return ImageProviderConfig(DEFAULT_PROVIDER, source="default")
 
 
@@ -402,6 +421,8 @@ def catalogue() -> List[Dict[str, Any]]:
             "default_model": meta["default_model"],
             "models": list(meta["models"]),
             "key_hint": meta.get("key_hint", ""),
+            # Said beside the model field: what each model needs or costs.
+            "model_notes": dict(meta.get("model_notes", {})),
             "checks": meta["check"] != "none",
             "shares_ai_key": provider_id in _SHARES_AI_KEY,
             "disclosure": disclosure(provider_id, meta.get("default_url", "")),
@@ -1064,6 +1085,13 @@ def save(provider: str, api_key: str = "", model: str = "", base_url: str = "") 
         key, key_from = "", ""
 
     model = (model or "").strip()
+    if not model:
+        # An empty model field keeps the model already in use with this
+        # provider, chosen here or carried over from the AI provider; only a
+        # model the creator picks changes it.
+        in_use = current_config()
+        if in_use.provider == provider and in_use.source in ("chosen", "ai_provider"):
+            model = in_use.model
     # The model goes into the request path at some providers, so it is a name
     # and nothing that could walk that path somewhere else.
     if model and (not _MODEL_NAME.match(model) or ".." in model):

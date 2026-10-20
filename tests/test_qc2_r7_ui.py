@@ -130,8 +130,12 @@ def test_choosing_openai_shows_what_leaves_before_saving_then_checks_the_key(pag
     page.wait_for_selector("text=Change image provider")
     page.select_option('select[aria-label="Image provider"]', "openai")
 
-    # Said before anything is saved or sent.
+    # Said before anything is saved or sent, the model's requirement too.
     assert "api.openai.com (OpenAI)." in panel.inner_text()
+    assert "verify your organisation" in panel.inner_text()
+    page.fill('input[aria-label="Image model"]', "dall-e-3")
+    assert "before this setting existed" in panel.inner_text()
+    page.fill('input[aria-label="Image model"]', "gpt-image-1")
     assert fake.requests == []
 
     page.fill('input[aria-label="Image provider API key"]', fakes.GOOD_KEY)

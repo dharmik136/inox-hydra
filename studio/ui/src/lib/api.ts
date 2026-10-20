@@ -2590,6 +2590,8 @@ export interface ImageProviderOption {
   default_model: string;
   models: string[];
   key_hint: string;
+  /** What a model needs or costs, said beside the model field. */
+  model_notes: Record<string, string>;
   checks: boolean;
   shares_ai_key: boolean;
   disclosure: ImageDisclosure;

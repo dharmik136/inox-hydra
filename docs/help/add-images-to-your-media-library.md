@@ -61,7 +61,7 @@ The image provider is set per profile, in the **Prompt** tab under **Images**, b
 | Choice | What leaves this machine | Account | Checked by |
 | --- | --- | --- | --- |
 | **Free public generator (image.pollinations.ai)** (the default) | The image prompt and size, inside the web address of the request, to a free public service run by a third party | None | Nothing to check |
-| **OpenAI Images** (gpt-image-1, dall-e-3) | The image prompt and size, with your key, to api.openai.com | Yours, billed per image | Asking OpenAI for the model |
+| **OpenAI Images** (gpt-image-1, dall-e-3) | The image prompt and size, with your key, to api.openai.com | Yours, billed per image. gpt-image-1 works only after OpenAI has verified your organisation, and is priced differently from dall-e-3 | Asking OpenAI for the model |
 | **Google Imagen (Gemini API)** (Imagen 4, Imagen 3) | The image prompt and size, with your key, to generativelanguage.googleapis.com | Your Google AI Studio key, with billing on | Asking Google for the model, and listing its Imagen models |
 | **Stability AI** (Stable Image Core and Ultra, SD 3.5) | The image prompt, the things to avoid, and the size, with your key, to api.stability.ai | Yours, spends credits | Reading your credit balance |
 | **Replicate** (FLUX and other models, written owner/name) | The image prompt and size, with your key, to api.replicate.com; the image is then downloaded from Replicate's file host, without your key | Yours, billed per image | Asking Replicate for the model |
@@ -71,7 +71,7 @@ The image provider is set per profile, in the **Prompt** tab under **Images**, b
 | **ComfyUI** | The same, as a basic text-to-image workflow, to the address you enter | Your own machine. It uses a checkpoint from ComfyUI's models/checkpoints folder. | Listing its checkpoints |
 | **Off** | Nothing. **Generate** is turned off. | None | Nothing to check |
 
-- With nothing chosen, an `openai` or `gemini` AI provider's key makes the images, as before this setting existed, and **Set by** says "Your AI provider's key". Otherwise the free public generator is used. To use the AI provider's key on purpose, choose the same company and leave the key empty.
+- With nothing chosen, an `openai` or `gemini` AI provider's key makes the images with the model it used before this setting existed (`dall-e-3` or `imagen-3.0-generate-002`), and **Set by** says "Your AI provider's key". The model changes only when you choose another one here. A new setup starts on the newer model, and the line under **Model** says what it needs or costs. Otherwise the free public generator is used. To use the AI provider's key on purpose, choose the same company and leave the key empty.
 - A web UI address on this computer (`127.0.0.1` or `localhost`) keeps the prompt here, and works even when outbound requests are switched off. An address on your network is another computer, and the prompt leaves this one for it. An address on the internet must start with `https`.
 - Only the provider you chose is asked. If it fails, the generation fails; the studio does not try another service in its place.
 - With an AI provider set up, **Preview prompt** and **Generate** also send your description to that AI provider first, to write the scene (see [Connect your own AI provider](connect-your-own-ai-provider.md)).

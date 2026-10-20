@@ -219,6 +219,12 @@ export function ImageProviderSettings() {
                 <option key={name} value={name} />
               ))}
             </datalist>
+            {/* Beside the field, so a requirement or a price change is read
+                before the model is saved (gpt-image-1 needs organisation
+                verification). */}
+            {option.model_notes?.[model.trim()] && (
+              <p className="text-[11px] leading-snug text-ink-muted">{option.model_notes[model.trim()]}</p>
+            )}
           </>
         )}
 
