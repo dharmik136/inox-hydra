@@ -705,6 +705,109 @@ def assert_runtime_self_contained(runtime_dir):
     return report
 
 
+# Pillow's Windows wheels include raqm, its complex text layout engine, and
+# load FriBiDi from the DLL search order at run time without shipping it. With
+# no FriBiDi, features.check("raqm") is False and the image studio leaves Hindi
+# and Gujarati overlays off generated images (R7-N1). Any of these names is
+# found; the application directory, beside python.exe, is searched first.
+FRIBIDI_NAMES = ("fribidi-0.dll", "libfribidi-0.dll", "fribidi.dll")
+
+
+def _scrubbed_env():
+    env = {k: v for k, v in os.environ.items()
+           if not k.upper().startswith("PYTHON") and k.upper() not in {"VIRTUAL_ENV", "CONDA_PREFIX"}}
+    if os.name == "nt":
+        system_root = os.environ.get("SystemRoot", r"C:\Windows")
+        env["PATH"] = os.pathsep.join([os.path.join(system_root, "System32"), system_root])
+    else:
+        env["PATH"] = "/usr/bin:/bin"
+    return env
+
+
+def bundle_fribidi(runtime_dir):
+    """
+    Copies a FriBiDi DLL, and its licence, beside the Windows python.exe.
+
+    The DLL comes from INOX_FRIBIDI_DLL (CI builds it with the runner's vcpkg:
+    `vcpkg install fribidi:x64-windows`), or from runtime_cache. FriBiDi is
+    LGPL-2.1, shipped as a separate replaceable DLL, so its licence ships with
+    it and a DLL with no licence beside it is refused. Off Windows, Pillow's
+    wheels carry FriBiDi themselves and nothing is copied.
+    """
+    if platform.system() != "Windows":
+        return None
+
+    source = os.environ.get("INOX_FRIBIDI_DLL", "").strip()
+    if not source:
+        source = next((os.path.join(CACHE_DIR, name) for name in FRIBIDI_NAMES
+                       if os.path.isfile(os.path.join(CACHE_DIR, name))), "")
+    if not source or not os.path.isfile(source):
+        raise SystemExit(
+            "REFUSING TO BUILD. No FriBiDi DLL for Pillow's complex text layout, so Hindi and "
+            "Gujarati overlays would be left off generated images. Build it with "
+            "`vcpkg install fribidi:x64-windows` and set INOX_FRIBIDI_DLL to the fribidi-0.dll it "
+            f"produces, or put one of {', '.join(FRIBIDI_NAMES)} in {CACHE_DIR}."
+        )
+
+    bin_dir = os.path.dirname(os.path.abspath(source))
+    licence = next((path for path in (
+        os.environ.get("INOX_FRIBIDI_LICENSE", "").strip(),
+        os.path.join(bin_dir, "..", "share", "fribidi", "copyright"),
+        os.path.join(bin_dir, "FRIBIDI-LICENSE.txt"),
+        os.path.join(bin_dir, "COPYING"),
+    ) if path and os.path.isfile(path)), None)
+    if not licence:
+        raise SystemExit(
+            f"REFUSING TO BUILD. {source} has no licence beside it. FriBiDi is LGPL-2.1 and its "
+            "licence ships with the DLL; set INOX_FRIBIDI_LICENSE to its COPYING file."
+        )
+
+    target = os.path.join(runtime_dir, os.path.basename(source))
+    shutil.copy2(source, target)
+    shutil.copy2(licence, os.path.join(runtime_dir, "FRIBIDI-LICENSE.txt"))
+    log("runtime", f"bundled {os.path.basename(source)} for complex text layout, with its licence")
+    return target
+
+
+_TEXT_LAYOUT_PROBE = r"""
+import json
+from PIL import features
+try:
+    fribidi = features.version("fribidi")
+except Exception:
+    fribidi = None
+print(json.dumps({"raqm": bool(features.check("raqm")), "fribidi": fribidi}))
+"""
+
+
+def assert_complex_text_layout(runtime_dir):
+    """
+    Asks the bundled runtime, with lib/ vendored, whether Pillow's raqm loads.
+
+    Required on Windows, where the DLL is ours to ship; reported elsewhere.
+    """
+    interpreter = get_runtime_interpreter(runtime_dir)
+    elsewhere = tempfile.mkdtemp(prefix="inox_text_layout_probe_")
+    try:
+        result = subprocess.run([interpreter, "-s", "-c", _TEXT_LAYOUT_PROBE], cwd=elsewhere,
+                                env=_scrubbed_env(), capture_output=True, text=True, timeout=120)
+    finally:
+        shutil.rmtree(elsewhere, ignore_errors=True)
+    if result.returncode != 0:
+        raise SystemExit("REFUSING TO BUILD. Pillow does not import in the bundled runtime:\n"
+                         + (result.stderr or result.stdout)[-2000:])
+    report = json.loads(result.stdout.strip().splitlines()[-1])
+    if platform.system() == "Windows" and not report["raqm"]:
+        raise SystemExit(
+            "REFUSING TO BUILD. PIL.features.check('raqm') is False in the bundled runtime, so "
+            "Hindi and Gujarati overlays would be left off generated images. The FriBiDi DLL "
+            "beside python.exe did not load."
+        )
+    log("runtime", f"complex text layout: raqm {'on' if report['raqm'] else 'OFF'}, "
+                   f"fribidi {report['fribidi'] or 'not found'}")
+    return report
+
+
 def write_path_file(runtime_dir):
     """
     Rewrites python3XX._pth (Windows) or configures sitecustomize and .pth (Unix)
@@ -920,6 +1023,8 @@ def main():
     lib_dir = os.path.join(staging, "lib")
     os.makedirs(lib_dir)
     vendor_dependencies(lib_dir)
+    bundle_fribidi(runtime_dir)
+    assert_complex_text_layout(runtime_dir)
 
     app_dir = os.path.join(staging, "app")
     os.makedirs(app_dir)

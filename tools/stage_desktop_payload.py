@@ -108,6 +108,8 @@ def main():
     lib_dir = os.path.join(PAYLOAD_ROOT, "lib")
     os.makedirs(lib_dir)
     build_portable.vendor_dependencies(lib_dir)
+    build_portable.bundle_fribidi(runtime_dir)
+    build_portable.assert_complex_text_layout(runtime_dir)
 
     app_dir = os.path.join(PAYLOAD_ROOT, "app")
     os.makedirs(app_dir)
