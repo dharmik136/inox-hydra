@@ -131,6 +131,11 @@ def test_the_shortcut_script_quotes_its_launcher(tmp_path):
     done = subprocess.run(["bash", str(install / "create_desktop_shortcut.sh")], env=env,
                           capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert done.returncode == 0, done.stdout + done.stderr
+    if sys.platform == "darwin":
+        # macOS gets a .command file on the Desktop that execs the launcher.
+        command = (home / "Desktop" / "Inox Hydra.command").read_text(encoding="utf-8")
+        assert f'exec "{launcher}"' in command, command
+        return
     entry = home / ".local" / "share" / "applications" / "inox-hydra.desktop"
     assert _exec_argv(_exec_of(entry)) == [launcher]
 

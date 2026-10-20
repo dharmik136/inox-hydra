@@ -95,7 +95,9 @@ def test_three_thousand_posts_import_in_seconds_and_match_what_the_bridge_read(c
     took = time.monotonic() - started
     assert res.status_code == 200, res.text
     assert res.json()["summary"]["posts"] == {"added": POSTS // 2, "already_there": POSTS // 2, "skipped": 0}
-    assert took < 5, f"a {POSTS}-post archive took {took:.1f} s to import"
+    # The quadratic import took 45 to 58 s here; 20 s keeps that caught on a slow
+    # shared CI runner, where the fixed import has taken 5.3 s.
+    assert took < 20, f"a {POSTS}-post archive took {took:.1f} s to import"
     conn = sqlite3.connect(paths.get_db_path())
     assert conn.execute("SELECT COUNT(*) FROM own_posts").fetchone()[0] == POSTS
     assert conn.execute("SELECT COUNT(*) FROM own_posts WHERE reactions = 5").fetchone()[0] == POSTS // 2
