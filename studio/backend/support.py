@@ -33,7 +33,7 @@ import shutil
 import sqlite3
 import sys
 import zipfile
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 try:
@@ -275,12 +275,88 @@ def write_diagnostics_bundle(destination: Optional[str] = None) -> str:
     return destination
 
 
+class BackupNotVerified(sqlite3.DatabaseError):
+    """The copy of the database failed SQLite's own check, so no backup was kept."""
+
+
+# Media that is already compressed. Deflating it again cost 1.8 s per 124 MB
+# on the three-year dataset and saved nothing; storing it costs 0.08 s.
+STORED_EXTENSIONS = frozenset({
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".heic",
+    ".mp4", ".mov", ".webm", ".mp3", ".m4a", ".zip", ".gz", ".pdf",
+})
+
+
+def _unique_path(directory: str, stem: str, extension: str) -> str:
+    """A path that does not exist yet: two backups in one second used to share a name."""
+    candidate = os.path.join(directory, f"{stem}{extension}")
+    counter = 1
+    while os.path.exists(candidate):
+        counter += 1
+        candidate = os.path.join(directory, f"{stem}_{counter}{extension}")
+    return candidate
+
+
+def _compact_copy(clean_label: str, stamp: str) -> Optional[str]:
+    """
+    A consistent, compact copy of the database, or None when there is none.
+
+    VACUUM INTO reads one snapshot, so the copy is consistent under WAL like
+    the backup API's, and it leaves free pages behind: the copy is smaller,
+    and bytes freed before secure_delete was on are not carried into it.
+    """
+    db_path = paths.get_db_path()
+    if not os.path.exists(db_path) or os.path.getsize(db_path) == 0:
+        return None
+    target = _unique_path(paths.get_backups_dir(), f"linkedin_studio_snapshot_{clean_label}_{stamp}", ".db")
+    source = sqlite3.connect(db_path, timeout=30.0)
+    try:
+        source.execute("PRAGMA busy_timeout = 30000")
+        source.execute("VACUUM INTO ?", (target,))
+    except Exception:
+        if os.path.exists(target):
+            os.remove(target)
+        raise
+    finally:
+        source.close()
+    return target
+
+
+def _integrity_of(path: str) -> str:
+    """PRAGMA integrity_check on a copy: "ok", or what SQLite found."""
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        rows = conn.execute("PRAGMA integrity_check").fetchall()
+    finally:
+        conn.close()
+    verdict = "; ".join(str(r[0]) for r in rows[:5])
+    return verdict or "no answer"
+
+
+def _read_back(archive: str, with_database: bool) -> None:
+    """Opens the written archive and checks every entry against its checksum."""
+    with zipfile.ZipFile(archive) as z:
+        broken = z.testzip()
+        if broken is not None:
+            raise BackupNotVerified(f"the backup could not be read back: {broken} does not match its checksum")
+        if with_database:
+            with z.open("data/linkedin_studio.db") as handle:
+                if not handle.read(16).startswith(SQLITE_HEADER):
+                    raise BackupNotVerified("the backup could not be read back: its database is not a database")
+
+
 def create_backup(label: str = "manual", require_database: bool = True) -> str:
     """
     Full state snapshot: database plus user media, in one ZIP.
 
-    The database is copied through the SQLite backup API first so the captured
-    file is internally consistent under WAL, rather than a torn file copy.
+    The database is copied with VACUUM INTO first so the captured file is
+    internally consistent under WAL, rather than a torn file copy, and compact.
+
+    Each backup is checked as it is made: the copy passes integrity_check
+    before it goes in, and the archive is read back against its checksums
+    after. One that fails either is removed and BackupNotVerified raised, so a
+    damaged copy is never listed beside the good ones. The manifest records
+    both checks.
 
     With no database yet this is refused: it used to write an archive of a few
     hundred bytes, call it a backup and print the command to restore it. Only
@@ -291,19 +367,32 @@ def create_backup(label: str = "manual", require_database: bool = True) -> str:
         raise ValueError(_no_database_message("back up"))
     clean_label = re.sub(r"[^a-zA-Z0-9_-]", "_", str(label))[:40] or "manual"
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    archive = os.path.join(paths.get_backups_dir(), f"inox_backup_{clean_label}_{stamp}.zip")
+    archive = _unique_path(paths.get_backups_dir(), f"inox_backup_{clean_label}_{stamp}", ".zip")
 
-    consistent_db = backup_database(reason=f"snapshot_{clean_label}")
+    consistent_db = _compact_copy(clean_label, stamp)
 
     try:
-        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as z:
+        verified: Dict[str, Any] = {"checked_at": datetime.now().isoformat(timespec="seconds")}
+        if consistent_db:
+            verdict = _integrity_of(consistent_db)
+            if verdict != "ok":
+                raise BackupNotVerified(
+                    f"The database failed SQLite's integrity check ({verdict}), so no backup was kept. "
+                    f"Your earlier backups are unchanged."
+                )
+            verified["integrity_check"] = verdict
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
             if consistent_db and os.path.exists(consistent_db):
                 z.write(consistent_db, "data/linkedin_studio.db")
             assets = paths.get_assets_dir()
             for dirpath, _, filenames in os.walk(assets):
                 for name in filenames:
                     full = os.path.join(dirpath, name)
-                    z.write(full, os.path.join("assets", os.path.relpath(full, assets)))
+                    stored = os.path.splitext(name)[1].lower() in STORED_EXTENSIONS
+                    z.write(full, os.path.join("assets", os.path.relpath(full, assets)),
+                            compress_type=zipfile.ZIP_STORED if stored else zipfile.ZIP_DEFLATED)
+            # True of every archive that is kept: one failing the read back below is removed.
+            verified["archive_read_back"] = True
             z.writestr("backup_manifest.json", json.dumps({
                 "created_at": datetime.now().isoformat(timespec="seconds"),
                 "app_version": __version__,
@@ -311,7 +400,9 @@ def create_backup(label: str = "manual", require_database: bool = True) -> str:
                 "label": clean_label,
                 # Which creator profile this is. A backup holds one profile only.
                 "profile": paths.get_active_profile_id(),
+                "verified": verified,
             }, indent=2, default=str))
+        _read_back(archive, with_database=bool(consistent_db))
     except Exception:
         # Half an archive is worse than none: it is listed as a backup.
         if os.path.exists(archive):
@@ -322,6 +413,185 @@ def create_backup(label: str = "manual", require_database: bool = True) -> str:
         if consistent_db and os.path.exists(consistent_db):
             os.remove(consistent_db)
     return archive
+
+
+# ---------------------------------------------------------------------------
+# Daily backups and rotation
+# ---------------------------------------------------------------------------
+
+# Backups the studio makes on its own, which rotation may remove. One the
+# creator made with Back up now or the command line, and the safety copies
+# taken before a restore or a reset, are never removed by the studio.
+AUTOMATIC_BACKUP_LABELS = ("daily", "pre_cleanup")
+KEEP_DAILY, KEEP_WEEKLY, KEEP_MONTHLY = 7, 4, 3
+# Bare database copies (before an upgrade, before the demo cleanup): the newest
+# of each kind are kept. The newest is the one every upgrade error points at.
+DATABASE_COPIES_KEPT = 2
+DAILY_BACKUP_EVERY = timedelta(hours=24)
+
+_ZIP_NAME = re.compile(r"^inox_backup_(?P<label>.+?)_(?P<stamp>\d{8}_\d{6})(?:_\d+)?\.zip$")
+_COPY_NAME = re.compile(r"^linkedin_studio_(?P<reason>.+?)_(?P<stamp>\d{8}_\d{6})(?:_\d+)?\.db$")
+
+
+def _made_at(name: str, path: str, pattern: "re.Pattern") -> datetime:
+    """When a backup was made: the stamp in its name, or the file's time."""
+    match = pattern.match(name)
+    if match:
+        try:
+            return datetime.strptime(match.group("stamp"), "%Y%m%d_%H%M%S")
+        except ValueError:
+            pass
+    return datetime.fromtimestamp(os.path.getmtime(path))
+
+
+def _backups_by_kind() -> Dict[str, List[tuple]]:
+    """{"automatic": [(made_at, path)], "zip": [...every backup ZIP], "copy:<reason>": [...]}, newest first."""
+    directory = paths.get_backups_dir()
+    found: Dict[str, List[tuple]] = {"automatic": [], "zip": []}
+    for name in os.listdir(directory):
+        full = os.path.join(directory, name)
+        if not os.path.isfile(full):
+            continue
+        zipped = _ZIP_NAME.match(name)
+        if zipped:
+            entry = (_made_at(name, full, _ZIP_NAME), full)
+            if "damaged" not in zipped.group("label"):
+                found["zip"].append(entry)
+            if zipped.group("label") in AUTOMATIC_BACKUP_LABELS:
+                found["automatic"].append(entry)
+            continue
+        copied = _COPY_NAME.match(name)
+        # A snapshot_ copy belongs to a backup being written right now.
+        if copied and not copied.group("reason").startswith("snapshot"):
+            found.setdefault(f"copy:{copied.group('reason')}", []).append((_made_at(name, full, _COPY_NAME), full))
+    for entries in found.values():
+        entries.sort(key=lambda entry: entry[0], reverse=True)
+    return found
+
+
+def _generations(entries: List[tuple]) -> set:
+    """
+    The newest backup of each of 7 days, then of 4 weeks before those, then of
+    3 months before those: 14 at most, reaching back about four months.
+    """
+    keep = set()
+    older_than = None
+    for count, period in ((KEEP_DAILY, lambda d: d.date()),
+                          (KEEP_WEEKLY, lambda d: d.isocalendar()[:2]),
+                          (KEEP_MONTHLY, lambda d: (d.year, d.month))):
+        # A period the tier before already holds a backup from is not counted again.
+        covered = {period(made_at) for made_at, path in entries if path in keep}
+        seen: List[Any] = []
+        for made_at, path in entries:  # newest first, so the first of a period is its newest
+            if len(seen) == count:
+                break
+            key = period(made_at)
+            if (older_than is not None and made_at >= older_than) or key in covered or key in seen:
+                continue
+            seen.append(key)
+            keep.add(path)
+        if keep:
+            older_than = min(made_at for made_at, path in entries if path in keep)
+    return keep
+
+
+# How long a backup can outlive what it holds: the oldest generation rotation
+# keeps. Used to tell a creator when a forgotten person leaves the last backup.
+ROTATION_REACH_DAYS = KEEP_DAILY + 7 * (KEEP_WEEKLY + 1) + 31 * KEEP_MONTHLY
+
+
+def rotate_backups() -> Dict[str, Any]:
+    """
+    Removes automatic backups beyond 7 daily, 4 weekly and 3 monthly, and bare
+    database copies beyond the newest 2 of each kind. Idempotent.
+
+    The newest automatic backup is always kept, and so is every backup the
+    creator made. Generations are counted back from the newest backup, not
+    from today, so a studio left closed for a month keeps its last good
+    copies rather than finding them all too old.
+    """
+    found = _backups_by_kind()
+    keep = _generations(found["automatic"])
+    doomed = [path for _, path in found["automatic"] if path not in keep]
+    for kind, entries in found.items():
+        if kind.startswith("copy:"):
+            doomed.extend(path for _, path in entries[DATABASE_COPIES_KEPT:])
+    removed, freed = [], 0
+    for path in doomed:
+        try:
+            size = os.path.getsize(path)
+            os.remove(path)
+        except OSError:
+            continue
+        removed.append(os.path.basename(path))
+        freed += size
+    return {"removed": sorted(removed), "freed_bytes": freed, "kept_automatic": len(keep)}
+
+
+def _manifest_of(archive: str) -> Dict[str, Any]:
+    try:
+        with zipfile.ZipFile(archive) as z:
+            manifest = json.loads(z.read("backup_manifest.json").decode("utf-8"))
+        return manifest if isinstance(manifest, dict) else {}
+    except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+        return {}
+
+
+def _describe(entry: Optional[tuple]) -> Optional[Dict[str, Any]]:
+    if not entry:
+        return None
+    made_at, path = entry
+    verified = _manifest_of(path).get("verified") or {}
+    return {
+        "name": os.path.basename(path),
+        "made_at": made_at.isoformat(timespec="seconds"),
+        "bytes": os.path.getsize(path),
+        # Backups made before checking began carry no record of it.
+        "verified": verified.get("integrity_check") == "ok" if verified else None,
+    }
+
+
+def backup_schedule(enabled: bool) -> Dict[str, Any]:
+    """The newest backup, when the next automatic one is due, and how many are kept."""
+    found = _backups_by_kind()
+    newest = found["zip"][0] if found["zip"] else None
+    next_due = None
+    if enabled:
+        due = (newest[0] + DAILY_BACKUP_EVERY) if newest else datetime.now()
+        next_due = max(due, datetime.now()).isoformat(timespec="seconds")
+    return {
+        "enabled": enabled,
+        "last": _describe(newest),
+        "next_due": next_due,
+        "automatic_count": len(found["automatic"]),
+        "zip_count": len(found["zip"]),
+        "keeps": {"daily": KEEP_DAILY, "weekly": KEEP_WEEKLY, "monthly": KEEP_MONTHLY,
+                  "database_copies": DATABASE_COPIES_KEPT},
+        "directory": paths.get_backups_dir(),
+    }
+
+
+def run_daily_backup(force: bool = False) -> Optional[Dict[str, Any]]:
+    """
+    The automatic daily backup of the active profile, then rotation.
+
+    None when no backup is due: any backup ZIP made in the last 24 hours, the
+    creator's own included, counts. A failure is returned, not raised, so the
+    schedule can say what went wrong; rotation does not run after one, so a
+    failed day never costs a good older backup.
+    """
+    if not _has_database():
+        return None
+    found = _backups_by_kind()
+    if not force and found["zip"] and datetime.now() - found["zip"][0][0] < DAILY_BACKUP_EVERY:
+        return None
+    at = datetime.now().isoformat(timespec="seconds")
+    try:
+        archive = create_backup("daily")
+    except Exception as error:
+        return {"ok": False, "at": at, "archive": None, "bytes": None, "error": str(error), "rotation": None}
+    return {"ok": True, "at": at, "archive": archive, "bytes": os.path.getsize(archive), "error": None,
+            "rotation": rotate_backups()}
 
 
 SQLITE_HEADER = b"SQLite format 3\x00"
