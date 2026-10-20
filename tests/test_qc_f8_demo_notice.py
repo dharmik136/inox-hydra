@@ -174,7 +174,7 @@ def test_today_shows_the_cleanup_notice_once(studio_url):
             notice = page.get_by_role("status").filter(has_text="removed sample content")
             expect(notice).to_be_visible(timeout=10000)
             expect(notice).to_contain_text(
-                "The studio removed sample content it had added in an earlier version: 16 drafts, 16 posts.")
+                "The studio removed sample content it had added itself: 16 drafts, 16 posts.")
             expect(notice).to_contain_text(f"A copy of your database from before is at {BACKUP}.")
             notice.get_by_role("button", name="Dismiss").click()
             expect(page.get_by_text("removed sample content")).to_have_count(0)
