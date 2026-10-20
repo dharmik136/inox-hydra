@@ -467,7 +467,10 @@ def create_desktop_shortcuts(
                 ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
                 capture_output=True,
                 text=True,
-                timeout=10
+                # PowerShell's first start on a slow or busy PC can take more
+                # than 10 s, which reported a shortcut as failed that was
+                # about to be made. Each browser gets its own call.
+                timeout=30
             )
             if os.path.exists(shortcut_dest):
                 created_shortcuts.append({
