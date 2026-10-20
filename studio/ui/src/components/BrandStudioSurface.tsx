@@ -22,13 +22,14 @@ import { cn } from "@/lib/utils";
 import { registerUnsavedWork } from "@/lib/unsaved";
 import { GroundingWorkspace } from "./GroundingWorkspace";
 import { LicenceWorkspace } from "./LicenceWorkspace";
+import { StoragePrivacyWorkspace } from "./StoragePrivacyWorkspace";
 
-type Workspace = "Identity" | "Watermark" | "Grounding" | "Local security" | "Licence";
+type Workspace = "Identity" | "Watermark" | "Grounding" | "Local security" | "Storage and privacy" | "Licence";
 
 // Grounding sits beside the other settings rather than in the composer: it
 // is a standing grant about what this machine will run and what leaves it,
 // not a per-draft choice.
-const WORKSPACES: Workspace[] = ["Identity", "Watermark", "Grounding", "Local security", "Licence"];
+const WORKSPACES: Workspace[] = ["Identity", "Watermark", "Grounding", "Local security", "Storage and privacy", "Licence"];
 
 /** The nine placements the backend accepts, laid out as they read on an image. */
 const POSITIONS = [
@@ -172,6 +173,7 @@ export function BrandStudioSurface() {
         {workspace === "Watermark" && <WatermarkWorkspace profile={profile} edit={edit} />}
         {workspace === "Grounding" && <GroundingWorkspace />}
         {workspace === "Local security" && <SecurityWorkspace loaded={loaded} ai={ai} />}
+        {workspace === "Storage and privacy" && <StoragePrivacyWorkspace />}
         {workspace === "Licence" && <LicenceWorkspace />}
       </div>
     </div>

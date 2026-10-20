@@ -161,8 +161,15 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # on the note that says what the demo cleanup removed (TodaySurface, api.ts).
 # Reached moves 98 -> 99, unreachable stays at 83, total moves 181 -> 182.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 182
-REACHED_BY_INTERFACE = 99
+# Then 182 -> 191 (batch R4), the Storage and privacy panel in Brand Studio:
+# /api/v1/storage, /api/v1/storage/rules, /api/v1/storage/preview/*,
+# /api/v1/storage/run/*, /api/v1/storage/review, /api/v1/storage/review/forget,
+# /api/v1/storage/review/keep, /api/v1/storage/backups/scrub and
+# /api/v1/storage/compact, all surfaced in StoragePrivacyWorkspace and api.ts.
+# Reached moves 99 -> 108, unreachable stays at 83, total moves 182 -> 191.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 191
+REACHED_BY_INTERFACE = 108
 UNREACHABLE = 83
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

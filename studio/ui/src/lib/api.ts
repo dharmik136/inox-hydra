@@ -2564,3 +2564,159 @@ export async function dismissDemoCleanupNotice(): Promise<boolean> {
   const res = await call<{ dismissed: boolean }>("/api/v1/today/demo-cleanup-notice/dismiss", { method: "POST" });
   return res.dismissed;
 }
+
+// ---------------------------------------------------------------------------
+// Storage and privacy (studio/backend/routers/storage.py)
+// ---------------------------------------------------------------------------
+
+export type RetentionJob = "telemetry" | "readings" | "reactions";
+
+export interface RetentionRules {
+  daily_backup: "on" | "off";
+  telemetry_days: "7" | "30" | "90";
+  readings: "on" | "off" | "ask";
+  readings_days: "30" | "90" | "365";
+  fold_reactions: "on" | "off" | "ask";
+  lead_review: "ask" | "off";
+}
+
+export interface StorageCategory {
+  key: string;
+  label: string;
+  /** null when this SQLite build cannot measure it: shown as not measured. */
+  bytes: number | null;
+  rows: number | null;
+}
+
+export interface BackupSummary {
+  name: string;
+  made_at: string;
+  bytes: number;
+  /** null for a backup made before checks were recorded. */
+  verified: boolean | null;
+}
+
+export interface RetentionLogEntry {
+  job: string;
+  started_at: string;
+  finished_at: string | null;
+  outcome: string;
+  removed: number;
+  backup: string | null;
+}
+
+export interface StorageOverview {
+  rules: RetentionRules;
+  defaults: Record<keyof RetentionRules, string>;
+  options: Record<keyof RetentionRules, string[]>;
+  sizes: {
+    measured: boolean;
+    categories: StorageCategory[];
+    database_bytes: number;
+    free_bytes: number;
+    telemetry_bytes: number;
+    media_bytes: number;
+    backups_bytes: number;
+  };
+  backups: {
+    enabled: boolean;
+    last: BackupSummary | null;
+    next_due: string | null;
+    automatic_count: number;
+    zip_count: number;
+    keeps: { daily: number; weekly: number; monthly: number; database_copies: number };
+    directory: string;
+    last_daily: { ok: boolean; at: string; archive: string | null; bytes: number | null; error: string | null } | null;
+    rotation_reach_days: number;
+  };
+  review: { count: number; silent_days: number; state: "ask" | "off" };
+  scrub: { people: number; since: string | null };
+  fold_days: number;
+  log: RetentionLogEntry[];
+}
+
+export interface RetentionPreview {
+  job: RetentionJob;
+  rows: number;
+  total_rows?: number;
+  posts?: number;
+  people?: number;
+  people_left_without_engagement?: number;
+  comments_kept?: number;
+  older_than_days: number;
+  bytes: number | null;
+  state: "on" | "off" | "ask";
+}
+
+export interface SilentLead {
+  id: string;
+  name: string | null;
+  headline: string | null;
+  company: string | null;
+  interactions: number;
+  last_activity: string;
+}
+
+export interface BackupDisclosure {
+  automatic_backups: number;
+  your_backups: number;
+  database_copies: number;
+  automatic_gone_by: string;
+}
+
+export interface ForgetResult {
+  forgotten: number;
+  kept_since: number;
+  backup: string | null;
+  backups: BackupDisclosure;
+}
+
+export interface ScrubResult {
+  rewritten?: number;
+  unchanged?: number;
+  failed?: { name: string; error: string }[];
+  people?: number;
+}
+
+export async function fetchStorage(): Promise<StorageOverview> {
+  return call<StorageOverview>("/api/v1/storage");
+}
+
+export async function saveRetentionRules(rules: Partial<RetentionRules>): Promise<RetentionRules> {
+  const data = await call<{ rules: RetentionRules }>("/api/v1/storage/rules", {
+    method: "PUT",
+    body: JSON.stringify({ rules }),
+  });
+  return data.rules;
+}
+
+/** What a cleanup would remove now. Removes nothing. */
+export async function previewRetention(job: RetentionJob): Promise<RetentionPreview> {
+  return call<RetentionPreview>(`/api/v1/storage/preview/${job}`);
+}
+
+/** Backs up, then runs the cleanup, and keeps it on from now on. */
+export async function runRetention(job: RetentionJob): Promise<{ removed: number; backup: string; free_bytes: number }> {
+  return call(`/api/v1/storage/run/${job}`, { method: "POST" });
+}
+
+export async function fetchSilentLeads(limit = 200): Promise<{ count: number; silent_days: number; leads: SilentLead[] }> {
+  return call(`/api/v1/storage/review?limit=${limit}`);
+}
+
+export async function forgetSilentLeads(leadIds: string[]): Promise<ForgetResult> {
+  return call("/api/v1/storage/review/forget", { method: "POST", body: JSON.stringify({ lead_ids: leadIds }) });
+}
+
+export async function keepSilentLeads(leadIds: string[]): Promise<{ kept: number }> {
+  return call("/api/v1/storage/review/keep", { method: "POST", body: JSON.stringify({ lead_ids: leadIds }) });
+}
+
+/** Removes forgotten people from every backup too, or with leave, lets rotation remove them. */
+export async function scrubBackups(leave = false): Promise<ScrubResult> {
+  return call("/api/v1/storage/backups/scrub", { method: "POST", body: JSON.stringify({ leave }) });
+}
+
+export async function compactDatabase(): Promise<{ before_bytes: number; after_bytes: number }> {
+  return call("/api/v1/storage/compact", { method: "POST" });
+}
