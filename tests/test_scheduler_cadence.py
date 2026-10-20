@@ -14,6 +14,7 @@ Validates:
 
 import os
 import sys
+import threading
 import uuid
 from datetime import datetime, timezone, timedelta
 import pytest
@@ -24,6 +25,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from app import app
 from database import init_db, seed_initial_data, get_db
+import scheduler as scheduler_engine
 from scheduler import (
     native_scheduler,
     parse_datetime_flexible,
@@ -630,3 +632,26 @@ def test_smart_slot_uses_local_wall_clock_times():
         )
         assert slot["day_name"] == DAY_NAMES[slot_local.weekday()]
         assert slot["time_slot"] == slot_local.strftime("%H:%M")
+
+
+def test_a_stopped_scheduler_runs_again_when_it_is_started_again():
+    """
+    Started a second time in one process, the queue is checked again.
+
+    APScheduler's shutdown closes its thread pool for good and start() does
+    not open a new one, so the second start submitted nothing: apscheduler
+    logged "cannot schedule new futures after shutdown" every 30 seconds and
+    no queue check or daily backup ran again for the life of the process.
+    """
+    engine = scheduler_engine.NativeScheduler()
+    engine.start()
+    engine.shutdown()
+    engine.start()
+    try:
+        assert engine.scheduler.running
+        ran = threading.Event()
+        engine.scheduler.add_job(ran.set, "interval", seconds=1, next_run_time=datetime.now(),
+                                 id="restart_probe", replace_existing=True)
+        assert ran.wait(5), "a job added after a restart was never submitted to the executor"
+    finally:
+        engine.shutdown()
