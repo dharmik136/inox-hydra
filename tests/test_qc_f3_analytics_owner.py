@@ -233,7 +233,7 @@ process.stdout.write(JSON.stringify(out));
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is required to run the worker")
 def test_the_signed_in_account_is_forgotten_when_the_linkedin_sign_in_changes():
     result = subprocess.run([shutil.which("node"), "-e", WORKER, os.path.join(EXT, "background.js")],
-                            capture_output=True, text=True, timeout=30)
+                            capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert result.returncode == 0, result.stderr
     out = json.loads(result.stdout)
     assert out["afterOtherCookie"] == "test-creator"

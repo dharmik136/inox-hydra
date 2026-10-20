@@ -91,12 +91,12 @@ def client_counts():
     with tempfile.TemporaryDirectory() as work:
         compiled = os.path.join(work, "text.js")
         build = subprocess.run([ESBUILD, TEXT_MODULE, "--format=esm", f"--outfile={compiled}"],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, encoding="utf-8")
         assert build.returncode == 0, f"esbuild failed: {build.stderr}"
         probe = os.path.join(work, "probe.mjs")
         with open(probe, "w", encoding="utf-8") as handle:
             handle.write(PROBE)
-        run = subprocess.run([NODE, probe, json.dumps(FIXTURES)], capture_output=True, text=True, cwd=work)
+        run = subprocess.run([NODE, probe, json.dumps(FIXTURES)], capture_output=True, text=True, encoding="utf-8", cwd=work)
         assert run.returncode == 0, f"probe failed: {run.stderr}"
         return json.loads(run.stdout)
 

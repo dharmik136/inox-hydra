@@ -172,7 +172,7 @@ def _select_draft(page, text):
     editor = page.locator('textarea[aria-label="Post body"]')
     editor.fill(text)
     editor.focus()
-    page.keyboard.press("Control+A")
+    page.keyboard.press("ControlOrMeta+A")
     page.wait_for_selector('button[aria-label="Re-hook this selection"]')
 
 

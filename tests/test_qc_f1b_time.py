@@ -48,13 +48,13 @@ def formatted():
     with tempfile.TemporaryDirectory() as work:
         build = subprocess.run(
             [esbuild, TIME_MODULE, "--format=esm", f"--outfile={os.path.join(work, 'time.js')}"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
         assert build.returncode == 0, build.stderr
         with open(os.path.join(work, "probe.mjs"), "w", encoding="utf-8") as handle:
             handle.write(PROBE)
         run = subprocess.run(
-            [NODE, "probe.mjs"], capture_output=True, text=True, cwd=work,
+            [NODE, "probe.mjs"], capture_output=True, text=True, encoding="utf-8", cwd=work,
             env={**os.environ, "TZ": "Asia/Kolkata", "LANG": "en_GB.UTF-8"},
         )
         assert run.returncode == 0, run.stderr

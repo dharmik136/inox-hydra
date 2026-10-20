@@ -123,7 +123,7 @@ def _vanity_of(href):
             break
         i += 1
     script = source[start:i + 1] + "\nprocess.stdout.write(JSON.stringify(vanityOf(" + json.dumps(href) + ")));"
-    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=60)
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
 

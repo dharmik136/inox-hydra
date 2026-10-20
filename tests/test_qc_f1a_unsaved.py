@@ -81,12 +81,12 @@ def results():
     with tempfile.TemporaryDirectory() as work:
         compiled = os.path.join(work, "unsaved.js")
         build = subprocess.run([ESBUILD, MODULE, "--format=esm", f"--outfile={compiled}"],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, encoding="utf-8")
         assert build.returncode == 0, f"esbuild failed: {build.stderr}"
         probe = os.path.join(work, "probe.mjs")
         with open(probe, "w", encoding="utf-8") as handle:
             handle.write(PROBE)
-        run = subprocess.run([NODE, probe], capture_output=True, text=True, cwd=work)
+        run = subprocess.run([NODE, probe], capture_output=True, text=True, encoding="utf-8", cwd=work)
         assert run.returncode == 0, f"probe failed: {run.stderr}"
         return json.loads(run.stdout)
 

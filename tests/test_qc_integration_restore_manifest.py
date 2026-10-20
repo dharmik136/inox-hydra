@@ -23,7 +23,7 @@ def test_a_malformed_manifest_is_refused_in_words():
         handle.writestr("linkedin_studio.db", b"")
     env = dict(os.environ, INOX_HYDRA_HOME=home)
     run = subprocess.run([sys.executable, "-m", "studio.cli", "restore", archive, "--yes"],
-                         cwd=REPO_ROOT, env=env, capture_output=True, text=True, timeout=120)
+                         cwd=REPO_ROOT, env=env, capture_output=True, text=True, encoding="utf-8", timeout=120)
     output = run.stdout + run.stderr
     assert run.returncode != 0
     assert "Traceback" not in output and "has no attribute" not in output, output

@@ -40,6 +40,9 @@ if not os.path.exists(BUILT_INDEX):
 from app import app  # noqa: E402
 from database import init_db  # noqa: E402
 
+# The start of a text box: Control+Home everywhere but macOS, where it is Command+Up.
+TO_START = "Meta+ArrowUp" if sys.platform == "darwin" else "Control+Home"
+
 
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -259,7 +262,15 @@ def test_windows_alt_codes_and_other_fields_never_apply_a_hook(new_page, studio_
     page.wait_for_timeout(300)
     assert editor.input_value() == draft, "Alt+2 typed in the image concept box changed the post"
 
-    # The shortcut itself still works from the editor, and can be undone.
+    # The shortcut itself still works from the editor, and can be undone. Not
+    # on a Mac, where Option and a digit types a character and the shortcut is
+    # deliberately off (HookFilmstrip.tsx): there, it must never fire at all.
+    if sys.platform == "darwin":
+        editor.click()
+        page.keyboard.press("Alt+Digit1")
+        page.wait_for_timeout(300)
+        assert editor.input_value() == draft, "Option+1 on a Mac applied a hook"
+        return
     editor.click()
     page.keyboard.press("Alt+Digit1")
     expect(editor).not_to_have_value(draft)
@@ -389,7 +400,7 @@ def test_typing_while_a_format_request_runs_is_kept(new_page, studio_url, api):
     )
     editor.fill("pricing is a design problem")
     editor.click()
-    page.keyboard.press("Control+Home")
+    page.keyboard.press(TO_START)
     for _ in range(7):
         page.keyboard.press("Shift+ArrowRight")
     page.get_by_role("button", name="Bold", exact=True).click()
@@ -413,7 +424,7 @@ def _slow_formats(page):
 
 def _select(page, editor, start, length):
     editor.click()
-    page.keyboard.press("Control+Home")
+    page.keyboard.press(TO_START)
     for _ in range(start):
         page.keyboard.press("ArrowRight")
     for _ in range(length):
@@ -428,7 +439,7 @@ def test_typing_before_the_selection_still_formats_the_selected_words(new_page, 
     editor.fill("Say pricing is a design problem")
     _select(page, editor, 4, 7)
     page.get_by_role("button", name="Bold", exact=True).click()
-    page.keyboard.press("Control+Home")
+    page.keyboard.press(TO_START)
     page.keyboard.type("Honestly, ")
     page.wait_for_timeout(1800)
     value = editor.input_value()
@@ -444,7 +455,7 @@ def test_a_format_dropped_because_the_words_changed_says_so(new_page, studio_url
     editor.fill("pricing is a design problem")
     _select(page, editor, 0, 7)
     page.get_by_role("button", name="Bold", exact=True).click()
-    page.keyboard.press("Control+Home")
+    page.keyboard.press(TO_START)
     page.keyboard.press("Delete")
     page.wait_for_timeout(1800)
     assert editor.input_value() == "ricing is a design problem", "the author's edit was undone"
@@ -458,7 +469,7 @@ def test_a_format_left_alone_keeps_its_selection_for_the_next_one(new_page, stud
     editor = _open_composer(page, studio_url)
     editor.fill("pricing is a design problem")
     editor.click()
-    page.keyboard.press("Control+Home")
+    page.keyboard.press(TO_START)
     for _ in range(7):
         page.keyboard.press("Shift+ArrowRight")
     page.get_by_role("button", name="Bold", exact=True).click()

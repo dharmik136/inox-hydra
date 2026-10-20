@@ -128,13 +128,13 @@ def probe():
         compiled = os.path.join(work, "api.js")
         build = subprocess.run(
             [ESBUILD, API_MODULE, "--format=esm", f"--outfile={compiled}"],
-            capture_output=True, text=True,
+            capture_output=True, text=True, encoding="utf-8",
         )
         assert build.returncode == 0, build.stderr
         script = os.path.join(work, "probe.mjs")
         with open(script, "w", encoding="utf-8") as handle:
             handle.write(PROBE)
-        run = subprocess.run([NODE, script], capture_output=True, text=True, cwd=work, timeout=60)
+        run = subprocess.run([NODE, script], capture_output=True, text=True, encoding="utf-8", cwd=work, timeout=60)
         assert run.returncode == 0, run.stderr
         return json.loads(run.stdout)
 

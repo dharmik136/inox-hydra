@@ -77,6 +77,7 @@ StartupWMClass=inox-hydra
 elif [ "$OS_NAME" = "Darwin" ]; then
     # macOS
     DESKTOP_DIR="$HOME/Desktop"
+    mkdir -p "$DESKTOP_DIR"
     SHORTCUT="$DESKTOP_DIR/Inox Hydra.command"
     cat << EOF > "$SHORTCUT"
 #!/bin/bash

@@ -143,11 +143,11 @@ def _run_api_probe(probe_source):
         pytest.skip("node or the UI's esbuild is not installed")
     with tempfile.TemporaryDirectory() as work:
         build = subprocess.run([esbuild, API_TS, "--format=esm", f"--outfile={os.path.join(work, 'api.js')}"],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, encoding="utf-8")
         assert build.returncode == 0, build.stderr
         with open(os.path.join(work, "probe.mjs"), "w", encoding="utf-8") as handle:
             handle.write(probe_source)
-        run = subprocess.run([node, "probe.mjs"], capture_output=True, text=True, cwd=work)
+        run = subprocess.run([node, "probe.mjs"], capture_output=True, text=True, encoding="utf-8", cwd=work)
         assert run.returncode == 0, run.stderr
         return json.loads(run.stdout)
 

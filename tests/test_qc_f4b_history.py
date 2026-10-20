@@ -466,7 +466,7 @@ runImport("activity_posts", "sample-erin", { id: 7 }).then(() => {
 });
 """ % {"grows": json.dumps(grows), "button": json.dumps(button), "loader": json.dumps(loader),
        "max_rounds": max_rounds, "stop_at": json.dumps(stop_at), "functions": functions}
-    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, timeout=60)
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert result.returncode == 0, result.stderr
     return json.loads(result.stdout)
 

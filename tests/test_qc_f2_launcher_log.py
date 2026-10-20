@@ -79,8 +79,20 @@ exec "{sys.executable}" "$@"
 def _run(app, env):
     return subprocess.run(
         ["/bin/bash", str(app / "launch_studio.sh")], env=env, cwd=str(app),
-        capture_output=True, text=True, timeout=60,
+        capture_output=True, text=True, encoding="utf-8", timeout=60,
     )
+
+
+def _log_lines(log, needle, count, timeout=10.0):
+    """The launcher starts the server in the background and returns, so its
+    first line can land in the log a moment after the launcher exits."""
+    import time
+    deadline = time.monotonic() + timeout
+    while True:
+        text = log.read_text(encoding="utf-8") if log.is_file() else ""
+        if text.count(needle) >= count or time.monotonic() > deadline:
+            return text
+        time.sleep(0.1)
 
 
 @runs_the_launcher
@@ -91,12 +103,12 @@ def test_the_log_lands_in_the_app_homes_logs_folder(sandbox):
 
     log = home / "logs" / "engine.log"
     assert log.is_file(), f"no engine log under the app home: {result.stdout}"
-    assert "uvicorn stub started" in log.read_text(encoding="utf-8")
+    assert "uvicorn stub started" in _log_lines(log, "uvicorn stub started", 1)
     assert str(log) in result.stdout, "the launcher does not say where its log is"
 
     # A second launch appends, rather than wiping the log of the first.
     _run(app, env)
-    assert log.read_text(encoding="utf-8").count("uvicorn stub started") == 2
+    assert _log_lines(log, "uvicorn stub started", 2).count("uvicorn stub started") == 2
 
 
 def test_the_launcher_names_no_shared_temporary_file():

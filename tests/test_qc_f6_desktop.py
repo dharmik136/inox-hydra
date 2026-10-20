@@ -108,7 +108,7 @@ def test_autostart_runs_the_launcher_whatever_its_path(linux, monkeypatch, folde
     entry = desktop.get_startup_shortcut_path()
     assert _exec_argv(_exec_of(entry)) == [launcher]
     if shutil.which("desktop-file-validate"):
-        checked = subprocess.run(["desktop-file-validate", entry], capture_output=True, text=True)
+        checked = subprocess.run(["desktop-file-validate", entry], capture_output=True, text=True, encoding="utf-8")
         assert "error" not in (checked.stdout + checked.stderr).lower(), checked.stdout + checked.stderr
 
 
@@ -129,7 +129,7 @@ def test_the_shortcut_script_quotes_its_launcher(tmp_path):
     home.mkdir()
     env = {"HOME": str(home), "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
     done = subprocess.run(["bash", str(install / "create_desktop_shortcut.sh")], env=env,
-                          capture_output=True, text=True, timeout=30)
+                          capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert done.returncode == 0, done.stdout + done.stderr
     entry = home / ".local" / "share" / "applications" / "inox-hydra.desktop"
     assert _exec_argv(_exec_of(entry)) == [launcher]

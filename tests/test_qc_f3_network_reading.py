@@ -48,7 +48,7 @@ vm.runInContext(source, vm.createContext({ window, Proxy, Reflect, Object, URL, 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is required to run the interceptor")
 def test_the_creator_analytics_response_survives_a_busy_page():
     result = subprocess.run([shutil.which("node"), "-e", HARNESS, os.path.join(EXT, "voyager_interceptor.js")],
-                            capture_output=True, text=True, timeout=30)
+                            capture_output=True, text=True, encoding="utf-8", timeout=30)
     assert result.returncode == 0, result.stderr
     posted = json.loads(result.stdout)
     assert "https://www.linkedin.com/voyager/api/identity/dash/creatorAnalytics" in posted

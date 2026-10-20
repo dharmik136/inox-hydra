@@ -13,7 +13,7 @@ released. Version numbers follow `studio/__version__.py`.
   (brave://extensions, edge://extensions or chrome://extensions). A browser
   keeps running the old extension until then, and the old one reports some
   things the studio now refuses (it may still say "synced").
-- **Open your own profile once** at https://www.linkedin.com/in/me/ in the
+- **Open your own profile once** at `https://www.linkedin.com/in/me/` in the
   bridge browser. Analytics are now kept only when the browser is signed in to
   the LinkedIn account you confirmed in Setup, and this is how the extension
   learns which account that is.
@@ -205,7 +205,7 @@ and carries a test. The register is in docs/quality/BUG_REGISTER_2026-10.md.
   language) are no longer saved and charted as today's figure.
 - Analytics and follower counts are saved only when the browser is signed in
   to the LinkedIn account confirmed in Setup; open
-  https://www.linkedin.com/in/me/ once in the bridge browser so it knows which
+  `https://www.linkedin.com/in/me/` once in the bridge browser so it knows which
   account that is.
 - Insert into LinkedIn Composer no longer types your draft into an open
   comment box or a message.
