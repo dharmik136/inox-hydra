@@ -650,7 +650,7 @@ function ForgottenInBackups({ view, busy, act }: { view: StorageOverview; busy: 
       <p className="text-[13px] leading-relaxed text-ink-secondary">
         Forgetting someone removes them from this database at once, and the words are overwritten, not only
         marked deleted. Copies stay in backups made before then: in automatic backups until rotation removes
-        them, within about {Math.round(reach / 30.4)} months ({reach} days); in copies taken before an upgrade
+        them, within {reach} days; in copies taken before an upgrade
         until two more upgrades; and in backups you made yourself until you delete them.
       </p>
       {view.scrub.people > 0 && (
