@@ -376,7 +376,15 @@ def inspect_backup(archive: str) -> Dict[str, Any]:
         names = z.namelist()
         manifest = {}
         if "backup_manifest.json" in names:
-            manifest = json.loads(z.read("backup_manifest.json").decode("utf-8"))
+            try:
+                manifest = json.loads(z.read("backup_manifest.json").decode("utf-8"))
+            except (ValueError, UnicodeDecodeError):
+                manifest = None
+            if not isinstance(manifest, dict):
+                # Hand-edited or cut short: nothing in it can be trusted, so
+                # the file is refused here rather than half read later.
+                raise ValueError("this backup's description file (backup_manifest.json) is damaged, "
+                                 "so it cannot be checked or restored")
         if "data/linkedin_studio.db" in names:
             with z.open("data/linkedin_studio.db") as handle:
                 schema_version = _schema_version_of(handle.read(100))
@@ -602,7 +610,8 @@ def restore_backup(archive: str, take_safety_backup: bool = True, into_active_pr
     if info["kind"] == "database":
         origin = _profile_whose_backups_hold(archive)
     else:
-        origin = (info.get("manifest") or {}).get("profile")
+        manifest = info.get("manifest")
+        origin = manifest.get("profile") if isinstance(manifest, dict) else None
     active = paths.get_active_profile_id()
     if origin and origin != active and not into_active_profile:
         raise ProfileMismatch(

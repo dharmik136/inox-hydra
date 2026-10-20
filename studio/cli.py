@@ -32,6 +32,7 @@ import json
 import os
 import sqlite3
 import sys
+import zipfile
 
 try:
     from .backend import paths, support, updates
@@ -164,8 +165,16 @@ def cmd_restore(args) -> int:
         print(f"No such backup: {args.archive}")
         return 1
 
-    info = support.inspect_backup(args.archive)
-    manifest = info.get("manifest") or {}
+    try:
+        info = support.inspect_backup(args.archive)
+    except (ValueError, zipfile.BadZipFile) as unreadable:
+        print(f"Not restored: {unreadable}")
+        return 1
+    manifest = info.get("manifest")
+    if not isinstance(manifest, dict):
+        # A manifest that is not an object (hand-edited, or cut short) says
+        # nothing it can be trusted for; restore_backup refuses such a file.
+        manifest = {}
     print(f"Backup: {args.archive}")
     if info.get("kind") == "database":
         # A pre-upgrade copy: the database alone, with no manifest to read.
