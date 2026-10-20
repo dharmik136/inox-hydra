@@ -798,6 +798,11 @@ class ImageGenerateRequest(BaseModel):
         s = v.strip() if isinstance(v, str) else ""
         if not s:
             raise ValueError("concept cannot be empty or only whitespace")
+        # The image agent's own contract needs three characters. Said here, at
+        # the boundary, instead of as a 500 on Preview and a pydantic dump
+        # in Generate's failure message.
+        if len(s) < 3:
+            raise ValueError("the concept needs at least 3 characters, for example \"AI chip\" rather than \"AI\"")
         return s[:2000]
 
 
