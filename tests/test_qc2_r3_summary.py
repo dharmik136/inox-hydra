@@ -103,8 +103,13 @@ def test_the_thresholds_are_the_crms():
 
 
 def test_a_capture_leaves_the_summary_current(home):
-    """The writer that records an interaction refreshes the rows it marked."""
+    """
+    The captured post is current when the capture returns; the person's other
+    posts, marked when their score moved, are caught up just after, outside
+    the capture's transaction (tests/test_qc2_r3_capture.py).
+    """
     import crm
+    import post_summary
     post = home["own"][-1]
     for n in range(3):
         crm.reverse_crm.ingest_interaction(
@@ -118,6 +123,9 @@ def test_a_capture_leaves_the_summary_current(home):
         headline="Founder and CEO", interaction_type="LIKE", post_urn=home["own"][-2])
     conn = _db()
     try:
+        assert conn.execute("SELECT stale FROM post_engagement WHERE post_urn = ?",
+                            (home["own"][-2],)).fetchone()[0] == 0
+        assert post_summary.wait_for_catch_up(10)
         assert conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0] == 0
         _consistent(conn)
     finally:

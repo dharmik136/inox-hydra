@@ -411,11 +411,129 @@ def rebuild(conn) -> int:
     return len(rows)
 
 
-def _marked(conn, keys: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
+def _marked(conn, keys: Optional[List[str]] = None, limit: Optional[int] = None) -> Dict[str, Dict[str, Any]]:
     where, params = ("stale != 0", []) if keys is None else (
         "stale != 0 AND post_urn IN (SELECT value FROM json_each(?))", [json.dumps(list(keys))])
+    if limit is not None:
+        where += f" LIMIT {int(limit):d}"
     return {r["post_urn"]: {**{c: r[c] for c in COLUMNS}, "stale": r["stale"]}
             for r in _rows(conn, f"SELECT {', '.join(COLUMNS)}, stale FROM post_engagement WHERE {where}", params)}
+
+
+# Rows recomputed per transaction when catching up. A changed name or score
+# marks every post the person engaged with, 1,136 for the busiest lead of
+# three years; recomputed in one transaction that held the write lock for
+# 1.1 s, and the captures queued behind it failed with "database is locked".
+CATCH_UP_BATCH = 50
+_CATCH_UP_WAIT_MS = 250
+
+
+def catch_up(conn, batch: int = CATCH_UP_BATCH, pause: float = 0.0) -> int:
+    """
+    Recomputes every row marked stale, `batch` rows to a transaction, so a
+    capture waiting for the lock waits for one batch at most. Stops early,
+    leaving the rest marked, when another writer keeps the lock longer than
+    a quarter of a second. `pause` seconds between batches leave the lock to
+    writers that are waiting for it: SQLite's busy handler polls, so a loop
+    that takes the lock again at once can starve them. Returns how many rows
+    were recomputed.
+    """
+    import time
+    if conn.in_transaction:
+        return refresh(conn)
+    done = 0
+    rounds = conn.execute("SELECT COUNT(*) FROM post_engagement WHERE stale != 0").fetchone()[0] // batch + 2
+    previous = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+    conn.execute(f"PRAGMA busy_timeout = {_CATCH_UP_WAIT_MS:d}")
+    try:
+        for _ in range(rounds):
+            # Looked for without the lock, so a catch-up with nothing to do
+            # never takes it.
+            if not conn.execute("SELECT 1 FROM post_engagement WHERE stale != 0 LIMIT 1").fetchone():
+                break
+            conn.execute("BEGIN IMMEDIATE")
+            marked = _marked(conn, limit=batch)
+            if marked:
+                _write(conn, _recompute(conn, marked))
+            conn.commit()
+            done += len(marked)
+            if len(marked) < batch:
+                break
+            if pause:
+                time.sleep(pause)
+    except sqlite3.OperationalError:
+        if conn.in_transaction:
+            conn.rollback()
+    finally:
+        conn.execute(f"PRAGMA busy_timeout = {int(previous)}")
+    return done
+
+
+_catch_up_threads: Dict[str, Any] = {}
+_catch_up_lock = None
+_CATCH_UP_SETTLE_S = 0.3
+_CATCH_UP_PAUSE_S = 0.03
+_CATCH_UP_ROUNDS = 50
+
+
+def catch_up_later(db_path: Optional[str] = None) -> None:
+    """
+    Catches up the rows a write marked, in the background, outside the
+    writer's transaction. One worker per database; a second call while one
+    runs leaves it to that one, which reads the marks until none are left.
+    """
+    import threading
+    global _catch_up_lock
+    try:
+        from . import sqlite_open
+        from .paths import get_db_path
+    except ImportError:
+        import sqlite_open
+        from paths import get_db_path
+    if db_path is None:
+        db_path = get_db_path()
+    if _catch_up_lock is None:
+        _catch_up_lock = threading.Lock()
+    with _catch_up_lock:
+        running = _catch_up_threads.get(db_path)
+        if running is not None and running.is_alive():
+            running.again = True
+            return
+
+        def work():
+            import time
+            me = threading.current_thread()
+            try:
+                # A moment first, so a burst of captures is caught up once,
+                # after it, not between every two of them.
+                time.sleep(_CATCH_UP_SETTLE_S)
+                for _ in range(_CATCH_UP_ROUNDS):
+                    me.again = False
+                    conn = sqlite_open.connect(db_path, timeout=5.0)
+                    try:
+                        catch_up(conn, pause=_CATCH_UP_PAUSE_S)
+                        left = conn.execute("SELECT 1 FROM post_engagement WHERE stale != 0 LIMIT 1").fetchone()
+                    finally:
+                        conn.close()
+                    if not left:
+                        return
+                    # Writers kept the lock, or marked more: try again shortly.
+                    time.sleep(_CATCH_UP_SETTLE_S)
+            except Exception:
+                # A database removed or replaced underneath; the readers catch up.
+                return
+
+        worker = threading.Thread(target=work, name="inox-summary-catch-up", daemon=True)
+        worker.again = False
+        _catch_up_threads[db_path] = worker
+        worker.start()
+
+
+def wait_for_catch_up(timeout: float = 10.0) -> bool:
+    """Waits for the background catch-up to finish. True when none is running."""
+    for worker in list(_catch_up_threads.values()):
+        worker.join(timeout)
+    return not any(worker.is_alive() for worker in _catch_up_threads.values())
 
 
 def refresh(conn, keys: Optional[Iterable[str]] = None) -> int:
@@ -434,27 +552,17 @@ def current(conn, keys: Optional[Iterable[str]] = None) -> Dict[str, Dict[str, A
     """
     The summary rows a screen reads, keyed by post URN, every one current.
 
-    Rows still marked stale are recomputed first and written back. When
-    another writer holds the lock, they are computed for this read only and
-    left marked, so a screen never waits on a capture in progress.
+    Rows still marked stale are recomputed first and written back, a batch
+    to a transaction (catch_up). When another writer holds the lock, the
+    rest are computed for this read only and left marked, so a screen never
+    waits on a capture in progress and a capture never waits long on it.
     """
     fresh: Dict[str, Optional[Dict[str, Any]]] = {}
     if conn.execute("SELECT 1 FROM post_engagement WHERE stale != 0 LIMIT 1").fetchone():
-        if conn.in_transaction:
+        if not conn.in_transaction:
+            catch_up(conn)
+        if conn.execute("SELECT 1 FROM post_engagement WHERE stale != 0 LIMIT 1").fetchone():
             fresh = _recompute(conn, _marked(conn))
-        else:
-            previous = conn.execute("PRAGMA busy_timeout").fetchone()[0]
-            conn.execute("PRAGMA busy_timeout = 250")
-            try:
-                conn.execute("BEGIN IMMEDIATE")
-                refresh(conn)
-                conn.commit()
-            except sqlite3.OperationalError:
-                if conn.in_transaction:
-                    conn.rollback()
-                fresh = _recompute(conn, _marked(conn))
-            finally:
-                conn.execute(f"PRAGMA busy_timeout = {int(previous)}")
     wanted = None if keys is None else [k for k in keys if k]
     out: Dict[str, Dict[str, Any]] = {}
     for urn, row in _stored(conn, wanted).items():
