@@ -503,27 +503,66 @@ def _can_bind(port: int) -> bool:
         sock.close()
 
 
+def _holds_only_lingering_connections(port: int) -> bool:
+    """
+    Whether a port nothing listens on is refusing a plain bind only because of
+    TIME_WAIT connections, rather than because this computer reserves it.
+
+    Asked on Windows alone, and only once a connection to the port has been
+    refused, which means no socket is listening there. SO_REUSEADDR binds over
+    lingering connections on Windows; a port the computer will not let this
+    user have at all (one inside a reserved range, which answers WSAEACCES)
+    refuses that bind too. Without this, the studio's own lingering
+    connections, or any port Windows refused a plain bind for, read as another
+    program and the launcher gave up on the whole range.
+    """
+    import socket
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((STUDIO_HOST, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        sock.close()
+
+
 def probe_port(port: int, timeout: float = 1.5):
     """
     What is on a port: ("studio", version), ("free", None) or ("taken", None).
 
     "studio" means /api/v1/health answered 200 with this application's name,
-    the same test the desktop shell applies. Anything else that answers, or a
-    port that refuses a connection and also cannot be bound (one Windows has
-    reserved, say), is "taken".
+    the same test the desktop shell applies. Any other program whose
+    connection is established is "taken", however it answers afterwards.
+
+    A port that accepts no connection has no server on it. Only the refusal
+    used to count as that: every other way a connection can fail to open was
+    read as another program on the port, and Windows has several (a dropped
+    SYN that ends in a timeout, a reset) where Linux and macOS always refuse.
+    So on Windows every port of the range could read as taken and the
+    launcher reported that all ten were in use and started nothing.
     """
     import http.client
     import json
 
     connection = http.client.HTTPConnection(STUDIO_HOST, port, timeout=timeout)
     try:
-        connection.request("GET", "/api/v1/health", headers={"Connection": "close"})
-        response = connection.getresponse()
-        body = response.read(8192)
-    except ConnectionRefusedError:
-        return ("free", None) if _can_bind(port) else ("taken", None)
-    except (OSError, http.client.HTTPException):
-        return ("taken", None)
+        try:
+            connection.connect()
+        except (OSError, http.client.HTTPException):
+            if _can_bind(port):
+                return ("free", None)
+            if is_windows() and _holds_only_lingering_connections(port):
+                return ("free", None)
+            return ("taken", None)
+        try:
+            connection.request("GET", "/api/v1/health", headers={"Connection": "close"})
+            response = connection.getresponse()
+            body = response.read(8192)
+        except (OSError, http.client.HTTPException):
+            return ("taken", None)
     finally:
         connection.close()
 
