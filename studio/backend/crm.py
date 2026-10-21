@@ -17,11 +17,11 @@ import logging
 
 try:
     from . import post_summary
-    from .database import get_db
+    from .database import get_db, write_with_retry
     from .migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 except ImportError:
     import post_summary
-    from database import get_db
+    from database import get_db, write_with_retry
     from migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 
 try:
@@ -488,98 +488,110 @@ class ReverseCRMManager:
         else:
             suggested_dm = ""
 
-        lead_id = None
-        conn = get_db()
-        try:
-            with conn:
-                cursor = conn.cursor()
-                row = _find_lead(cursor, linkedin_urn)
-                # The capture sends the profile URL as linkedin_urn. The rest
-                # of the studio reads profile_url, which stayed empty.
-                profile_url = linkedin_urn if (linkedin_urn or "").lower().startswith("http") else None
+        # A capture that found the write lock held was refused outright, and
+        # the person the extension had just captured was lost with it. The
+        # whole write, its connection and its transaction, is made again
+        # while SQLite says the database is locked: nothing of a refused
+        # attempt is left behind, so a second one is the same as the
+        # extension having sent this capture a moment later.
+        def write():
+            lead_id = None
+            interaction_id = None
+            icp = icp_score
+            conn = get_db()
+            try:
+                with conn:
+                    cursor = conn.cursor()
+                    row = _find_lead(cursor, linkedin_urn)
+                    # The capture sends the profile URL as linkedin_urn. The rest
+                    # of the studio reads profile_url, which stayed empty.
+                    profile_url = linkedin_urn if (linkedin_urn or "").lower().startswith("http") else None
 
-                if row:
-                    lead_id = row["id"]
-                    stored = cursor.execute(
-                        "SELECT engagement_type FROM leads WHERE id = ?", (lead_id,)
-                    ).fetchone()["engagement_type"]
-                    cursor.execute(
-                        "UPDATE leads SET engagement_type = ?, "
-                        "profile_url = COALESCE(NULLIF(profile_url, ''), ?) WHERE id = ?",
-                        (strongest_engagement(stored, interaction_type), profile_url, lead_id),
-                    )
-                    # The score reflects the person as they are now and the
-                    # best engagement on record. It was max(old, new), which
-                    # only ever rose: after a headline change from CTO to
-                    # intern the seniority updated and the score stayed at 95.
-                    # Every recorded interaction is scored against the current
-                    # headline, with this one, and the result written once. A
-                    # provisional score written first and corrected after
-                    # marked every post the person had engaged with in the
-                    # per-post summary on every capture.
-                    new_icp = icp_score = max(
-                        [icp_score] + [
-                            ICPScoringEngine.calculate_icp_score(headline, company, r["comment_text"],
-                                                                 r["interaction_type"])
-                            for r in cursor.execute(
-                                "SELECT interaction_type, comment_text FROM lead_interactions WHERE lead_id = ?",
-                                (lead_id,),
-                            ).fetchall()
-                        ]
-                    )
+                    if row:
+                        lead_id = row["id"]
+                        stored = cursor.execute(
+                            "SELECT engagement_type FROM leads WHERE id = ?", (lead_id,)
+                        ).fetchone()["engagement_type"]
+                        cursor.execute(
+                            "UPDATE leads SET engagement_type = ?, "
+                            "profile_url = COALESCE(NULLIF(profile_url, ''), ?) WHERE id = ?",
+                            (strongest_engagement(stored, interaction_type), profile_url, lead_id),
+                        )
+                        # The score reflects the person as they are now and the
+                        # best engagement on record. It was max(old, new), which
+                        # only ever rose: after a headline change from CTO to
+                        # intern the seniority updated and the score stayed at 95.
+                        # Every recorded interaction is scored against the current
+                        # headline, with this one, and the result written once. A
+                        # provisional score written first and corrected after
+                        # marked every post the person had engaged with in the
+                        # per-post summary on every capture.
+                        new_icp = icp = max(
+                            [icp] + [
+                                ICPScoringEngine.calculate_icp_score(headline, company, r["comment_text"],
+                                                                     r["interaction_type"])
+                                for r in cursor.execute(
+                                    "SELECT interaction_type, comment_text FROM lead_interactions WHERE lead_id = ?",
+                                    (lead_id,),
+                                ).fetchall()
+                            ]
+                        )
+                        cursor.execute("""
+                        UPDATE leads SET
+                            full_name = ?,
+                            name = ?,
+                            headline = ?,
+                            company = ?,
+                            seniority_level = ?,
+                            icp_score = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """, (full_name, full_name, headline, company, seniority, new_icp, lead_id))
+                    else:
+                        new_id = f"lead-{stable_lead_key(linkedin_urn or full_name)}"
+                        cursor.execute("""
+                        INSERT INTO leads (
+                            id, linkedin_urn, profile_url, full_name, name, headline, company,
+                            seniority_level, icp_score, engagement_type, lead_status, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NEW', CURRENT_TIMESTAMP)
+                        """, (new_id, linkedin_urn, profile_url, full_name, full_name, headline, company,
+                              seniority, icp, strongest_engagement(None, interaction_type)))
+                        lead_id = new_id
+
+                    # One row per interaction. Reading the same comment again, which
+                    # happens every time the post is reopened, updates when it was
+                    # last seen instead of counting as a second engagement.
                     cursor.execute("""
-                    UPDATE leads SET
-                        full_name = ?,
-                        name = ?,
-                        headline = ?,
-                        company = ?,
-                        seniority_level = ?,
-                        icp_score = ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                    """, (full_name, full_name, headline, company, seniority, new_icp, lead_id))
-                else:
-                    new_id = f"lead-{stable_lead_key(linkedin_urn or full_name)}"
-                    cursor.execute("""
-                    INSERT INTO leads (
-                        id, linkedin_urn, profile_url, full_name, name, headline, company,
-                        seniority_level, icp_score, engagement_type, lead_status, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'NEW', CURRENT_TIMESTAMP)
-                    """, (new_id, linkedin_urn, profile_url, full_name, full_name, headline, company,
-                          seniority, icp_score, strongest_engagement(None, interaction_type)))
-                    lead_id = new_id
+                    INSERT INTO lead_interactions (
+                        lead_id, post_id, post_urn, interaction_type,
+                        comment_text, suggested_dm_reply, capture_context, interacted_at,
+                        comment_key, first_seen_at, last_seen_at, seen_count
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
+                    ON CONFLICT(lead_id, COALESCE(post_urn, ''), interaction_type, comment_key) DO UPDATE SET
+                        last_seen_at = CURRENT_TIMESTAMP,
+                        seen_count = lead_interactions.seen_count + 1,
+                        post_id = COALESCE(lead_interactions.post_id, excluded.post_id)
+                    """, (lead_id, post_id, post_urn, interaction_type, comment_text,
+                          suggested_dm, capture_context, interaction_comment_key(comment_text)))
+                    interaction_id = cursor.execute(
+                        "SELECT id FROM lead_interactions WHERE lead_id = ? AND COALESCE(post_urn, '') = ? "
+                        "AND interaction_type = ? AND comment_key = ?",
+                        (lead_id, post_urn or "", interaction_type, interaction_comment_key(comment_text)),
+                    ).fetchone()[0]
 
-                # One row per interaction. Reading the same comment again, which
-                # happens every time the post is reopened, updates when it was
-                # last seen instead of counting as a second engagement.
-                cursor.execute("""
-                INSERT INTO lead_interactions (
-                    lead_id, post_id, post_urn, interaction_type,
-                    comment_text, suggested_dm_reply, capture_context, interacted_at,
-                    comment_key, first_seen_at, last_seen_at, seen_count
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
-                ON CONFLICT(lead_id, COALESCE(post_urn, ''), interaction_type, comment_key) DO UPDATE SET
-                    last_seen_at = CURRENT_TIMESTAMP,
-                    seen_count = lead_interactions.seen_count + 1,
-                    post_id = COALESCE(lead_interactions.post_id, excluded.post_id)
-                """, (lead_id, post_id, post_urn, interaction_type, comment_text,
-                      suggested_dm, capture_context, interaction_comment_key(comment_text)))
-                interaction_id = cursor.execute(
-                    "SELECT id FROM lead_interactions WHERE lead_id = ? AND COALESCE(post_urn, '') = ? "
-                    "AND interaction_type = ? AND comment_key = ?",
-                    (lead_id, post_urn or "", interaction_type, interaction_comment_key(comment_text)),
-                ).fetchone()[0]
+                    # The captured post's summary row is brought current here,
+                    # so a capture leaves its post right. A name or score that
+                    # moved also marked the person's other posts: those are
+                    # caught up after this transaction, in the background and by
+                    # the next reader, in small batches, never inside the
+                    # capture's hold on the write lock.
+                    if post_urn:
+                        post_summary.refresh(conn, [post_urn])
+            finally:
+                conn.close()
+            return lead_id, interaction_id, icp
 
-                # The captured post's summary row is brought current here,
-                # so a capture leaves its post right. A name or score that
-                # moved also marked the person's other posts: those are
-                # caught up after this transaction, in the background and by
-                # the next reader, in small batches, never inside the
-                # capture's hold on the write lock.
-                if post_urn:
-                    post_summary.refresh(conn, [post_urn])
-        finally:
-            conn.close()
+        lead_id, interaction_id, icp_score = write_with_retry("Capturing an engagement", write)
         post_summary.catch_up_later()
 
         tier = qualification_tier(icp_score)

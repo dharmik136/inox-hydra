@@ -484,23 +484,175 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-function relayToStudio(message, path, sendResponse) {
-  studioFetch(path, {
-    method: message.method || "POST",
-    body: message.body ? JSON.stringify(sanitizeTelemetryPayload(message.body)) : undefined
-  })
-    .then(res => res.json().catch(() => ({})).then(data => ({ ok: res.ok, httpStatus: res.status, data })))
-    // The HTTP code is reported as httpStatus, never as status. Spreading a
-    // result carrying its own `status` over this object silently replaced
-    // the literal "success" with the number 200, and the content script
-    // tests `response.status !== "success"`, so every relayed capture
-    // resolved to null while appearing to succeed.
-    .then(result => sendResponse({
-      status: result.ok ? "success" : "error",
-      httpStatus: result.httpStatus,
-      data: result.data
-    }))
-    .catch(err => sendResponse({ status: "error", error: err.message }));
+// -------------------------------------------------------------
+// A capture the studio was too busy for is kept, never dropped
+// -------------------------------------------------------------
+// The studio answers 503 "the studio's database is busy" with Retry-After
+// when a write loses the database lock for longer than it waits, and a
+// request can also end with no answer at all. This worker used to report
+// either to the content script and forget it, so the person captured was
+// gone from the post with nothing said. A capture is now asked again a few
+// times, and if the studio is still busy it is kept in the extension's own
+// storage and sent with the next relay that gets through.
+//
+// Repeating a capture is safe: one interaction row per person, post and
+// comment (migrations.py's unique key, ON CONFLICT on
+// /api/v1/crm/interactions/ingest), so a payload that arrives twice updates
+// when it was last seen, exactly as reopening the post does, and never
+// counts as a second engagement. tests/test_qc2_ci_windows2_capture.py
+// ::test_the_same_capture_sent_twice_is_one_engagement holds this.
+const BUSY_ATTEMPTS = 3;
+const BUSY_WAIT_MS = 400;
+const BUSY_WAIT_LEAST_MS = 50;
+// Waiting out a whole Retry-After in the relay would stall the capture of
+// the next engager, and the queue below means it does not have to.
+const BUSY_WAIT_CAP_MS = 2000;
+// What is worth keeping: a write whose payload can arrive twice without
+// counting twice. A heartbeat or a read is about this moment and is not kept.
+const KEEP_WHEN_BUSY = new Set([
+  "/api/v1/crm/interactions/ingest"
+]);
+// Captures kept at once. A studio left busy or closed for a day must not
+// grow the extension's storage without limit, so the newest are kept.
+const KEPT_CAPTURES_KEY = "keptCaptures";
+const KEPT_CAPTURES_LIMIT = 200;
+
+function waitFor(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// How long to wait before asking again: what the studio asked for, with
+// jitter, because a page's engagers are relayed one after another and a
+// fixed wait would send them all back at the same moment.
+//
+// Line comments rather than a block: the file's webRequest filter holds the
+// characters that open one, and more than one reader of this source pairs
+// them naively.
+function busyWaitMs(retryAfter, attempt) {
+  const asked = Number(retryAfter);
+  const base = Number.isFinite(asked) && asked >= 0
+    ? asked * 1000
+    : BUSY_WAIT_MS * Math.pow(2, attempt - 1);
+  const bounded = Math.min(Math.max(base, BUSY_WAIT_LEAST_MS), BUSY_WAIT_CAP_MS);
+  return Math.round(bounded * (0.5 + Math.random()));
+}
+
+// One request to the studio, as what happened rather than as an exception.
+async function askStudio(path, method, body) {
+  let response;
+  try {
+    response = await studioFetch(path, { method, body });
+  } catch (err) {
+    // No answer at all: the studio may have taken the write and never
+    // replied, which is why only a repeatable payload is kept below.
+    return { ok: false, httpStatus: 0, data: {}, busy: true, error: err.message };
+  }
+  const data = await response.json().catch(() => ({}));
+  const retryAfter = response.headers && response.headers.get ? response.headers.get("Retry-After") : null;
+  return {
+    ok: response.ok,
+    httpStatus: response.status,
+    data,
+    busy: response.status === 503,
+    retryAfter,
+    error: response.ok ? null : "the studio answered " + response.status
+  };
+}
+
+function readKeptCaptures() {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(KEPT_CAPTURES_KEY, (items) => {
+        const kept = items && items[KEPT_CAPTURES_KEY];
+        resolve(Array.isArray(kept) ? kept : []);
+      });
+    } catch (err) {
+      resolve([]);
+    }
+  });
+}
+
+function writeKeptCaptures(kept) {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.set({ [KEPT_CAPTURES_KEY]: kept.slice(-KEPT_CAPTURES_LIMIT) }, () => resolve());
+    } catch (err) {
+      resolve();
+    }
+  });
+}
+
+async function keepCapture(path, body) {
+  const kept = await readKeptCaptures();
+  kept.push({ path, body, at: new Date().toISOString() });
+  if (kept.length > KEPT_CAPTURES_LIMIT) {
+    console.warn("[Studio Bridge] More than " + KEPT_CAPTURES_LIMIT +
+      " captures are waiting for the studio; the oldest are dropped.");
+  }
+  await writeKeptCaptures(kept);
+}
+
+// One drain at a time, so two relays finishing together cannot send the
+// same kept capture twice.
+let sendingKept = Promise.resolve();
+
+function sendKeptCapturesLater() {
+  sendingKept = sendingKept.then(sendKeptCaptures).catch(() => {});
+  return sendingKept;
+}
+
+// Sends what was kept, oldest first, and stops at the first refusal so the
+// rest stay for the next time. A capture the studio refuses for a reason of
+// its own (it is not busy) is dropped, because asking again cannot help.
+async function sendKeptCaptures() {
+  const kept = await readKeptCaptures();
+  if (kept.length === 0) return 0;
+  let sent = 0;
+  while (kept.length > 0) {
+    const item = kept[0];
+    const answer = await askStudio(item.path, "POST", item.body);
+    if (answer.busy) break;
+    kept.shift();
+    if (answer.ok) sent += 1;
+  }
+  await writeKeptCaptures(kept);
+  return sent;
+}
+
+chrome.runtime.onStartup.addListener(() => { sendKeptCapturesLater(); });
+
+async function relayToStudio(message, path, sendResponse) {
+  const method = message.method || "POST";
+  const body = message.body ? JSON.stringify(sanitizeTelemetryPayload(message.body)) : undefined;
+  let answer = { ok: false, httpStatus: 0, data: {}, busy: false, error: "not sent" };
+  for (let attempt = 1; attempt <= BUSY_ATTEMPTS; attempt += 1) {
+    answer = await askStudio(path, method, body);
+    if (!answer.busy || attempt === BUSY_ATTEMPTS) break;
+    await waitFor(busyWaitMs(answer.retryAfter, attempt));
+  }
+  // The HTTP code is reported as httpStatus, never as status. Spreading a
+  // result carrying its own `status` over this object silently replaced
+  // the literal "success" with the number 200, and the content script
+  // tests `response.status !== "success"`, so every relayed capture
+  // resolved to null while appearing to succeed.
+  if (answer.ok) {
+    sendResponse({ status: "success", httpStatus: answer.httpStatus, data: answer.data });
+    // Something got through, so anything kept has a chance now.
+    sendKeptCapturesLater();
+    return;
+  }
+  if (answer.busy && KEEP_WHEN_BUSY.has(path)) {
+    await keepCapture(path, body);
+    sendResponse({
+      status: "error",
+      httpStatus: answer.httpStatus,
+      data: answer.data,
+      kept: true,
+      error: "The studio is busy, so this capture is kept and sent again shortly."
+    });
+    return;
+  }
+  sendResponse({ status: "error", httpStatus: answer.httpStatus, data: answer.data, error: answer.error });
 }
 
 // -------------------------------------------------------------

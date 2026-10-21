@@ -36,6 +36,7 @@ Strict Invariants:
 
 import json
 import sqlite3
+import threading
 from typing import Any, Dict, Iterable, List, Optional
 
 # The Posts screen lists this many people per post, commenters first.
@@ -430,6 +431,12 @@ def _marked(conn, keys: Optional[List[str]] = None, limit: Optional[int] = None)
 CATCH_UP_BATCH = 50
 _CATCH_UP_WAIT_MS = 250
 
+# Set while a restore replaces the database file. The background catch-up
+# holds a connection on that file, and Windows refuses to replace a file any
+# handle holds, so the catch-up puts the database down and stays off it until
+# the restore is through. Rows left marked are caught up by the next reader.
+_stopping = threading.Event()
+
 
 def catch_up(conn, batch: int = CATCH_UP_BATCH, pause: float = 0.0) -> int:
     """
@@ -452,6 +459,8 @@ def catch_up(conn, batch: int = CATCH_UP_BATCH, pause: float = 0.0) -> int:
         for _ in range(rounds):
             # Looked for without the lock, so a catch-up with nothing to do
             # never takes it.
+            if _stopping.is_set():
+                break
             if not conn.execute("SELECT 1 FROM post_engagement WHERE stale != 0 LIMIT 1").fetchone():
                 break
             conn.execute("BEGIN IMMEDIATE")
@@ -497,6 +506,8 @@ def catch_up_later(db_path: Optional[str] = None) -> None:
         db_path = get_db_path()
     if _catch_up_lock is None:
         _catch_up_lock = threading.Lock()
+    if _stopping.is_set():
+        return
     with _catch_up_lock:
         running = _catch_up_threads.get(db_path)
         if running is not None and running.is_alive():
@@ -509,9 +520,12 @@ def catch_up_later(db_path: Optional[str] = None) -> None:
             try:
                 # A moment first, so a burst of captures is caught up once,
                 # after it, not between every two of them.
-                time.sleep(_CATCH_UP_SETTLE_S)
+                if _stopping.wait(_CATCH_UP_SETTLE_S):
+                    return
                 for _ in range(_CATCH_UP_ROUNDS):
                     me.again = False
+                    if _stopping.is_set():
+                        return
                     conn = sqlite_open.connect(db_path, timeout=5.0)
                     try:
                         catch_up(conn, pause=_CATCH_UP_PAUSE_S)
@@ -521,7 +535,8 @@ def catch_up_later(db_path: Optional[str] = None) -> None:
                     if not left:
                         return
                     # Writers kept the lock, or marked more: try again shortly.
-                    time.sleep(_CATCH_UP_SETTLE_S)
+                    if _stopping.wait(_CATCH_UP_SETTLE_S):
+                        return
             except Exception:
                 # A database removed or replaced underneath; the readers catch up.
                 return
@@ -530,6 +545,26 @@ def catch_up_later(db_path: Optional[str] = None) -> None:
         worker.again = False
         _catch_up_threads[db_path] = worker
         worker.start()
+
+
+def stop_catch_up(timeout: float = 10.0) -> bool:
+    """
+    Asks the background catch-up to put the database down, and waits for it.
+
+    Called before a restore replaces the database file: a connection open on
+    that file is what Windows refuses to replace. Rows still marked stale are
+    the restored database's problem, and its readers catch them up. True when
+    no worker is left holding a connection.
+    """
+    _stopping.set()
+    for worker in list(_catch_up_threads.values()):
+        worker.join(timeout)
+    return not any(worker.is_alive() for worker in _catch_up_threads.values())
+
+
+def resume_catch_up() -> None:
+    """Lets the background catch-up run again, after a restore."""
+    _stopping.clear()
 
 
 def wait_for_catch_up(timeout: float = 10.0) -> bool:
