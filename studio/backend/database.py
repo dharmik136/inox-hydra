@@ -27,11 +27,11 @@ from typing import Optional, List, Dict, Any
 try:
     from .paths import get_db_path, _STUDIO_DIR, DB_FILENAME
     from .migrations import ensure_schema, check_compatibility, backup_database
-    from .sqlite_open import secure
+    from .sqlite_open import secure, wait_while_held
 except ImportError:
     from paths import get_db_path, _STUDIO_DIR, DB_FILENAME
     from migrations import ensure_schema, check_compatibility, backup_database
-    from sqlite_open import secure
+    from sqlite_open import secure, wait_while_held
 
 # Retained as a module constant for backwards compatibility. Live resolution
 # happens in get_db() so that INOX_HYDRA_HOME can be redirected at runtime.
@@ -43,6 +43,71 @@ _db_write_lock = threading.Lock()
 # or roll forward these seeded example posts; they exist so a fresh install
 # has something to show in the queue UI.
 SEEDED_DEMO_POST_IDS = ("post-enterprise-scheduled",)
+
+
+# How long one statement waits for whoever holds the write lock before
+# SQLite gives up with "database is locked". Kept at five seconds: a studio
+# request that cannot be served should answer, not hang, and no single write
+# in the studio holds the lock anywhere near that long. Waiting longer is not
+# what a crowd of writers needs anyway, see write_with_retry below.
+BUSY_TIMEOUT_MS = 5000
+
+# Attempts a write gets when SQLite refuses it because another writer held
+# the lock, and the first wait between two of them.
+#
+# SQLite's busy handler polls: a waiter sleeps, retries, and whoever asks at
+# the right moment wins, so with many writers one of them can lose every
+# poll for the whole busy_timeout and be refused while the queue it is in is
+# only a few hundred milliseconds long. CI's Windows runner did exactly that
+# with the 30 captures the extension sends for one post's engagers: three
+# were refused after waiting five seconds for a queue that takes 0.3 s to
+# drain. Starting the wait again, after a short jittered pause that breaks
+# the lockstep, is what such a writer needs; waiting longer the first time
+# is not. Four attempts, with about 50, 100 and 200 ms between them, give a
+# write four full five-second waits for the lock, and still answer.
+WRITE_ATTEMPTS = 4
+WRITE_WAIT_S = 0.05
+
+_busy_log = logging.getLogger("studio.database")
+
+
+def is_locked(error: BaseException) -> bool:
+    """Whether SQLite refused this statement because someone else held the lock."""
+    said = str(error).lower()
+    return isinstance(error, sqlite3.OperationalError) and ("locked" in said or "busy" in said)
+
+
+def write_with_retry(what: str, write, attempts: Optional[int] = None):
+    """
+    Runs `write` again, up to `attempts` times (WRITE_ATTEMPTS by default),
+    while SQLite says the database is locked. Returns whatever `write`
+    returns.
+
+    `write` must open its own connection and own transaction and leave
+    nothing behind when it raises, so that running it again is the same as
+    the caller having asked a moment later. A write refused on the last
+    attempt raises, and the route answers "the studio's database is busy"
+    with Retry-After rather than failing silently.
+    """
+    import random
+    import time
+    attempts = WRITE_ATTEMPTS if attempts is None else attempts
+    for attempt in range(1, attempts + 1):
+        try:
+            return write()
+        except sqlite3.OperationalError as refused:
+            if not is_locked(refused):
+                raise
+            if attempt == attempts:
+                _busy_log.warning(
+                    "%s: the database stayed locked through %d attempts, so nothing was saved.", what, attempts)
+                raise
+            # Jittered, so writers refused at the same moment do not come
+            # back at the same moment and refuse each other again.
+            wait = WRITE_WAIT_S * (2 ** (attempt - 1)) * (0.5 + random.random())
+            _busy_log.warning("%s: the database was locked (attempt %d of %d), waiting %d ms.",
+                              what, attempt, attempts, int(wait * 1000))
+            time.sleep(wait)
 
 
 def get_db() -> sqlite3.Connection:
@@ -63,6 +128,9 @@ def get_db() -> sqlite3.Connection:
                 "Tests must run against an isolated INOX_HYDRA_HOME sandbox."
             )
 
+    # A restore replaces this file, and Windows refuses to replace a file any
+    # handle holds, so nothing is opened while the swap runs.
+    wait_while_held()
     conn = sqlite3.connect(db_path, timeout=5.0)
     # A damaged file fails on the first PRAGMA below, and the connection was
     # then left open with its handles on the database, the WAL and the shared
@@ -75,7 +143,7 @@ def get_db() -> sqlite3.Connection:
         conn.row_factory = sqlite3.Row
         # A delete overwrites the freed bytes, so a forgotten person is gone from the file (DATA-01).
         secure(conn)
-        conn.execute("PRAGMA busy_timeout = 5000;")
+        conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS:d};")
         # WAL is written into the database file, so it holds for every later
         # connection. Setting it takes a brief exclusive lock, and setting it
         # on every open meant a connection opened while another was writing
@@ -115,9 +183,10 @@ def optimize_db(db_path: Optional[str] = None) -> None:
     looks only at tables the same connection has queried, which on a fresh
     connection is none, so older builds run a bounded ANALYZE instead.
     """
+    wait_while_held()
     conn = secure(sqlite3.connect(db_path or get_db_path(), timeout=5.0))
     try:
-        conn.execute("PRAGMA busy_timeout = 5000;")
+        conn.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS:d};")
         conn.execute(f"PRAGMA analysis_limit = {ANALYSIS_LIMIT:d};")
         if sqlite3.sqlite_version_info >= (3, 46, 0):
             conn.execute("PRAGMA optimize = 0x10002;")
