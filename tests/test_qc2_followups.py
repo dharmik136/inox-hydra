@@ -109,3 +109,31 @@ def test_a_fresh_database_never_defaults_members_reached_to_zero(home):
     finally:
         conn.close()
     assert value is None, "a row written without the column read as 0 members reached"
+
+
+def test_sync_version_covers_every_file_that_states_a_version():
+    """
+    The bump tool missed two files the desktop shell states its version in, so
+    a release left them behind and the suite caught it after the push. Every
+    place a test checks must be a place the tool syncs.
+    """
+    import subprocess
+
+    checked = {
+        "studio/extension/manifest.json",
+        "release/latest.json",
+        "desktop/src-tauri/tauri.conf.json",
+        "desktop/src-tauri/Cargo.toml",
+    }
+    tool = os.path.join(REPO_ROOT, "tools", "sync_version.py")
+    with open(tool, encoding="utf-8") as handle:
+        source = handle.read()
+    for path in checked:
+        name = os.path.basename(path)
+        assert name in source, f"{path} states a version that sync_version.py does not keep in step"
+
+    run = subprocess.run([sys.executable, tool, "--check"], cwd=REPO_ROOT,
+                         capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stdout + run.stderr
+    for path in checked:
+        assert os.path.basename(path) in run.stdout, f"--check says nothing about {path}"

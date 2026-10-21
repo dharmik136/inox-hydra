@@ -35,6 +35,8 @@ REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 VERSION_FILE = os.path.join(REPO_ROOT, "studio", "__version__.py")
 MANIFEST = os.path.join(REPO_ROOT, "studio", "extension", "manifest.json")
 RELEASE_MANIFEST = os.path.join(REPO_ROOT, "release", "latest.json")
+SHELL_CONFIG = os.path.join(REPO_ROOT, "desktop", "src-tauri", "tauri.conf.json")
+SHELL_CARGO = os.path.join(REPO_ROOT, "desktop", "src-tauri", "Cargo.toml")
 
 CHROME_VERSION_RE = re.compile(r"^\d{1,5}(\.\d{1,5}){0,3}$")
 
@@ -135,6 +137,88 @@ def sync_release_manifest(version: str, check_only: bool) -> bool:
     return True
 
 
+def sync_shell_config(version: str, check_only: bool) -> bool:
+    """
+    Keeps the desktop shell's own version in step.
+
+    The shell states its version in tauri.conf.json, which names the installer
+    it builds and what the updater compares against. This tool did not touch
+    it, so a release bump left it behind and a test caught the mismatch after
+    the push. It is synced here so the bump is one step again.
+    """
+    if not os.path.exists(SHELL_CONFIG):
+        print("  tauri.conf.json   MISSING")
+        return False
+
+    with open(SHELL_CONFIG, encoding="utf-8") as f:
+        raw = f.read()
+    try:
+        current = json.loads(raw).get("version")
+    except json.JSONDecodeError as exc:
+        print(f"  tauri.conf.json   INVALID JSON at line {exc.lineno} column {exc.colno}: {exc.msg}")
+        return False
+
+    if current == version:
+        print(f"  tauri.conf.json   {current} (in sync)")
+        return True
+    if check_only:
+        print(f"  tauri.conf.json   {current} DRIFT, source says {version}")
+        return False
+
+    updated, count = re.subn(
+        r'("version"\s*:\s*)"[^"]*"',
+        lambda m: m.group(1) + '"' + version + '"',
+        raw,
+        count=1,
+    )
+    if count != 1:
+        raise SystemExit("could not locate the version field in desktop/src-tauri/tauri.conf.json")
+    with open(SHELL_CONFIG, "w", encoding="utf-8", newline="\n") as f:
+        f.write(updated)
+    print(f"  tauri.conf.json   {current} -> {version}")
+    return True
+
+
+def sync_shell_cargo(version: str, check_only: bool) -> bool:
+    """
+    Keeps the shell crate's version in step.
+
+    Cargo.toml states it a second time, and only the one under [package] is
+    the shell's own: every other version line names a dependency. So the
+    rewrite is anchored to that section and stops at the next one.
+    """
+    if not os.path.exists(SHELL_CARGO):
+        print("  Cargo.toml        MISSING")
+        return False
+
+    with open(SHELL_CARGO, encoding="utf-8") as f:
+        raw = f.read()
+    package = re.search(r"(?ms)^\[package\]\s*\n(.*?)(?=^\[|\Z)", raw)
+    if not package:
+        print("  Cargo.toml        no [package] section")
+        return False
+    found = re.search(r'(?m)^version\s*=\s*"([^"]*)"', package.group(1))
+    if not found:
+        print("  Cargo.toml        no version under [package]")
+        return False
+    current = found.group(1)
+
+    if current == version:
+        print(f"  Cargo.toml        {current} (in sync)")
+        return True
+    if check_only:
+        print(f"  Cargo.toml        {current} DRIFT, source says {version}")
+        return False
+
+    start = package.start(1) + found.start(0)
+    end = package.start(1) + found.end(0)
+    updated = raw[:start] + f'version = "{version}"' + raw[end:]
+    with open(SHELL_CARGO, "w", encoding="utf-8", newline="\n") as f:
+        f.write(updated)
+    print(f"  Cargo.toml        {current} -> {version}")
+    return True
+
+
 def main() -> int:
     check_only = "--check" in sys.argv
     version = read_source_version()
@@ -143,6 +227,8 @@ def main() -> int:
     print(f"source of truth: studio/__version__.py = {version}")
     ok = sync_manifest(version, check_only)
     ok = sync_release_manifest(version, check_only) and ok
+    ok = sync_shell_config(version, check_only) and ok
+    ok = sync_shell_cargo(version, check_only) and ok
 
     if check_only and not ok:
         print()
