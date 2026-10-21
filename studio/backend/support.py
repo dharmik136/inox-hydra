@@ -24,9 +24,11 @@ Strict Invariants:
 """
 
 import csv
+import errno
 import functools
 import io
 import json
+import logging
 import os
 import platform
 import re
@@ -1054,13 +1056,52 @@ def _verify_staged_database(staged_db: str, archive: str) -> None:
                          f"Nothing was changed.")
 
 
+_restore_log = logging.getLogger("studio.support")
+
+# Windows refuses to replace a file another process holds: WinError 32 when
+# something has it open, WinError 5 when something has it mapped, which is
+# what a virus scanner or the search indexer does for a moment after a file
+# is written. Such a holder is gone a moment later, and a restore that gave
+# up at the first refusal left the creator where CI's Windows job left it:
+# told the restore stopped part way, with nothing they could do. Five tries
+# over about three seconds, and every step is still undone if they all fail.
+REPLACE_ATTEMPTS = 5
+REPLACE_WAIT_S = 0.2
+
+
+def _someone_holds_it(error: BaseException) -> bool:
+    """Whether this failure is another handle on the file rather than a real fault."""
+    if not isinstance(error, OSError):
+        return False
+    if getattr(error, "winerror", None) in (5, 32):
+        return True
+    return isinstance(error, PermissionError) or error.errno in (errno.EACCES, errno.EPERM, errno.EBUSY)
+
+
+def _replace(source: str, target: str) -> None:
+    """os.replace, tried again while something else holds either file."""
+    import time
+    for attempt in range(1, REPLACE_ATTEMPTS + 1):
+        try:
+            os.replace(source, target)
+            return
+        except OSError as refused:
+            if not _someone_holds_it(refused) or attempt == REPLACE_ATTEMPTS:
+                raise
+            _restore_log.warning("%s is held by something else (%s), attempt %d of %d.",
+                                 os.path.basename(target), refused, attempt, REPLACE_ATTEMPTS)
+            time.sleep(REPLACE_WAIT_S * attempt)
+
+
 def _swap(plan: List[tuple], staging: str) -> None:
     """
     Moves each live file aside and the staged one into its place.
 
     os.replace within one drive is atomic per file. If any step fails, every
     step already taken is undone in reverse, so the live state is either the
-    backup's or exactly what it was.
+    backup's or exactly what it was. Nothing in the studio may hold the
+    database while this runs (see restore_backup), and each move is tried
+    again while anything outside the studio does.
     """
     done: List[list] = []
     try:
@@ -1069,12 +1110,12 @@ def _swap(plan: List[tuple], staging: str) -> None:
             if os.path.lexists(target):
                 aside = os.path.join(staging, "old", str(index))
                 os.makedirs(os.path.dirname(aside), exist_ok=True)
-                os.replace(target, aside)
+                _replace(target, aside)
             step = [target, aside, False]
             done.append(step)
             if staged is not None:
                 os.makedirs(os.path.dirname(target), exist_ok=True)
-                os.replace(staged, target)
+                _replace(staged, target)
                 step[2] = True
     except Exception as error:
         stuck = []
@@ -1083,7 +1124,7 @@ def _swap(plan: List[tuple], staging: str) -> None:
                 if placed and os.path.lexists(target):
                     os.remove(target)
                 if aside is not None:
-                    os.replace(aside, target)
+                    _replace(aside, target)
             except OSError:
                 stuck.append(target)
         if stuck:
@@ -1092,6 +1133,32 @@ def _swap(plan: List[tuple], staging: str) -> None:
                 f"The originals are in {os.path.join(staging, 'old')}."
             ) from error
         raise RestoreFailed(f"The restore stopped part way ({error}). Everything it had changed was put back.") from error
+
+
+def _put_the_database_down() -> None:
+    """
+    Stops the studio's background database work and waits for it to let go.
+
+    The summary catch-up keeps a connection open for as long as it has rows
+    to recompute, which is exactly what Windows will not let a restore
+    replace. Rows left marked are recomputed by the restored database's
+    readers, so stopping costs nothing.
+    """
+    try:
+        from . import post_summary
+    except ImportError:
+        import post_summary
+    if not post_summary.stop_catch_up(30.0):
+        _restore_log.warning("The background summary catch-up did not stop before the restore.")
+
+
+def _let_the_database_go() -> None:
+    """Lets the background database work run again, after the swap."""
+    try:
+        from . import post_summary
+    except ImportError:
+        import post_summary
+    post_summary.resume_catch_up()
 
 
 @_waits_for_maintenance
@@ -1160,7 +1227,17 @@ def restore_backup(archive: str, take_safety_backup: bool = True, into_active_pr
         safety, safety_note = _safety_snapshot() if take_safety_backup else (None, "")
 
         try:
-            _swap(plan, staging)
+            # Every connection in the studio is put down and kept down while
+            # the files are swapped. Windows refuses to replace a file any
+            # handle holds, and the background summary catch-up, or a screen
+            # being read at that moment, was enough to answer "Access is
+            # denied" and leave the creator in safe mode with no way out.
+            _put_the_database_down()
+            try:
+                with sqlite_open.files_held():
+                    _swap(plan, staging)
+            finally:
+                _let_the_database_go()
         except RestoreFailed as failed:
             keep_staging = "could not be put back" in str(failed)
             raise RestoreFailed(str(failed), safety_backup=safety, safety_note=safety_note) from failed.__cause__
