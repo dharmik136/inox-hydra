@@ -168,6 +168,56 @@ def test_captures_survive_a_slow_write_transaction(busy_home, monkeypatch):
     assert _capture_all(busy_home, _busiest(30)) == []
 
 
+def test_the_same_capture_sent_twice_is_one_engagement(busy_home):
+    """
+    What the extension's retry and its queue rest on (CI-WINDOWS2-N1): a
+    payload that arrives a second time, because the first answer was lost or
+    the capture was kept and sent again, must not count as a second
+    engagement or a second person. The unique key from migration 11 holds
+    the row; seen_count is how often the capture has read the same thing, as
+    reopening the post already does.
+    """
+    import crm
+    lead = _busiest(1)[0]
+    post = busy_home["own"][-1]
+    conn = database.get_db()
+    try:
+        before = conn.execute("SELECT COUNT(*) FROM lead_interactions").fetchone()[0]
+        leads_before = conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0]
+    finally:
+        conn.close()
+
+    def capture():
+        return crm.reverse_crm.ingest_interaction(
+            full_name=lead["full_name"], linkedin_urn=lead["linkedin_urn"], headline=lead["headline"],
+            company=lead["company"], interaction_type="COMMENT", comment_text="Thanks, useful", post_urn=post)
+
+    first, again = capture(), capture()
+    assert first["lead_id"] == again["lead_id"]
+    assert first["interaction_id"] == again["interaction_id"]
+    assert first["icp_score"] == again["icp_score"]
+    conn = database.get_db()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM lead_interactions").fetchone()[0] == before + 1
+        assert conn.execute("SELECT COUNT(*) FROM leads").fetchone()[0] == leads_before
+        row = conn.execute(
+            "SELECT seen_count FROM lead_interactions WHERE id = ?", (first["interaction_id"],)).fetchone()
+        assert row["seen_count"] == 2, "the repeat was not recorded as the same engagement seen again"
+        import post_summary
+        post_summary.wait_for_catch_up(10)
+        people = post_summary.current(conn, [post])[post]["people"]
+    finally:
+        conn.close()
+    conn = database.get_db()
+    try:
+        counted = conn.execute(
+            "SELECT COUNT(DISTINCT CAST(lead_id AS TEXT)) FROM lead_interactions WHERE post_urn = ?", (post,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert people == counted, "the post counts the repeated capture as another person"
+
+
 def test_a_write_that_stays_locked_is_refused_in_a_bounded_number_of_tries(busy_home, monkeypatch, caplog):
     """
     A database somebody else holds for good is not retried for ever: the
