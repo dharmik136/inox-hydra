@@ -80,6 +80,11 @@ RESET_SETTING_KEYS = (
     "ai_provider", "ai_api_key", "ai_model", "ai_base_url", "ai_verified_at", "ai_status",
     "gemini_api_key",
     "li_at", "JSESSIONID", "last_token_update", "session_status",
+    # The account those cookies belonged to: the creator's LinkedIn vanity and
+    # member URN, stored beside them for Send to LinkedIn. Clearing the cookies
+    # and leaving the name of whose they were says who used this computer long
+    # after the session itself is gone (noted by the R6 review).
+    "linkedin_session_account",
 )
 # Any later provider setting is named ai_<something>, and goes with the rest.
 RESET_SETTING_PREFIX = "ai_"

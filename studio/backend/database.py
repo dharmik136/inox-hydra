@@ -218,7 +218,9 @@ def init_db() -> None:
         connections INTEGER,
         profile_views INTEGER,
         impressions INTEGER DEFAULT 0,
-        unique_members_reached INTEGER DEFAULT 0,
+        -- Never read from LinkedIn, so it has no default: a 0 here would
+        -- read as measured (AUDIENCE-26). Migration 25 clears the old ones.
+        unique_members_reached INTEGER,
         reactions INTEGER DEFAULT 0,
         comments INTEGER DEFAULT 0,
         shares INTEGER DEFAULT 0,

@@ -1186,6 +1186,16 @@ def _migrate_retention(cursor: sqlite3.Cursor) -> None:
 # payload is either a sequence of SQL statements or a callable taking a cursor.
 # Append only. Never reorder, never edit, never delete.
 Payload = Union[Sequence[str], Callable[[sqlite3.Cursor], None]]
+# A day's "members reached" was never read from LinkedIn: no writer has ever
+# set it, and every insert now names it NULL. The column's old DEFAULT 0 put a
+# 0 on every row written before that, and a 0 reads as measured on Analytics.
+# So each one is cleared, which the F3 review asked for (AUDIENCE-26). Run
+# again it finds nothing: there are no 0s left to clear.
+_MIGRATION_25_UNREAD_REACH = (
+    "UPDATE analytics_daily SET unique_members_reached = NULL WHERE unique_members_reached = 0",
+)
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1210,6 +1220,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (22, "Index posts, leads and comments for search (superseded by 24)", _MIGRATION_22_SUPERSEDED),
     (23, "Retention: reaction folds, the lead keep list and a cleanup log", _migrate_retention),
     (24, "Search folds the Composer's bold and italic letters, and removes rows by id", _MIGRATION_24_SEARCH),
+    (25, "A day's members reached is not measured, so an invented 0 is cleared", _MIGRATION_25_UNREAD_REACH),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
