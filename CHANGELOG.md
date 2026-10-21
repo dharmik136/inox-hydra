@@ -5,7 +5,33 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
-## 2.6.0 (not yet released)
+## 2.6.1
+
+Three faults that needed Windows, or a slow machine, to show themselves. If
+you run 2.6.0 on Windows, this one replaces it.
+
+- **A capture the studio was busy with is saved instead of lost.** When the
+  bridge sent a page's engagers together, some were refused with "database is
+  locked" and dropped without a word. The studio now waits its turn and tries
+  again, and if it is still busy it answers so plainly; the extension keeps
+  that capture and sends it the next time it gets through, up to 200 of them,
+  and the same capture sent twice is still one engagement.
+- **A restore is no longer refused.** On Windows, restoring a backup could
+  stop with "Access is denied", because a background job that keeps each
+  post's figures up to date still had the database open. Every part of the
+  studio that opens the database now waits while a restore swaps the files,
+  that job is stopped and resumed around it, and each file move is retried
+  briefly in case something else is reading it. A half-applied restore was
+  never possible and still is not.
+- **Reset forgets whose LinkedIn session it was.** It cleared the session
+  cookies and kept the row naming the account they belonged to, so the studio
+  still said who had used this computer.
+- **A day's "members reached" is no longer shown as 0.** That figure has never
+  been read from LinkedIn, and an old database default stored a 0 on every
+  row, which Analytics read as measured. Your existing rows are cleared when
+  the studio next starts.
+
+## 2.6.0
 
 ### Before you use 2.6.0: four things to do once
 
