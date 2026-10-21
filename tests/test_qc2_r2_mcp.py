@@ -70,6 +70,33 @@ def _hanging_launcher(tmp_path, tag="a"):
     return ["/bin/sh", str(script)], pidfile
 
 
+def _why_alive(pid):
+    """What a process that outlived its launcher is, for the failure message."""
+    try:
+        with open(f"/proc/{pid}/stat") as handle:
+            fields = handle.read().rsplit(")", 1)[1].split()
+        with open(f"/proc/{pid}/cmdline") as handle:
+            command = handle.read().replace("\0", " ").strip()
+        return f"state={fields[0]} ppid={fields[1]} pgid={fields[3]} cmd={command!r}"
+    except OSError:
+        return "gone from /proc while kill(0) still answered"
+
+
+def _wait_until_gone(pid, timeout=10.0):
+    """
+    Waits for the server to be gone, and says what it is if it is not.
+
+    Three seconds was enough here and not on CI's Linux runner, where the
+    whole suite took twice as long. The promise is that stopping takes the
+    launcher's children with it, not that it is instant, so the budget is
+    generous and a failure carries the evidence.
+    """
+    deadline = time.monotonic() + timeout
+    while _alive(pid) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not _alive(pid), f"the real server outlived its launcher: {_why_alive(pid)}"
+
+
 def _wait_for(path, timeout=5.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -102,10 +129,7 @@ def test_a_hanging_server_under_a_launcher_times_out_and_leaves_nothing(tmp_path
         assert box["ok"] is False
         assert time.monotonic() - started < 1.5 + 3
         server.stop()
-        deadline = time.monotonic() + 3
-        while _alive(pid) and time.monotonic() < deadline:
-            time.sleep(0.05)
-        assert not _alive(pid), "the real server outlived its launcher"
+        _wait_until_gone(pid)
         assert "did not answer" in (server.last_error or "")
     finally:
         _kill(pid)
@@ -130,10 +154,7 @@ def test_a_stopped_healthy_server_under_a_launcher_leaves_nothing(tmp_path):
     try:
         assert server.list_resources()
         server.stop()
-        deadline = time.monotonic() + 3
-        while _alive(pid) and time.monotonic() < deadline:
-            time.sleep(0.05)
-        assert not _alive(pid)
+        _wait_until_gone(pid)
     finally:
         _kill(pid)
 
