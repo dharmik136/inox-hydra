@@ -13,7 +13,6 @@
     "cookies",
     "storage",
     "tabs",
-    "activeTab",
     "scripting",
     "webRequest",
     "alarms"
