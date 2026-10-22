@@ -59,11 +59,12 @@ def _old_gate(engager_profile, post_urn, post_author):
     """engagement_gate as it stood before T4: every own_posts row, one regex each."""
     import onboarding
     from database import get_db
+    import ingest_contract
     me = onboarding.confirmed_vanity()
     if not me:
-        return "confirm your profile in Setup first, so the studio can tell your posts from other people's"
+        return ingest_contract.GATE_SETUP_FIRST
     if onboarding.normalise_vanity(engager_profile) == me:
-        return "that is you"
+        return ingest_contract.GATE_THAT_IS_YOU
     if onboarding.normalise_vanity(post_author) == me:
         return None
     wanted = onboarding._activity_id(post_urn)
@@ -75,7 +76,11 @@ def _old_gate(engager_profile, post_urn, post_author):
                     return None
         finally:
             conn.close()
-    return "not on one of your posts"
+    # Batch T3 replaced the gate's words with the ingest contract's reason
+    # catalogue. This reference exists to prove the indexed lookup reaches the
+    # same verdict as reading every row, so it speaks the same catalogue: the
+    # wording is T3's to own, the verdict is what is compared here.
+    return ingest_contract.GATE_NOT_YOUR_POST
 
 
 def test_the_gate_does_not_read_every_post_to_judge_one_capture(home, monkeypatch):
@@ -128,5 +133,6 @@ def test_the_gate_gives_the_same_verdict_as_reading_every_post(home):
     # activity id it has never seen is refused, so the cases above are not all
     # the same answer.
     assert onboarding.engagement_gate(ENGAGER, f"urn:li:activity:{home['spellings'][0]}", None) is None
+    import ingest_contract
     assert onboarding.engagement_gate(ENGAGER, "urn:li:activity:9999999999999999999", None) == (
-        "not on one of your posts")
+        ingest_contract.GATE_NOT_YOUR_POST)
