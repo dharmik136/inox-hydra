@@ -46,25 +46,80 @@
   // Talking to the studio, through the worker's allowlisted relay
   // ---------------------------------------------------------------
 
-  function studio(path, body) {
+  // One call, as what happened rather than as a value or nothing:
+  //   {ok: true,  data}                      the studio took it
+  //   {ok: false, kept: true, waiting}       it is waiting and will be resent
+  //   {ok: false, httpStatus, reason, message, show}   the studio said no
+  //   {ok: false, unreachable: true}         no answer at all
+  //
+  // This used to collapse every answer that was not a success to null, with
+  // nothing logged, so the refusal a real creator meets most, "this post is
+  // not one of your recorded posts; import your posts first", was invisible:
+  // they opened their post's analytics page and nothing happened, forever.
+  function studioCall(path, body) {
     return new Promise((resolve) => {
       try {
         chrome.runtime.sendMessage(
           { action: "STUDIO_API", path, method: "POST", body: body || {} },
           (response) => {
-            if (chrome.runtime.lastError || !response || response.status !== "success") {
-              resolve(null);
+            if (chrome.runtime.lastError || !response) {
+              resolve({ ok: false, unreachable: true });
               return;
             }
-            resolve(response.data || {});
+            if (response.status === "success") {
+              resolve({ ok: true, data: response.data || {} });
+              return;
+            }
+            if (response.kept) {
+              resolve({ ok: false, kept: true, waiting: response.waiting || 0, message: response.error || "" });
+              return;
+            }
+            if (!response.httpStatus) {
+              resolve({ ok: false, unreachable: true });
+              return;
+            }
+            resolve({
+              ok: false,
+              httpStatus: response.httpStatus,
+              reason: response.reason || "refused",
+              message: response.message || (response.data && response.data.detail) || "",
+              show: response.show === true
+            });
           }
         );
       } catch (err) {
         // The extension was reloaded under this page. Nothing to do until the
         // page is reloaded too.
-        resolve(null);
+        resolve({ ok: false, unreachable: true });
       }
     });
+  }
+
+  // The last thing the studio refused, so the side panel can name it even
+  // after the page has moved on.
+  function rememberRefusal(path, answer) {
+    try {
+      chrome.storage.local.set({
+        lastRefusal: {
+          path, at: new Date().toISOString(), httpStatus: answer.httpStatus,
+          reason: answer.reason, message: answer.message, show: answer.show,
+        },
+      }, () => {});
+    } catch (err) {
+      // Storage is unavailable only while the extension is being reloaded.
+    }
+  }
+
+  // What the callers that only need the body use. A refusal is logged and
+  // remembered on the way past, so nothing is silent any more.
+  async function studio(path, body) {
+    const answer = await studioCall(path, body);
+    if (answer.ok) return answer.data;
+    if (answer.httpStatus) {
+      console.warn("[Inox Hydra] the studio refused " + path + ": " + answer.message);
+      rememberRefusal(path, answer);
+    }
+    return null;
   }
 
   // One extractor run, for the studio's capture log (see content.js
@@ -1078,10 +1133,16 @@
       return true;
     });
     if (!fresh.length) return 0;
-    if (kind === "activity_posts") {
-      await studio("/api/v1/self/posts/ingest", { author: me, posts: fresh });
-    } else {
-      await studio("/api/v1/self/outbound/ingest", { actor: me, items: fresh });
+    const path = kind === "activity_posts" ? "/api/v1/self/posts/ingest" : "/api/v1/self/outbound/ingest";
+    const payload = kind === "activity_posts" ? { author: me, posts: fresh } : { actor: me, items: fresh };
+    const answer = announce(await studioCall(path, payload), path);
+    // A read the studio understood and stored nothing of. The creator asked
+    // for this import, so being told "0 of 14" beats being told nothing,
+    // which is what `skipped` got until now.
+    const stored = answer && answer.ok ? answer.data || {} : {};
+    if (answer && answer.ok && stored.skipped && !stored.written) {
+      toast("Inox Hydra: the studio understood " + stored.skipped +
+            " of these and stored none. They are already recorded, or not in a shape it reads.");
     }
     return fresh.length;
   }
@@ -1147,7 +1208,29 @@
     const found = Object.keys(metrics).length;
     reportCapture("post_analytics", found, found, found ? [] : ["metric_labels"]);
     if (!found) return;
-    await studio("/api/v1/self/posts/analytics", { author: me, activity_urn: urn, metrics });
+    // The creator is standing on their own post's analytics page, having
+    // opened it on purpose, so a refusal here is worth a sentence on the page.
+    // Both this answer and the one below were thrown away.
+    announce(await studioCall("/api/v1/self/posts/analytics",
+                              { author: me, activity_urn: urn, metrics }),
+             "/api/v1/self/posts/analytics");
+  }
+
+  // Says on the page what the studio answered, when the studio asked for it
+  // to be said or is holding the work. A success is silent: the creator asked
+  // for a page, not for a running commentary.
+  function announce(answer, path) {
+    if (!answer || answer.ok) return answer;
+    if (answer.kept) {
+      toast("Inox Hydra: your studio was busy, so this is kept and will be sent again. " +
+            answer.waiting + " waiting in all.");
+      return answer;
+    }
+    if (answer.show && answer.message) {
+      toast("Inox Hydra: " + answer.message);
+      rememberRefusal(path, answer);
+    }
+    return answer;
   }
 
   // ---------------------------------------------------------------
@@ -1335,8 +1418,22 @@
   // second tab, so while the creator reads Setup the LinkedIn tab is hidden,
   // and a heartbeat sent only from a visible tab made Setup say the bridge was
   // gone while its tab sat open.
-  function heartbeat() {
-    studio("/api/v1/bridge/heartbeat", { extension_version: EXTENSION_VERSION, page_kind: pageKind() });
+  // The heartbeat is also the version handshake. The studio answers which
+  // ingest contract it speaks and whether this extension is older than it, so
+  // a creator who pulled a new studio is told once to press Reload instead of
+  // watching captures fail on a field name that moved. Said once per browser
+  // session, by the service worker's own record of it.
+  let reloadNoticeShown = false;
+  async function heartbeat() {
+    const answer = await studio("/api/v1/bridge/heartbeat", {
+      extension_version: EXTENSION_VERSION,
+      page_kind: pageKind(),
+    });
+    const shake = answer && answer.handshake;
+    if (shake && shake.reload_required && shake.message && !reloadNoticeShown) {
+      reloadNoticeShown = true;
+      toast("Inox Hydra: " + shake.message);
+    }
   }
 
   function toast(message) {

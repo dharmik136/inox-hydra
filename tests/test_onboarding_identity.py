@@ -399,9 +399,13 @@ def test_before_setup_no_engager_is_a_lead(no_asha):
     """
     Without a confirmed creator the studio cannot tell whose post anything is,
     so it stores nothing and says where that gets fixed.
+
+    The refusal is the contract's 409 now, not a 200 the extension discarded:
+    the creator has something to do about it, so it reaches them.
     """
     result = _engager(post_author=ME)
-    assert result["status"] == "skipped" and "Setup" in result["reason"]
+    assert result["status"] == "refused" and result["reason"] == "setup_needed"
+    assert "Setup" in result["message"]
     assert _lead_count() == 0
 
 
@@ -416,7 +420,7 @@ def test_a_strangers_commenter_is_not_your_lead(no_asha):
 def test_you_are_never_your_own_lead(no_asha):
     _confirm()
     result = _engager(full_name="Priya Raman", linkedin_urn=f"https://www.linkedin.com/in/{ME}/", post_author=ME)
-    assert result["status"] == "skipped" and result["reason"] == "that is you"
+    assert result["status"] == "skipped" and result["reason"] == "that_is_you"
 
 
 def test_an_engager_on_your_post_is_a_lead(no_asha):
