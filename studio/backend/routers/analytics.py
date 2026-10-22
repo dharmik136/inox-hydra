@@ -16,11 +16,13 @@ from fastapi import APIRouter, HTTPException, Response, Path, Query
 
 try:
     from ..database import get_db
+    from .. import insights
     from .. import post_summary
     from ..crm import reverse_crm, VIP_THRESHOLD
     from ..linkedin_client import linkedin_client
 except (ImportError, ValueError):
     from database import get_db
+    import insights
     import post_summary
     from crm import reverse_crm, VIP_THRESHOLD
     from linkedin_client import linkedin_client
@@ -362,9 +364,15 @@ def _rate(impressions, reactions, comments, shares):
 
 
 @router.get("/api/analytics/posts")
-def get_posts_leaderboard():
+def get_posts_leaderboard(limit: Optional[int] = Query(None, ge=1), offset: int = Query(0, ge=0)):
     """
     The creator's posts, each with its figures and the leads it brought.
+
+    One page of posts, most seen first, insights.POSTS_PAGE of them by
+    default. This used to answer with every post, 2,432 KB on three years of
+    one creator, and a `limit` in the URL was accepted and ignored: limit=50
+    and limit=2000 returned the same 1,418 posts. The order is the order it
+    always was, so the rows of a page are the rows that page always held.
 
     The comparison is the creator's LinkedIn posts, imported from their
     activity pages or their archive: that is what they published. It read
@@ -407,6 +415,13 @@ def get_posts_leaderboard():
 
         listed.sort(key=lambda d: (d["impressions"] is None, -(d["impressions"] or 0),
                                    d["reactions"] is None, -(d["reactions"] or 0)))
+        # The page, cut after the sort, so a page holds the posts that page
+        # has always held. Everything below runs for the page's posts only:
+        # the lead attribution of 1,418 posts was computed and sent on every
+        # Analytics load for a table nobody scrolled to the end of.
+        size, start = insights.page_bounds(limit, offset)
+        total = len(listed)
+        listed = listed[start:start + size]
         # Who each post brought, from the per-post summary: its people, how
         # many are VIP, and their scores' sum. Reading every interaction to
         # build each post's set took 1 s at 500,000. A lead tied to a post by
@@ -463,7 +478,7 @@ def get_posts_leaderboard():
             d["attribution"] = attribution(post_id_str, post_urn)
             rows.append(d)
         conn.close()
-        return {"status": "success", "posts": rows}
+        return {"status": "success", "posts": rows, **insights.paging(total, size, start, len(rows))}
     finally:
         conn.close()
 

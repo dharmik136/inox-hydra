@@ -323,8 +323,16 @@ def test_the_post_comparison_answers_fast_at_volume(studio):
     # 4,000 ms before: one query per post, each scanning every lead. The
     # bound is loose on purpose so a slow CI machine does not fail it.
     assert elapsed < 750, f"/api/analytics/posts took {elapsed:.0f} ms at 2,000 posts"
-    assert len(body["posts"]) == 2000
-    busiest = next(p for p in body["posts"] if p["id"] == _urn(0))
+    # One page of posts since batch T4, with the whole count beside it, and
+    # the rest reachable by offset.
+    import insights
+    assert len(body["posts"]) == insights.POSTS_PAGE
+    assert body["total"] == 2000
+    busiest = None
+    for offset in range(0, body["total"], insights.POSTS_PAGE_MAX):
+        page = _timed(studio, f"/api/analytics/posts?limit={insights.POSTS_PAGE_MAX}&offset={offset}")[1]
+        busiest = next((p for p in page["posts"] if p["id"] == _urn(0)), busiest)
+    assert busiest is not None, "every page together holds every post"
     from database import get_db
     conn = get_db()
     expected = conn.execute("SELECT COUNT(DISTINCT lead_id) FROM lead_interactions WHERE post_urn = ?",

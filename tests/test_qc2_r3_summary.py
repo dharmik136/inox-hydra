@@ -507,7 +507,10 @@ def test_folded_reactions_still_count_on_the_posts_screen(home, monkeypatch):
     import post_summary
 
     def shown():
-        return {p["activity_urn"]: (p["people_count"], p["conversations"]) for p in insights.posts_overview()["posts"]}
+        # Every post, not the first page of them: the Posts screen answers
+        # with one page since batch T4, and this counts the whole history.
+        return {p["activity_urn"]: (p["people_count"], p["conversations"])
+                for p in insights.posts_overview(limit=insights.POSTS_PAGE_MAX)["posts"]}
 
     before = shown()
     conn = _db()
@@ -528,7 +531,7 @@ def test_folded_reactions_still_count_on_the_posts_screen(home, monkeypatch):
         assert all(rows[urn]["folded_reactions"] == n for urn, n in folded.items())
     finally:
         conn.close()
-    after = insights.posts_overview()["posts"]
+    after = insights.posts_overview(limit=insights.POSTS_PAGE_MAX)["posts"]
     assert {p["activity_urn"]: (p["people_count"], p["conversations"]) for p in after} == before
     assert sum(p["folded_reactions"] for p in after) == sum(n for urn, n in folded.items() if urn in home["own"]) > 300
 
