@@ -31,11 +31,12 @@ except ImportError:
     from text_cut import clip
 
 try:
-    from . import contrast_engine, onboarding, post_summary
+    from . import contrast_engine, onboarding, post_identity, post_summary
     from .database import get_db
 except ImportError:
     import contrast_engine
     import onboarding
+    import post_identity
     import post_summary
     from database import get_db
 
@@ -123,7 +124,10 @@ def posts_overview() -> Dict[str, Any]:
             # People from this post the creator went on to talk to: Connected
             # or Meeting Booked. The question the Posts screen exists for.
             "conversations": engaged["conversations"] if engaged else 0,
-            "url": f"https://www.linkedin.com/feed/update/{post['activity_urn']}/",
+            # None for a post published from the studio and not yet seen on
+            # LinkedIn: it is recorded under a local key, and a link built
+            # from that key would 404.
+            "url": post_identity.linkedin_permalink(post["activity_urn"]),
         })
 
     # The two settled posts that did best against your own median reactions,

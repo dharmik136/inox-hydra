@@ -39,7 +39,7 @@ except ImportError:
     from __version__ import __version__
 
 try:
-    from .database import get_db, init_db, seed_initial_data, create_draft, get_draft, list_drafts, schedule_draft, checkpoint_db
+    from .database import get_db, init_db, seed_initial_data, create_draft, get_draft, list_drafts, checkpoint_db
     from .formatters import (
         to_sans_bold,
         to_sans_italic,
@@ -111,7 +111,7 @@ try:
             telemetry_engine = None
             telemetry_buffer = None
 except ImportError:
-    from database import get_db, init_db, seed_initial_data, create_draft, get_draft, list_drafts, schedule_draft, checkpoint_db
+    from database import get_db, init_db, seed_initial_data, create_draft, get_draft, list_drafts, checkpoint_db
     from formatters import (
         to_sans_bold,
         to_sans_italic,
@@ -957,9 +957,14 @@ delete_post = posts_router_module.delete_post
 @app.post("/api/posts/{post_id}/publish-now", tags=["LinkedIn Native Scheduler"])
 def publish_post_now(post_id: str):
     """
-    Immediately dispatches a scheduled post or draft as published.
-    Normalizes status to published, records UTC published_at,
-    and broadcasts the post_published event across the real-time event bus.
+    Records that a post the creator wrote has gone out.
+
+    Normalizes status to published, records UTC published_at, and then does
+    what an imported own post does: arms the fingerprint that will recognise
+    the post on LinkedIn, writes the publication record so every surface that
+    reads own_posts can see it, and creates its engagement row. This used to
+    write two columns, so the studio could not see its own published post
+    until the extension imported it back from LinkedIn.
     """
     conn = get_db()
     try:
@@ -975,26 +980,32 @@ def publish_post_now(post_id: str):
             raise HTTPException(status_code=400, detail="Post is already published")
 
         now_iso = datetime.now(timezone.utc).isoformat()
-        cursor.execute("""
-        UPDATE posts
-        SET status = 'published', published_at = ?
-        WHERE id = ?
-        """, (now_iso, post_id))
-        conn.commit()
+        # One transaction: a post is either published with everything that
+        # follows from it, or not published.
+        with conn:
+            conn.execute("""
+            UPDATE posts
+            SET status = 'published', published_at = ?
+            WHERE id = ?
+            """, (now_iso, post_id))
+            recorded = post_identity.record_publication(conn, post_id, published_at=now_iso)
         conn.close()
 
         event_bus.publish_sync("post_published", {
             "post_id": post_id,
             "content": existing["content"][:80],
             "action": "published_now",
-            "published_at": now_iso
+            "published_at": now_iso,
+            "publication_urn": recorded.get("publication_urn"),
         })
 
         return {
             "status": "success",
             "message": "Post published immediately.",
             "post_id": post_id,
-            "published_at": now_iso
+            "published_at": now_iso,
+            "publication_urn": recorded.get("publication_urn"),
+            "content_fingerprint": recorded.get("content_fingerprint"),
         }
     finally:
         conn.close()

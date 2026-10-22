@@ -43,6 +43,7 @@ try:
     from ..linkedin_client import linkedin_client
     from ..event_bus import event_bus
     from .. import post_identity
+    from .. import post_summary
 except (ImportError, ValueError):
     from database import get_db
     from formatters import (
@@ -74,6 +75,7 @@ except (ImportError, ValueError):
     from linkedin_client import linkedin_client
     from event_bus import event_bus
     import post_identity
+    import post_summary
 
 router = APIRouter()
 
@@ -549,145 +551,72 @@ def record_injected_post(req: InjectedPostRequest):
 
 @router.post("/api/v1/posts/bind-urn", tags=["Post Identity"])
 def bind_post_urn(req: BindUrnRequest):
-    urn = post_identity.extract_activity_urn(req.activity_urn) or req.activity_urn
-    if not post_identity.ACTIVITY_URN_PATTERN.fullmatch(urn or ""):
-        return {"status": "invalid_urn", "bound": False, "activity_urn": urn}
+    """
+    Binds the post on the permalink the creator just opened to the studio
+    record it came from.
 
-    # Whose post the page showed. A follower's plain repost of the creator's
-    # post shows the creator's text under the repost's own activity id, so a
-    # text match alone bound the repost, and the real post never bound after
-    # it. A post naming any author but the confirmed creator is refused; one
-    # naming none (a page whose author the bridge could not read) is matched
-    # by its text, as before.
-    if req.post_author:
-        try:
-            from .. import onboarding
-        except (ImportError, ValueError):
-            import onboarding
-        me = onboarding.confirmed_vanity()
-        if not me or onboarding.normalise_vanity(req.post_author) != me:
-            return {"status": "not_yours", "bound": False, "activity_urn": urn}
-
+    The rule lives in post_identity.bind_activity_urn, which is also what the
+    history import binds with. There used to be two binders with different
+    candidate sets and different tie breaks, so a post could bind one way and
+    not the other.
+    """
     conn = get_db()
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id FROM posts WHERE activity_urn = ?", (urn,))
-        already = cursor.fetchone()
-        if already:
-            return {"status": "already_bound", "bound": True, "post_id": already["id"], "activity_urn": urn}
-
-        # A post that left the studio by any route, not only an inserted one.
-        # Only an insert stored a fingerprint, so a post marked as published,
-        # queued, or sent to LinkedIn's scheduler could never bind. Those are
-        # matched on the fingerprint their text gives now. A plain draft is
-        # left out: this runs on every post the creator opens, and a draft can
-        # hold someone else's words.
-        cursor.execute(
-            """
-            SELECT id, content, content_fingerprint FROM posts
-            WHERE activity_urn IS NULL
-              AND (content_fingerprint IS NOT NULL OR status IN ('published', 'scheduled', 'due'))
-            ORDER BY COALESCE(published_at, scheduled_for, created_at) DESC
-            LIMIT 200
-            """
-        )
-        candidates = cursor.fetchall()
-
-        text = req.post_text or ""
-        matched = [
-            row for row in candidates
-            if any(
-                fingerprint and post_identity.fingerprint_matches(text, fingerprint)
-                for fingerprint in (row["content_fingerprint"], post_identity.content_fingerprint(row["content"] or ""))
+        with conn:
+            result = post_identity.bind_activity_urn(
+                conn,
+                req.activity_urn,
+                req.post_text or "",
+                author_vanity=req.post_author,
             )
-        ]
-
-        # Exactly one, as the history import binds: two candidates bind
-        # neither, because a wrong binding credits one post's engagers to
-        # another and is very hard to notice.
-        #
-        # Except where the side panel decides it. A database from before the
-        # insert route stopped copying posts holds a queued post and a second,
-        # armed copy the old route made when it was inserted. Both match by
-        # text; the armed one is the post the creator put into LinkedIn, and
-        # it is what bound before. So among several matches, the single one
-        # whose stored fingerprint matches wins; two armed ones still bind
-        # neither.
-        if len(matched) > 1:
-            armed = [
-                row for row in matched
-                if row["content_fingerprint"] and post_identity.fingerprint_matches(text, row["content_fingerprint"])
-            ]
-            if len(armed) == 1:
-                matched = armed
-
-        if len(matched) == 1:
-            row = matched[0]
-            try:
-                from ..onboarding import published_at_from_urn
-            except ImportError:
-                from onboarding import published_at_from_urn
-            # LinkedIn showing the post is the proof it was published, and its
-            # id carries the time it was.
-            with conn:
-                conn.execute(
-                    "UPDATE posts SET activity_urn = ?, status = 'published', "
-                    "content_fingerprint = COALESCE(content_fingerprint, ?), "
-                    "published_at = COALESCE(?, published_at, ?) WHERE id = ?",
-                    (
-                        urn,
-                        post_identity.content_fingerprint(row["content"] or ""),
-                        published_at_from_urn(urn),
-                        datetime.now(timezone.utc).isoformat(),
-                        row["id"],
-                    ),
-                )
-            return {
-                "status": "bound",
-                "bound": True,
-                "post_id": row["id"],
-                "activity_urn": urn,
-            }
-
-        return {
-            "status": "ambiguous" if matched else "no_match",
-            "bound": False,
-            "activity_urn": urn,
-            "candidates_considered": len(candidates),
-        }
+        # The permalink route runs on every post the creator opens, so text
+        # too short to identify anything is simply no match, as it was before.
+        if result["status"] == "too_short":
+            return {"status": "no_match", "bound": False, "activity_urn": result["activity_urn"],
+                    "candidates_considered": 0}
+        return result
     finally:
         conn.close()
 
 
 @router.get("/api/v1/posts/{post_id}/engagers", tags=["Post Identity"])
 def get_post_engagers(post_id: str):
+    """
+    Who engaged with a post, for any identifier the product uses: the studio's
+    own id, an activity, share or ugcPost URN, a permalink, or a fingerprint.
+
+    It used to take a studio id only, so the 523 posts the extension had
+    imported but the studio had no row for answered 404, and the busiest post
+    in a three year install could not be asked about at all. The join is the
+    one post_summary documents: lead_interactions.lead_id is declared INTEGER
+    and leads.id is TEXT, so a join written l.id = i.lead_id applies numeric
+    affinity and scans every lead.
+    """
     conn = get_db()
     try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, activity_urn, content FROM posts WHERE id = ?", (post_id,))
-        post = cursor.fetchone()
-        if not post:
+        ref = post_identity.resolve(conn, post_id)
+        if not ref:
             raise HTTPException(status_code=404, detail="No such post")
 
-        if not post["activity_urn"]:
+        if not ref["engagement_urns"]:
             return {
                 "status": "unbound",
-                "post_id": post_id,
+                "post_id": ref["post_id"],
                 "engagers": [],
                 "message": "This post has no LinkedIn URN yet. Open it on LinkedIn once to bind it.",
             }
 
+        cursor = conn.cursor()
         cursor.execute(
-            """
+            f"""
             SELECT l.id, l.full_name, l.name, l.headline, l.company,
                    l.seniority_level, l.icp_score, l.profile_url,
                    i.interaction_type, i.comment_text, i.interacted_at
-            FROM lead_interactions i
-            JOIN leads l ON l.id = i.lead_id
-            WHERE i.post_urn = ?
+            FROM lead_interactions i {post_summary.LEAD_JOIN}
+            WHERE i.post_urn IN ({', '.join('?' for _ in ref['engagement_urns'])})
             ORDER BY l.icp_score DESC
             """,
-            (post["activity_urn"],),
+            ref["engagement_urns"],
         )
         engagers = [dict(r) for r in cursor.fetchall()]
     finally:
@@ -695,8 +624,8 @@ def get_post_engagers(post_id: str):
 
     return {
         "status": "success",
-        "post_id": post_id,
-        "activity_urn": post["activity_urn"],
+        "post_id": ref["post_id"],
+        "activity_urn": ref["publication_urn"],
         "count": len(engagers),
         "engagers": engagers,
     }

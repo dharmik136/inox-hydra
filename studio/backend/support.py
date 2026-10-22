@@ -100,7 +100,7 @@ RESET_SETTING_PREFIX = "ai_"
 # be taken anywhere. creator_identity holds their own contact details, which is
 # theirs to export; settings, which holds credentials, is still never listed.
 EXPORTABLE_TABLES = ("drafts", "posts", "leads", "lead_interactions",
-                     "analytics_daily", "audience_demographics", "queue_items",
+                     "analytics_daily", "audience_demographics",
                      "creator_identity", "creator_positions", "creator_education", "creator_skills",
                      "own_posts", "post_metric_observations", "outbound_engagements", "lead_stage_events",
                      "connections", "archive_imports")

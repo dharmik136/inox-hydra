@@ -249,7 +249,7 @@ def recent_log(limit: int = 10) -> List[Dict[str, Any]]:
 
 CATEGORIES = (
     ("posts", "Your posts, drafts and queue",
-     ("drafts", "posts", "own_posts", "queue_items", "queue_slots", "media_assets", "viral_templates",
+     ("drafts", "posts", "own_posts", "queue_slots", "media_assets", "viral_templates",
       "creator_identity", "creator_positions", "creator_education", "creator_skills", "creator_accounts")),
     ("readings", "Post readings", ("post_metric_observations",)),
     ("audience", "Leads and their engagement",

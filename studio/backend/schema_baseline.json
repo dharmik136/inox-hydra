@@ -4,7 +4,10 @@
     "Regenerate ONLY when deliberately re-baselining, which should be almost never.",
     "If a test told you to look here, you probably added DDL to init_db().",
     "That DDL belongs in studio/backend/migrations.py as a numbered entry, or",
-    "existing users will never receive it. See the master plan, section 5.1."
+    "existing users will never receive it. See the master plan, section 5.1.",
+    "One deliberate removal: queue_items and idx_queue_scheduled. Nothing",
+    "reachable ever wrote or read that table, migration 26 drops it, and",
+    "init_db() would otherwise create it again empty on the next start."
   ],
   "baseline_version": 1,
   "tables": {
@@ -146,15 +149,6 @@
       "status",
       "tags"
     ],
-    "queue_items": [
-      "channel",
-      "created_at",
-      "draft_id",
-      "id",
-      "published_at",
-      "scheduled_at",
-      "status"
-    ],
     "queue_slots": [
       "day_of_week",
       "id",
@@ -191,7 +185,6 @@
     "idx_leads_status",
     "idx_leads_urn",
     "idx_posts_account",
-    "idx_queue_scheduled",
     "idx_viral_templates_archetype",
     "idx_viral_templates_velocity"
   ]

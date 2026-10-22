@@ -150,12 +150,12 @@ def test_a_queued_or_published_seed_draft_survives_with_its_history(demo_home, m
     queued, published, bound, untouched = _seeded_draft_ids(demo_home)[:4]
     conn = demo_home.get_db()
     try:
+        # Queueing and publishing are what mark a seeded draft as the
+        # creator's own now. Each used to write a queue_items row as well,
+        # which batch T1 dropped: posts.status with posts.scheduled_for is the
+        # one queue, and migration 26 carried every slot it held across.
         conn.execute("UPDATE drafts SET status = 'QUEUED' WHERE id = ?", (queued,))
-        conn.execute("INSERT INTO queue_items (draft_id, scheduled_at, status) VALUES (?, '2026-11-01 09:00', 'PENDING')", (queued,))
         conn.execute("UPDATE drafts SET status = 'PUBLISHED' WHERE id = ?", (published,))
-        conn.execute(
-            "INSERT INTO queue_items (draft_id, scheduled_at, published_at, status) "
-            "VALUES (?, '2026-10-01 09:00', '2026-10-01 09:00', 'PUBLISHED')", (published,))
         # Still a DRAFT, but its post row has been published and read since.
         conn.execute(
             "UPDATE posts SET status = 'published', impressions = 412, activity_urn = 'urn:li:activity:7384000000000000001' "
@@ -168,7 +168,6 @@ def test_a_queued_or_published_seed_draft_survives_with_its_history(demo_home, m
 
     for draft in (queued, published, bound):
         assert _count(demo_home, "SELECT COUNT(*) FROM drafts WHERE id = ?", (draft,)) == 1, f"draft {draft} was purged"
-    assert _count(demo_home, "SELECT COUNT(*) FROM queue_items") == 2, "a queue row went with its draft"
     assert _count(demo_home, "SELECT COUNT(*) FROM posts WHERE id LIKE 'post-day%' AND id LIKE ?", (f"%-{bound}",)) == 1
     assert _count(demo_home, "SELECT COUNT(*) FROM drafts WHERE id = ?", (untouched,)) == 0, (
         "an untouched demo draft should still go"
@@ -307,16 +306,18 @@ def test_the_purge_is_idempotent(demo_home, monkeypatch):
     queued = _seeded_draft_ids(demo_home)[0]
     conn = demo_home.get_db()
     try:
+        # Queueing is what marks the draft as the creator's own now. It used
+        # to write a queue_items row too, which batch T1 dropped: posts.status
+        # with posts.scheduled_for is the one queue.
         conn.execute("UPDATE drafts SET status = 'QUEUED' WHERE id = ?", (queued,))
-        conn.execute("INSERT INTO queue_items (draft_id, scheduled_at, status) VALUES (?, '2026-11-01 09:00', 'PENDING')", (queued,))
         conn.commit()
     finally:
         conn.close()
     _restart_without_the_flag(monkeypatch, demo_home)
-    tables = ("drafts", "queue_items", "posts", "leads", "analytics_daily", "audience_demographics")
+    tables = ("drafts", "posts", "leads", "analytics_daily", "audience_demographics")
     first = {t: _count(demo_home, f"SELECT COUNT(*) FROM {t}") for t in tables}
     _restart_without_the_flag(monkeypatch, demo_home)
     second = {t: _count(demo_home, f"SELECT COUNT(*) FROM {t}") for t in tables}
     assert first == second, (first, second)
-    assert first["drafts"] == 1 and first["queue_items"] == 1, first
+    assert first["drafts"] == 1, first
     assert demo_home.purge_all_seeded_data(dry_run=True)["drafts"]["seeded"] == []

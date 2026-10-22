@@ -1196,6 +1196,163 @@ _MIGRATION_25_UNREAD_REACH = (
 )
 
 
+# How a drafts row's status reads as a posts status. The legacy store had its
+# own four, in capitals, and the queue it fed had four more.
+_DRAFT_STATUS = {"DRAFT": "draft", "QUEUED": "scheduled", "PUBLISHED": "published", "ARCHIVED": "draft"}
+_QUEUE_STATUS = {"PENDING": "scheduled", "NOTIFIED": "scheduled", "PUBLISHED": "published", "CANCELLED": "draft"}
+
+
+def _migrate_one_post_identity(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 26:
+    One identity for a post.
+
+    Four tables held "something the creator wrote" and they disagreed. On a
+    three year install: posts 894, own_posts 1,417, drafts 1,044 that no
+    screen could show, queue_items 894 with no reachable writer or reader.
+    523 own_posts had no posts row, which stranded 182,115 of 500,061
+    captured interactions: the busiest post in the install answered 404 from
+    the engagers endpoint while Analytics showed it and its leads.
+
+    After this, posts is the record of what the creator wrote and own_posts is
+    the record of the publication, one of each per post, joined by
+    own_posts.post_id as well as by the URN:
+
+      posts.source        where the row came from: 'studio' for one written
+                          here, 'linkedin' for one reconstructed from a
+                          publication the extension or the archive brought,
+                          'drafts' for one carried out of the legacy store.
+      own_posts.post_id   the posts row this publication belongs to.
+
+    Nothing the creator wrote is lost and nothing is duplicated:
+
+      1. A publication whose URN a posts row already carries keeps that row.
+      2. A publication whose text matches exactly one unbound posts row binds
+         to it, by post_identity.bind_activity_urn, which is the same rule the
+         permalink route and the history import bind by.
+      3. Any other publication gets a posts row made from it, keyed
+         deterministically by its URN, so running this twice makes one row.
+      4. A drafts row with no posts row beside it gets one, carrying its text,
+         its tags, its date and the slot its queue_items row held, so dropping
+         the dead queue loses no time a creator chose.
+      5. queue_items is dropped. Every one of the 894 rows in the three year
+         install named a draft that step 4 covers, and nothing a creator can
+         reach wrote or read the table.
+
+    Idempotent and resumable: every step is written as the work still to do
+    (post_id IS NULL, no posts row for this draft), so a run that was
+    interrupted and rolled back repeats only what it had not finished, and a
+    run with nothing to do touches no row. The ledger takes the standard
+    pre-migration backup before any of it.
+    """
+    import hashlib
+
+    try:
+        from . import post_identity
+    except (ImportError, ValueError):
+        import post_identity
+
+    conn = cursor.connection
+
+    columns = {row[1] for row in cursor.execute("PRAGMA table_info(posts)")}
+    if "source" not in columns:
+        # Defaulted rather than backfilled: a row written before this
+        # migration came from the studio unless it says otherwise, and the
+        # default says so without touching a single row the creator wrote.
+        cursor.execute("ALTER TABLE posts ADD COLUMN source TEXT DEFAULT 'studio'")
+    own_columns = {row[1] for row in cursor.execute("PRAGMA table_info(own_posts)")}
+    if "post_id" not in own_columns:
+        cursor.execute("ALTER TABLE own_posts ADD COLUMN post_id TEXT")
+
+    # 1. The publications a posts row already carries the URN of.
+    cursor.execute(
+        "UPDATE own_posts SET post_id = (SELECT p.id FROM posts p WHERE p.activity_urn = own_posts.activity_urn) "
+        "WHERE post_id IS NULL AND EXISTS (SELECT 1 FROM posts p WHERE p.activity_urn = own_posts.activity_urn)"
+    )
+
+    # 2 and 3. Everything else: bound by its text where exactly one unbound
+    # posts row matches, else given a posts row of its own.
+    orphans = cursor.execute(
+        "SELECT activity_urn, text, published_at, first_seen_at FROM own_posts WHERE post_id IS NULL"
+    ).fetchall()
+    for urn, text, published_at, first_seen_at in orphans:
+        if not urn:
+            continue
+        bindable = cursor.execute(
+            "SELECT 1 FROM posts WHERE activity_urn IS NULL AND COALESCE(content, '') != '' LIMIT 1"
+        ).fetchone()
+        if bindable and text:
+            result = post_identity.bind_activity_urn(
+                conn, urn, text, published_at=published_at, from_history=True)
+            if result.get("bound"):
+                cursor.execute("UPDATE own_posts SET post_id = ? WHERE activity_urn = ?",
+                               (result["post_id"], urn))
+                continue
+        post_id = f"post-{hashlib.sha256(urn.encode('utf-8')).hexdigest()[:12]}"
+        existing = cursor.execute("SELECT activity_urn FROM posts WHERE id = ?", (post_id,)).fetchone()
+        if existing is None:
+            cursor.execute(
+                "INSERT INTO posts (id, content, status, published_at, activity_urn, content_fingerprint, "
+                "source, created_at) VALUES (?, ?, 'published', ?, ?, ?, 'linkedin', ?)",
+                (post_id, text or "", published_at, urn,
+                 post_identity.content_fingerprint(text or ""), first_seen_at or published_at),
+            )
+        elif existing[0] != urn:
+            # Two posts whose URNs hash to the same twelve characters. Keep
+            # the first and name the second after its own URN in full.
+            post_id = f"post-{hashlib.sha256((urn + '#2').encode('utf-8')).hexdigest()[:12]}"
+            cursor.execute(
+                "INSERT OR IGNORE INTO posts (id, content, status, published_at, activity_urn, "
+                "content_fingerprint, source, created_at) VALUES (?, ?, 'published', ?, ?, ?, 'linkedin', ?)",
+                (post_id, text or "", published_at, urn,
+                 post_identity.content_fingerprint(text or ""), first_seen_at or published_at),
+            )
+        cursor.execute("UPDATE own_posts SET post_id = ? WHERE activity_urn = ?", (post_id, urn))
+
+    # 4. The legacy drafts store keeps no writing of its own. A row with no
+    # posts row beside it becomes one, with the slot its queue row held.
+    if cursor.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'drafts'").fetchone():
+        has_queue = cursor.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'queue_items'").fetchone()
+        # A drafts row is already in posts when a posts row names it, or when
+        # one holds the same text: the demo seeder and the Telegram ingress
+        # both wrote their posts row without naming the draft. Matching the
+        # text as well is also what makes running this twice a no-op.
+        stranded = cursor.execute(
+            "SELECT d.id, d.raw_content, d.status, d.tags, d.created_at FROM drafts d "
+            "WHERE COALESCE(d.raw_content, '') != '' "
+            "AND d.id NOT IN (SELECT draft_id FROM posts WHERE draft_id IS NOT NULL) "
+            "AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.content = d.raw_content)"
+        ).fetchall()
+        for draft_id, raw_content, draft_status, tags, created_at in stranded:
+            status = _DRAFT_STATUS.get((draft_status or "").upper(), "draft")
+            scheduled_for = published_at = None
+            if has_queue:
+                slot = cursor.execute(
+                    "SELECT scheduled_at, published_at, status FROM queue_items WHERE draft_id = ? "
+                    "ORDER BY id DESC LIMIT 1", (draft_id,)).fetchone()
+                if slot:
+                    status = _QUEUE_STATUS.get((slot[2] or "").upper(), status)
+                    if status == "published":
+                        published_at = slot[1] or slot[0]
+                    elif status == "scheduled":
+                        scheduled_for = slot[0]
+            cursor.execute(
+                "INSERT OR IGNORE INTO posts (id, content, status, scheduled_for, published_at, tags, "
+                "draft_id, source, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'drafts', ?)",
+                (f"post-draft-{draft_id}", raw_content, status, scheduled_for, published_at,
+                 tags or "[]", draft_id, created_at),
+            )
+
+    # 5. The dead queue.
+    cursor.execute("DROP INDEX IF EXISTS idx_queue_scheduled")
+    cursor.execute("DROP TABLE IF EXISTS queue_items")
+
+    # Rows written before this migration came from the studio unless they say
+    # otherwise, which is what the column is for.
+    cursor.execute("UPDATE posts SET source = 'studio' WHERE source IS NULL")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1221,6 +1378,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (23, "Retention: reaction folds, the lead keep list and a cleanup log", _migrate_retention),
     (24, "Search folds the Composer's bold and italic letters, and removes rows by id", _MIGRATION_24_SEARCH),
     (25, "A day's members reached is not measured, so an invented 0 is cleared", _MIGRATION_25_UNREAD_REACH),
+    (26, "One identity for a post: every publication has its post, and the dead queue is gone",
+     _migrate_one_post_identity),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
