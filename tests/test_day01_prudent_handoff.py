@@ -72,7 +72,9 @@ def test_crm_relational_schema_and_indexes():
     assert "leads" in tables
     assert "lead_interactions" in tables
     assert "drafts" in tables
-    assert "queue_items" in tables
+    # The second queue went with batch T1: nothing reachable wrote or read it,
+    # and migration 26 drops it. tests/test_qc3_t1_one_store.py holds that.
+    assert "queue_items" not in tables
 
     # Verify leads columns
     c.execute("PRAGMA table_info(leads)")

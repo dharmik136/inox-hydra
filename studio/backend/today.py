@@ -32,10 +32,11 @@ except ImportError:
     from text_cut import clip
 
 try:
-    from . import onboarding, post_summary
+    from . import onboarding, post_identity, post_summary
     from .database import get_db
 except ImportError:
     import onboarding
+    import post_identity
     import post_summary
     from database import get_db
 
@@ -62,9 +63,15 @@ DUE_LIMIT = 10
 
 
 def _latest_post(conn) -> Optional[Dict[str, Any]]:
+    # A post published from the studio has a publication record from the
+    # moment it goes out, under a local key, because every other surface needs
+    # to see it. This card is how LinkedIn read the post against the creator's
+    # own history, and LinkedIn has not seen it yet, so it stays out of here
+    # and _marked_published names it instead.
     posts = conn.execute(
         "SELECT activity_urn, text, published_at FROM own_posts WHERE published_at IS NOT NULL "
-        "ORDER BY published_at DESC LIMIT ?", (COMPARE_WITH + 1,)).fetchall()
+        "AND activity_urn NOT LIKE ? ORDER BY published_at DESC LIMIT ?",
+        (post_identity.LOCAL_URN_PREFIX + "%", COMPARE_WITH + 1)).fetchall()
     if not posts:
         return None
 
@@ -121,8 +128,12 @@ def _latest_post(conn) -> Optional[Dict[str, Any]]:
         "current": current,
         "comparison": comparison or None,
         "not_compared_because": verdict,
-        "url": f"https://www.linkedin.com/feed/update/{latest['activity_urn']}/",
-        "analytics_url": f"https://www.linkedin.com/analytics/post-summary/{latest['activity_urn']}/",
+        # None for a post published from the studio and not yet seen on
+        # LinkedIn: it is recorded under a local key, and a link built from
+        # that key would 404.
+        "url": post_identity.linkedin_permalink(latest["activity_urn"]),
+        "analytics_url": (f"https://www.linkedin.com/analytics/post-summary/{latest['activity_urn']}/"
+                          if post_identity.linkedin_permalink(latest["activity_urn"]) else None),
     }
 
 

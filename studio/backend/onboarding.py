@@ -974,115 +974,26 @@ def post_readings(activity_urn: str) -> List[Dict[str, Any]]:
         conn.close()
 
 
-# How far a studio record's time may run past a post's publish time and still
-# be its source: the machine's clock and LinkedIn's can disagree a little.
-BIND_CLOCK_SKEW = timedelta(minutes=10)
-
-
-def _parse_moment(value: Any) -> Optional[datetime]:
-    """A stored time, ISO or SQLite's "YYYY-MM-DD HH:MM:SS" (UTC), or None."""
-    if not value or not isinstance(value, str):
-        return None
-    try:
-        moment = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
-
-
 def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: Optional[str]) -> Optional[str]:
     """
     Connects one of the creator's LinkedIn posts to the studio record it came
     from. Returns how it bound ("post", "draft"), or None.
 
-    Binding used to have one route: inject a draft through the composer
-    button, which stored a fingerprint, then open the permalink. A post marked
-    as published, handed to LinkedIn's scheduler, or retyped on LinkedIn never
-    bound, so "which of my posts brought which people" had no answer for most
-    of what the creator actually published.
-
-    An imported own post is already proven to be the creator's, by its actor.
-    What remains is which studio record it is, and that is decided by the text:
-
-      1. an unbound posts row whose opening matches, else
-      2. a draft whose opening matches, which gets a posts row created for it.
-
-    Exactly one match binds. Two or more bind nothing, because a wrong binding
-    credits one post's engagers to another and is very hard to notice. The
-    fingerprint is the same deliberately loose one the permalink binding uses,
-    which survives LinkedIn's rewriting of whitespace and characters.
+    An imported own post is already proven to be the creator's, by its actor,
+    so any writing of theirs may be its source. Which record it is is decided
+    by post_identity.bind_activity_urn, the one binder: this used to be a
+    second implementation of that rule, with a different candidate set and a
+    different tie break from the permalink route's, so a post could bind one
+    way and not the other.
     """
     try:
         from . import post_identity
     except ImportError:
         import post_identity
 
-    if not text or post_identity.content_fingerprint(text) is None:
-        return None
-    if conn.execute("SELECT 1 FROM posts WHERE activity_urn = ?", (activity_urn,)).fetchone():
-        return None
-
-    def matches(stored_fingerprint, content):
-        # The stored fingerprint, and the one the row's text gives today: a
-        # fingerprint stored before the normaliser kept every script's letters
-        # no longer matches text with accents, circled digits or non-Latin
-        # letters in it.
-        return any(
-            fingerprint and post_identity.fingerprint_matches(text, fingerprint)
-            for fingerprint in (stored_fingerprint, post_identity.content_fingerprint(content or ""))
-        )
-
-    # A draft can only be where a LinkedIn post came from if it was written by
-    # the time the post went out. Without this, a new draft that reused an old
-    # hit's opening was taken over by a history import: marked published, with
-    # the old post's date and figures, and gone from the drafts.
-    #
-    # A row the creator marked published is exempt: they said it is out, and
-    # it is often marked, or pasted in, after posting on LinkedIn ("Mark as
-    # published" stamps the click time), so any date on it can be later than
-    # the post. A scheduled row counts from the earlier of when it was written
-    # and when it was due.
-    posted = _parse_moment(published_at)
-
-    def existed_by_then(row) -> bool:
-        if posted is None:
-            return True
-        status = (row["status"] or "").lower() if "status" in row.keys() else ""
-        if status == "published":
-            return True
-        times = [row["created_at"]] + ([row["scheduled_for"]] if status == "scheduled" else [])
-        moments = [m for m in (_parse_moment(t) for t in times) if m]
-        return not moments or min(moments) <= posted + BIND_CLOCK_SKEW
-
-    posts = [r for r in conn.execute(
-        "SELECT id, content, content_fingerprint, status, published_at, scheduled_for, created_at FROM posts "
-        "WHERE activity_urn IS NULL AND COALESCE(content, '') != ''")
-        if matches(r["content_fingerprint"], r["content"]) and existed_by_then(r)]
-    if len(posts) == 1:
-        row = posts[0]
-        conn.execute(
-            "UPDATE posts SET activity_urn = ?, "
-            "content_fingerprint = COALESCE(content_fingerprint, ?), "
-            "status = 'published', published_at = COALESCE(?, published_at) WHERE id = ?",
-            (activity_urn, post_identity.content_fingerprint(row["content"]), published_at, row["id"]),
-        )
-        return "post"
-    if len(posts) > 1:
-        return None
-
-    drafts = [r for r in conn.execute(
-        "SELECT id, raw_content, created_at FROM drafts WHERE COALESCE(raw_content, '') != '' "
-        "AND id NOT IN (SELECT draft_id FROM posts WHERE draft_id IS NOT NULL)")
-        if matches(None, r["raw_content"]) and existed_by_then(r)]
-    if len(drafts) == 1:
-        conn.execute(
-            "INSERT INTO posts (id, content, status, published_at, content_fingerprint, draft_id, activity_urn) "
-            "VALUES (?, ?, 'published', ?, ?, ?, ?)",
-            (f"post-{hashlib.sha256(activity_urn.encode()).hexdigest()[:12]}", text, published_at,
-             post_identity.content_fingerprint(text), drafts[0]["id"], activity_urn),
-        )
-        return "draft"
-    return None
+    result = post_identity.bind_activity_urn(
+        conn, activity_urn, text, published_at=published_at, from_history=True)
+    return result.get("how") if result.get("bound") else None
 
 
 def ingest_outbound(actor: Any, items: Any) -> Dict[str, Any]:

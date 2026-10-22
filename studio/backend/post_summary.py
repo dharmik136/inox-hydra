@@ -586,6 +586,23 @@ def refresh(conn, keys: Optional[Iterable[str]] = None) -> int:
     return len(marked)
 
 
+def ensure_row(conn, post_urn: str) -> None:
+    """
+    The summary row of a post that has just been published, so the screens
+    have somewhere to read before anybody engages with it.
+
+    Zero people and no reading is what the row says, which is the truth about
+    a post that went out a moment ago. It is not marked stale: there is
+    nothing to compute from yet. A later recompute drops it again once it is
+    still empty, and every reader already treats a missing row as no
+    engagement, so the two agree either way. Inside the caller's transaction.
+    """
+    if not post_urn:
+        return
+    conn.execute("INSERT INTO post_engagement (post_urn, stale) VALUES (?, 0) "
+                 "ON CONFLICT(post_urn) DO NOTHING", (post_urn,))
+
+
 def current(conn, keys: Optional[Iterable[str]] = None) -> Dict[str, Dict[str, Any]]:
     """
     The summary rows a screen reads, keyed by post URN, every one current.

@@ -313,7 +313,9 @@ class TelegramIngressDaemon:
         # Parse message
         parsed = IngressMessageParser.parse_message(text)
 
-        # Store in local SQLite database (both drafts table and posts table for full sync)
+        # One record of what the creator wrote: create_draft writes the posts
+        # row with the draft, so this used to write a second posts row of its
+        # own for the same text.
         draft_id = create_draft(
             title=parsed["title"],
             raw_content=parsed["raw_content"],
@@ -329,25 +331,6 @@ class TelegramIngressDaemon:
         record = get_draft(draft_id)
         if not record:
             return None
-
-        # Also store into posts table for seamless integration with legacy post studio
-        conn = None
-        try:
-            conn = get_db()
-            with conn:
-                post_id = f"post-tg-{draft_id}"
-                conn.execute("""
-                INSERT OR REPLACE INTO posts (id, content, status, tags, created_at)
-                VALUES (?, ?, 'draft', ?, CURRENT_TIMESTAMP)
-                """, (post_id, parsed["raw_content"], json.dumps(parsed["tags"])))
-        except Exception as e:
-            logger.error(f"Error syncing post to posts table: {e}")
-        finally:
-            if conn:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
 
         # Broadcast live to UI via SSE bus
         event_payload = {

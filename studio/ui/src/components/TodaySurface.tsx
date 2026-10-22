@@ -541,10 +541,12 @@ function LatestPost({
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
+        {/* A post published from the studio has no LinkedIn address until
+            LinkedIn shows it, so there is nothing to open yet. */}
         {[
           { url: post.url, label: "Open the post" },
           { url: post.analytics_url, label: "Open its analytics" },
-        ].map((link) => (
+        ].filter((link): link is { url: string; label: string } => Boolean(link.url)).map((link) => (
           <button
             key={link.url}
             type="button"

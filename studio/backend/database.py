@@ -447,20 +447,12 @@ def init_db() -> None:
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_drafts_status ON drafts(status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_drafts_updated ON drafts(updated_at DESC)")
 
-    # 12. Smart Queue Items
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS queue_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        draft_id INTEGER NOT NULL,
-        scheduled_at TIMESTAMP NOT NULL,
-        published_at TIMESTAMP,
-        status TEXT DEFAULT 'PENDING' CHECK(status IN ('PENDING', 'NOTIFIED', 'PUBLISHED', 'CANCELLED')),
-        channel TEXT DEFAULT 'linkedin',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(draft_id) REFERENCES drafts(id) ON DELETE CASCADE
-    )
-    """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_queue_scheduled ON queue_items(scheduled_at, status)")
+    # 12. The queue a post waits in is posts.status with posts.scheduled_for.
+    # There used to be a second one here, queue_items, whose only writer
+    # (database.schedule_draft) had no callers and which no screen read. It
+    # held 894 rows on a three year install, every one a duplicate of a
+    # published post, and retention, backup, export and forget all carried
+    # it. Migration 26 drops it and carries any slot it held into posts.
 
     # 13. Enterprise Reverse CRM Migrations for Leads
     cursor.execute("PRAGMA table_info(leads)")
@@ -2216,10 +2208,13 @@ def _seeded_post_row(conn: sqlite3.Connection, post_id: str) -> Optional[sqlite3
 
 
 def _draft_has_history(conn: sqlite3.Connection, draft_id: int) -> bool:
-    """Queued, scheduled or published from the studio, or bound to a post."""
-    if _has_table(conn, "queue_items") and conn.execute(
-            "SELECT 1 FROM queue_items WHERE draft_id = ?", (draft_id,)).fetchone():
-        return True
+    """
+    Queued, scheduled or published from the studio, or bound to a post.
+
+    The queue it used to ask first, queue_items, is gone (migration 26). Every
+    slot it held was carried into the posts row the draft has, so posts.draft_id
+    answers for both now.
+    """
     columns = {r[1] for r in conn.execute("PRAGMA table_info(posts)")}
     return "draft_id" in columns and conn.execute(
         "SELECT 1 FROM posts WHERE draft_id = ?", (draft_id,)).fetchone() is not None
@@ -2808,7 +2803,16 @@ def create_draft(
     archetype: str = "Direct",
     tags: Optional[List[str]] = None,
 ) -> int:
-    """Insert a draft into the sovereign store under thread-safe write lock."""
+    """
+    Insert a draft into the sovereign store under thread-safe write lock.
+
+    The posts row is written with it, in the same transaction, because posts
+    is the record of what the creator wrote and every screen reads it. The
+    legacy drafts store keeps the authored form beside it (the title, the fold
+    measurements, the archetype) and holds no writing posts does not: 1,044
+    rows of a creator's writing sat here where no screen could show them,
+    which migration 26 carried across.
+    """
     tags_json = json.dumps(tags or [])
     with _db_write_lock:
         conn = get_db()
@@ -2834,6 +2838,13 @@ def create_draft(
             ),
         )
         draft_id = cursor.lastrowid
+        cursor.execute(
+            """
+            INSERT OR REPLACE INTO posts (id, content, status, tags, draft_id, source, created_at)
+            VALUES (?, ?, 'draft', ?, ?, 'drafts', CURRENT_TIMESTAMP)
+            """,
+            (f"post-draft-{draft_id}", raw_content, tags_json, draft_id),
+        )
         conn.commit()
         conn.close()
         return draft_id
@@ -2883,28 +2894,6 @@ def list_drafts(limit: int = 50, status: Optional[str] = None) -> List[Dict[str,
         d["is_pre_fold_safe"] = bool(d["is_pre_fold_safe"])
         results.append(d)
     return results
-
-
-def schedule_draft(draft_id: int, scheduled_at: str, channel: str = "linkedin") -> int:
-    """Schedule a draft for automatic local queueing under thread-safe write lock."""
-    with _db_write_lock:
-        conn = get_db()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO queue_items (draft_id, scheduled_at, status, channel)
-            VALUES (?, ?, 'PENDING', ?)
-            """,
-            (draft_id, scheduled_at, channel),
-        )
-        queue_id = cursor.lastrowid
-        cursor.execute(
-            "UPDATE drafts SET status = 'QUEUED', updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (draft_id,),
-        )
-        conn.commit()
-        conn.close()
-        return queue_id
 
 
 if __name__ == "__main__":

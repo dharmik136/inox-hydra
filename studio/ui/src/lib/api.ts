@@ -2094,8 +2094,9 @@ export interface TodayLatestPost {
   /** Present only when the post and enough earlier ones were read at about two days old. */
   comparison: Partial<Record<"impressions" | "reactions" | "comments", MetricComparison>> | null;
   not_compared_because: string | null;
-  url: string;
-  analytics_url: string;
+  /** Null for a post published from the studio that LinkedIn has not shown yet. */
+  url: string | null;
+  analytics_url: string | null;
 }
 
 export interface TodayBrief {
@@ -2147,7 +2148,8 @@ export interface PostInsight {
   people: PostInsightPerson[];
   people_count: number;
   conversations: number;
-  url: string;
+  /** Null for a post published from the studio that LinkedIn has not shown yet. */
+  url: string | null;
 }
 
 export interface PostsInsights {

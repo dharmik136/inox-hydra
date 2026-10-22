@@ -184,7 +184,9 @@ function PostRow({
               NOBODY CAPTURED FROM THIS POST YET. OPEN IT IN THE BRIDGE BROWSER AND ITS COMMENTERS ARE READ.
             </p>
           )}
-          <OpenThePost url={post.url} />
+          {/* A post published from the studio has no LinkedIn address until
+              LinkedIn shows it, so there is nothing to open yet. */}
+          {post.url ? <OpenThePost url={post.url} /> : null}
         </div>
       )}
     </li>
