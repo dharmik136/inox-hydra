@@ -18,12 +18,14 @@ try:
     from ..database import get_db
     from .. import insights
     from .. import post_summary
+    from .. import results
     from ..crm import reverse_crm, VIP_THRESHOLD
     from ..linkedin_client import linkedin_client
 except (ImportError, ValueError):
     from database import get_db
     import insights
     import post_summary
+    import results
     from crm import reverse_crm, VIP_THRESHOLD
     from linkedin_client import linkedin_client
 
@@ -42,8 +44,9 @@ router = APIRouter()
 # share of its days captured, and then by the level per captured day, not by
 # the sum. The sums were compared whatever was captured: two weeks after
 # install the previous 30 days held 4 captured days, and a flat 1,000
-# impressions a day was reported as +650%.
-MIN_CAPTURED_SHARE_TO_COMPARE = 0.8
+# impressions a day was reported as +650%. The share lives in results.py with
+# the rest of the rules, so a new screen cannot pick its own.
+MIN_CAPTURED_SHARE_TO_COMPARE = results.MIN_CAPTURED_SHARE_TO_COMPARE
 
 
 def rounding_half_width(value, precision) -> float:
@@ -175,7 +178,8 @@ def get_kpis(range: str = "30d"):
 
         def comparable(metric):
             """Each metric's change stands or falls on that metric's own coverage."""
-            return cur[metric][0] >= days_needed and prev[metric][0] >= days_needed
+            return (results.window_complete(cur[metric][0], days_needed)
+                    and results.window_complete(prev[metric][0], days_needed))
 
         # Every figure built from one LinkedIn rounded is named in
         # "approximate", and a change smaller than the rounding could hide is
@@ -357,10 +361,17 @@ def export_analytics(format: str = "csv"):
 
 
 def _rate(impressions, reactions, comments, shares):
-    """(reactions + comments + shares) / impressions, as a percentage, or None without both read."""
-    if not impressions or reactions is None:
-        return None
-    return round((reactions + (comments or 0) + (shares or 0)) * 100.0 / impressions, 2)
+    """
+    (reactions + comments + shares) / impressions as a percentage, and the
+    reason there is none when there is none.
+
+    results.engagement_rate owns the rule. This had no clamp and no check that
+    engagements cannot exceed impressions, so one post of 1,417 printed
+    "116.25% engagement" as a measured fact, and the aside beside the table
+    promoted exactly that post.
+    """
+    return results.engagement_rate({"impressions": impressions, "reactions": reactions,
+                                    "comments": comments, "reposts": shares})
 
 
 @router.get("/api/analytics/posts")
@@ -383,20 +394,30 @@ def get_posts_leaderboard(limit: Optional[int] = Query(None, ge=1), offset: int 
     Nothing reads a studio post's figures. The table writes every one at its
     column default of 0, so a studio post whose figures are all 0 or empty
     was never measured, and says so (None) rather than showing a 0% rate.
+
+    Every figure, the rate and "which post worked best" come from results.py,
+    so this screen and the Posts screen answer alike. `best` is read from the
+    whole history, never from the page.
     """
     conn = get_db()
     try:
         cursor = conn.cursor()
+        # One reading per post, from the one engine, so this table and the
+        # Posts screen cannot show one post two sets of figures.
+        read = results.figures(conn)
         listed = []
         for r in cursor.execute("""
-            SELECT o.activity_urn, o.text, o.published_at, o.impressions, o.reactions, o.comments, o.reposts,
+            SELECT o.activity_urn, o.text, o.published_at,
                    p.id AS post_id, p.media_urls, p.tags
             FROM own_posts o LEFT JOIN posts p ON p.activity_urn = o.activity_urn
         """).fetchall():
+            figure = read.get(r["activity_urn"]) or {}
             listed.append({
                 "id": r["activity_urn"], "content": r["text"] or "", "media_urls": r["media_urls"],
-                "status": "published", "published_at": r["published_at"], "impressions": r["impressions"],
-                "reactions": r["reactions"], "comments": r["comments"], "shares": r["reposts"], "tags": r["tags"],
+                "status": "published", "published_at": r["published_at"],
+                "impressions": figure.get("impressions"), "reactions": figure.get("reactions"),
+                "comments": figure.get("comments"), "shares": figure.get("reposts"), "tags": r["tags"],
+                "figures_source": figure.get("source"), "figures_read_at": figure.get("read_at"),
                 "activity_urn": r["activity_urn"], "studio_post_id": r["post_id"],
             })
         for r in cursor.execute("""
@@ -411,6 +432,8 @@ def get_posts_leaderboard(limit: Optional[int] = Query(None, ge=1), offset: int 
             if all(not d[k] for k in ("impressions", "reactions", "comments", "shares")):
                 d.update(impressions=None, reactions=None, comments=None, shares=None)
             d["studio_post_id"] = d["id"]
+            d.setdefault("figures_source", None)
+            d.setdefault("figures_read_at", None)
             listed.append(d)
 
         listed.sort(key=lambda d: (d["impressions"] is None, -(d["impressions"] or 0),
@@ -469,7 +492,12 @@ def get_posts_leaderboard(limit: Optional[int] = Query(None, ge=1), offset: int 
 
         rows = []
         for d in listed:
-            d["engagement_rate"] = _rate(d["impressions"], d["reactions"], d["comments"], d["shares"])
+            rate, reason = _rate(d["impressions"], d["reactions"], d["comments"], d["shares"])
+            d["engagement_rate"] = rate
+            # Why there is no rate, so the screen says it rather than leaving
+            # a blank or printing an impossible number.
+            d["engagement_rate_unmeasured"] = reason
+            d["engagement_rate_note"] = results.rate_reason_sentence(reason)
             d["media_urls"] = json.loads(d["media_urls"]) if d["media_urls"] else []
             d["tags"] = json.loads(d["tags"]) if d["tags"] else []
 
@@ -477,8 +505,15 @@ def get_posts_leaderboard(limit: Optional[int] = Query(None, ge=1), offset: int 
             post_urn = d.get("activity_urn") or ""
             d["attribution"] = attribution(post_id_str, post_urn)
             rows.append(d)
+        # Which posts worked, from the whole history and the one engine. The
+        # aside beside this table used to take the highest engagement rate out
+        # of the rows the page had fetched, so after paging it named the best
+        # post on page one, and the post it named shared no ground with the
+        # two the Posts screen named.
+        worked = results.best(conn, limit=2, read=read)
         conn.close()
-        return {"status": "success", "posts": rows, **insights.paging(total, size, start, len(rows))}
+        return {"status": "success", "posts": rows, "best": worked,
+                **insights.paging(total, size, start, len(rows))}
     finally:
         conn.close()
 

@@ -24,11 +24,12 @@ except ImportError:
 try:
     from .database import get_db, get_db_path
     from .contrast_engine import compute_all_contrasts
-    from . import post_summary
+    from . import post_summary, results
 except ImportError:
     from database import get_db, get_db_path
     from contrast_engine import compute_all_contrasts
     import post_summary
+    import results
 
 
 # ---------------------------------------------------------------------------
@@ -242,10 +243,10 @@ def get_topic_attribution_map() -> Dict[str, Any]:
                 folded_by_topic.setdefault(topic, set()).add(lead_id)
         candidates = conn.execute("""
             SELECT id, icp_score, lead_status, status FROM leads
-            WHERE icp_score >= 60
+            WHERE icp_score >= :qualified
                OR COALESCE(lead_status, '') NOT IN ('', 'NEW', 'ARCHIVED', 'CONTACTED', 'QUALIFIED', 'DM_SENT', 'DM_DRAFTED')
                OR COALESCE(status, '') NOT IN ('', 'New Lead', 'Outreach Sent')
-        """).fetchall()
+        """, {"qualified": results.QUALIFIED_SCORE}).fetchall()
     finally:
         conn.close()
 
@@ -262,11 +263,10 @@ def get_topic_attribution_map() -> Dict[str, Any]:
     # "6 qualified leads", and leads divided by posts a 600% "conversion".
     qualified_people: set = set()
     for row in candidates:
-        icp = row["icp_score"] or 0
-        lead_status = (row["lead_status"] or "").upper()
-        status = (row["status"] or "").lower()
-        is_qualified = (icp >= 60.0) or (lead_status in ("ENGAGED", "CONVERTED")) or ("connected" in status or "meeting" in status)
-        if is_qualified:
+        # One rule, results.is_qualified's, which the per-post summary counts
+        # by as well: this screen counted a stage the summary ignored, so the
+        # same person was qualified on Patterns and not on Posts.
+        if results.is_qualified(row["icp_score"], row["lead_status"], row["status"]):
             qualified_people.add(row["id"])
 
     # Aggregate by topic
@@ -282,13 +282,21 @@ def get_topic_attribution_map() -> Dict[str, Any]:
             "post_count": 0,
             "total_reactions": 0,
             "people": set(),
+            "shares": [],
         })
         entry["posts_count"] += 1
         entry["post_count"] += 1
         entry["total_reactions"] += rxn
         # A person who engaged with two posts of a topic is one person for it.
-        entry["people"].update(post_summary.lead_ids_of(summary.get(urn)))
+        people_here = post_summary.lead_ids_of(summary.get(urn))
+        entry["people"].update(people_here)
+        # Each post's own share of qualified people, kept so the topics can be
+        # compared with the spread inside one of them, which is the only way
+        # "no difference" can be said rather than a league table printed.
+        if people_here:
+            entry["shares"].append(100.0 * len(set(people_here) & qualified_people) / len(people_here))
 
+    shares_by_topic: Dict[str, List[float]] = {}
     for entry in topic_aggregates.values():
         # A folded reactor is still a lead, so they join the topic's people
         # once, however many of its posts they reacted to or commented on,
@@ -296,6 +304,7 @@ def get_topic_attribution_map() -> Dict[str, Any]:
         people = entry.pop("people") | folded_by_topic.get(entry["topic"], set())
         entry["people_engaged"] = len(people)
         entry["qualified_leads"] = len(people & qualified_people)
+        shares_by_topic[entry["topic"]] = entry.pop("shares")
 
     topic_list = sorted(
         topic_aggregates.values(),
@@ -310,7 +319,20 @@ def get_topic_attribution_map() -> Dict[str, Any]:
                                      if t["people_engaged"] else None)
         t["summary"] = f"{_people(t['qualified_leads'])} qualified from {_posts(t['posts_count'])}"
 
-    if len(topic_list) >= 2:
+    # Whether the topics differ at all. Measured on one creator's three years,
+    # the gap between topics was 0.26 percentage points and the gap between
+    # two posts of one topic was 27, so a table ordered by qualified leads
+    # reads as a ranking of noise. The verdict is stated and, where it is
+    # "none", the sentence says so instead of naming a best and a worst.
+    difference = results.spread(shares_by_topic)
+
+    if difference["verdict"] == "none" and len(topic_list) >= 2:
+        summary_sentence = (
+            f"Across your {len(difference['medians'])} topics the share of people who qualify is "
+            f"{results.NO_DIFFERENCE}: {difference['between']} percentage points between topics against "
+            f"{difference['within']} between two posts of one topic."
+        )
+    elif len(topic_list) >= 2:
         top = topic_list[0]
         bottom = topic_list[-1]
         summary_sentence = (
@@ -329,6 +351,7 @@ def get_topic_attribution_map() -> Dict[str, Any]:
         "status": "success",
         "grouping": TOPIC_GROUPING,
         "topics": topic_list,
+        "difference": difference,
         "summary_sentence": summary_sentence
     }
 
@@ -340,40 +363,53 @@ def get_retrieval_evidence_brief(limit_top: int = 3, limit_bottom: int = 2) -> D
     """
     conn = get_db()
     try:
-        # Ranked by reactions, the measure "top performing" names, with the
-        # people each post brought counted once each and shown beside it. It
-        # was ranked by a count of interactions, which put a 50 reaction post
-        # with three chatty commenters above posts with 300.
+        # Ranked by results.best, the one ranking: against the creator's own
+        # median reactions, over settled posts only. This ranked raw reactions
+        # with no settled rule at all, so a three hour old post could be a top
+        # exemplar fed to the copilot while the Posts screen left it out of the
+        # median, and the panel named posts no other screen named.
         #
         # The qualified people per post come from the per-post summary.
         # Joining every interaction to its lead for the count took 0.9 s at
-        # 500,000 interactions. Posts with equal reactions keep the order the
-        # old GROUP BY gave them, by URN.
+        # 500,000 interactions.
         summary = post_summary.current(conn)
-        rows = conn.execute("""
-            SELECT activity_urn, text, reactions, comments FROM own_posts
-            WHERE text IS NOT NULL AND reactions IS NOT NULL
-            ORDER BY reactions DESC, activity_urn
-        """).fetchall()
-        posts = [dict(r, qualified_leads=(summary.get(r["activity_urn"]) or {}).get("qualified", 0)) for r in rows]
+        # One reading of the figures for the whole request: the ranking, the
+        # exemplars beside it and the contrasts below all read these.
+        read = results.figures(conn)
+        worked = results.ranking(conn, read=read)
+        rows = {r["activity_urn"]: dict(r) for r in conn.execute(
+            "SELECT activity_urn, text FROM own_posts WHERE text IS NOT NULL")}
+
+        def exemplar(urn):
+            figure = read.get(urn) or {}
+            return dict(rows[urn], reactions=figure.get("reactions"), comments=figure.get("comments"),
+                        figures_source=figure.get("source"),
+                        against_usual=results.against_usual(figure, worked["usual"]).get(results.RANKED_METRIC),
+                        qualified_leads=(summary.get(urn) or {}).get("qualified", 0))
+
+        ranked = [urn for urn in worked["order"] if urn in rows]
     finally:
         conn.close()
 
-    if len(posts) < 3:
+    if len(ranked) < 3:
         return {
             "has_evidence": False,
-            "message": "Cold start: fewer than 3 settled posts found.",
+            "message": f"Cold start: fewer than 3 settled posts found ({len(ranked)}).",
             "top_exemplars": [],
             "bottom_exemplars": [],
             "contrast_findings": [],
+            "settled_posts_analyzed": len(ranked),
+            "median_reactions": worked["usual"][results.RANKED_METRIC]["median"],
             "brief_section": ""
         }
 
-    top_posts = posts[:limit_top]
-    bottom_posts = posts[-limit_bottom:] if len(posts) > limit_top else []
+    top_posts = [exemplar(urn) for urn in ranked[:limit_top]]
+    # The weakest posts, from the other end of the one ranking. With exactly
+    # four posts the third was both a top and a bottom exemplar.
+    bottom_posts = [exemplar(urn) for urn in reversed(ranked[max(limit_top, len(ranked) - limit_bottom):])]
 
-    # Get contrasts
-    contrast_res = compute_all_contrasts()
+    # Get contrasts, from the figures this request has already read.
+    contrast_res = compute_all_contrasts(read=read)
     conclusive_contrasts = [
         c for c in contrast_res.get("contrasts", [])
         if c.get("status") == "conclusive" and c.get("planted_or_significant")
@@ -383,9 +419,13 @@ def get_retrieval_evidence_brief(limit_top: int = 3, limit_bottom: int = 2) -> D
     for c in conclusive_contrasts:
         ratio = c.get("ratio", 1.0)
         label = c.get("label", "")
-        if ratio > 1.15:
+        # The cut is results.difference's, named once. A second pair of
+        # thresholds here (1.15 and 0.85) meant a contrast the engine had
+        # already called notable could still print nothing.
+        verdict = c.get("difference", {}).get("verdict")
+        if verdict == "more":
             contrast_lines.append(f"- Posts with {label} went with {ratio}x higher engagement.")
-        elif ratio < 0.85:
+        elif verdict == "fewer":
             contrast_lines.append(f"- Posts with {label} went with lower engagement ({ratio}x).")
 
     lines = [
@@ -408,5 +448,11 @@ def get_retrieval_evidence_brief(limit_top: int = 3, limit_bottom: int = 2) -> D
         "top_exemplars": top_posts,
         "bottom_exemplars": bottom_posts,
         "contrast_findings": conclusive_contrasts,
+        # What the ranking rests on, which the panel claims on screen and the
+        # interface already had a type for: the creator's own median, and how
+        # many settled posts were compared.
+        "median_reactions": worked["usual"][results.RANKED_METRIC]["median"],
+        "settled_posts_analyzed": worked["ranked_posts"],
+        "settled_after": {"hours": worked["settled_after_hours"]},
         "brief_section": brief_section
     }

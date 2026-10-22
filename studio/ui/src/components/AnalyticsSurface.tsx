@@ -6,6 +6,7 @@ import {
   fetchAnalyticsPosts,
   type AnalyticsKpis,
   type AnalyticsPoint,
+  type AnalyticsBest,
   type AnalyticsPost,
   type AnalyticsRange,
   ANALYTICS_CSV_URL,
@@ -57,6 +58,7 @@ export function AnalyticsSurface() {
   const [series, setSeries] = useState<Point[] | null>(null);
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [posts, setPosts] = useState<AnalyticsPost[] | null>(null);
+  const [best, setBest] = useState<AnalyticsBest | null>(null);
   const [loadingRange, setLoadingRange] = useState(false);
   const [failed, setFailed] = useState(false);
   // Read again when the studio answers after an outage, so a screen that
@@ -69,7 +71,11 @@ export function AnalyticsSurface() {
   useEffect(() => {
     let live = true;
     fetchAnalyticsPosts()
-      .then((rows) => live && setPosts(rows))
+      .then((answer) => {
+        if (!live) return;
+        setPosts(answer.posts);
+        setBest(answer.best);
+      })
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
@@ -214,7 +220,7 @@ export function AnalyticsSurface() {
           )}
         </div>
 
-        <Observations kpis={kpis} posts={posts} />
+        <Observations kpis={kpis} posts={posts} best={best} />
       </div>
 
       <section className="mt-10">
@@ -238,7 +244,15 @@ export function AnalyticsSurface() {
  * every range click took most of a second.
  */
 const PostTable = memo(function PostTable({ posts }: { posts: AnalyticsPost[] }) {
+  // A post whose recorded engagements exceed its impressions has no rate: the
+  // two figures were read from different pages at different moments. One post
+  // of 1,417 read 877 reactions against 837 impressions, and the aside beside
+  // this table promoted it as "116.25% engagement".
+  const impossible = posts.filter(
+    (post) => post.engagement_rate_unmeasured === "more_engagements_than_impressions",
+  );
   return (
+    <>
     <table className="w-full text-left">
       <thead>
         <tr className="studio-label border-b border-edge">
@@ -255,6 +269,14 @@ const PostTable = memo(function PostTable({ posts }: { posts: AnalyticsPost[] })
         ))}
       </tbody>
     </table>
+    {impossible.length > 0 && (
+      <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
+        {impossible.length} POST{impossible.length === 1 ? " ON THIS PAGE HAS" : "S ON THIS PAGE HAVE"} MORE
+        ENGAGEMENTS RECORDED THAN IMPRESSIONS, SO THOSE TWO FIGURES CAME FROM DIFFERENT READINGS AND NO RATE CAN
+        BE MEASURED FROM THEM.
+      </p>
+    )}
+    </>
   );
 });
 
@@ -370,7 +392,15 @@ function Cell({ value, suffix = "" }: { value: number | null; suffix?: string })
  * it does not run experiments, so it cannot separate correlation from cause and
  * must not write sentences that imply it did.
  */
-function Observations({ kpis, posts }: { kpis: Kpis | null; posts: AnalyticsPost[] | null }) {
+function Observations({
+  kpis,
+  posts,
+  best,
+}: {
+  kpis: Kpis | null;
+  posts: AnalyticsPost[] | null;
+  best: AnalyticsBest | null;
+}) {
   if (!kpis) return null;
   const coverage = coverageNote(kpis);
   const approx = new Set(kpis.approximate ?? []);
@@ -379,13 +409,14 @@ function Observations({ kpis, posts }: { kpis: Kpis | null; posts: AnalyticsPost
   const pct = (value: number | null) =>
     value === null ? null : `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 
-  const best = (posts ?? []).reduce<AnalyticsPost | null>(
-    (acc, post) =>
-      post.engagement_rate !== null && (acc === null || post.engagement_rate > (acc.engagement_rate ?? -1))
-        ? post
-        : acc,
-    null,
-  );
+  // The strongest post, as the one engine ranks it over the whole history:
+  // against the creator's own median reactions, settled posts only. This
+  // panel used to take the highest engagement rate out of the rows the table
+  // had fetched, which after paging meant page one, and the rate had no
+  // clamp, so it read "Your strongest post in this set ran at 116.25%
+  // engagement" beside a table whose every row read under 1.6%.
+  const strongest = best?.best?.[0] ?? null;
+  const ratio = strongest ? best?.named?.[strongest]?.against_usual?.[best.metric] ?? null : null;
 
   return (
     <aside className="flex flex-col gap-5 border-l border-edge pl-5">
@@ -445,15 +476,15 @@ function Observations({ kpis, posts }: { kpis: Kpis | null; posts: AnalyticsPost
         <p className="studio-label mb-1.5">What to look at next</p>
         {posts === null ? (
           <p className="studio-meta text-ink-muted">READING YOUR POSTS</p>
-        ) : best ? (
+        ) : best && strongest && ratio ? (
           <p className="text-[12px] leading-relaxed text-ink-secondary">
-            Your strongest post in this set ran at{" "}
-            <span className="text-ink-primary">{best.engagement_rate?.toFixed(2)}%</span> engagement.
-            Comparing its opening against the weaker ones is the one comparison this data supports.
+            Your strongest post, across the {best.ranked_posts} of your posts whose figures have settled, took{" "}
+            <span className="text-ink-primary">{ratio}x</span> your usual {best.metric}. Comparing its opening
+            against the weaker ones is the one comparison this data supports.
           </p>
         ) : (
           <p className="text-[12px] leading-relaxed text-ink-muted">
-            No post carries a measured engagement rate yet, so there is nothing to compare.
+            No post of yours has settled figures to compare yet, so there is nothing to compare.
           </p>
         )}
       </section>

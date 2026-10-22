@@ -650,12 +650,46 @@ export interface AnalyticsPost {
   comments: number | null;
   shares: number | null;
   engagement_rate: number | null;
+  /** Why there is no rate, when there is none: the screen says it. */
+  engagement_rate_unmeasured?: string | null;
+  engagement_rate_note?: string | null;
+  figures_source?: string | null;
   published_at: string | null;
 }
 
-export async function fetchAnalyticsPosts(): Promise<AnalyticsPost[]> {
-  const data = await call<{ posts?: AnalyticsPost[] }>("/api/analytics/posts");
-  return data.posts ?? [];
+/**
+ * Which posts worked, from the whole history and one engine (results.py), not
+ * from the page this screen happens to have fetched.
+ */
+export interface AnalyticsBest {
+  best: string[];
+  worst: string[];
+  metric: string;
+  ranked_posts: number;
+  settled_posts: number;
+  settled_after_hours: number;
+  usual: Record<string, { median: number | null; posts: number }>;
+  /**
+   * Each named post's figures and how they compare with the creator's own
+   * median. They travel with the answer because the post that worked best is
+   * usually not on the page of the table the screen is showing.
+   */
+  named: Record<
+    string,
+    {
+      impressions: number | null;
+      reactions: number | null;
+      comments: number | null;
+      reposts: number | null;
+      source: string | null;
+      against_usual: Record<string, number>;
+    }
+  >;
+}
+
+export async function fetchAnalyticsPosts(): Promise<{ posts: AnalyticsPost[]; best: AnalyticsBest | null }> {
+  const data = await call<{ posts?: AnalyticsPost[]; best?: AnalyticsBest }>("/api/analytics/posts");
+  return { posts: data.posts ?? [], best: data.best ?? null };
 }
 
 // ---------------------------------------------------------------------------
@@ -2090,7 +2124,21 @@ export interface TodayLatestPost {
   excerpt: string | null;
   published_at: string;
   age_hours: number;
-  current: { age_hours: number | null; impressions: number | null; reactions: number | null; comments: number | null } | null;
+  /**
+   * How the post is doing now, as results.figures answers it for every
+   * screen: one reading, with the page it came from named. Today used to show
+   * the two day old reading here, so one post read 19,943 impressions on this
+   * screen and 50,118 on Posts in the same minute.
+   */
+  current: {
+    impressions: number | null;
+    reactions: number | null;
+    comments: number | null;
+    reposts: number | null;
+    source: string | null;
+    read_at: string | null;
+    read_at_age_hours: number | null;
+  } | null;
   /** Present only when the post and enough earlier ones were read at about two days old. */
   comparison: Partial<Record<"impressions" | "reactions" | "comments", MetricComparison>> | null;
   not_compared_because: string | null;
@@ -2197,6 +2245,23 @@ export interface PatternFinding {
   different_period?: boolean;
   typical_year_with?: number;
   typical_year_without?: number;
+  /**
+   * What this line is allowed to say: "more", "fewer", "none" when the two
+   * sides are too close for the creator's own posts to separate, or
+   * "too_few_posts" (results.difference).
+   */
+  difference?: { verdict: string; notable: boolean; n_with: number; n_without: number; min_per_side: number };
+}
+
+/**
+ * How old a post of this creator's has to be before its figures are judged:
+ * measured from their own readings where they can say so, and assumed where
+ * they cannot (results.settled_after_hours).
+ */
+export interface SettledAfter {
+  hours: number;
+  measured: boolean;
+  posts: number;
 }
 
 export interface PatternsInsights {
@@ -2205,6 +2270,7 @@ export interface PatternsInsights {
   patterns: PatternFinding[];
   not_enough_posts: PatternFinding[];
   min_per_side: number;
+  settled_after?: SettledAfter;
 }
 
 export async function fetchPatternsInsights(): Promise<PatternsInsights> {

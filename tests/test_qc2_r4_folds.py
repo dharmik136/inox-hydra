@@ -76,6 +76,12 @@ def _build():
     conn.execute("UPDATE leads SET icp_score = 85, lead_status = 'ENGAGED' WHERE id = 'lead-2'")
     conn.execute("UPDATE leads SET icp_score = 65 WHERE id IN ('lead-5', 'lead-7')")
     conn.execute("UPDATE leads SET icp_score = 90 WHERE id = 'lead-3'")
+    # These tiers are the fixture's subject, so they stand as though the
+    # engine had written them: since batch T2 a score carries a mark saying it
+    # needs recomputing, and inserting a lead sets it, so the mark is cleared
+    # here. A reaction alone cannot reach the VIP cut through the engine,
+    # which is a finding of its own and not what this file tests.
+    conn.execute("UPDATE leads SET icp_stale = 0")
     conn.commit()
     conn.close()
 

@@ -32,12 +32,13 @@ except ImportError:
     from text_cut import clip
 
 try:
-    from . import onboarding, post_identity, post_summary
+    from . import onboarding, post_identity, post_summary, results
     from .database import get_db
 except ImportError:
     import onboarding
     import post_identity
     import post_summary
+    import results
     from database import get_db
 
 # People are listed while their engagement is recent enough to answer.
@@ -85,7 +86,12 @@ def _latest_post(conn) -> Optional[Dict[str, Any]]:
     latest, earlier = posts[0], posts[1:]
     age = (datetime.now(timezone.utc) - datetime.fromisoformat(latest["published_at"])).total_seconds() / 3600.0
     own = at_age(latest["activity_urn"])
-    current = own or post_summary.reading_of(readings.get(latest["activity_urn"]), "latest_reading")
+    # How the post is doing now, from results.figures, which every screen
+    # reads. This showed the two day old reading as the post's current
+    # figures, so one post read 19,943 impressions here and 50,118 on Posts
+    # and Analytics in the same minute. The two day reading is still what the
+    # comparison below is made at, and it says so.
+    current = results.figures(conn, [latest["activity_urn"]]).get(latest["activity_urn"])
 
     usual_readings = [r for r in (at_age(p["activity_urn"]) for p in earlier) if r]
     comparison = None

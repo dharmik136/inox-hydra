@@ -151,11 +151,15 @@ def test_a_pattern_needs_posts_on_both_sides():
 
 
 def test_a_difference_from_another_period_is_marked():
-    """Found live: hashtags looked like 2.7x, and the hashtag posts were two years older."""
+    """
+    Found live: hashtags looked like 2.7x, and the hashtag posts were two
+    years older. Eight posts a side, which is results.MIN_PER_SIDE: Patterns
+    used to publish at three while the Evidence panel suppressed at eight.
+    """
     _confirm()
-    for i in range(3):
+    for i in range(8):
         _text_post(urn_days_ago(700 + i, i), f"Old post {i}\n#tag", 60)
-    for i in range(3):
+    for i in range(8):
         _text_post(urn_days_ago(20 + i, 10 + i), f"New post {i}\nNo tags here.", 20)
     hashtags = next(p for p in client.get("/api/v1/insights/patterns").json()["patterns"] if p["key"] == "hashtags")
     assert hashtags["ratio"] == 3.0

@@ -43,6 +43,13 @@ def home(monkeypatch):
     init_db()
     conn = get_db()
     data = qc2_r3_data.build(conn)
+    # The scores the fixture wrote into the column are derived values, and
+    # since batch T2 a derived value that has not been recomputed is marked
+    # stale and brought current by the first reader. Doing it here leaves the
+    # history as a real install's would be, so the tests below compare two
+    # computations over the same scores rather than racing the catch-up.
+    import crm
+    crm.catch_up_scores(conn)
     conn.close()
     yield data
     shutil.rmtree(path, ignore_errors=True)
@@ -339,21 +346,32 @@ def test_topic_attribution_is_the_same(home):
 
 def test_evidence_exemplars_are_the_same(home):
     import evidence_briefing
+    import results
     conn = _db()
     try:
-        old = [dict(r) for r in conn.execute("""
-            SELECT p.activity_urn, p.text, p.reactions, p.comments,
-                   COUNT(DISTINCT CASE WHEN q.icp_score >= 60 THEN q.lead_id END) AS qualified_leads
+        # The people each exemplar brought, counted the way the old full scan
+        # counted them. The order is results.best's since batch T2: the panel
+        # ranked raw reactions with no settled rule, so it named posts no
+        # other screen named and could feed the copilot a post three hours
+        # old. What has to stay the same is the count beside each exemplar.
+        qualified = {r["activity_urn"]: r["qualified_leads"] for r in conn.execute("""
+            SELECT p.activity_urn,
+                   COUNT(DISTINCT CASE WHEN q.icp_score >= :qualified
+                                       OR UPPER(COALESCE(q.lead_status, '')) IN ('ENGAGED', 'CONVERTED')
+                                       THEN q.lead_id END) AS qualified_leads
             FROM own_posts p
-            LEFT JOIN (SELECT li.post_urn, l.id AS lead_id, l.icp_score
+            LEFT JOIN (SELECT li.post_urn, l.id AS lead_id, l.icp_score, l.lead_status
                        FROM leads l CROSS JOIN lead_interactions li ON li.lead_id = l.id) q
                    ON q.post_urn = p.activity_urn
-            WHERE p.text IS NOT NULL AND p.reactions IS NOT NULL
-            GROUP BY p.activity_urn ORDER BY p.reactions DESC""")]
+            WHERE p.text IS NOT NULL
+            GROUP BY p.activity_urn""", {"qualified": results.QUALIFIED_SCORE})}
+        order = results.ranking(conn)["order"]
     finally:
         conn.close()
-    result = evidence_briefing.get_retrieval_evidence_brief(limit_top=len(old), limit_bottom=0)
-    assert result["top_exemplars"] == old
+    result = evidence_briefing.get_retrieval_evidence_brief(limit_top=len(order), limit_bottom=0)
+    assert [p["activity_urn"] for p in result["top_exemplars"]] == order
+    for post in result["top_exemplars"]:
+        assert post["qualified_leads"] == qualified[post["activity_urn"]], post["activity_urn"]
 
 
 def test_outbound_reciprocity_is_the_same(home):
@@ -400,15 +418,20 @@ def test_todays_comparison_reads_the_same_readings(home):
             return dict(min(rows, key=lambda r: abs(r["age_hours"] - 48.0))) if rows else None
 
         old = [old_at_age(p[0]) for p in posts]
-        newest = conn.execute("SELECT age_hours, impressions, reactions, comments, observed_at "
-                              "FROM post_metric_observations WHERE activity_urn = ? "
-                              "ORDER BY observed_at DESC, id DESC LIMIT 1", (posts[0][0],)).fetchone()
+        import results
+        figure = results.figures(conn, [posts[0][0]])[posts[0][0]]
         latest = today._latest_post(conn)
     finally:
         conn.close()
     assert old[0] and sum(1 for r in old if r) > 10, "the history has readings at two days"
     assert old[0]["age_hours"] == 47.5, "the tie at 47.5 and 48.5 hours goes to the earlier reading"
-    assert latest["current"] == (old[0] or (dict(newest) if newest else None))
+    # What the post is doing now is results.figures, the one answer every
+    # screen reads. Today showed the two day old reading as the post's current
+    # figures, so one post read 19,943 impressions here and 50,118 on Posts in
+    # the same minute. The comparison below is still made at two days old.
+    assert latest["current"] == figure
+    assert latest["current"]["impressions"] != old[0]["impressions"], (
+        "the history's latest reading differs from its two day reading, which is the point")
     usual = [r for r in old[1:] if r]
     assert latest["comparison"], latest["not_compared_because"]
     for metric, entry in latest["comparison"].items():

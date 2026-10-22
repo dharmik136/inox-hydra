@@ -14,13 +14,15 @@ from typing import Any, Dict, List, Optional
 import re
 import json
 import logging
+import sqlite3
 
 try:
-    from . import post_summary
+    from . import post_summary, results
     from .database import get_db, write_with_retry
     from .migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 except ImportError:
     import post_summary
+    import results
     from database import get_db, write_with_retry
     from migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 
@@ -93,24 +95,15 @@ MIN_ARCHIVE_INACTIVE_DAYS = 7
 MAX_HIGH_VALUE_QUERY_LIMIT = 500
 
 # -- Qualification tiers ---------------------------------------------------
-# One definition. The same lead used to be VIP on one screen and not another:
-# tiers were cut at 80/60/30 in four places, the CRM summary counted "high
-# value" from 70 and "qualified" from 50, and the top tier was called VIP in
-# two places and TIER_1_VIP in two others.
-VIP_THRESHOLD = 80.0
-QUALIFIED_THRESHOLD = 60.0
-NURTURE_THRESHOLD = 30.0
-
-
-def qualification_tier(score) -> str:
-    score = float(score or 0.0)
-    if score >= VIP_THRESHOLD:
-        return "TIER_1_VIP"
-    if score >= QUALIFIED_THRESHOLD:
-        return "QUALIFIED"
-    if score >= NURTURE_THRESHOLD:
-        return "NURTURE"
-    return "DISQUALIFIED"
+# One definition, in results.py, which every screen reads. The same lead used
+# to be VIP on one screen and not another: tiers were cut at 80/60/30 in four
+# places, the CRM summary counted "high value" from 70 and "qualified" from
+# 50, and the top tier was called VIP in two places and TIER_1_VIP in two
+# others. These names are kept because the whole backend reads them.
+VIP_THRESHOLD = results.VIP_SCORE
+QUALIFIED_THRESHOLD = results.QUALIFIED_SCORE
+NURTURE_THRESHOLD = results.NURTURE_SCORE
+qualification_tier = results.tier
 
 
 def stable_lead_key(identity: str) -> str:
@@ -228,6 +221,20 @@ class ICPScoringEngine:
         return 0.0
 
     @classmethod
+    def blend(cls, w_s: float, w_i: float, w_c: float, w_q: float) -> float:
+        """
+        The formula, written once: every caller blends the four weights here.
+
+        Kept separate from calculate_icp_score because who a person is (their
+        seniority and company weights) is read from their row once, while the
+        engagement weights are read per engagement: recomputing 49,142 people
+        from 500,000 engagements classifies the headline once each instead of
+        half a million times (548 ms against ten seconds).
+        """
+        raw_score = (w_s * 0.45) + (w_i * 0.30) + (w_c * 0.15) + (w_q * 0.10)
+        return max(0.0, min(100.0, round(raw_score, 1)))
+
+    @classmethod
     def calculate_icp_score(
         cls,
         headline: str,
@@ -239,14 +246,10 @@ class ICPScoringEngine:
         Compute deterministic ICP score from 0.0 to 100.0 using the specification formula:
         ICP Score = min(100, max(0, W_s * 0.45 + W_i * 0.30 + W_c * 0.15 + W_q * 0.10))
         """
-        w_s = cls.calculate_seniority_weight(headline)
-        w_i = cls.calculate_interaction_weight(interaction_type, comment_text)
-        w_c = cls.calculate_company_weight(company)
-        w_q = cls.calculate_question_weight(comment_text)
-
-        raw_score = (w_s * 0.45) + (w_i * 0.30) + (w_c * 0.15) + (w_q * 0.10)
-        final_score = max(0.0, min(100.0, round(raw_score, 1)))
-        return final_score
+        return cls.blend(cls.calculate_seniority_weight(headline),
+                         cls.calculate_interaction_weight(interaction_type, comment_text),
+                         cls.calculate_company_weight(company),
+                         cls.calculate_question_weight(comment_text))
 
     @classmethod
     def calculate_icp_breakdown(
@@ -271,7 +274,9 @@ class ICPScoringEngine:
         c_q = round(w_q * 0.10, 2)
 
         raw_score = round(c_s + c_i + c_c + c_q, 2)
-        final_score = max(0.0, min(100.0, round(raw_score, 1)))
+        # The score itself from the one formula, so a breakdown cannot add up
+        # to a different number than the score beside it.
+        final_score = cls.blend(w_s, w_i, w_c, w_q)
 
         seniority = cls.classify_seniority(headline)
 
@@ -445,6 +450,186 @@ class ICPScoringEngine:
         return variants
 
 
+# ---------------------------------------------------------------------------
+# Scores that are current
+# ---------------------------------------------------------------------------
+#
+# icp_score was written once, at capture, and never recomputed. Measured on
+# one creator's three years: the stored scores said 0 of 49,142 people
+# qualified, while this engine on the same headlines and the same comments
+# qualified 11,767 of them. Every screen read the stored number, which is why
+# Patterns told a creator with 49,142 captured people that none qualified.
+#
+# So the score is a derived value with a stale mark, exactly as the per-post
+# summary is (post_summary.py): migration 27's triggers mark a lead whenever
+# anything the score is computed from changes (their headline, their company,
+# an interaction added, changed or removed), and the readers below bring the
+# marked ones current before anything counts them.
+#
+# The other option was to recompute on every read. Measured on the same data:
+# 548 ms to walk 500,000 interactions and score 49,142 leads, on every screen
+# that counts qualified people, against a 100 ms budget for a whole endpoint.
+# One lead's recompute is a single indexed read, so marking is the cheap way
+# round.
+
+# Leads recomputed per transaction, so a capture waiting for the write lock
+# waits for one batch at most.
+SCORE_BATCH = 500
+_SCORE_WAIT_MS = 250
+
+
+def score_of(headline: Optional[str], company: Optional[str],
+             interactions: List[Any]) -> Optional[float]:
+    """
+    A lead's score: the best of their recorded engagements, judged against who
+    they are now, and None for a person with no engagement recorded.
+
+    The same walk a re-capture does (ingest_interaction), in one place, so a
+    backfilled score and a captured score cannot differ. Half the score is the
+    engagement, so a person nobody has seen engage has no score rather than a
+    low one, and the dossier says "not scored" instead of inventing a tier.
+    """
+    scores = [ICPScoringEngine.calculate_icp_score(headline, company, row["comment_text"],
+                                                   row["interaction_type"])
+              for row in interactions]
+    return max(scores) if scores else None
+
+
+def _scores_by_seek(cursor, rows) -> Dict[str, Optional[float]]:
+    """
+    Each lead's score, reading their own engagements by the index that starts
+    with lead_id. For a handful of leads, which is what a capture marks.
+    """
+    return {row["id"]: score_of(row["headline"], row["company"], cursor.execute(
+        "SELECT interaction_type, comment_text FROM lead_interactions WHERE lead_id = ?",
+        (row["id"],)).fetchall()) for row in rows}
+
+
+def _scores_in_one_pass(cursor, rows) -> Dict[str, Optional[float]]:
+    """
+    Every named lead's score in one pass over the engagements, for a backfill.
+
+    lead_interactions.lead_id is declared INTEGER while leads.id is TEXT, so a
+    filter on a list of ids can use no index from the interaction side (the
+    phase 3 rebuild fixes the column). Reading every engagement once is 433 ms
+    at 500,000; filtering 98 batches of 500 against them was 9.8 s.
+
+    Who a person is is weighed once each here, and only their engagements are
+    weighed per row, which is what makes one pass affordable. The formula is
+    still ICPScoringEngine.blend.
+    """
+    engine = ICPScoringEngine
+    profile = {row["id"]: (engine.calculate_seniority_weight(row["headline"]),
+                           engine.calculate_company_weight(row["company"])) for row in rows}
+    best: Dict[str, Optional[float]] = {lead: None for lead in profile}
+    for lead_id, interaction_type, comment_text in cursor.execute(
+            "SELECT CAST(lead_id AS TEXT), interaction_type, comment_text FROM lead_interactions"):
+        weights = profile.get(lead_id)
+        if weights is None:
+            continue
+        score = engine.blend(weights[0], engine.calculate_interaction_weight(interaction_type, comment_text),
+                             weights[1], engine.calculate_question_weight(comment_text))
+        if best[lead_id] is None or score > best[lead_id]:
+            best[lead_id] = score
+    return best
+
+
+# Above this many marked leads, their engagements are read in one pass rather
+# than sought one lead at a time.
+SCORE_BULK_FROM = 200
+
+
+def recompute_scores(conn, lead_ids: List[str]) -> int:
+    """
+    Writes the current score and seniority of the leads named, inside the
+    caller's transaction, and clears their marks. Returns how many moved.
+    """
+    if not lead_ids:
+        return 0
+    cursor = conn.cursor()
+    rows = cursor.execute(
+        "SELECT id, headline, company, icp_score FROM leads WHERE id IN (SELECT value FROM json_each(?))",
+        (json.dumps(lead_ids),)).fetchall()
+    scored = (_scores_in_one_pass(cursor, rows) if len(rows) > SCORE_BULK_FROM
+              else _scores_by_seek(cursor, rows))
+    moved = 0
+    for row in rows:
+        score = scored.get(row["id"])
+        if (row["icp_score"] is None) != (score is None) or (
+                score is not None and row["icp_score"] is not None
+                and abs(float(row["icp_score"]) - score) > 1e-9):
+            moved += 1
+        # Written even when it has not moved, because the mark has to clear
+        # and the trigger only fires on a real change.
+        cursor.execute(
+            "UPDATE leads SET icp_score = ?, seniority_level = ?, icp_stale = 0 WHERE id = ?",
+            (score, ICPScoringEngine.classify_seniority(row["headline"]), row["id"]))
+    # Marks on leads that no longer exist would otherwise be looked at for ever.
+    cursor.execute("UPDATE leads SET icp_stale = 0 WHERE id IN (SELECT value FROM json_each(?))",
+                   (json.dumps(lead_ids),))
+    return moved
+
+
+def _marked_leads(conn, batch: Optional[int] = None) -> List[str]:
+    limit = "" if batch is None else f" LIMIT {int(batch):d}"
+    return [row[0] for row in conn.execute(f"SELECT id FROM leads WHERE icp_stale != 0{limit}")]
+
+
+def catch_up_scores(conn, batch: int = SCORE_BATCH) -> int:
+    """
+    Brings every marked lead's score current, a batch to a transaction, so a
+    capture waiting for the lock waits for one batch at most. Stops early and
+    leaves the rest marked when another writer keeps the lock, as the per-post
+    summary's catch-up does. Returns how many scores moved.
+    """
+    try:
+        if not conn.execute("SELECT 1 FROM leads WHERE icp_stale != 0 LIMIT 1").fetchone():
+            return 0
+    except sqlite3.OperationalError:
+        # Before migration 27 there is no mark, and the stored score is all
+        # there is. A reader must not fail over that.
+        return 0
+    if conn.in_transaction:
+        return recompute_scores(conn, _marked_leads(conn))
+    # A backfill (migration 27 marks every lead) is one pass over the
+    # engagements and one transaction, the way the per-post summary's own
+    # rebuild is: measured on three years, 1.5 s for 49,142 leads against
+    # 9.8 s for ninety-eight batches that each read the engagements again.
+    # Everything smaller than that is a capture's handful of leads.
+    marked = conn.execute("SELECT COUNT(*) FROM leads WHERE icp_stale != 0").fetchone()[0]
+    if marked > SCORE_BULK_FROM:
+        batch = marked
+    moved = 0
+    previous = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+    conn.execute(f"PRAGMA busy_timeout = {_SCORE_WAIT_MS:d}")
+    try:
+        while True:
+            if not conn.execute("SELECT 1 FROM leads WHERE icp_stale != 0 LIMIT 1").fetchone():
+                break
+            conn.execute("BEGIN IMMEDIATE")
+            marked = _marked_leads(conn, batch)
+            if marked:
+                moved += recompute_scores(conn, marked)
+            conn.commit()
+            if len(marked) < batch:
+                break
+    except sqlite3.OperationalError:
+        if conn.in_transaction:
+            conn.rollback()
+    finally:
+        conn.execute(f"PRAGMA busy_timeout = {int(previous)}")
+    return moved
+
+
+def scores_current(conn) -> int:
+    """
+    What a reader calls before counting qualified people: the scores of leads
+    whose inputs have changed are recomputed first, so a stale one cannot
+    survive a single screen load.
+    """
+    return catch_up_scores(conn)
+
+
 class ReverseCRMManager:
     """Database coordinator for lead ingestion, interaction recording, and ICP queries."""
 
@@ -525,17 +710,13 @@ class ReverseCRMManager:
                         # headline, with this one, and the result written once. A
                         # provisional score written first and corrected after
                         # marked every post the person had engaged with in the
-                        # per-post summary on every capture.
-                        new_icp = icp = max(
-                            [icp] + [
-                                ICPScoringEngine.calculate_icp_score(headline, company, r["comment_text"],
-                                                                     r["interaction_type"])
-                                for r in cursor.execute(
-                                    "SELECT interaction_type, comment_text FROM lead_interactions WHERE lead_id = ?",
-                                    (lead_id,),
-                                ).fetchall()
-                            ]
-                        )
+                        # per-post summary on every capture. score_of is the one
+                        # walk, which the catch-up for a lead whose headline
+                        # changed outside a capture uses as well.
+                        recorded = score_of(headline, company, cursor.execute(
+                            "SELECT interaction_type, comment_text FROM lead_interactions WHERE lead_id = ?",
+                            (lead_id,)).fetchall())
+                        new_icp = icp = icp if recorded is None else max(icp, recorded)
                         cursor.execute("""
                         UPDATE leads SET
                             full_name = ?,
