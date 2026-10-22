@@ -308,13 +308,23 @@ _waiting: Dict[str, Any] = {}
 
 
 def note_client(extension_version: Any = None, contract_version: Any = None) -> None:
-    """Remembers which client is talking, so the handshake can answer."""
+    """
+    Remembers which client is talking, so the handshake can answer when there
+    is no client on the line, as on `GET /api/v1/extension/health`.
+
+    A client that says nothing at all teaches nothing, and what is remembered
+    is left alone. A client that names itself teaches both facts, including
+    that it declared no contract version: remembering the last good number
+    across a reload would tell a creator everything is fine while the browser
+    runs an extension that cannot speak to this studio.
+    """
     speaks = contract_version if isinstance(contract_version, int) else None
+    if extension_version is None and speaks is None:
+        return
     with _lock:
         if extension_version:
             _client["extension_version"] = str(extension_version)[:40]
-        if speaks is not None:
-            _client["contract_version"] = speaks
+        _client["contract_version"] = speaks
         _client["last_seen_at"] = datetime.now(timezone.utc).isoformat()
 
 
@@ -345,7 +355,12 @@ def handshake(extension_version: Any = None, contract_version: Any = None) -> Di
     note_client(extension_version, contract_version)
     with _lock:
         seen = dict(_client)
-    speaks = seen.get("contract_version")
+    # A client on the line is judged on what it just said, not on what some
+    # earlier client said. Only a read with nobody on the line, such as the
+    # side panel's health call, falls back to what is remembered.
+    on_the_line = extension_version is not None or contract_version is not None
+    speaks = (contract_version if isinstance(contract_version, int) else None) if on_the_line \
+        else seen.get("contract_version")
     stale = speaks is None or speaks < CONTRACT_VERSION
     return {
         "contract_version": CONTRACT_VERSION,

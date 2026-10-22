@@ -259,6 +259,19 @@ def test_a_capture_also_declares_the_contract_it_speaks():
     assert client.get("/api/v1/extension/health").json()["contract"]["reload_required"] is False
 
 
+def test_an_older_client_after_a_newer_one_is_still_told_to_reload():
+    """
+    Each answer is about the client that just spoke. Remembering the last good
+    number across a browser reloading an older build would tell a creator
+    everything is fine while nothing could be captured.
+    """
+    client.post("/api/v1/bridge/heartbeat",
+                json={"extension_version": "2.6.1", "contract_version": ingest_contract.CONTRACT_VERSION})
+    older = client.post("/api/v1/bridge/heartbeat", json={"extension_version": "2.5.0"})
+    assert older.json()["handshake"]["reload_required"] is True
+    assert client.get("/api/v1/extension/health").json()["contract"]["reload_required"] is True
+
+
 # ---------------------------------------------------------------------------
 # What is waiting, and what was refused
 # ---------------------------------------------------------------------------
