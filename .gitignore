@@ -144,3 +144,6 @@ studio/inox_export_*
 
 # The licence signing key (tools/licence_keys.py). It must never be committed.
 *.secret
+
+# Transient per-agent checkouts, created and removed by tooling.
+.claude/worktrees/
