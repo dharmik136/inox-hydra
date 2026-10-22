@@ -43,6 +43,7 @@ try:
     from ..linkedin_client import linkedin_client
     from ..event_bus import event_bus
     from .. import post_identity
+    from .. import post_summary
 except (ImportError, ValueError):
     from database import get_db
     from formatters import (
@@ -74,6 +75,7 @@ except (ImportError, ValueError):
     from linkedin_client import linkedin_client
     from event_bus import event_bus
     import post_identity
+    import post_summary
 
 router = APIRouter()
 
@@ -677,15 +679,24 @@ def get_post_engagers(post_id: str):
                 "message": "This post has no LinkedIn URN yet. Open it on LinkedIn once to bind it.",
             }
 
+        # post_summary.LEAD_JOIN, the one join in the codebase that can read
+        # this table by index: lead_interactions.lead_id is declared INTEGER
+        # and leads.id is TEXT, so a join written l.id = i.lead_id applies
+        # numeric affinity and the leads primary key cannot serve it. Written
+        # that way this read scanned all 49,142 leads (7.66 ms for one post
+        # of three years); by the index it is 0.12 ms, for the same rows in
+        # the same order. The last two sort keys are the order the old scan
+        # met rows in: it walked idx_leads_icp, which orders equal scores by
+        # the lead's rowid, and each lead's interactions by the post index.
         cursor.execute(
-            """
+            f"""
             SELECT l.id, l.full_name, l.name, l.headline, l.company,
                    l.seniority_level, l.icp_score, l.profile_url,
                    i.interaction_type, i.comment_text, i.interacted_at
             FROM lead_interactions i
-            JOIN leads l ON l.id = i.lead_id
+            {post_summary.LEAD_JOIN}
             WHERE i.post_urn = ?
-            ORDER BY l.icp_score DESC
+            ORDER BY l.icp_score DESC, l.rowid, i.id
             """,
             (post["activity_urn"],),
         )
