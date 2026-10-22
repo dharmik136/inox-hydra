@@ -64,7 +64,6 @@ try:
     from .agno_agent import agno_orchestrator
     from .agno_agentos import orchestrator
     from .image_studio import image_studio_manager, image_providers
-    from .event_bus import event_bus
     from .ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
     from .crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from .rate_limiter import rate_limiter, write_actor
@@ -137,7 +136,6 @@ except ImportError:
     from agno_agent import agno_orchestrator
     from agno_agentos import orchestrator
     from image_studio import image_studio_manager, image_providers
-    from event_bus import event_bus
     from ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
     from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from rate_limiter import rate_limiter, write_actor
@@ -198,7 +196,6 @@ OPENAPI_TAGS = [
     {"name": "LinkedIn Bridge", "description": "Passive session token synchronization and live analytics ingestion."},
     {"name": "Settings & Creator Profile", "description": "Creator branding, personal watermark configuration, and session bridge."},
     {"name": "Documentation", "description": "Interactive enterprise documentation suite and in-app playbook viewer."},
-    {"name": "Real-Time Event Stream", "description": "Server-Sent Events (SSE) bus for under 5ms instant live inbox updates."},
     {"name": "Ubiquitous Ingress", "description": "Outbound long-polling Telegram ingress, directive parser, and mobile fold analyzer."},
     {"name": "LinkedIn Native Scheduler", "description": "Voyager cloud pre-staging and self-healing morning grace window recovery."},
     {"name": "Enterprise Reverse CRM", "description": "Deterministic ICP scoring engine and anti-slop 1-to-1 contextual DM generation."},
@@ -968,8 +965,7 @@ delete_post = posts_router_module.delete_post
 def publish_post_now(post_id: str):
     """
     Immediately dispatches a scheduled post or draft as published.
-    Normalizes status to published, records UTC published_at,
-    and broadcasts the post_published event across the real-time event bus.
+    Normalizes status to published and records UTC published_at.
     """
     conn = get_db()
     try:
@@ -992,13 +988,6 @@ def publish_post_now(post_id: str):
         """, (now_iso, post_id))
         conn.commit()
         conn.close()
-
-        event_bus.publish_sync("post_published", {
-            "post_id": post_id,
-            "content": existing["content"][:80],
-            "action": "published_now",
-            "published_at": now_iso
-        })
 
         return {
             "status": "success",
@@ -2221,8 +2210,8 @@ class IngressSimulateRequest(BaseModel):
 def simulate_ingress(req: IngressSimulateRequest):
     """
     Simulates incoming message from Telegram mobile bot or desktop tray.
-    Parses directives (Draft:, Idea:, Schedule:), evaluates mobile fold,
-    persists into SQLite WAL, and broadcasts live over SSE bus.
+    Parses directives (Draft:, Idea:, Schedule:), evaluates mobile fold, and
+    persists into SQLite WAL.
     """
     update_payload = {
         "update_id": int(time.time()),

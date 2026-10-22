@@ -41,7 +41,6 @@ try:
         MISSED_POST_KEY,
     )
     from ..linkedin_client import linkedin_client
-    from ..event_bus import event_bus
     from .. import post_identity
 except (ImportError, ValueError):
     from database import get_db
@@ -72,7 +71,6 @@ except (ImportError, ValueError):
         MISSED_POST_KEY,
     )
     from linkedin_client import linkedin_client
-    from event_bus import event_bus
     import post_identity
 
 router = APIRouter()

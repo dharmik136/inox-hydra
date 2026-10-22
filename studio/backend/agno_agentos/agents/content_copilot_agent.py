@@ -29,7 +29,7 @@ except ImportError:
 # `agno_agentos...` when studio/backend is on sys.path directly, which is how
 # the app and the tests load it. A three level relative import runs off the
 # top of the package in the second case, so it is tried and then fallen back
-# from, the same way database and event_bus are imported elsewhere here.
+# from, the same way database and crm are imported elsewhere here.
 try:
     from ...mcp_client import as_brief_inputs, gather, grounding_provenance
 except Exception:  # pragma: no cover - the fallback below is the common path

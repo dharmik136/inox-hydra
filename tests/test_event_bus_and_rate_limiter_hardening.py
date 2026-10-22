@@ -11,11 +11,6 @@ from fastapi.testclient import TestClient
 # Ensure studio/backend is on sys.path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "studio", "backend"))
 
-from event_bus import (
-    EventBus,
-    MAX_SUBSCRIBERS,
-    MAX_EVENT_TYPE_LENGTH,
-)
 from studio.core.rate_limiter import (
     GaussianRateLimiter,
     SingleWriterActor,
@@ -24,103 +19,6 @@ from studio.core.rate_limiter import (
 from app import app
 
 client = TestClient(app)
-
-
-def test_event_bus_subscriber_cap_and_eviction():
-    """EventBus caps active subscribers to MAX_SUBSCRIBERS, evicting oldest."""
-    bus = EventBus(buffer_size=50)
-
-    async def _run():
-        generators = []
-        # Create MAX_SUBSCRIBERS + 20 subscribers
-        for _ in range(MAX_SUBSCRIBERS + 20):
-            gen = bus.subscribe()
-            generators.append(gen)
-            # Advance generator to the queue creation point
-            await gen.__anext__ if False else None
-
-        # Verify count does not exceed MAX_SUBSCRIBERS
-        assert len(bus._subscribers) <= MAX_SUBSCRIBERS
-
-    asyncio.run(_run())
-
-
-def test_event_bus_dead_queue_pruning():
-    """Persistent QueueFull on abandoned queues automatically triggers eviction."""
-    bus = EventBus(buffer_size=10)
-    abandoned_queue = asyncio.Queue(maxsize=2)
-    bus._subscribers.append(abandoned_queue)
-
-    # Publish 30 events into a full queue of size 2
-    for i in range(30):
-        bus.publish_sync("test_event", {"counter": i})
-
-    # Abandoned queue should be pruned after exceeding dropped threshold
-    assert abandoned_queue not in bus._subscribers
-
-
-def test_event_bus_publish_sync_sanitization():
-    """EventBus sanitizes event types containing newlines and wraps non-dict payloads."""
-    bus = EventBus(buffer_size=10)
-
-    # SSE injection attempt with carriage return and newline
-    malicious_type = "draft_created\r\nevent: fake_event\r\ndata: injected"
-    payload = bus.publish_sync(malicious_type, "simple_string_payload")
-
-    assert "\r" not in payload["event"]
-    assert "\n" not in payload["event"]
-    assert payload["event"] == "draft_createdevent: fake_eventdata: injected"
-    assert isinstance(payload["data"], dict)
-    assert payload["data"]["payload"] == "simple_string_payload"
-
-    # None event type defaults cleanly
-    p_none = bus.publish_sync(None, {"key": "val"})
-    assert p_none["event"] == "unknown"
-
-
-def test_event_bus_format_sse_safe_serialization():
-    """format_sse handles un-serializable objects and non-dict events without throwing."""
-    bus = EventBus()
-
-    # Non-dict event
-    assert bus.format_sse(None) == ""
-    assert bus.format_sse("string_event") == ""
-
-    # Complex / non-JSON-serializable payload
-    complex_event = {
-        "id": 42,
-        "event": "complex_update\n\r",
-        "data": {
-            "timestamp": datetime.now(timezone.utc),
-            "custom_set": {1, 2, 3},
-        }
-    }
-    sse_wire = bus.format_sse(complex_event)
-    assert sse_wire.startswith("id: 42\nevent: complex_update\ndata: ")
-    assert sse_wire.endswith("\n\n")
-    assert "\r" not in sse_wire[:30]
-
-
-def test_event_bus_subscribe_replay_last_id_robustness():
-    """EventBus handles malformed or string last_event_id without raising TypeError."""
-    bus = EventBus(buffer_size=10)
-    bus.publish_sync("ev1", {"num": 1})
-    bus.publish_sync("ev2", {"num": 2})
-
-    async def _test():
-        # String last_event_id
-        received = []
-        gen = bus.subscribe(last_event_id="1")
-        # First event from replay
-        ev = await gen.asend(None)
-        received.append(ev)
-        assert received[0]["id"] == 2
-
-        # Invalid string that cannot be parsed as int
-        gen_bad = bus.subscribe(last_event_id="invalid-id")
-        assert gen_bad is not None
-
-    asyncio.run(_test())
 
 
 def test_rate_limiter_gaussian_generator_clamping():
@@ -210,7 +108,6 @@ def test_zero_em_dash_compliance_module11():
     em_dash = chr(0x2014)
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     target_files = [
-        os.path.join(base_dir, "studio", "backend", "event_bus.py"),
         os.path.join(base_dir, "studio", "core", "rate_limiter.py"),
         os.path.join(base_dir, "studio", "backend", "rate_limiter.py"),
         os.path.abspath(__file__),
@@ -220,73 +117,3 @@ def test_zero_em_dash_compliance_module11():
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
             assert em_dash not in content, f"Em-dash found in {file_path}"
-
-
-def test_publish_from_background_thread_reaches_an_idle_loop():
-    """
-    Verifies an event published from a worker thread is delivered to a loop that is
-    otherwise idle.
-
-    asyncio.Queue is not thread safe. put_nowait from a foreign thread resolves the
-    waiting getter's future but never wakes the selector, so an idle loop, which is
-    exactly what an SSE stream is between events, never sees it. The scheduler
-    publishes post_published and schedule_recovery from its own thread and the UI
-    listens for both, so this path has to work.
-    """
-    import asyncio
-    import threading
-    import time
-
-    from event_bus import EventBus
-
-    async def scenario():
-        bus = EventBus()
-        received = []
-
-        async def consumer():
-            async for event in bus.subscribe():
-                received.append(event)
-                break
-
-        task = asyncio.create_task(consumer())
-        await asyncio.sleep(0.2)
-
-        # Publish only once the loop has settled into an idle wait.
-        def publish_later():
-            time.sleep(0.8)
-            bus.publish_sync("post_published", {"post_id": "thread-probe"})
-
-        threading.Thread(target=publish_later, daemon=True).start()
-
-        await asyncio.wait_for(task, timeout=6.0)
-        return received
-
-    received = asyncio.run(scenario())
-    assert len(received) == 1, "The threaded publish never reached the idle loop"
-    assert received[0]["event"] == "post_published"
-    assert received[0]["data"]["post_id"] == "thread-probe"
-
-
-def test_event_ids_are_unique_under_concurrent_threaded_publishes():
-    """Verifies the event counter does not hand out duplicate ids to racing threads."""
-    import threading
-
-    from event_bus import EventBus
-
-    bus = EventBus(buffer_size=1000)
-    ids = []
-    ids_lock = threading.Lock()
-
-    def publish_batch():
-        local = [bus.publish_sync("probe", {"n": i})["id"] for i in range(40)]
-        with ids_lock:
-            ids.extend(local)
-
-    threads = [threading.Thread(target=publish_batch) for _ in range(6)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    assert len(ids) == 240
-    assert len(set(ids)) == len(ids), "Duplicate event ids were handed out across threads"

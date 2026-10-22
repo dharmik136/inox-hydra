@@ -2,8 +2,8 @@
 Ubiquitous Telegram Ingress Daemon & Mobile Message Parser.
 ===========================================================
 Handles outbound long-polling to api.telegram.org (zero inbound ports),
-parses structured and unstructured creator thoughts, persists into SQLite WAL,
-and broadcasts live events over the local EventBus.
+parses structured and unstructured creator thoughts, and persists into
+SQLite WAL.
 
 Strict Invariants:
 - Zero open inbound ports (pure outbound HTTP long-polling).
@@ -27,10 +27,8 @@ import time
 
 try:
     from .database import get_db, create_draft, get_draft
-    from .event_bus import event_bus
 except ImportError:
     from database import get_db, create_draft, get_draft
-    from event_bus import event_bus
 
 MAX_UPDATE_ATTEMPTS = 3
 
@@ -348,21 +346,6 @@ class TelegramIngressDaemon:
                     conn.close()
                 except Exception:
                     pass
-
-        # Broadcast live to UI via SSE bus
-        event_payload = {
-            "draft_id": draft_id,
-            "title": record["title"],
-            "raw_content": record["raw_content"],
-            "archetype": record["archetype"],
-            "tags": record["tags"],
-            "is_pre_fold_safe": record["is_pre_fold_safe"],
-            "created_at": record["created_at"],
-        }
-        event_bus.publish_sync(
-            event_type="draft_ingested",
-            data=event_payload,
-        )
 
         return record
 

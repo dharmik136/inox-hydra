@@ -43,8 +43,8 @@ GSTACK_ROLES = {
     "ENGINEERING_MANAGER": {
         "title": "Engineering Manager",
         "prd_ref": "gstack/02_ENG_MANAGER_SPEC.md",
-        "mandate": "SQLite WAL concurrency, single-writer actor queues, SSE real-time buses, and schema integrity.",
-        "focus_areas": ["WAL Pragmas", "Actor Queue Concurrency", "Event Bus Latency", "Relational Schemas"]
+        "mandate": "SQLite WAL concurrency, single-writer actor queues, and schema integrity.",
+        "focus_areas": ["WAL Pragmas", "Actor Queue Concurrency", "Relational Schemas"]
     },
     "DESIGNER": {
         "title": "Lead UI/UX Designer",

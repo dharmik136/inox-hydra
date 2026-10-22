@@ -8,11 +8,12 @@ Operationalizes Module 02 enterprise publishing cadence:
    local peak slots (Mon-Fri 08:30 / 17:30).
 3. Self-Healing Morning Grace Window Recovery:
    - Within 2-hour grace window (<= 120m overdue): Marks the post due, for the
-     creator to post it, and notifies via SSE. Nothing is posted from here.
+     creator to post it. Nothing is posted from here.
    - Beyond grace window (> 120m overdue): Marks the post due at its own
      time and records that it was missed. Nothing moves it; Today offers
      Post now and Move to next slot.
-4. Real-time SSE stream integration (schedule_recovery event).
+4. What the dispatch did is returned to its caller and written to the log.
+   Every screen reads the posts table; nothing is pushed.
 
 Strict Invariant: Zero em-dashes in all code, comments, and strings.
 """
@@ -29,12 +30,10 @@ from apscheduler.schedulers.background import BackgroundScheduler
 try:
     from . import paths
     from .database import get_db, init_db, SEEDED_DEMO_POST_IDS, DEFAULT_QUEUE_SLOTS, neutral_slot_label
-    from .event_bus import event_bus
     from .migrations import SCHEMA_VERSION
 except ImportError:
     import paths
     from database import get_db, init_db, SEEDED_DEMO_POST_IDS, DEFAULT_QUEUE_SLOTS, neutral_slot_label
-    from event_bus import event_bus
     from migrations import SCHEMA_VERSION
 
 logger = logging.getLogger("studio.scheduler")
@@ -453,10 +452,6 @@ class NativeScheduler:
                     conn.commit()
                     if claimed == 0:
                         continue
-                    event_bus.publish_sync("post_published", {
-                        "post_id": post_id,
-                        "published_at": sched_dt.isoformat(),
-                    })
                     actions.append({
                         "post_id": post_id,
                         "action": "published_by_linkedin",
@@ -495,10 +490,6 @@ class NativeScheduler:
 
                     if overdue_minutes <= ON_TIME_THRESHOLD_MINUTES:
                         logger.info("Post %s is due, on time, at %s.", post_id, now_iso)
-                        event_bus.publish_sync("post_due", {
-                            "post_id": post_id,
-                            "due_at": now_iso
-                        })
                         actions.append({
                             "post_id": post_id,
                             "action": "due_on_time",
@@ -510,16 +501,6 @@ class NativeScheduler:
                             "Post %s is due, %.1fm late, inside the grace window, at %s.",
                             post_id, overdue_minutes, now_iso
                         )
-                        recovery_payload = {
-                            "type": "grace_due",
-                            "post_id": post_id,
-                            "overdue_minutes": round(overdue_minutes, 1),
-                            "message": (
-                                f"This post was due {int(overdue_minutes)}m ago and is waiting on the "
-                                "Queue for you to post it."
-                            )
-                        }
-                        event_bus.publish_sync("schedule_recovery", recovery_payload)
                         actions.append({
                             "post_id": post_id,
                             "action": "due_within_grace",
@@ -532,8 +513,8 @@ class NativeScheduler:
                 # Due at its own time, never moved. This used to roll the post
                 # forward to the next free slot, so a creator who opened the
                 # studio at 11:00 for an 08:30 post found it quietly re-timed
-                # for the evening or another day, told only by a log line and
-                # an event nothing listens to. The post now waits as due with
+                # for the evening or another day, told only by a log line. The
+                # post now waits as due with
                 # the time they chose, and a note that it was missed, which
                 # Today shows with Post now and Move to next slot.
                 else:
@@ -563,16 +544,6 @@ class NativeScheduler:
                         "Post %s missed its time by %.1fm. It is due, at its own time, for the creator to decide.",
                         post_id, overdue_minutes
                     )
-                    event_bus.publish_sync("schedule_recovery", {
-                        "type": "missed_due",
-                        "post_id": post_id,
-                        "scheduled_for": sched_dt.isoformat(),
-                        "overdue_minutes": round(overdue_minutes, 1),
-                        "message": (
-                            f"This post was due {round(overdue_minutes / 60.0, 1)}h ago and was missed. "
-                            "It is waiting for you to post it or move it to the next slot."
-                        )
-                    })
                     actions.append({
                         "post_id": post_id,
                         "action": "missed_due",
