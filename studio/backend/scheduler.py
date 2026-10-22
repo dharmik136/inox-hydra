@@ -41,6 +41,14 @@ logger = logging.getLogger("studio.scheduler")
 
 MIN_COOLDOWN_HOURS = 12.0
 
+# How late a background run may be and still be taken. None means however
+# late: a laptop that sleeps across the hour stops the clock, and with
+# APScheduler's default of one second every run that came due in the sleep
+# was skipped, the hourly backup for a whole hour at a time. Both jobs here
+# are checks that decide for themselves whether there is work to do, so a
+# late run is always better than no run.
+MISFIRE_GRACE = None
+
 # A settings key, per post, for a post handed to LinkedIn's own scheduler with
 # Send to LinkedIn. LinkedIn publishes that one itself at its time, so it is
 # the one queued post that really is published when its time comes.
@@ -719,7 +727,13 @@ class NativeScheduler:
                 "interval",
                 seconds=30,
                 id="queue_checker",
-                replace_existing=True
+                replace_existing=True,
+                # Run it however late it is, and once for a whole sleep. See
+                # the hourly job below: the same default skipped this check
+                # too, so a post that came due while the machine slept waited
+                # another 30 seconds after the wake to be noticed.
+                misfire_grace_time=MISFIRE_GRACE,
+                coalesce=True,
             )
             # The daily backup, its rotation and the retention cleanups, for
             # every profile. Checked hourly, so a studio opened for an hour a
@@ -738,6 +752,15 @@ class NativeScheduler:
                 replace_existing=True,
                 max_instances=1,
                 coalesce=True,
+                # The run is taken however late it is. APScheduler's default
+                # grace is one second, so a run that came due while the
+                # machine was asleep was dropped with "was missed by ..." and
+                # the next one was a full hour later: a creator who opened the
+                # studio, slept the laptop and woke it an hour later got no
+                # backup, no reaction folding and no retention cleanup. With
+                # coalesce a sleep of any length is caught up by one run, and
+                # retention.py still decides what is actually due.
+                misfire_grace_time=MISFIRE_GRACE,
             )
             self.scheduler.start()
             logger.info("Local background cadence scheduler started.")
