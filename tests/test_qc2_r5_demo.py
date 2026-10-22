@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from studio.backend import app as app_module  # noqa: E402
-from studio.backend import database, onboarding, paths  # noqa: E402
+from studio.backend import database, insights, onboarding, paths  # noqa: E402
 
 
 @pytest.fixture
@@ -66,7 +66,16 @@ def test_posts_patterns_and_outbound_have_data(demo):
 
     patterns = demo.get("/api/v1/insights/patterns").json()
     assert patterns["posts_compared"] >= 7, patterns
-    assert patterns["patterns"], f"Patterns has nothing to compare in demo mode: {patterns['not_enough_posts']}"
+    # The demo seeds seven posts and one pattern now needs eight a side
+    # (results.MIN_PER_SIDE, batch T2: Patterns published at three while the
+    # Evidence panel suppressed the same split at eight). So the demo shows
+    # the honest empty state, which must name every test it could not run and
+    # say how many posts each would need.
+    assert not patterns["patterns"]
+    assert len(patterns["not_enough_posts"]) == len(insights.PATTERNS)
+    for line in patterns["not_enough_posts"]:
+        assert line["difference"]["verdict"] == "too_few_posts"
+        assert line["difference"]["min_per_side"] == patterns["min_per_side"]
 
     outbound = demo.get("/api/v1/insights/outbound").json()
     assert outbound != {} and _count("SELECT COUNT(*) FROM outbound_engagements") == len(database.DEMO_OUTBOUND)

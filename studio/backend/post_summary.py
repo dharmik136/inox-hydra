@@ -39,6 +39,11 @@ import sqlite3
 import threading
 from typing import Any, Dict, Iterable, List, Optional
 
+try:
+    from . import results
+except ImportError:
+    import results
+
 # The Posts screen lists this many people per post, commenters first.
 TOP_PEOPLE = 12
 
@@ -47,13 +52,14 @@ TOP_PEOPLE = 12
 READING_AT_HOURS = 48.0
 READING_WINDOW = (36.0, 72.0)
 
-# The tier cut points, as crm.qualification_tier draws them. Kept here as
-# numbers so the summary does not import the CRM; a test holds them equal.
-VIP_SCORE = 80.0
-QUALIFIED_SCORE = 60.0
+# The tier cut points and who counts as qualified are results.py's, which the
+# CRM reads too, so the same person cannot be qualified on one screen and not
+# on another. They were written out as numbers in four files.
+VIP_SCORE = results.VIP_SCORE
+QUALIFIED_SCORE = results.QUALIFIED_SCORE
 
 # Lead statuses that mean the creator went on to talk to the person.
-CONVERSATION_STATUSES = ("ENGAGED", "CONVERTED")
+CONVERSATION_STATUSES = results.CONVERSATION_STATUSES
 
 # Lead ids are joined with the unit separator, which splits far faster than
 # JSON parses; a set of ids that contains it is stored as JSON after a record
@@ -233,7 +239,10 @@ def _engagement(people: List[sqlite3.Row]) -> Dict[str, Any]:
         "people": len(people),
         "commenters": sum(1 for p in people if p["commented"]),
         "vip": sum(1 for score in known if score >= VIP_SCORE),
-        "qualified": sum(1 for score in known if score >= QUALIFIED_SCORE),
+        # By the one rule: a person the creator is talking to is qualified
+        # whatever a keyword guess about their job title says. This counted
+        # scores only, while the topic table counted scores or stages.
+        "qualified": sum(1 for p in people if results.is_qualified(p["icp"], p["status"])),
         "icp_known": len(known),
         # Rounded so that the same scores give the same sum whichever order
         # they are added in, the fold's included.
@@ -246,29 +255,38 @@ def _engagement(people: List[sqlite3.Row]) -> Dict[str, Any]:
     }
 
 
+READING_FIELDS = ("age_hours", "impressions", "reactions", "comments", "reposts", "source")
+
+
 def _readings(conn, keys: Optional[List[str]]) -> Dict[str, Dict[str, Optional[str]]]:
     where, params = _in_clause(keys, "activity_urn")
     out: Dict[str, Dict[str, Optional[str]]] = {}
     # Closest to two days old; on a tie the earlier reading, which is the one
-    # Today chose when it read them in observed order.
+    # Today chose when it read them in observed order. Each reading carries
+    # the page it was read from: the feed card and the post's own analytics
+    # page count different things, and a figure that does not say which it
+    # came from cannot be compared with another.
     for r in _rows(
-            conn, f"SELECT activity_urn, age_hours, impressions, reactions, comments FROM post_metric_observations "
+            conn, f"SELECT activity_urn, {', '.join(READING_FIELDS)} FROM post_metric_observations "
             f"WHERE {where} AND age_hours BETWEEN ? AND ? ORDER BY activity_urn, observed_at, id",
             (*params, *READING_WINDOW)):
         entry = out.setdefault(r["activity_urn"], {"best": None, "latest": None})
         best = entry["best"]
         if best is None or abs(r["age_hours"] - READING_AT_HOURS) < abs(best["age_hours"] - READING_AT_HOURS):
-            entry["best"] = {k: r[k] for k in ("age_hours", "impressions", "reactions", "comments")}
-    # The latest reading; on a tie the one written last, as Today read it.
+            entry["best"] = {k: r[k] for k in READING_FIELDS}
+    # The latest reading, which is the post's figures: results.figures draws
+    # it the same way, preferring the post's own analytics page where two
+    # pages were read in the same hour.
     urns = keys if keys is not None else [
         r[0] for r in conn.execute("SELECT DISTINCT activity_urn FROM post_metric_observations")]
     for urn in urns:
         r = _rows(
-            conn, "SELECT age_hours, impressions, reactions, comments, observed_at FROM post_metric_observations "
-            "WHERE activity_urn = ? ORDER BY observed_at DESC, id DESC LIMIT 1", (urn,)).fetchone()
+            conn, f"SELECT {', '.join(READING_FIELDS)}, observed_at FROM post_metric_observations "
+            "WHERE activity_urn = ? ORDER BY observed_at DESC, "
+            "CASE source WHEN 'post_analytics' THEN 2 ELSE 1 END DESC, id DESC LIMIT 1", (urn,)).fetchone()
         if r is not None:
             entry = out.setdefault(urn, {"best": None, "latest": None})
-            entry["latest"] = {k: r[k] for k in ("age_hours", "impressions", "reactions", "comments", "observed_at")}
+            entry["latest"] = {k: r[k] for k in READING_FIELDS + ("observed_at",)}
     return {urn: {"reading_48h": json.dumps(e["best"]) if e["best"] else None,
                   "latest_reading": json.dumps(e["latest"]) if e["latest"] else None}
             for urn, e in out.items()}
@@ -612,6 +630,18 @@ def current(conn, keys: Optional[Iterable[str]] = None) -> Dict[str, Dict[str, A
     rest are computed for this read only and left marked, so a screen never
     waits on a capture in progress and a capture never waits long on it.
     """
+    # The people's scores first, because the counts below are of qualified and
+    # VIP people and a score whose inputs have changed is not one. Imported
+    # here: the CRM reads this module. Writing a score marks the posts that
+    # person engaged with, which the catch-up below then recomputes, so the
+    # two run in this order and not the other.
+    try:
+        from . import crm
+    except ImportError:
+        import crm
+    if not conn.in_transaction:
+        crm.scores_current(conn)
+
     fresh: Dict[str, Optional[Dict[str, Any]]] = {}
     if conn.execute("SELECT 1 FROM post_engagement WHERE stale != 0 LIMIT 1").fetchone():
         if not conn.in_transaction:

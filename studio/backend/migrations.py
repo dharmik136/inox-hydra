@@ -1353,6 +1353,76 @@ def _migrate_one_post_identity(cursor: sqlite3.Cursor) -> None:
     cursor.execute("UPDATE posts SET source = 'studio' WHERE source IS NULL")
 
 
+def _migrate_current_scores(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 27:
+    A lead's score is derived, not a snapshot, and says when it needs redoing.
+
+    icp_score was written once at capture and never recomputed. Measured on a
+    three year install: the stored scores said 0 of 49,142 people qualified
+    while the product's own engine, on the same headlines and the same
+    comments, qualified 11,767 of them, and every screen read the stored
+    number: "0 people qualified from 1417 posts".
+
+    So the column becomes a cache with a mark beside it. These triggers mark a
+    lead whenever anything the score is computed from changes, and
+    crm.catch_up_scores recomputes the marked ones (a reader before it counts,
+    database.init_db after an upgrade). Every lead is marked here, so no score
+    written by an import, a seeding or an older build survives.
+
+    The per-post summary's readings are marked too: they now carry which page
+    each reading came from, which the old rows do not hold.
+    """
+    columns = {row[1] for row in cursor.execute("PRAGMA table_info(leads)")}
+    if "icp_stale" not in columns:
+        cursor.execute("ALTER TABLE leads ADD COLUMN icp_stale INTEGER NOT NULL DEFAULT 0")
+    # Partial, so finding the marked leads costs nothing when none are marked,
+    # which is the normal case: a full scan of 49,142 rows is 3 ms and this is
+    # read on every screen that counts people.
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_leads_score_stale ON leads(icp_stale) WHERE icp_stale != 0")
+    # Who the person is, which the score's seniority and company weights read.
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS lead_score_profile_changed
+        AFTER UPDATE OF headline, company ON leads
+        WHEN OLD.headline IS NOT NEW.headline OR OLD.company IS NOT NEW.company
+        BEGIN
+            UPDATE leads SET icp_stale = 1 WHERE id = NEW.id AND icp_stale = 0;
+        END
+    """)
+    # A score written by anything but the engine, including an import, a demo
+    # seeding and this migration's own backfill.
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS lead_score_added AFTER INSERT ON leads
+        BEGIN
+            UPDATE leads SET icp_stale = 1 WHERE id = NEW.id AND icp_stale = 0;
+        END
+    """)
+    # The engagements the score is the best of. An engagement being removed
+    # does not mark anything: the only thing that removes one is the retention
+    # fold, which keeps the reaction as a count and the person's tier as it
+    # was then (retention.py), and re-deriving the score from the rows it left
+    # would quietly recompute a person from less evidence than was observed.
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS lead_score_interaction_added
+        AFTER INSERT ON lead_interactions
+        BEGIN
+            UPDATE leads SET icp_stale = 1
+            WHERE id = CAST(NEW.lead_id AS TEXT) AND icp_stale = 0;
+        END
+    """)
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS lead_score_interaction_changed
+        AFTER UPDATE OF lead_id, interaction_type, comment_text ON lead_interactions
+        BEGIN
+            UPDATE leads SET icp_stale = 1
+            WHERE id IN (CAST(OLD.lead_id AS TEXT), CAST(NEW.lead_id AS TEXT)) AND icp_stale = 0;
+        END
+    """)
+    cursor.execute("UPDATE leads SET icp_stale = 1 WHERE icp_stale = 0")
+    if cursor.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'post_engagement'").fetchone():
+        cursor.execute("UPDATE post_engagement SET stale = stale | 2 WHERE (stale & 2) = 0")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1380,6 +1450,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (25, "A day's members reached is not measured, so an invented 0 is cleared", _MIGRATION_25_UNREAD_REACH),
     (26, "One identity for a post: every publication has its post, and the dead queue is gone",
      _migrate_one_post_identity),
+    (27, "A lead's score is recomputed when what it is computed from changes", _migrate_current_scores),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

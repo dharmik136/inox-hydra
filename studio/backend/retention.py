@@ -47,7 +47,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import evidence_briefing, onboarding, paths, post_summary, sqlite_open, support
+    from . import evidence_briefing, onboarding, paths, post_summary, results, sqlite_open, support
     from .crm import QUALIFIED_THRESHOLD, VIP_THRESHOLD, reverse_crm
     from .database import get_db
     from .migrations import SCHEMA_VERSION
@@ -57,6 +57,7 @@ except ImportError:  # top-level import mode
     import onboarding
     import paths
     import post_summary
+    import results
     import sqlite_open
     import support
     from crm import QUALIFIED_THRESHOLD, VIP_THRESHOLD, reverse_crm
@@ -596,7 +597,12 @@ def _run_reactions(rule: Dict[str, str]) -> int:
                         post["icp_known"] += 1
                         post["icp_sum"] += float(row["icp"])
                         post["vip"] += 1 if row["icp"] >= VIP_THRESHOLD else 0
-                        post["qualified"] += 1 if row["icp"] >= QUALIFIED_THRESHOLD else 0
+                    # Qualified by the one rule (results.is_qualified, batch
+                    # T2), which counts the stage the creator put a person in
+                    # as well as their score. Counted here by the score only,
+                    # a fold dropped the people the creator is talking to from
+                    # every post's qualified count.
+                    post["qualified"] += 1 if results.is_qualified(row["icp"], row["status"]) else 0
                     post["conversations"] += 1 if (row["status"] or "") in CONVERSATION_STATUSES else 0
                 person = people.setdefault(str(row["lead_id"]), {"yours": 0, "not_yours": 0, "unknown": 0,
                                                                  "at": "", "topics": set()})

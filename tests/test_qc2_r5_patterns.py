@@ -24,7 +24,10 @@ def _posts(client, count):
 def test_each_form_is_compared_once_without_statistics_words(studio):
     client = studio["client"]
     confirm_identity(client)
-    _posts(client, 12)
+    # Eight posts a side, which is what both lists now ask for (batch T2:
+    # this screen published at three while the Evidence panel suppressed the
+    # same split at eight).
+    _posts(client, 18)
     page = studio["page"]
     page.goto(studio["url"] + "/#/patterns", wait_until="networkidle")
     page.wait_for_selector("text=Went with more or fewer reactions")
@@ -32,7 +35,8 @@ def test_each_form_is_compared_once_without_statistics_words(studio):
     for jargon in ("Binary feature comparisons", "Feature Contrasts", "ABSTAIN", "PER ARM"):
         assert jargon not in body, f"{jargon!r} is still on the screen"
     assert body.count("An opening line that asks a question") == 1, body
-    assert "fewer than 8 posts on one side" in body, body
+    assert "Each side needs 8 posts before a line is shown" in body, body
+    assert "Settled means" in body, body
     assert "THE TALLEST BAR IS" in body, body
 
 

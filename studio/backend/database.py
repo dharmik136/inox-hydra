@@ -581,13 +581,18 @@ def init_db() -> None:
         # left marked are computed now, by today's code, so the first screen
         # opened after an update reads them ready (1.3 s at three years).
         try:
-            from . import post_summary, universal_search
+            from . import crm, post_summary, universal_search
         except ImportError:
+            import crm
             import post_summary
             import universal_search
         try:
             conn = get_db()
             try:
+                # The scores migration 27 marked, before the summary, which
+                # counts how many of each post's people qualify (548 ms for
+                # 49,142 leads at three years).
+                crm.catch_up_scores(conn)
                 post_summary.catch_up(conn, batch=500)
                 universal_search.refold_pending(conn)
             finally:

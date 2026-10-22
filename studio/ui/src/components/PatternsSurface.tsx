@@ -73,13 +73,20 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
     settled_without_reactions?: number;
     settled_without_reactions_from_archive?: number;
   };
-  const clean = patterns.patterns.filter((p) => !p.different_period);
+  // A line whose own verdict is "none" is a difference too small for this
+  // creator's posts to separate (results.difference), and it is said rather
+  // than printed as a finding: a 1.1x line over 1,417 posts read as a rule to
+  // follow when it is noise.
+  const verdict = (p: PatternFinding) => p.difference?.verdict;
+  const clean = patterns.patterns.filter((p) => !p.different_period && verdict(p) !== "none");
+  const same = patterns.patterns.filter((p) => !p.different_period && verdict(p) === "none");
   const confounded = patterns.patterns.filter((p) => p.different_period);
   // The same seven forms were compared twice on this screen: here, with 3
   // posts a side, and again below as "Binary feature comparisons", with 8 a
-  // side and the words ABSTAIN and PER ARM. One list now, and a line with
-  // fewer than the stricter count on a side says it is an early sign.
-  const firm = contrasts?.min_arm_size ?? null;
+  // side and the words ABSTAIN and PER ARM. One list now, and one number of
+  // posts a side (results.MIN_PER_SIDE), so a line this screen publishes is
+  // one the Evidence panel publishes too.
+  const settled = patterns.settled_after ?? null;
   const early = new Set(
     (contrasts?.contrasts ?? []).filter((c) => (c.status as string) === "not_enough_data").map((c) => c.key),
   );
@@ -93,9 +100,16 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
       <h1 id="patterns-title" className="studio-title mt-2">What your own posts suggest</h1>
       <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
         Each line compares your posts that have a form with those that do not, by median reactions, across your{" "}
-        {patterns.posts_compared} posts at least a week old with reactions recorded. These are differences between your
-        posts, not causes: treat a large one as something to try, not a rule.
-        {firm !== null && ` A line marked early has fewer than ${firm} posts on one side, so it may not hold.`}
+        {patterns.posts_compared} posts whose figures have settled, with reactions recorded. These are differences
+        between your posts, not causes: treat a large one as something to try, not a rule.
+        {/* Both lists now ask for the same number of posts a side, so nothing
+            is published that the panel beside it would suppress, and a line
+            below that number is listed as not enough rather than tagged. */}
+        {` Each side needs ${patterns.min_per_side} posts before a line is shown.`}
+        {settled &&
+          (settled.measured
+            ? ` Settled means ${Math.round(settled.hours / 24)} days or older, measured from your own ${settled.posts} posts' readings.`
+            : ` Settled means ${Math.round(settled.hours / 24)} days or older, which the studio assumes until your readings can say.`)}
       </p>
       {/* Posts with no reactions recorded are left out because of that, not
           because of their age, and the screen says which. */}
@@ -116,12 +130,28 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
               <PatternRow key={p.key} pattern={p} early={early.has(p.key)} />
             ))}
           </ul>
+        ) : same.length ? (
+          <Note>NO FORM WENT WITH A DIFFERENCE YOUR OWN POSTS CAN SEPARATE.</Note>
         ) : confounded.length ? (
           <Note>NO PATTERN YET HAS POSTS FROM THE SAME PERIOD ON BOTH SIDES. THE LINES BELOW MAY BE ABOUT WHEN YOU POSTED.</Note>
         ) : (
           <Note>NO FORM HAS ENOUGH POSTS WITH REACTIONS RECORDED ON BOTH SIDES YET.</Note>
         )}
       </section>
+
+      {same.length > 0 && (
+        <section className="mt-6">
+          <p className="studio-label mb-1">No difference your own posts can separate</p>
+          <p className="mb-2 text-[12px] leading-snug text-ink-muted">
+            These forms were compared and came out close enough to be the same. Nothing here is a finding.
+          </p>
+          <ul className="flex flex-col divide-y divide-edge border-y border-edge">
+            {same.map((p) => (
+              <PatternRow key={p.key} pattern={p} early={early.has(p.key)} muted />
+            ))}
+          </ul>
+        </section>
+      )}
 
       {confounded.length > 0 && (
         <section className="mt-6">

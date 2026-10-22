@@ -61,11 +61,19 @@ def _post(text, reactions, when=None, salt=0, comments=None):
     return urn
 
 
-def _engaged(lead_id, name, urn, *kinds, score=80.0):
+def _engaged(lead_id, name, urn, *kinds, headline="Founder at Northwind Cloud"):
+    """
+    One person and their engagements. The headline carries the score, because
+    since batch T2 a score written into the column by hand does not survive:
+    it is recomputed from the headline, the company and the engagements
+    whenever any of them changes (crm.catch_up_scores). "Founder at Northwind
+    Cloud" with a question in the comment scores 71.5, which is qualified;
+    "Intern" scores 28, which is not.
+    """
     conn = _db()
     with conn:
-        conn.execute("INSERT OR IGNORE INTO leads (id, name, full_name, icp_score) VALUES (?, ?, ?, ?)",
-                     (lead_id, name, name, score))
+        conn.execute("INSERT OR IGNORE INTO leads (id, name, full_name, headline, company) VALUES (?, ?, ?, ?, ?)",
+                     (lead_id, name, name, headline, "Northwind Cloud" if "at " in headline else None))
         for kind in kinds:
             conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, comment_text) "
                          "VALUES (?, ?, ?, ?)", (lead_id, urn, kind, "A real question?" if kind == "COMMENT" else None))
@@ -105,7 +113,7 @@ def test_no_rate_exceeds_its_definition(studio):
     urn = _post("Why we moved our database to Postgres", 50)
     for k in range(3):
         _engaged(f"lead-founder-{k}", f"Founder {k}", urn, "COMMENT", "LIKE")
-    _engaged("lead-student", "A Student", urn, "LIKE", score=10.0)
+    _engaged("lead-student", "A Student", urn, "LIKE", headline="Intern")
     for t in _get(studio, "/api/v1/insights/attribution")["topics"]:
         rate = t["lead_conversion_rate"]
         assert rate is None or 0 <= rate <= 1, t

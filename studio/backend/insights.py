@@ -31,19 +31,20 @@ except ImportError:
     from text_cut import clip
 
 try:
-    from . import contrast_engine, onboarding, post_identity, post_summary
+    from . import onboarding, post_identity, post_summary, results
     from .database import get_db
 except ImportError:
-    import contrast_engine
     import onboarding
     import post_identity
     import post_summary
+    import results
     from database import get_db
 
-# A post's reactions and comments have mostly arrived by a week. Before that
-# a low number may just be a young post, so it is not called weak.
-SETTLED_AFTER_HOURS = 7 * 24
-MIN_FOR_MEDIAN = 3
+# What worked, how old a post must be before it is judged, and the creator's
+# own median are results.py's to define, so that the Posts screen, the
+# Evidence panel and Analytics cannot answer differently. This module reads
+# them and adds the people each post brought.
+MIN_FOR_MEDIAN = results.MIN_FOR_MEDIAN
 
 # ---------------------------------------------------------------------------
 # One page of posts
@@ -78,12 +79,6 @@ def paging(total: int, size: int, start: int, returned: int) -> Dict[str, Any]:
             "has_more": start + returned < total}
 
 
-def _age_hours(published_at: Optional[str]) -> Optional[float]:
-    if not published_at:
-        return None
-    return (datetime.now(timezone.utc) - datetime.fromisoformat(published_at)).total_seconds() / 3600.0
-
-
 def _excerpt(text: Optional[str], limit: int = 140) -> Optional[str]:
     return clip(" ".join((text or "").split()), limit) or None
 
@@ -92,16 +87,24 @@ def posts_overview(limit: Optional[int] = None, offset: Optional[int] = None) ->
     size, start = page_bounds(limit, offset)
     conn = get_db()
     try:
+        # What worked, over the whole history: the creator's own median, the
+        # best and worst posts, and the settle rule, all from the one engine,
+        # so the Posts screen cannot name a post Analytics does not.
+        settle = results.settled_after_hours(conn)
+        read_all = results.figures(conn)
+        worked = results.best(conn, limit=2, settled_after=settle["hours"], read=read_all)
         # Every post's figures, which the usual, the best two and the counts
         # below are all read from, and which carry no text: the text of 1,417
         # posts was most of the 2,201 KB this answer used to be.
         posts = [dict(r) for r in conn.execute(
-            "SELECT activity_urn, published_at, published_at_source, reactions, comments, impressions "
-            "FROM own_posts ORDER BY published_at DESC")]
+            "SELECT activity_urn, published_at, published_at_source FROM own_posts ORDER BY published_at DESC")]
         # The page itself, newest first, with the text the screen shows.
         page = [dict(r) for r in conn.execute(
-            "SELECT activity_urn, text, published_at, published_at_source, reactions, comments, reposts, impressions "
+            "SELECT activity_urn, text, published_at, published_at_source "
             "FROM own_posts ORDER BY published_at DESC LIMIT ? OFFSET ?", (size, start))]
+        # One reading per post, with the page it was read from named, and
+        # where the post sits among the creator's own posts at the same age.
+        pairs = results.pair(conn, [p["activity_urn"] for p in page], read=read_all)
 
         # Who engaged with each post on the page, from the per-post summary.
         # Every interaction used to be read into Python on every load: 1.9 s
@@ -120,43 +123,47 @@ def posts_overview(limit: Optional[int] = None, offset: Optional[int] = None) ->
     finally:
         conn.close()
 
-    settled = [p for p in posts if (_age_hours(p["published_at"]) or 0) >= SETTLED_AFTER_HOURS]
+    settled = [p for p in posts if results.is_settled(p["published_at"], settle["hours"])]
+    usual = worked["usual"]
 
-    def median_of(metric):
-        values = [p[metric] for p in settled if p[metric] is not None]
-        return (statistics.median(values), len(values)) if len(values) >= MIN_FOR_MEDIAN else (None, len(values))
-
-    usual = {m: median_of(m) for m in ("reactions", "comments", "impressions")}
-
-    # Settled posts with no figures at all, usually from LinkedIn's archive,
-    # which carries none. Counted so the screen can say why there is no
-    # usual, rather than blaming the age of posts that are years old.
-    unmeasured = [p for p in settled if all(p[m] is None for m in ("reactions", "comments", "impressions"))]
-
-    def against_usual(post, age):
-        ratios = {}
-        for metric, (median, _n) in usual.items():
-            if median and post[metric] is not None and age is not None and age >= SETTLED_AFTER_HOURS:
-                ratios[metric] = round(post[metric] / median, 2)
-        return ratios
+    # Settled posts no figure was ever read for, usually from LinkedIn's
+    # archive, which carries none. Counted so the screen can say why there is
+    # no usual, rather than blaming the age of posts that are years old.
+    unmeasured = [p for p in settled
+                  if all((read_all.get(p["activity_urn"]) or {}).get(m) is None
+                         for m in results.COMPARED_METRICS)]
 
     out = []
     for post in page:
-        age = _age_hours(post["published_at"])
-        engaged = engagers.get(onboarding._activity_id(post["activity_urn"]))
-        ratios = against_usual(post, age)
+        urn = post["activity_urn"]
+        age = results.age_hours(post["published_at"])
+        engaged = engagers.get(onboarding._activity_id(urn))
+        figure = read_all.get(urn) or {}
+        settled_now = results.is_settled(post["published_at"], settle["hours"])
+        ratios = results.against_usual(figure, usual) if settled_now else {}
 
         out.append({
-            "activity_urn": post["activity_urn"],
+            "activity_urn": urn,
             "excerpt": _excerpt(post["text"]),
             "published_at": post["published_at"],
             "age_days": round(age / 24, 1) if age is not None else None,
-            "settled": age is not None and age >= SETTLED_AFTER_HOURS,
-            "reactions": post["reactions"],
-            "comments": post["comments"],
-            "reposts": post["reposts"],
-            "impressions": post["impressions"],
+            "settled": settled_now,
+            "reactions": figure.get("reactions"),
+            "comments": figure.get("comments"),
+            "reposts": figure.get("reposts"),
+            "impressions": figure.get("impressions"),
+            # Which page these figures were read from, and when. Posts and
+            # Analytics showed the stored snapshot while Today showed a
+            # reading, so one post read 19,943 impressions on one screen and
+            # 50,118 on the other in the same minute.
+            "figures_source": figure.get("source"),
+            "figures_read_at": figure.get("read_at"),
             "against_usual": ratios or None,
+            # Reach and response together: a post of this creator's sat at p5
+            # for impressions and p86 for reactions at the same moment, and
+            # either number alone reads as the opposite of the truth. None
+            # when the studio has no reading at a comparable age.
+            "reach_and_response": pairs.get(urn),
             # Commenters first, then by name, at most post_summary.TOP_PEOPLE.
             "people": post_summary.people_of(engaged),
             # Reactions older than 24 months are kept as counts once the
@@ -175,20 +182,26 @@ def posts_overview(limit: Optional[int] = None, offset: Optional[int] = None) ->
             "url": post_identity.linkedin_permalink(post["activity_urn"]),
         })
 
-    # The two settled posts that did best against your own median reactions,
-    # which is what "repurpose the top two" means: forms that already worked.
-    # Read from the whole history, not from the page, so the same two posts
-    # are named whichever page the screen is showing.
-    with_ratio = [(p["activity_urn"], against_usual(p, _age_hours(p["published_at"]))) for p in posts]
-    ranked = sorted(((urn, r["reactions"]) for urn, r in with_ratio if "reactions" in r),
-                    key=lambda pair: pair[1], reverse=True)
     return {
         "status": "success",
         "posts": out,
         **paging(len(posts), size, start, len(out)),
-        "usual": {m: {"median": v[0], "posts": v[1]} for m, v in usual.items()},
-        "best": [urn for urn, _ratio in ranked[:2]],
-        "settled_after_days": SETTLED_AFTER_HOURS // 24,
+        "usual": usual,
+        # The settled posts that did best and worst against your own median
+        # reactions, which is what "repurpose the top two" means: forms that
+        # already worked. Read from the whole history, not from the page, so
+        # the same posts are named whichever page the screen is showing, and
+        # from the one engine, so Analytics names them too.
+        "best": worked["best"],
+        "worst": worked["worst"],
+        "metric": worked["metric"],
+        "ranked_posts": worked["ranked_posts"],
+        # How old a post of this creator's has to be before its figures are
+        # judged: measured from their own readings where they can say
+        # (settled.measured), and the week the studio used to assume where
+        # they cannot.
+        "settled_after": settle,
+        "settled_after_days": round(settle["hours"] / 24, 1),
         "settled_without_figures": len(unmeasured),
         "settled_without_figures_from_archive": sum(1 for p in unmeasured if p["published_at_source"] == "archive"),
     }
@@ -290,93 +303,67 @@ def outbound_overview() -> Dict[str, Any]:
 # ---------------------------------------------------------------------------
 #
 # Each pattern splits your settled posts in two (has it, does not) and compares
-# the median reactions of each side. A pattern is shown only when both sides
-# have at least MIN_PER_SIDE posts, and always with both counts, because on a
-# few dozen posts a difference is a lead to try, not a finding. The wording is
-# "went with", never "causes": this compares posts, it runs no experiment.
+# the median reactions of each side. The features, the minimum per side and
+# what counts as a difference are results.py's, so that this screen cannot
+# publish a line the Evidence panel suppresses on the same posts: it asked for
+# 3 posts a side where the panel asked for 8. Every line carries both counts
+# and a verdict, which may be "none": on a few dozen posts a difference is a
+# lead to try, not a finding. The wording is "went with", never "causes": this
+# compares posts, it runs no experiment.
 
-import re as _re
-import unicodedata as _unicodedata
-
-MIN_PER_SIDE = 3
-
-_ANNOUNCEMENT = _re.compile(
-    r"\b(excited|thrilled|happy to share|pleased to|proud to|congratulations|new position|starting a new)\b",
-    _re.IGNORECASE)
-
-
-def opening_line(text: Optional[str]) -> str:
-    """What shows before anything else: the first line, or the first sentence of a one-line post."""
-    lines = [l.strip() for l in (text or "").split("\n") if l.strip()]
-    if not lines:
-        return ""
-    first = lines[0]
-    if len(lines) == 1:
-        match = _re.match(r"(.{1,200}?[.!?])(\s|$)", first)
-        if match:
-            first = match.group(1)
-    return first
-
-
-def _opens_with_symbol(line: str) -> bool:
-    return bool(line) and _unicodedata.category(line[0]) == "So"
-
-
-def _has_bold_unicode(text: str) -> bool:
-    return any(0x1D400 <= ord(ch) <= 0x1D7FF for ch in text)
-
-
-PATTERNS = [
-    ("short_opening", "An opening line of 60 characters or fewer",
-     lambda text, opening: len(opening) <= 60),
-    ("question_opening", "An opening line that asks a question",
-     lambda text, opening: "?" in opening),
-    ("symbol_opening", "An opening that starts with an emoji or symbol",
-     lambda text, opening: _opens_with_symbol(opening)),
-    ("announcement", "An announcement (excited, thrilled, happy to share, new position)",
-     lambda text, opening: bool(_ANNOUNCEMENT.search(opening))),
-    ("bold_unicode", "Bold or styled Unicode letters",
-     lambda text, opening: _has_bold_unicode(text)),
-    ("hashtags", "Hashtags",
-     lambda text, opening: "#" in text),
-    ("long_post", "More than 1,500 characters",
-     lambda text, opening: len(text) > 1500),
-]
+PATTERNS = results.BINARY_FEATURES
+MIN_PER_SIDE = results.MIN_PER_SIDE
+opening_line = results.opening_line
 
 
 def patterns_overview() -> Dict[str, Any]:
     conn = get_db()
     try:
+        settle = results.settled_after_hours(conn)
+        read = results.figures(conn)
         posts = [dict(r) for r in conn.execute(
-            "SELECT text, published_at, reactions FROM own_posts WHERE reactions IS NOT NULL AND text IS NOT NULL")]
+            "SELECT activity_urn, text, published_at FROM own_posts WHERE text IS NOT NULL")]
         # Left out because no reactions were ever read for them, as for every
         # post imported from LinkedIn's archive. Not because of their age.
         unread = [dict(r) for r in conn.execute(
-            "SELECT published_at, published_at_source FROM own_posts WHERE reactions IS NULL")]
+            "SELECT activity_urn, published_at, published_at_source FROM own_posts")]
     finally:
         conn.close()
-    settled = [p for p in posts if (_age_hours(p["published_at"]) or 0) >= SETTLED_AFTER_HOURS]
-    unread = [p for p in unread if (_age_hours(p["published_at"]) or 0) >= SETTLED_AFTER_HOURS]
+
+    def reactions_of(post):
+        return (read.get(post["activity_urn"]) or {}).get("reactions")
+
+    settled = [p for p in posts if results.is_settled(p["published_at"], settle["hours"])
+               and reactions_of(p) is not None]
+    unread = [p for p in unread if results.is_settled(p["published_at"], settle["hours"])
+              and reactions_of(p) is None]
 
     found, too_few = [], []
-    for key, label, test in PATTERNS:
+    for key, label, test in results.BINARY_FEATURES:
         with_it, without, with_dates, without_dates = [], [], [], []
         for post in settled:
-            has = test(post["text"], opening_line(post["text"]))
-            (with_it if has else without).append(post["reactions"])
-            (with_dates if has else without_dates).append(datetime.fromisoformat(post["published_at"]).timestamp())
+            has = test(post["text"], results.opening_line(post["text"]))
+            (with_it if has else without).append(reactions_of(post))
+            (with_dates if has else without_dates).append(results.timestamp(post["published_at"]))
         entry = {"key": key, "label": label, "with_posts": len(with_it), "without_posts": len(without)}
-        if len(with_it) < MIN_PER_SIDE or len(without) < MIN_PER_SIDE:
+        if len(with_it) < results.MIN_PER_SIDE or len(without) < results.MIN_PER_SIDE:
+            entry["difference"] = results.difference(None, len(with_it), len(without))
             too_few.append(entry)
             continue
         a, b = statistics.median(with_it), statistics.median(without)
-        entry.update({"with_median": a, "without_median": b, "ratio": round(a / b, 2) if b else None})
+        ratio = round(a / b, 2) if b else None
+        entry.update({"with_median": a, "without_median": b, "ratio": ratio})
+        # What this line is allowed to say, including "none": the same cut as
+        # the Evidence panel's, so one screen cannot call a split notable
+        # while the other calls it nothing.
+        entry["difference"] = results.difference(ratio, len(with_it), len(without))
         # When the two sides come from different periods, the difference may
         # be about when rather than how. Measured on the first live install:
         # hashtags went with 2.7x the reactions, and the hashtag posts were
         # mostly from two years earlier, when the account and its audience
         # were different. Flagged rather than hidden.
-        entry.update(contrast_engine.different_periods(with_dates, without_dates))
+        entry.update(results.different_periods([d for d in with_dates if d],
+                                               [d for d in without_dates if d]))
         found.append(entry)
 
     found.sort(key=lambda e: abs((e["ratio"] or 1) - 1), reverse=True)
@@ -385,10 +372,13 @@ def patterns_overview() -> Dict[str, Any]:
         "posts_compared": len(settled),
         "settled_without_reactions": len(unread),
         "settled_without_reactions_from_archive": sum(1 for p in unread if p["published_at_source"] == "archive"),
-        "metric": "reactions",
+        "metric": results.RANKED_METRIC,
         "patterns": found,
         "not_enough_posts": too_few,
-        "min_per_side": MIN_PER_SIDE,
+        "min_per_side": results.MIN_PER_SIDE,
+        "settled_after": settle,
+        # Nothing here is a finding unless its own verdict says so.
+        "no_difference": results.NO_DIFFERENCE,
     }
 
 
