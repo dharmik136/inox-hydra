@@ -15,6 +15,13 @@ const STUDIO_COOKIE_ORIGINS = [
 const LOCAL_API_AUTH = STUDIO_ORIGIN + "/api/auth/cookies";
 const LOCAL_INGEST_URL = STUDIO_ORIGIN + "/api/analytics/ingest";
 
+// Which version of the studio's ingest contract this extension speaks.
+// studio/backend/ingest_contract.py holds the same number and the whole
+// contract in prose. Every write says it, so a studio newer than the
+// extension can tell the creator to press Reload once, instead of the two
+// sides disagreeing about a field name and losing captures quietly.
+const INGEST_CONTRACT_VERSION = 1;
+
 const STUDIO_TOKEN_COOKIE = "inox_studio_token";
 const STUDIO_TOKEN_HEADER = "X-Inox-Token";
 
@@ -509,9 +516,30 @@ const BUSY_WAIT_LEAST_MS = 50;
 const BUSY_WAIT_CAP_MS = 2000;
 // What is worth keeping: a write whose payload can arrive twice without
 // counting twice. A heartbeat or a read is about this moment and is not kept.
+//
+// This was one path of nine, so the creator's engagers survived a busy studio
+// and their posts, their own posts' figures, their comments and reactions and
+// their profile did not. Every path here carries the creator's own data and
+// is idempotent on the studio's side: an upsert keyed on the thing itself, so
+// the same payload arriving twice updates when it was last seen and never
+// counts twice. The bookkeeping paths (heartbeat, capture log, schema drift,
+// import events) are about a moment that has passed and are not kept.
 const KEEP_WHEN_BUSY = new Set([
-  "/api/v1/crm/interactions/ingest"
+  "/api/v1/crm/interactions/ingest",
+  "/api/v1/self/posts/ingest",
+  "/api/v1/self/posts/analytics",
+  "/api/v1/self/outbound/ingest",
+  "/api/v1/identity/observe",
+  "/api/v1/posts/bind-urn",
+  "/api/v1/bridge/voyager-ingest",
+  "/api/analytics/ingest"
 ]);
+// Draining used to happen only on browser start-up or after a later
+// successful relay, so a creator who closed LinkedIn with captures waiting
+// kept them until the next browser start. The alarms permission was already
+// in the manifest and unused.
+const DRAIN_ALARM = "studio_drain_kept";
+const DRAIN_EVERY_MINUTES = 1;
 // Captures kept at once. A studio left busy or closed for a day must not
 // grow the extension's storage without limit, so the newest are kept.
 const KEPT_CAPTURES_KEY = "keptCaptures";
@@ -545,7 +573,7 @@ async function askStudio(path, method, body) {
   } catch (err) {
     // No answer at all: the studio may have taken the write and never
     // replied, which is why only a repeatable payload is kept below.
-    return { ok: false, httpStatus: 0, data: {}, busy: true, error: err.message };
+    return { ok: false, httpStatus: 0, data: {}, busy: true, later: true, error: err.message };
   }
   const data = await response.json().catch(() => ({}));
   const retryAfter = response.headers && response.headers.get ? response.headers.get("Retry-After") : null;
@@ -554,6 +582,14 @@ async function askStudio(path, method, body) {
     httpStatus: response.status,
     data,
     busy: response.status === 503,
+    // Whether asking again can help. The studio's database being busy is one
+    // reason; a browser the studio has not been paired with yet (401, 403)
+    // and a studio that is restarting (any 5xx, or no answer at all) are the
+    // others, and all of them end as soon as the creator opens the studio.
+    // A 409, 400 or 422 is the studio deciding, and asking again cannot
+    // change its mind: those used to throw away the whole waiting queue.
+    later: response.status === 0 || response.status === 401 || response.status === 403
+      || response.status >= 500,
     retryAfter,
     error: response.ok ? null : "the studio answered " + response.status
   };
@@ -582,7 +618,11 @@ function writeKeptCaptures(kept) {
   });
 }
 
-async function keepCapture(path, body) {
+// One queue, one writer. Keeping and draining both read the whole array and
+// write it back, so a drain that started while a capture was being kept
+// overwrote it and the capture was lost. Both now take a turn in the same
+// chain below.
+async function keepCaptureNow(path, body) {
   const kept = await readKeptCaptures();
   kept.push({ path, body, at: new Date().toISOString() });
   if (kept.length > KEPT_CAPTURES_LIMIT) {
@@ -590,41 +630,178 @@ async function keepCapture(path, body) {
       " captures are waiting for the studio; the oldest are dropped.");
   }
   await writeKeptCaptures(kept);
+  await afterQueueChanged();
 }
 
-// One drain at a time, so two relays finishing together cannot send the
-// same kept capture twice.
-let sendingKept = Promise.resolve();
+// One turn at a time, so two relays finishing together cannot send the same
+// kept capture twice, and a keep cannot race a drain.
+let queueTurn = Promise.resolve();
+
+function inTurn(work) {
+  queueTurn = queueTurn.then(work).catch(() => {});
+  return queueTurn;
+}
+
+function keepCapture(path, body) {
+  return inTurn(() => keepCaptureNow(path, body));
+}
 
 function sendKeptCapturesLater() {
-  sendingKept = sendingKept.then(sendKeptCaptures).catch(() => {});
-  return sendingKept;
+  return inTurn(sendKeptCaptures);
 }
 
-// Sends what was kept, oldest first, and stops at the first refusal so the
-// rest stay for the next time. A capture the studio refuses for a reason of
-// its own (it is not busy) is dropped, because asking again cannot help.
+// Sends what was kept, oldest first. It stops at the first answer that asking
+// again could fix, so the rest stay for the next time; this used to stop only
+// on a busy studio and shift everything else off the front, which threw the
+// whole queue away when the real problem was a browser the studio had not
+// been paired with. A capture the studio has decided about is dropped, and
+// the reason is remembered so the creator can be told.
 async function sendKeptCaptures() {
   const kept = await readKeptCaptures();
-  if (kept.length === 0) return 0;
+  if (kept.length === 0) {
+    await afterQueueChanged();
+    return 0;
+  }
   let sent = 0;
   while (kept.length > 0) {
     const item = kept[0];
     const answer = await askStudio(item.path, "POST", item.body);
-    if (answer.busy) break;
+    if (answer.later) break;
     kept.shift();
     if (answer.ok) sent += 1;
+    else await rememberRefusal(item.path, answer);
   }
   await writeKeptCaptures(kept);
+  await afterQueueChanged();
   return sent;
 }
 
+// -------------------------------------------------------------
+// What is waiting, and what was refused: said once, where it can be read
+// -------------------------------------------------------------
+// Nothing in the product could say that work was waiting. The count goes to
+// the studio on a heartbeat, so a screen can show it, and into the
+// extension's own storage, so the side panel can show it without the studio.
+const WAITING_KEY = "waitingCaptures";
+const LAST_REFUSAL_KEY = "lastRefusal";
+const RELOAD_NOTICE_KEY = "reloadNoticeFor";
+
+function storeLocal(values) {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.set(values, () => resolve());
+    } catch (err) {
+      resolve();
+    }
+  });
+}
+
+function readLocal(key) {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(key, (items) => resolve((items && items[key]) || null));
+    } catch (err) {
+      resolve(null);
+    }
+  });
+}
+
+async function afterQueueChanged() {
+  const kept = await readKeptCaptures();
+  await storeLocal({ [WAITING_KEY]: { waiting: kept.length, oldest_at: kept.length ? kept[0].at : null } });
+  if (kept.length > 0) scheduleDrain();
+  else clearDrain();
+  reportWaiting(kept);
+}
+
+// A refusal the studio has decided on, kept so the side panel can name it.
+// Every one of these used to be discarded, including the one a creator meets
+// most: "import your posts first".
+async function rememberRefusal(path, answer) {
+  const data = (answer && answer.data) || {};
+  await storeLocal({
+    [LAST_REFUSAL_KEY]: {
+      path,
+      at: new Date().toISOString(),
+      httpStatus: answer.httpStatus,
+      reason: data.reason || "refused",
+      message: data.message || data.detail || answer.error || "The studio refused this capture.",
+      show: data.show !== false
+    }
+  });
+}
+
+// Tells the studio how many captures are waiting, so a screen can show the
+// number. It rides on the heartbeat, which already carries the version, and
+// is best effort: a studio that cannot be reached is the usual reason for a
+// queue in the first place.
+function reportWaiting(kept) {
+  studioFetch("/api/v1/bridge/heartbeat", {
+    method: "POST",
+    body: JSON.stringify({
+      extension_version: chrome.runtime.getManifest().version,
+      contract_version: INGEST_CONTRACT_VERSION,
+      page_kind: "service_worker",
+      waiting_captures: kept.length,
+      oldest_waiting_at: kept.length ? kept[0].at : null
+    })
+  }).then((response) => response.json().catch(() => ({})))
+    .then((answer) => {
+      const shake = answer && answer.handshake;
+      if (shake && shake.reload_required) noteReloadNeeded(shake);
+    })
+    .catch(() => {});
+}
+
+// The studio speaks a newer contract than this extension. Said once per
+// studio contract version, because an extension that needs reloading would
+// otherwise say so on every heartbeat for as long as the browser is open.
+async function noteReloadNeeded(shake) {
+  const seen = await readLocal(RELOAD_NOTICE_KEY);
+  if (seen === shake.contract_version) return;
+  await storeLocal({ [RELOAD_NOTICE_KEY]: shake.contract_version, studioHandshake: shake });
+  console.warn("[Studio Bridge] " + shake.message);
+}
+
+function scheduleDrain() {
+  try {
+    chrome.alarms.create(DRAIN_ALARM, { periodInMinutes: DRAIN_EVERY_MINUTES });
+  } catch (err) {
+    // Alarms are unavailable only if the permission was removed; the drain
+    // on the next successful relay still runs.
+  }
+}
+
+function clearDrain() {
+  try {
+    chrome.alarms.clear(DRAIN_ALARM);
+  } catch (err) {
+    // Nothing to clear.
+  }
+}
+
 chrome.runtime.onStartup.addListener(() => { sendKeptCapturesLater(); });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm && alarm.name === DRAIN_ALARM) sendKeptCapturesLater();
+});
+
+// Every write says which contract it speaks and which build sent it, so the
+// studio knows what it is talking to without the page script having to
+// remember to say. A body that names them already keeps its own values.
+function stamped(body) {
+  const payload = sanitizeTelemetryPayload(body) || {};
+  if (typeof payload !== "object" || Array.isArray(payload)) return payload;
+  if (payload.contract_version === undefined) payload.contract_version = INGEST_CONTRACT_VERSION;
+  if (payload.extension_version === undefined) {
+    payload.extension_version = chrome.runtime.getManifest().version;
+  }
+  return payload;
+}
 
 async function relayToStudio(message, path, sendResponse) {
   const method = message.method || "POST";
-  const body = message.body ? JSON.stringify(sanitizeTelemetryPayload(message.body)) : undefined;
-  let answer = { ok: false, httpStatus: 0, data: {}, busy: false, error: "not sent" };
+  const body = message.body ? JSON.stringify(stamped(message.body)) : undefined;
+  let answer = { ok: false, httpStatus: 0, data: {}, busy: false, later: false, error: "not sent" };
   for (let attempt = 1; attempt <= BUSY_ATTEMPTS; attempt += 1) {
     answer = await askStudio(path, method, body);
     if (!answer.busy || attempt === BUSY_ATTEMPTS) break;
@@ -636,23 +813,45 @@ async function relayToStudio(message, path, sendResponse) {
   // tests `response.status !== "success"`, so every relayed capture
   // resolved to null while appearing to succeed.
   if (answer.ok) {
+    const shake = answer.data && answer.data.handshake;
+    if (shake && shake.reload_required) noteReloadNeeded(shake);
     sendResponse({ status: "success", httpStatus: answer.httpStatus, data: answer.data });
     // Something got through, so anything kept has a chance now.
     sendKeptCapturesLater();
     return;
   }
-  if (answer.busy && KEEP_WHEN_BUSY.has(path)) {
+  // Anything the creator can act on is kept, not only a busy studio: an
+  // unpaired browser and a studio that is restarting both end as soon as the
+  // creator opens it, and the capture is the creator's either way.
+  if (answer.later && KEEP_WHEN_BUSY.has(path)) {
     await keepCapture(path, body);
+    const waiting = (await readLocal(WAITING_KEY)) || {};
     sendResponse({
       status: "error",
       httpStatus: answer.httpStatus,
       data: answer.data,
       kept: true,
-      error: "The studio is busy, so this capture is kept and sent again shortly."
+      waiting: waiting.waiting || 0,
+      error: answer.busy
+        ? "The studio is busy, so this capture is kept and sent again shortly."
+        : "Your studio could not be reached, so this capture is kept and sent again shortly."
     });
     return;
   }
-  sendResponse({ status: "error", httpStatus: answer.httpStatus, data: answer.data, error: answer.error });
+  // A refusal the studio decided on. The reason and the sentence travel back
+  // to whoever asked, and are remembered for the side panel: every one of
+  // them used to be collapsed to an error with nothing said.
+  await rememberRefusal(path, answer);
+  const refusal = answer.data || {};
+  sendResponse({
+    status: "error",
+    httpStatus: answer.httpStatus,
+    data: answer.data,
+    reason: refusal.reason || null,
+    message: refusal.message || refusal.detail || null,
+    show: refusal.show === true,
+    error: answer.error
+  });
 }
 
 // -------------------------------------------------------------

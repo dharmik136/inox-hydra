@@ -46,9 +46,11 @@ except ImportError:
 
 try:
     from . import post_summary
+    from . import ingest_contract
     from .database import get_db
 except ImportError:
     import post_summary
+    import ingest_contract
     from database import get_db
 
 # How recently the extension must have been heard from to count as connected.
@@ -1073,21 +1075,29 @@ def engagement_gate(engager_profile: Any, post_urn: Any, post_author: Any) -> Op
     """
     me = confirmed_vanity()
     if not me:
-        return "confirm your profile in Setup first, so the studio can tell your posts from other people's"
+        return ingest_contract.GATE_SETUP_FIRST
     if normalise_vanity(engager_profile) == me:
-        return "that is you"
+        return ingest_contract.GATE_THAT_IS_YOU
     if normalise_vanity(post_author) == me:
         return None
     wanted = _activity_id(post_urn)
-    if wanted:
-        conn = get_db()
-        try:
+    conn = get_db()
+    try:
+        if wanted:
             for row in conn.execute("SELECT activity_urn FROM own_posts"):
                 if _activity_id(row["activity_urn"]) == wanted:
                     return None
-        finally:
-            conn.close()
-    return "not on one of your posts"
+        # A post whose author could be read and is somebody else is somebody
+        # else's, whatever has been imported. Only when the author could not
+        # be read does the answer depend on the creator's own history, and a
+        # creator who has imported nothing then has something to do about it:
+        # "not on one of your posts" was both wrong and unactionable there.
+        if not normalise_vanity(post_author) and not conn.execute(
+                "SELECT 1 FROM own_posts LIMIT 1").fetchone():
+            return ingest_contract.GATE_IMPORT_FIRST
+    finally:
+        conn.close()
+    return ingest_contract.GATE_NOT_YOUR_POST
 
 
 # ---------------------------------------------------------------------------

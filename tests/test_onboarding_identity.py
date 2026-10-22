@@ -20,6 +20,7 @@ leads fill the CRM with people who never engaged with them.
 
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 
@@ -351,11 +352,18 @@ def test_no_timer_harvests_the_session():
     with open(path, encoding="utf-8") as handle:
         source = handle.read()
     code = "\n".join(line for line in source.splitlines() if not line.strip().startswith("//"))
-    assert "alarms.create" not in code, "an alarm is being created again"
-    assert "onAlarm" not in code, "something still runs on an alarm"
     assert 'alarms.clear("studio_periodic_sync")' in code, (
         "the alarm an earlier version registered is no longer cleared, and alarms outlive their code"
     )
+    # One alarm is allowed, and only one: the drain that sends captures the
+    # studio was too busy for. What may not happen on a schedule is the
+    # session sync, so the alarm's handler is read and must not reach it.
+    created = re.findall(r"alarms\.create\(\s*([A-Za-z_]+)", code)
+    assert created == ["DRAIN_ALARM"], f"an alarm other than the capture drain is created: {created}"
+    handlers = re.findall(r"alarms\.onAlarm\.addListener\((.{0,220})", code, re.S)
+    assert len(handlers) == 1, "more than one alarm handler"
+    for forbidden in ("syncActiveSessionToStudio", "li_at", "cookies"):
+        assert forbidden not in handlers[0], f"an alarm reaches {forbidden}"
 
 
 # ---------------------------------------------------------------------------
@@ -399,9 +407,13 @@ def test_before_setup_no_engager_is_a_lead(no_asha):
     """
     Without a confirmed creator the studio cannot tell whose post anything is,
     so it stores nothing and says where that gets fixed.
+
+    The refusal is the contract's 409 now, not a 200 the extension discarded:
+    the creator has something to do about it, so it reaches them.
     """
     result = _engager(post_author=ME)
-    assert result["status"] == "skipped" and "Setup" in result["reason"]
+    assert result["status"] == "refused" and result["reason"] == "setup_needed"
+    assert "Setup" in result["message"]
     assert _lead_count() == 0
 
 
@@ -416,7 +428,7 @@ def test_a_strangers_commenter_is_not_your_lead(no_asha):
 def test_you_are_never_your_own_lead(no_asha):
     _confirm()
     result = _engager(full_name="Priya Raman", linkedin_urn=f"https://www.linkedin.com/in/{ME}/", post_author=ME)
-    assert result["status"] == "skipped" and result["reason"] == "that is you"
+    assert result["status"] == "skipped" and result["reason"] == "that_is_you"
 
 
 def test_an_engager_on_your_post_is_a_lead(no_asha):

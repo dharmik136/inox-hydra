@@ -112,7 +112,7 @@ const chrome = {
                       remove: (k, cb) => { for (const key of [].concat(k)) delete storage[key]; if (cb) cb(); } },
              onChanged: event() },
   scripting: { getRegisteredContentScripts: async () => [], registerContentScripts: async () => {}, unregisterContentScripts: async () => {} },
-  alarms: { clear: () => {} },
+  alarms: { clear: () => {}, create: () => {}, onAlarm: { addListener: () => {} } },
   cookies: { get: (q, cb) => cb({ value: q.name === "li_at" ? "AQEDAlive" : "ajax:1" }), onChanged: { addListener: () => {} } },
   sidePanel: { open: async () => {} },
   webRequest: { onCompleted: { addListener: () => {} } },

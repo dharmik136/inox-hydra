@@ -18,6 +18,12 @@
  * A studio that answered with an error status resolves to
  * {status: "refused", httpStatus, detail}: it is running and said no, which a
  * notice must not describe as either success or "could not reach".
+ *
+ * A capture the worker kept for a studio that was busy resolves to
+ * {status: "kept", waiting}. That flag was dropped here, so the one thing the
+ * creator most needed to know, that their work is waiting and not lost, could
+ * not be said. The refusal's reason code and sentence come back with it, so a
+ * caller can both count the reason and show the sentence.
  */
 function studioApi(path, body, method) {
   return new Promise((resolve) => {
@@ -30,8 +36,19 @@ function studioApi(path, body, method) {
             return;
           }
           if (response.status !== "success") {
+            if (response.kept) {
+              resolve({ status: "kept", waiting: response.waiting || 0, message: response.error || "" });
+              return;
+            }
             resolve(response.httpStatus
-              ? { status: "refused", httpStatus: response.httpStatus, detail: (response.data && response.data.detail) || "" }
+              ? {
+                  status: "refused",
+                  httpStatus: response.httpStatus,
+                  detail: (response.data && response.data.detail) || "",
+                  reason: response.reason || null,
+                  message: response.message || (response.data && response.data.detail) || "",
+                  show: response.show === true
+                }
               : null);
             return;
           }
@@ -764,10 +781,30 @@ function maybeBindPostUrn() {
 
   studioApi("/api/v1/posts/bind-urn", { activity_urn: urn, post_text: body, post_author: postAuthorFor(document.body) })
     .then(result => {
-      if (result && result.status === "bound") {
+      if (!result) return;
+      if (result.status === "bound") {
         showInPageToast(
           "Inox Hydra: this post is now linked to your draft. Engagement on it will be attributed.",
           "success"
+        );
+        return;
+      }
+      // "ambiguous" means the studio holds more than one draft whose opening
+      // matches this post and will not guess. Only the creator can settle it,
+      // and nothing said so: this answer was read for "bound" and discarded.
+      if (result.status === "ambiguous" && !shownRefusals.ambiguous_bind) {
+        shownRefusals.ambiguous_bind = true;
+        showInPageToast(
+          "Inox Hydra: more than one of your drafts opens like this post, so it was not linked. " +
+          "Open the studio's Posts screen to say which one it is.",
+          "warning"
+        );
+        return;
+      }
+      if (result.status === "kept") {
+        showInPageToast(
+          "Inox Hydra: your studio was busy, so linking this post is waiting and will be sent again.",
+          "warning"
         );
       }
     })
@@ -789,9 +826,11 @@ setTimeout(maybeBindPostUrn, 2500);
 // -------------------------------------------------------------
 let lastCommentScrapeTime = 0;
 const knownEngagersSet = new Set();
-// Shown once per page, so a creator browsing the feed before Setup is told
-// once why nothing is captured, not on every post.
-let setupHintShown = false;
+// Shown once per page, per reason, so a creator browsing the feed before
+// Setup is told once why nothing is captured, not on every post. Keyed on the
+// reason code, because there is more than one refusal worth saying and saying
+// only the first of them is how "import your posts first" stayed invisible.
+const shownRefusals = {};
 
 /**
  * Identifies an engagement, not a person.
@@ -1231,30 +1270,43 @@ function observeAndCaptureEngagers() {
       // down or restarting was skipped on every later read of the page. They
       // are offered again after 30 s, not on the next read, so a studio that
       // is down is not asked every 4 s.
+      // A capture kept for a busy studio is decided: it will be sent again by
+      // the worker, so offering the person once more would queue them twice.
+      const decided = ["success", "skipped", "kept"];
       const undecided = identified
-        .filter((lead, i) => !answers[i] || (answers[i].status !== "success" && answers[i].status !== "skipped"))
+        .filter((lead, i) => !answers[i] || decided.indexOf(answers[i].status) < 0)
         .map((lead) => lead._key);
       if (undecided.length) {
         setTimeout(() => undecided.forEach((key) => knownEngagersSet.delete(key)), 30000);
       }
       const stored = answers.filter(a => a && a.status === "success").length;
+      const kept = answers.filter(a => a && a.status === "kept").length;
+      const waiting = answers.reduce((most, a) => (a && a.status === "kept" ? Math.max(most, a.waiting || 0) : most), 0);
       // Not running, or running and refusing this unpaired browser: either
       // way nothing was saved, which is what the notice below says.
       const unreachable = answers.filter(a => a === null ||
         (a.status === "refused" && (a.httpStatus === 401 || a.httpStatus === 403))).length;
-      const needsSetup = answers.some(a => a && a.status === "skipped" && /Setup/.test(a.reason || ""));
+      // Every refusal the studio asked to be shown, in its own words. This
+      // used to look for the word "Setup" in a reason the studio no longer
+      // worded that way, so the refusal a creator meets most, "import your
+      // posts first", fired no notice at all.
+      const toShow = answers.find(a => a && a.status === "refused" && a.show && a.message);
 
       if (stored > 0) {
         const note = skipped > 0 ? ` (${skipped} had no profile link)` : "";
-        showInPageToast(`Inox Hydra: ${stored} engager(s) on your post captured${note}.`, "success");
-      } else if (unreachable === answers.length) {
-        showInPageToast("Inox Hydra: could not reach your studio, so nothing was saved.", "warning");
-      } else if (needsSetup && !setupHintShown) {
-        setupHintShown = true;
+        const alsoKept = kept > 0 ? ` ${kept} are waiting for the studio.` : "";
+        showInPageToast(`Inox Hydra: ${stored} engager(s) on your post captured${note}.${alsoKept}`, "success");
+      } else if (kept > 0) {
         showInPageToast(
-          "Inox Hydra: confirm your profile in the studio's Setup screen to start capturing leads from your posts.",
+          `Inox Hydra: your studio was busy, so ${kept} capture(s) are kept and will be sent again. ` +
+          `${waiting} waiting in all.`,
           "warning"
         );
+      } else if (toShow && !shownRefusals[toShow.reason || toShow.message]) {
+        shownRefusals[toShow.reason || toShow.message] = true;
+        showInPageToast("Inox Hydra: " + toShow.message, "warning");
+      } else if (unreachable === answers.length) {
+        showInPageToast("Inox Hydra: could not reach your studio, so nothing was saved.", "warning");
       }
     });
   }

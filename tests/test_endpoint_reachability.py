@@ -202,9 +202,16 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 #   R6: 5 paths added and reached, native/stage removed (unreachable -1).
 #   R7: /api/image/provider added, reached (+1).
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 167
+# Cycle 3, batch T3 (one path in): /api/v1/extension/captures/waiting added.
+# It answers how many captures the extension is holding for a studio that was
+# busy, which nothing in the product could say. It is read by the extension's
+# side panel, not by the studio interface, so it joins the unreachable column
+# by design, beside /api/v1/extension/health. Total 167 -> 168, reached stays
+# at 114, unreachable 53 -> 54. The Today screen reads it in a later batch.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 168
 REACHED_BY_INTERFACE = 114
-UNREACHABLE = 53
+UNREACHABLE = 54
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

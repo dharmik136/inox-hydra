@@ -109,7 +109,7 @@ const chrome = {
       remove: (k, cb) => { const c = {}; for (const key of [].concat(k)) { c[key] = { oldValue: storage[key] }; delete storage[key]; } changed(c); if (cb) cb(); } },
     onChanged: { addListener: (fn) => storageListeners.push(fn) } },
   scripting: { getRegisteredContentScripts: async () => [], registerContentScripts: async () => {}, unregisterContentScripts: async () => {} },
-  alarms: { clear: () => {} },
+  alarms: { clear: () => {}, create: () => {}, onAlarm: { addListener: () => {} } },
   cookies: { get: (q, cb) => cb(q.name === "li_at" && cookie ? cookie : null),
              onChanged: { addListener: (fn) => cookieListeners.push(fn) } },
   sidePanel: { open: async () => {} },

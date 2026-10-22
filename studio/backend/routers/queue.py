@@ -19,11 +19,9 @@ from pydantic import BaseModel, Field
 try:
     from ..database import get_db, neutral_slot_label
     from ..scheduler import native_scheduler, parse_datetime_flexible, DAY_NAMES
-    from ..event_bus import event_bus
 except ImportError:
     from database import get_db, neutral_slot_label
     from scheduler import native_scheduler, parse_datetime_flexible, DAY_NAMES
-    from event_bus import event_bus
 
 router = APIRouter()
 
@@ -210,7 +208,6 @@ def toggle_queue_pause(payload: Optional[QueuePausePayload] = None):
             ),
         }
 
-    event_bus.publish_sync("queue_status_changed", {"queue_paused": actual_state})
     msg = "Publishing queue paused." if actual_state else "Publishing queue resumed."
     return {
         "status": "success",

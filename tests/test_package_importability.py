@@ -38,7 +38,6 @@ BACKEND_MODULES = [
     "agno_agent",
     "agno_agentos",
     "image_studio",
-    "event_bus",
     "ingress",
     "crm",
     "rate_limiter",

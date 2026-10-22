@@ -21,7 +21,6 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from app import app
 from database import get_db, init_db, create_draft, get_draft, list_drafts
-from event_bus import event_bus
 from ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
 from linkedin_client import linkedin_client
 from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
@@ -175,22 +174,6 @@ def test_telegram_whitelist_security():
     res_auth = daemon.process_incoming_update(auth_update)
     assert res_auth is not None
     assert res_auth["title"] == "Authorized message ingestion"
-
-
-# -------------------------------------------------------------
-# TASK 3: Real-Time Event Bus & Server-Sent Events (SSE)
-# -------------------------------------------------------------
-def test_event_bus_pubsub_and_format():
-    """Tests synchronous and asynchronous event publishing and SSE formatting."""
-    event = event_bus.publish_sync("test_event", {"message": "hello world"})
-    assert event["event"] == "test_event"
-    assert event["data"]["message"] == "hello world"
-    assert event["id"] > 0
-
-    wire_format = event_bus.format_sse(event)
-    assert f"id: {event['id']}\n" in wire_format
-    assert "event: test_event\n" in wire_format
-    assert 'data: {"message": "hello world"}\n\n' in wire_format
 
 
 @pytest.mark.usefixtures("dev_mode")

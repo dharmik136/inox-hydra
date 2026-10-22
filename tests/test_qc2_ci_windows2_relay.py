@@ -69,7 +69,7 @@ const chrome = {
     registerContentScripts: async () => {},
     unregisterContentScripts: async () => {},
   },
-  alarms: { clear: () => {} },
+  alarms: { clear: () => {}, create: () => {}, onAlarm: { addListener: () => {} } },
   cookies: { get: (_q, cb) => cb({ value: "token" }), onChanged: event("changed") },
   sidePanel: { open: async () => {} },
   webRequest: { onCompleted: { addListener: (fn) => listeners.request.push(fn) } },

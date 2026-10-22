@@ -468,6 +468,70 @@ async function loadSideCRM() {
   }
 }
 
+function panelStorage(keys) {
+  return new Promise((resolve) => {
+    try {
+      chrome.storage.local.get(keys, (items) => resolve(items || {}));
+    } catch (err) {
+      resolve({});
+    }
+  });
+}
+
+/**
+ * The three things the bridge decided and never said: how many captures are
+ * waiting for a studio that was busy, what the studio last refused and why,
+ * and whether this extension speaks the studio's ingest contract.
+ *
+ * The waiting count comes from the extension's own storage, which is where the
+ * queue lives, so it is right even while the studio cannot be reached. A count
+ * nobody has written yet is "not measured", never a zero.
+ */
+async function waitingAndRefusalPanel(health) {
+  const kept = await panelStorage(["waitingCaptures", "lastRefusal"]);
+  const waiting = kept.waitingCaptures || null;
+  const refusal = kept.lastRefusal || null;
+  const shake = (health && health.contract) || {};
+  let html = "";
+
+  if (shake.reload_required && shake.message) {
+    html += `
+      <div style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: 6px; padding: 8px; margin-bottom: 8px;">
+        <div style="color: #f87171; font-weight: 600; margin-bottom: 4px; font-size: 11px;">Reload this extension</div>
+        <div style="font-size: 10.5px; color: var(--text-muted);">${escapeHtml(shake.message)}</div>
+      </div>
+    `;
+  }
+
+  const count = waiting && typeof waiting.waiting === "number" ? waiting.waiting : null;
+  if (count === null) {
+    html += `
+      <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 11px; color: var(--text-muted);">
+        Captures waiting for the studio: not measured yet.
+      </div>
+    `;
+  } else if (count > 0) {
+    html += `
+      <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 6px; padding: 8px; margin-bottom: 8px;">
+        <div style="color: #f59e0b; font-weight: 600; margin-bottom: 4px; font-size: 11px;">${count} capture(s) waiting</div>
+        <div style="font-size: 10.5px; color: var(--text-muted);">
+          Your studio was busy or closed. They are sent again on their own, oldest first.
+        </div>
+      </div>
+    `;
+  }
+
+  if (refusal && refusal.message) {
+    html += `
+      <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px;">
+        <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 4px;">The studio last refused a capture</div>
+        <div style="font-size: 10.5px; color: var(--text);">${escapeHtml(refusal.message)}</div>
+      </div>
+    `;
+  }
+  return html;
+}
+
 async function loadSideHealth() {
   const container = document.getElementById("health-mini-list");
   const badge = document.getElementById("sp-health-badge");
@@ -496,7 +560,13 @@ async function loadSideHealth() {
       badge.style.color = "var(--text-dim)";
     }
 
-    let html = `
+    // What the creator could not see before: captures waiting because the
+    // studio was busy, the last refusal in the studio's own words, and whether
+    // this extension is older than the studio's ingest contract. Every one of
+    // these was decided somewhere and shown nowhere.
+    let html = await waitingAndRefusalPanel(health);
+
+    html += `
       <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
           <span style="color: var(--text-muted);">Network Interceptor</span>

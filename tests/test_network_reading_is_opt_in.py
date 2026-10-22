@@ -57,7 +57,7 @@ const chrome = {
       for (const id of ids) { const i = registered.findIndex((s) => s.id === id); if (i >= 0) registered.splice(i, 1); }
     },
   },
-  alarms: { clear: () => {} },
+  alarms: { clear: () => {}, create: () => {}, onAlarm: { addListener: () => {} } },
   cookies: { get: (_q, cb) => cb({ value: "token" }) },
   sidePanel: { open: async () => {} },
   webRequest: { onCompleted: { addListener: (fn) => listeners.request.push(fn) } },

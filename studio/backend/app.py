@@ -64,7 +64,6 @@ try:
     from .agno_agent import agno_orchestrator
     from .agno_agentos import orchestrator
     from .image_studio import image_studio_manager, image_providers
-    from .event_bus import event_bus
     from .ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
     from .crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from .rate_limiter import rate_limiter, write_actor
@@ -73,6 +72,7 @@ try:
     from .gstack_governance import gstack_engine
     from .internal_sheet import internal_sheet_manager
     from . import onboarding
+    from . import ingest_contract
     from . import accounts
     from . import licensing
     from . import archive_import
@@ -136,7 +136,6 @@ except ImportError:
     from agno_agent import agno_orchestrator
     from agno_agentos import orchestrator
     from image_studio import image_studio_manager, image_providers
-    from event_bus import event_bus
     from ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
     from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from rate_limiter import rate_limiter, write_actor
@@ -145,6 +144,7 @@ except ImportError:
     from gstack_governance import gstack_engine
     from internal_sheet import internal_sheet_manager
     import onboarding
+    import ingest_contract
     import accounts
     import licensing
     import archive_import
@@ -196,7 +196,6 @@ OPENAPI_TAGS = [
     {"name": "LinkedIn Bridge", "description": "Passive session token synchronization and live analytics ingestion."},
     {"name": "Settings & Creator Profile", "description": "Creator branding, personal watermark configuration, and session bridge."},
     {"name": "Documentation", "description": "Interactive enterprise documentation suite and in-app playbook viewer."},
-    {"name": "Real-Time Event Stream", "description": "Server-Sent Events (SSE) bus for under 5ms instant live inbox updates."},
     {"name": "Ubiquitous Ingress", "description": "Outbound long-polling Telegram ingress, directive parser, and mobile fold analyzer."},
     {"name": "LinkedIn Native Scheduler", "description": "Voyager cloud pre-staging and self-healing morning grace window recovery."},
     {"name": "Enterprise Reverse CRM", "description": "Deterministic ICP scoring engine and anti-slop 1-to-1 contextual DM generation."},
@@ -588,6 +587,14 @@ async def _answer_invalid_value(request: Request, error):
     # A model built inside a route from the request's values, such as an
     # agent's input contract, is the request's fault, not the studio's.
     return _validation_answer(error.errors(include_url=False, include_input=False, include_context=False))
+
+
+@app.exception_handler(ingest_contract.RefusedIngest)
+async def _answer_refused_ingest(request: Request, error):
+    # A capture the studio refuses and the creator can act on. The body
+    # carries the reason code beside the sentence, and repeats the sentence
+    # as `detail` so every reader written before the contract still works.
+    return JSONResponse(status_code=409, content=ingest_contract.refusal_body(error.reason, error.message))
 
 
 @app.exception_handler(sqlite3.Error)
@@ -990,14 +997,6 @@ def publish_post_now(post_id: str):
             """, (now_iso, post_id))
             recorded = post_identity.record_publication(conn, post_id, published_at=now_iso)
         conn.close()
-
-        event_bus.publish_sync("post_published", {
-            "post_id": post_id,
-            "content": existing["content"][:80],
-            "action": "published_now",
-            "published_at": now_iso,
-            "publication_urn": recorded.get("publication_urn"),
-        })
 
         return {
             "status": "success",
@@ -1460,6 +1459,12 @@ _ENRICHMENT_RETIRED = crm_router_module._ENRICHMENT_RETIRED
 class BridgeHeartbeat(BaseModel):
     extension_version: Optional[str] = None
     page_kind: Optional[str] = None
+    # Which version of the ingest contract this extension speaks, and how many
+    # captures it is holding for a studio that was busy. Absent means an
+    # extension older than the contract, which the handshake answers.
+    contract_version: Optional[int] = None
+    waiting_captures: Optional[int] = None
+    oldest_waiting_at: Optional[str] = None
 
 
 class IdentityConfirm(BaseModel):
@@ -1488,7 +1493,14 @@ class ImportEvent(BaseModel):
 
 
 def _refusal(error: "onboarding.RefusedCapture"):
-    raise HTTPException(status_code=409, detail=str(error))
+    """
+    Turns a refused capture into the contract's 409: the sentence the creator
+    reads, the reason code a screen can count, and `show` so the extension
+    knows to put it on the page. It used to be a bare HTTPException whose
+    detail the extension discarded, which is why "import your posts first"
+    was invisible.
+    """
+    raise ingest_contract.RefusedIngest(ingest_contract.reason_code(error), str(error))
 
 
 try:
@@ -1526,7 +1538,16 @@ def get_onboarding_state():
 
 @app.post("/api/v1/bridge/heartbeat", tags=["Onboarding"])
 def post_bridge_heartbeat(payload: BridgeHeartbeat):
-    return onboarding.record_heartbeat(payload.extension_version, payload.page_kind)
+    """
+    The extension saying it is here, and the one place the two sides agree on
+    what they are. The answer carries the handshake, so an extension older
+    than the studio's ingest contract is told to reload once instead of
+    failing quietly on a field name that moved.
+    """
+    seen = onboarding.record_heartbeat(payload.extension_version, payload.page_kind)
+    ingest_contract.note_waiting(payload.waiting_captures, payload.oldest_waiting_at)
+    seen["handshake"] = ingest_contract.handshake(payload.extension_version, payload.contract_version)
+    return seen
 
 
 @app.post("/api/v1/bridge/capture", tags=["Onboarding"])
@@ -1558,8 +1579,32 @@ def post_bridge_schema_drift(payload: Dict[str, Any]):
 
 @app.get("/api/v1/extension/health", tags=["Onboarding"])
 def get_extension_health():
-    """Returns aggregated health status of the Chrome extension and Voyager interception."""
-    return onboarding.extension_health()
+    """
+    Aggregated health of the extension and of Voyager interception, plus the
+    two things the creator could not see before: which contract the extension
+    speaks, and how many captures it is holding because the studio was busy.
+    """
+    health = onboarding.extension_health()
+    health["contract"] = ingest_contract.handshake()
+    health["waiting_captures"] = ingest_contract.waiting_captures()
+    health["refusals"] = ingest_contract.refusal_counts()
+    return health
+
+
+@app.get("/api/v1/extension/captures/waiting", tags=["Onboarding"])
+def get_waiting_captures():
+    """
+    How many captures the extension is holding for a studio that was busy, as
+    the extension last said, and how many each refusal reason has turned away
+    since the studio started.
+
+    The extension keeps a capture it could not deliver and sends it again, and
+    nothing in the studio could say so, so a creator had no way to learn that
+    work was waiting. `measured` is false until the extension has reported,
+    and `waiting` is then null rather than zero.
+    """
+    return {"status": "success", **ingest_contract.waiting_captures(),
+            "refusals": ingest_contract.refusal_counts()}
 
 
 @app.post("/api/v1/identity/observe", tags=["Onboarding"])
@@ -2176,8 +2221,8 @@ class IngressSimulateRequest(BaseModel):
 def simulate_ingress(req: IngressSimulateRequest):
     """
     Simulates incoming message from Telegram mobile bot or desktop tray.
-    Parses directives (Draft:, Idea:, Schedule:), evaluates mobile fold,
-    persists into SQLite WAL, and broadcasts live over SSE bus.
+    Parses directives (Draft:, Idea:, Schedule:), evaluates mobile fold, and
+    persists into SQLite WAL.
     """
     update_payload = {
         "update_id": int(time.time()),

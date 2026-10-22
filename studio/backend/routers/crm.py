@@ -24,7 +24,7 @@ try:
         export_leads_csv,
     )
     from ..crm import ICPScoringEngine, ReverseCRMManager, reverse_crm, qualification_tier
-    from .. import onboarding, retention
+    from .. import onboarding, retention, ingest_contract
 except (ImportError, ValueError):
     from database import get_db
     from leads import (
@@ -41,6 +41,7 @@ except (ImportError, ValueError):
     from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm, qualification_tier
     import onboarding
     import retention
+    import ingest_contract
 
 router = APIRouter()
 
@@ -55,6 +56,7 @@ class LeadNotesUpdate(BaseModel):
 
 
 class IngestInteractionRequest(BaseModel):
+    """One engagement on one post, in the shape ingest_contract documents."""
     full_name: Optional[str] = "Unknown"
     linkedin_urn: Optional[str] = None
     profile_url: Optional[str] = None
@@ -63,10 +65,18 @@ class IngestInteractionRequest(BaseModel):
     interaction_type: Optional[str] = "COMMENT"
     comment_text: Optional[str] = None
     post_urn: Optional[str] = None
-    post_id: Optional[int] = None
+    # The studio's own post key, which is TEXT. This was declared
+    # Optional[int] for a TEXT column, so a client sending a correct
+    # "post-<hex12>" got a 422 and its capture was lost outright. post_id
+    # stays as the deprecated alias an extension that has not been reloaded
+    # sends, and is read as TEXT too.
+    post_key: Optional[str] = None
+    post_id: Optional[str] = None
     post_topic: Optional[str] = None
     capture_context: Optional[str] = None
     post_author: Optional[str] = None
+    extension_version: Optional[str] = None
+    contract_version: Optional[int] = None
 
 
 class GenerateDMRequest(BaseModel):
@@ -155,9 +165,22 @@ def get_lead_enrichment_endpoint(lead_id: str):
 
 @router.post("/api/v1/crm/interactions/ingest", tags=["Enterprise Reverse CRM"])
 def ingest_crm_interaction(req: IngestInteractionRequest):
+    """
+    One engagement on one of the creator's posts. Answers one of the three
+    outcomes in ingest_contract: accepted, nothing_new, or 409 refused.
+
+    Every decline used to be 200 {"status": "skipped"}, including "confirm
+    your profile in Setup first", so a creator scrolled their own post, saw
+    nothing happen, and had no way to learn why.
+    """
+    ingest_contract.note_client(req.extension_version, req.contract_version)
     refused = onboarding.engagement_gate(req.linkedin_urn or req.profile_url, req.post_urn, req.post_author)
-    if refused:
-        return {"status": "skipped", "reason": refused}
+    verdict = ingest_contract.classify(refused)
+    if verdict:
+        reason, outcome = verdict
+        if outcome == ingest_contract.REFUSED:
+            ingest_contract.refuse(reason, refused)
+        return ingest_contract.nothing_new(reason, refused)
     urn = req.linkedin_urn or req.profile_url or f"local:unresolved:{uuid.uuid4().hex[:12]}"
     raw_type = (req.interaction_type or "COMMENT").upper()
     if "COMMENT" in raw_type:
@@ -169,7 +192,19 @@ def ingest_crm_interaction(req: IngestInteractionRequest):
     else:
         norm_type = "COMMENT"
 
-    result = reverse_crm.ingest_interaction(
+    # One writer for a burst. Thirty engagers of one post arrive at once and
+    # used to race for the database lock through SQLite's polling busy
+    # handler, so each waited for the whole queue: 6,047 ms of wall time
+    # against 1,318 ms for the same thirty one at a time. Taking a turn costs
+    # one hand-off and removes the contention.
+    #
+    # post_id is deliberately not passed on. lead_interactions.post_id is an
+    # INTEGER foreign key into drafts(id) and can never match a posts.id, so
+    # writing the studio's own key there stored a value nothing can join;
+    # post_urn is what every attribution surface reads.
+    result = ingest_contract.through_the_writer(
+        "Capturing an engagement",
+        reverse_crm.ingest_interaction,
         full_name=req.full_name,
         linkedin_urn=urn,
         headline=req.headline,
@@ -177,13 +212,14 @@ def ingest_crm_interaction(req: IngestInteractionRequest):
         interaction_type=norm_type,
         comment_text=req.comment_text,
         post_urn=req.post_urn,
-        post_id=req.post_id,
+        post_id=None,
         post_topic=req.post_topic,
         capture_context=req.capture_context,
     )
     result["id"] = result.get("lead_id")
     result["qualification_tier"] = result.get("tier")
-    return {"status": "success", "interaction": result, "lead": result}
+    return ingest_contract.accepted(interaction=result, lead=result,
+                                    post_key=ingest_contract.post_key_of(req.model_dump()))
 
 
 @router.post("/api/v1/crm/leads/generate-dm", tags=["Enterprise Reverse CRM"])

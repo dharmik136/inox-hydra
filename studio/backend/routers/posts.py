@@ -41,7 +41,6 @@ try:
         MISSED_POST_KEY,
     )
     from ..linkedin_client import linkedin_client
-    from ..event_bus import event_bus
     from .. import post_identity
     from .. import post_summary
 except (ImportError, ValueError):
@@ -73,7 +72,6 @@ except (ImportError, ValueError):
         MISSED_POST_KEY,
     )
     from linkedin_client import linkedin_client
-    from event_bus import event_bus
     import post_identity
     import post_summary
 

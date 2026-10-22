@@ -33,7 +33,7 @@ Cloud creator platforms keep your drafts, your audience and your analytics on th
 | **Bring-Your-Own-AI Hub** | AI Copilot | Multi-model gateway (OpenAI, Gemini, Claude, Groq, Ollama) + Antigravity Local Engine | Verified live connection via CLI or UI; the key is sealed at rest |
 | **Vector Carousel Engine** | Content Design Studio | 4:5 & 1:1 Swiss vector SVG slides ('Plus Jakarta Sans', 'Inter', 'JetBrains Mono') | Pure vector SVG, zero cloud rendering |
 | **FTS5 Playbook Search** | Knowledge Base | SQLite FTS5 BM25 search across 401 strategy & technical sections (<15ms) | Local SQLite virtual table, zero latency |
-| **Request Pacing** | n/a | Gaussian-jittered token bucket with single-writer serialization | Paces the studio's own background work; nothing is automated on LinkedIn |
+| **Request Pacing** | n/a | Gaussian-jittered token bucket, and a single writer thread that serializes capture writes | Paces the studio's own background work; nothing is automated on LinkedIn. Thirty engagers captured at once take 1.2 s rather than 6.0 s |
 
 ---
 
