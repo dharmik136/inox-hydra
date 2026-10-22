@@ -83,9 +83,12 @@ def test_no_docstring_describes_a_stream_that_does_not_exist():
 
 def test_the_stream_routes_are_still_gone():
     """Cycle 2 removed them because one accepted a forged post_published."""
+    # 404 or 405: with the interface built, its catch-all answers GET for an
+    # unknown path, so a POST to one is Method Not Allowed. Either way there
+    # is no route, which is how tests/test_qc2_r2_route_surface.py pins them.
     for path in ("/api/v1/stream/events", "/api/v1/stream/history"):
-        assert client.get(path).status_code == 404
-    assert client.post("/api/v1/stream/broadcast", json={}).status_code == 404
+        assert client.get(path).status_code in (404, 405), path
+    assert client.post("/api/v1/stream/broadcast", json={}).status_code in (404, 405)
 
 
 def test_nothing_a_creator_can_reach_depended_on_it():

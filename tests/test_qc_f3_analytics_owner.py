@@ -215,7 +215,7 @@ const chrome = {
   storage: { local: { get: (k, cb) => cb({ [k]: storage[k] }), remove: (k, cb) => { for (const key of [].concat(k)) delete storage[key]; if (cb) cb(); } },
              onChanged: event() },
   scripting: { getRegisteredContentScripts: async () => [], registerContentScripts: async () => {}, unregisterContentScripts: async () => {} },
-  alarms: { clear: () => {} },
+  alarms: { clear: () => {}, create: () => {}, onAlarm: { addListener: () => {} } },
   cookies: { get: (_q, cb) => cb(null), onChanged: { addListener: (fn) => cookieListeners.push(fn) } },
   sidePanel: { open: async () => {} },
   webRequest: { onCompleted: { addListener: () => {} } },
