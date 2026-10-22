@@ -1084,9 +1084,17 @@ def engagement_gate(engager_profile: Any, post_urn: Any, post_author: Any) -> Op
     conn = get_db()
     try:
         if wanted:
-            for row in conn.execute("SELECT activity_urn FROM own_posts"):
-                if _activity_id(row["activity_urn"]) == wanted:
-                    return None
+            # One indexed lookup of the post's own key. This read every row of
+            # own_posts into Python and ran a regex on each, 0.63 ms per
+            # capture on three years of posts against 0.011 ms, before any
+            # write, and it grew with the creator's history. The three
+            # spellings are the three LinkedIn names a post goes by, and both
+            # writers store the key as "urn:li:<kind>:<digits>".
+            if conn.execute(
+                    "SELECT 1 FROM own_posts WHERE activity_urn IN "
+                    "('urn:li:activity:' || ?, 'urn:li:share:' || ?, 'urn:li:ugcPost:' || ?) LIMIT 1",
+                    (wanted, wanted, wanted)).fetchone():
+                return None
         # A post whose author could be read and is somebody else is somebody
         # else's, whatever has been imported. Only when the author could not
         # be read does the answer depend on the creator's own history, and a

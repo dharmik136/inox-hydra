@@ -605,6 +605,14 @@ def get_post_engagers(post_id: str):
             }
 
         cursor = conn.cursor()
+        # post_summary.LEAD_JOIN, the one join in the codebase that can read
+        # this table by index: lead_interactions.lead_id is declared INTEGER
+        # and leads.id is TEXT, so a join written l.id = i.lead_id applies
+        # numeric affinity and the leads primary key cannot serve it. Written
+        # that way this read scanned all 49,142 leads (7.66 ms for one post of
+        # three years); by the index it is 0.12 ms, for the same rows in the
+        # same order. The last two sort keys are the order the old scan met
+        # rows in.
         cursor.execute(
             f"""
             SELECT l.id, l.full_name, l.name, l.headline, l.company,
@@ -612,7 +620,7 @@ def get_post_engagers(post_id: str):
                    i.interaction_type, i.comment_text, i.interacted_at
             FROM lead_interactions i {post_summary.LEAD_JOIN}
             WHERE i.post_urn IN ({', '.join('?' for _ in ref['engagement_urns'])})
-            ORDER BY l.icp_score DESC
+            ORDER BY l.icp_score DESC, l.rowid, i.id
             """,
             ref["engagement_urns"],
         )

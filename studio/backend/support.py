@@ -524,6 +524,10 @@ KEEP_DAILY, KEEP_WEEKLY, KEEP_MONTHLY = 7, 4, 3
 # of each kind are kept. The newest is the one every upgrade error points at.
 DATABASE_COPIES_KEPT = 2
 DAILY_BACKUP_EVERY = timedelta(hours=24)
+# When the newest backup is old enough to be a fault rather than a wait. One
+# whole missed day: the hourly job takes a backup as soon as a day has passed,
+# so two days without one means the schedule is not running.
+STALE_BACKUP_AFTER = 2 * DAILY_BACKUP_EVERY
 
 _ZIP_NAME = re.compile(r"^inox_backup_(?P<label>.+?)_(?P<stamp>\d{8}_\d{6})(?:_\d+)?\.zip$")
 _COPY_NAME = re.compile(r"^linkedin_studio_(?P<reason>.+?)_(?P<stamp>\d{8}_\d{6})(?:_\d+)?\.db$")
@@ -658,7 +662,7 @@ def _dated_sensibly(entries: List[tuple]) -> List[tuple]:
 
 
 def backup_schedule(enabled: bool) -> Dict[str, Any]:
-    """The newest backup, when the next automatic one is due, and how many are kept."""
+    """The newest backup, whether it is overdue, when the next one is due, and how many are kept."""
     found = _backups_by_kind()
     sensible = _dated_sensibly(found["zip"])
     newest = sensible[0] if sensible else None
@@ -666,10 +670,23 @@ def backup_schedule(enabled: bool) -> Dict[str, Any]:
     if enabled:
         due = (newest[0] + DAILY_BACKUP_EVERY) if newest else datetime.now()
         next_due = max(due, datetime.now()).isoformat(timespec="seconds")
+    # Whether the schedule has stopped producing backups. The hourly job takes
+    # one as soon as DAILY_BACKUP_EVERY has passed, so a newest backup older
+    # than twice that is the schedule itself not running rather than a day not
+    # yet over. Nothing used to treat an old date as a problem, which is how a
+    # machine that slept across every hour could go weeks with nothing to
+    # restore from. "never" is kept apart from "stale": a profile that has
+    # never had a backup may simply have been open for less than the first
+    # ten minutes.
+    age = (datetime.now() - newest[0]) if newest else None
     return {
         "enabled": enabled,
         "last": _describe(newest),
         "next_due": next_due,
+        "age_hours": round(age.total_seconds() / 3600.0, 1) if age else None,
+        "stale": bool(enabled and age is not None and age >= STALE_BACKUP_AFTER),
+        "never": newest is None,
+        "stale_after_hours": round(STALE_BACKUP_AFTER.total_seconds() / 3600.0, 1),
         "automatic_count": len(found["automatic"]),
         "zip_count": len(found["zip"]),
         "keeps": {"daily": KEEP_DAILY, "weekly": KEEP_WEEKLY, "monthly": KEEP_MONTHLY,

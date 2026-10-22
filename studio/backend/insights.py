@@ -45,6 +45,38 @@ except ImportError:
 SETTLED_AFTER_HOURS = 7 * 24
 MIN_FOR_MEDIAN = 3
 
+# ---------------------------------------------------------------------------
+# One page of posts
+# ---------------------------------------------------------------------------
+#
+# Posts and Analytics each answered with every post the creator has ever
+# written, each carrying the people who engaged with it: measured on three
+# years, 2,201 KB from /api/v1/insights/posts and 2,432 KB from
+# /api/analytics/posts, on every load of either screen, and the second
+# accepted a `limit` in the URL and ignored it. One page of 50 is 78 KB and
+# 83 KB. Both endpoints page through here, so the contract is written once:
+# the rows of one page, and what a caller needs to ask for the next.
+#
+# Only the list of posts is a page. Every figure beside it (the creator's
+# usual, which posts are worth repurposing, how many settled posts carry no
+# figures) is still computed from the whole history, because a median of the
+# first fifty posts is a different number, not the same number read faster.
+
+POSTS_PAGE = 50
+POSTS_PAGE_MAX = 200
+
+
+def page_bounds(limit: Optional[int], offset: Optional[int]) -> tuple:
+    """The page a caller asked for, as (size, start), clamped to what one answer carries."""
+    size = POSTS_PAGE if limit is None else max(1, min(int(limit), POSTS_PAGE_MAX))
+    return size, max(0, int(offset or 0))
+
+
+def paging(total: int, size: int, start: int, returned: int) -> Dict[str, Any]:
+    """What a caller needs to know to ask for the rest, as every paged answer says it."""
+    return {"total": total, "limit": size, "offset": start, "returned": returned,
+            "has_more": start + returned < total}
+
 
 def _age_hours(published_at: Optional[str]) -> Optional[float]:
     if not published_at:
@@ -56,22 +88,32 @@ def _excerpt(text: Optional[str], limit: int = 140) -> Optional[str]:
     return clip(" ".join((text or "").split()), limit) or None
 
 
-def posts_overview() -> Dict[str, Any]:
+def posts_overview(limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
+    size, start = page_bounds(limit, offset)
     conn = get_db()
     try:
+        # Every post's figures, which the usual, the best two and the counts
+        # below are all read from, and which carry no text: the text of 1,417
+        # posts was most of the 2,201 KB this answer used to be.
         posts = [dict(r) for r in conn.execute(
-            "SELECT activity_urn, text, published_at, published_at_source, reactions, comments, reposts, impressions "
+            "SELECT activity_urn, published_at, published_at_source, reactions, comments, impressions "
             "FROM own_posts ORDER BY published_at DESC")]
+        # The page itself, newest first, with the text the screen shows.
+        page = [dict(r) for r in conn.execute(
+            "SELECT activity_urn, text, published_at, published_at_source, reactions, comments, reposts, impressions "
+            "FROM own_posts ORDER BY published_at DESC LIMIT ? OFFSET ?", (size, start))]
 
-        # Who engaged with each post, from the per-post summary. Every
-        # interaction used to be read into Python on every load: 1.9 s at
-        # 500,000. A post whose engagement was recorded under two spellings
+        # Who engaged with each post on the page, from the per-post summary.
+        # Every interaction used to be read into Python on every load: 1.9 s
+        # at 500,000. A post whose engagement was recorded under two spellings
         # of its URN is counted from the raw rows, each person once.
         summary = post_summary.current(conn)
+        wanted = {onboarding._activity_id(p["activity_urn"]) for p in page}
         spellings: Dict[str, List[str]] = {}
         for urn, row in summary.items():
-            if row["people"] or row["folded_reactions"]:
-                spellings.setdefault(onboarding._activity_id(urn), []).append(urn)
+            key = onboarding._activity_id(urn)
+            if key in wanted and (row["people"] or row["folded_reactions"]):
+                spellings.setdefault(key, []).append(urn)
         engagers: Dict[str, Dict[str, Any]] = {
             key: (summary[urns[0]] if len(urns) == 1 else post_summary.combined(conn, urns))
             for key, urns in spellings.items()}
@@ -91,15 +133,18 @@ def posts_overview() -> Dict[str, Any]:
     # usual, rather than blaming the age of posts that are years old.
     unmeasured = [p for p in settled if all(p[m] is None for m in ("reactions", "comments", "impressions"))]
 
-    out = []
-    for post in posts:
-        age = _age_hours(post["published_at"])
-        engaged = engagers.get(onboarding._activity_id(post["activity_urn"]))
-
+    def against_usual(post, age):
         ratios = {}
         for metric, (median, _n) in usual.items():
             if median and post[metric] is not None and age is not None and age >= SETTLED_AFTER_HOURS:
                 ratios[metric] = round(post[metric] / median, 2)
+        return ratios
+
+    out = []
+    for post in page:
+        age = _age_hours(post["published_at"])
+        engaged = engagers.get(onboarding._activity_id(post["activity_urn"]))
+        ratios = against_usual(post, age)
 
         out.append({
             "activity_urn": post["activity_urn"],
@@ -132,13 +177,17 @@ def posts_overview() -> Dict[str, Any]:
 
     # The two settled posts that did best against your own median reactions,
     # which is what "repurpose the top two" means: forms that already worked.
-    ranked = sorted((p for p in out if p["against_usual"] and "reactions" in p["against_usual"]),
-                    key=lambda p: p["against_usual"]["reactions"], reverse=True)
+    # Read from the whole history, not from the page, so the same two posts
+    # are named whichever page the screen is showing.
+    with_ratio = [(p["activity_urn"], against_usual(p, _age_hours(p["published_at"]))) for p in posts]
+    ranked = sorted(((urn, r["reactions"]) for urn, r in with_ratio if "reactions" in r),
+                    key=lambda pair: pair[1], reverse=True)
     return {
         "status": "success",
         "posts": out,
+        **paging(len(posts), size, start, len(out)),
         "usual": {m: {"median": v[0], "posts": v[1]} for m, v in usual.items()},
-        "best": [p["activity_urn"] for p in ranked[:2]],
+        "best": [urn for urn, _ratio in ranked[:2]],
         "settled_after_days": SETTLED_AFTER_HOURS // 24,
         "settled_without_figures": len(unmeasured),
         "settled_without_figures_from_archive": sum(1 for p in unmeasured if p["published_at_source"] == "archive"),

@@ -5,8 +5,8 @@ Surfaces observed post history, cadence, outbound engagement reciprocity,
 patterns, and binary feature contrasts. Zero cloud egress.
 """
 
-from fastapi import APIRouter
-from typing import Dict, Any
+from fastapi import APIRouter, Query
+from typing import Dict, Any, Optional
 
 try:
     from .. import insights
@@ -21,9 +21,15 @@ router = APIRouter(tags=["Insights"])
 
 
 @router.get("/api/v1/insights/posts")
-def get_posts_insights() -> Dict[str, Any]:
-    """Which settled posts did best against your median, and who engaged."""
-    return insights.posts_overview()
+def get_posts_insights(limit: Optional[int] = Query(None, ge=1), offset: int = Query(0, ge=0)) -> Dict[str, Any]:
+    """
+    Which settled posts did best against your median, and who engaged.
+
+    One page of posts, newest first, insights.POSTS_PAGE of them by default.
+    Every figure beside the list (your usual, the best two, the counts) is
+    read from your whole history whichever page this is.
+    """
+    return insights.posts_overview(limit=limit, offset=offset)
 
 
 @router.get("/api/v1/insights/patterns")
