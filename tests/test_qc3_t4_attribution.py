@@ -21,6 +21,7 @@ number, and this module holds all three:
    are one migration, and this holds them there.
 """
 
+import inspect
 import os
 import shutil
 import sqlite3
@@ -58,18 +59,48 @@ def _plan(conn, sql, params=()):
 # The index and the statistics, in one migration
 # ---------------------------------------------------------------------------
 
+def _migration_sql(payload):
+    """
+    Every SQL statement a migration payload can run, whether it is a tuple of
+    statements or a function.
+
+    Reading tuples alone let 18 of the 24 migrations past this guard, which a
+    reviewer demonstrated: a function that creates the index and no statistics
+    would have been accepted. A function is read from its source instead.
+    """
+    if isinstance(payload, (tuple, list)):
+        return [str(statement) for statement in payload]
+    try:
+        return [inspect.getsource(payload)]
+    except (TypeError, OSError):  # pragma: no cover
+        return []
+
+
 def test_the_index_on_post_urn_and_its_analyze_are_one_migration():
     import migrations
     payloads = {version: payload for version, _description, payload in migrations.MIGRATIONS}
     holding = [version for version, payload in payloads.items()
-               if isinstance(payload, tuple)
-               and any("idx_interactions_post" in str(statement) for statement in payload)]
+               if any("idx_interactions_post" in sql for sql in _migration_sql(payload))]
     assert holding, "no migration creates idx_interactions_post"
     for version in holding:
-        statements = [str(s).strip().upper() for s in payloads[version]]
-        assert any(s.startswith("ANALYZE") for s in statements), (
+        sql = " ".join(_migration_sql(payloads[version])).upper()
+        assert "ANALYZE" in sql, (
             f"migration {version} adds idx_interactions_post without the ANALYZE it needs: "
             "an index with no statistics made the same attribution 35 times slower")
+
+
+def test_this_guard_reads_a_function_migration_too():
+    """The reviewer's bypass: the same mistake hidden in a function payload."""
+    def _bad(cursor):
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_post ON lead_interactions(post_urn)")
+
+    def _good(cursor):
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_interactions_post ON lead_interactions(post_urn)")
+        cursor.execute("ANALYZE")
+
+    assert any("idx_interactions_post" in sql for sql in _migration_sql(_bad))
+    assert "ANALYZE" not in " ".join(_migration_sql(_bad)).upper()
+    assert "ANALYZE" in " ".join(_migration_sql(_good)).upper()
 
 
 def _interaction_statistics():
