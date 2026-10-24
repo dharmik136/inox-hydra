@@ -77,7 +77,7 @@ If you imported your archive in step 4, this step only adds what has happened si
 | **Comments you left** | Your comments on other people's posts, and which post each was on. |
 | **Posts you reacted to** | The posts you reacted to, and the reaction you used where the page says. |
 
-Click **Import**. The bridge browser opens that activity page, and the extension scrolls it for you. A banner at the bottom of the page reads "Studio is importing your posts: N so far." with a **Stop** button.
+Click **Import**. The bridge browser opens that activity page, and the extension then clicks LinkedIn's own "Show more results" control and scrolls the page for you, at a randomised pace, for up to 250 rounds, which can take several minutes. A banner at the bottom of the page reads "Studio is importing your posts: N so far." with a **Stop** button.
 
 - Keep the tab in view. The import pauses while the tab is hidden, and Setup then says PAUSED AT the count so far, BRING THE LINKEDIN TAB TO THE FRONT TO GO ON.
 - It stops by itself when the list stops growing. If the page has nothing more to load, that is the end of the list: the banner reads "Done. N posts imported." and the row in Setup reads **READ TO THE END**.

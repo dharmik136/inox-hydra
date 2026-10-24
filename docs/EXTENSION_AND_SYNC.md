@@ -1,6 +1,6 @@
 # Chrome Extension & Sync Bridge
 
-The **Inox Hydra Bridge** extension connects the LinkedIn pages you open in your own browser to the studio running on `127.0.0.1:8000`. It reads; it never acts on LinkedIn for you.
+The **Inox Hydra Bridge** extension connects the LinkedIn pages you open in your own browser to the studio running on `127.0.0.1:8000`. For everyday reading it never acts on LinkedIn for you; the one exception, covered below, is a history import you start yourself, which clicks LinkedIn's own load-more control and scrolls the page.
 
 ---
 
@@ -11,13 +11,14 @@ graph TD
     subgraph BrowserContext [Google Chrome Browser]
         Tab[Active LinkedIn Tab: linkedin.com]
         ContentScript[Content Script: content.js<br/>Passive DOM MutationObserver]
-        BackgroundWorker[Service Worker: background.js<br/>15-min Alarms & Cookies API]
+        BackgroundWorker[Service Worker: background.js<br/>Cookies API; drains kept captures every 1 min]
         SidePanel[Side Panel: sidepanel.html<br/>In-Feed Composer]
     end
 
     subgraph LocalhostEngine [Localhost Studio: 127.0.0.1:8000]
         AuthEndpoint[POST /api/auth/cookies]
-        IngestEndpoint[POST /api/analytics/ingest]
+        CaptureEndpoints[POST /api/v1/bridge/capture,<br/>/api/v1/crm/interactions/ingest]
+        PanelEndpoints[GET through an allowlist,<br/>POST /api/v1/posts/injected]
         SQLite[(SQLite: leads & settings)]
     end
 
@@ -25,26 +26,28 @@ graph TD
     BackgroundWorker -->|POST tokens| AuthEndpoint
     
     ContentScript -->|Observe Comments DOM| Tab
-    ContentScript -->|Debounced POST leads| IngestEndpoint
+    ContentScript -->|Debounced POST, allowlisted paths only| CaptureEndpoints
     
-    SidePanel <-->|Drafts & Hooks| IngestEndpoint
+    SidePanel <-->|Reads, and the one write for an injected draft| PanelEndpoints
     
     AuthEndpoint --> SQLite
-    IngestEndpoint --> SQLite
+    CaptureEndpoints --> SQLite
+    PanelEndpoints --> SQLite
 ```
 
 ---
 
 ## 2. What the Bridge Does in LinkedIn's Page
 
-LinkedIn's User Agreement restricts automated access. The bridge is built to stay a reader of pages you open yourself, and to say plainly what it does there:
+LinkedIn's User Agreement restricts automated access. The bridge is built to stay a reader of pages you open yourself, with one named exception, and to say plainly what it does there:
 
 | What | How |
 | :--- | :--- |
-| **Page reading** | Content scripts read the page you have open, as it renders, and follow your own scrolling. They never click, type, post, react, comment, message or connect. |
+| **Page reading** | Content scripts read the page you have open, as it renders, and follow your own scrolling. Outside the one exception below, they never click, type, post, react, comment, message or connect. |
+| **History import (the one exception)** | Only after you press **Import your history** in Setup, for your own posts, comments or reactions, `own_pages.js` clicks LinkedIn's "Show more results" control and scrolls the page itself, so it can read further than what was already on screen. It runs at a randomised pace, 1.6 to 3.2 seconds between rounds, for up to 250 rounds per kind: up to several minutes of unattended clicking and scrolling. A **Stop** control sits on the page the whole time, and the import pauses itself while the tab is not visible. It runs only because you asked for that import, on your own posts, comments or reactions, never on a timer and never on a page that is not yours. This is the exposure the risk register (`planning/7 Roadmap/Risk - LinkedIn terms and detection.md`) names as "the scrolled History Import". |
 | **Network reading (off by default)** | Only when you switch on **Read LinkedIn's network responses** in the extension's popup: `voyager_interceptor.js` wraps `window.fetch` in LinkedIn's page and copies the JSON of responses LinkedIn's own app already fetched, for exact rather than rounded figures, and the worker notes which of LinkedIn's data requests a page made (address and status, never contents). It never sends a request of its own. Wrapping fetch is visible to LinkedIn's page code, which may treat it as automation. Switching it off stops the copying at once; an open tab keeps the inert wrapper until reloaded. |
 | **Post ids on feed cards** | `card_urns.js` runs in the page, always, and copies each feed card's post id from LinkedIn's React properties onto the card, so the readers know which post a commenter belongs to. It reads and marks the page; it does not touch fetch. |
-| **Requests to LinkedIn** | None from the extension. The studio contacts LinkedIn only for features that are off by default, and from your machine, never from a server. |
+| **Requests to LinkedIn** | None of the extension's own fetches, outside network reading above. During a history import, clicking LinkedIn's own load-more control makes LinkedIn's page issue its own request to load more of the list; the extension does not make that request itself, but its click is what causes it. Outside the import, the studio itself contacts LinkedIn only for features that are off by default, and from your machine, never from a server. |
 | **Session** | Copied into the studio only when you press **Sync LinkedIn Session** in the popup, read through `chrome.cookies`, and sealed at rest. |
 
 ---
