@@ -657,9 +657,13 @@ export interface AnalyticsBest {
 }
 
 /**
- * One page of the post comparison table, best first, server side: this
- * answered with every post the creator had ever written, 2,432 KB on three
- * years, with a `limit` in the URL that was accepted and ignored.
+ * One page of the post comparison table, most seen first (the route orders
+ * by impressions, then reactions), server side: this answered with every
+ * post the creator had ever written, 2,432 KB on three years, with a `limit`
+ * in the URL that was accepted and ignored.
+ *
+ * "Best" is results.best's word for a different ranking, which travels
+ * beside the rows in `best` and is read from the whole history.
  */
 export async function fetchAnalyticsPosts(
   options: { limit?: number; offset?: number } = {},

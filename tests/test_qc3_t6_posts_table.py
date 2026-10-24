@@ -310,6 +310,34 @@ def test_the_strongest_post_does_not_move_with_the_page(home):
         assert figures["reactions"] is not None and figures["against_usual"]
 
 
+def test_the_comparison_table_names_the_order_it_is_actually_in(home):
+    """
+    The count beside the table read "best first" while the route orders by
+    impressions, so the table opened on the most seen post and the engine's
+    panel four inches to its right named a different one as best. One screen,
+    two answers to which post is best, which is the thing this cycle removes.
+
+    The two orders are by different metrics by design: the table is what the
+    creator has been shown most, the engine's ranking is reactions against
+    their own median. So the label has to name the one it is over.
+    """
+    page = _leaderboard(limit=14, offset=0)
+    seen = [post["impressions"] for post in page["posts"] if post["impressions"] is not None]
+    assert seen == sorted(seen, reverse=True), "the page is not ordered by impressions"
+    # A post no impressions were read for sorts after every post that has
+    # them, rather than ahead of them as a zero.
+    unread = [index for index, post in enumerate(page["posts"]) if post["impressions"] is None]
+    assert unread == list(range(len(seen), len(page["posts"]))), "an unmeasured post is ordered as a zero"
+    # The engine ranks by another metric entirely, so "best" cannot name this
+    # order whichever posts the two happen to agree on.
+    assert page["best"]["metric"] == "reactions"
+
+    source = _source("AnalyticsSurface.tsx")
+    assert "most seen first" in source, "the count line names the order the rows are in"
+    assert "best first" not in source.replace("read \"best first\"", ""), (
+        "the screen calls this order by the engine's name for a different one")
+
+
 def test_the_posts_screen_and_analytics_name_the_same_best_post(home):
     import insights
     from routers import analytics
