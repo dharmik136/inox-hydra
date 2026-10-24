@@ -20,10 +20,10 @@ import { cn } from "@/lib/utils";
 
 const RANGES: AnalyticsRange[] = ["7d", "30d", "90d"];
 
-// A summary, not a second copy of the Posts table: best first, a handful at
-// a time. The full, sortable, searchable table of every post lives on the
-// Posts screen; this answers "how are my posts doing", not "show me all of
-// them again".
+// A summary, not a second copy of the Posts table: most seen first, a
+// handful at a time. The full, sortable, searchable table of every post
+// lives on the Posts screen; this answers "how are my posts doing", not
+// "show me all of them again".
 const ANALYTICS_PAGE_SIZE = 14;
 
 /** The measures worth plotting on their own axis, one at a time. */
@@ -266,9 +266,15 @@ export function AnalyticsSurface() {
           <section className="mt-6">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <p className="studio-label">Post comparison</p>
+              {/* The order the route actually reads in, in its own words
+                  (routers/analytics.py: impressions, then reactions). It
+                  read "best first", which is the engine's word for a
+                  different ranking: results.best ranks by reactions against
+                  the creator's own median, so the panel beside this table
+                  named one post while this line implied another. */}
               {posts !== null && postsTotal > 0 && (
                 <p className="studio-meta text-[11px] text-ink-muted">
-                  {`${postsOffset + 1}–${postsOffset + posts.length} of ${postsTotal.toLocaleString()}, best first`}
+                  {`${postsOffset + 1}–${postsOffset + posts.length} of ${postsTotal.toLocaleString()}, most seen first`}
                 </p>
               )}
             </div>

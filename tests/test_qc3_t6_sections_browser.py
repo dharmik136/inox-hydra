@@ -234,11 +234,25 @@ def test_analytics_prints_no_percentage_over_a_hundred(screen):
     assert "116.25" not in text
 
 
-def test_the_comparison_table_is_paged_and_says_so(screen):
+def test_the_comparison_table_is_paged_and_says_the_order_it_is_in(screen):
     _open(screen, "Analytics")
     screen.wait_for_timeout(900)
     body = screen.locator("body").inner_text()
-    assert re.search(r"\d+–\d+ of [\d,]+, best first", body), "the table says how much of the history it shows"
+    assert re.search(r"\d+–\d+ of [\d,]+, most seen first", body), (
+        "the table says how much of the history it shows, and in what order")
+    # The words and the rows agree: the rows are in descending impressions,
+    # which is what "most seen" means, and not in the engine's order, which
+    # is reactions against the creator's median and is named separately in
+    # the panel beside the table.
+    impressions = []
+    for row in screen.locator("tbody tr").all():
+        cells = row.locator("td").all_inner_texts()
+        if len(cells) >= 2 and cells[1].replace(",", "").strip().isdigit():
+            impressions.append(int(cells[1].replace(",", "").strip()))
+    assert impressions, "the table's rows carry impressions"
+    assert impressions == sorted(impressions, reverse=True), f"not most seen first: {impressions}"
+    assert "best first" not in body.lower()
+
     rows_before = screen.locator("tbody tr").all_inner_texts()
     nxt = screen.locator('button[aria-label="Next posts"]')
     assert nxt.is_enabled()
