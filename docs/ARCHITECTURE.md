@@ -76,7 +76,7 @@ def get_db():
 
 ## 3. Database Schema & Data Dictionary
 
-The database consists of 7 normalized relational tables:
+The database has grown well past a small fixed count of tables as features were added; `studio/backend/database.py` and `studio/backend/migrations.py` are the source of truth for the live schema, not this section. The tables below are the ones a reader needs for the core shape, kept deliberately incomplete rather than silently stale about a total:
 
 ```mermaid
 erDiagram
@@ -159,6 +159,8 @@ erDiagram
     posts ||--o{ leads : "engages on"
 ```
 
+`leads.post_id` is declared above but, measured, is not populated by the capture path: nothing currently writes it. Read the relationship as the intended shape, not a measured one, until it is wired or the column is removed.
+
 ---
 
 ## 4. Security Model & Zero-Egress Guarantee
@@ -168,15 +170,19 @@ erDiagram
 | Threat Vector | Commercial SaaS (e.g. Taplio) | Our Local Architecture |
 | :--- | :--- | :--- |
 | **Draft Confidentiality** | Drafts sent to third-party cloud servers | Stored exclusively on local disk (`linkedin_studio.db`) |
-| **Account Ban Risk** | Automated cloud bots spoofing IPs trigger security checkpoints | Zero automated bot activity. Uses your own authenticated browser cookies |
+| **Account Ban Risk** | Automated cloud bots spoofing IPs trigger security checkpoints | Two automated paths exist, and both are disclosed rather than hidden: a history import that clicks LinkedIn's load-more control and scrolls (`docs/EXTENSION_AND_SYNC.md` §2), and **Send to LinkedIn**, which posts a scheduled share to LinkedIn's private Voyager API with your own saved session cookies (`linkedin_client.schedule_norm_share`). Both run only when you ask for them, never on a timer. Neither is "zero automated activity"; see the risk register entry below |
 | **Data Leakage / Telemetry** | Mixpanel, Segment, and Google Analytics tracking | 0 tracking pixels, 0 telemetry pings, 0 external CSS/JS dependencies (Chart.js cached/CDN) |
 | **Credential Egress** | Cookie/password sent to third-party SaaS databases | Cookies remain on `127.0.0.1`. Never leave localhost |
 | **Network Attack Surface** | Public web endpoints exposed to internet | Backend binds exclusively to loopback interface (`127.0.0.1`). Not accessible from LAN or WAN |
+
+### Risk register
+
+The maintained register of what LinkedIn could notice is `planning/7 Roadmap/Risk - LinkedIn terms and detection.md`. As of cycle 3 it names three exposures: the Voyager network interceptor, the scrolled history import above, and `schedule_norm_share` ("Send to LinkedIn"), which writes to LinkedIn's private, undocumented `contentcreation/normShares` endpoint, a use outside LinkedIn's published terms, and could affect the account's standing if LinkedIn's systems treat it as automation. `egress.py:84` refuses that category by default (`INOX_ALLOW_LINKEDIN_EGRESS`), and since cycle 3 a studio installation's first Send to LinkedIn also requires a one-time, logged acknowledgement of that sentence, separate from the per-send confirmation that names the account and the time (see `docs/help/publish-queue-or-send-to-linkedin.md`).
 
 ---
 
 ## 5. Threading & Process Model
 
 1. **Uvicorn Daemon**: Runs the ASGI FastAPI application asynchronously on `127.0.0.1:8000`.
-2. **Scheduler Worker Thread**: Spawns at FastAPI startup (`on_startup`) via `studio/backend/scheduler.py`. Polls the `posts` table every 60 seconds for drafts where `status = 'scheduled'` and `scheduled_for <= UTC_NOW()`.
+2. **Scheduler Worker Thread**: An APScheduler background thread, started at FastAPI startup (`on_startup`) via `studio/backend/scheduler.py`. A 30-second job checks every profile's due posts; a separate hourly job runs the daily backup and retention cleanups. Both jobs are "sleep-safe": a run that came due while the machine slept is still taken, however late, rather than silently skipped (`misfire_grace_time`, `coalesce=True`).
 3. **Chrome Process**: Runs in isolated `--app` container, sandboxed by Windows OS user privileges.

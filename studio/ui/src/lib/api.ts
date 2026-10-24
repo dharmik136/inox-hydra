@@ -2922,7 +2922,12 @@ export interface LinkedInSendRecord {
 /** Whether Send to LinkedIn can work for a post now, as which account, and its earlier sends. */
 export interface LinkedInSendState {
   ready: boolean;
-  /** Why not: no_session, no_identity, account_unknown, other_account, author_unknown or egress_off. */
+  /**
+   * Why not: no_session, no_identity, account_unknown, other_account,
+   * author_unknown, egress_off or risk_not_acknowledged. The last one is the
+   * one-time, per-installation acknowledgement of the account risk, and the
+   * only one the dialog can settle itself, with acknowledgeLinkedInRisk below.
+   */
   code: string | null;
   reason: string | null;
   account: { vanity: string; name: string | null; profile_url: string; member_urn_known: boolean } | null;
@@ -2933,6 +2938,22 @@ export interface LinkedInSendState {
 /** Reads this machine only: the saved session's account, and the send record for the post. */
 export async function fetchLinkedInSend(postId: string): Promise<LinkedInSendState> {
   return call<LinkedInSendState>(`/api/v1/posts/${encodeURIComponent(postId)}/linkedin-send`);
+}
+
+/**
+ * Records this installation's one-time acknowledgement of the Send to LinkedIn
+ * account risk: that it writes to LinkedIn's private scheduling API, outside
+ * LinkedIn's published terms.
+ *
+ * Asked once per installation, never per send. The per-send confirmation in
+ * the Publish dialog is separate and still happens every time: it names the
+ * account and the time, which is not the same thing as naming the risk.
+ */
+export async function acknowledgeLinkedInRisk(): Promise<{ acknowledged: boolean; at: string }> {
+  return call<{ acknowledged: boolean; at: string }>("/api/v1/linkedin/risk-ack", {
+    method: "POST",
+    body: JSON.stringify({ acknowledge: true }),
+  });
 }
 
 /** A weekly slot as the creator sets it: a day (0 is Monday), a local time and an optional name. */

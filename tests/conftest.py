@@ -163,6 +163,25 @@ def pytest_configure(config):
             seed_initial_data()
         except Exception as e:
             sys.stderr.write(f"Notice: Sandbox database bootstrap encountered: {e}\n")
+        # Send to LinkedIn asks once per installation for an acknowledgement of
+        # its account risk before the first send (app.LINKEDIN_RISK_ACK_KEY).
+        # The sandbox is one installation that has already answered it, so the
+        # tests about everything else that gates a send still test that. The
+        # gate itself is tested by clearing this row: see
+        # tests/test_qc3_t8_linkedin_risk_ack.py.
+        try:
+            from database import get_db
+            conn = get_db()
+            try:
+                conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value, updated_at) "
+                    "VALUES ('linkedin_send_risk_ack', '2026-10-01T00:00:00+00:00', CURRENT_TIMESTAMP)"
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as e:
+            sys.stderr.write(f"Notice: Sandbox risk acknowledgement seed encountered: {e}\n")
 
 
 # ---------------------------------------------------------------------------

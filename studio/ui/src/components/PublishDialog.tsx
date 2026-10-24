@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { CalendarClock, CheckCheck, Copy, Loader2, Send } from "lucide-react";
 import {
+  acknowledgeLinkedInRisk,
   fetchLinkedInSend,
   fetchNextSlot,
   publishNow,
@@ -233,6 +234,25 @@ export function PublishDialog({ open, postId, opening, content, onClose, onDone 
   const sendAs = account ? `${account.name ? `${account.name} (${account.profile_url})` : account.profile_url}` : null;
   const lastSend: LinkedInSendRecord | null = linkedin?.sends?.length ? linkedin.sends[linkedin.sends.length - 1] : null;
   const sendBlocked = !linkedin || !linkedin.ready;
+  // The one-time, per-installation acknowledgement of the account risk. It is
+  // the only reason a send is blocked that the creator can settle from here,
+  // so it gets a control rather than the plain sentence the others get.
+  const needsRiskAck = linkedin?.code === "risk_not_acknowledged";
+
+  /** Records the acknowledgement, then reads readiness again so the button unblocks. */
+  async function acknowledgeRisk() {
+    if (!postId) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await acknowledgeLinkedInRisk();
+      setLinkedin(await fetchLinkedInSend(postId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "The acknowledgement was refused.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <AnimatePresence>
@@ -442,6 +462,38 @@ export function PublishDialog({ open, postId, opening, content, onClose, onDone 
                           {account ? `Yes, send as ${account.name ?? account.vanity}` : "Yes, send it to LinkedIn"}
                         </button>
                       </div>
+                    </div>
+                  ) : needsRiskAck ? (
+                    /* Asked once for this studio, before its first send ever,
+                       and never again. It names the one thing the per-send
+                       confirmation above does not: what sending actually is
+                       on LinkedIn's side, and what it could cost the account.
+                       The words are the server's, so the register, the
+                       architecture document and this prompt cannot drift. */
+                    <div className="mt-3">
+                      <p className="studio-meta leading-snug text-ink-muted">
+                        BEFORE THE FIRST SEND FROM THIS STUDIO, ONCE
+                      </p>
+                      <p id="linkedin-send-reason" className="mt-2 text-[13px] leading-relaxed text-signal-orange-text">
+                        {linkedin?.reason}
+                      </p>
+                      <p className="mt-2 text-[12px] leading-snug text-ink-secondary">
+                        Acknowledging this is recorded on this machine and is asked only this once. Each
+                        send still asks you to confirm the account and the time.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={acknowledgeRisk}
+                        className="mt-3 flex items-center gap-1.5 rounded-md border border-signal-orange/60 px-2.5 py-1 text-[12px] text-signal-orange-text transition-colors hover:bg-soft disabled:opacity-40"
+                      >
+                        {busy ? (
+                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Send className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                        )}
+                        I understand, and accept this risk
+                      </button>
                     </div>
                   ) : (
                     <>

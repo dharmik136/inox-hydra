@@ -61,7 +61,12 @@ Everything goes only to the studio at `127.0.0.1:8000`. Lead capture skips profi
 
 ## What it never does
 
-It does not post, comment, react, message or follow on your behalf, and it does not load LinkedIn pages. Apart from the session cookies and request addresses above, it reads only what your browser is already showing. The one thing it can do on a LinkedIn page is the side panel's insert button: it opens LinkedIn's post box if needed and types your text into it, but it does not press Post.
+It does not post, comment, react, message or follow on your behalf. Apart from the session cookies and request addresses above, it reads what your browser is already showing.
+
+Two things it does act on a page, and both happen only when you press something:
+
+- **The side panel's insert button.** It opens LinkedIn's post box if needed and types your text into it, but it does not press Post.
+- **A history import, after you press Import in Setup.** It clicks LinkedIn's own "Show more results" control and scrolls your own activity page so it can read further back, at a randomised pace, for up to 250 rounds, and when it has finished one kind it loads the next activity page itself. A **Stop** control sits on the page throughout, and it pauses while the tab is not in front. See [Set up the studio from your LinkedIn](set-up-the-studio-from-your-linkedin.md).
 
 The part of the extension that runs inside LinkedIn pages can reach only a fixed list of studio functions: saving analytics, linking a post, saving an engagement, the bridge's heartbeat and capture log, recognising your own profile, saving your own posts, comments and reactions and the history imports that read them, and, only while network reading is on, the network readings. Fields named after LinkedIn session credentials are stripped out first.
 

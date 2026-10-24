@@ -436,6 +436,9 @@ def signed_in(monkeypatch):
         "INSERT INTO creator_identity (id, vanity, display_name, confirmed_at) VALUES (1, 'r6-creator', 'Rae Six', ?)",
         (datetime.now(timezone.utc).isoformat(),),
     )
+    # A studio that has never sent, so the cycle 3 one-time risk
+    # acknowledgement is where each of these tests starts from.
+    conn.execute("DELETE FROM settings WHERE key = 'linkedin_send_risk_ack'")
     conn.commit()
     conn.close()
     sender.save_tokens(
@@ -448,7 +451,10 @@ def signed_in(monkeypatch):
     sender.circuit_breaker.reset()
     conn = get_db()
     conn.execute("DELETE FROM creator_identity WHERE id = 1")
-    conn.execute("DELETE FROM settings WHERE key LIKE 'linkedin_send_log:%' OR key LIKE 'linkedin_holds:%'")
+    conn.execute(
+        "DELETE FROM settings WHERE key LIKE 'linkedin_send_log:%' OR key LIKE 'linkedin_holds:%' "
+        "OR key = 'linkedin_send_risk_ack'"
+    )
     conn.commit()
     conn.close()
 
@@ -462,11 +468,42 @@ def test_send_to_linkedin_without_a_session_is_greyed_out_with_the_reason(contex
     assert send.is_disabled()
 
 
+def test_the_first_send_from_a_studio_asks_for_the_risk_to_be_acknowledged(context, studio_url, signed_in):
+    """
+    Cycle 3, T8: the one-time gate, in the real dialog.
+
+    This studio has never sent, so the account risk is named in place of the
+    Send to LinkedIn button, and there is no way past it but to answer it.
+    """
+    page, editor = _composer(context, studio_url)
+    editor.fill(f"{PREFIX} the first post this studio would ever send")
+    dialog = _publish(page)
+    dialog.get_by_text("BEFORE THE FIRST SEND FROM THIS STUDIO, ONCE").wait_for()
+    shown = " ".join(dialog.inner_text().split())
+
+    assert "outside LinkedIn's published terms" in shown
+    assert "account's standing" in shown
+    assert dialog.get_by_role("button", name="Send to LinkedIn").count() == 0, (
+        "the send button was offered before the risk was acknowledged"
+    )
+    assert signed_in.requests == []
+
+    dialog.get_by_role("button", name="I understand, and accept this risk").click()
+    dialog.get_by_role("button", name="Send to LinkedIn").wait_for()
+    assert signed_in.requests == [], "acknowledging sent the post"
+
+
 def test_the_confirmation_names_the_account_and_the_time_and_the_send_reaches_only_the_fake(
         context, studio_url, signed_in):
     page, editor = _composer(context, studio_url)
     editor.fill(f"{PREFIX} the post for LinkedIn to hold")
     dialog = _publish(page)
+    # Since cycle 3 (T8) a studio's first send asks once for the account risk
+    # to be acknowledged. This test is about the per-send confirmation that
+    # follows it, so the one-time gate is answered first.
+    acknowledge = dialog.get_by_role("button", name="I understand, and accept this risk")
+    if acknowledge.count():
+        acknowledge.click()
     dialog.get_by_text("Sends as Rae Six (linkedin.com/in/r6-creator).").wait_for()
 
     dialog.get_by_role("button", name="Send to LinkedIn").click()
