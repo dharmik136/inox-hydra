@@ -111,7 +111,23 @@ export function PromptPanel({ draft = "" }: { draft?: string } = {}) {
     }
   }
 
-  if (failed) return <p className="studio-meta pt-8 text-center text-ink-muted">ENGINE STATUS UNAVAILABLE</p>;
+  // A failed read of the engine's status takes the banner and the provider
+  // controls, which are about the status, and nothing else. The instruction
+  // box is about the draft: on the Command section this came from, a status
+  // that could not be read omitted the banner and left the form working, and
+  // folding it in must not make it less available. Which engine answered is
+  // still named, by the answer itself.
+  if (failed && !status) {
+    return (
+      <div className="flex flex-col gap-5">
+        <p className="studio-meta leading-relaxed text-ink-muted">
+          ENGINE STATUS UNAVAILABLE, SO WHICH ENGINE ANSWERS CANNOT BE SAID BEFORE IT DOES. AN INSTRUCTION STILL
+          RUNS, AND ITS ANSWER NAMES THE ENGINE THAT WROTE IT.
+        </p>
+        <CommandBlock draft={draft} />
+      </div>
+    );
+  }
   if (!status) return <p className="studio-meta pt-8 text-center text-ink-muted">READING ENGINE STATUS</p>;
 
   // has_api_key is the difference between a local deterministic engine and a

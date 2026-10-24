@@ -56,11 +56,16 @@ def test_docs_search_returns_only_customer_documents(consumer):
 
 def test_help_hits_are_not_crowded_out_by_hidden_ones(consumer):
     """
-    Over a hundred maintainer sections mention "architecture" and two help
-    articles do. Dropping the hidden ones from a page afterwards left none.
+    Dozens of maintainer sections mention "scheduler" and two help articles
+    do. Dropping the hidden ones from a page afterwards left none.
+
+    The probe was "architecture" until cycle 3 batch T7 retired
+    browse-the-swipe-file.md, which was the only help article carrying that
+    word (through the engineering pack's archetype names). A probe no help
+    article answers measures nothing.
     """
-    results = client.get("/api/docs/search", params={"q": "architecture", "limit": 5}).json()["results"]
-    assert results, "the help articles that mention architecture were crowded out"
+    results = client.get("/api/docs/search", params={"q": "scheduler", "limit": 5}).json()["results"]
+    assert results, "the help articles that mention the scheduler were crowded out"
     assert {hit["kind"] for hit in results} == {"help"}
 
 

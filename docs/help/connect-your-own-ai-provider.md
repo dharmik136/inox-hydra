@@ -1,5 +1,5 @@
 # Connect your own AI provider
-Plug in your own model key so Re-Hook and the Command console use it, and see exactly what text it receives.
+Plug in your own model key so Re-Hook and the instruction box use it, and see exactly what text it receives.
 
 ## You do not need one
 
@@ -41,7 +41,7 @@ Once connected, this is what reaches the provider:
 | Feature | What is sent |
 | --- | --- |
 | **Re-Hook** on a selection | A prompt built from the first line of your selection |
-| **Command** console | Your instruction, and your Composer draft only when **Include my Composer draft** is ticked |
+| **Instruction** box | Your instruction, and your draft only when **Include my draft** is ticked |
 | **Media** tab, **Preview prompt** and **Generate** | Your image description, so the model can describe the scene |
 | **Media** tab **Generate**, with `openai` or `gemini` and no image provider chosen | The image prompt, to OpenAI Images or Google Imagen with this key. Choose another under **Images** in the **Prompt** tab |
 | **Audit** tab, and message drafts on **Leads** | Nothing. These always run locally. |
@@ -60,7 +60,7 @@ If a provider call fails, Re-Hook and Command say so and give the provider's rea
 
 If no key is saved in the studio, which is always the case for `ollama`, it uses `OPENAI_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, or `GROQ_API_KEY` from your environment, in that order, and that provider replaces the one you chose. Starting the studio with `INOX_ALLOW_MODEL_EGRESS=0` or `INOX_NO_EGRESS=1` refuses all model traffic.
 
-## Use the Command console
+## Use the instruction box
 
 1. Open **Command** from the rail.
 2. Check the banner: it shows the active mode, then STAYS ON THIS MACHINE (no key) or SENT TO THE PROVIDER.

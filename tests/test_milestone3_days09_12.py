@@ -118,7 +118,10 @@ def test_day09_offline_docs_engine_and_fts5():
     assert "section" in first_match
 
     # 3. Test HTTP API endpoint
-    resp = client.get("/api/docs/search?q=architecture&limit=5")
+    # "scheduler" rather than "architecture": the one help article that
+    # carried the latter went with the Swipe File (cycle 3, batch T7), and a
+    # consumer build searches the help alone.
+    resp = client.get("/api/docs/search?q=scheduler&limit=5")
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "success"

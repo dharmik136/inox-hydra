@@ -1,6 +1,6 @@
 # Search everything with Ctrl+K
 
-Find a post, a lead, a Swipe File specimen or a help article from any surface, and open it where it lives.
+Find a post, a lead, a hook form or a help article from any surface, and open it where it lives.
 
 ## Open search
 
@@ -20,7 +20,7 @@ To close it, press **Escape**, press **Ctrl+K** again, or click the dimmed area 
 | **Actions** | The names of the actions listed below | Runs it |
 | **Posts** | The saved text and tags of every post, whatever its status, and the text of your posts imported from LinkedIn, marked PUBLISHED ON LINKEDIN | A draft opens in the **Composer**. A queued or scheduled post opens **Queue**. A published post, and a post imported from LinkedIn, opens **Analytics** |
 | **Leads** | Name, company, headline and notes, and every comment the person left | Opens **Leads** with that person selected. A lead found by a comment shows the comment, starting "Commented:" |
-| **Swipe File** | The hook, archetype and pacing pattern of each specimen | Opens **Swipe File** with that card outlined in orange. Any search or archetype filter you had set there is cleared first, so the card is not hidden |
+| **Hook forms** | The hook, archetype and pacing pattern of each form | Opens the **Composer**, where the hook rail above the editor applies a form to your opening line |
 | **Help** | The help articles in **Docs** | Opens the article at the section that matched |
 
 3. Move with the arrow keys and press **Enter**, or click a result. The selected result shows where it will open, for example "Opens in Composer".
@@ -56,7 +56,7 @@ Each action does what its label says. Earlier versions listed entries such as "G
 
 | You see | What it means |
 | --- | --- |
-| "Nothing in your posts, leads, Swipe File or help matches that." | No saved item contains every word you typed. Try fewer words |
+| "Nothing in your posts, leads, hook forms or help matches that." | No saved item contains every word you typed. Try fewer words |
 | "The search could not run" followed by a reason | The studio's server did not answer. See [The studio will not open](the-studio-will-not-open.md) |
 | "Leads could not be searched." (or another group) | That one group failed. The other groups are still searched and shown |
 | A post you just wrote is missing | It has not been saved yet. Press **Save** in the Composer, then search again |

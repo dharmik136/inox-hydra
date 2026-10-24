@@ -43,17 +43,21 @@ This check is not the same as the 140 character fold mark in the editor, which m
 
 See [Connect your own AI provider](connect-your-own-ai-provider.md) and [What leaves this machine, and when](what-leaves-this-machine.md).
 
-## Browse more in the Swipe File
+## What the forms are, and are not
 
-The rail shows 12 forms. The full library is in **Swipe File** on the rail: 12 starter forms in a new studio, and 36 more if you add the engineering creator pack there.
+These are hook forms, not posts anyone measured. The library stores patterns:
+a form with a bracketed blank for you to fill, such as `[Number] years of
+[your work] taught me one thing about [topic]:`. No reaction or comment count
+is shown for one, because none was ever read for one.
 
-- Type in **Search specimens** to filter by text.
-- Press an archetype chip to narrow the list, or **All** to clear it. The count reads, for example, `2 OF 12`.
-- Hover over a card to read the full specimen. It collapses when the pointer leaves.
+A rating on a form was typed in by whoever wrote it. The studio shows it as
+an editor's rating, never as a measurement, and a form with no rating shows
+none rather than a zero.
 
-The banner reads "These are hook forms, not posts anyone measured." The library stores patterns, not real posts, so no reaction or comment counts are shown.
-
-There is no button that moves a specimen into the Composer. Select the text on the card, copy it, and paste it into the editor.
+To search the whole library rather than the twelve in the rail, press
+**Ctrl+K** (**Cmd+K** on a Mac) and type a word from a form. Choosing one
+opens the Composer, where the rail applies it. See
+[Search everything with Ctrl+K](use-the-command-palette.md).
 
 ## If it does not work
 

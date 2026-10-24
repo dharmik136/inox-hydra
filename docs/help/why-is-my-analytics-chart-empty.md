@@ -1,5 +1,5 @@
-# Why is my analytics chart or Swipe File empty?
-Match what Analytics or the Swipe File shows to its cause, and get figures or specimens back on screen.
+# Why is my analytics chart empty?
+Match what Analytics shows to its cause, and get figures back on screen.
 
 ## Analytics: how figures arrive
 
@@ -32,17 +32,6 @@ The studio never fetches your analytics. The browser extension reads the impress
 5. Open **Analytics** in the studio, or switch away and back if it was already open.
 
 If you see a banner reading "*n* of *m* days are seeded sample data, not measurements.", those days are generated samples, not your figures. [Read your analytics](read-your-analytics.md) explains it.
-
-## Swipe File: what you see, and what to do
-
-The Swipe File reads its specimens once when you open it. They are hook forms stored on this machine, starting with a set that ships with the studio. Nothing is fetched from LinkedIn.
-
-| What you see | Why | What to do |
-| --- | --- | --- |
-| SWIPE FILE UNAVAILABLE | The request to the studio failed | Check the studio is running, then reopen **Swipe File** |
-| LOADING SPECIMENS that never ends | The server has not answered | Treat it like SWIPE FILE UNAVAILABLE |
-| NOTHING MATCHES THAT | Your text in **Search specimens**, or the type chip you chose, matches nothing. Search looks at the post text, the hook and the topic, and it combines with the chip | Clear the search box and choose **All** |
-| NO SPECIMENS SAVED YET | The library came back empty. The studio refills it with its shipped forms whenever it is empty, so this should be rare | Switch to another surface and back to **Swipe File**. If it persists, run the doctor command below |
 
 ## Still stuck
 

@@ -422,15 +422,25 @@ def outbound_overview() -> Dict[str, Any]:
         if one_lead:
             # Whose a post is still decided by post_identity's id rather than
             # by string equality, but once per post instead of once per
-            # interaction. Then one grouped read per person, which the
-            # interaction index serves: 29 ms for 40 names on the three year
-            # home against the 51 s the join by name cost.
+            # interaction. Then one grouped read per person, which
+            # idx_interactions_lead serves. Measured on the three year home
+            # with every row named: 78 ms for the whole read, against 1,095 ms
+            # for the implementation this replaced, which read every
+            # interaction of every lead sharing a name.
             leads_json = json.dumps(list(of_lead))
-            mine = json.dumps([urn for (urn,) in conn.execute(
-                "SELECT DISTINCT post_urn FROM lead_interactions "
-                "WHERE lead_id IN (SELECT value FROM json_each(?)) AND post_urn IS NOT NULL",
-                (leads_json,))
-                if onboarding._activity_id(urn) in own_ids])
+            # One key per post, not one per spelling: a publication can be
+            # captured under both an activity: and a ugcPost: urn, which
+            # post_identity resolves to one id, and counting both would say a
+            # person engaged with two posts where they engaged with one.
+            by_id: Dict[str, str] = {}
+            for (urn,) in conn.execute(
+                    "SELECT DISTINCT post_urn FROM lead_interactions "
+                    "WHERE lead_id IN (SELECT value FROM json_each(?)) AND post_urn IS NOT NULL",
+                    (leads_json,)):
+                post = onboarding._activity_id(urn)
+                if post in own_ids:
+                    by_id.setdefault(post, urn)
+            mine = json.dumps(list(by_id.values()))
             for row in conn.execute(
                 "SELECT CAST(lead_id AS TEXT) AS lead_id, COUNT(DISTINCT post_urn) AS posts, "
                 "MAX(interacted_at) AS at FROM lead_interactions "
@@ -482,8 +492,6 @@ def outbound_overview() -> Dict[str, Any]:
         # are kept separate so neither reads as the other.
         age = results.age_hours(inbound) if inbound else None
         entry["gone_quiet"] = bool(entry["engaged_back"] and age is not None and age >= GONE_QUIET_DAYS * 24)
-        # Their own words, clipped the way every other excerpt in the studio
-        # is. None when you have only ever reacted to them.
 
     ranked = sorted(authors.values(), key=lambda a: (a["total"], a["comments"]), reverse=True)
 
@@ -521,6 +529,11 @@ def outbound_overview() -> Dict[str, Any]:
         # page of the table: the figure above the lists counted the rows it
         # could see and read "3 of 40" over a list of twelve names.
         "reciprocal_count": sum(1 for a in ranked if a["engaged_back"]),
+        # The names that are one captured person's, which is the population
+        # reciprocity can be read for at all. Without it the figure read
+        # "0 of 1,540" on a history where no name belongs to one person, and
+        # the reason was a footnote under the table.
+        "matched_names": sum(1 for a in authors.values() if a["named_people"] == 1),
         # Names more than one captured person answers to, which is why their
         # row carries no reciprocity number.
         "shared_names": sum(1 for a in authors.values() if a["named_people"] > 1),
