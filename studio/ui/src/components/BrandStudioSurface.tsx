@@ -182,7 +182,16 @@ export function BrandStudioSurface() {
         {workspace === "Watermark" && <WatermarkWorkspace profile={profile} edit={edit} />}
         {workspace === "Grounding" && <GroundingWorkspace />}
         {workspace === "Local security" && <SecurityWorkspace loaded={loaded} ai={ai} />}
-        {workspace === "Storage and privacy" && <StoragePrivacyWorkspace />}
+        {/* Your data first in this pane, and no longer at the foot of Local
+            security, where it sat at y=1322 in a 900 pixel window under a tab
+            about what leaves the machine. A creator looking for a copy of
+            their work looks in the pane named for their storage. */}
+        {workspace === "Storage and privacy" && (
+          <div className="flex flex-col gap-8">
+            <YourData />
+            <StoragePrivacyWorkspace />
+          </div>
+        )}
         {workspace === "Licence" && <LicenceWorkspace />}
       </div>
     </div>
@@ -441,8 +450,6 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
       <EgressLedger />
 
       <SessionConnection />
-
-      <YourData />
     </div>
   );
 }

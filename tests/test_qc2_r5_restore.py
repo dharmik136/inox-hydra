@@ -234,7 +234,7 @@ def test_the_help_offers_the_button_before_the_terminal():
 
 
 def test_the_restore_button_restores_from_the_interface(tmp_path, monkeypatch):
-    """Brand Studio, Local security, Restore, OK: the backup's state is back and the note says so."""
+    """Brand Studio, Storage and privacy, Restore, OK: the backup's state is back and the note says so."""
     pytest.importorskip("playwright.sync_api")
     if not os.path.exists(os.path.join(REPO_ROOT, "studio", "frontend_next", "index.html")):
         pytest.skip("the interface is not built")
@@ -272,7 +272,8 @@ def test_the_restore_button_restores_from_the_interface(tmp_path, monkeypatch):
                 context = browser.new_context(service_workers="block")
                 page = context.new_page()
                 page.goto(f"http://127.0.0.1:{port}/#/settings", wait_until="networkidle")
-                page.get_by_role("tab", name="Local security").click()
+                # Your data moved to the pane named for it in cycle 3 batch T7.
+                page.get_by_role("tab", name="Storage and privacy").click()
                 questions = []
                 page.on("dialog", lambda dialog: (questions.append(dialog.message), dialog.accept()))
                 page.get_by_role("button", name=f"Restore {os.path.basename(archive)}").click()
