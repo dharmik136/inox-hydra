@@ -14,7 +14,10 @@ has stopped running (T4's stale flag on /api/v1/storage).
 This drives the built interface at 1440x900 and asks what is on the screen.
 """
 
-from playwright.sync_api import expect
+import pytest
+
+pytest.importorskip("playwright.sync_api")
+from playwright.sync_api import expect  # noqa: E402
 
 from qc2_r5_live import confirm_identity, open_section, seed_creator, server, studio  # noqa: F401
 

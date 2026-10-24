@@ -15,7 +15,9 @@ restored into the editor, which is what a real install does.
 """
 
 import pytest
-from playwright.sync_api import expect
+
+pytest.importorskip("playwright.sync_api")
+from playwright.sync_api import expect  # noqa: E402
 
 from qc2_r5_live import seed_creator, server, studio  # noqa: F401
 

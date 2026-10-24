@@ -18,7 +18,10 @@ forecast.
 
 import os
 
-from playwright.sync_api import expect
+import pytest
+
+pytest.importorskip("playwright.sync_api")
+from playwright.sync_api import expect  # noqa: E402
 
 from qc2_r5_live import open_section, seed_creator, server, studio  # noqa: F401
 

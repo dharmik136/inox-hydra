@@ -22,7 +22,10 @@ unreproducible.
 
 from datetime import datetime, timedelta
 
-from playwright.sync_api import expect
+import pytest
+
+pytest.importorskip("playwright.sync_api")
+from playwright.sync_api import expect  # noqa: E402
 
 from qc2_r5_live import confirm_identity, open_section, server, studio  # noqa: F401
 
