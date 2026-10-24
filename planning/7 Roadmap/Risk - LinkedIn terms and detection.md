@@ -9,7 +9,7 @@ tags:
 
 # Risk - LinkedIn terms and detection
 
-LinkedIn's User Agreement prohibits automated access and scraping. The product reads pages the creator opens rather than crawling, never posts or messages, and gates every request to LinkedIn. That is a defensible personal tool. A commercial product is judged more strictly.
+LinkedIn's User Agreement prohibits automated access and scraping. The product reads pages the creator opens rather than crawling, and gates every request to LinkedIn. It never comments, reacts, connects or messages. It does three things that are not reading, each only when the creator asks: it schedules a post through LinkedIn's private API (**Send to LinkedIn**, the paragraph below), it clicks and scrolls through the creator's own activity during a history import, and it clicks Start a post and types a draft into LinkedIn's composer without posting it. That is a defensible personal tool. A commercial product is judged more strictly.
 
 **Most exposed:** [[Voyager Interceptor]] (wraps fetch inside LinkedIn's page), the scrolled [[History Import]], and `linkedin_client.schedule_norm_share` ("Send to LinkedIn").
 

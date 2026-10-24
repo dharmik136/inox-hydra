@@ -1,6 +1,6 @@
 # Chrome Extension & Sync Bridge
 
-The **Inox Hydra Bridge** extension connects the LinkedIn pages you open in your own browser to the studio running on `127.0.0.1:8000`. For everyday reading it never acts on LinkedIn for you; the one exception, covered below, is a history import you start yourself, which clicks LinkedIn's own load-more control and scrolls the page.
+The **Inox Hydra Bridge** extension connects the LinkedIn pages you open in your own browser to the studio running on `127.0.0.1:8000`. For everyday reading it never acts on LinkedIn for you. Two things it does do to the page, both covered below and both only when you press something: a history import, which clicks LinkedIn's own load-more control, scrolls, and moves the tab from one of your activity pages to the next; and placing a draft, which opens LinkedIn's composer and types your post into it. Neither posts: you press LinkedIn's own Post button yourself.
 
 ---
 
@@ -39,15 +39,16 @@ graph TD
 
 ## 2. What the Bridge Does in LinkedIn's Page
 
-LinkedIn's User Agreement restricts automated access. The bridge is built to stay a reader of pages you open yourself, with one named exception, and to say plainly what it does there:
+LinkedIn's User Agreement restricts automated access. The bridge is built to stay a reader of pages you open yourself, with two named exceptions, and to say plainly what it does there:
 
 | What | How |
 | :--- | :--- |
-| **Page reading** | Content scripts read the page you have open, as it renders, and follow your own scrolling. Outside the one exception below, they never click, type, post, react, comment, message or connect. |
-| **History import (the one exception)** | Only after you press **Import your history** in Setup, for your own posts, comments or reactions, `own_pages.js` clicks LinkedIn's "Show more results" control and scrolls the page itself, so it can read further than what was already on screen. It runs at a randomised pace, 1.6 to 3.2 seconds between rounds, for up to 250 rounds per kind: up to several minutes of unattended clicking and scrolling. A **Stop** control sits on the page the whole time, and the import pauses itself while the tab is not visible. It runs only because you asked for that import, on your own posts, comments or reactions, never on a timer and never on a page that is not yours. This is the exposure the risk register (`planning/7 Roadmap/Risk - LinkedIn terms and detection.md`) names as "the scrolled History Import". |
+| **Page reading** | Content scripts read the page you have open, as it renders, and follow your own scrolling. They never post, react, comment, message or connect, at all. They click and type in exactly two places, both named below, and each only when you press something yourself. |
+| **History import (first exception)** | Only after you press **Import your history** in Setup, for your own posts, comments or reactions, `own_pages.js` clicks LinkedIn's "Show more results" control and scrolls the page itself, so it can read further than what was already on screen. It runs at a randomised pace, 1.6 to 3.2 seconds between rounds, for up to 250 rounds per kind: up to several minutes of unattended clicking and scrolling. When you asked for all three kinds, it also moves the tab itself from one of your activity pages to the next (`own_pages.js:1388` sets `window.location.href`), so the import opens a page as well as reading one. A **Stop** control sits on the page the whole time, and the import pauses itself while the tab is not visible. It runs only because you asked for that import, on your own activity, never on a timer and never on a page that is not yours. This is the exposure the risk register (`planning/7 Roadmap/Risk - LinkedIn terms and detection.md`) names as "the scrolled History Import". |
+| **Placing a draft (second exception)** | Only when you press the side panel's insert control, `content.js` puts a draft you wrote into LinkedIn's composer: if the composer is not already open it clicks LinkedIn's **Start a post** control to open it (`content.js:275-279`), then types the text into the editor. It never presses **Post**, and if it cannot find the composer it says so on the page and does nothing. |
 | **Network reading (off by default)** | Only when you switch on **Read LinkedIn's network responses** in the extension's popup: `voyager_interceptor.js` wraps `window.fetch` in LinkedIn's page and copies the JSON of responses LinkedIn's own app already fetched, for exact rather than rounded figures, and the worker notes which of LinkedIn's data requests a page made (address and status, never contents). It never sends a request of its own. Wrapping fetch is visible to LinkedIn's page code, which may treat it as automation. Switching it off stops the copying at once; an open tab keeps the inert wrapper until reloaded. |
 | **Post ids on feed cards** | `card_urns.js` runs in the page, always, and copies each feed card's post id from LinkedIn's React properties onto the card, so the readers know which post a commenter belongs to. It reads and marks the page; it does not touch fetch. |
-| **Requests to LinkedIn** | None of the extension's own fetches, outside network reading above. During a history import, clicking LinkedIn's own load-more control makes LinkedIn's page issue its own request to load more of the list; the extension does not make that request itself, but its click is what causes it. Outside the import, the studio itself contacts LinkedIn only for features that are off by default, and from your machine, never from a server. |
+| **Requests to LinkedIn** | None. No part of the extension fetches from LinkedIn, network reading included: that feature copies answers LinkedIn's own page already had. What a history import does instead is make LinkedIn's own page fetch: its click on the load-more control, and the activity page it opens, are requests LinkedIn's page issues because the extension acted on it. Separately from the extension, the studio itself contacts LinkedIn for features that are off by default, from your machine, never from a server. |
 | **Session** | Copied into the studio only when you press **Sync LinkedIn Session** in the popup, read through `chrome.cookies`, and sealed at rest. |
 
 ---
@@ -77,7 +78,9 @@ LinkedIn's analytics page and its network responses do not say whose figures the
 
 ## 4. Session Sync, When You Ask
 
-Nothing runs on a timer. When you press **Sync LinkedIn Session** in the popup, `studio/extension/background.js`:
+Nothing about your session runs on a timer. Two other things do, and neither touches LinkedIn: the worker retries captures the studio was too busy to take, every minute (`background.js`, `DRAIN_EVERY_MINUTES`), and a page the bridge is reading tells the studio it is alive every minute (`own_pages.js`, `HEARTBEAT_MS`). Both talk only to `127.0.0.1:8000`.
+
+When you press **Sync LinkedIn Session** in the popup, `studio/extension/background.js`:
 
 1. Reads `li_at` and `JSESSIONID` from Chrome's cookie store.
 2. Posts them to `http://127.0.0.1:8000/api/auth/cookies`, with the studio token.
@@ -90,7 +93,7 @@ An earlier version copied the session every 15 minutes. That alarm is cleared wh
 ## 5. Sidepanel Composer & In-Feed Warm CRM
 
 The extension embeds a lightweight workspace directly into Chrome's native **Side Panel**:
-* **Composer Tab**: Draft and format posts with Unicode mathematical sans-bold and insert directly into the LinkedIn composer with 1 click.
+* **Composer Tab**: Draft and format posts with Unicode mathematical sans-bold and insert into the LinkedIn composer with 1 click. That insert is the second of the two exceptions in §2: it clicks LinkedIn's **Start a post** control if the composer is closed, and types. It does not press **Post**.
 * **Queued Posts Tab**: Review your upcoming scheduled publishing queue.
 * **Warm CRM Tab**: Browse your active prospect pipeline right alongside LinkedIn. Click **⚡ Copy DM** to generate a personalized outreach message tailored to the prospect's real comments and copy it to your clipboard with one click.
 

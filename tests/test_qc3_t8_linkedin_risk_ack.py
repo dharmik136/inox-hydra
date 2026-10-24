@@ -209,6 +209,36 @@ def test_readiness_says_so_before_the_creator_presses_send():
     assert state["account"]["vanity"] == "t8-creator"
 
 
+def test_a_default_install_meets_the_risk_before_the_flag_that_would_allow_it(monkeypatch):
+    """
+    Review of T8, item 6: the ordering.
+
+    LinkedIn egress is off by default, and readiness used to check that before
+    the acknowledgement. On a default install the creator therefore met only
+    "start the studio with INOX_ALLOW_LINKEDIN_EGRESS=1" and never met the
+    risk sentence: the instruction for switching the feature on arrived before
+    the disclosure of what switching it on means, which is backwards for a
+    consent gate. The risk is now named first, and the flag second.
+    """
+    monkeypatch.delenv("INOX_ALLOW_LINKEDIN_EGRESS", raising=False)
+
+    state = client.get(f"/api/v1/posts/{PREFIX}none/linkedin-send").json()
+
+    assert state["ready"] is False
+    assert state["code"] == "risk_not_acknowledged", (
+        "a default install is told how to switch sending on before it is told what sending is"
+    )
+    assert state["reason"] == RISK_SENTENCE
+    assert state["egress_allowed"] is False, "the test did not reach a default install"
+
+    # And once it is answered, the flag is the next thing said, so nothing is
+    # lost: the creator still learns what to do to make a send possible.
+    _acknowledge(acknowledge=True)
+    after = client.get(f"/api/v1/posts/{PREFIX}none/linkedin-send").json()
+    assert after["code"] == "egress_off"
+    assert "INOX_ALLOW_LINKEDIN_EGRESS" in after["reason"]
+
+
 def test_an_acknowledgement_that_acknowledges_nothing_is_refused():
     """A default is not consent: the field has to be sent, and sent true."""
     assert _acknowledge().status_code == 400
@@ -316,6 +346,9 @@ def test_the_extension_document_does_not_claim_the_scripts_never_click():
     extension_doc = _repo_file("docs", "EXTENSION_AND_SYNC.md")
 
     assert "They never click, type" not in extension_doc, "the unconditional claim is back"
-    assert "Outside the one exception below, they never click" in extension_doc
     assert "250 rounds" in extension_doc
     assert "Import your history" in extension_doc
+    # The exact wording of the exceptions, and the second one this test's
+    # first version did not know about, are held by
+    # tests/test_qc3_t8_doc_claims.py, which the review of this batch produced.
+    assert "They click and type in exactly two places" in extension_doc
