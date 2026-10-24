@@ -215,14 +215,24 @@ def test_without_a_model_re_hook_offers_labelled_fill_in_templates(page):
         assert "%" not in text and "enterprise" not in text.lower(), text
 
 
+# The instruction box is in the Composer's Prompt panel since cycle 3 batch
+# T7: Command was a rail section whose only subject was the draft, and whose
+# answer could not reach it.
 def _run_command(page, text, include_draft):
-    page.click('button[aria-label="Command"]')
+    # Not _open_prompt_tab: that waits for the heading the panel shows when no
+    # provider is configured, and these tests configure one. The instruction
+    # box is what this needs.
+    opener = page.locator('button[aria-label="Open inspector"]')
+    if opener.count() and opener.is_visible():
+        opener.click()
+    page.click('aside[aria-label="Inspector"] button:has-text("Prompt")')
+    page.wait_for_selector("#agent-command")
     page.fill("#agent-command", text)
     box = page.locator('input[type="checkbox"][name="include-draft"]')
     if include_draft:
         box.check()
     page.click('button[aria-label="Run the command"]')
-    page.wait_for_selector("section li pre")
+    page.wait_for_selector('aside[aria-label="Inspector"] li pre')
 
 
 def test_the_command_console_shows_the_answer_and_sends_the_draft_only_when_asked(page, provider):
@@ -231,7 +241,7 @@ def test_the_command_console_shows_the_answer_and_sends_the_draft_only_when_aske
     page.locator('textarea[aria-label="Post body"]').fill("Our bakery moved orders to a simple form.")
 
     _run_command(page, "Summarise my draft in one sentence", include_draft=True)
-    entry = page.locator("section li").first
+    entry = page.locator('aside[aria-label="Inspector"] li:has(pre)').first
     assert entry.locator("pre").inner_text().strip() == "OK from the fake model."
     assert "{" not in entry.inner_text(), "the console printed the raw JSON"
     assert "Custom_openai (fake)" in entry.inner_text(), "the engine that answered is not named"
@@ -240,8 +250,21 @@ def test_the_command_console_shows_the_answer_and_sends_the_draft_only_when_aske
     page.locator('input[type="checkbox"][name="include-draft"]').uncheck()
     page.fill("#agent-command", "Write one line about pricing")
     page.click('button[aria-label="Run the command"]')
-    page.wait_for_function("document.querySelectorAll('section li pre').length >= 2")
+    page.wait_for_function(
+        "document.querySelectorAll('aside[aria-label=\\'Inspector\\'] li pre').length >= 2")
     assert "Our bakery" not in provider.requests[-1]["messages"][-1]["content"], "the draft was sent unasked"
+
+
+def test_an_answer_can_be_copied_without_selecting_it_by_hand(page, provider):
+    """
+    The one control the Command section never had. MAKING.md measured
+    "ACTIONS ON A COMMAND ANSWER []": the only way to use an answer was the
+    mouse, and a reload lost it.
+    """
+    page.click('button[aria-label="Composer"]')
+    _run_command(page, "Write one line about pricing", include_draft=False)
+    entry = page.locator('aside[aria-label="Inspector"] li:has(pre)').first
+    assert entry.get_by_text("COPY").count() == 1, entry.inner_text()
 
 
 def _open_prompt_tab(page):

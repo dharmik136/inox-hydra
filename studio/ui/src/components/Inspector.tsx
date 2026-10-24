@@ -110,7 +110,7 @@ export function Inspector({ open, onClose, draft, overlay = false }: InspectorPr
         {mode === "Evidence" && <EvidencePanel />}
         {mode === "Media" && <MediaPanel />}
         {mode === "Brand" && <BrandPanel />}
-        {mode === "Prompt" && <PromptPanel />}
+        {mode === "Prompt" && <PromptPanel draft={draft} />}
       </div>
     </div>
   );

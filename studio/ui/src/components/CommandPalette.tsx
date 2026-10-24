@@ -65,14 +65,13 @@ const OPENS: Record<SearchOpens, string> = {
   queue: "Opens Queue",
   analytics: "Opens Analytics",
   leads: "Opens the lead",
-  swipe: "Shows in Swipe File",
   docs: "Opens the article",
 };
 
 const GROUPS: { key: keyof SearchResponse["groups"]; heading: string; icon: LucideIcon }[] = [
   { key: "posts", heading: "Posts", icon: FileText },
   { key: "leads", heading: "Leads", icon: UserRound },
-  { key: "specimens", heading: "Swipe File", icon: Bookmark },
+  { key: "specimens", heading: "Hook forms", icon: Bookmark },
   { key: "help", heading: "Help", icon: BookOpen },
 ];
 
@@ -232,7 +231,7 @@ export function CommandPalette({
                 <Command.Input
                   value={query}
                   onValueChange={setQuery}
-                  placeholder="Search posts, leads, the Swipe File and help"
+                  placeholder="Search posts, leads, hook forms and help"
                   className="w-full bg-transparent py-3.5 text-[14px] text-ink-primary outline-none placeholder:text-ink-muted"
                 />
                 {searching && (
@@ -243,7 +242,7 @@ export function CommandPalette({
               <Command.List className="max-h-[58vh] overflow-y-auto p-2">
                 {nothing && (
                   <p className="px-3 py-8 text-center text-[13px] text-ink-muted">
-                    Nothing in your posts, leads, Swipe File or help matches that.
+                    Nothing in your posts, leads, hook forms or help matches that.
                   </p>
                 )}
 

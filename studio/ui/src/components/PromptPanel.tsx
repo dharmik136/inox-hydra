@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Loader2 } from "lucide-react";
-import { configureAi, fetchAiProviders, fetchAiStatus, type AiProviderOption, type AiStatus } from "@/lib/api";
+import { Copy, CornerDownLeft, Loader2 } from "lucide-react";
+import {
+  configureAi,
+  fetchAiProviders,
+  fetchAiStatus,
+  runAiCommand,
+  type AiProviderOption,
+  type AiStatus,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { ImageProviderSettings } from "./ImageProviderSettings";
 
@@ -38,11 +45,18 @@ const SENT_BY_FEATURE: { feature: string; what: string }[] = [
 /**
  * The prompt inspector (blueprint section 10).
  *
- * Which engine is answering, and whether anything leaves this machine to do
- * it. That second question is the product's central claim, so it is the line
- * with the colour on it.
+ * Which engine is answering, whether anything leaves this machine to do it,
+ * and the instruction box that used to be a rail section of its own. That
+ * second question is the product's central claim, so it is the line with the
+ * colour on it.
+ *
+ * Command came here because the only thing it can act on is the draft, and as
+ * a section it was 147 characters, three controls and an answer the creator
+ * had to select with the mouse to use. Beside the draft, under the disclosure
+ * that says what goes with it, it is the same engine answering about the text
+ * on screen.
  */
-export function PromptPanel() {
+export function PromptPanel({ draft = "" }: { draft?: string } = {}) {
   const [status, setStatus] = useState<StatusWithFailure | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -165,6 +179,8 @@ export function PromptPanel() {
         </ul>
       </section>
 
+      <CommandBlock draft={draft} />
+
       <section className="border-t border-edge pt-4">
         <p className="studio-label mb-2">{local ? "Connect a provider" : "Change provider"}</p>
         {local && (
@@ -241,6 +257,170 @@ export function PromptPanel() {
 
       <ImageProviderSettings />
     </div>
+  );
+}
+
+/** One instruction, and what the engine answered, for this session. */
+interface Ran {
+  command: string;
+  response: string;
+  failed: boolean;
+  /** Who wrote the response, as the engine reports it. */
+  engine: string | null;
+  /** What went to the provider with the instruction, when one was used. */
+  sent: string[];
+}
+
+/**
+ * The instruction box, moved here from the Command section.
+ *
+ * The draft goes with an instruction only when the box under it is ticked.
+ * The placeholder used to offer to work with "your draft" while the draft was
+ * never sent, so "summarise my draft" was answered about nothing. An answer
+ * can be copied, which it could not be on the section: the only way to use
+ * one there was to select it with the mouse.
+ */
+function CommandBlock({ draft }: { draft: string }) {
+  const [command, setCommand] = useState("");
+  const [includeDraft, setIncludeDraft] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [log, setLog] = useState<Ran[]>([]);
+  const [copied, setCopied] = useState<number | null>(null);
+  const hasDraft = draft.trim().length > 0;
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    const text = command.trim();
+    if (!text || busy) return;
+
+    setBusy(true);
+    try {
+      const result = await runAiCommand(text, includeDraft && hasDraft ? draft : undefined);
+      // The engine answers in "output". That field was never read, so every
+      // answer was printed as the whole JSON payload with its line breaks
+      // escaped. The payload is still the last resort, rather than "undefined".
+      const readable =
+        typeof result.output === "string"
+          ? result.output
+          : typeof result.message === "string"
+            ? result.message
+            : JSON.stringify(result, null, 2);
+      const engine = typeof result.engine === "string" ? result.engine : null;
+      const sent = Array.isArray(result.sent) ? result.sent.map(String) : [];
+      setLog((entries) => [{ command: text, response: readable, failed: false, engine, sent }, ...entries]);
+      setCommand("");
+    } catch (error) {
+      setLog((entries) => [
+        {
+          command: text,
+          response: error instanceof Error ? error.message : "The command was refused.",
+          failed: true,
+          engine: null,
+          sent: [],
+        },
+        ...entries,
+      ]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="border-t border-edge pt-4">
+      <p className="studio-label mb-2">Instruction</p>
+      <form onSubmit={onSubmit}>
+        <div className="flex items-start gap-2">
+          <textarea
+            id="agent-command"
+            aria-label="Instruction"
+            value={command}
+            onChange={(event) => setCommand(event.target.value)}
+            onKeyDown={(event) => {
+              // Enter sends; shift and enter makes a new line. A console that
+              // needs a mouse to submit is not a console.
+              if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                void onSubmit(event as unknown as React.FormEvent);
+              }
+            }}
+            rows={3}
+            placeholder="Tell the model what to write. Tick the box below to include your draft."
+            className="flex-1 resize-none rounded-md border border-edge bg-ink px-2 py-1.5 text-[12px] text-ink-primary outline-none placeholder:text-ink-muted focus-visible:border-edge-strong"
+          />
+          <button
+            type="submit"
+            disabled={busy || !command.trim()}
+            aria-label="Run the command"
+            className="grid size-8 shrink-0 place-items-center rounded-md bg-signal-orange text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+          >
+            {busy ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <CornerDownLeft className="size-4" strokeWidth={1.75} aria-hidden="true" />
+            )}
+          </button>
+        </div>
+        <label className="mt-2 flex items-center gap-2 text-[12px] text-ink-secondary">
+          <input
+            type="checkbox"
+            name="include-draft"
+            checked={includeDraft && hasDraft}
+            disabled={!hasDraft}
+            onChange={(event) => setIncludeDraft(event.target.checked)}
+            className="size-4 accent-[var(--studio-orange)]"
+          />
+          Include my draft
+          {!hasDraft && <span className="text-ink-muted">(the editor is empty)</span>}
+        </label>
+      </form>
+
+      {log.length === 0 ? (
+        <p className="studio-meta mt-3 text-ink-muted">NOTHING RUN YET IN THIS SESSION</p>
+      ) : (
+        <ul className="mt-3 flex flex-col gap-4">
+          {log.map((entry, index) => (
+            <li key={`${index}-${entry.command}`} className="border-l border-edge pl-3">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="studio-meta text-[10px]">
+                  {entry.failed ? "REFUSED" : "RAN"}
+                  {entry.engine && <span className="text-ink-muted"> · {entry.engine}</span>}
+                </p>
+                {!entry.failed && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // COPIED once the browser has taken the text, and not
+                      // before. An answer that cannot be copied has to be
+                      // selected with the mouse, which is what the section it
+                      // came from was criticised for.
+                      if (!navigator.clipboard?.writeText) return;
+                      navigator.clipboard
+                        .writeText(entry.response)
+                        .then(() => {
+                          setCopied(index);
+                          window.setTimeout(() => setCopied(null), 1600);
+                        })
+                        .catch(() => setCopied(null));
+                    }}
+                    className="studio-meta flex items-center gap-1 text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+                  >
+                    <Copy className="size-3" strokeWidth={2} aria-hidden="true" />
+                    {copied === index ? "COPIED" : "COPY"}
+                  </button>
+                )}
+              </div>
+              <p className="mt-1 text-[12px] text-ink-primary">{entry.command}</p>
+              <pre className="mt-1.5 font-editorial text-[12px] leading-relaxed whitespace-pre-wrap text-ink-secondary">
+                {entry.response}
+              </pre>
+              {entry.sent.length > 0 && (
+                <p className="mt-1.5 text-[11px] leading-snug text-ink-muted">Sent with it: {entry.sent.join("; ")}.</p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

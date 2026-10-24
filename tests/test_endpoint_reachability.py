@@ -209,9 +209,20 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # by design, beside /api/v1/extension/health. Total 167 -> 168, reached stays
 # at 114, unreachable 53 -> 54. The Today screen reads it in a later batch.
 # ---------------------------------------------------------------------------
+# Cycle 3, batch T7 (sections C): the Swipe File is gone. It drew the same
+# viral_templates rows as the Composer’s hook rail through a second endpoint,
+# and nothing could put a specimen in or take one out, so its two client
+# functions went with it: GET /api/inspirations and POST
+# /api/v1/intelligence/packs/engineering now have no caller in the interface.
+# Neither route was removed. The first still serves Ctrl+K’s hook form search
+# through /api/v1/search, and the second is how the opt-in pack is added, which
+# is a control the hook rail should carry (MAKING.md D3) and does not yet, so
+# it sits in the unreachable column until it does, where it is visible.
+# Total stays at 168, reached 114 -> 112, unreachable 54 -> 56.
+# ---------------------------------------------------------------------------
 TOTAL_API_PATHS = 168
-REACHED_BY_INTERFACE = 114
-UNREACHABLE = 54
+REACHED_BY_INTERFACE = 112
+UNREACHABLE = 56
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 
