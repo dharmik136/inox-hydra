@@ -2173,6 +2173,15 @@ export async function fetchToday(): Promise<TodayBrief> {
 // Insights: your posts, and your attention
 // -------------------------------------------------------------
 
+/** What a caller needs to ask for the rest of a paged answer. */
+export interface Paging {
+  total: number;
+  limit: number;
+  offset: number;
+  returned: number;
+  has_more: boolean;
+}
+
 export interface PostInsightPerson {
   lead_id: string;
   name: string | null;
@@ -2180,19 +2189,40 @@ export interface PostInsightPerson {
   status: string | null;
 }
 
+/**
+ * Where a post sits among the creator's own posts at the same age, for reach
+ * and for response, together: a post can sit at p5 for impressions and p86
+ * for reactions at the same moment, and either number alone reads as the
+ * opposite of the truth. Null when the studio has no reading at a
+ * comparable age.
+ */
+export interface ReachAndResponse {
+  band: string;
+  band_hours: number | null;
+  posts_compared: number;
+  read_at_age_hours: number;
+  source: string | null;
+  reach: { impressions: number | null; percentile: number };
+  response: { reactions: number | null; percentile: number };
+  shape: string;
+}
+
 export interface PostInsight {
   activity_urn: string;
   excerpt: string | null;
   published_at: string | null;
   age_days: number | null;
-  /** Old enough (a week) for its numbers to have mostly arrived. */
+  /** Old enough (measured or assumed, per settled_after) for its numbers to have mostly arrived. */
   settled: boolean;
   reactions: number | null;
   comments: number | null;
   reposts: number | null;
   impressions: number | null;
+  figures_source?: string | null;
+  figures_read_at?: string | null;
   /** Against your own median, only for settled posts. 1.0 is your usual. */
   against_usual: Partial<Record<"reactions" | "comments" | "impressions", number>> | null;
+  reach_and_response: ReachAndResponse | null;
   people: PostInsightPerson[];
   people_count: number;
   conversations: number;
@@ -2200,15 +2230,87 @@ export interface PostInsight {
   url: string | null;
 }
 
-export interface PostsInsights {
+export interface PostsInsights extends Paging {
   posts: PostInsight[];
   usual: Record<"reactions" | "comments" | "impressions", { median: number | null; posts: number }>;
   best: string[];
+  worst: string[];
   settled_after_days: number;
+  sort: string;
+  settled_state: string | null;
+  q: string | null;
 }
 
-export async function fetchPostsInsights(): Promise<PostsInsights> {
-  return call<PostsInsights>("/api/v1/insights/posts");
+/** What the Posts table can ask for: which page, sorted and filtered how. */
+export interface PostsQuery {
+  limit?: number;
+  offset?: number;
+  sort?: "newest" | "oldest" | "reactions" | "impressions" | "comments";
+  settled_state?: "settled" | "growing" | null;
+  q?: string;
+}
+
+export async function fetchPostsInsights(query: PostsQuery = {}): Promise<PostsInsights> {
+  const params = new URLSearchParams();
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  if (query.offset !== undefined) params.set("offset", String(query.offset));
+  if (query.sort) params.set("sort", query.sort);
+  if (query.settled_state) params.set("settled_state", query.settled_state);
+  if (query.q?.trim()) params.set("q", query.q.trim());
+  return call<PostsInsights>(`/api/v1/insights/posts${params.toString() ? `?${params}` : ""}`);
+}
+
+/** One post, in full: the detail view the Posts table opens into. */
+export interface PostDetail {
+  activity_urn: string;
+  text: string;
+  published_at: string | null;
+  age_days: number | null;
+  settled: boolean;
+  settled_after_days: number;
+  reactions: number | null;
+  comments: number | null;
+  reposts: number | null;
+  impressions: number | null;
+  figures_source: string | null;
+  figures_read_at: string | null;
+  engagement_rate: number | null;
+  engagement_rate_unmeasured?: string | null;
+  engagement_rate_note?: string | null;
+  against_usual: Partial<Record<"reactions" | "comments" | "impressions", number>> | null;
+  reach_and_response: ReachAndResponse | null;
+  url: string | null;
+}
+
+export async function fetchPostDetail(activityUrn: string): Promise<PostDetail> {
+  return call<PostDetail>(`/api/v1/insights/posts/${encodeURIComponent(activityUrn)}`);
+}
+
+export interface PostEngager {
+  id: string;
+  full_name: string | null;
+  name: string | null;
+  headline: string | null;
+  company: string | null;
+  seniority_level: string | null;
+  icp_score: number | null;
+  profile_url: string | null;
+  interaction_type: string | null;
+  comment_text: string | null;
+  interacted_at: string | null;
+}
+
+/** Who engaged with one post, for any identifier the product uses (post_identity.resolve). */
+export async function fetchPostEngagers(
+  postId: string,
+): Promise<{ status: string; count: number; engagers: PostEngager[]; message?: string }> {
+  const data = await call<Record<string, any>>(`/api/v1/posts/${encodeURIComponent(postId)}/engagers`);
+  return {
+    status: data.status ?? "success",
+    count: data.count ?? 0,
+    engagers: data.engagers ?? [],
+    message: data.message,
+  };
 }
 
 export interface OutboundAuthor {

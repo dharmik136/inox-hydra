@@ -83,13 +83,42 @@ def _excerpt(text: Optional[str], limit: int = 140) -> Optional[str]:
     return clip(" ".join((text or "").split()), limit) or None
 
 
-def posts_overview(limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
+# What the Posts screen's table can sort and filter by. Every option still
+# pages through page_bounds/paging above: sorting and filtering choose which
+# posts make the ordered list that is then cut into a page, so sorting by
+# reactions surfaces the creator's true top post on page one rather than the
+# top of whichever fifty rows a fixed published_at order happened to put
+# there first.
+POSTS_SORTS = ("newest", "oldest", "reactions", "impressions", "comments")
+POSTS_SETTLED_STATES = ("settled", "growing")
+
+
+def _for_like(term: str) -> str:
+    """
+    A search term as LIKE should read it: the creator's own characters.
+
+    LIKE takes % and _ as wildcards, so a search for "50%" matched every post
+    and a search for "a_b" matched "axb".
+    """
+    for character in ("\\", "%", "_"):
+        term = term.replace(character, "\\" + character)
+    return term
+
+
+def posts_overview(limit: Optional[int] = None, offset: Optional[int] = None, sort: str = "newest",
+                    settled_state: Optional[str] = None, q: Optional[str] = None) -> Dict[str, Any]:
     size, start = page_bounds(limit, offset)
+    sort = sort if sort in POSTS_SORTS else "newest"
+    settled_state = settled_state if settled_state in POSTS_SETTLED_STATES else None
+    search = (q or "").strip() or None
     conn = get_db()
     try:
         # What worked, over the whole history: the creator's own median, the
         # best and worst posts, and the settle rule, all from the one engine,
-        # so the Posts screen cannot name a post Analytics does not.
+        # so the Posts screen cannot name a post Analytics does not. Never
+        # narrowed by a sort, a filter or a search: a median of the posts a
+        # search happened to match is a different number, not the same
+        # number read faster.
         settle = results.settled_after_hours(conn)
         read_all = results.figures(conn)
         worked = results.best(conn, limit=2, settled_after=settle["hours"], read=read_all)
@@ -98,13 +127,44 @@ def posts_overview(limit: Optional[int] = None, offset: Optional[int] = None) ->
         # posts was most of the 2,201 KB this answer used to be.
         posts = [dict(r) for r in conn.execute(
             "SELECT activity_urn, published_at, published_at_source FROM own_posts ORDER BY published_at DESC")]
-        # The page itself, newest first, with the text the screen shows.
-        page = [dict(r) for r in conn.execute(
-            "SELECT activity_urn, text, published_at, published_at_source "
-            "FROM own_posts ORDER BY published_at DESC LIMIT ? OFFSET ?", (size, start))]
+
+        # The ordered, filtered list a page is cut from. A search reads text
+        # at the database, which SQLite scans in under a millisecond at 1,417
+        # rows; the settled state and the metric sorts are read from read_all,
+        # which this call already holds for the whole history.
+        candidates = list(posts) if search is None else [dict(r) for r in conn.execute(
+            "SELECT activity_urn, published_at, published_at_source FROM own_posts "
+            "WHERE text LIKE ? ESCAPE '\\' ORDER BY published_at DESC", (f"%{_for_like(search)}%",))]
+        if settled_state == "settled":
+            candidates = [p for p in candidates if results.is_settled(p["published_at"], settle["hours"])]
+        elif settled_state == "growing":
+            candidates = [p for p in candidates if not results.is_settled(p["published_at"], settle["hours"])]
+
+        def _metric_key(urn: str, metric: str):
+            value = (read_all.get(urn) or {}).get(metric)
+            # None sorts last whichever direction the metric is read in: a
+            # post never read is not worse than zero, it is unmeasured.
+            return (value is None, -(value or 0))
+
+        if sort == "oldest":
+            candidates.sort(key=lambda p: (p["published_at"] is None, p["published_at"] or ""))
+        elif sort in ("reactions", "impressions", "comments"):
+            candidates.sort(key=lambda p: _metric_key(p["activity_urn"], sort))
+        # "newest" needs no re-sort: every query above already read that order.
+
+        total = len(candidates)
+        sliced = candidates[start:start + size]
+        urns_on_page = [p["activity_urn"] for p in sliced]
+        # The text for the page's rows only, read by the ids the sort and the
+        # filter settled on, never for the whole history.
+        marks = ", ".join("?" for _ in urns_on_page)
+        texts = ({r["activity_urn"]: r["text"] for r in conn.execute(
+            f"SELECT activity_urn, text FROM own_posts WHERE activity_urn IN ({marks})", urns_on_page)}
+                 if urns_on_page else {})
+        page = [{**p, "text": texts.get(p["activity_urn"])} for p in sliced]
         # One reading per post, with the page it was read from named, and
         # where the post sits among the creator's own posts at the same age.
-        pairs = results.pair(conn, [p["activity_urn"] for p in page], read=read_all)
+        pairs = results.pair(conn, urns_on_page, read=read_all)
 
         # Who engaged with each post on the page, from the per-post summary.
         # Every interaction used to be read into Python on every load: 1.9 s
@@ -185,7 +245,13 @@ def posts_overview(limit: Optional[int] = None, offset: Optional[int] = None) ->
     return {
         "status": "success",
         "posts": out,
-        **paging(len(posts), size, start, len(out)),
+        **paging(total, size, start, len(out)),
+        # The table's own state, echoed back, so the screen can keep its
+        # controls in step with the page it is showing rather than track them
+        # twice.
+        "sort": sort,
+        "settled_state": settled_state,
+        "q": search,
         "usual": usual,
         # The settled posts that did best and worst against your own median
         # reactions, which is what "repurpose the top two" means: forms that
@@ -204,6 +270,74 @@ def posts_overview(limit: Optional[int] = None, offset: Optional[int] = None) ->
         "settled_after_days": round(settle["hours"] / 24, 1),
         "settled_without_figures": len(unmeasured),
         "settled_without_figures_from_archive": sum(1 for p in unmeasured if p["published_at_source"] == "archive"),
+    }
+
+
+def post_detail(activity_urn: str) -> Optional[Dict[str, Any]]:
+    """
+    One post, in full, for the detail view the Posts table opens into.
+
+    The table's own page carries a 140 character excerpt, because the full
+    text of every post on it was most of what made that answer 2,201 KB. A
+    creator who opens one post gets its whole text here, read once, with the
+    same figures, the same settle rule and the same comparison against their
+    own median that the table's row already carried, so the two screens
+    cannot disagree about the one post either of them is showing.
+
+    None when the studio holds no such post.
+    """
+    conn = get_db()
+    try:
+        row = conn.execute(
+            "SELECT activity_urn, text, published_at, published_at_source FROM own_posts WHERE activity_urn = ?",
+            (activity_urn,)).fetchone()
+        if not row:
+            return None
+        row = dict(row)
+        settle = results.settled_after_hours(conn)
+        read_all = results.figures(conn)
+        figure = read_all.get(activity_urn) or {}
+        settled_now = results.is_settled(row["published_at"], settle["hours"])
+        settled_posts = [p for p in conn.execute(
+            "SELECT activity_urn, published_at FROM own_posts WHERE published_at IS NOT NULL")
+            if results.is_settled(p["published_at"], settle["hours"])]
+        usual = results.usual_of(read_all.get(p["activity_urn"]) or {} for p in settled_posts)
+        ratios = results.against_usual(figure, usual) if settled_now else None
+        pair = results.pair(conn, [activity_urn], read=read_all).get(activity_urn)
+        rate, reason = results.engagement_rate(figure)
+        age = results.age_hours(row["published_at"])
+    finally:
+        conn.close()
+
+    return {
+        "status": "success",
+        "activity_urn": row["activity_urn"],
+        "text": row["text"] or "",
+        "published_at": row["published_at"],
+        "published_at_source": row["published_at_source"],
+        "age_days": round(age / 24, 1) if age is not None else None,
+        "settled": settled_now,
+        "settled_after": settle,
+        "settled_after_days": round(settle["hours"] / 24, 1),
+        "reactions": figure.get("reactions"),
+        "comments": figure.get("comments"),
+        "reposts": figure.get("reposts"),
+        "impressions": figure.get("impressions"),
+        "figures_source": figure.get("source"),
+        "figures_read_at": figure.get("read_at"),
+        "engagement_rate": rate,
+        "engagement_rate_unmeasured": reason,
+        "engagement_rate_note": results.rate_reason_sentence(reason),
+        "against_usual": ratios,
+        "usual": usual,
+        # Where this post sits among the creator's own posts at the same age,
+        # for reach and for response, together: the pair results.py exists
+        # for, read from the whole history, not from the table's page.
+        "reach_and_response": pair,
+        # None for a post published from the studio and not yet seen on
+        # LinkedIn: it is recorded under a local key, and a link built from
+        # that key would 404.
+        "url": post_identity.linkedin_permalink(row["activity_urn"]),
     }
 
 

@@ -5,7 +5,7 @@ Surfaces observed post history, cadence, outbound engagement reciprocity,
 patterns, and binary feature contrasts. Zero cloud egress.
 """
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from typing import Dict, Any, Optional
 
 try:
@@ -21,15 +21,27 @@ router = APIRouter(tags=["Insights"])
 
 
 @router.get("/api/v1/insights/posts")
-def get_posts_insights(limit: Optional[int] = Query(None, ge=1), offset: int = Query(0, ge=0)) -> Dict[str, Any]:
+def get_posts_insights(limit: Optional[int] = Query(None, ge=1), offset: int = Query(0, ge=0),
+                        sort: str = Query("newest"), settled_state: Optional[str] = Query(None),
+                        q: Optional[str] = Query(None, max_length=200)) -> Dict[str, Any]:
     """
     Which settled posts did best against your median, and who engaged.
 
-    One page of posts, newest first, insights.POSTS_PAGE of them by default.
+    One page of posts, sorted and filtered as asked (insights.POSTS_SORTS,
+    insights.POSTS_SETTLED_STATES), insights.POSTS_PAGE of them by default.
     Every figure beside the list (your usual, the best two, the counts) is
-    read from your whole history whichever page this is.
+    read from your whole history whichever page this is, sort or filter.
     """
-    return insights.posts_overview(limit=limit, offset=offset)
+    return insights.posts_overview(limit=limit, offset=offset, sort=sort, settled_state=settled_state, q=q)
+
+
+@router.get("/api/v1/insights/posts/{activity_urn}")
+def get_post_detail(activity_urn: str) -> Dict[str, Any]:
+    """One post's whole text and figures, for the detail view the Posts table opens into."""
+    detail = insights.post_detail(activity_urn)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="No such post")
+    return detail
 
 
 @router.get("/api/v1/insights/patterns")

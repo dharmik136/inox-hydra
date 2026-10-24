@@ -209,8 +209,13 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # by design, beside /api/v1/extension/health. Total 167 -> 168, reached stays
 # at 114, unreachable 53 -> 54. The Today screen reads it in a later batch.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 168
-REACHED_BY_INTERFACE = 114
+# Cycle 3, batch T6 (sections B): /api/v1/insights/posts/{activity_urn} added,
+# one post's whole text and figures, which the Posts table opens into rather
+# than rendering every post's text inline. Read by PostDetail.tsx, so it is
+# reached. Total 168 -> 169, reached 114 -> 115, unreachable stays at 54.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 169
+REACHED_BY_INTERFACE = 115
 UNREACHABLE = 54
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

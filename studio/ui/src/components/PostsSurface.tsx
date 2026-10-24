@@ -1,21 +1,41 @@
-import { useCallback, useEffect, useState } from "react";
-import { Activity, ChevronDown, ExternalLink, Loader2 } from "lucide-react";
-import { fetchPostsInsights, launchBridge, type PostInsight, type PostsInsights } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Activity, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { fetchPostsInsights, type PostInsight, type PostsInsights, type PostsQuery } from "@/lib/api";
 import { useRefresh } from "@/lib/refresh";
 import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
+import { PostDetail } from "./PostDetail";
 
 /** Settled posts with no figures at all, and how many of those came from LinkedIn's archive. */
 type Unmeasured = { settled_without_figures?: number; settled_without_figures_from_archive?: number };
 
+const PAGE_SIZE = 20;
+
+const SORTS: { key: PostsQuery["sort"] & string; label: string }[] = [
+  { key: "newest", label: "Newest" },
+  { key: "oldest", label: "Oldest" },
+  { key: "reactions", label: "Most reactions" },
+  { key: "impressions", label: "Most impressions" },
+  { key: "comments", label: "Most comments" },
+];
+
+const SETTLED_FILTERS: { key: "" | "settled" | "growing"; label: string }[] = [
+  { key: "", label: "All" },
+  { key: "settled", label: "Settled" },
+  { key: "growing", label: "Still growing" },
+];
+
 /**
- * Posts: which of your posts worked, and whom each one brought.
+ * Posts: a table, not a column of cards.
  *
- * "Worked" means against your own median, never a benchmark, and only for
- * posts at least a week old: before that a low number may just be a young
- * post. The two settled posts furthest above your usual are marked as worth
- * repurposing, because their form already worked for your audience.
+ * It used to render every post the creator had ever written down one column,
+ * 324,344 characters, 176 screens tall, with no way to reach a post past the
+ * fiftieth without opening the network tab. This is a table: sorted,
+ * filtered and paged, with a visible count, with reach and response shown as
+ * a pair per post (results.pair) and a settle state (measured or assumed,
+ * from results.settled_after_hours). A row opens one post into its detail
+ * rather than rendering everything inline.
  */
 export function PostsSurface({
   onOpenLead,
@@ -29,16 +49,41 @@ export function PostsSurface({
   const [data, setData] = useState<PostsInsights | null>(null);
   const [failed, setFailed] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const [sort, setSort] = useState<PostsQuery["sort"] & string>("newest");
+  const [settledFilter, setSettledFilter] = useState<"" | "settled" | "growing">("");
+  const [queryInput, setQueryInput] = useState("");
+  const [query, setQuery] = useState("");
+  const [offset, setOffset] = useState(0);
+
+  // The search box asks the server only after the typing pauses, so a
+  // keystroke does not fire a request on a table of 1,417 posts.
+  useEffect(() => {
+    const id = window.setTimeout(() => setQuery(queryInput.trim()), 300);
+    return () => window.clearTimeout(id);
+  }, [queryInput]);
+
+  // Any change to how the table is sorted or filtered starts again from its
+  // first page: an offset carried over from a longer, unfiltered list would
+  // either repeat rows or skip past the end of a shorter one.
+  useEffect(() => {
+    setOffset(0);
+  }, [sort, settledFilter, query]);
 
   const load = useCallback(
     () =>
-      fetchPostsInsights()
+      fetchPostsInsights({
+        limit: PAGE_SIZE,
+        offset,
+        sort,
+        settled_state: settledFilter || undefined,
+        q: query || undefined,
+      })
         .then((result) => {
           setData(result);
           setFailed(false);
         })
         .catch(() => setFailed(true)),
-    [],
+    [offset, sort, settledFilter, query],
   );
   useEffect(() => {
     void load();
@@ -47,9 +92,12 @@ export function PostsSurface({
   // this one, and a list that failed in an outage returns by itself.
   useRefresh(load);
 
+  const bestSet = useMemo(() => new Set(data?.best ?? []), [data?.best]);
+  const worstSet = useMemo(() => new Set(data?.worst ?? []), [data?.worst]);
+
   if (failed && !data) return <Centered>POSTS ARE UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
   if (!data) return <Centered>LOADING YOUR POSTS</Centered>;
-  if (!data.posts.length) {
+  if (data.total === 0 && !query && !settledFilter) {
     return (
       <EmptySurface label="Posts" title="What worked, and who it brought" onOpenSetup={onOpenSetup}>
         None of your posts have been imported yet. Import them in Setup, and each one appears here
@@ -64,8 +112,11 @@ export function PostsSurface({
     .map((metric) => `${Math.round(usual[metric].median as number).toLocaleString()} ${metric}`)
     .join(", ");
 
+  const shownFrom = data.total === 0 ? 0 : data.offset + 1;
+  const shownTo = data.offset + data.returned;
+
   return (
-    <article className="mx-auto max-w-[80ch] px-8 py-8">
+    <article className="mx-auto max-w-[120ch] px-8 py-8">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="studio-label">Posts</p>
@@ -89,18 +140,132 @@ export function PostsSurface({
         A post is compared with it only once it is {data.settled_after_days} days old.
       </p>
 
-      <ul className="mt-6 flex flex-col divide-y divide-edge border-y border-edge">
-        {data.posts.map((post) => (
-          <PostRow
-            key={post.activity_urn}
-            post={post}
-            best={data.best.includes(post.activity_urn)}
-            expanded={open === post.activity_urn}
-            onToggle={() => setOpen((current) => (current === post.activity_urn ? null : post.activity_urn))}
-            onOpenLead={onOpenLead}
+      {/* Filter, search and sort: the whole history is behind the table, so
+          every one of these asks the server again rather than narrowing a
+          page already in hand. */}
+      <div className="mt-5 flex flex-wrap items-center gap-3">
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-muted"
+            strokeWidth={1.75}
+            aria-hidden="true"
           />
-        ))}
-      </ul>
+          <input
+            value={queryInput}
+            onChange={(event) => setQueryInput(event.target.value)}
+            placeholder="Search your posts"
+            aria-label="Search your posts"
+            className="w-56 rounded-md border border-edge bg-ink py-1.5 pr-3 pl-8 text-[12px] text-ink-primary outline-none placeholder:text-ink-muted focus-visible:border-edge-strong"
+          />
+        </div>
+        <div className="flex items-center gap-1" role="group" aria-label="Settled state">
+          {SETTLED_FILTERS.map((candidate) => (
+            <button
+              key={candidate.key || "all"}
+              type="button"
+              onClick={() => setSettledFilter(candidate.key)}
+              aria-pressed={settledFilter === candidate.key}
+              className={cn(
+                "rounded-full border px-2.5 py-0.5 text-[11px]",
+                settledFilter === candidate.key
+                  ? "border-edge-strong bg-soft text-ink-primary"
+                  : "border-edge text-ink-muted hover:text-ink-secondary",
+              )}
+            >
+              {candidate.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1" role="group" aria-label="Sort">
+          {SORTS.map((candidate) => (
+            <button
+              key={candidate.key}
+              type="button"
+              onClick={() => setSort(candidate.key)}
+              aria-pressed={sort === candidate.key}
+              className={cn(
+                "flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium",
+                sort === candidate.key ? "bg-soft text-ink-primary" : "text-ink-muted hover:text-ink-secondary",
+              )}
+            >
+              {candidate.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-x-auto border-y border-edge">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="studio-label border-b border-edge">
+              <th scope="col" className="py-2 pr-3 font-medium">Post</th>
+              <th scope="col" className="py-2 pr-3 font-medium">Date</th>
+              <th scope="col" className="py-2 pr-3 text-right font-medium">Reach &amp; response</th>
+              <th scope="col" className="py-2 pr-3 text-right font-medium">Reactions</th>
+              <th scope="col" className="py-2 pr-3 text-right font-medium">Comments</th>
+              <th scope="col" className="py-2 pr-3 text-right font-medium">Impressions</th>
+              <th scope="col" className="py-2 font-medium">People</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-edge">
+            {data.posts.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="py-6 text-center">
+                  <span className="studio-meta text-ink-muted">NO POST MATCHES THIS SEARCH AND FILTER.</span>
+                </td>
+              </tr>
+            ) : (
+              data.posts.map((post) => (
+                <PostRow
+                  key={post.activity_urn}
+                  post={post}
+                  best={bestSet.has(post.activity_urn)}
+                  worst={worstSet.has(post.activity_urn)}
+                  onOpen={() => setOpen(post.activity_urn)}
+                />
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
+        REACH AND RESPONSE ARE WHERE A POST SITS AMONG YOUR OWN POSTS READ AT THE SAME AGE, AS PERCENTILES, AND ARE
+        READ TOGETHER. A FIGURE IN BRACKETS IS THE POST AGAINST YOUR USUAL. A POST STILL GROWING IS NOT COMPARED.
+      </p>
+
+      {/* The count and the control that reaches the rest of 1,417 posts: the
+          screen used to show fifty of them with nothing beyond that fiftieth. */}
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="studio-meta text-[11px] text-ink-muted">
+          {data.total === 0 ? "0 of 0" : `${shownFrom}–${shownTo} of ${data.total.toLocaleString()}`}
+        </p>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setOffset((current) => Math.max(0, current - PAGE_SIZE))}
+            disabled={offset === 0}
+            aria-label="Previous page"
+            className="grid size-7 place-items-center rounded-md border border-edge text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+          >
+            <ChevronLeft className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          </button>
+          <p className="studio-meta px-1 text-[11px] text-ink-muted">
+            PAGE {Math.floor(offset / PAGE_SIZE) + 1} OF {Math.max(1, Math.ceil(data.total / PAGE_SIZE))}
+          </p>
+          <button
+            type="button"
+            onClick={() => setOffset((current) => current + PAGE_SIZE)}
+            disabled={!data.has_more}
+            aria-label="Next page"
+            className="grid size-7 place-items-center rounded-md border border-edge text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+          >
+            <ChevronRight className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          </button>
+        </div>
+      </div>
+
+      {open && <PostDetail activityUrn={open} onClose={() => setOpen(null)} onOpenLead={onOpenLead} />}
     </article>
   );
 }
@@ -124,138 +289,83 @@ function noUsualReason(data: PostsInsights & Unmeasured): string {
 function PostRow({
   post,
   best,
-  expanded,
-  onToggle,
-  onOpenLead,
+  worst,
+  onOpen,
 }: {
   post: PostInsight;
   best: boolean;
-  expanded: boolean;
-  onToggle: () => void;
-  onOpenLead: (leadId: string) => void;
+  worst: boolean;
+  onOpen: () => void;
 }) {
+  const pair = post.reach_and_response;
   return (
-    <li className="py-3">
-      <button type="button" onClick={onToggle} aria-expanded={expanded} className="w-full text-left">
-        <div className="flex items-baseline justify-between gap-4">
-          <p className="studio-meta text-[10px] text-ink-muted">
-            {formatLocalDay(post.published_at, "Date unknown").toUpperCase()}
-            {!post.settled && " · STILL GROWING"}
-            {best && <span className="ml-2 text-signal-green-text">WORTH REPURPOSING</span>}
+    <tr className="align-top">
+      <td className="max-w-[46ch] py-2.5 pr-3">
+        <button type="button" onClick={onOpen} className="text-left text-[13px] leading-snug text-ink-primary hover:underline">
+          <span className="line-clamp-2">{post.excerpt ?? "(no text)"}</span>
+        </button>
+        {(best || worst) && (
+          <p className="studio-meta mt-1 text-[10px]">
+            {best && <span className="text-signal-green-text">WORTH REPURPOSING</span>}
+            {best && worst && " · "}
+            {worst && <span className="text-signal-orange-text">UNDERPERFORMED</span>}
           </p>
-          <ChevronDown
-            className={cn("size-3.5 shrink-0 text-ink-muted transition-transform", expanded && "rotate-180")}
-            aria-hidden="true"
-          />
-        </div>
-        <p className="mt-1 line-clamp-2 text-[13px] leading-snug text-ink-primary">{post.excerpt ?? "(no text)"}</p>
-        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
-          <Figure label="reactions" value={post.reactions} ratio={post.against_usual?.reactions} />
-          <Figure label="comments" value={post.comments} ratio={post.against_usual?.comments} />
-          <Figure label="impressions" value={post.impressions} ratio={post.against_usual?.impressions} />
-          <span className="studio-meta text-[10px] text-ink-muted">
-            {post.people_count} {post.people_count === 1 ? "PERSON" : "PEOPLE"} CAPTURED
-            {post.conversations > 0 && ` · ${post.conversations} CONVERSATION${post.conversations > 1 ? "S" : ""}`}
-          </span>
-        </div>
-      </button>
-
-      {expanded && (
-        <div className="mt-3 border-l border-edge pl-3">
-          {post.people.length ? (
-            <ul className="flex flex-col gap-1">
-              {post.people.map((person) => (
-                <li key={person.lead_id}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenLead(person.lead_id)}
-                    className="text-[12px] text-ink-secondary hover:text-ink-primary"
-                  >
-                    {person.name}
-                    <span className="studio-meta ml-2 text-[10px] text-ink-muted">
-                      {person.commented ? "COMMENTED" : "REACTED"}
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="studio-meta text-[10px] leading-snug text-ink-muted">
-              NOBODY CAPTURED FROM THIS POST YET. OPEN IT IN THE BRIDGE BROWSER AND ITS COMMENTERS ARE READ.
-            </p>
-          )}
-          {/* A post published from the studio has no LinkedIn address until
-              LinkedIn shows it, so there is nothing to open yet. */}
-          {post.url ? <OpenThePost url={post.url} /> : null}
-        </div>
-      )}
-    </li>
-  );
-}
-
-/**
- * Opens the post in the bridge browser, and says what came of it.
- *
- * The launch used to be fired and forgotten: no sign it was under way, and a
- * failure surfaced only as an uncaught error in the console, so nobody could
- * tell a browser opening behind the window from one that never started.
- */
-function OpenThePost({ url }: { url: string }) {
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | null>(null);
-
-  async function open() {
-    setBusy(true);
-    setNote(null);
-    try {
-      setNote((await launchBridge("auto", url)).message || "Opened in the bridge browser.");
-    } catch (caught) {
-      setNote(caught instanceof Error ? caught.message : "The browser could not be opened.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => void open()}
-        disabled={busy}
-        className="mt-2 flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-50"
-      >
-        {busy ? (
-          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-        ) : (
-          <ExternalLink className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
         )}
-        Open the post
-      </button>
-      {note && (
-        <p role="status" className="mt-1.5 text-[12px] leading-snug text-ink-secondary">
-          {note}
+      </td>
+      <td className="py-2.5 pr-3">
+        <p className="studio-meta text-[10px] text-ink-muted whitespace-nowrap">
+          {formatLocalDay(post.published_at, "Date unknown").toUpperCase()}
         </p>
-      )}
-    </>
+        <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
+          {post.settled ? "SETTLED" : "STILL GROWING"}
+        </p>
+      </td>
+      <td className="py-2.5 pr-3 text-right">
+        {/* Both numbers or neither: a post can sit at p5 for reach and p86
+            for response at the same moment, and either alone reads as the
+            opposite of the truth (results.pair). */}
+        {pair ? (
+          <span className="studio-meta text-[10px] tabular-nums text-ink-secondary" title={pair.shape}>
+            p{pair.reach.percentile} / p{pair.response.percentile}
+          </span>
+        ) : (
+          <span className="studio-meta text-[10px] text-ink-muted">not read at a comparable age</span>
+        )}
+      </td>
+      <RatioCell value={post.reactions} ratio={post.against_usual?.reactions} />
+      <RatioCell value={post.comments} ratio={post.against_usual?.comments} />
+      <RatioCell value={post.impressions} ratio={post.against_usual?.impressions} />
+      <td className="py-2.5">
+        <span className="studio-meta text-[10px] tabular-nums text-ink-secondary">
+          {post.people_count} {post.people_count === 1 ? "PERSON" : "PEOPLE"}
+          {post.conversations > 0 && ` · ${post.conversations} CONVO${post.conversations > 1 ? "S" : ""}`}
+        </span>
+      </td>
+    </tr>
   );
 }
 
-function Figure({ label, value, ratio }: { label: string; value: number | null; ratio?: number }) {
-  if (value === null) return null;
+function RatioCell({ value, ratio }: { value: number | null; ratio?: number }) {
   return (
-    <span className="studio-meta text-[10px] tabular-nums text-ink-secondary">
-      {value.toLocaleString()} {label.toUpperCase()}
-      {ratio !== undefined && (
-        <span
-          className={cn(
-            "ml-1",
-            ratio >= 1.2 ? "text-signal-green-text" : ratio <= 0.8 ? "text-signal-orange-text" : "text-ink-muted",
+    <td className="py-2.5 pr-3 text-right">
+      {value === null ? (
+        <span className="studio-meta text-[10px] text-ink-muted">not measured</span>
+      ) : (
+        <span className="studio-meta text-[10px] tabular-nums text-ink-secondary">
+          {value.toLocaleString()}
+          {ratio !== undefined && (
+            <span
+              className={cn(
+                "ml-1",
+                ratio >= 1.2 ? "text-signal-green-text" : ratio <= 0.8 ? "text-signal-orange-text" : "text-ink-muted",
+              )}
+            >
+              ({ratio.toFixed(1)}x)
+            </span>
           )}
-        >
-          ({ratio.toFixed(1)}x)
         </span>
       )}
-    </span>
+    </td>
   );
 }
 
