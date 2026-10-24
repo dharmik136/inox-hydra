@@ -21,9 +21,19 @@ import { useRefresh } from "@/lib/refresh";
 import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
+/**
+ * A stored time as the browser reads it in UTC.
+ *
+ * The studio stores times in UTC, and some tables store them without a zone.
+ * `new Date("2026-10-20 08:55:00")` is read as local time, so a line's clock
+ * and the day it is filed under disagreed by the machine's offset.
+ */
+function utc(iso: string): string {
+  return iso.includes("T") || iso.endsWith("Z") ? iso : `${iso.replace(" ", "T")}Z`;
+}
+
 function ago(iso: string): string {
-  const normalized = iso.includes("T") || iso.endsWith("Z") ? iso : `${iso.replace(" ", "T")}Z`;
-  const then = new Date(normalized).getTime();
+  const then = new Date(utc(iso)).getTime();
   if (Number.isNaN(then)) return iso;
   const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
   if (seconds < 15) return "just now";
@@ -35,16 +45,14 @@ function ago(iso: string): string {
 
 /** A stored time as the local clock reads it, for the log's left column. */
 function clockTime(iso: string): string {
-  const normalized = iso.includes("T") || iso.endsWith("Z") ? iso : `${iso.replace(" ", "T")}Z`;
-  const when = new Date(normalized);
+  const when = new Date(utc(iso));
   if (Number.isNaN(when.getTime())) return "";
   return when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
 /** The local day a stored time falls on, as the key the log groups by. */
 function dayKey(iso: string): string {
-  const normalized = iso.includes("T") || iso.endsWith("Z") ? iso : `${iso.replace(" ", "T")}Z`;
-  const when = new Date(normalized);
+  const when = new Date(utc(iso));
   if (Number.isNaN(when.getTime())) return iso;
   return `${when.getFullYear()}-${when.getMonth() + 1}-${when.getDate()}`;
 }
@@ -229,7 +237,7 @@ export function ActivitySurface({
       const key = dayKey(entry.at);
       const last = grouped[grouped.length - 1];
       if (last && last.key === key) last.lines.push(entry);
-      else grouped.push({ key, label: formatLocalDay(entry.at), lines: [entry] });
+      else grouped.push({ key, label: formatLocalDay(utc(entry.at)), lines: [entry] });
     }
     return grouped;
   }, [shown.lines]);
