@@ -224,12 +224,16 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # batch T3 said would read it, so it leaves the unreachable column.
 # Total 168 -> 170, reached 114 -> 117, unreachable 54 -> 53.
 # ---------------------------------------------------------------------------
-# Both batches applied: 168 -> 171 total, 114 -> 118 reached, 54 -> 53
-# unreachable. T7's removals (Swipe File and Command) are counted when that
-# branch merges.
+# Cycle 3, batch T6 (sections B): /api/v1/insights/posts/{activity_urn} added,
+# one post's whole text and figures, which the Posts table opens into rather
+# than rendering every post's text inline. Read by PostDetail.tsx, so it is
+# reached. Total 168 -> 169, reached 114 -> 115, unreachable stays at 54.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 171
-REACHED_BY_INTERFACE = 118
+# T5, T6 and T8 applied: 168 -> 172 total, 114 -> 119 reached, 54 -> 53
+# unreachable. T7's removals are counted when that branch merges.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 172
+REACHED_BY_INTERFACE = 119
 UNREACHABLE = 53
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

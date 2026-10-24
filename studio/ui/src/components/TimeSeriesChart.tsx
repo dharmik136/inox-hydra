@@ -13,7 +13,7 @@ interface TimeSeriesChartProps {
 }
 
 const PAD = { top: 16, right: 20, bottom: 26, left: 48 };
-const HEIGHT = 260;
+const HEIGHT = 200;
 
 /** Clean axis ceilings, so ticks land on numbers a reader would choose. */
 function niceCeiling(max: number): number {

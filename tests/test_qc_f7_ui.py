@@ -289,18 +289,27 @@ LAUNCHED = (200, {"status": "success", "browser": "Brave", "carries_extension": 
 
 
 def _open_the_post(studio, studio_url, answer):
+    """
+    Opens a post in the bridge browser from where that control now lives.
+
+    Posts became a table in batch T6, and a row opens the post into its own
+    detail view rather than expanding in place, so Open the post is in the
+    dialog. What it has to do is unchanged: say what came of the launch,
+    rather than leaving the failure as an uncaught error in the console.
+    """
     _seed_own_posts(studio_url)
     session = studio()
     session.answer("/api/v1/browser/launch", *answer)
     page = session.open("Posts")
-    page.locator("article ul li button[aria-expanded]").first.click()
+    page.locator("tbody tr button").first.click()
+    page.locator("div[role=dialog][aria-label='Post detail']").wait_for(state="visible", timeout=5000)
     page.get_by_role("button", name="Open the post").click()
     return session, page
 
 
 def test_open_the_post_shows_why_it_failed(studio, studio_url):
     session, page = _open_the_post(studio, studio_url, NO_BROWSER)
-    note = page.locator("article ul li [role=status]")
+    note = page.locator("div[role=dialog] [role=status]")
     note.wait_for(state="visible", timeout=3000)
     assert "No supported browser was found" in note.inner_text()
     assert not session.errors, f"the failure escaped as an uncaught error: {session.errors}"
@@ -308,7 +317,7 @@ def test_open_the_post_shows_why_it_failed(studio, studio_url):
 
 def test_open_the_post_says_which_browser_opened(studio, studio_url):
     _, page = _open_the_post(studio, studio_url, LAUNCHED)
-    note = page.locator("article ul li [role=status]")
+    note = page.locator("div[role=dialog] [role=status]")
     note.wait_for(state="visible", timeout=3000)
     assert "Launched Brave" in note.inner_text()
 

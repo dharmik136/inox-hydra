@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ChevronRight, Download } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import {
   fetchAnalyticsKpis,
   fetchAnalyticsOverview,
@@ -11,6 +11,7 @@ import {
   type AnalyticsRange,
   ANALYTICS_CSV_URL,
   fetchPostAttribution,
+  fetchPostDetail,
   type PostAttribution,
 } from "@/lib/api";
 import { TimeSeriesChart, type SeriesPoint } from "./TimeSeriesChart";
@@ -18,6 +19,12 @@ import { useStudioBack } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 
 const RANGES: AnalyticsRange[] = ["7d", "30d", "90d"];
+
+// A summary, not a second copy of the Posts table: best first, a handful at
+// a time. The full, sortable, searchable table of every post lives on the
+// Posts screen; this answers "how are my posts doing", not "show me all of
+// them again".
+const ANALYTICS_PAGE_SIZE = 14;
 
 /** The measures worth plotting on their own axis, one at a time. */
 const METRICS = [
@@ -59,28 +66,56 @@ export function AnalyticsSurface() {
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [posts, setPosts] = useState<AnalyticsPost[] | null>(null);
   const [best, setBest] = useState<AnalyticsBest | null>(null);
+  const [postsTotal, setPostsTotal] = useState(0);
+  const [postsOffset, setPostsOffset] = useState(0);
+  const [postsHasMore, setPostsHasMore] = useState(false);
+  // The opening lines of the two posts the engine named, which are almost
+  // never among the rows this page holds: the answer carries their figures
+  // but not their text, and a URN names nothing a creator recognises.
+  const [named, setNamed] = useState<Record<string, string>>({});
   const [loadingRange, setLoadingRange] = useState(false);
   const [failed, setFailed] = useState(false);
   // Read again when the studio answers after an outage, so a screen that
   // failed while it was down does not stay failed once it is back.
   const back = useStudioBack();
 
-  // The posts do not depend on the range, so they are read once. They were
-  // read again on every range click, and at 2,000 posts the screen went back
-  // to LOADING ANALYTICS for five seconds each time.
+  // The posts do not depend on the range, so a range click does not read
+  // them again. At 2,000 posts, fetching every one of them on every click
+  // put the screen back to LOADING ANALYTICS for five seconds each time; now
+  // only a page turn asks for more, and it asks for one page of them.
   useEffect(() => {
     let live = true;
-    fetchAnalyticsPosts()
+    fetchAnalyticsPosts({ limit: ANALYTICS_PAGE_SIZE, offset: postsOffset })
       .then((answer) => {
         if (!live) return;
         setPosts(answer.posts);
         setBest(answer.best);
+        setPostsTotal(answer.total);
+        setPostsHasMore(answer.has_more);
       })
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
-  }, [back]);
+  }, [back, postsOffset]);
+
+  // The opening line of each post the engine named, read one post at a time
+  // from the same endpoint the Posts screen's detail view reads.
+  useEffect(() => {
+    const wanted = [...(best?.best ?? []), ...(best?.worst ?? [])].slice(0, 4).filter((urn) => !(urn in named));
+    if (!wanted.length) return;
+    let live = true;
+    Promise.all(wanted.map((urn) => fetchPostDetail(urn).then((post) => [urn, post.text] as const).catch(() => null)))
+      .then((answers) => {
+        if (!live) return;
+        const found: Record<string, string> = {};
+        for (const answer of answers) if (answer) found[answer[0]] = answer[1];
+        if (Object.keys(found).length) setNamed((current) => ({ ...current, ...found }));
+      });
+    return () => {
+      live = false;
+    };
+  }, [best, named]);
 
   // A range change keeps the current chart on screen until the new one
   // arrives, rather than blanking the page.
@@ -131,7 +166,7 @@ export function AnalyticsSurface() {
   const metricLabel = METRICS.find((m) => m.key === metric)?.label ?? metric;
 
   return (
-    <div className="mx-auto max-w-[110ch] px-8 py-8">
+    <div className="mx-auto max-w-[120ch] px-8 py-6">
       <div className="flex flex-wrap items-baseline justify-between gap-4">
         <h1 className="studio-title">Analytics</h1>
         <div className="flex items-center gap-3">
@@ -187,30 +222,36 @@ export function AnalyticsSurface() {
         </p>
       )}
 
-      <div className="mt-6 flex flex-wrap items-center gap-1" role="group" aria-label="Measure">
-        {METRICS.map((candidate) => (
-          <button
-            key={candidate.key}
-            type="button"
-            onClick={() => setMetric(candidate.key)}
-            aria-pressed={metric === candidate.key}
-            className={cn(
-              "rounded-full border px-2.5 py-0.5 text-[11px]",
-              "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
-              metric === candidate.key
-                ? "border-edge-strong bg-soft text-ink-primary"
-                : "border-edge text-ink-muted hover:text-ink-secondary",
-            )}
-          >
-            {candidate.label}
-          </button>
-        ))}
-      </div>
+      {/* The levels, with each one's own change beside it. They were in the
+          aside as changes alone, so the screen printed "+4.2%" of a figure
+          it never showed, and a chart of one measure at a time was the only
+          number on it. */}
+      <KpiStrip kpis={kpis} range={range} />
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_260px]">
-        <div>
+      <div className="mt-5 grid gap-x-6 gap-y-5 lg:grid-cols-[minmax(0,1fr)_270px]">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-1" role="group" aria-label="Measure">
+            {METRICS.map((candidate) => (
+              <button
+                key={candidate.key}
+                type="button"
+                onClick={() => setMetric(candidate.key)}
+                aria-pressed={metric === candidate.key}
+                className={cn(
+                  "rounded-full border px-2.5 py-0.5 text-[11px]",
+                  "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
+                  metric === candidate.key
+                    ? "border-edge-strong bg-soft text-ink-primary"
+                    : "border-edge text-ink-muted hover:text-ink-secondary",
+                )}
+              >
+                {candidate.label}
+              </button>
+            ))}
+          </div>
+
           {/* A single series, so the heading names it and no legend box is drawn. */}
-          <p className="studio-label mb-2">{metricLabel} per day</p>
+          <p className="studio-label mt-3 mb-2">{metricLabel} per day</p>
           <TimeSeriesChart points={points} label={metricLabel} />
           {roundedDays > 0 && (
             <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
@@ -218,22 +259,139 @@ export function AnalyticsSurface() {
               ROUNDED, SUCH AS 1.2K, SO {roundedDays === 1 ? "ITS POINT IS" : "THEIR POINTS ARE"} APPROXIMATE.
             </p>
           )}
+
+          {/* The comparison table sits with the chart rather than ten screens
+              under it: this screen was 58.9 screens tall, and the rows a
+              creator came for were all below the fold. */}
+          <section className="mt-6">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <p className="studio-label">Post comparison</p>
+              {posts !== null && postsTotal > 0 && (
+                <p className="studio-meta text-[11px] text-ink-muted">
+                  {`${postsOffset + 1}–${postsOffset + posts.length} of ${postsTotal.toLocaleString()}, best first`}
+                </p>
+              )}
+            </div>
+            {posts === null ? (
+              <p className="studio-meta text-ink-muted">READING YOUR POSTS</p>
+            ) : posts.length === 0 ? (
+              <p className="studio-meta text-ink-muted">NO PUBLISHED POSTS TO COMPARE</p>
+            ) : (
+              <>
+                <PostTable posts={posts} />
+                <div className="mt-2 flex items-center justify-end gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setPostsOffset((current) => Math.max(0, current - ANALYTICS_PAGE_SIZE))}
+                    disabled={postsOffset === 0}
+                    aria-label="Previous posts"
+                    className="grid size-7 place-items-center rounded-md border border-edge text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                  >
+                    <ChevronLeft className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPostsOffset((current) => current + ANALYTICS_PAGE_SIZE)}
+                    disabled={!postsHasMore}
+                    aria-label="Next posts"
+                    className="grid size-7 place-items-center rounded-md border border-edge text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                  >
+                    <ChevronRight className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
         </div>
 
-        <Observations kpis={kpis} posts={posts} best={best} />
+        <Observations kpis={kpis} posts={posts} best={best} named={named} />
       </div>
-
-      <section className="mt-10">
-        <p className="studio-label mb-3">Post comparison</p>
-        {posts === null ? (
-          <p className="studio-meta text-ink-muted">READING YOUR POSTS</p>
-        ) : posts.length === 0 ? (
-          <p className="studio-meta text-ink-muted">NO PUBLISHED POSTS TO COMPARE</p>
-        ) : (
-          <PostTable posts={posts} />
-        )}
-      </section>
     </div>
+  );
+}
+
+/** The five figures the range holds, each with its own change and its own honesty. */
+function KpiStrip({ kpis, range }: { kpis: Kpis | null; range: AnalyticsRange }) {
+  if (!kpis) return null;
+  const approx = new Set(kpis.approximate ?? []);
+  const figures: {
+    label: string; value: number | null; suffix?: string; change: string | null;
+    /** The KPI field the level is, and the one the change is: either can be approximate. */
+    key: string; changeKey: string;
+  }[] = [
+    {
+      label: "Impressions", value: kpis.impressions, key: "impressions", changeKey: "impressions_delta_pct",
+      change: kpis.impressions_delta_pct === null ? null : `${kpis.impressions_delta_pct > 0 ? "+" : ""}${kpis.impressions_delta_pct.toFixed(1)}%`,
+    },
+    {
+      label: "Engagements", value: kpis.total_engagements, key: "total_engagements", changeKey: "engagements_delta_pct",
+      change: kpis.engagements_delta_pct === null ? null : `${kpis.engagements_delta_pct > 0 ? "+" : ""}${kpis.engagements_delta_pct.toFixed(1)}%`,
+    },
+    {
+      label: "Engagement rate", value: kpis.avg_engagement_rate, suffix: "%", key: "avg_engagement_rate",
+      changeKey: "engagement_rate_delta",
+      change: kpis.engagement_rate_delta === null ? null : `${kpis.engagement_rate_delta > 0 ? "+" : ""}${kpis.engagement_rate_delta.toFixed(2)}pp`,
+    },
+    {
+      label: "Followers", value: kpis.total_followers, key: "total_followers", changeKey: "follower_growth",
+      change: kpis.follower_growth === null ? null : `${kpis.follower_growth > 0 ? "+" : ""}${kpis.follower_growth.toLocaleString()}`,
+    },
+    {
+      label: "Profile views", value: kpis.profile_views, key: "profile_views", changeKey: "profile_views_delta_pct",
+      change: kpis.profile_views_delta_pct === null ? null : `${kpis.profile_views_delta_pct > 0 ? "+" : ""}${kpis.profile_views_delta_pct.toFixed(1)}%`,
+    },
+  ];
+  return (
+    <>
+      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-y border-edge py-3 sm:grid-cols-3 lg:grid-cols-5">
+        {figures.map((figure) => (
+          <div key={figure.label} className="min-w-0">
+            <dt className="studio-meta text-[10px] text-ink-muted">{figure.label.toUpperCase()}</dt>
+            <dd className="mt-0.5 text-[15px] tabular-nums text-ink-primary">
+              {/* A figure read on no day of the range is not measured, not 0. */}
+              {figure.value === null ? (
+                <span className="text-[12px] text-ink-muted">not measured</span>
+              ) : (
+                <>
+                  {approx.has(figure.key) && (
+                    <>
+                      <span aria-hidden="true">~</span>
+                      <span className="sr-only">about </span>
+                    </>
+                  )}
+                  {figure.value.toLocaleString()}
+                  {figure.suffix ?? ""}
+                </>
+              )}
+            </dd>
+            <dd className="studio-meta mt-0.5 text-[10px] tabular-nums text-ink-secondary">
+              {/* A change the studio cannot stand behind says so in the words
+                  the rest of the product uses, and the line under the strip
+                  says why. It is never a plausible looking percentage. */}
+              {figure.change === null ? (
+                <span className="text-ink-muted">not measured</span>
+              ) : (
+                <>
+                  {approx.has(figure.changeKey) && (
+                    <>
+                      <span aria-hidden="true">~</span>
+                      <span className="sr-only">about </span>
+                    </>
+                  )}
+                  {`${figure.change} ON THE ${range.toUpperCase()} BEFORE`}
+                </>
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
+        {kpis.days_counted ?? 0} DAY{(kpis.days_counted ?? 0) === 1 ? "" : "S"} OF THIS {range.toUpperCase()} WERE
+        CAPTURED, AND {kpis.previous_days_counted ?? 0} OF THE {range.toUpperCase()} BEFORE IT. A CHANGE IS SHOWN
+        ONLY WHERE BOTH PERIODS HOLD AT LEAST {kpis.days_needed_to_compare ?? 0} CAPTURED DAYS OF THAT FIGURE, SO A
+        PART CAPTURED PERIOD READS NOT MEASURED RATHER THAN A PERCENTAGE.
+      </p>
+    </>
   );
 }
 
@@ -396,18 +554,18 @@ function Observations({
   kpis,
   posts,
   best,
+  named,
 }: {
   kpis: Kpis | null;
   posts: AnalyticsPost[] | null;
   best: AnalyticsBest | null;
+  /** The opening lines of the posts the engine named, by URN. */
+  named: Record<string, string>;
 }) {
   if (!kpis) return null;
   const coverage = coverageNote(kpis);
   const approx = new Set(kpis.approximate ?? []);
   const hidden = WHAT_CHANGED.filter((line) => (kpis.within_rounding ?? []).includes(line.key)).map((l) => l.label);
-
-  const pct = (value: number | null) =>
-    value === null ? null : `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 
   // The strongest post, as the one engine ranks it over the whole history:
   // against the creator's own median reactions, settled posts only. This
@@ -419,23 +577,17 @@ function Observations({
   const ratio = strongest ? best?.named?.[strongest]?.against_usual?.[best.metric] ?? null : null;
 
   return (
-    <aside className="flex flex-col gap-5 border-l border-edge pl-5">
+    <aside className="flex flex-col gap-5 lg:border-l lg:border-edge lg:pl-5">
+      {/* Only when there is something to read: an empty heading over nothing
+          is what the rest of this screen is being cleared of. */}
+      {(WHAT_CHANGED.some((line) => approx.has(line.key)) || hidden.length > 0
+        || (kpis.days_excluded_unknown_window ?? 0) > 0 || coverage) && (
       <section>
-        <p className="studio-label mb-1.5">What changed</p>
-        <ul className="flex flex-col gap-1">
-          <Line label="Impressions" value={pct(kpis.impressions_delta_pct)} approx={approx.has("impressions_delta_pct")} />
-          <Line label="Engagements" value={pct(kpis.engagements_delta_pct)} approx={approx.has("engagements_delta_pct")} />
-          <Line
-            label="Profile views"
-            value={pct(kpis.profile_views_delta_pct)}
-            approx={approx.has("profile_views_delta_pct")}
-          />
-          <Line
-            label="Followers"
-            value={kpis.follower_growth === null ? null : `${kpis.follower_growth > 0 ? "+" : ""}${kpis.follower_growth}`}
-            approx={approx.has("follower_growth")}
-          />
-        </ul>
+        <p className="studio-label mb-1.5">How to read the figures</p>
+        {/* The changes themselves are in the strip above, beside the figure
+            each one is a change in. What belongs here is what the studio
+            could not measure and why, which is the part a creator cannot
+            work out for themselves. */}
         {/* LinkedIn writes some figures as 1.2K, which is anything from 1,150
             to 1,249. A change built from one is approximate, and a change
             smaller than that rounding is not shown at all. */}
@@ -464,6 +616,7 @@ function Observations({
             thirty days with four, so it is not shown, and this says why. */}
         {coverage && <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">{coverage}</p>}
       </section>
+      )}
 
       <section>
         <p className="studio-label mb-1.5">What moved with it</p>
@@ -471,6 +624,43 @@ function Observations({
           {describeRelationship(kpis)}
         </p>
       </section>
+
+      {/* The posts the engine named, best and weakest, with the figures it
+          ranked them on. They are read from the whole history, so neither is
+          usually among the rows of the table beside this. */}
+      {best && (best.best.length > 0 || best.worst.length > 0) && (
+        <section>
+          <p className="studio-label mb-1.5">Your best and your weakest</p>
+          <ul className="flex flex-col gap-2.5">
+            {[...best.best.slice(0, 2).map((urn) => ({ urn, kind: "best" as const })),
+              ...best.worst.slice(0, 2).map((urn) => ({ urn, kind: "worst" as const }))].map(({ urn, kind }) => {
+              const figures = best.named?.[urn];
+              const against = figures?.against_usual?.[best.metric];
+              return (
+                <li key={`${kind}-${urn}`}>
+                  <p className="studio-meta text-[10px] text-ink-muted">
+                    {kind === "best" ? "ABOVE YOUR USUAL" : "BELOW YOUR USUAL"}
+                    {against !== undefined && (
+                      <span className={kind === "best" ? "ml-1.5 text-signal-green-text" : "ml-1.5 text-signal-orange-text"}>
+                        {against}x
+                      </span>
+                    )}
+                  </p>
+                  <p className="line-clamp-2 text-[12px] leading-snug text-ink-secondary">
+                    {named[urn] ? openingLine(named[urn]) : "reading this post"}
+                  </p>
+                  <p className="studio-meta text-[10px] tabular-nums text-ink-muted">
+                    {figures?.reactions === null || figures?.reactions === undefined
+                      ? "REACTIONS NOT READ"
+                      : `${figures.reactions.toLocaleString()} REACTIONS`}
+                    {figures?.impressions != null && ` \u00b7 ${figures.impressions.toLocaleString()} IMPRESSIONS`}
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
 
       <section>
         <p className="studio-label mb-1.5">What to look at next</p>
@@ -490,6 +680,12 @@ function Observations({
       </section>
     </aside>
   );
+}
+
+/** What shows before anything else on a post: its first line. */
+function openingLine(text: string): string {
+  const first = text.split("\n").map((line) => line.trim()).find((line) => line.length > 0);
+  return first ?? "(no text)";
 }
 
 /** Why Impressions and Engagements read "not measured", when the reason is too few captured days. */
@@ -536,23 +732,6 @@ const WHAT_CHANGED = [
   { key: "profile_views_delta_pct", label: "Profile views" },
   { key: "follower_growth", label: "Followers" },
 ] as const;
-
-function Line({ label, value, approx = false }: { label: string; value: string | null; approx?: boolean }) {
-  return (
-    <li className="flex items-baseline justify-between gap-3">
-      <span className="text-[11px] text-ink-muted">{label}</span>
-      <span className="studio-meta text-ink-secondary">
-        {value !== null && approx && (
-          <>
-            <span aria-hidden="true">~</span>
-            <span className="sr-only">about </span>
-          </>
-        )}
-        {value ?? "not measured"}
-      </span>
-    </li>
-  );
-}
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
