@@ -176,7 +176,11 @@ def test_the_week_can_be_changed_from_the_queue(context, studio_url):
     try:
         page = _open(context, studio_url, "queue")
         week = page.locator("section[aria-labelledby=queue-week]")
-        assert "Architecture" not in week.inner_text() and "Monday morning" in week.inner_text()
+        # The slots are named on the week at a glance, which the Queue opens
+        # on since cycle 3; this section changes them. Neutral names either
+        # way: the author's own themes were the defect here.
+        screen = page.locator("main").inner_text()
+        assert "Architecture" not in screen and "Monday morning" in screen
 
         week.get_by_role("button", name="Change slots").click()
         week.get_by_label("Day of the new slot").select_option("5")

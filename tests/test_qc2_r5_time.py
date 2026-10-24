@@ -103,7 +103,10 @@ def test_today_does_not_say_nothing_captured_beside_posts_it_holds(studio):
     assert brief["freshness"]["posts_held"] == 1, brief["freshness"]
     page = studio["page"]
     page.goto(studio["url"] + "/#/today", wait_until="networkidle")
-    line = page.locator("article > p.studio-meta").first.inner_text()
+    # The capture line on Today's strip. It was the first studio-meta
+    # paragraph under an <article>; Today is a grid of panels since cycle 3,
+    # and the line is the first studio-meta paragraph on the screen.
+    line = page.locator("main p.studio-meta").first.inner_text()
     assert "NOTHING CAPTURED YET" not in line, line
     if not brief["freshness"]["last_capture_at"]:
         assert "1 POST OF YOURS HELD" in line, line

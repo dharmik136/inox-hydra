@@ -168,14 +168,37 @@ class BindUrnRequest(BaseModel):
 
 
 @router.get("/api/posts")
-def list_posts(status: Optional[str] = None):
+def list_posts(status: Optional[str] = None, limit: Optional[int] = None):
+    """
+    Posts, filtered by status. Without a limit this answers with every one of
+    them, as it always has.
+
+    `limit` answers the newest that many instead, in the same order as the
+    full list, so a caller that wants only the most recent draft no longer
+    pays for all of them: on a three year install
+    /api/posts?status=draft was 259 KB for 1,044 drafts, read on every load
+    of the interface to reopen one of them.
+    """
     conn = get_db()
     try:
         cursor = conn.cursor()
+        capped = max(1, int(limit)) if limit is not None else None
         if status:
-            cursor.execute("SELECT * FROM posts WHERE status = ? ORDER BY COALESCE(scheduled_for, created_at) ASC", (status,))
-        else:
+            if capped is None:
+                cursor.execute(
+                    "SELECT * FROM posts WHERE status = ? ORDER BY COALESCE(scheduled_for, created_at) ASC",
+                    (status,))
+            else:
+                # Taken newest first so the limit keeps the newest rows, then
+                # put back into ascending order below, which is the order
+                # every existing caller reads.
+                cursor.execute(
+                    "SELECT * FROM posts WHERE status = ? ORDER BY COALESCE(scheduled_for, created_at) DESC LIMIT ?",
+                    (status, capped))
+        elif capped is None:
             cursor.execute("SELECT * FROM posts ORDER BY created_at DESC")
+        else:
+            cursor.execute("SELECT * FROM posts ORDER BY created_at DESC LIMIT ?", (capped,))
 
         rows = []
         for r in cursor.fetchall():
@@ -183,7 +206,8 @@ def list_posts(status: Optional[str] = None):
             d["media_urls"] = json.loads(d["media_urls"]) if d["media_urls"] else []
             d["tags"] = json.loads(d["tags"]) if d["tags"] else []
             rows.append(d)
-        conn.close()
+        if status and capped is not None:
+            rows.reverse()
         return {"status": "success", "posts": rows}
     finally:
         conn.close()

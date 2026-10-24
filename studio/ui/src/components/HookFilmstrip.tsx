@@ -1,8 +1,17 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { X } from "lucide-react";
-import { fetchHookTemplates, type GeneratedHook, type HookTemplate } from "@/lib/api";
+import { fetchHookTemplates, setEngineeringPack, type GeneratedHook, type HookTemplate } from "@/lib/api";
+import { RAIL_SIZE, selectRailTemplates } from "@/lib/hookRail";
 import { cn } from "@/lib/utils";
+
+/**
+ * Fetched well above the rail's own size so the whole library (starters and
+ * the opt-in pack both) is in hand before `selectRailTemplates` picks the
+ * rail from it. Asking the server for only 12, ranked by score, is the bug
+ * this fixes (MAKING.md M-1): it returned 12 pack forms and zero starters.
+ */
+const LIBRARY_FETCH_LIMIT = 200;
 
 interface HookFilmstripProps {
   onApply: (hook: string) => void;
@@ -62,6 +71,12 @@ interface Specimen {
   score: { label: string; value: number } | null;
   /** Generated hooks report whether they clear the fold. The vault does not. */
   fits: boolean | null;
+  /**
+   * True for a specimen from the opt-in engineering pack: another author's
+   * own first-person claims, not the creator's. Shown so the warning beside
+   * the rail is about something the creator can see, not a blanket notice.
+   */
+  fromPack: boolean;
 }
 
 /**
@@ -81,16 +96,51 @@ interface Specimen {
 export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, onUndo }: HookFilmstripProps) {
   const [templates, setTemplates] = useState<HookTemplate[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [packNote, setPackNote] = useState<string | null>(null);
+
+  const read = useCallback(
+    () =>
+      fetchHookTemplates(LIBRARY_FETCH_LIMIT)
+        .then((rows) => {
+          setTemplates(rows);
+          setFailed(false);
+        })
+        .catch(() => setFailed(true)),
+    [],
+  );
 
   useEffect(() => {
-    let live = true;
-    fetchHookTemplates(12)
-      .then((rows) => live && setTemplates(rows))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-  }, []);
+    void read();
+  }, [read]);
+
+  /**
+   * Takes the opt-in pack back out of the library.
+   *
+   * The pack's own control used to live on the Swipe File, which is gone,
+   * and a creator who had added it would otherwise have had no way back:
+   * the forms would stay in the rail, one keystroke from their opening
+   * line, for good. Nothing here offers to add it, which is a decision
+   * recorded with its reasons in the batch report.
+   */
+  async function removePack() {
+    setRemoving(true);
+    setPackNote(null);
+    try {
+      const result = await setEngineeringPack(false);
+      await read();
+      setPackNote(`Removed ${result.removed ?? 0} forms. Your own starter forms have the rail to themselves.`);
+    } catch (caught) {
+      setPackNote(caught instanceof Error ? caught.message : "The studio refused the change.");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  // The pack can add to the rail; it can never evict the creator's own
+  // starter forms below half of it. See lib/hookRail.ts.
+  const picked = templates ? selectRailTemplates(templates, RAIL_SIZE) : null;
+  const packInRail = picked?.some((pick) => pick.fromPack) ?? false;
 
   const specimens: Specimen[] | null = generated
     ? generated.map((hook, index) => ({
@@ -99,8 +149,9 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
         text: hook.hook_text,
         score: null,
         fits: hook.mobile_safe,
+        fromPack: false,
       }))
-    : templates?.map((template) => ({
+    : picked?.map(({ item: template, fromPack }) => ({
         key: `template-${template.id}`,
         category: template.archetype,
         text: template.hook_text,
@@ -110,6 +161,7 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
         score:
           template.velocity_score === null ? null : { label: "EDITOR'S RATING", value: template.velocity_score },
         fits: null,
+        fromPack,
       })) ?? null;
 
   // Alt and a digit applies that specimen. Alt rather than a bare digit
@@ -172,6 +224,56 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
         </div>
       </div>
 
+      {/* What these specimens are, said where they are applied.
+
+          This claim had one home, the Swipe File's banner, and that screen is
+          gone. It belongs here more than it belonged there: the rail is where
+          a form becomes the creator's opening line, in one keystroke. The
+          clause about the rating is printed only when a rated card is on the
+          rail, because a starter form carries no rating and a disclaimer
+          about a number nobody can see is noise. */}
+      {!generated && (
+        <p className="mt-1.5 px-10 text-[11px] leading-snug text-ink-muted">
+          <span className="text-ink-secondary">These are hook forms, not posts anyone measured.</span>
+          {packInRail && (
+            <>
+              {" "}
+              The forms marked{" "}
+              <span className="studio-meta text-[10px] text-signal-orange-text">PACK</span> are the
+              engineering pack&apos;s, not yours: they make first-person claims you would have to make true
+              before posting one, and the rating on them was typed in by whoever wrote the form, not
+              measured. Your own starter forms keep half of this rail.
+            </>
+          )}
+        </p>
+      )}
+
+      {/* The way back out of the pack. Its own control was on the Swipe
+          File; nothing offers to add it now, and this appears only while the
+          pack is actually in the rail. */}
+      {(packInRail || packNote) && !generated && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-10">
+          {/* The button goes once the pack has gone, but what happened stays:
+              a confirmation that disappears with the control it confirms
+              leaves the creator wondering whether the press did anything. */}
+          {packInRail && (
+            <button
+              type="button"
+              disabled={removing}
+              onClick={() => void removePack()}
+              className="shrink-0 rounded-md border border-edge px-2.5 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+            >
+              Remove the engineering pack
+            </button>
+          )}
+          {packNote && (
+            <p role="status" className="min-w-0 text-[11px] text-ink-secondary">
+              {packNote}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Horizontal contact sheet. Scrolls rather than wraps, so the strip
           stays one line deep however many specimens are vaulted. */}
       <ul className="flex gap-2 overflow-x-auto px-10 py-3">
@@ -197,6 +299,16 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
                   {String(index + 1).padStart(2, "0")}
                   <span className="mx-1.5">·</span>
                   {specimen.category.toUpperCase()}
+                  {/* Named on the card itself, because this is the text that
+                      goes into the post, and whose words they are matters.
+                      The space is written out, so the label is a word of its
+                      own to a screen reader rather than a margin. */}
+                  {specimen.fromPack && (
+                    <>
+                      {" "}
+                      <span className="text-signal-orange-text">PACK</span>
+                    </>
+                  )}
                 </span>
                 {index < SHORTCUT_LIMIT && !ALT_TYPES_CHARACTERS && (
                   <kbd className="studio-meta shrink-0 rounded border border-edge px-1 text-[9px] text-ink-muted">

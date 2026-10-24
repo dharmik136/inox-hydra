@@ -242,6 +242,30 @@ def _missed(note: Optional[Dict[str, Any]], scheduled_for: Optional[str]) -> Opt
             "late_minutes": late if isinstance(late, (int, float)) else None}
 
 
+def due_posts(conn, limit: int = DUE_LIMIT) -> List[Dict[str, Any]]:
+    """
+    Queued posts whose time has come, oldest first, with the whole text for
+    Copy text, and why one was missed when it was: the machine was asleep or
+    the studio was closed at its time, noticed this late. This is the one
+    place that reads the due status; Today and the Queue both call it, so a
+    creator sees the same list and the same reason on either screen.
+    """
+    try:
+        from .scheduler import native_scheduler
+    except ImportError:
+        from scheduler import native_scheduler
+    try:
+        missed = native_scheduler.missed_notes(conn)
+    except Exception:
+        missed = {}
+    return [{"post_id": r["id"], "scheduled_for": r["scheduled_for"], "content": r["content"] or "",
+             "excerpt": clip(" ".join((r["content"] or "").split()), 120),
+             "missed": _missed(missed.get(r["id"]), r["scheduled_for"])}
+            for r in conn.execute(
+                "SELECT id, content, scheduled_for FROM posts WHERE status = 'due' "
+                "ORDER BY scheduled_for LIMIT ?", (limit,))]
+
+
 def _queue(conn) -> Dict[str, Any]:
     row = conn.execute(
         "SELECT id, content, scheduled_for FROM posts WHERE status = 'scheduled' AND scheduled_for IS NOT NULL "
@@ -263,16 +287,7 @@ def _queue(conn) -> Dict[str, Any]:
     # whole text for Copy text. A post missed while the machine slept carries
     # the time it was due and how late it was noticed, so Today can say it
     # was missed rather than let it read as on time.
-    try:
-        missed = native_scheduler.missed_notes(conn)
-    except Exception:
-        missed = {}
-    due = [{"post_id": r["id"], "scheduled_for": r["scheduled_for"], "content": r["content"] or "",
-            "excerpt": clip(" ".join((r["content"] or "").split()), 120),
-            "missed": _missed(missed.get(r["id"]), r["scheduled_for"])}
-           for r in conn.execute(
-               "SELECT id, content, scheduled_for FROM posts WHERE status = 'due' "
-               "ORDER BY scheduled_for LIMIT ?", (DUE_LIMIT,))]
+    due = due_posts(conn)
     return {"next_scheduled": scheduled, "next_open_slot": slot, "due": due}
 
 

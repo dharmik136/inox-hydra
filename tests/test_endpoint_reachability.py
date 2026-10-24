@@ -214,9 +214,23 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # account risk, and the Publish dialog calls it, so it is reached. Total
 # 168 -> 169, reached 114 -> 115, unreachable stays at 54.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 169
-REACHED_BY_INTERFACE = 115
-UNREACHABLE = 54
+# Cycle 3, batch T5 (Today, Queue, Composer feeding): two paths added, both
+# reached. /api/queue/due is the one due list with the scheduler's missed
+# note, which the Queue reads instead of the generic posts endpoint.
+# /api/v1/storage/backups answers the backup schedule alone, which Today
+# reads to say when it has gone stale: the whole storage overview costs
+# 578 ms on a three year install against 1.7 ms for this.
+# T3's /api/v1/extension/captures/waiting is now read by Today, which is the
+# batch T3 said would read it, so it leaves the unreachable column.
+# Total 168 -> 170, reached 114 -> 117, unreachable 54 -> 53.
+# ---------------------------------------------------------------------------
+# Both batches applied: 168 -> 171 total, 114 -> 118 reached, 54 -> 53
+# unreachable. T7's removals (Swipe File and Command) are counted when that
+# branch merges.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 171
+REACHED_BY_INTERFACE = 118
+UNREACHABLE = 53
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 
