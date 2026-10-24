@@ -235,7 +235,10 @@ interface PostRow {
  * oldest draft the creator ever wrote.
  */
 export async function fetchLatestDraft(): Promise<Draft | null> {
-  const data = await call<{ posts?: PostRow[] }>("/api/posts?status=draft");
+  // One row, because that is all this answers with. Reading every draft to
+  // find the newest cost 259 KB on a three year install, on every load of
+  // the interface, which is the largest single read on the Today screen.
+  const data = await call<{ posts?: PostRow[] }>("/api/posts?status=draft&limit=1");
   const rows = data.posts ?? [];
   const newest = rows[rows.length - 1];
   return newest ? { id: newest.id, content: newest.content } : null;
@@ -744,9 +747,16 @@ export async function fetchSmartSlots(): Promise<{ slots: QueueSlot[]; scheduled
  * published only when the creator says they posted it (publishNow) or the
  * bridge sees it on LinkedIn.
  */
-export async function fetchDuePosts(): Promise<ScheduledPost[]> {
-  const data = await call<{ posts?: ScheduledPost[] }>("/api/posts?status=due");
-  return data.posts ?? [];
+/**
+ * Queued posts whose time has come, with why one was missed when it was.
+ *
+ * Reads the one place that builds this list (today.due_posts on the server),
+ * which also backs Today's due section, instead of the generic posts
+ * endpoint, which carried no missed note at all.
+ */
+export async function fetchDuePosts(): Promise<TodayDuePost[]> {
+  const data = await call<{ due?: TodayDuePost[] }>("/api/queue/due");
+  return data.due ?? [];
 }
 
 /**
@@ -2705,6 +2715,16 @@ export interface StorageOverview {
     directory: string;
     last_daily: { ok: boolean; at: string; archive: string | null; bytes: number | null; error: string | null } | null;
     rotation_reach_days: number;
+    /** How old the newest backup is, or null when there has never been one. */
+    age_hours: number | null;
+    /**
+     * Whether the backup schedule has stopped producing backups: the newest
+     * one is older than twice the daily interval. False while there has
+     * never been a backup at all, which "never" says instead.
+     */
+    stale: boolean;
+    never: boolean;
+    stale_after_hours: number;
   };
   review: { count: number; silent_days: number; state: "ask" | "off" };
   scrub: { people: number; since: string | null };
@@ -3028,4 +3048,42 @@ export async function saveImageProvider(setup: {
   base_url?: string;
 }): Promise<{ message: string; models: string[]; config: ImageProviderConfig }> {
   return call("/api/image/provider", { method: "POST", body: JSON.stringify(setup) });
+}
+
+// ---------------------------------------------------------------------------
+// Captures the extension is holding (T5: surfaced on Today, was endpoint only)
+// ---------------------------------------------------------------------------
+
+/** The backup schedule on its own, as /api/v1/storage/backups answers it. */
+export type BackupSchedule = StorageOverview["backups"];
+
+/**
+ * Whether the backup schedule is still producing backups, and the newest one.
+ *
+ * The same block the Storage and privacy panel reads inside its overview,
+ * answered on its own: the overview measures every table on the way, which
+ * is 578 ms on a three year install against 1.7 ms for this, and Today says
+ * when the schedule has gone stale.
+ */
+export async function fetchBackupSchedule(): Promise<BackupSchedule> {
+  return call<BackupSchedule>("/api/v1/storage/backups");
+}
+
+export interface WaitingCaptures {
+  /** Null while the extension has not reported since the studio started. */
+  waiting: number | null;
+  measured: boolean;
+  oldest_at: string | null;
+  reported_at: string | null;
+  message: string | null;
+  refusals: { refusals: Record<string, number>; total: number; since: string };
+}
+
+/**
+ * How many captures the extension is holding for a studio that was busy, as
+ * the extension last said. This was readable only by calling the endpoint
+ * directly; nothing in the interface showed it.
+ */
+export async function fetchWaitingCaptures(): Promise<WaitingCaptures> {
+  return call<WaitingCaptures>("/api/v1/extension/captures/waiting");
 }

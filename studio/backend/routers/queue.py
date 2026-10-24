@@ -19,9 +19,11 @@ from pydantic import BaseModel, Field
 try:
     from ..database import get_db, neutral_slot_label
     from ..scheduler import native_scheduler, parse_datetime_flexible, DAY_NAMES
+    from .. import today as today_module
 except ImportError:
     from database import get_db, neutral_slot_label
     from scheduler import native_scheduler, parse_datetime_flexible, DAY_NAMES
+    import today as today_module
 
 router = APIRouter()
 
@@ -152,6 +154,22 @@ def get_next_smart_slot(from_time: Optional[str] = None):
     cursor_dt = parse_datetime_flexible(from_time) if from_time else None
     slot = native_scheduler.calculate_next_smart_slot(from_time=cursor_dt)
     return {"status": "success", "slot": slot}
+
+
+@router.get("/api/queue/due", tags=["Smart Queue"])
+def get_due_posts():
+    """
+    Queued posts whose time has come, with why one was missed when it was.
+
+    today.due_posts is the one place that reads the due status; Today and the
+    Queue both call it, so the Queue no longer builds its own list from the
+    generic posts endpoint, which carried no missed note at all.
+    """
+    conn = get_db()
+    try:
+        return {"status": "success", "due": today_module.due_posts(conn)}
+    finally:
+        conn.close()
 
 
 @router.get("/api/queue/cadence-health", tags=["Smart Queue"])

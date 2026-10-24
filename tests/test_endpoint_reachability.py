@@ -209,9 +209,19 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # by design, beside /api/v1/extension/health. Total 167 -> 168, reached stays
 # at 114, unreachable 53 -> 54. The Today screen reads it in a later batch.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 168
-REACHED_BY_INTERFACE = 114
-UNREACHABLE = 54
+# Cycle 3, batch T5 (Today, Queue, Composer feeding): two paths added, both
+# reached. /api/queue/due is the one due list with the scheduler's missed
+# note, which the Queue reads instead of the generic posts endpoint.
+# /api/v1/storage/backups answers the backup schedule alone, which Today
+# reads to say when it has gone stale: the whole storage overview costs
+# 578 ms on a three year install against 1.7 ms for this.
+# T3's /api/v1/extension/captures/waiting is now read by Today, which is the
+# batch T3 said would read it, so it leaves the unreachable column.
+# Total 168 -> 170, reached 114 -> 117, unreachable 54 -> 53.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 170
+REACHED_BY_INTERFACE = 117
+UNREACHABLE = 53
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 
