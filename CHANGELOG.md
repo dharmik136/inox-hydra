@@ -5,6 +5,151 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
+## 2.7.0
+
+The studio used to disagree with itself. Ask which post did best and four
+screens gave four answers; ask how one post did and Today, Posts and
+Analytics gave three different numbers. Underneath, four tables each held
+"something you wrote", and a third of your captured engagement could not be
+reached from the post it happened on.
+
+This release gives the studio one idea of a post, one idea of what worked,
+and one way in. Then every section was rebuilt on top of that, measured
+rather than judged by eye: how much of the screen carries something, how
+much it downloads before it can show you anything, and how long its own
+questions take on three years of posts.
+
+### Before you use 2.7.0
+
+- **Your database is upgraded** the first time you start it, to hold one
+  record per post. A backup is taken first, as always. Nothing you wrote is
+  removed: on a three year install the upgrade moved 1,567 pieces of writing
+  and left 1,567, and the engagement that could not reach its post went from
+  182,054 stranded to none.
+- **Two sections are gone.** The Swipe File drew the same hook forms as the
+  rail under the Composer's editor through a second screen, and nothing could
+  be saved into it. Command was the Prompt panel with its own icon; its
+  instruction box is now in the Prompt panel, with a Copy control it never
+  had.
+- **Before the first Send to LinkedIn**, the studio asks you to acknowledge
+  what it does: it posts through an interface LinkedIn has not published, and
+  LinkedIn could treat that as automation. The per-send confirmation still
+  asks every time on top of that.
+
+#### What the studio knows about your posts
+- Every post can tell you who engaged with it, including the posts the studio
+  only knows from LinkedIn.
+- A post you publish from the studio appears everywhere at once, instead of
+  waiting for the extension to find it on LinkedIn.
+- The drafts list shows the drafts that used to be held where no screen could
+  show them.
+- The studio stopped carrying a second, empty queue in every backup, export
+  and cleanup.
+- Posts, Analytics and the Composer's Evidence panel now name the same best
+  post, measured the same way, from your whole history rather than from the
+  page on screen.
+- An engagement rate above 100% is no longer shown as a fact: where the
+  figures came from two different readings the studio says so instead of
+  printing a rate.
+- Lead scores are recomputed when the headline, company or engagements they
+  are derived from change, so every screen shows the same current number.
+- One post now shows one set of figures on Today, Posts and Analytics, and
+  says which page they were read from and when.
+- Posts now reads each post as a pair, how far it reached and how strongly
+  people responded, against your own posts at the same age, and the studio
+  measures when a post has settled from your own readings instead of assuming
+  a week.
+- Patterns now says plainly when a difference is too small for your own posts
+  to separate, instead of printing it as a finding.
+
+#### What reaches the studio, and how fast
+- A capture that carries the studio's own post key is kept instead of being
+  rejected, and an extension older than the studio is told once to reload
+  rather than failing quietly.
+- When the studio turns a capture away it now says why, on the page and in the
+  side panel, instead of nothing happening: most often "import your posts
+  first".
+- A capture your studio was busy or closed for is now kept on every path that
+  carries your own data, sent again on its own, and counted where you can see
+  it.
+- Capturing a busy post's engagers is four times faster and no longer leaves
+  the slowest capture waiting six seconds.
+- Posts and Analytics read the people a post brought for the posts on screen,
+  not for every post you have ever written.
+- The Posts and Analytics screens load a page of posts instead of your whole
+  history: 2,207 KB to 84 KB and 2,447 KB to 108 KB on a three year account.
+- A post's engagers open faster, from the index rather than a scan of every
+  person you have captured.
+- Capturing the people who engaged with a post no longer reads your whole
+  posting history for each one.
+- Your hourly backup and cleanup now run when the laptop wakes, instead of
+  being skipped for the hour, and the studio says when the newest backup is
+  out of date.
+
+#### Today, the Queue and writing
+- Today shows the whole day at once: what to fix, who to reply to in their own
+  words, how your latest post did against your own history, what worked and
+  what did not, what goes out next, your last thirty days and your posting
+  rhythm, without scrolling.
+- The Queue opens on your week: each day with its slots and what sits in them,
+  what is due, what was missed and why, and how the queue's pace compares with
+  how steadily you have actually posted.
+- The Composer now opens on your own strongest openings, with what each post
+  drew and the shape it was in, and one click puts one at the top of your
+  draft.
+- Adding the engineering hook pack now adds to the Composer's hook rail
+  instead of replacing your own starter forms, each pack form is marked, and
+  the Composer says that those forms make first-person claims you would have
+  to make true.
+- The Composer's hook rail now says these are hook forms rather than posts
+  anyone measured, and the rating on a pack form was typed in rather than
+  measured. If you had added the engineering pack, you can take it back out
+  from the rail.
+- The studio no longer reads every draft you have written each time it opens.
+
+#### Posts, Analytics and Patterns
+- Posts is a table you can sort, filter, search and page, and it says how many
+  posts it is showing of how many you have.
+- Opening a post from Posts shows the whole post, its one reading with the
+  page it came from named, where it sat for reach and response, and everyone
+  the studio captured on it.
+- Analytics shows your impressions, engagements, rate, followers and profile
+  views with each one's change beside it, and its post comparison is a page
+  you can turn.
+- Patterns shows how your own posts settle, measured from your readings rather
+  than assumed, and lets you order the findings, open each one and sort the
+  topic table.
+
+#### Leads, Outbound and the rest
+- The lead dossier fits a phone, and at a wide window what is known about a
+  person sits beside what you can do about it, so drafting a message no longer
+  starts below the fold.
+- A lead's dossier now shows which of your posts that person engaged with, how
+  often, and when they last did.
+- Outbound now shows whose posts you spend your attention on, what you last
+  said to them, who has engaged back, who has gone quiet and where it goes one
+  way, instead of a notice about an import.
+- Activity is one log of what the bridge read, newest first and grouped by
+  day, instead of five tabs of cards six screens long.
+- The Swipe File is gone. It showed the same hook forms as the Composer's
+  rail, which is where they can actually be used; Ctrl+K now opens one there.
+- The Command section is gone. Its instruction box is in the Composer's Prompt
+  panel, next to the draft it works on, and an answer can be copied.
+- Backing up and exporting your work is now at the top of Brand Studio's
+  Storage and privacy tab, not at the foot of Local security.
+
+#### Saying what the studio actually does
+- The extension document and help now say what a history import does: it
+  clicks LinkedIn's load-more control and scrolls your own activity page, up
+  to 250 rounds, only after you press Import your history.
+- The architecture document no longer claims zero automated activity: it names
+  Send to LinkedIn and the history import, and the risk register now names the
+  Send to LinkedIn path and what it could cost an account.
+- Before the first time a studio sends a post to LinkedIn, it now asks you
+  once to acknowledge that this writes to LinkedIn's private scheduling API,
+  outside LinkedIn's published terms, and records your answer. Each send still
+  asks you to confirm the account and the time.
+
 ## 2.6.1
 
 Three faults that needed Windows, or a slow machine, to show themselves. If

@@ -703,6 +703,7 @@ HELP_SECTIONS = [
             "quality/BUG_REGISTER_2026-10.md",
             "quality/CYCLE2_2026-10_PRD.md",
             "quality/CYCLE3_2026-10_PRD.md",
+            "quality/CYCLE3_REGISTER.md",
             "UI_CONVENTIONS.md",
             "ICON_SYSTEM.md",
             "UI_AGENT_WORKFLOW.md",

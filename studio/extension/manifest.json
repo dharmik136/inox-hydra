@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Inox Hydra Bridge",
-  "version": "2.6.1",
+  "version": "2.7.0",
   "description": "Brings what you see on your own LinkedIn pages into Inox Hydra on this computer, and places your drafts in LinkedIn's composer.",
   "icons": {
     "16": "icons/icon-16.png",

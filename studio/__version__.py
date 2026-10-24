@@ -11,4 +11,4 @@ Strict Invariants:
   cannot be migrated forward. See docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md.
 """
 
-__version__ = "2.6.1"
+__version__ = "2.7.0"
