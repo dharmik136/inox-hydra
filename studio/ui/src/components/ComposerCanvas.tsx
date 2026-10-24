@@ -447,6 +447,13 @@ function figuresOf(item: EvidenceExemplar): string {
 }
 
 /**
+ * Whether the writer has folded this panel away. Kept for the session rather
+ * than stored, so it is open again next time the studio is opened, and never
+ * twice in the way of one sitting's work.
+ */
+let foldedAway = false;
+
+/**
  * What worked, offered where the writing happens.
  *
  * MAKING.md: what the creator learns never reaches what they write. The one
@@ -472,9 +479,12 @@ function WhatWorkedForYou({
 }) {
   const [brief, setBrief] = useState<RetrievalEvidenceBrief | null>(null);
   const [failed, setFailed] = useState(false);
-  // Open while the page is empty, which is when a writer is deciding what to
-  // write; folded away once there is a draft, so it never crowds the text.
-  const [open, setOpen] = useState(!value.trim());
+  // Open when the Composer opens, because a writer deciding what to write is
+  // who this is for, and folded away for the rest of the session once they
+  // fold it. It cannot key off an empty editor: the draft the studio reopens
+  // arrives after this first renders, so "empty" is true at that instant
+  // whatever is about to fill the page.
+  const [open, setOpen] = useState(!foldedAway);
   // The draft as it was before an opening was applied, so one click back is
   // as fast as the click that replaced it. The hook rail's undo works the
   // same way, and for the same reason.
@@ -525,7 +535,10 @@ function WhatWorkedForYou({
           )}
           <button
             type="button"
-            onClick={() => setOpen((shown) => !shown)}
+            onClick={() => {
+              foldedAway = open;
+              setOpen(!open);
+            }}
             aria-expanded={open}
             className="studio-meta text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
           >
