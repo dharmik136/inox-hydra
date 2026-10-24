@@ -13,6 +13,11 @@ Cycle 3, batch T7, against the built interface (tests/qc2_r5_live.py).
   Brand Studio  Export sat at y=1322 under "Local security" while a tab named
                 "Storage and privacy" existed beside it (ONEVIEW section 2).
                 Your data is now the first thing in that tab.
+  Leads         the dossier's identity fields were two columns at every
+                width, about 150 pixels each on a phone, and the dossier
+                capped itself at 70 characters in a pane twice that wide. It
+                now also groups a person's engagement with the creator's own
+                posts, which is drawn here because it is drawn in the browser.
 
 The scroll page and ink numbers of the section bar are measured on the three
 year dataset, not here; these hold the shape that makes them possible, on a
@@ -21,6 +26,8 @@ seeded install, at the 1440x900 the bar is set at.
 
 import os
 import sys
+
+import pytest
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(REPO_ROOT, "studio", "backend"))
@@ -112,6 +119,87 @@ def test_activity_still_says_what_it_measured_and_what_it_did_not(studio):
 
 
 # ---------------------------------------------------------------------------
+# Leads: the dossier at a phone's width, and a person's engagement history
+# ---------------------------------------------------------------------------
+
+def _open_dossier(studio, name):
+    """The stream, with this person's dossier open, as a creator opens it."""
+    page = studio["page"]
+    open_section(studio, "leads")
+    page.wait_for_selector("text=Lead stream")
+    row = page.get_by_role("button", name=name, exact=False).first
+    row.wait_for()
+    row.click()
+    # The dossier is an article, and at a phone's width it replaces the
+    # stream rather than sitting beside it, so the person's name appears in
+    # two places of which one is hidden. The article is the pane itself.
+    page.locator("main article").first.wait_for(state="visible")
+    page.wait_for_selector("main dl")
+    return page
+
+
+@pytest.mark.parametrize("width,height,columns", [(1440, 900, 2), (390, 844, 1)])
+def test_the_dossier_fields_are_one_column_on_a_phone(studio, width, height, columns):
+    """
+    Company, seniority, the score and the first-seen date were a fixed two
+    column grid: at 390 wide each column was about 150 pixels and a company
+    name or a score with its tier was squeezed into it.
+    """
+    client, page = studio["client"], studio["page"]
+    seed_creator(client, commenter="Anika Shah")
+    page.set_viewport_size({"width": width, "height": height})
+    _open_dossier(studio, "Anika Shah")
+
+    tracks = page.evaluate(
+        "() => {const dl = document.querySelector('main dl');"
+        " return dl ? getComputedStyle(dl).gridTemplateColumns.split(' ').length : 0;}"
+    )
+    assert tracks == columns, f"the dossier's fields are {tracks} columns at {width} wide"
+
+    overflow = page.evaluate(
+        "() => Math.max(0, document.documentElement.scrollWidth - window.innerWidth)")
+    assert overflow == 0, f"{overflow}px of horizontal overflow at {width} wide"
+    widest = page.evaluate(
+        "() => Math.max(0, ...Array.from(document.querySelectorAll('main *'))"
+        ".map((el) => el.getBoundingClientRect().right)) - window.innerWidth")
+    assert widest <= 1, f"an element reaches {widest:.0f}px past the window at {width} wide"
+
+
+def test_the_dossier_groups_what_a_person_did_on_each_of_your_posts(studio):
+    """
+    One row per post of the creator's, from the whole history rather than the
+    handful of interactions the timeline lists: two comments and a reaction on
+    one post is one row saying so.
+    """
+    client = studio["client"]
+    urns = seed_creator(client, commenter=None)
+    for interaction, comment, urn in (
+        ("COMMENT", "First thought on this one.", urns[0]),
+        ("COMMENT", "And a second, later.", urns[0]),
+        ("LIKE", None, urns[0]),
+        ("LIKE", None, urns[1]),
+    ):
+        answer = client.post("/api/v1/crm/interactions/ingest", json={
+            "full_name": "Nadia Okonkwo", "profile_url": "https://www.linkedin.com/in/nadia-okonkwo-x",
+            "headline": "Head of Operations at Harbourline", "company": "Harbourline",
+            "interaction_type": interaction, "comment_text": comment,
+            "post_urn": urn, "post_author": ME,
+        })
+        assert answer.status_code == 200, answer.text
+
+    page = _open_dossier(studio, "Nadia Okonkwo")
+    page.wait_for_selector("text=Engagement with your posts")
+    section = page.locator("main section").filter(has_text="Engagement with your posts").first
+    rows = section.locator("li")
+    assert rows.count() == 2, f"{rows.count()} posts listed for two posts engaged with"
+    text = section.inner_text()
+    assert "2 comments, 1 reaction" in text, text
+    assert "1 reaction" in text, text
+    # Each row names the post, so the creator does not have to remember which.
+    assert "on-call rota" in text, text
+
+
+# ---------------------------------------------------------------------------
 # Outbound: rebuilt on what the live capture path records
 # ---------------------------------------------------------------------------
 
@@ -167,6 +255,38 @@ def test_outbound_does_not_call_an_account_quiet_before_it_has_looked(studio):
     text = page.inner_text("main").upper()
     assert "NOT JUDGED YET" in text, text[:500]
     assert "FREQUENT AUTHOR" in text, "the account is still ranked, only not judged"
+
+
+# ---------------------------------------------------------------------------
+# The folded instruction box: no less available than the section it replaced
+# ---------------------------------------------------------------------------
+
+def _open_prompt(studio):
+    page = studio["page"]
+    open_section(studio, "composer")
+    opener = page.locator('button[aria-label="Open inspector"]')
+    if opener.count() and opener.is_visible():
+        opener.click()
+    page.click('aside[aria-label="Inspector"] button:has-text("Prompt")')
+    return page
+
+
+def test_an_instruction_still_runs_when_the_engine_status_cannot_be_read(studio):
+    """
+    The Command section omitted its banner when /api/ai/status failed and kept
+    the form working. Folded into the Prompt panel, a failed status replaced
+    the whole panel, so the capability became less available than before.
+    """
+    client, page = studio["client"], studio["page"]
+    seed_creator(client, commenter=None)
+    page.route("**/api/ai/status", lambda route: route.fulfill(status=503, body="{}"))
+
+    _open_prompt(studio)
+    page.wait_for_selector("#agent-command")
+    text = page.inner_text('aside[aria-label="Inspector"]').upper()
+    assert "ENGINE STATUS UNAVAILABLE" in text, text[:300]
+    assert page.locator('button[aria-label="Run the command"]').count() == 1
+    assert not studio["errors"], studio["errors"]
 
 
 # ---------------------------------------------------------------------------

@@ -901,27 +901,13 @@ class ReverseCRMManager:
                 (lead_id,),
             )
             interactions = [dict(r) for r in cursor.fetchall()]
+            return {
+                "status": "success",
+                "lead": dict(lead_row),
+                "interactions": interactions,
+            }
         finally:
             conn.close()
-
-        # Whether each interaction was on one of your own posts, and that
-        # post's opening line: the dossier's one window onto a person's
-        # actual engagement with your writing, rather than a lead naming a
-        # post the creator has to remember themselves. Unreliable before one
-        # post identity existed (it read the post id a capture happened to
-        # record, not the one id a post is known by), so it was never wired
-        # here.
-        try:
-            from . import onboarding
-        except ImportError:
-            import onboarding
-        interactions = onboarding.annotate_interactions(interactions)
-
-        return {
-            "status": "success",
-            "lead": dict(lead_row),
-            "interactions": interactions,
-        }
 
     def get_crm_telemetry(self) -> Dict[str, Any]:
         """
