@@ -48,7 +48,7 @@ A new database starts almost empty, on purpose. Nothing about you or your accoun
 
 The studio opens on **Setup** until you have confirmed your profile there, and on **Today** afterwards (see [What to do today](what-to-do-today.md)). Each screen has its own address, such as `#/leads` after the studio's address, so reloading keeps you on the screen you were on, a bookmark or link opens that screen, and the browser's Back and Forward buttons move between the screens you visited. It connects the bridge browser and reads your own LinkedIn: see [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).
 
-- **Composer**: an empty editor. Above it, the hook rail shows specimens from the 36 built-in hook forms.
+- **Composer**: an empty editor. Above it, the hook rail shows the 12 starter hook forms a new studio is seeded with.
 - **Queue**: 11 default weekly posting slots and no posts.
 - **Leads**: "No leads captured yet" and setup instructions for the browser extension.
 - **Analytics**: empty until the extension captures your numbers.
@@ -68,14 +68,12 @@ The rail on the left lists the surfaces. Hover an icon to see its name.
 | Posts | Which of your posts worked, and who each one brought |
 | Patterns | What your own posts suggest, and how steadily you post |
 | Outbound | Whose content you engage with, and whether it comes back |
-| Swipe File | Saved specimens and structural patterns |
-| Analytics | Time series, observations and comparisons |
-| Command | Agent runs and local model routing |
+| Analytics | Time series, what changed, and comparisons |
 | Docs | Offline playbook and strategy search |
-| Brand Studio | Identity, watermark and local security |
+| Brand Studio | Identity, watermark, grounding, local security, storage and your licence |
 
 - The mark at the top of the rail opens a tray that lists the same surfaces with their labels.
-- Press **Ctrl+K** (**Cmd+K** on a Mac), or click the magnifier at the top of the rail, to search your posts, leads, Swipe File and help from anywhere. Press **Escape** to close it. See [Search everything with Ctrl+K](use-the-command-palette.md).
+- Press **Ctrl+K** (**Cmd+K** on a Mac), or click the magnifier at the top of the rail, to search your posts, leads, hook forms and help from anywhere. Press **Escape** to close it. See [Search everything with Ctrl+K](use-the-command-palette.md).
 - On the Composer, the inspector sits on the right with the tabs **Preview**, **Audit**, **Media**, **Brand** and **Prompt**. If you close it, a small panel icon in the top right corner (named **Open inspector**) brings it back.
 - The studio opens in the light or dark theme your computer is set to. The sun or moon button in the top bar of every screen except the Composer, or **Switch theme** in Ctrl+K, changes it, and the studio remembers your choice in this browser.
 

@@ -1,9 +1,9 @@
-# Set up Brand Studio: identity, watermark, grounding and local security
-Save the name and headline your previews show, and find the watermark, grounding and privacy settings.
+# Set up Brand Studio: identity, watermark, grounding, security, storage and licence
+Save the name and headline your previews show, and find the watermark, grounding, privacy, storage and licence settings.
 
 ## Open it
 
-Press **Brand Studio** in the rail. It has four tabs: **Identity**, **Watermark**, **Grounding** and **Local security**.
+Press **Brand Studio** in the rail. It has six tabs, in this order: **Identity**, **Watermark**, **Grounding**, **Local security**, **Storage and privacy** and **Licence**.
 
 ## How saving works
 
@@ -13,7 +13,7 @@ The **Save** button at the top right saves **Identity** and **Watermark** only, 
 - The mark beside it reads UNSAVED, SAVING, SAVED or SAVE FAILED. Hover over SAVE FAILED to read the reason.
 - While it reads UNSAVED or SAVE FAILED, switching profile asks first, naming "Your Brand Studio edits", because the switch reloads the studio and the edits would be lost.
 
-The controls on **Grounding** and **Local security** act as soon as you use them and do not need **Save**.
+The controls on **Grounding**, **Local security**, **Storage and privacy** and **Licence** act as soon as you use them and do not need **Save**.
 
 ## Identity
 
@@ -59,7 +59,7 @@ Below the rows, a short list says what stays and what leaves: your drafts, posts
 
 - **What has left this machine**, the egress ledger. See [What leaves this machine, and when](what-leaves-this-machine.md).
 - **LinkedIn session**, where you paste your session. See [Connect your LinkedIn session](connect-your-linkedin-session.md).
-- **Your data**, with **Back up now**, **Export JSON** and **Export CSV**. See [Back up, restore and export](back-up-restore-and-export.md).
+- **Your data**, with **Back up now**, **Export JSON** and **Export CSV**, which is now the first thing on the **Storage and privacy** tab rather than the foot of this one. See [Back up, restore and export](back-up-restore-and-export.md) and [Choose what the studio keeps](choose-what-the-studio-keeps.md).
 
 ## What happens
 

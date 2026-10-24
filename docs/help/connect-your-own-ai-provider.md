@@ -1,9 +1,9 @@
 # Connect your own AI provider
-Plug in your own model key so Re-Hook and the Command console use it, and see exactly what text it receives.
+Plug in your own model key so Re-Hook and Command use it, and see exactly what text it receives.
 
 ## You do not need one
 
-Without a key, nothing writes for you. **Re-Hook** offers fill-in templates built around your own words, with a [bracket] wherever a fact of yours belongs, and the hook rail says they are templates. Replace every bracket before you post. The formatting tools and the **Audit** tab work as usual. The **Command** console needs a model and says so. The **Prompt** tab sums this up: "NO KEY IS CONFIGURED. RE-HOOK OFFERS FILL-IN TEMPLATES AND THE AUDIT RUNS HERE. COMMAND NEEDS A MODEL." Image generation is the exception: even with no key it sends a prompt to an outside image service (see [Add images and files to your media library](add-images-to-your-media-library.md)). A key changes who writes the text, and it means some of your text leaves your machine.
+Without a key, nothing writes for you. **Re-Hook** offers fill-in templates built around your own words, with a [bracket] wherever a fact of yours belongs, and the hook rail says they are templates. Replace every bracket before you post. The formatting tools and the **Audit** tab work as usual. **Command**, on the same tab, needs a model and says so. The **Prompt** tab sums this up: "NO KEY IS CONFIGURED. RE-HOOK OFFERS FILL-IN TEMPLATES AND THE AUDIT RUNS HERE. COMMAND NEEDS A MODEL." Image generation is the exception: even with no key it sends a prompt to an outside image service (see [Add images and files to your media library](add-images-to-your-media-library.md)). A key changes who writes the text, and it means some of your text leaves your machine.
 
 ## Providers
 
@@ -41,7 +41,7 @@ Once connected, this is what reaches the provider:
 | Feature | What is sent |
 | --- | --- |
 | **Re-Hook** on a selection | A prompt built from the first line of your selection |
-| **Command** console | Your instruction, and your Composer draft only when **Include my Composer draft** is ticked |
+| **Command** | Your instruction, and your Composer draft only when **Include my draft** is ticked |
 | **Media** tab, **Preview prompt** and **Generate** | Your image description, so the model can describe the scene |
 | **Media** tab **Generate**, with `openai` or `gemini` and no image provider chosen | The image prompt, to OpenAI Images or Google Imagen with this key. Choose another under **Images** in the **Prompt** tab |
 | **Audit** tab, and message drafts on **Leads** | Nothing. These always run locally. |
@@ -60,14 +60,14 @@ If a provider call fails, Re-Hook and Command say so and give the provider's rea
 
 If no key is saved in the studio, which is always the case for `ollama`, it uses `OPENAI_API_KEY`, `GEMINI_API_KEY` or `GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, or `GROQ_API_KEY` from your environment, in that order, and that provider replaces the one you chose. Starting the studio with `INOX_ALLOW_MODEL_EGRESS=0` or `INOX_NO_EGRESS=1` refuses all model traffic.
 
-## Use the Command console
+## Use Command
 
-1. Open **Command** from the rail.
-2. Check the banner: it shows the active mode, then STAYS ON THIS MACHINE (no key) or SENT TO THE PROVIDER.
+1. Open the **Composer**, then the **Prompt** tab in the inspector. Command is a block on that tab; it is no longer a rail section.
+2. Check the **Engine** rows above it: Mode, Provider, Model, and Egress, which reads NONE, RUNS LOCALLY with no key or SENDS TO PROVIDER with one.
 3. Type in the **Instruction** box. Enter runs it. Shift+Enter adds a new line.
-4. To have the model work on what you are writing, tick **Include my Composer draft** first. The box is greyed out while the Composer is empty.
+4. To have the model work on what you are writing, tick **Include my draft** first. The box is greyed out while the editor is empty.
 
-Each answer is listed under your instruction, with the engine that wrote it beside RAN. With no key, the console answers that no model is set up and writes nothing.
+Each answer is listed under your instruction, with the engine that wrote it beside RAN, and a **COPY** control. With no key, it answers that no model is set up and writes nothing. See [Run an instruction with Command](use-the-command-console.md).
 
 ## Go back to local only
 
