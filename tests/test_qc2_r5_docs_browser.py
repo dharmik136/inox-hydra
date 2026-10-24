@@ -86,7 +86,11 @@ def test_the_docs_home_offers_only_the_help(page):
 
 
 def test_the_name_filter_skips_hidden_documents(page):
-    page.get_by_label("Search the documentation").fill("architecture")
+    # The probe has to be a word a creator's own help answers: "architecture"
+    # reached the help only through browse-the-swipe-file.md, which was
+    # retired with the Swipe File (cycle 3, batch T7), so a consumer build now
+    # finds nothing for it and the filter has nothing to skip.
+    page.get_by_label("Search the documentation").fill("analytics")
     page.wait_for_timeout(600)
     main = page.locator("main")
     expect(main.get_by_text("result", exact=False).first).to_be_visible()
@@ -107,6 +111,9 @@ def test_dev_mode_brings_them_back(studio_url, monkeypatch):
             page.goto(f"{studio_url}/#/docs", wait_until="networkidle")
             main = page.locator("main")
             expect(main.get_by_text("For maintainers").first).to_be_visible()
+            # "architecture" here, because this control asserts that
+            # ARCHITECTURE.md itself comes back when maintainer documents are
+            # shown, and the filter matches a document's name.
             page.get_by_label("Search the documentation").fill("architecture")
             page.wait_for_timeout(600)
             expect(main.get_by_text("ARCHITECTURE.md").first).to_be_visible()
