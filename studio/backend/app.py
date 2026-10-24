@@ -2275,6 +2275,76 @@ class StagePostRequest(BaseModel):
     confirm_resend: bool = False
 
 
+# The account-risk sentence a studio installation must acknowledge, once,
+# before its first Send to LinkedIn. It names the one thing the per-send
+# confirmation dialog does not: this writes to LinkedIn's private, undocumented
+# scheduling API, outside LinkedIn's published terms, and could affect the
+# account's standing if LinkedIn's systems treat it as automation. The same
+# sentence is in the risk register (planning/7 Roadmap/Risk - LinkedIn terms
+# and detection.md) and docs/ARCHITECTURE.md, so a creator who reads any of the
+# three meets the same words.
+LINKEDIN_SEND_RISK_SENTENCE = (
+    "Send to LinkedIn writes to LinkedIn's private, undocumented scheduling API, a use "
+    "outside LinkedIn's published terms, and it could affect your account's standing if "
+    "LinkedIn's systems treat it as automation."
+)
+
+# One flag, not one per post: acknowledged once for this installation, never
+# asked again. Separate from confirm/confirm_account above, which is asked on
+# every send and names the account and the time, not this risk.
+LINKEDIN_RISK_ACK_KEY = "linkedin_send_risk_ack"
+
+
+def _risk_acknowledged() -> Optional[str]:
+    """When this installation acknowledged the risk sentence, or None."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (LINKEDIN_RISK_ACK_KEY,)).fetchone()
+        return row["value"] if row else None
+    finally:
+        conn.close()
+
+
+def _record_risk_ack() -> str:
+    at = datetime.now(timezone.utc).isoformat()
+    conn = get_db()
+    try:
+        conn.execute(
+            "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+            (LINKEDIN_RISK_ACK_KEY, at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return at
+
+
+class LinkedInRiskAckRequest(BaseModel):
+    acknowledge: bool = False
+
+
+@app.post("/api/v1/linkedin/risk-ack", tags=["LinkedIn Native Scheduler"])
+def acknowledge_linkedin_risk(req: LinkedInRiskAckRequest):
+    """
+    Records this installation's one-time acknowledgement of the Send to
+    LinkedIn account risk, named in LINKEDIN_SEND_RISK_SENTENCE.
+
+    Asked once per installation, not once per send: the Publish dialog's own
+    per-send confirmation (StagePostRequest.confirm) still names the account
+    and the time on every send, and is untouched by this. This is the
+    separate, one-time gate the risk register and docs/ARCHITECTURE.md
+    promise before a studio's first Send to LinkedIn.
+    """
+    if not req.acknowledge:
+        raise HTTPException(
+            status_code=400,
+            detail="Acknowledge the risk sentence to continue. Nothing was recorded.",
+        )
+    at = _record_risk_ack()
+    return {"acknowledged": True, "at": at}
+
+
 # A send LinkedIn never answered, per post: the time it went out.
 UNANSWERED_SEND_KEY = "linkedin_send_unanswered:"
 
@@ -2361,6 +2431,11 @@ def send_readiness() -> Dict[str, Any]:
             "started with INOX_ALLOW_LINKEDIN_EGRESS=1; see Publish, queue or send a post to LinkedIn "
             "in Docs."
         ))
+    if not _risk_acknowledged():
+        # One-time per installation, not per send or per post: once acknowledged,
+        # this never blocks again. The per-send confirmation that follows names
+        # the account and the time; this is the only place that names the risk.
+        return verdict("risk_not_acknowledged", LINKEDIN_SEND_RISK_SENTENCE)
     return verdict(None, None)
 
 
@@ -2549,7 +2624,13 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
     # account the session belongs to now, so a session synced from another
     # account after the dialog opened cannot send as them.
     readiness = send_readiness()
-    if readiness["code"] in ("no_session", "no_identity", "account_unknown", "other_account", "author_unknown"):
+    if readiness["code"] in (
+        "no_session", "no_identity", "account_unknown", "other_account", "author_unknown",
+        # The one-time, per-installation risk acknowledgement. Checked before
+        # anything reaches LinkedIn, same as the identity checks above it, and
+        # never satisfied by the per-send confirm/confirm_account on this request.
+        "risk_not_acknowledged",
+    ):
         raise HTTPException(status_code=409, detail={"code": readiness["code"], "message": readiness["reason"]})
     account = linkedin_client.session_account() or {}
     if onboarding.normalise_vanity(req.confirm_account or "") != account.get("vanity"):

@@ -209,8 +209,13 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # by design, beside /api/v1/extension/health. Total 167 -> 168, reached stays
 # at 114, unreachable 53 -> 54. The Today screen reads it in a later batch.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 168
-REACHED_BY_INTERFACE = 114
+# Cycle 3, batch T8 (docs honesty): /api/v1/linkedin/risk-ack added. It records
+# a studio installation's one-time acknowledgement of the Send to LinkedIn
+# account risk, and the Publish dialog calls it, so it is reached. Total
+# 168 -> 169, reached 114 -> 115, unreachable stays at 54.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 169
+REACHED_BY_INTERFACE = 115
 UNREACHABLE = 54
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

@@ -18,7 +18,7 @@ Learn what Copy and mark posted, Queue it and Send to LinkedIn each do, and whic
 
 | | Copy and mark posted | Queue it | Send to LinkedIn |
 | --- | --- | --- | --- |
-| What it does first | Copies the post's exact text to your clipboard | Nothing else | Asks you to confirm the account and the time |
+| What it does first | Copies the post's exact text to your clipboard | Nothing else | Asks you to confirm the account and the time, and on the first send from this studio, to acknowledge the account risk once |
 | What it writes on this machine | Status published, with the current time, only once the copy worked | Status scheduled, at the NEXT SLOT time; due when that time comes | Status scheduled at the NEXT SLOT time, only after LinkedIn accepts; published when that time comes |
 | What leaves the machine | Nothing | Nothing | The post text and your stored session cookies, sent to LinkedIn |
 | Can you undo it here? | No | No unschedule control; **Pause the queue** on the Queue holds it, and **Back to drafts** takes a due post off it | No. Change or cancel it on LinkedIn |
@@ -51,9 +51,18 @@ Press **Queue it**, beside **Copy and mark posted**. The strip shows the time, f
 1. Press **Publish**.
 2. Check **NEXT SLOT**. The request asks LinkedIn to publish at that time. It must be at least 10 minutes and at most about three months away.
 3. Below the line, read which account it sends as, for example "Sends as Rae Six (linkedin.com/in/rae-six)." If **Send to LinkedIn** is greyed out, the sentence under it says why and what to do (see the table below).
-4. Press **Send to LinkedIn**.
-5. Read the question: "Send as <your name> (linkedin.com/in/<you>), for LinkedIn to publish at <date and time> (this computer's time)?" and, in orange, "This sends the post's text to LinkedIn, signed in with your saved LinkedIn session. It cannot be undone from here: after this, changing it means going to LinkedIn."
-6. Press **Yes, send as <your name>**, or **Keep it here** to back out.
+4. On the first send from this studio only, answer the acknowledgement that appears in place of the button (see **The first send from this studio asks you once** below).
+5. Press **Send to LinkedIn**.
+6. Read the question: "Send as <your name> (linkedin.com/in/<you>), for LinkedIn to publish at <date and time> (this computer's time)?" and, in orange, "This sends the post's text to LinkedIn, signed in with your saved LinkedIn session. It cannot be undone from here: after this, changing it means going to LinkedIn."
+7. Press **Yes, send as <your name>**, or **Keep it here** to back out.
+
+### The first send from this studio asks you once
+
+Before the first time you ever send from this studio, in place of the **Send to LinkedIn** button the dialog reads BEFORE THE FIRST SEND FROM THIS STUDIO, ONCE and, in orange: "Send to LinkedIn writes to LinkedIn's private, undocumented scheduling API, a use outside LinkedIn's published terms, and it could affect your account's standing if LinkedIn's systems treat it as automation."
+
+Press **I understand, and accept this risk**. The studio records your acknowledgement, with the time, on this machine, and the **Send to LinkedIn** button appears.
+
+This is asked once for this installation and never again. It is separate from the confirmation in step 6, which names the account and the time and is asked on every send: that one is about this post, this one is about what sending is. Until you answer it, a send is refused with the same sentence and nothing leaves the machine.
 
 ### The account it sends as
 
@@ -83,6 +92,7 @@ After any of the three, the Composer lets go of the post and clears, so the next
 | The saved session is for linkedin.com/in/..., but this studio is set up for... | That browser is signed in to LinkedIn as someone else. Sign in as yourself, open your profile, and sync again. |
 | The studio does not know your LinkedIn member id yet... | Open your own LinkedIn profile in the bridge browser, wait for it to load, then press **Sync LinkedIn Session**. |
 | Sending to LinkedIn is switched off in this studio... | Start the studio with `INOX_ALLOW_LINKEDIN_EGRESS=1`, as in **Before you start**. |
+| Send to LinkedIn writes to LinkedIn's private, undocumented scheduling API... | This studio has not acknowledged the account risk yet. Press **I understand, and accept this risk**; it is asked once for this installation. See **The first send from this studio asks you once**. |
 | Nothing was sent. The confirmation did not name ... | The session changed account after the dialog opened. Close **Publish** and open it again. |
 | That time is less than 10 minutes away... or LinkedIn holds a post for up to about three months ahead... | The slot is outside the window LinkedIn accepts. Nothing was sent. Choose another slot on the Queue, or post it yourself with **Copy and mark posted**. |
 | LinkedIn refused the post (HTTP 422: ...) | LinkedIn read the request and said no; its own reason follows the status. Nothing was scheduled, and the attempt is in the post's send record. |
