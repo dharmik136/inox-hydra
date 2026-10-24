@@ -246,10 +246,16 @@ def outbound_overview() -> Dict[str, Any]:
         # author: with a single MAX aggregate SQLite takes the other columns
         # from the row that matched, so this is one pass over the comments
         # rather than a subquery per author.
-        said = {_name_key(r["target_author"]): r["my_text"] for r in conn.execute(
-            "SELECT target_author, MAX(last_seen_at) AS at, my_text FROM outbound_engagements "
-            "WHERE kind = 'comment' AND my_text IS NOT NULL AND target_author IS NOT NULL "
-            "GROUP BY target_author")}
+        # Two spellings of one name are one account, so the newest of their
+        # comments wins rather than whichever row the grouping met last.
+        said: Dict[str, Dict[str, Any]] = {}
+        for row in conn.execute(
+                "SELECT target_author, MAX(last_seen_at) AS at, my_text FROM outbound_engagements "
+                "WHERE kind = 'comment' AND my_text IS NOT NULL AND target_author IS NOT NULL "
+                "GROUP BY target_author"):
+            key = _name_key(row["target_author"])
+            if (row["at"] or "") >= (said.get(key, {}).get("at") or ""):
+                said[key] = {"at": row["at"], "text": row["my_text"]}
         own_ids = onboarding._own_activity_ids(conn)
         # People who engaged with your posts, by display name, and on how
         # many of them: a comment and a like on one post is one post, not two.
@@ -336,7 +342,7 @@ def outbound_overview() -> Dict[str, Any]:
         entry["last_inbound_at"] = inbound
         # Their own words, clipped the way every other excerpt in the studio
         # is. None when you have only ever reacted to them.
-        entry["last_comment"] = clip(" ".join((said.get(key) or "").split()), 120) or None
+        entry["last_comment"] = clip(" ".join((said.get(key, {}).get("text") or "").split()), 120) or None
         # Quiet is a claim about someone who used to come back, not about a
         # stranger who never has: that is one_way's claim, below, and the two
         # are kept separate so neither reads as the other.
