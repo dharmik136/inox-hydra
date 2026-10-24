@@ -12,7 +12,6 @@ against.
 
 from datetime import datetime, timedelta
 
-import pytest
 from playwright.sync_api import expect
 
 from qc2_r5_live import confirm_identity, open_section, seed_creator, server, studio  # noqa: F401
@@ -36,7 +35,7 @@ def test_the_week_is_the_first_thing_on_the_queue(studio):
     _queue_a_post(studio["client"], "The rota rewrite shipped.", now + timedelta(days=1, hours=2))
     page = open_section(studio, "queue")
 
-    week = page.locator("section", has_text="This week").first
+    week = page.locator("section", has_text="Next seven days").first
     expect(week).to_be_visible(timeout=10000)
     # Seven named days, each carrying its slots and what sits in them.
     for day in ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"):
@@ -54,21 +53,14 @@ def test_a_post_sits_in_the_cell_whose_day_its_own_row_names(studio):
     lib/time.ts now, so they cannot disagree.
     """
     confirm_identity(studio["client"])
-    # Soon, because the API will not schedule into the past, and inside the
-    # week the grid draws, which runs Monday to Sunday: "tomorrow" is in the
-    # next week when this runs on a Sunday, and the post would then be in no
-    # cell at all.
-    now = datetime.now()
-    when = now + timedelta(minutes=90)
-    week_ends = (now + timedelta(days=7 - ((now.weekday() + 7) % 7))).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
-    if when >= week_ends:
-        pytest.skip("the next free moment is in next week, which this week's grid does not draw")
-    _queue_a_post(studio["client"], "The one queued post.", when)
+    # Tomorrow, which the grid always draws now that it is the next seven
+    # days from today rather than the calendar week. This used to skip when
+    # the moment it queued fell outside the drawn week, which left the case
+    # the review found recorded and unguarded.
+    _queue_a_post(studio["client"], "The one queued post.", datetime.now() + timedelta(days=1, hours=1))
 
     page = open_section(studio, "queue")
-    week = page.locator("section", has_text="This week").first
+    week = page.locator("section", has_text="Next seven days").first
     expect(week).to_be_visible(timeout=10000)
 
     agreement = page.evaluate(
@@ -85,7 +77,7 @@ def test_a_post_sits_in_the_cell_whose_day_its_own_row_names(studio):
     )
     assert len(agreement["queued"]) == 1, agreement
     # The cell's day initial and the weekday the row prints are the same day.
-    day_in_cell = agreement["queued"][0].split("\n")[0].strip()
+    day_in_cell = agreement["queued"][0].split("\n")[0].strip().split(" ")[0]
     assert agreement["row"], "the queued post is not listed"
     weekday = agreement["row"].split(",")[0].strip().upper()
     assert weekday.startswith(day_in_cell[:3]) or day_in_cell.startswith(weekday[:3]), (

@@ -52,8 +52,11 @@ def test_the_composer_offers_the_creator_their_own_strongest_opening(studio):
     seed_creator(studio["client"], commenter=None)
     page = open_section(studio, "composer")
 
-    panel = page.locator("section", has_text="What worked, from your own posts")
+    panel = page.locator("section[aria-labelledby=composer-what-worked]")
     expect(panel).to_be_visible(timeout=10000)
+    # Folded when the Composer opens, so that the editor is on screen; the
+    # writer asks for it and it is there.
+    panel.get_by_role("button", name="SHOW").click()
     expect(panel).to_contain_text("not a suggestion from a model")
 
     use = panel.get_by_role("button", name="Use this opening").first
@@ -75,8 +78,10 @@ def test_the_figures_beside_an_opening_are_the_ones_the_server_measured(studio):
     """Reactions, comments and qualified leads, under those names. No rating."""
     seed_creator(studio["client"], commenter=None)
     page = open_section(studio, "composer")
-    panel = page.locator("section", has_text="What worked, from your own posts")
+    panel = page.locator("section[aria-labelledby=composer-what-worked]")
     expect(panel).to_be_visible(timeout=10000)
+    panel.get_by_role("button", name="SHOW").click()
+    expect(panel).to_contain_text("reactions", timeout=10000)
     text = panel.inner_text()
     assert "reactions" in text
     assert "qualified leads" in text
@@ -166,8 +171,10 @@ def test_the_pack_can_be_taken_back_out_of_the_rail(studio):
 def test_with_too_few_settled_posts_the_panel_says_so_rather_than_inventing(studio):
     """The honesty rule: a brief with no evidence prints the server's reason."""
     page = open_section(studio, "composer")
-    panel = page.locator("section", has_text="What worked, from your own posts")
+    panel = page.locator("section[aria-labelledby=composer-what-worked]")
     expect(panel).to_be_visible(timeout=10000)
+    panel.get_by_role("button", name="SHOW").click()
+    page.wait_for_timeout(400)
     text = panel.inner_text()
     assert "Use this opening" not in text, "an opening was offered with no settled posts to draw it from"
     assert "reactions" not in text.lower() or "Not enough" in text

@@ -447,11 +447,22 @@ function figuresOf(item: EvidenceExemplar): string {
 }
 
 /**
- * Whether the writer has folded this panel away. Kept for the session rather
- * than stored, so it is open again next time the studio is opened, and never
- * twice in the way of one sitting's work.
+ * Whether the writer has opened this panel. Kept for the session rather than
+ * stored, so a writer who wants it keeps it for this sitting's work and finds
+ * the editor where they left it next time the studio opens.
  */
-let foldedAway = false;
+let openedThisSession = false;
+
+/**
+ * How tall the panel may grow once it is opened.
+ *
+ * Bounded rather than as tall as the evidence it holds, because this sits
+ * above the editor: unbounded, five exemplars put the textarea's top at
+ * y=834 on a three year install, leaving 66 pixels of the writing surface on
+ * screen at 1440x900 and none of it at 1280x800. It scrolls inside itself
+ * instead, and the editor stays where a writer can type in it.
+ */
+const PANEL_MAX_HEIGHT = "max-h-[15rem]";
 
 /**
  * What worked, offered where the writing happens.
@@ -479,12 +490,11 @@ function WhatWorkedForYou({
 }) {
   const [brief, setBrief] = useState<RetrievalEvidenceBrief | null>(null);
   const [failed, setFailed] = useState(false);
-  // Open when the Composer opens, because a writer deciding what to write is
-  // who this is for, and folded away for the rest of the session once they
-  // fold it. It cannot key off an empty editor: the draft the studio reopens
-  // arrives after this first renders, so "empty" is true at that instant
-  // whatever is about to fill the page.
-  const [open, setOpen] = useState(!foldedAway);
+  // Folded when the Composer opens, and open for the rest of the session
+  // once the writer opens it. The Composer is a writing surface before it is
+  // anything else: whatever is offered here, the editor has to be on screen
+  // when the screen opens, and this panel sits above it.
+  const [open, setOpen] = useState(openedThisSession);
   // The draft as it was before an opening was applied, so one click back is
   // as fast as the click that replaced it. The hook rail's undo works the
   // same way, and for the same reason.
@@ -536,7 +546,7 @@ function WhatWorkedForYou({
           <button
             type="button"
             onClick={() => {
-              foldedAway = open;
+              openedThisSession = !open;
               setOpen(!open);
             }}
             aria-expanded={open}
@@ -548,7 +558,12 @@ function WhatWorkedForYou({
       </div>
 
       {open && (
-        <div className="border-t border-edge px-3 py-2">
+        <div
+          className={`${PANEL_MAX_HEIGHT} overflow-y-auto border-t border-edge px-3 py-2`}
+          tabIndex={0}
+          role="group"
+          aria-label="What worked, from your own posts"
+        >
           {/* Said before anything is offered, because the one thing that
               makes this worth reading is whose words these are. */}
           <p className="text-[12px] leading-snug text-ink-secondary">
