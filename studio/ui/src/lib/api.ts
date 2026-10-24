@@ -687,9 +687,29 @@ export interface AnalyticsBest {
   >;
 }
 
-export async function fetchAnalyticsPosts(): Promise<{ posts: AnalyticsPost[]; best: AnalyticsBest | null }> {
-  const data = await call<{ posts?: AnalyticsPost[]; best?: AnalyticsBest }>("/api/analytics/posts");
-  return { posts: data.posts ?? [], best: data.best ?? null };
+/**
+ * One page of the post comparison table, best first, server side: this
+ * answered with every post the creator had ever written, 2,432 KB on three
+ * years, with a `limit` in the URL that was accepted and ignored.
+ */
+export async function fetchAnalyticsPosts(
+  options: { limit?: number; offset?: number } = {},
+): Promise<{ posts: AnalyticsPost[]; best: AnalyticsBest | null } & Paging> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  if (options.offset !== undefined) params.set("offset", String(options.offset));
+  const data = await call<{ posts?: AnalyticsPost[]; best?: AnalyticsBest } & Partial<Paging>>(
+    `/api/analytics/posts${params.toString() ? `?${params}` : ""}`,
+  );
+  return {
+    posts: data.posts ?? [],
+    best: data.best ?? null,
+    total: data.total ?? 0,
+    limit: data.limit ?? options.limit ?? 0,
+    offset: data.offset ?? options.offset ?? 0,
+    returned: data.returned ?? (data.posts ?? []).length,
+    has_more: data.has_more ?? false,
+  };
 }
 
 // ---------------------------------------------------------------------------

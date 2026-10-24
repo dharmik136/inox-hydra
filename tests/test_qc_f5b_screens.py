@@ -119,9 +119,16 @@ def _days(client, count, **metrics):
 
 
 def _what_changed(page, label):
-    line = page.locator("aside li", has_text=label).first
-    # The value is the second of the two spans; a screen reader hears "about" for the "~".
-    return " ".join((line.locator(":scope > span").nth(1).text_content() or "").split())
+    """
+    What the screen says changed in one figure, read where that change is now
+    shown: beside the figure itself, in the strip across the top (batch T6
+    moved it there from the aside's "What changed" list, so that a change is
+    never printed without the figure it is a change in). A screen reader
+    hears "about" for the "~" that marks a change built from a figure
+    LinkedIn rounded.
+    """
+    figure = page.locator("dl div", has=page.locator("dt", has_text=label)).first
+    return " ".join((figure.locator("dd").nth(1).text_content() or "").split())
 
 
 # ---------------------------------------------------------------------------
@@ -132,9 +139,9 @@ def test_a_thin_previous_period_reads_not_measured_and_says_why(studio):
     """AUDIENCE-05"""
     _days(studio["client"], 34, impressions=1000, reactions=20, comments=2, shares=1)
     page = _open(studio, "Analytics")
-    page.wait_for_selector("text=What changed")
-    assert _what_changed(page, "Impressions") == "not measured"
-    assert _what_changed(page, "Engagements") == "not measured"
+    page.wait_for_selector("dl dt:text('IMPRESSIONS')")
+    assert _what_changed(page, "IMPRESSIONS") == "not measured"
+    assert _what_changed(page, "ENGAGEMENTS") == "not measured"
     body = page.inner_text("body")
     assert "IMPRESSIONS: 30 DAYS IN THIS PERIOD, 4 IN THE ONE BEFORE." in body
     assert "+650" not in body and "rose together" not in body
@@ -149,9 +156,9 @@ def test_unread_engagements_read_not_measured_not_a_fall(studio):
               for b in range(60)]
     assert client.post("/api/analytics/ingest", json={"series": series, "author": ME}).status_code == 200
     page = _open(studio, "Analytics")
-    page.wait_for_selector("text=What changed")
-    assert _what_changed(page, "Impressions") == "0.0%"
-    assert _what_changed(page, "Engagements") == "not measured"
+    page.wait_for_selector("dl dt:text('IMPRESSIONS')")
+    assert _what_changed(page, "IMPRESSIONS") == "0.0% ON THE 30D BEFORE"
+    assert _what_changed(page, "ENGAGEMENTS") == "not measured"
     body = page.inner_text("body")
     assert "-100.0%" not in body and "fell together" not in body
     assert "ENGAGEMENTS: 0 DAYS IN THIS PERIOD, 30 IN THE ONE BEFORE." in body
@@ -166,8 +173,8 @@ def test_a_rounded_follower_count_is_shown_as_approximate(studio):
            "impressions": 1037}
     assert client.post("/api/analytics/ingest", json={"series": [row], "author": ME}).status_code == 200
     page = _open(studio, "Analytics")
-    page.wait_for_selector("text=What changed")
-    assert _what_changed(page, "Followers") == "~about +396"
+    page.wait_for_selector("dl dt:text('IMPRESSIONS')")
+    assert _what_changed(page, "FOLLOWERS") == "~about +396 ON THE 30D BEFORE"
     body = page.inner_text("body")
     assert "LINKEDIN ROUNDED, SUCH AS 1.2K, SO IT IS APPROXIMATE" in body
     assert "OF THESE DAYS WAS READ" not in body, "impressions were exact, yet the chart was marked"
