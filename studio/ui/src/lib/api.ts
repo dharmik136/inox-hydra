@@ -3219,3 +3219,18 @@ export interface WaitingCaptures {
 export async function fetchWaitingCaptures(): Promise<WaitingCaptures> {
   return call<WaitingCaptures>("/api/v1/extension/captures/waiting");
 }
+
+/**
+ * Removes the opt-in engineering creator pack from the hook library, or adds
+ * it back.
+ *
+ * The Swipe File was its only screen and is gone, so the hook rail is the one
+ * caller: it offers the way out while pack forms are in the library, and
+ * nothing offers the way in until those 36 first-person claims are rewritten.
+ */
+export async function setEngineeringPack(enabled: boolean): Promise<{ added?: number; removed?: number }> {
+  return call<{ added?: number; removed?: number }>("/api/v1/intelligence/packs/engineering", {
+    method: "POST",
+    body: JSON.stringify({ enabled }),
+  });
+}

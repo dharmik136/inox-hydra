@@ -242,10 +242,14 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # ---------------------------------------------------------------------------
 # All of cycle 3 applied. The counts below are what the running application
 # declares and what the interface reaches, measured, not added up by hand.
+# The engineering pack route is reached again: T7 removed the Swipe File and
+# its client function with it, and the hook rail is that function's caller
+# now, so the merge restored it. The pack has a way out and no way in until
+# its 36 first-person claims are rewritten, which is a decision, not a gap.
 # ---------------------------------------------------------------------------
 TOTAL_API_PATHS = 172
-REACHED_BY_INTERFACE = 117
-UNREACHABLE = 55
+REACHED_BY_INTERFACE = 118
+UNREACHABLE = 54
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 
