@@ -505,9 +505,14 @@ def test_the_confirmation_names_the_account_and_the_time_and_the_send_reaches_on
     # Since cycle 3 (T8) a studio's first send asks once for the account risk
     # to be acknowledged. This test is about the per-send confirmation that
     # follows it, so the one-time gate is answered first.
-    acknowledge = dialog.get_by_role("button", name="I understand, and accept this risk")
-    if acknowledge.count():
-        acknowledge.click()
+    # The fixture starts from an installation that has never sent, so the
+    # one-time gate is always what the dialog offers first, and waiting for it
+    # is what makes this deterministic. Asking whether it is there instead
+    # (if acknowledge.count()) raced the readiness fetch, which lands after
+    # the dialog opens: under load the question was answered before the prompt
+    # existed, the gate went unanswered, and the wait below timed out.
+    dialog.get_by_role("button", name="I understand, and accept this risk").click()
+    dialog.get_by_role("button", name="Send to LinkedIn").wait_for()
     dialog.get_by_text("Sends as Rae Six (linkedin.com/in/r6-creator).").wait_for()
 
     dialog.get_by_role("button", name="Send to LinkedIn").click()

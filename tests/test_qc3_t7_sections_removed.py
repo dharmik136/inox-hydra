@@ -179,14 +179,31 @@ def _help_files():
     return sorted(name for name in os.listdir(HELP) if name.endswith(".md"))
 
 
-def test_no_help_article_names_a_removed_section():
+# Saying a section is gone is not sending a creator to it. Someone who knew
+# the Swipe File will look for it, and "it has been removed, the forms are on
+# the rail" is the article doing its job. What this guards against is an
+# article that still treats a dead section as somewhere to go.
+REMOVAL_WORDS = ("has been removed", "have been removed", "was removed", "is gone", "no longer")
+
+
+def _sentences_naming(text, label):
+    for sentence in re.split(r"(?<=[.!?])\s+|\n", text):
+        if label in sentence:
+            yield sentence
+
+
+def test_no_help_article_sends_a_creator_to_a_removed_section():
     named = {}
     for name in _help_files():
         text = _read(os.path.join(HELP, name))
         for label in GONE_LABELS:
-            if label in text:
-                named.setdefault(name, []).append(label)
-    assert not named, f"help articles still name a section the rail does not have: {named}"
+            for sentence in _sentences_naming(text, label):
+                if not any(word in sentence for word in REMOVAL_WORDS):
+                    named.setdefault(name, []).append(sentence.strip()[:80])
+    assert not named, (
+        "help articles still treat a removed section as somewhere to go "
+        f"(saying it was removed is fine): {named}"
+    )
 
 
 def test_no_article_about_a_removed_section_is_shipped_to_a_creator():

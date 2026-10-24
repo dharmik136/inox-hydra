@@ -3,7 +3,7 @@ Plug in your own model key so Re-Hook and the instruction box use it, and see ex
 
 ## You do not need one
 
-Without a key, nothing writes for you. **Re-Hook** offers fill-in templates built around your own words, with a [bracket] wherever a fact of yours belongs, and the hook rail says they are templates. Replace every bracket before you post. The formatting tools and the **Audit** tab work as usual. The **Command** console needs a model and says so. The **Prompt** tab sums this up: "NO KEY IS CONFIGURED. RE-HOOK OFFERS FILL-IN TEMPLATES AND THE AUDIT RUNS HERE. COMMAND NEEDS A MODEL." Image generation is the exception: even with no key it sends a prompt to an outside image service (see [Add images and files to your media library](add-images-to-your-media-library.md)). A key changes who writes the text, and it means some of your text leaves your machine.
+Without a key, nothing writes for you. **Re-Hook** offers fill-in templates built around your own words, with a [bracket] wherever a fact of yours belongs, and the hook rail says they are templates. Replace every bracket before you post. The formatting tools and the **Audit** tab work as usual. **Command**, on the same tab, needs a model and says so. The **Prompt** tab sums this up: "NO KEY IS CONFIGURED. RE-HOOK OFFERS FILL-IN TEMPLATES AND THE AUDIT RUNS HERE. COMMAND NEEDS A MODEL." Image generation is the exception: even with no key it sends a prompt to an outside image service (see [Add images and files to your media library](add-images-to-your-media-library.md)). A key changes who writes the text, and it means some of your text leaves your machine.
 
 ## Providers
 
@@ -62,12 +62,12 @@ If no key is saved in the studio, which is always the case for `ollama`, it uses
 
 ## Use the instruction box
 
-1. Open **Command** from the rail.
-2. Check the banner: it shows the active mode, then STAYS ON THIS MACHINE (no key) or SENT TO THE PROVIDER.
+1. Open the **Composer**, then the **Prompt** tab in the inspector. Command is a block on that tab; it is no longer a rail section.
+2. Check the **Engine** rows above it: Mode, Provider, Model, and Egress, which reads NONE, RUNS LOCALLY with no key or SENDS TO PROVIDER with one.
 3. Type in the **Instruction** box. Enter runs it. Shift+Enter adds a new line.
-4. To have the model work on what you are writing, tick **Include my Composer draft** first. The box is greyed out while the Composer is empty.
+4. To have the model work on what you are writing, tick **Include my draft** first. The box is greyed out while the editor is empty.
 
-Each answer is listed under your instruction, with the engine that wrote it beside RAN. With no key, the console answers that no model is set up and writes nothing.
+Each answer is listed under your instruction, with the engine that wrote it beside RAN, and a **COPY** control. With no key, it answers that no model is set up and writes nothing. See [Run an instruction on your draft](run-an-instruction-on-your-draft.md).
 
 ## Go back to local only
 

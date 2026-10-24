@@ -6,23 +6,32 @@ All three screens are built from your own imported history. Import your posts, c
 
 ## Posts
 
-The line under the title gives your usual: the median reactions, comments and impressions of your posts that are at least a week old. If your week-old posts have no figures, as posts imported from LinkedIn's archive do not, the line says how many and asks you to press **Import your history** in **Setup**, so the bridge reads them.
+The line under the title gives your usual: the median reactions, comments and impressions of your posts older than the age at which your posts settle. That age is not a fixed week any more: the screen prints the number of days it is using, measured from your own posts' readings where there are enough of them. If those posts have no figures, as posts imported from LinkedIn's archive do not, the line says how many and asks you to press **Import your history** in **Setup**, so the bridge reads them. With too few settled posts it says there is not enough to know your usual yet, rather than showing one.
 
-Each post shows its date (for example TUE 20 OCT), opening, and the reactions, comments and impressions last read on it. For a post at least a week old, each figure is followed by how it compares with your usual, for example "55 REACTIONS (1.8x)". Green is at least 1.2 times your usual, orange is 0.8 times or less. A post under a week old is marked **STILL GROWING** and not compared, because its numbers are still arriving.
+The posts are a table, one row each, with columns for the post, its date (for example TUE 20 OCT), reach and response, reactions, comments, impressions and the people it brought. Above it:
 
-The two week-old posts furthest above your usual reactions are marked **WORTH REPURPOSING**: their form has already worked for your audience.
+- **Search your posts** filters by text.
+- A **Settled state** group narrows to **All**, **Settled** or **Still growing**.
+- **Sort** offers newest, oldest, most reactions, most impressions and most comments.
+- The count reads, for example, `1-20 of 1,417`, with **Previous** and **Next** and PAGE 1 OF 71. Twenty rows are shown at a time.
+
+Each figure on a settled row is followed by how it compares with your usual, for example "55 REACTIONS (1.8x)". Green is at least 1.2 times your usual, orange is 0.8 times or less. A post that has not settled yet is marked **STILL GROWING** and not compared, because its numbers are still arriving. Reach and response are given as percentiles against your other posts, for example `p72/p48`, or say the post was not read at a comparable age.
+
+The settled posts furthest above your usual reactions are marked **WORTH REPURPOSING**, and the ones furthest below **UNDERPERFORMED**.
 
 Click a post to see the people the studio captured engaging with it. Click a name to open their dossier in **Leads**. **CONVERSATIONS** counts the people from that post whose lead status you moved to **Connected** or **Meeting Booked**. If a post shows nobody, open it with **Open the post**; its commenters are read when it opens in the bridge browser.
 
 ## Patterns
 
-**Patterns** compares your posts that have a form with those that do not, by median reactions, across your posts at least a week old with reactions recorded. Posts with none recorded, such as those from LinkedIn's archive, are left out, and a note under the introduction says how many. Each line gives both medians and both counts, for example "MEDIAN 38 REACTIONS ON 7 POSTS WITH IT, 25 ON 11 WITHOUT".
+**Patterns** compares your posts that have a form with those that do not, by median reactions, across your posts whose figures have settled and have reactions recorded. The introduction says how many days settled means for you, and whether that was measured from your own readings or assumed until they can say. Posts with none recorded, such as those from LinkedIn's archive, are left out, and a note under the introduction says how many. Each line gives both medians and both counts, for example "MEDIAN 38 REACTIONS ON 7 POSTS WITH IT, 25 ON 11 WITHOUT".
 
-The forms compared are: a short opening line (60 characters or fewer), an opening that asks a question, an opening that starts with an emoji or symbol, an announcement ("excited", "thrilled", "happy to share", a new position), bold or styled Unicode letters, hashtags, and a post over 1,500 characters. A form is compared only when at least three posts have it and three do not; the others are listed as not enough posts.
+The forms compared are: a short opening line (60 characters or fewer), an opening that asks a question, an opening that starts with an emoji or symbol, an announcement ("excited", "thrilled", "happy to share", a new position), bold or styled Unicode letters, hashtags, and a post over 1,500 characters. A form is compared only when enough posts have it and enough do not. The introduction prints that number, which is the same one the Composer's Evidence panel uses, so nothing is shown here that it would suppress. The others are listed as not enough posts.
 
 When most posts on one side are from a different year than the other, the line is moved under **Mixed up with when you posted**. Your account and audience were different then, so the difference may be about the time rather than the form.
 
-Each form is compared once. A line with fewer than eight posts on one side ends in **EARLY**: the difference may not hold as more posts arrive. Only a comparison with at least eight posts on each side, from the same period, is passed to the copilot as evidence.
+Each form is compared once. A line the evidence check still counts as short of data ends in **EARLY**: the difference may not hold as more posts arrive. Only a comparison that passes that same check, from the same period, is passed to the copilot as evidence.
+
+Under the comparisons, **How your posts settle** draws the share of a post's final figures it had reached by each age, measured from your own readings. Where an age has too few readings to measure, it says so instead of drawing a line.
 
 Under **Cadence**, **POSTS BY MONTH** draws one bar per month and says how many posts the tallest bar stands for.
 

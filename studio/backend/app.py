@@ -2425,17 +2425,27 @@ def send_readiness() -> Dict[str, Any]:
             "the author. Open your own LinkedIn profile in the bridge browser, then press Sync LinkedIn "
             "Session in the extension."
         ))
+    if not _risk_acknowledged():
+        # One-time per installation, not per send or per post: once acknowledged,
+        # this never blocks again. The per-send confirmation that follows names
+        # the account and the time; this is the only place that names the risk.
+        #
+        # Deliberately ahead of the egress check below, although egress is off
+        # by default and so is the likelier answer on a fresh install. Checked
+        # the other way round, a default install was told "start the studio
+        # with INOX_ALLOW_LINKEDIN_EGRESS=1" and never met the risk sentence at
+        # all: the instruction for switching the feature on arrived before the
+        # disclosure of what switching it on means. For a consent gate that is
+        # backwards, so the risk is named first and the flag second. Nothing is
+        # lost, because the flag is what readiness says the moment this is
+        # answered.
+        return verdict("risk_not_acknowledged", LINKEDIN_SEND_RISK_SENTENCE)
     if not egress_policy.allowed("linkedin"):
         return verdict("egress_off", (
             "Sending to LinkedIn is switched off in this studio. It is allowed only when the studio is "
             "started with INOX_ALLOW_LINKEDIN_EGRESS=1; see Publish, queue or send a post to LinkedIn "
             "in Docs."
         ))
-    if not _risk_acknowledged():
-        # One-time per installation, not per send or per post: once acknowledged,
-        # this never blocks again. The per-send confirmation that follows names
-        # the account and the time; this is the only place that names the risk.
-        return verdict("risk_not_acknowledged", LINKEDIN_SEND_RISK_SENTENCE)
     return verdict(None, None)
 
 

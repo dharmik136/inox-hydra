@@ -158,7 +158,7 @@ That win is achievable on an empty database because nothing in it reads a row. `
 | 3:00 | They click `Rewrite the opener`. Ten deterministic archetypes, no key needed. They take one |
 | 5:00 | They export a carousel or quote image. Because rung 4 is not satisfied, export asks once: `Add your name. Slides carry a footer with it.` One field, one save, export proceeds with their name, not the author's |
 | 6:00 | Session can end here and the product was useful. The connection panel is still sitting there stating that three optional rows exist. It has not nagged once |
-| Later, after they mark a post as posted | One sentence appears on that post's row: `Want to see who engaged with this? That needs a browser add-on that reads your post page while you look at it. It never posts, follows or messages, and it only reads pages you open yourself.` That is the first and only mention of the extension in the flow |
+| Later, after they mark a post as posted | One sentence appears on that post's row: `Want to see who engaged with this? That needs a browser add-on that reads your post page while you look at it. It never posts, follows or messages. It reads the pages you open, and scrolls your own activity pages if you ask it to import your history.` That is the first and only mention of the extension in the flow |
 
 The extension request is deliberately placed after a payoff. `GETTING_STARTED.md:42-49` currently makes it step 2, before any value has been delivered, and the manifest asks for `cookies`, `webRequest`, `scripting` and `tabs` (`manifest.json:11-19`), which produces Chrome's maximally alarming warning. Nobody grants that to a tool that has not done anything for them yet.
 

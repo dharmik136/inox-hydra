@@ -59,6 +59,15 @@ To search the whole library rather than the twelve in the rail, press
 opens the Composer, where the rail applies it. See
 [Search everything with Ctrl+K](use-the-command-palette.md).
 
+## The Swipe File has been removed
+
+The hook rail under the editor is where forms are applied, and it is the only place they are now: the Swipe File section that used to list them has been removed, because it drew the same forms through a second screen and nothing could be saved into it or taken out of it.
+
+- The rail shows 12 forms. Under them, a line reads "These are hook forms, not posts anyone measured." They are patterns, not posts anyone measured, so no reaction or comment counts are shown.
+- To search the whole set, press **Ctrl+K** (**Cmd+K** on a Mac) and type. Matches are grouped under **Hook forms**, and choosing one opens the **Composer**, where the rail applies it. See [Search everything with Ctrl+K](use-the-command-palette.md).
+
+If the engineering creator pack is in your rail, its forms are marked **PACK**, and a line says they make first-person claims you would have to make true before posting one and that their rating was typed in by whoever wrote the form rather than measured. **Remove the engineering pack** takes those forms back out. No control in the studio adds the pack now.
+
 ## If it does not work
 
 | What you see | What it means |

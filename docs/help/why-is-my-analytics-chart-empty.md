@@ -33,6 +33,10 @@ The studio never fetches your analytics. The browser extension reads the impress
 
 If you see a banner reading "*n* of *m* days are seeded sample data, not measurements.", those days are generated samples, not your figures. [Read your analytics](read-your-analytics.md) explains it.
 
+## Looking for the hook forms?
+
+The Swipe File section has been removed. Hook forms now live only on the rail under the Composer's editor, and Ctrl+K finds them under **Hook forms**. See [Try a different opening line](try-a-different-opening-line.md).
+
 ## Still stuck
 
 Run `python -m studio.cli doctor` in a terminal opened in the checkout folder (portable build: `InoxHydra-CLI.bat doctor`). It lists content row counts and any problems it found. Then see [The studio will not open](the-studio-will-not-open.md).

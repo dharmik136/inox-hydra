@@ -25,13 +25,15 @@ The server keeps the first 5,000 characters of an instruction.
 
 ## With no provider
 
-You get the same fixed post every time. Only one sentence changes. The studio takes the first non-empty line of your instruction, removes a leading "write", "create", "draft", "stepping into", "how to" or "why", and drops the rest into a built-in template that ends on a question. So "Write a post about onboarding" gives "...building systems around a post about onboarding." No model runs, and nothing leaves this machine.
+Nothing is written. The answer reads "No model is set up, so nothing was written for this instruction.", and points you at the **Prompt** tab to connect one.
+
+The studio used to answer with a built-in template here: the same fixed post every time, with one sentence swapped in from your instruction. It read as though a model had written something for you, so it was removed. Without a provider, Re-Hook still offers fill-in forms built around your own words, and the formatting tools still work on your text.
 
 ## With a provider
 
 The studio sends `Command: <your instruction>` to your provider, with your draft when you ticked the box, together with its own fixed writing rules (no em or en dashes, no buzzwords, short paragraphs, a strong first line, end on a question), and asks for up to 1,500 tokens. The reply is cleaned of dashes before you see it. What else goes with a request is listed in the same tab, under what the provider receives.
 
-If the provider call fails, you get the local template above instead, and the entry names the engine that answered. The studio never falls back to a different provider. To set one up, see [Connect your own AI provider](connect-your-own-ai-provider.md).
+If the provider call fails, the entry says so and names the engine that answered; nothing is invented in its place. The studio never falls back to a different provider. To set one up, see [Connect your own AI provider](connect-your-own-ai-provider.md).
 
 ## Read and use the answer
 

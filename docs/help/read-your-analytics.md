@@ -38,11 +38,14 @@ Figures are read in the page's language: on a German or Italian page 8.210 is 82
 | Comments | Not captured. Days captured now hold no figure; days captured by an earlier version read 0. |
 | Profile views | Not captured. The chart shows NOTHING MEASURED IN THIS RANGE. |
 
-## The three observations
+## The panels beside the figures
 
-- **What changed**: Impressions and Engagements (reactions, comments and shares) over the range, counting only days that hold a single day's figures, compared with the previous period of the same length by the level per captured day. A change is shown only when each period has that figure captured on at least 80 percent of its days (6 of 7, 24 of 30, 72 of 90), counted figure by figure: a day whose impressions were read and whose engagements were not counts for impressions only, and its engagements are not measured, never 0. Otherwise the change reads "not measured" and a note says on how many days each period has the figure. The engagement rate uses only days on which both were read. Days captured with an unknown range are left out, and a note under the list says how many. Profile views compares the last day's figure with the first day's, and Followers is the difference between them. If either day has no figure, or the previous period holds nothing to compare with, the change reads "not measured" rather than 0 or +100.0%.
+The changes themselves are no longer in this list: each one now sits beside its own figure in the strip at the top, with a `~` where the source figure was rounded. What is left here is the reading, in up to four panels, some of which appear only when there is something to say.
+
+- **How to read the figures**: the caveats that apply to the strip above. Impressions and Engagements (reactions, comments and shares) over the range, counting only days that hold a single day's figures, compared with the previous period of the same length by the level per captured day. A change is shown only when each period has that figure captured on at least 80 percent of its days (6 of 7, 24 of 30, 72 of 90), counted figure by figure: a day whose impressions were read and whose engagements were not counts for impressions only, and its engagements are not measured, never 0. Otherwise the change reads "not measured" and a note says on how many days each period has the figure. The engagement rate uses only days on which both were read. Days captured with an unknown range are left out, and a note under the list says how many. Profile views compares the last day's figure with the first day's, and Followers is the difference between them. If either day has no figure, or the previous period holds nothing to compare with, the change reads "not measured" rather than 0 or +100.0%.
 - **What moved with it**: one sentence on how reach and engagement moved together.
-- **What to look at next**: your post with the highest engagement rate.
+- **Your best and your weakest**: shown when enough of your posts have settled to name them.
+- **What to look at next**: your strongest post across all of your posts whose figures have settled, as a multiple of your usual, with the note that comparing its opening against the weaker ones is the one comparison this data supports. It is no longer the highest engagement rate on the page: that read the rate out of the rows in view, which could name a post with a handful of impressions. If nothing of yours has settled, it says so instead.
 
 These describe the numbers. They do not claim a cause.
 

@@ -20,7 +20,7 @@ To close it, press **Escape**, press **Ctrl+K** again, or click the dimmed area 
 | **Actions** | The names of the actions listed below | Runs it |
 | **Posts** | The saved text and tags of every post, whatever its status, and the text of your posts imported from LinkedIn, marked PUBLISHED ON LINKEDIN | A draft opens in the **Composer**. A queued or scheduled post opens **Queue**. A published post, and a post imported from LinkedIn, opens **Analytics** |
 | **Leads** | Name, company, headline and notes, and every comment the person left | Opens **Leads** with that person selected. A lead found by a comment shows the comment, starting "Commented:" |
-| **Hook forms** | The hook, archetype and pacing pattern of each form | Opens the **Composer**, where the hook rail above the editor applies a form to your opening line |
+| **Hook forms** | The hook, archetype and pacing pattern of each form | Opens the **Composer**, where the hook rail applies the form to your opening line |
 | **Help** | The help articles in **Docs** | Opens the article at the section that matched |
 
 3. Move with the arrow keys and press **Enter**, or click a result. The selected result shows where it will open, for example "Opens in Composer".
