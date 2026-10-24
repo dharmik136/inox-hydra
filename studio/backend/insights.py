@@ -345,35 +345,104 @@ def _name_key(name: Optional[str]) -> str:
     return " ".join((name or "").lower().split())
 
 
+# How long since someone who has engaged back before last did, before this
+# screen calls the relationship quiet. Shorter than retention's 24 month
+# silent-lead rule on purpose: that rule decides whether to offer a contact
+# for deletion, this one decides whether attention that used to be returned
+# still is. 45 days is about six weeks of a creator's own posting rhythm,
+# long enough that one missed post is not a finding.
+GONE_QUIET_DAYS = 45
+
+
 def outbound_overview() -> Dict[str, Any]:
+    """
+    Whose content you spend your attention on, and whether it comes back.
+
+    Built only from what the bridge captured of your own comments and
+    reactions on other people's posts (outbound_engagements). The archive
+    import leaves every row's author NULL, because LinkedIn's own export does
+    not name the author of a post you reacted to; the live capture path
+    (own_pages.js, while your own Activity page is open) reads it from the
+    card and does name it, so an author only ever arrives going forward, one
+    visit at a time. totals.without_author is exactly the rows the archive
+    produced, never hidden or guessed into a name.
+    """
     conn = get_db()
     try:
+        # Grouped in SQLite rather than read row by row. Reading all 44,000
+        # rows of the three year home to count them in Python took 116 ms and
+        # carried every comment body with it, and my_text was never looked at:
+        # this reads one row per author and kind, which is a few hundred.
         rows = [dict(r) for r in conn.execute(
-            "SELECT target_author, kind, reaction_kind, my_text, last_seen_at FROM outbound_engagements")]
+            "SELECT target_author, kind, COUNT(*) AS n, MAX(last_seen_at) AS last_at "
+            "FROM outbound_engagements GROUP BY target_author, kind")]
+        # The last thing you actually said to each of them. One row per
+        # author: with a single MAX aggregate SQLite takes the other columns
+        # from the row that matched, so this is one pass over the comments
+        # rather than a subquery per author.
+        # Two spellings of one name are one account, so the newest of their
+        # comments wins rather than whichever row the grouping met last.
+        said: Dict[str, Dict[str, Any]] = {}
+        for row in conn.execute(
+                "SELECT target_author, MAX(last_seen_at) AS at, my_text FROM outbound_engagements "
+                "WHERE kind = 'comment' AND my_text IS NOT NULL AND target_author IS NOT NULL "
+                "GROUP BY target_author"):
+            key = _name_key(row["target_author"])
+            if (row["at"] or "") >= (said.get(key, {}).get("at") or ""):
+                said[key] = {"at": row["at"], "text": row["my_text"]}
         own_ids = onboarding._own_activity_ids(conn)
         # People who engaged with your posts, by display name, and on how
         # many of them: a comment and a like on one post is one post, not two.
-        #
-        # Only the names of accounts you engaged with can be matched, so only
-        # leads with one of those names are looked up, and their interactions
-        # read by lead. Reading every interaction to build every name's set
-        # took 1.1 s at 500,000.
+        # Only the names of accounts you engaged with are looked for, so the
+        # lead table is read once and nothing else is.
         wanted = {_name_key(r["target_author"]) for r in rows if r["target_author"]}
-        named: Dict[str, str] = {}
+        # A name is one person, or it is not a match at all.
+        #
+        # A reaction records the author's display name and not their profile,
+        # so an author can only be looked for by name. This used to add
+        # together every captured person who answered to that name: on the
+        # three year home, where 40 names belong to 1,850 captured people, one
+        # row claimed 533 of the creator's posts by merging 46 strangers, and
+        # reading their interactions to do it cost 51 seconds. A name that
+        # belongs to more than one person is reported as what it is instead,
+        # and the row says so rather than printing a number about nobody.
+        by_name: Dict[str, List[str]] = {}
         if wanted:
             for lead in conn.execute("SELECT id, COALESCE(full_name, name) AS name FROM leads"):
                 key = _name_key(lead["name"])
                 if key in wanted:
-                    named[lead["id"]] = key
-        engaged_back: Dict[str, set] = {}
-        if named:
-            for row in conn.execute(
-                "SELECT CAST(lead_id AS TEXT) AS lead_id, post_urn FROM lead_interactions "
+                    by_name.setdefault(key, []).append(lead["id"])
+        # The one person each name resolves to, and back again.
+        one_lead = {key: ids[0] for key, ids in by_name.items() if len(ids) == 1}
+        of_lead = {lead_id: key for key, lead_id in one_lead.items()}
+        engaged_back: Dict[str, int] = {}
+        # The most recent moment they engaged with one of your posts, for
+        # "gone quiet": reciprocity is a count, quiet is a date.
+        last_inbound: Dict[str, str] = {}
+        if one_lead:
+            # Whose a post is still decided by post_identity's id rather than
+            # by string equality, but once per post instead of once per
+            # interaction. Then one grouped read per person, which the
+            # interaction index serves: 29 ms for 40 names on the three year
+            # home against the 51 s the join by name cost.
+            leads_json = json.dumps(list(of_lead))
+            mine = json.dumps([urn for (urn,) in conn.execute(
+                "SELECT DISTINCT post_urn FROM lead_interactions "
                 "WHERE lead_id IN (SELECT value FROM json_each(?)) AND post_urn IS NOT NULL",
-                (json.dumps(list(named)),)):
-                post = onboarding._activity_id(row["post_urn"])
-                if post in own_ids and row["lead_id"] in named:
-                    engaged_back.setdefault(named[row["lead_id"]], set()).add(post)
+                (leads_json,))
+                if onboarding._activity_id(urn) in own_ids])
+            for row in conn.execute(
+                "SELECT CAST(lead_id AS TEXT) AS lead_id, COUNT(DISTINCT post_urn) AS posts, "
+                "MAX(interacted_at) AS at FROM lead_interactions "
+                "WHERE lead_id IN (SELECT value FROM json_each(?)) "
+                "AND post_urn IN (SELECT value FROM json_each(?)) GROUP BY lead_id",
+                (leads_json, mine)):
+                key = of_lead.get(row["lead_id"])
+                if not key:
+                    continue
+                engaged_back[key] = row["posts"]
+                if (row["at"] or "") > (last_inbound.get(key) or ""):
+                    last_inbound[key] = row["at"] or ""
         # Which of your posts the studio has read engagers on, for coverage.
         read_posts = {onboarding._activity_id(urn) for urn, row in post_summary.current(conn).items()
                       if row["people"] or row["folded_reactions"]}
@@ -382,20 +451,39 @@ def outbound_overview() -> Dict[str, Any]:
 
     authors: Dict[str, Dict[str, Any]] = {}
     unknown = 0
+    # Two spellings of one name are one account here, as the reciprocity match
+    # already treats them: the grouped rows are folded by name key.
     for row in rows:
         if not row["target_author"]:
-            unknown += 1
+            unknown += row["n"]
             continue
         key = _name_key(row["target_author"])
         entry = authors.setdefault(key, {"name": row["target_author"], "reactions": 0, "comments": 0,
-                                         "last_at": None})
-        entry["reactions" if row["kind"] == "reaction" else "comments"] += 1
-        if (row["last_seen_at"] or "") > (entry["last_at"] or ""):
-            entry["last_at"] = row["last_seen_at"]
+                                         "last_outbound_at": None})
+        entry["reactions" if row["kind"] == "reaction" else "comments"] += row["n"]
+        if (row["last_at"] or "") > (entry["last_outbound_at"] or ""):
+            entry["last_outbound_at"] = row["last_at"]
 
     for key, entry in authors.items():
         entry["total"] = entry["reactions"] + entry["comments"]
-        entry["engaged_back"] = len(engaged_back.get(key, ()))
+        # How many captured people answer to this name: 1 is a match, more
+        # than 1 cannot be told apart, 0 means nobody of that name has ever
+        # engaged with a post of yours that the studio has read.
+        entry["named_people"] = len(by_name.get(key, ()))
+        entry["lead_id"] = one_lead.get(key)
+        entry["engaged_back"] = engaged_back.get(key, 0)
+        inbound = last_inbound.get(key)
+        entry["last_inbound_at"] = inbound
+        # Their own words, clipped the way every other excerpt in the studio
+        # is. None when you have only ever reacted to them.
+        entry["last_comment"] = clip(" ".join((said.get(key, {}).get("text") or "").split()), 120) or None
+        # Quiet is a claim about someone who used to come back, not about a
+        # stranger who never has: that is one_way's claim, below, and the two
+        # are kept separate so neither reads as the other.
+        age = results.age_hours(inbound) if inbound else None
+        entry["gone_quiet"] = bool(entry["engaged_back"] and age is not None and age >= GONE_QUIET_DAYS * 24)
+        # Their own words, clipped the way every other excerpt in the studio
+        # is. None when you have only ever reacted to them.
 
     ranked = sorted(authors.values(), key=lambda a: (a["total"], a["comments"]), reverse=True)
 
@@ -419,15 +507,29 @@ def outbound_overview() -> Dict[str, Any]:
         "coverage": {"posts_read": covered, "posts_with_engagement": len(engaged_posts), "share": coverage,
                      "one_way_judged": judged},
         "status": "success",
-        "totals": {"reactions": sum(1 for r in rows if r["kind"] == "reaction"),
-                   "comments": sum(1 for r in rows if r["kind"] == "comment"),
+        "totals": {"reactions": sum(r["n"] for r in rows if r["kind"] == "reaction"),
+                   "comments": sum(r["n"] for r in rows if r["kind"] == "comment"),
                    "authors": len(authors), "without_author": unknown},
         "authors": ranked[:40],
         # Accounts you engaged with at least three times that have never
         # engaged with a post of yours: where your attention goes one way.
-        "one_way": ([a["name"] for a in ranked if a["total"] >= 3 and not a["engaged_back"]][:12]
+        "one_way": ([a["name"] for a in ranked
+                     if a["total"] >= 3 and not a["engaged_back"] and a["named_people"] <= 1][:12]
                     if judged else []),
         "reciprocal": [a["name"] for a in ranked if a["engaged_back"]][:12],
+        # Every account that has engaged back, not only those on the first
+        # page of the table: the figure above the lists counted the rows it
+        # could see and read "3 of 40" over a list of twelve names.
+        "reciprocal_count": sum(1 for a in ranked if a["engaged_back"]),
+        # Names more than one captured person answers to, which is why their
+        # row carries no reciprocity number.
+        "shared_names": sum(1 for a in authors.values() if a["named_people"] > 1),
+        # People who have engaged back before but not on any post of yours in
+        # GONE_QUIET_DAYS: the same coverage requirement as one_way, because
+        # the studio cannot call someone quiet from engagers it never read.
+        "gone_quiet": ([{"name": a["name"], "days_since": round(results.age_hours(a["last_inbound_at"]) / 24)}
+                        for a in ranked if a["gone_quiet"]][:12] if judged else []),
+        "gone_quiet_days": GONE_QUIET_DAYS,
         "matched_by": "display name",
     }
 

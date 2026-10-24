@@ -334,14 +334,14 @@ def _open_in_bridge(studio, studio_url, answer):
 
 def test_open_in_bridge_browser_shows_why_it_failed(studio, studio_url):
     session, page = _open_in_bridge(studio, studio_url, NO_BROWSER)
-    page.locator("article [role=status]").filter(has_text="No supported browser").wait_for(
+    page.locator("main [role=status]").filter(has_text="No supported browser").wait_for(
         state="visible", timeout=3000)
     assert not session.errors
 
 
 def test_open_in_bridge_browser_says_which_browser_opened(studio, studio_url):
     _, page = _open_in_bridge(studio, studio_url, LAUNCHED)
-    page.locator("article [role=status]").filter(has_text="Launched Brave").wait_for(
+    page.locator("main [role=status]").filter(has_text="Launched Brave").wait_for(
         state="visible", timeout=3000)
 
 
@@ -552,13 +552,27 @@ def test_a_licence_with_room_offers_add_creator_profile(studio, monkeypatch):
 # UX-24: the Command screen opens without an internal codename
 # ---------------------------------------------------------------------------
 
-def test_the_command_banner_names_no_internal_engine(studio):
-    page = studio().open("Command")
-    banner = page.locator("main").get_by_text("STAYS ON THIS MACHINE")
-    banner.wait_for(state="visible")
-    text = page.locator("main").inner_text().upper()
-    assert "ANTIGRAVITY" not in text, "the Command screen opens with an internal codename"
-    assert "BUILT-IN" in text, "the banner no longer says what answers when no provider is connected"
+def test_the_instruction_box_names_no_internal_engine(studio):
+    """
+    This read the Command section, which cycle 3 batch T7 folded into the
+    Composer's Prompt panel. The claim is the same: the engine that answers is
+    described rather than named with its internal codename, and the panel says
+    what answers when no provider is connected.
+    """
+    session = studio()
+    page = session.open("Composer")
+    opener = page.locator('button[aria-label="Open inspector"]')
+    if opener.count() and opener.is_visible():
+        opener.click()
+    page.click('aside[aria-label="Inspector"] button:has-text("Prompt")')
+    panel = page.locator('aside[aria-label="Inspector"]')
+    panel.get_by_text("NONE, RUNS LOCALLY").wait_for(state="visible")
+    page.fill("#agent-command", "Write one line about pricing")
+    text = panel.inner_text().upper()
+    assert "ANTIGRAVITY" not in text, "the panel names an internal codename"
+    assert "BUILT-IN TEMPLATES" in text, (
+        "the panel no longer says what answers when no provider is connected"
+    )
 
 
 # ---------------------------------------------------------------------------

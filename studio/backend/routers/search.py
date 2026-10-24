@@ -308,7 +308,9 @@ def search_everything(q: str = "", limit: int = 6):
                     "title": universal_search.snippet_around(hook, terms, radius=45) or "Untitled specimen",
                     "snippet": template.get("pacing_style") or "",
                     "meta": str(template.get("archetype") or "").upper(),
-                    "opens": "swipe",
+                    # The hook rail is where a form is applied, and the
+                    # Swipe File that used to draw the same rows is gone.
+                    "opens": "composer",
                 })
             if len(found) >= per_group:
                 break

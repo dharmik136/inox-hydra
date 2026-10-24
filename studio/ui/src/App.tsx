@@ -14,12 +14,10 @@ import { ActivitySurface } from "@/components/ActivitySurface";
 import { PostsSurface } from "@/components/PostsSurface";
 import { OutboundSurface } from "@/components/OutboundSurface";
 import { PatternsSurface } from "@/components/PatternsSurface";
-import { SwipeSurface } from "@/components/SwipeSurface";
 import { AnalyticsSurface } from "@/components/AnalyticsSurface";
 import { BrandStudioSurface } from "@/components/BrandStudioSurface";
 import { QueueSurface } from "@/components/QueueSurface";
 import { DocsSurface } from "@/components/DocsSurface";
-import { CommandSurface } from "@/components/CommandSurface";
 import { PublishDialog } from "@/components/PublishDialog";
 import { DraftsPanel, draftTitle } from "@/components/DraftsPanel";
 import { DevtoolsSurface } from "@/components/DevtoolsSurface";
@@ -775,7 +773,10 @@ export default function App() {
       }
 
       if (result.kind === "lead") point("leads", result.id);
-      else if (result.kind === "specimen") point("swipe", result.id);
+      // A hook form opens the Composer, whose rail is the one place a
+      // form is applied. It used to open the Swipe File, which drew the
+      // same rows and could do nothing with them.
+      else if (result.kind === "specimen") navigate("composer");
       else if (result.kind === "help") point("docs", result.id, result.anchor_text ?? null);
     },
     [draftId, navigate, adopt],
@@ -982,7 +983,7 @@ export default function App() {
 
             {/* The surfaces that scroll internally manage their own overflow,
                 so the shell does not add a second scrollbar around them. */}
-            <main className={cn("min-h-0 flex-1", active === "leads" || active === "swipe" || active === "docs" ? "overflow-hidden" : "overflow-y-auto")}>
+            <main className={cn("min-h-0 flex-1", active === "leads" || active === "docs" ? "overflow-hidden" : "overflow-y-auto")}>
               {active === "composer" && (
                 <ComposerCanvas
                   value={draft}
@@ -1027,14 +1028,21 @@ export default function App() {
                   }}
                 />
               )}
-              {active === "outbound" && <OutboundSurface onOpenSetup={() => navigate("setup")} />}
+              {active === "outbound" && (
+                <OutboundSurface
+                  onOpenSetup={() => navigate("setup")}
+                  onOpenLead={(leadId) => {
+                    if (!navigate("leads")) return;
+                    focusNonce.current += 1;
+                    setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
+                  }}
+                />
+              )}
               {active === "patterns" && <PatternsSurface onOpenSetup={() => navigate("setup")} />}
-              {active === "swipe" && <SwipeSurface focus={focusFor("swipe")} />}
               {active === "analytics" && <AnalyticsSurface />}
               {active === "settings" && <BrandStudioSurface />}
               {active === "queue" && <QueueSurface onEditText={(postId) => void onEditText(postId)} />}
               {active === "docs" && <DocsSurface focus={focusFor("docs")} />}
-              {active === "command" && <CommandSurface draft={draft} />}
               {active === "devtools" && <DevtoolsSurface />}
 
             </main>

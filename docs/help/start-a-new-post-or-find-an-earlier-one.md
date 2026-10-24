@@ -45,7 +45,7 @@ You can also read your posts in these places:
 | --- | --- | --- |
 | **Queue**, under **Scheduled posts** | The scheduled date and time, and the first line of each post | Scheduled only |
 | **Analytics**, under **Post comparison** | The first line of each post with its numbers | Published only |
-| **Brand Studio** > **Local security** > **Your data**, **Export JSON** or **Export CSV** | The full text of every post, whatever its status | All, including drafts |
+| **Brand Studio** > **Storage and privacy** > **Your data**, **Export JSON** or **Export CSV** | The full text of every post, whatever its status | All, including drafts |
 
 The exports are written to the studio's home folder on this machine, and the path is shown under the buttons when the export finishes. See [Back up, restore and export](back-up-restore-and-export.md).
 

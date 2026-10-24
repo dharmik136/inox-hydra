@@ -345,7 +345,10 @@ def test_e2e_a_narrow_window_keeps_the_editor(browser_instance, live_studio_url,
 
 def test_e2e_every_surface_names_itself_once(page):
     """Each surface owns the page while it is shown, so each carries one level-one heading."""
-    for label in ("Setup", "Today", "Queue", "Posts", "Patterns", "Outbound", "Analytics", "Command", "Brand Studio", "Activity"):
+    # Command and the Swipe File are not in the rail any more: cycle 3 batch
+    # T7 folded the first into the Composer's Prompt panel and the second into
+    # its hook rail, which drew the same rows.
+    for label in ("Setup", "Today", "Queue", "Posts", "Patterns", "Outbound", "Analytics", "Brand Studio", "Activity"):
         page.click(f'nav[aria-label="Studio sections"] button[aria-label="{label}"]')
         page.wait_for_timeout(500)
         assert page.locator("h1:visible").count() == 1, f"{label} has {page.locator('h1:visible').count()} level-one headings"

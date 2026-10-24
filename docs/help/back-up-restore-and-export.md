@@ -17,8 +17,8 @@ To see the exact paths, open a terminal in the checkout folder, the one that hol
 ## Back up now
 
 1. Open **Brand Studio** from the rail.
-2. Choose the **Local security** tab.
-3. Scroll to **Your data**.
+2. Choose the **Storage and privacy** tab.
+3. **Your data** is at the top of it.
 4. Click **Back up now**.
 
 When it finishes, a note reads "Saved *size* to *archive path*". Below the buttons the studio lists how many files the backups folder holds, five of them with their size and time, and the folder path. Your ZIP backups come first, newest first, then the automatic database copies. The file itself is not downloaded through the browser; it stays where the note says.
@@ -79,7 +79,7 @@ A figure the studio never read says "not measured", not 0.
 ## Restore a backup
 
 1. Open **Brand Studio** from the rail.
-2. Choose the **Local security** tab and scroll to **Your data**.
+2. Choose the **Storage and privacy** tab, where **Your data** is at the top.
 3. In the list of backups, click **Restore** beside the one you want. Every ZIP backup and every automatic database copy has one.
 4. The studio asks first. The question names the backup and says what it replaces: everything in this creator profile, that is drafts and the queue, leads and analytics, your confirmed identity and Setup, settings and stored keys, media files (not for an automatic database copy, which leaves media as they are), and the record of people you forgot. Click **OK** to go ahead.
 5. When it finishes, a note reads "Restored *backup name*" and names the safety backup. If people you forgot after the backup was made were in it, the note says how many were forgotten again. Click **Reload the studio** to see the restored data. If you have unsaved work open, the studio asks before reloading.

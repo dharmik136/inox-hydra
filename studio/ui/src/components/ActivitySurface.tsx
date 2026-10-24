@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
   Check,
@@ -18,11 +18,22 @@ import {
 import { importEnding } from "@/lib/importOutcome";
 import { reportBridge } from "@/lib/bridgeState";
 import { useRefresh } from "@/lib/refresh";
+import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
+/**
+ * A stored time as the browser reads it in UTC.
+ *
+ * The studio stores times in UTC, and some tables store them without a zone.
+ * `new Date("2026-10-20 08:55:00")` is read as local time, so a line's clock
+ * and the day it is filed under disagreed by the machine's offset.
+ */
+function utc(iso: string): string {
+  return iso.includes("T") || iso.endsWith("Z") ? iso : `${iso.replace(" ", "T")}Z`;
+}
+
 function ago(iso: string): string {
-  const normalized = iso.includes("T") || iso.endsWith("Z") ? iso : `${iso.replace(" ", "T")}Z`;
-  const then = new Date(normalized).getTime();
+  const then = new Date(utc(iso)).getTime();
   if (Number.isNaN(then)) return iso;
   const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
   if (seconds < 15) return "just now";
@@ -30,6 +41,20 @@ function ago(iso: string): string {
   if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
   if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
   return `${Math.round(seconds / 86400)}d ago`;
+}
+
+/** A stored time as the local clock reads it, for the log's left column. */
+function clockTime(iso: string): string {
+  const when = new Date(utc(iso));
+  if (Number.isNaN(when.getTime())) return "";
+  return when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+/** The local day a stored time falls on, as the key the log groups by. */
+function dayKey(iso: string): string {
+  const when = new Date(utc(iso));
+  if (Number.isNaN(when.getTime())) return iso;
+  return `${when.getFullYear()}-${when.getMonth() + 1}-${when.getDate()}`;
 }
 
 /**
@@ -41,6 +66,57 @@ function measured(value: number | null | undefined): string {
   return value === null || value === undefined ? "not measured" : value.toLocaleString();
 }
 
+/** One line in the log: something the bridge read, and when it read it. */
+interface Entry {
+  key: string;
+  kind: "post" | "comment" | "reaction" | "lead" | "import";
+  at: string;
+  /** What it was about, in the creator's own words where there are any. */
+  subject: string;
+  /** The figures or outcome that go with it, already in words. */
+  detail: string;
+  /** Orange for an import that did not read to the end; nothing otherwise. */
+  tone?: "partial" | "done";
+  urn?: string;
+  leadId?: string;
+}
+
+const KINDS: { id: Entry["kind"] | "all"; label: string }[] = [
+  { id: "all", label: "Everything" },
+  { id: "post", label: "Your posts" },
+  { id: "comment", label: "Your comments" },
+  { id: "reaction", label: "Your reactions" },
+  { id: "lead", label: "People" },
+  { id: "import", label: "Imports" },
+];
+
+const KIND_LABELS: Record<Entry["kind"], string> = {
+  post: "POST",
+  comment: "COMMENT",
+  reaction: "REACTION",
+  lead: "PERSON",
+  import: "IMPORT",
+};
+
+/**
+ * How many of each kind the screen asks the studio for, and how many lines it
+ * draws. It asked for 50 of each and drew all 250 as cards, which on three
+ * years of one creator was 13,669 characters down a column 6.1 viewports
+ * tall, read from a 56 KB answer that the screen's own poll re-read every
+ * 2.5 seconds. A log of what just happened does not need the whole history:
+ * the counts above it say how much there is, Posts and Leads hold the rest.
+ */
+const ASK_PER_KIND = 12;
+const LINES = 24;
+
+/**
+ * Activity: what the bridge read, as a log.
+ *
+ * One list, newest first, grouped by the day it happened on, one line each,
+ * filtered by kind rather than split across five panels of cards. The two
+ * controls that only make sense on a post of your own (copy its URN, open it
+ * in the bridge browser) stay on its line.
+ */
 export function ActivitySurface({
   onOpenLead,
 }: {
@@ -52,7 +128,7 @@ export function ActivitySurface({
   const [autoRefresh, setAutoRefresh] = useState(true);
   /** When the studio last answered, the one thing a refresh measures. */
   const [loadedAt, setLoadedAt] = useState<Date | null>(null);
-  const [tab, setTab] = useState<"posts" | "comments" | "reactions" | "leads" | "imports">("posts");
+  const [kind, setKind] = useState<Entry["kind"] | "all">("all");
   const [copiedUrn, setCopiedUrn] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
@@ -62,7 +138,7 @@ export function ActivitySurface({
 
   const loadData = useCallback(async () => {
     try {
-      const result = await fetchActivityStream(50);
+      const result = await fetchActivityStream(ASK_PER_KIND);
       setStream(result);
       reportBridge(result.summary.bridge_connected);
       setLoadedAt(new Date());
@@ -83,6 +159,88 @@ export function ActivitySurface({
   // the largest steady load the interface put on the database while the
   // bridge was writing. Also read on coming back, and after an outage.
   useRefresh(loadData, autoRefresh ? 2500 : undefined);
+
+  // One list out of the five the studio answers with, newest first. Built
+  // from the answer alone, so a kind the creator filters to is already here
+  // and no filter costs another read.
+  const entries = useMemo<Entry[]>(() => {
+    if (!stream) return [];
+    const all: Entry[] = [];
+    for (const post of stream.recent_posts) {
+      const figures = [`Reactions: ${measured(post.reactions)}`, `Comments: ${measured(post.comments)}`];
+      if (post.reposts) figures.push(`Reposts: ${measured(post.reposts)}`);
+      if (post.impressions !== null) figures.push(`Impressions: ${measured(post.impressions)}`);
+      all.push({
+        key: `post-${post.activity_urn}`,
+        kind: "post",
+        at: post.last_seen_at,
+        subject: post.excerpt || "Authored post without excerpt",
+        detail: figures.join(" · "),
+        urn: post.activity_urn,
+      });
+    }
+    stream.recent_comments.forEach((comment, index) => {
+      all.push({
+        key: `comment-${comment.target_activity_urn}-${index}`,
+        kind: "comment",
+        at: comment.last_seen_at,
+        subject: comment.my_text || comment.target_excerpt || "A comment of yours",
+        detail: `On ${comment.target_author || "an unnamed author"}’s post`,
+      });
+    });
+    stream.recent_reactions.forEach((reaction, index) => {
+      all.push({
+        key: `reaction-${reaction.target_activity_urn}-${index}`,
+        kind: "reaction",
+        at: reaction.last_seen_at,
+        subject: reaction.target_excerpt || "A post you reacted to",
+        detail: `${(reaction.reaction_kind || "like").toUpperCase()} on ${reaction.target_author || "an unnamed author"}’s post`,
+      });
+    });
+    for (const lead of stream.recent_leads) {
+      all.push({
+        key: `lead-${lead.id}`,
+        kind: "lead",
+        at: lead.created_at,
+        subject: lead.name,
+        detail: [lead.headline, lead.company ? `at ${lead.company}` : "", `ICP ${lead.icp_score}`]
+          .filter(Boolean)
+          .join(" · "),
+        leadId: lead.id,
+      });
+    }
+    for (const request of stream.recent_imports) {
+      // Green only for an import read to the end, orange for one that was
+      // not: importEnding is the one place that decides which.
+      const ending = importEnding(request);
+      all.push({
+        key: `import-${request.id}`,
+        kind: "import",
+        at: request.finished_at || request.started_at || request.requested_at,
+        subject: `${request.kind} import: ${ending.label.toLowerCase()}`,
+        detail: request.items_seen === null ? "Items: not measured" : `Items: ${request.items_seen.toLocaleString()}`,
+        tone: ending.tone === "done" ? "done" : ending.tone === "partial" ? "partial" : undefined,
+      });
+    }
+    return all.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  }, [stream]);
+
+  const shown = useMemo(() => {
+    const picked = kind === "all" ? entries : entries.filter((entry) => entry.kind === kind);
+    return { lines: picked.slice(0, LINES), total: picked.length };
+  }, [entries, kind]);
+
+  // The lines of one day, under that day's heading.
+  const days = useMemo(() => {
+    const grouped: { key: string; label: string; lines: Entry[] }[] = [];
+    for (const entry of shown.lines) {
+      const key = dayKey(entry.at);
+      const last = grouped[grouped.length - 1];
+      if (last && last.key === key) last.lines.push(entry);
+      else grouped.push({ key, label: formatLocalDay(utc(entry.at)), lines: [entry] });
+    }
+    return grouped;
+  }, [shown.lines]);
 
   async function handleSyncAll() {
     setSyncing(true);
@@ -175,7 +333,7 @@ export function ActivitySurface({
   const bridgeOnline = summary.bridge_connected;
 
   return (
-    <article className="mx-auto max-w-[88ch] px-8 py-8">
+    <div className="px-6 py-6 lg:px-8">
       {/* Top Banner and Heading */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -198,10 +356,9 @@ export function ActivitySurface({
             </span>
           </div>
           <h1 className="studio-title mt-1.5">What the bridge has read</h1>
-          <p className="mt-1 max-w-[62ch] text-[13px] leading-relaxed text-ink-secondary">
-            Everything the browser extension has read from your LinkedIn, newest first: your posts, your
-            comments and reactions elsewhere, and the people who engaged. It is kept in this studio's
-            database and nowhere else.
+          <p className="mt-1 max-w-[86ch] text-[12px] leading-snug text-ink-secondary">
+            The newest {LINES} things the browser extension read from your LinkedIn, kept on this machine. The counts
+            are everything it has read; Posts and Leads hold the rest.
           </p>
         </div>
 
@@ -242,57 +399,51 @@ export function ActivitySurface({
         </div>
       </div>
 
-      {/* Sync Orchestration and Bridge Status Card */}
-      <section className="mt-6 rounded-md border border-edge-strong bg-raised/40 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <p className="studio-label">Your history</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-ink-primary">
-              <span className="font-medium">
-                {stream.creator ? `Creator: @${stream.creator}` : "Unconfirmed identity"}
-              </span>
-              <span className="text-ink-muted" aria-hidden="true">|</span>
-              <span className="text-ink-secondary">
-                {/* No browser is named until one has reported in. This used
-                    to say Brave whenever nothing was known. */}
-                {summary.bridge_carrier
-                  ? `Bridge: ${summary.bridge_carrier} (${summary.bridge_last_seen ? ago(summary.bridge_last_seen) : "not heard from yet"})`
-                  : summary.bridge_last_seen
-                    ? `Bridge last heard from ${ago(summary.bridge_last_seen)}`
-                    : "The bridge has not reported in yet"}
-              </span>
-            </div>
-            {summary.active_sync_chain && (
-              <p className="mt-1 text-[11px] text-signal-orange-text">
-                Import in progress: step {summary.active_sync_chain.current_index + 1} of{" "}
-                {summary.active_sync_chain.sequence.length} ({summary.active_sync_chain.sequence[summary.active_sync_chain.current_index]})
-              </p>
-            )}
-            {syncNotice && (
-              <p className="mt-1.5 text-[11px] text-ink-secondary">{syncNotice}</p>
-            )}
-          </div>
-
-          <button
-            type="button"
-            disabled={syncing}
-            onClick={() => void handleSyncAll()}
-            className="flex items-center gap-1.5 rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-50"
-          >
-            {syncing ? (
-              <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-            ) : (
-              <Download className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-            )}
-            <span>Import your history</span>
-          </button>
+      {/* The bridge, the identity and the one import control, on one line
+          rather than in a card of its own. */}
+      <section className="mt-3 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 border-y border-edge py-2">
+        <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink-primary">
+          <span className="font-medium">
+            {stream.creator ? `Creator: @${stream.creator}` : "Unconfirmed identity"}
+          </span>
+          <span className="text-ink-muted" aria-hidden="true">|</span>
+          <span className="text-ink-secondary">
+            {/* No browser is named until one has reported in. This used
+                to say Brave whenever nothing was known. */}
+            {summary.bridge_carrier
+              ? `Bridge: ${summary.bridge_carrier} (${summary.bridge_last_seen ? ago(summary.bridge_last_seen) : "not heard from yet"})`
+              : summary.bridge_last_seen
+                ? `Bridge last heard from ${ago(summary.bridge_last_seen)}`
+                : "The bridge has not reported in yet"}
+          </span>
+          {summary.active_sync_chain && (
+            <span className="text-[11px] text-signal-orange-text">
+              Import in progress: step {summary.active_sync_chain.current_index + 1} of{" "}
+              {summary.active_sync_chain.sequence.length} ({summary.active_sync_chain.sequence[summary.active_sync_chain.current_index]})
+            </span>
+          )}
+          {syncNotice && <span className="text-[11px] text-ink-secondary">{syncNotice}</span>}
         </div>
+
+        <button
+          type="button"
+          disabled={syncing}
+          onClick={() => void handleSyncAll()}
+          className="flex items-center gap-1.5 rounded-md bg-signal-orange px-3 py-1.5 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-50"
+        >
+          {syncing ? (
+            <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Download className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+          )}
+          <span>Import your history</span>
+        </button>
       </section>
 
       {/* Counts as one ruled row, not four cards. Blueprint section 18
           retires the grid of KPI cards as a default, and these are a tally
           of what has been read, not performance. */}
-      <dl className="mt-6 grid grid-cols-2 border-y border-edge sm:grid-cols-4">
+      <dl className="mt-3 grid grid-cols-2 border-b border-edge sm:grid-cols-4">
         {[
           { label: "Your posts", value: summary.posts_count },
           { label: "Your comments", value: summary.comments_count },
@@ -301,303 +452,127 @@ export function ActivitySurface({
         ].map((item, index) => (
           <div
             key={item.label}
-            className={cn("px-3 py-3", index > 0 && "sm:border-l sm:border-edge", index % 2 === 1 && "border-l border-edge")}
+            className={cn("px-3 py-2", index > 0 && "sm:border-l sm:border-edge", index % 2 === 1 && "border-l border-edge")}
           >
             <dt className="studio-label">{item.label}</dt>
-            <dd className="mt-1 font-mono text-[20px] tabular-nums text-ink-primary">{item.value.toLocaleString()}</dd>
+            <dd className="mt-0.5 font-mono text-[17px] tabular-nums text-ink-primary">{item.value.toLocaleString()}</dd>
           </div>
         ))}
       </dl>
 
-      {/* Tabs */}
-      <div className="mt-8 border-b border-edge">
-        <div className="flex space-x-6">
-          <button
-            type="button"
-            onClick={() => setTab("posts")}
-            className={cn(
-              "pb-2.5 text-[12px] font-medium transition-colors",
-              tab === "posts"
-                ? "border-b-2 border-signal-orange text-ink-primary"
-                : "text-ink-muted hover:text-ink-primary",
-            )}
-          >
-            Posts ({stream.recent_posts.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("comments")}
-            className={cn(
-              "pb-2.5 text-[12px] font-medium transition-colors",
-              tab === "comments"
-                ? "border-b-2 border-signal-orange text-ink-primary"
-                : "text-ink-muted hover:text-ink-primary",
-            )}
-          >
-            Outbound Comments ({stream.recent_comments.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("reactions")}
-            className={cn(
-              "pb-2.5 text-[12px] font-medium transition-colors",
-              tab === "reactions"
-                ? "border-b-2 border-signal-orange text-ink-primary"
-                : "text-ink-muted hover:text-ink-primary",
-            )}
-          >
-            Reactions ({stream.recent_reactions.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("leads")}
-            className={cn(
-              "pb-2.5 text-[12px] font-medium transition-colors",
-              tab === "leads"
-                ? "border-b-2 border-signal-orange text-ink-primary"
-                : "text-ink-muted hover:text-ink-primary",
-            )}
-          >
-            Leads ({stream.recent_leads.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setTab("imports")}
-            className={cn(
-              "pb-2.5 text-[12px] font-medium transition-colors",
-              tab === "imports"
-                ? "border-b-2 border-signal-orange text-ink-primary"
-                : "text-ink-muted hover:text-ink-primary",
-            )}
-          >
-            Diagnostics ({stream.recent_imports.length})
-          </button>
-        </div>
-      </div>
-
-      {/* Tab Panels */}
-      <div className="mt-6">
-        {tab === "posts" && (
-          <div className="flex flex-col divide-y divide-edge border-y border-edge">
-            {stream.recent_posts.length === 0 ? (
-              <p className="py-8 text-center text-[12px] text-ink-muted">
-                None of your posts have been read yet. Press Import your history, or open your posts on LinkedIn in the bridge browser.
-              </p>
-            ) : (
-              stream.recent_posts.map((post) => (
-                <div key={post.activity_urn} className="py-3.5">
-                  <div className="flex items-start justify-between gap-4">
-                    <p className="text-[13px] leading-snug text-ink-primary">
-                      {post.excerpt || "Authored post without excerpt"}
-                    </p>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => copyUrn(post.activity_urn)}
-                        title="Copy activity URN"
-                        aria-label="Copy activity URN"
-                        className="grid size-7 place-items-center rounded border border-edge bg-soft text-ink-muted hover:text-ink-primary"
-                      >
-                        {copiedUrn === post.activity_urn ? (
-                          <Check className="size-3.5 text-signal-green-text" aria-hidden="true" />
-                        ) : (
-                          <Copy className="size-3.5" aria-hidden="true" />
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void openBridgePost(post.activity_urn)}
-                        disabled={openingPost === post.activity_urn}
-                        title="Open in Bridge Browser"
-                        aria-label="Open in Bridge Browser"
-                        className="grid size-7 place-items-center rounded border border-edge bg-soft text-ink-muted hover:text-ink-primary disabled:opacity-50"
-                      >
-                        {openingPost === post.activity_urn ? (
-                          <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
-                        ) : (
-                          <ExternalLink className="size-3.5" aria-hidden="true" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-ink-muted">
-                    <span className="tabular-nums">Reactions: {measured(post.reactions)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="tabular-nums">Comments: {measured(post.comments)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className="tabular-nums">Reposts: {measured(post.reposts)}</span>
-                    {post.impressions !== null && (
-                      <>
-                        <span aria-hidden="true">·</span>
-                        <span className="tabular-nums">Impressions: {measured(post.impressions)}</span>
-                      </>
-                    )}
-                    <span aria-hidden="true">·</span>
-                    <span>Loaded {ago(post.last_seen_at)}</span>
-                  </div>
-                  {rowNote?.urn === post.activity_urn && (
-                    <p role="status" className="mt-1.5 text-[11px] break-all text-ink-secondary">
-                      {rowNote.text}
-                    </p>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {tab === "comments" && (
-          <div className="flex flex-col divide-y divide-edge border-y border-edge">
-            {stream.recent_comments.length === 0 ? (
-              <p className="py-8 text-center text-[12px] text-ink-muted">
-                No outbound comments recorded yet.
-              </p>
-            ) : (
-              stream.recent_comments.map((comment, index) => (
-                <div key={`${comment.target_activity_urn}-${index}`} className="py-3.5">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="text-[12px] font-medium text-ink-primary">
-                      Reply on {comment.target_author || "Unknown"}&apos;s post
-                    </p>
-                    <span className="text-[11px] text-ink-muted">{ago(comment.last_seen_at)}</span>
-                  </div>
-                  {comment.my_text && (
-                    <blockquote className="mt-1.5 rounded bg-soft/70 px-3 py-2 text-[13px] text-ink-secondary">
-                      &ldquo;{comment.my_text}&rdquo;
-                    </blockquote>
-                  )}
-                  {comment.target_excerpt && (
-                    <p className="mt-1.5 text-[11px] text-ink-muted line-clamp-2">
-                      Original: {comment.target_excerpt}
-                    </p>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {tab === "reactions" && (
-          <div className="flex flex-col divide-y divide-edge border-y border-edge">
-            {stream.recent_reactions.length === 0 ? (
-              <p className="py-8 text-center text-[12px] text-ink-muted">
-                No outbound reactions recorded yet.
-              </p>
-            ) : (
-              stream.recent_reactions.map((reaction, index) => (
-                <div key={`${reaction.target_activity_urn}-${index}`} className="flex items-center justify-between py-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <span className="inline-flex items-center rounded bg-soft px-2 py-0.5 text-[11px] font-medium uppercase text-ink-primary">
-                      {reaction.reaction_kind || "like"}
-                    </span>
-                    <span className="text-[13px] text-ink-primary">
-                      {reaction.target_author || "LinkedIn Post"}
-                    </span>
-                  </div>
-                  <span className="text-[11px] text-ink-muted">{ago(reaction.last_seen_at)}</span>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {tab === "leads" && (
-          <div className="flex flex-col divide-y divide-edge border-y border-edge">
-            {stream.recent_leads.length === 0 ? (
-              <p className="py-8 text-center text-[12px] text-ink-muted">
-                No audience leads identified yet. Commenters and high-intent engagers will be recorded here automatically.
-              </p>
-            ) : (
-              stream.recent_leads.map((lead) => (
-                <div key={lead.id} className="flex items-center justify-between py-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-[13px] font-medium text-ink-primary">{lead.name}</p>
-                      <span className="rounded bg-soft px-1.5 py-0.5 text-[10px] text-ink-muted">
-                        ICP: {lead.icp_score}
-                      </span>
-                    </div>
-                    <p className="mt-0.5 text-[11px] text-ink-secondary">
-                      {lead.headline || "Professional on LinkedIn"}
-                      {lead.company ? ` at ${lead.company}` : ""}
-                    </p>
-                  </div>
-                  {onOpenLead && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenLead(lead.id)}
-                      className="flex items-center gap-1 rounded border border-edge bg-soft px-2.5 py-1 text-[11px] text-ink-primary hover:bg-raised"
-                    >
-                      <span>View Lead</span>
-                      <ArrowUpRight className="size-3" aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {tab === "imports" && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-[12px]">
-              <thead>
-                <tr className="studio-meta text-[10px] text-ink-muted">
-                  <th className="py-2 font-normal">KIND</th>
-                  <th className="py-2 font-normal">OUTCOME</th>
-                  <th className="py-2 text-right font-normal">ITEMS</th>
-                  <th className="py-2 text-right font-normal">REQUESTED</th>
-                  <th className="py-2 text-right font-normal">COMPLETED</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-edge border-y border-edge">
-                {stream.recent_imports.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-6 text-center text-ink-muted">
-                      No background import runs recorded.
-                    </td>
-                  </tr>
-                ) : (
-                  stream.recent_imports.map((req) => {
-                    // Green only for an import read to the end. This keyed on
-                    // the old "completed", so a whole history showed in grey.
-                    const ending = importEnding(req);
-                    return (
-                      <tr key={req.id}>
-                        <td className="py-2 font-medium uppercase text-ink-primary">{req.kind}</td>
-                        <td className="py-2">
-                          <span
-                            className={cn(
-                              "rounded px-1.5 py-0.5 text-[10px] uppercase font-medium",
-                              ending.tone === "done"
-                                ? "bg-signal-green-subtle text-signal-green-text"
-                                : ending.tone === "partial"
-                                ? "bg-signal-orange-subtle text-signal-orange-text"
-                                : "bg-soft text-ink-secondary",
-                            )}
-                          >
-                            {ending.label}
-                          </span>
-                        </td>
-                        <td className="py-2 text-right tabular-nums text-ink-secondary">
-                          {req.items_seen ?? "-"}
-                        </td>
-                        <td className="py-2 text-right tabular-nums text-ink-muted">
-                          {ago(req.requested_at)}
-                        </td>
-                        <td className="py-2 text-right tabular-nums text-ink-muted">
-                          {req.finished_at ? ago(req.finished_at) : "-"}
-                        </td>
-                      </tr>
-                    );
-                  })
+      {/* One log, filtered by kind. These were five tabs of fifty cards. */}
+      <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+        <div className="flex flex-wrap gap-1">
+          {KINDS.map((option) => {
+            const count = option.id === "all" ? entries.length : entries.filter((entry) => entry.kind === option.id).length;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setKind(option.id)}
+                aria-pressed={kind === option.id}
+                className={cn(
+                  "rounded-full border px-2.5 py-0.5 text-[11px] transition-colors",
+                  kind === option.id
+                    ? "border-edge-strong bg-soft text-ink-primary"
+                    : "border-edge text-ink-muted hover:text-ink-secondary",
                 )}
-              </tbody>
-            </table>
-          </div>
-        )}
+              >
+                {option.label} ({count})
+              </button>
+            );
+          })}
+        </div>
+        <p className="studio-meta text-[10px] text-ink-muted">
+          {shown.total > shown.lines.length
+            ? `NEWEST ${shown.lines.length} OF ${shown.total.toLocaleString()} READ IN THIS ANSWER`
+            : `${shown.total.toLocaleString()} ${shown.total === 1 ? "LINE" : "LINES"}`}
+        </p>
       </div>
-    </article>
+
+      {shown.lines.length === 0 ? (
+        <p className="border-y border-edge py-8 text-center text-[12px] text-ink-muted">
+          Nothing of this kind has been read yet. Press Import your history, or open your LinkedIn in the bridge
+          browser.
+        </p>
+      ) : (
+        <div className="mt-2 border-t border-edge">
+          {days.map((day) => (
+            <section key={day.key}>
+              <h2 className="studio-meta sticky top-0 bg-ink py-1 text-[10px] text-ink-muted">{day.label.toUpperCase()}</h2>
+              <ul className="flex flex-col divide-y divide-edge border-y border-edge">
+                {day.lines.map((entry) => (
+                  <li key={entry.key} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 py-1.5">
+                    <span className="studio-meta w-12 shrink-0 text-[10px] tabular-nums text-ink-muted">
+                      {clockTime(entry.at)}
+                    </span>
+                    <span
+                      className={cn(
+                        "studio-meta w-[72px] shrink-0 text-[10px]",
+                        entry.tone === "partial"
+                          ? "text-signal-orange-text"
+                          : entry.tone === "done"
+                            ? "text-signal-green-text"
+                            : "text-ink-muted",
+                      )}
+                    >
+                      {KIND_LABELS[entry.kind]}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[13px] text-ink-primary">{entry.subject}</span>
+                    <span className="shrink-0 text-[11px] text-ink-muted">{entry.detail}</span>
+                    {entry.urn && (
+                      <span className="flex shrink-0 items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => copyUrn(entry.urn as string)}
+                          title="Copy activity URN"
+                          aria-label="Copy activity URN"
+                          className="grid size-6 place-items-center rounded border border-edge bg-soft text-ink-muted hover:text-ink-primary"
+                        >
+                          {copiedUrn === entry.urn ? (
+                            <Check className="size-3 text-signal-green-text" aria-hidden="true" />
+                          ) : (
+                            <Copy className="size-3" aria-hidden="true" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void openBridgePost(entry.urn as string)}
+                          disabled={openingPost === entry.urn}
+                          title="Open in Bridge Browser"
+                          aria-label="Open in Bridge Browser"
+                          className="grid size-6 place-items-center rounded border border-edge bg-soft text-ink-muted hover:text-ink-primary disabled:opacity-50"
+                        >
+                          {openingPost === entry.urn ? (
+                            <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <ExternalLink className="size-3" aria-hidden="true" />
+                          )}
+                        </button>
+                      </span>
+                    )}
+                    {entry.leadId && onOpenLead && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenLead(entry.leadId as string)}
+                        className="flex shrink-0 items-center gap-1 rounded border border-edge bg-soft px-2 py-0.5 text-[11px] text-ink-primary hover:bg-raised"
+                      >
+                        <span>View Lead</span>
+                        <ArrowUpRight className="size-3" aria-hidden="true" />
+                      </button>
+                    )}
+                    {entry.urn && rowNote && rowNote.urn === entry.urn && (
+                      <p role="status" className="w-full text-[11px] break-all text-ink-secondary">
+                        {rowNote.text}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

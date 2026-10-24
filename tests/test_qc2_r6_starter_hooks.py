@@ -98,9 +98,11 @@ def test_an_existing_library_keeps_the_pack_it_has(library):
     assert len(_templates()) == before, "an install that had the pack lost or gained forms on its own"
 
 
-def test_the_rail_and_the_wall_hide_a_rating_that_is_not_there():
+def test_the_rail_hides_a_rating_that_is_not_there():
+    """
+    The wall half of this read SwipeSurface.tsx, which cycle 3 batch T7
+    removed: the rail is now the only surface that draws these rows.
+    """
     root = os.path.join(os.path.dirname(__file__), "..", "studio", "ui", "src", "components")
     rail = open(os.path.join(root, "HookFilmstrip.tsx")).read()
-    wall = open(os.path.join(root, "SwipeSurface.tsx")).read()
     assert "template.velocity_score === null" in rail or "template.velocity_score == null" in rail
-    assert "specimen.velocity_score !== null" in wall

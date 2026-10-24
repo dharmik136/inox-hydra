@@ -3,9 +3,7 @@ import {
   PenLine,
   CalendarClock,
   Users,
-  Bookmark,
   BarChart3,
-  Terminal,
   BookOpen,
   Settings2,
   Wrench,
@@ -27,9 +25,7 @@ export type SectionId =
   | "composer"
   | "queue"
   | "leads"
-  | "swipe"
   | "analytics"
-  | "command"
   | "docs"
   | "settings"
   | "devtools";
@@ -76,9 +72,14 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   { id: "posts", label: "Posts", blurb: "Which of your posts worked, and who each one brought", icon: Newspaper },
   { id: "patterns", label: "Patterns", blurb: "What your own posts suggest, and how steadily you post", icon: Shapes },
   { id: "outbound", label: "Outbound", blurb: "Whose content you engage with, and whether it comes back", icon: Send },
-  { id: "swipe", screenKey: "swipe", label: "Swipe File", blurb: "Saved specimens and structural patterns", icon: Bookmark },
   { id: "analytics", screenKey: "analytics", label: "Analytics", blurb: "Time series, observations and comparisons", icon: BarChart3 },
-  { id: "command", screenKey: "ai_command", label: "Command", blurb: "Agent runs and local model routing", icon: Terminal },
+  // No Swipe File and no Command. The Swipe File drew the same
+  // viral_templates rows as the Composer’s hook rail through a second
+  // endpoint, and nothing could put a specimen into it or take one out;
+  // Command was a textarea and a tick box whose answer could not reach
+  // the draft it was about, and is now a block in the Composer’s Prompt
+  // panel, beside the text it operates on. A hook form found through
+  // Ctrl+K opens the Composer, where the rail applies it.
   { id: "docs", screenKey: "docs", label: "Docs", blurb: "Offline playbook and strategy search", icon: BookOpen },
   { id: "settings", screenKey: "settings", label: "Brand Studio", blurb: "Identity, watermark and local security", icon: Settings2 },
   // Last, and only present when the maintainer surface is on. A consumer

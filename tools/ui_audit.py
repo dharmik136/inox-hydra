@@ -63,9 +63,7 @@ SECTIONS = {
     "posts": "Posts",
     "patterns": "Patterns",
     "outbound": "Outbound",
-    "swipe": "Swipe File",
     "analytics": "Analytics",
-    "command": "Command",
     "docs": "Docs",
     "settings": "Brand Studio",
 }

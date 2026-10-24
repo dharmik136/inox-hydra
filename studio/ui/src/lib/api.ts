@@ -559,40 +559,6 @@ export async function fetchLeadTimeline(
 }
 
 // ---------------------------------------------------------------------------
-// Swipe file
-// ---------------------------------------------------------------------------
-
-export interface Inspiration {
-  id: number;
-  archetype: string;
-  topic: string;
-  content: string;
-  key_hook: string | null;
-  author_name: string | null;
-  author_headline: string | null;
-  /**
-   * Null for a specimen that was never posted, which is all of the ones
-   * shipped in the box. The endpoint used to synthesise these from the
-   * velocity score, so the wall reported reactions on posts that had never
-   * existed. A number here means someone captured it.
-   */
-  likes_count: number | null;
-  comments_count: number | null;
-  /** A stored rating typed by the form's author; null for a starter form nobody rated. */
-  velocity_score: number | null;
-  pacing_style: string | null;
-  /** 'shipped' came in the box, 'captured' was saved by the creator. */
-  origin: string | null;
-  /** "engineering" for a form from the opt-in engineering creator pack. */
-  pack?: string | null;
-}
-
-export async function fetchInspirations(): Promise<Inspiration[]> {
-  const data = await call<{ inspirations?: Inspiration[] }>("/api/inspirations");
-  return data.inspirations ?? [];
-}
-
-// ---------------------------------------------------------------------------
 // Analytics
 // ---------------------------------------------------------------------------
 
@@ -2072,7 +2038,7 @@ export const OWN_PROFILE_URL = "https://www.linkedin.com/in/me/";
 // ---------------------------------------------------------------------------
 
 /** Where a result opens. Chosen by the server from the row's own state. */
-export type SearchOpens = "composer" | "queue" | "analytics" | "leads" | "swipe" | "docs";
+export type SearchOpens = "composer" | "queue" | "analytics" | "leads" | "docs";
 
 export interface SearchResult {
   kind: "post" | "lead" | "specimen" | "help";
@@ -2348,8 +2314,21 @@ export interface OutboundAuthor {
   reactions: number;
   comments: number;
   total: number;
-  last_at: string | null;
+  last_outbound_at: string | null;
+  last_inbound_at: string | null;
   engaged_back: number;
+  gone_quiet: boolean;
+  /** The last comment you left on one of their posts, clipped. */
+  last_comment: string | null;
+  /** The lead this is, when exactly one lead answers to the name. */
+  lead_id: string | null;
+  /** How many captured people answer to this name. More than 1 cannot be told apart. */
+  named_people: number;
+}
+
+export interface GoneQuietAuthor {
+  name: string;
+  days_since: number;
 }
 
 export interface OutboundInsights {
@@ -2358,6 +2337,12 @@ export interface OutboundInsights {
   authors: OutboundAuthor[];
   one_way: string[];
   reciprocal: string[];
+  /** Every account that has engaged back, counted over all of them, not the page. */
+  reciprocal_count: number;
+  gone_quiet: GoneQuietAuthor[];
+  gone_quiet_days: number;
+  /** Names that more than one captured person answers to, so cannot be matched. */
+  shared_names: number;
   matched_by: string;
 }
 
@@ -3017,17 +3002,6 @@ export interface TodayDuePost {
   excerpt: string;
   /** Present when the post was missed while the studio was closed or asleep. */
   missed?: { scheduled_for: string; noticed_at: string | null; late_minutes: number | null } | null;
-}
-
-/**
- * Adds or removes the opt-in engineering creator pack in the hook library.
- * A new library holds neutral fill-in forms only.
- */
-export async function setEngineeringPack(enabled: boolean): Promise<{ added?: number; removed?: number }> {
-  return call<{ added?: number; removed?: number }>("/api/v1/intelligence/packs/engineering", {
-    method: "POST",
-    body: JSON.stringify({ enabled }),
-  });
 }
 
 /**

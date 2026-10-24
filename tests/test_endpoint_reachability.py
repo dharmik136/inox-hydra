@@ -229,12 +229,23 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # than rendering every post's text inline. Read by PostDetail.tsx, so it is
 # reached. Total 168 -> 169, reached 114 -> 115, unreachable stays at 54.
 # ---------------------------------------------------------------------------
-# T5, T6 and T8 applied: 168 -> 172 total, 114 -> 119 reached, 54 -> 53
-# unreachable. T7's removals are counted when that branch merges.
+# Cycle 3, batch T7 (sections C): the Swipe File is gone. It drew the same
+# viral_templates rows as the Composer’s hook rail through a second endpoint,
+# and nothing could put a specimen in or take one out, so its two client
+# functions went with it: GET /api/inspirations and POST
+# /api/v1/intelligence/packs/engineering now have no caller in the interface.
+# Neither route was removed. The first still serves Ctrl+K’s hook form search
+# through /api/v1/search, and the second is how the opt-in pack is added, which
+# is a control the hook rail should carry (MAKING.md D3) and does not yet, so
+# it sits in the unreachable column until it does, where it is visible.
+# Total stays at 168, reached 114 -> 112, unreachable 54 -> 56.
+# ---------------------------------------------------------------------------
+# All of cycle 3 applied. The counts below are what the running application
+# declares and what the interface reaches, measured, not added up by hand.
 # ---------------------------------------------------------------------------
 TOTAL_API_PATHS = 172
-REACHED_BY_INTERFACE = 119
-UNREACHABLE = 53
+REACHED_BY_INTERFACE = 117
+UNREACHABLE = 55
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

@@ -44,7 +44,9 @@ def test_generated_hooks_carry_no_invented_score():
 
 
 def test_a_typed_rating_is_not_called_velocity():
-    for path in ("components/HookFilmstrip.tsx", "components/SwipeSurface.tsx"):
+    # SwipeSurface.tsx was the second surface drawing these rows; cycle 3
+    # batch T7 removed it, and the rail is the only one left.
+    for path in ("components/HookFilmstrip.tsx",):
         source = _ui(path)
         assert not re.search(r'"VELOCITY"|>\s*VELOCITY\b|\bVELOCITY \{', source), (
             f"{path} labels an author's typed rating as a measured velocity"

@@ -36,7 +36,6 @@ from database import init_db
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
-SWIPE_SURFACE = os.path.join(UI_SRC, "components", "SwipeSurface.tsx")
 CAROUSEL = os.path.join(REPO_ROOT, "studio", "backend", "carousel_engine.py")
 README = os.path.join(REPO_ROOT, "README.md")
 LAUNCHER = os.path.join(REPO_ROOT, "launch_studio.bat")
@@ -136,28 +135,15 @@ def test_the_origin_column_exists_to_be_read():
     )
 
 
-def test_the_wall_states_what_it_is_showing():
-    """
-    The surface half, in the same spirit as the banner Analytics puts above its
-    chart.
-
-    The first version of this asserted the phrase "never posted", which was the
-    first version of the banner. That banner counted rows whose origin was
-    'shipped' and was wrong twice: viral_templates also takes 'synced' and
-    'imported' rows, and rows predating migration 9 carry no origin at all. The
-    claim never needed provenance. The table has no reaction or comment columns,
-    so nothing in it was measured whichever way it arrived, and that is what the
-    wall now says.
-    """
-    source = _rendered(SWIPE_SURFACE)
-    assert "hook forms, not posts anyone measured" in source, (
-        "the specimen wall no longer tells the reader that its contents are "
-        "patterns rather than measured posts"
-    )
-    assert "No reactions or comments are shown" in source, (
-        "the wall stopped explaining why it shows no engagement, which is the "
-        "half that keeps the absence from reading as missing data"
-    )
+# The surface half of this was asserted against the Swipe File's banner
+# ("hook forms, not posts anyone measured", "No reactions or comments are
+# shown"). Cycle 3 batch T7 removed that section: it drew the same
+# viral_templates rows as the Composer's hook rail through a second endpoint,
+# and nothing could put a specimen in or take one out. The rows still reach
+# the creator, through the rail, so the claim has to be made there, where a
+# form is applied in one keystroke. That is the other half of MAKING.md's M-1
+# and it belongs to the batch that owns the Composer. The data half above,
+# which is the part that cannot be argued with, is unchanged.
 
 
 # ---------------------------------------------------------------------------

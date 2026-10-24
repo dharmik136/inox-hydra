@@ -32,7 +32,6 @@ from database import init_db
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 COMPONENTS = os.path.join(REPO_ROOT, "studio", "ui", "src", "components")
 LEADS_SURFACE = os.path.join(COMPONENTS, "LeadsSurface.tsx")
-SWIPE_SURFACE = os.path.join(COMPONENTS, "SwipeSurface.tsx")
 
 client = TestClient(app)
 
@@ -166,20 +165,8 @@ def test_the_seeded_specimens_repeat_their_category():
     )
 
 
-def test_the_swipe_card_compares_before_printing_both():
-    """
-    A separator with the same word on both sides tells a reader nothing. The
-    card has to compare the two fields rather than concatenate them.
-    """
-    source = _source(SWIPE_SURFACE)
-
-    assert "specimen.topic" in source, "the card no longer shows a topic at all"
-    comparison = re.search(
-        r"specimen\.topic[^\n]*!==[^\n]*specimen\.archetype"
-        r"|specimen\.archetype[^\n]*!==[^\n]*specimen\.topic",
-        source,
-    )
-    assert comparison, (
-        "the card prints archetype and topic unconditionally, which renders the "
-        "same word twice for every specimen the product seeds"
-    )
+# The card that printed archetype and topic on one line was the Swipe File's,
+# and cycle 3 batch T7 removed that section. The condition above still holds of
+# the data (every seeded specimen carries topic == archetype), and the one
+# surface that still draws these rows, the Composer's hook rail, prints neither
+# field. tests/test_qc3_t7_sections_removed.py holds the removal itself.
