@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { SelectionToolbar, type ToolbarPosition } from "./SelectionToolbar";
-import { formatText, type FormatKind } from "@/lib/api";
-import { measurableLength, openingEnd, rawIndexAtMeasurableOffset } from "@/lib/text";
+import { fetchEvidenceBrief, formatText, type EvidenceExemplar, type FormatKind, type RetrievalEvidenceBrief } from "@/lib/api";
+import { measurableLength, openingEnd, rawIndexAtMeasurableOffset, swapOpening } from "@/lib/text";
 
 /**
  * LinkedIn collapses the post body behind "see more" at roughly this many
@@ -275,6 +275,7 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey, onSave }: C
 
   return (
     <div className="mx-auto w-full max-w-[68ch] px-10 py-12">
+      <WhatWorkedForYou value={value} onChange={onChange} />
       {formatNote && (
         <p role="status" className="mb-3 text-[12px] leading-snug text-signal-orange-text">
           {formatNote}
@@ -404,5 +405,197 @@ export function ComposerCanvas({ value, onChange, onReHook, swapKey, onSave }: C
           : `Post is within the ${FOLD_CHARS} character fold.`}
       </p>
     </div>
+  );
+}
+
+/* -------------------------------------------------------------------------
+ * What worked, for you: the Composer's one reading of the creator's own
+ * measured history.
+ * ---------------------------------------------------------------------- */
+
+/** The opening line of a post, which is the part a reader decides on. */
+function openerOf(text: string): string {
+  const line = (text ?? "").trim().split("\n")[0]?.trim() ?? "";
+  return line.length > 200 ? `${line.slice(0, 199)}...` : line;
+}
+
+/**
+ * The shape of one of the creator's own posts, measured from its own text:
+ * how long it ran, how many paragraphs it was set in, and whether its
+ * opening cleared the fold. Nothing here is a forecast or a rating; every
+ * number is a count of a post the creator already published.
+ */
+function shapeOf(text: string): string {
+  const body = text ?? "";
+  const paragraphs = body.split(/\n\s*\n/).filter((part) => part.trim()).length;
+  const end = openingEnd(body);
+  const opening = end === -1 ? body : body.slice(0, end);
+  const fits = measurableLength(opening) <= FOLD_CHARS;
+  return `${measurableLength(body).toLocaleString()} characters · ${paragraphs} ${
+    paragraphs === 1 ? "paragraph" : "paragraphs"
+  } · opening ${fits ? "fits the fold" : "runs past the fold"}`;
+}
+
+/** The measured figures behind calling one of these posts strongest or weakest. */
+function figuresOf(item: EvidenceExemplar): string {
+  const parts = [`${item.reactions.toLocaleString()} reactions`];
+  if (item.comments !== null && item.comments !== undefined) {
+    parts.push(`${item.comments.toLocaleString()} comments`);
+  }
+  parts.push(`${item.qualified_leads.toLocaleString()} qualified leads`);
+  return parts.join(" · ");
+}
+
+/**
+ * What worked, offered where the writing happens.
+ *
+ * MAKING.md: what the creator learns never reaches what they write. The one
+ * brief that answers "which of my posts worked" is
+ * /api/v1/insights/evidence, the same 10 KB read Today uses, and until now
+ * the Composer could reach it only through a tab in the inspector beside the
+ * editor.
+ *
+ * So the openings of the creator's own strongest settled posts are offered
+ * here, with the figures that make them the strongest and the shape each one
+ * was set in. Nothing is generated: every line of text below was written and
+ * published by the creator, and is labelled as theirs. A post that did least
+ * well is shown as the other half of the comparison and is not offered for
+ * use, because applying a weak opening is not something a writer wants in
+ * one click.
+ */
+function WhatWorkedForYou({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (next: string, cleared?: boolean) => void;
+}) {
+  const [brief, setBrief] = useState<RetrievalEvidenceBrief | null>(null);
+  const [failed, setFailed] = useState(false);
+  // Open while the page is empty, which is when a writer is deciding what to
+  // write; folded away once there is a draft, so it never crowds the text.
+  const [open, setOpen] = useState(!value.trim());
+  // The draft as it was before an opening was applied, so one click back is
+  // as fast as the click that replaced it. The hook rail's undo works the
+  // same way, and for the same reason.
+  const [undo, setUndo] = useState<{ before: string; opener: string } | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    fetchEvidenceBrief()
+      .then((result) => live && setBrief(result))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  const top: EvidenceExemplar[] = brief?.top_exemplars ?? [];
+  const bottom: EvidenceExemplar[] = brief?.bottom_exemplars ?? [];
+  const canUndo = undo !== null && value.startsWith(undo.opener);
+
+  function apply(opener: string) {
+    setUndo({ before: value, opener });
+    onChange(swapOpening(value, opener));
+  }
+
+  return (
+    <section aria-labelledby="composer-what-worked" className="mb-6 rounded-md border border-edge">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-3 py-2">
+        <h2 id="composer-what-worked" className="studio-label">
+          What worked, from your own posts
+        </h2>
+        <div className="flex items-center gap-3">
+          {canUndo && (
+            <p role="status" className="studio-meta flex items-center gap-2 text-[10px] text-ink-muted">
+              OPENING REPLACED
+              <button
+                type="button"
+                onClick={() => {
+                  if (!undo) return;
+                  onChange(undo.before);
+                  setUndo(null);
+                }}
+                aria-label="Undo the opening and put your own words back"
+                className="rounded-sm border border-edge px-1.5 text-ink-secondary transition-colors hover:border-edge-strong hover:text-ink-primary"
+              >
+                UNDO
+              </button>
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={() => setOpen((shown) => !shown)}
+            aria-expanded={open}
+            className="studio-meta text-[10px] text-ink-muted transition-colors hover:text-ink-primary"
+          >
+            {open ? "HIDE" : "SHOW"}
+          </button>
+        </div>
+      </div>
+
+      {open && (
+        <div className="border-t border-edge px-3 py-2">
+          {/* Said before anything is offered, because the one thing that
+              makes this worth reading is whose words these are. */}
+          <p className="text-[12px] leading-snug text-ink-secondary">
+            Your settled posts, measured by what they drew. These are your own words as you published them,
+            not a suggestion from a model and not a forecast of how any of them will do again.
+          </p>
+
+          {top.length === 0 ? (
+            <p className="studio-meta mt-2 leading-relaxed text-ink-muted">
+              {failed
+                ? "The studio did not answer. It is read again when this window comes back."
+                : brief
+                  ? (brief.message ??
+                    "Not enough settled posts yet to say which of yours worked. It fills in as your posts settle.")
+                  : "READING YOUR POSTS"}
+            </p>
+          ) : (
+            <>
+              <p className="studio-label mt-3">Your strongest openings</p>
+              <ul className="mt-1 flex flex-col divide-y divide-edge border-y border-edge">
+                {top.map((item, index) => (
+                  <li
+                    key={item.activity_urn ?? `top-${index}`}
+                    className="flex flex-wrap items-start gap-x-3 gap-y-1 py-2"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] leading-snug text-ink-primary">{openerOf(item.text)}</p>
+                      <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">{figuresOf(item)}</p>
+                      <p className="studio-meta text-[10px] text-ink-muted">{shapeOf(item.text)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => apply(openerOf(item.text))}
+                      className="shrink-0 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+                    >
+                      Use this opening
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              {bottom.length > 0 && (
+                <>
+                  {/* The weak end of the same read. Showing one without the
+                      other turns a comparison into a trophy cabinet. */}
+                  <p className="studio-label mt-3">And what did least well</p>
+                  <ul className="mt-1 flex flex-col divide-y divide-edge border-y border-edge">
+                    {bottom.map((item, index) => (
+                      <li key={item.activity_urn ?? `bottom-${index}`} className="py-2">
+                        <p className="text-[13px] leading-snug text-ink-secondary">{openerOf(item.text)}</p>
+                        <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">{figuresOf(item)}</p>
+                        <p className="studio-meta text-[10px] text-ink-muted">{shapeOf(item.text)}</p>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

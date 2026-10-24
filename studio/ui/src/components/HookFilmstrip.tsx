@@ -2,7 +2,16 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { X } from "lucide-react";
 import { fetchHookTemplates, type GeneratedHook, type HookTemplate } from "@/lib/api";
+import { RAIL_SIZE, selectRailTemplates } from "@/lib/hookRail";
 import { cn } from "@/lib/utils";
+
+/**
+ * Fetched well above the rail's own size so the whole library (starters and
+ * the opt-in pack both) is in hand before `selectRailTemplates` picks the
+ * rail from it. Asking the server for only 12, ranked by score, is the bug
+ * this fixes (MAKING.md M-1): it returned 12 pack forms and zero starters.
+ */
+const LIBRARY_FETCH_LIMIT = 200;
 
 interface HookFilmstripProps {
   onApply: (hook: string) => void;
@@ -62,6 +71,12 @@ interface Specimen {
   score: { label: string; value: number } | null;
   /** Generated hooks report whether they clear the fold. The vault does not. */
   fits: boolean | null;
+  /**
+   * True for a specimen from the opt-in engineering pack: another author's
+   * own first-person claims, not the creator's. Shown so the warning beside
+   * the rail is about something the creator can see, not a blanket notice.
+   */
+  fromPack: boolean;
 }
 
 /**
@@ -84,13 +99,18 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
 
   useEffect(() => {
     let live = true;
-    fetchHookTemplates(12)
+    fetchHookTemplates(LIBRARY_FETCH_LIMIT)
       .then((rows) => live && setTemplates(rows))
       .catch(() => live && setFailed(true));
     return () => {
       live = false;
     };
   }, []);
+
+  // The pack can add to the rail; it can never evict the creator's own
+  // starter forms below half of it. See lib/hookRail.ts.
+  const picked = templates ? selectRailTemplates(templates, RAIL_SIZE) : null;
+  const packInRail = picked?.some((pick) => pick.fromPack) ?? false;
 
   const specimens: Specimen[] | null = generated
     ? generated.map((hook, index) => ({
@@ -99,8 +119,9 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
         text: hook.hook_text,
         score: null,
         fits: hook.mobile_safe,
+        fromPack: false,
       }))
-    : templates?.map((template) => ({
+    : picked?.map(({ item: template, fromPack }) => ({
         key: `template-${template.id}`,
         category: template.archetype,
         text: template.hook_text,
@@ -110,6 +131,7 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
         score:
           template.velocity_score === null ? null : { label: "EDITOR'S RATING", value: template.velocity_score },
         fits: null,
+        fromPack,
       })) ?? null;
 
   // Alt and a digit applies that specimen. Alt rather than a bare digit
@@ -172,6 +194,18 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
         </div>
       </div>
 
+      {/* The warning that these forms make first-person claims was only on
+          the Swipe File screen, while the one keystroke that puts one over
+          the creator's opening line is here. It is said where it applies. */}
+      {packInRail && !generated && (
+        <p className="mt-1.5 px-10 text-[11px] leading-snug text-ink-muted">
+          The forms marked{" "}
+          <span className="studio-meta text-[10px] text-signal-orange-text">PACK</span> are the engineering
+          pack&apos;s, not yours. They make first-person claims you would have to make true before posting
+          one. Your own starter forms keep half of this rail.
+        </p>
+      )}
+
       {/* Horizontal contact sheet. Scrolls rather than wraps, so the strip
           stays one line deep however many specimens are vaulted. */}
       <ul className="flex gap-2 overflow-x-auto px-10 py-3">
@@ -197,6 +231,16 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
                   {String(index + 1).padStart(2, "0")}
                   <span className="mx-1.5">·</span>
                   {specimen.category.toUpperCase()}
+                  {/* Named on the card itself, because this is the text that
+                      goes into the post, and whose words they are matters.
+                      The space is written out, so the label is a word of its
+                      own to a screen reader rather than a margin. */}
+                  {specimen.fromPack && (
+                    <>
+                      {" "}
+                      <span className="text-signal-orange-text">PACK</span>
+                    </>
+                  )}
                 </span>
                 {index < SHORTCUT_LIMIT && !ALT_TYPES_CHARACTERS && (
                   <kbd className="studio-meta shrink-0 rounded border border-edge px-1 text-[9px] text-ink-muted">
