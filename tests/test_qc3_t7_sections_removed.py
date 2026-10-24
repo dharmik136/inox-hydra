@@ -24,10 +24,12 @@ What this holds: the component files are deleted rather than unlinked, no
 section id survives in the rail or the router, no surface still imports them,
 and the two things that did point at the Swipe File (the command palette's
 specimen results and the backend that tells them where to open) now point at
-the Composer, so neither is a dead click. The endpoints are deliberately
-untouched: `/api/inspirations` still serves Ctrl+K's hook form search and
-`/api/ai/command` still answers the Prompt panel, so no route was removed and
-tests/test_endpoint_reachability.py's counts are unchanged.
+the Composer, so neither is a dead click. No route was removed: `/api/ai/command` still answers the Prompt panel, and
+`/api/inspirations` still serves the same `viral_templates` rows (Ctrl+K reads
+that table in process through routers/search.py, not over HTTP, so the route
+itself now has no caller in the interface). The two client functions the wall
+used are gone with it, which is why tests/test_endpoint_reachability.py's
+recorded counts move by two in the same commit range.
 """
 
 import io
@@ -157,6 +159,71 @@ def test_a_hook_form_found_in_search_opens_a_screen_that_exists():
 def test_the_palette_names_no_section_the_rail_does_not_have():
     palette = _read(os.path.join(UI_SRC, "components", "CommandPalette.tsx"))
     assert "Swipe File" not in palette, "the palette still offers the Swipe File"
+
+
+# ---------------------------------------------------------------------------
+# The help does not send a creator to a section that is not there
+# ---------------------------------------------------------------------------
+
+HELP = os.path.join(REPO_ROOT, "docs", "help")
+
+# The rail labels of the two sections this batch removed. A help article may
+# not name either, because a creator who reads it goes looking for a rail
+# entry that no longer exists. The first version of this module walked
+# docs/help and asserted nothing about it, and three whole articles about the
+# dead sections were still shipped in-app through docs_engine.HELP_SECTIONS.
+GONE_LABELS = ("Swipe File", "Command console")
+
+
+def _help_files():
+    return sorted(name for name in os.listdir(HELP) if name.endswith(".md"))
+
+
+def test_no_help_article_names_a_removed_section():
+    named = {}
+    for name in _help_files():
+        text = _read(os.path.join(HELP, name))
+        for label in GONE_LABELS:
+            if label in text:
+                named.setdefault(name, []).append(label)
+    assert not named, f"help articles still name a section the rail does not have: {named}"
+
+
+def test_no_article_about_a_removed_section_is_shipped_to_a_creator():
+    """
+    docs_engine.HELP_SECTIONS is the help a creator can browse and search.
+    Two whole articles about the removed sections were listed in it.
+    """
+    import docs_engine
+
+    shipped = [path for section in docs_engine.HELP_SECTIONS if section["id"] != "maintainers"
+               for path in section["paths"]]
+    for path in shipped:
+        assert os.path.exists(os.path.join(REPO_ROOT, "docs", path)), f"{path} is listed and missing"
+    for dead in ("help/browse-the-swipe-file.md", "help/use-the-command-console.md",
+                 "help/why-is-analytics-or-the-swipe-file-empty.md"):
+        assert dead not in shipped, f"{dead} is still shipped to a creator"
+        assert not os.path.exists(os.path.join(REPO_ROOT, "docs", dead)), f"{dead} is still in the tree"
+
+
+def test_the_rail_table_a_new_creator_reads_lists_only_sections_that_exist():
+    """
+    docs/help/open-the-studio-for-the-first-time.md tabulates the rail. Every
+    label in it has to be a label the rail has, or the first thing a new
+    creator does is hunt for something that is not there.
+    """
+    navigation = _read(os.path.join(UI_SRC, "lib", "navigation.ts"))
+    labels = set(re.findall(r'label: "([^"]+)"', navigation))
+    assert "Composer" in labels and "Leads" in labels, labels
+
+    article = _read(os.path.join(HELP, "open-the-studio-for-the-first-time.md"))
+    # The one table headed "Rail label", not every table in the article.
+    table = article.split("| Rail label |", 1)[1].split("\n\n", 1)[0]
+    rows = re.findall(r"^\| ([A-Za-z][A-Za-z ]+?) \|", table, flags=re.M)
+    tabulated = {row.strip() for row in rows} - {"---"}
+    assert len(tabulated) >= 8, f"the rail table reads as {tabulated}"
+    unknown = sorted(label for label in tabulated if label not in labels)
+    assert not unknown, f"the rail table names sections the rail does not have: {unknown}"
 
 
 # ---------------------------------------------------------------------------

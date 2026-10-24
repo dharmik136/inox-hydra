@@ -7,7 +7,7 @@ Connect a local MCP server so the studio can read your own notes, and understand
 A grounding source is an MCP server: a program on this computer that the studio starts, asks what documents it holds, reads a few of them, and stops again. The idea is that posts can draw on your own notes instead of generic material.
 
 > [!IMPORTANT]
-> Nothing in the interface uses grounding material yet. You can connect a source and preview what it hands over, but no button in the composer, Re-Hook or the Command console gathers it. The only code that does is a copilot route that no control in the interface calls.
+> Nothing in the interface uses grounding material yet. You can connect a source and preview what it hands over, but no button in the composer, Re-Hook or the instruction box gathers it. The only code that does is a copilot route that no control in the interface calls.
 
 ## What you are allowing
 

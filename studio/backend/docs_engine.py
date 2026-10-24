@@ -626,7 +626,6 @@ HELP_SECTIONS = [
             "help/check-a-draft-before-you-post.md",
             "help/publish-queue-or-send-to-linkedin.md",
             "help/how-the-queue-works.md",
-            "help/browse-the-swipe-file.md",
             "help/send-a-post-idea-from-telegram.md",
             "strategy_playbook.md",
         ],
@@ -646,10 +645,10 @@ HELP_SECTIONS = [
     {
         "id": "ai",
         "title": "Bring your own AI",
-        "blurb": "Connect an AI provider, use the Command console, set up Brand Studio and its grounding sources, and add images.",
+        "blurb": "Connect an AI provider, run an instruction on your draft, set up Brand Studio and its grounding sources, and add images.",
         "paths": [
             "help/connect-your-own-ai-provider.md",
-            "help/use-the-command-console.md",
+            "help/run-an-instruction-on-your-draft.md",
             "help/set-up-brand-studio.md",
             "help/add-a-grounding-source.md",
             "help/add-images-to-your-media-library.md",
@@ -681,7 +680,7 @@ HELP_SECTIONS = [
             # of the help a creator is shown.
             "help/command-line-tool-reference.md",
             "help/why-is-my-lead-list-empty.md",
-            "help/why-is-analytics-or-the-swipe-file-empty.md",
+            "help/why-is-my-analytics-chart-empty.md",
             "help/why-does-the-audit-say-blocked.md",
         ],
     },
