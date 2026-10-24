@@ -111,14 +111,8 @@ export function HookFilmstrip({ onApply, generated, onClearGenerated, canUndo, o
   );
 
   useEffect(() => {
-    let live = true;
-    fetchHookTemplates(LIBRARY_FETCH_LIMIT)
-      .then((rows) => live && setTemplates(rows))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-  }, []);
+    void read();
+  }, [read]);
 
   /**
    * Takes the opt-in pack back out of the library.
