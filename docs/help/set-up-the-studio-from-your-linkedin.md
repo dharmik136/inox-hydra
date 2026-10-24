@@ -93,7 +93,7 @@ Your comments and reactions are kept as your own activity. They never become lea
 When every step is ticked, a line under step 5 says Setup is done, with a **Go to Today** button.
 
 > [!NOTE]
-> Scrolling is the one thing the studio does on LinkedIn on your behalf, and only on your own activity pages, only after you click **Import** or **Import your history**. With **Import your history**, the bridge also moves from one of your activity pages to the next by itself. It reads what the page shows. The extension makes no requests to LinkedIn of its own.
+> Importing is the only time the bridge acts on a LinkedIn page to read it, and it does so only on your own activity pages, only after you click **Import** or **Import your history**. It clicks LinkedIn's own "Show more results" control and scrolls, and with **Import your history** it also moves from one of your activity pages to the next by itself. It reads what the page shows. The extension makes no requests to LinkedIn of its own. (Placing a draft in LinkedIn's composer is the one other thing it does to a page; it never posts.)
 
 ## Check the capture is still working
 

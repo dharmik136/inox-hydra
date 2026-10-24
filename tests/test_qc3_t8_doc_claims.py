@@ -226,6 +226,23 @@ def test_the_swipe_file_article_is_gone_and_nothing_links_to_it():
     assert "browse-the-swipe-file.md" not in docs_engine
 
 
+def test_no_help_article_calls_the_import_the_only_thing_that_acts():
+    """
+    The reviewer's notes on T8-8. Two articles said the import was the one
+    thing the bridge does to a page, which content.js:279 contradicts, and one
+    of them attributed the click on LinkedIn's own control to the creator,
+    who presses Import in the studio.
+    """
+    leaves = read(os.path.join(HELP, "what-leaves-this-machine.md"))
+    assert "That import is the one thing it does to the page" not in leaves
+    assert "your click on LinkedIn's control" not in leaves
+    assert "Its click on LinkedIn's control, not yours" in leaves
+
+    setup = read(os.path.join(HELP, "set-up-the-studio-from-your-linkedin.md"))
+    assert "Scrolling is the one thing the studio does on LinkedIn" not in setup
+    assert "the one other thing it does to a page" in setup
+
+
 def test_the_command_article_describes_the_prompt_panel():
     text = read(os.path.join(HELP, "use-the-command-console.md"))
     assert "**Prompt** tab" in text
