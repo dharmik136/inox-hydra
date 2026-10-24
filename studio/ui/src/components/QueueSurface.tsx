@@ -5,14 +5,17 @@ import {
   deleteQueueSlot,
   dispatchQueueNow,
   fetchCadenceHealth,
+  fetchCadenceInsights,
   fetchDuePosts,
   fetchSmartSlots,
   publishNow,
   returnToDrafts,
   toggleQueuePause,
   type CadenceHealth,
+  type CadenceInsights,
   type QueueSlot,
   type ScheduledPost,
+  type TodayDuePost,
   updateQueueSlot,
 } from "@/lib/api";
 import { useRefresh } from "@/lib/refresh";
@@ -22,8 +25,36 @@ import { cn } from "@/lib/utils";
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
+/** Monday of the week the given day falls in, at midnight local time. */
+function startOfWeek(now: Date): Date {
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  // getDay is 0 for Sunday; the week here starts on Monday, as the slots do.
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return monday;
+}
+
 /**
- * The smart queue (blueprint build order phase 4).
+ * Which day of the displayed week a stored time falls on, or null for
+ * another week.
+ *
+ * Parsed the way lib/time.ts parses it, so a post sits on the day the rest
+ * of the screen prints beside it. Reading the stored string as UTC instead
+ * put a Saturday 10:57 PM post in the Sunday cell on a clock five and a half
+ * hours ahead, while the row below it said Saturday.
+ */
+function dayInWeek(iso: string | null, weekStart: Date): number | null {
+  if (!iso) return null;
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return null;
+  // Midnight to midnight, rounded, so the hour a clock change adds or takes
+  // from a day does not move a post into the day beside it.
+  const day = new Date(when.getFullYear(), when.getMonth(), when.getDate());
+  const days = Math.round((day.getTime() - weekStart.getTime()) / 86_400_000);
+  return days >= 0 && days < 7 ? days : null;
+}
+
+/**
+ * The smart queue: the week at a glance.
  *
  * The queue posts nothing. At a post's time it marks the post due, and the
  * post waits at the top of this screen for the creator to post it on LinkedIn
@@ -32,13 +63,21 @@ const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Satu
  * post was silently recorded as published and counted in Analytics although
  * nothing had been posted. Pausing stops posts being marked due, and its state
  * is read back from the server rather than assumed from the click.
+ *
+ * It also used to hold 770 characters and three controls on a three year
+ * install, in a column using 57% of the width it was given, and it did not
+ * say that a post had been missed or why (research: ONEVIEW.md section 1).
+ * It now opens on the week itself, with each day's slots and what sits in
+ * them, the missed note the scheduler left, and the creator's own measured
+ * rhythm beside the cadence of what is queued.
  */
 export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => void } = {}) {
   const [slots, setSlots] = useState<QueueSlot[] | null>(null);
   const [scheduled, setScheduled] = useState<ScheduledPost[]>([]);
-  const [due, setDue] = useState<ScheduledPost[]>([]);
+  const [due, setDue] = useState<TodayDuePost[]>([]);
   const [dueNote, setDueNote] = useState<string | null>(null);
   const [health, setHealth] = useState<CadenceHealth | null>(null);
+  const [rhythm, setRhythm] = useState<CadenceInsights | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dispatchNote, setDispatchNote] = useState<string | null>(null);
@@ -58,6 +97,18 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
     } catch {
       setFailed(true);
     }
+  }, []);
+
+  // How steadily the creator actually posts, from their own history. Read
+  // once: it moves on the scale of days, not of a queue dispatch.
+  useEffect(() => {
+    let live = true;
+    fetchCadenceInsights()
+      .then((result) => live && setRhythm(result))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -102,7 +153,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
     }
   }
 
-  async function onCopy(post: ScheduledPost) {
+  async function onCopy(post: TodayDuePost) {
     try {
       await navigator.clipboard.writeText(post.content);
       setDueNote("Copied. Paste it into LinkedIn, post it, then press I posted it.");
@@ -111,13 +162,13 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
     }
   }
 
-  async function onBackToDrafts(post: ScheduledPost) {
+  async function onBackToDrafts(post: TodayDuePost) {
     setBusy(true);
     setDueNote(null);
     try {
       // For a post the creator has decided not to post: off the Queue, text
       // kept, and nothing recorded as published.
-      await returnToDrafts(post.id);
+      await returnToDrafts(post.post_id);
       setDueNote("Moved back to your drafts. Search for it with Ctrl K to open it in the Composer.");
       await load();
     } catch (error) {
@@ -127,12 +178,12 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
     }
   }
 
-  async function onPosted(post: ScheduledPost) {
+  async function onPosted(post: TodayDuePost) {
     setBusy(true);
     setDueNote(null);
     try {
       // Recorded only now, on the creator's word, which is when it is true.
-      await publishNow(post.id);
+      await publishNow(post.post_id);
       setDueNote("Marked as published.");
       await load();
     } catch (error) {
@@ -145,10 +196,19 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
   if (failed && !slots) return <Centered>QUEUE UNAVAILABLE</Centered>;
   if (!slots || !health) return <Centered>LOADING QUEUE</Centered>;
 
+  const missed = due.filter((post) => post.missed);
+
   return (
-    <div className="mx-auto max-w-[96ch] px-8 py-8">
-      <div className="flex flex-wrap items-baseline justify-between gap-4">
-        <h1 className="studio-title">Queue</h1>
+    <div className="mx-auto w-full max-w-[150ch] px-6 py-5">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="studio-title">Queue</h1>
+          <p className="max-w-[72ch] text-[12px] leading-snug text-ink-secondary">
+            The queue does not post anything. When a queued post&apos;s time comes, it moves to Due below, for
+            you to post on LinkedIn yourself. It counts as published only once you press I posted it, or once
+            the bridge sees it on LinkedIn.
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -181,82 +241,262 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
         </div>
       </div>
 
-      <p className="mt-2 max-w-[70ch] text-[13px] leading-relaxed text-ink-secondary">
-        The queue does not post anything. When a queued post&apos;s time comes, it moves to Due
-        below, for you to post on LinkedIn yourself. It counts as published only once you press I
-        posted it, or once the bridge sees it on LinkedIn.
-      </p>
-
       {health.queue_paused && (
-        <p role="status" className="studio-meta mt-4 rounded-md border border-signal-orange/40 bg-signal-orange-subtle p-3 text-signal-orange-text">
+        <p role="status" className="studio-meta mt-3 rounded-md border border-signal-orange/40 bg-signal-orange-subtle p-2.5 text-signal-orange-text">
           THE QUEUE IS PAUSED. QUEUED POSTS STAY QUEUED AND ARE NOT MARKED DUE UNTIL YOU RESUME IT.
         </p>
       )}
 
       {dispatchNote && (
-        <p role="status" className="studio-meta mt-3 text-ink-secondary">
+        <p role="status" className="studio-meta mt-2 text-ink-secondary">
           {dispatchNote.toUpperCase()}
         </p>
       )}
 
-      <section className="mt-6" aria-labelledby="queue-due">
-        <p id="queue-due" className="studio-label mb-3">
-          Due, waiting for you to post it
-        </p>
-        {dueNote && (
-          <p role="status" className="studio-meta mb-2 text-ink-secondary">
-            {dueNote.toUpperCase()}
-          </p>
-        )}
-        {due.length === 0 ? (
-          <p className="studio-meta text-ink-muted">NOTHING IS DUE</p>
-        ) : (
-          <ul className="flex flex-col">
-            {due.map((post) => (
-              <li key={post.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-edge py-2">
-                <span className="studio-meta shrink-0 text-[11px] text-signal-orange-text">
-                  DUE {formatLocal(post.scheduled_for).toUpperCase()}
-                </span>
-                <span className="min-w-0 flex-1 truncate text-[12px] text-ink-primary">
-                  {post.content.split("\n")[0]}
-                </span>
-                <span className="flex shrink-0 items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void onCopy(post)}
-                    className="flex items-center gap-1.5 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
-                  >
-                    <Copy className="size-3" strokeWidth={1.75} aria-hidden="true" />
-                    Copy text
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void onBackToDrafts(post)}
-                    className="flex items-center gap-1.5 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
-                  >
-                    <Undo2 className="size-3" strokeWidth={1.75} aria-hidden="true" />
-                    Back to drafts
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void onPosted(post)}
-                    className="flex items-center gap-1.5 rounded-md bg-signal-orange px-2 py-0.5 text-[11px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
-                  >
-                    <CheckCheck className="size-3" strokeWidth={1.75} aria-hidden="true" />
-                    I posted it
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <ThisWeek slots={slots} scheduled={scheduled} due={due} />
 
-      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-2 border-y border-edge py-4 sm:grid-cols-4">
+      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <section aria-labelledby="queue-due">
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <p id="queue-due" className="studio-label">
+              Due, waiting for you to post it
+            </p>
+            {missed.length > 0 && (
+              <span className="studio-meta shrink-0 text-[10px] text-signal-orange-text">
+                {missed.length === 1 ? "1 WAS MISSED" : `${missed.length} WERE MISSED`}
+              </span>
+            )}
+          </div>
+          {dueNote && (
+            <p role="status" className="studio-meta mb-2 text-ink-secondary">
+              {dueNote.toUpperCase()}
+            </p>
+          )}
+          {due.length === 0 ? (
+            <p className="text-[13px] leading-relaxed text-ink-muted">
+              Nothing is due. A queued post appears here at its own time, and waits for you.
+            </p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-edge border-y border-edge">
+              {due.map((post) => (
+                <li key={post.post_id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
+                  <span
+                    className={cn(
+                      "studio-meta shrink-0 text-[11px]",
+                      post.missed ? "text-signal-orange-text" : "text-ink-muted",
+                    )}
+                  >
+                    {post.missed ? "MISSED, WAS DUE " : "DUE "}
+                    {formatLocal(post.scheduled_for).toUpperCase()}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink-primary">{post.excerpt}</span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void onCopy(post)}
+                      className="flex items-center gap-1.5 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+                    >
+                      <Copy className="size-3" strokeWidth={1.75} aria-hidden="true" />
+                      Copy text
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void onBackToDrafts(post)}
+                      className="flex items-center gap-1.5 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                    >
+                      <Undo2 className="size-3" strokeWidth={1.75} aria-hidden="true" />
+                      Back to drafts
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => void onPosted(post)}
+                      className="flex items-center gap-1.5 rounded-md bg-signal-orange px-2 py-0.5 text-[11px] font-medium text-on-signal transition-[filter] hover:brightness-110 disabled:opacity-40"
+                    >
+                      <CheckCheck className="size-3" strokeWidth={1.75} aria-hidden="true" />
+                      I posted it
+                    </button>
+                  </span>
+                  {/* Why it was missed, in the scheduler's own terms: it was
+                      not posted at its time because nothing was running then,
+                      and the studio noticed this much later. Nothing moved
+                      it; it still carries the time the creator chose. */}
+                  {post.missed && (
+                    <p className="w-full text-[12px] leading-snug text-ink-muted">
+                      Missed because the studio was closed or the machine asleep at its time.
+                      {post.missed.late_minutes !== null && post.missed.late_minutes !== undefined
+                        ? ` Noticed ${lateness(post.missed.late_minutes)} late`
+                        : " Noticed later"}
+                      {post.missed.noticed_at ? `, at ${formatLocal(post.missed.noticed_at)}` : ""}. It kept its
+                      time; nothing moved it.
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <p className="studio-label mt-5 mb-2">Queued posts</p>
+          {scheduled.length === 0 ? (
+            <p className="text-[13px] leading-relaxed text-ink-muted">
+              Nothing is queued. Queue a draft from the Composer and it takes the next open slot.
+            </p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-edge border-y border-edge">
+              {scheduled.map((post) => (
+                <li key={post.id} className="flex items-baseline gap-4 py-2">
+                  <span className="studio-meta shrink-0 text-[11px]">{formatLocal(post.scheduled_for)}</span>
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink-secondary">
+                    {post.content.split("\n")[0]}
+                  </span>
+                  {/* Opens the post in the Composer, which asks before it
+                      changes a queued post's text. */}
+                  {onEditText && (
+                    <button
+                      type="button"
+                      onClick={() => onEditText(post.id)}
+                      className="shrink-0 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+                    >
+                      Edit text
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <div className="flex flex-col gap-4">
+          <Cadence health={health} rhythm={rhythm} slots={slots} />
+          <WeeklySlots slots={slots} onChanged={load} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** How late a missed post was noticed, in the coarsest unit that is still true. */
+function lateness(minutes: number): string {
+  if (minutes < 90) return `${Math.round(minutes)} minutes`;
+  const hours = minutes / 60;
+  if (hours < 48) return `${hours.toFixed(1)} hours`;
+  return `${Math.round(hours / 24)} days`;
+}
+
+/**
+ * The week itself: each day, its slots, and what sits in them.
+ *
+ * This is what the screen opens on now, because the question it exists to
+ * answer is when the next post goes out, and a week of seven named days
+ * answers it in one look. A day holding a due or missed post is marked, so
+ * the thing needing a decision is visible before anything is scrolled.
+ */
+function ThisWeek({
+  slots,
+  scheduled,
+  due,
+}: {
+  slots: QueueSlot[];
+  scheduled: ScheduledPost[];
+  due: TodayDuePost[];
+}) {
+  const weekStart = startOfWeek(new Date());
+  const today = Math.floor((new Date().getTime() - weekStart.getTime()) / 86_400_000);
+  const active = slots.filter((slot) => slot.is_active);
+
+  return (
+    <section aria-labelledby="queue-week-at-a-glance" className="mt-4">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <p id="queue-week-at-a-glance" className="studio-label">
+          This week
+        </p>
+        <span className="studio-meta text-[10px] text-ink-muted">
+          {`${active.length} ${active.length === 1 ? "SLOT" : "SLOTS"} A WEEK · TIMES ARE THIS COMPUTER'S LOCAL TIME`}
+        </span>
+      </div>
+      <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        {DAYS.map((day, index) => {
+          const daySlots = active.filter((slot) => slot.day_of_week === index);
+          const dayQueued = scheduled.filter((post) => dayInWeek(post.scheduled_for, weekStart) === index);
+          const dayDue = due.filter((post) => dayInWeek(post.scheduled_for, weekStart) === index);
+          const anyMissed = dayDue.some((post) => post.missed);
+          return (
+            <li
+              key={day}
+              className={cn(
+                "rounded-md border p-2",
+                anyMissed ? "border-signal-orange" : index === today ? "border-edge-strong bg-soft" : "border-edge",
+              )}
+            >
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="studio-meta text-[10px] text-ink-muted">{day.toUpperCase()}</p>
+                {index === today && <span className="studio-meta text-[9px] text-ink-secondary">TODAY</span>}
+              </div>
+              {daySlots.length === 0 ? (
+                <p className="mt-1 text-[11px] text-ink-muted">No slot</p>
+              ) : (
+                <ul className="mt-1 flex flex-col gap-1">
+                  {daySlots.map((slot) => (
+                    <li key={slot.id} className="text-[12px] leading-tight text-ink-primary">
+                      {formatSlotTime(slot.time_slot)}
+                      <span className="block truncate text-[10px] text-ink-muted">{slot.label}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p
+                className={cn(
+                  "studio-meta mt-1.5 border-t border-edge pt-1 text-[10px]",
+                  anyMissed ? "text-signal-orange-text" : dayQueued.length ? "text-ink-secondary" : "text-ink-muted",
+                )}
+              >
+                {anyMissed
+                  ? `${dayDue.filter((post) => post.missed).length} MISSED`
+                  : dayDue.length
+                    ? `${dayDue.length} DUE`
+                    : dayQueued.length
+                      ? `${dayQueued.length} QUEUED`
+                      : "EMPTY"}
+              </p>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/**
+ * Cadence: what the queue holds, against how steadily the creator actually
+ * posts.
+ *
+ * The cadence health percentage is the queue's own arithmetic about
+ * collisions and spacing. On its own it said "100%" beside "Collisions 0" on
+ * an install with nothing queued, which is a number about nothing. Beside it
+ * now is the creator's measured rhythm from their own posts: how many the
+ * studio has read, the usual gap between them, and how long it has been.
+ */
+function Cadence({
+  health,
+  rhythm,
+  slots,
+}: {
+  health: CadenceHealth;
+  rhythm: CadenceInsights | null;
+  slots: QueueSlot[];
+}) {
+  const weekly = slots.filter((slot) => slot.is_active).length;
+  const usual = rhythm?.median_gap_days;
+  // Both as a gap in days, which is the one unit they can be compared in.
+  const slotGap = weekly > 0 ? 7 / weekly : null;
+  return (
+    <section aria-labelledby="queue-cadence">
+      <p id="queue-cadence" className="studio-label mb-2">
+        Cadence
+      </p>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2 border-y border-edge py-3">
         <Stat label="Queued" value={String(health.total_scheduled)} />
-        <Stat label="Cadence health" value={`${health.cadence_health_score}%`} />
         <Stat
           label="Collisions"
           value={String(health.collision_count)}
@@ -266,12 +506,59 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
           label="Closest spacing"
           value={health.min_spacing_hours === null ? "Not measured" : `${health.min_spacing_hours}h`}
         />
+        <Stat label="Slots a week" value={String(weekly)} />
       </dl>
 
+      <div className="mt-3 border-b border-edge pb-3">
+        <p className="studio-label mb-1.5">Against your own rhythm</p>
+        {!rhythm ? (
+          <p className="text-[13px] leading-relaxed text-ink-muted">
+            Your posting rhythm has not been read yet. It is measured from the posts the studio holds.
+          </p>
+        ) : (
+          <>
+            <dl className="flex flex-col gap-1.5">
+              <Line label="Posts read" value={rhythm.posts.toLocaleString()} />
+              <Line
+                label="Your usual gap"
+                value={
+                  usual === null || usual === undefined
+                    ? "Not measured"
+                    : `${usual.toFixed(1)} days between posts`
+                }
+              />
+              <Line
+                label="Since your last"
+                value={
+                  rhythm.days_since_last === null || rhythm.days_since_last === undefined
+                    ? "Not measured"
+                    : `${rhythm.days_since_last.toFixed(1)} days`
+                }
+              />
+              <Line
+                label="These slots"
+                value={slotGap === null ? "No slots set" : `one post every ${slotGap.toFixed(1)} days`}
+              />
+            </dl>
+            {/* One sentence, and only when both numbers were measured. A
+                comparison with half of itself missing is not a comparison. */}
+            {slotGap !== null && usual !== null && usual !== undefined && (
+              <p className="mt-2 text-[12px] leading-snug text-ink-secondary">
+                {slotGap < usual * 0.75
+                  ? `Your slots ask for more than you have posted: one every ${slotGap.toFixed(1)} days against your usual ${usual.toFixed(1)}.`
+                  : slotGap > usual * 1.5
+                    ? `Your slots ask for less than you have posted: one every ${slotGap.toFixed(1)} days against your usual ${usual.toFixed(1)}.`
+                    : `Your slots are about the rhythm you have kept: one every ${slotGap.toFixed(1)} days against your usual ${usual.toFixed(1)}.`}
+              </p>
+            )}
+          </>
+        )}
+      </div>
+
       {health.next_smart_slot && (
-        <section className="mt-6">
-          <p className="studio-label mb-1.5">Next slot</p>
-          <p className="text-[14px] text-ink-primary">
+        <div className="mt-3">
+          <p className="studio-label mb-1">Next slot offered</p>
+          <p className="text-[13px] text-ink-primary">
             {health.next_smart_slot.day_name} {formatSlotTime(health.next_smart_slot.time_slot)}
             <span className="mx-2 text-ink-muted">·</span>
             <span className="text-ink-secondary">{health.next_smart_slot.label}</span>
@@ -287,40 +574,9 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
               </span>
             )}
           </p>
-        </section>
+        </div>
       )}
-
-      <WeeklySlots slots={slots} onChanged={load} />
-
-      <section className="mt-8">
-        <p className="studio-label mb-3">Queued posts</p>
-        {scheduled.length === 0 ? (
-          <p className="studio-meta text-ink-muted">NOTHING IS QUEUED</p>
-        ) : (
-          <ul className="flex flex-col">
-            {scheduled.map((post) => (
-              <li key={post.id} className="flex items-baseline gap-4 border-b border-edge py-2">
-                <span className="studio-meta shrink-0 text-[11px]">{formatLocal(post.scheduled_for)}</span>
-                <span className="truncate text-[12px] text-ink-secondary">
-                  {post.content.split("\n")[0]}
-                </span>
-                {/* Opens the post in the Composer, which asks before it
-                    changes a queued post's text. */}
-                {onEditText && (
-                  <button
-                    type="button"
-                    onClick={() => onEditText(post.id)}
-                    className="ml-auto shrink-0 rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
-                  >
-                    Edit text
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </div>
+    </section>
   );
 }
 
@@ -339,7 +595,6 @@ function WeeklySlots({ slots, onChanged }: { slots: QueueSlot[]; onChanged: () =
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
   const [draft, setDraft] = useState<Record<number, { time: string; label: string }>>({});
   const [adding, setAdding] = useState({ day: 0, time: "09:00", label: "" });
-  const byDay = DAYS.map((_, index) => slots.filter((slot) => slot.day_of_week === index));
 
   async function act(work: () => Promise<unknown>, done: string) {
     setBusy(true);
@@ -358,8 +613,8 @@ function WeeklySlots({ slots, onChanged }: { slots: QueueSlot[]; onChanged: () =
   const edited = (slot: QueueSlot) => draft[slot.id] ?? { time: slot.time_slot, label: slot.label ?? "" };
 
   return (
-    <section className="mt-8" aria-labelledby="queue-week">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
+    <section aria-labelledby="queue-week">
+      <div className="mb-2 flex items-baseline justify-between gap-3">
         <p id="queue-week" className="studio-label">
           Weekly slots
         </p>
@@ -370,7 +625,7 @@ function WeeklySlots({ slots, onChanged }: { slots: QueueSlot[]; onChanged: () =
             setDraft({});
             setNote(null);
           }}
-          className="rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+          className="rounded-md border border-edge px-2.5 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
         >
           {editing ? "Done" : "Change slots"}
         </button>
@@ -381,25 +636,10 @@ function WeeklySlots({ slots, onChanged }: { slots: QueueSlot[]; onChanged: () =
         </p>
       )}
       {!editing ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
-          {byDay.map((daySlots, index) => (
-            <div key={DAYS[index]} className="rounded-md border border-edge p-2">
-              <p className="studio-meta text-[10px]">{DAYS[index].toUpperCase()}</p>
-              {daySlots.length === 0 ? (
-                <p className="mt-1.5 text-[11px] text-ink-muted">None</p>
-              ) : (
-                <ul className="mt-1.5 flex flex-col gap-1">
-                  {daySlots.map((slot) => (
-                    <li key={slot.id} className="text-[12px] text-ink-primary">
-                      {formatSlotTime(slot.time_slot)}
-                      <span className="block text-[10px] text-ink-muted">{slot.label}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          ))}
-        </div>
+        <p className="text-[12px] leading-snug text-ink-muted">
+          Queue it offers the next of these that is at least 12 hours from your other posts. The week above
+          shows them in place. Posts already queued keep their times.
+        </p>
       ) : (
         <div className="rounded-md border border-edge p-3">
           <p className="text-[12px] leading-snug text-ink-secondary">
@@ -512,6 +752,15 @@ function Stat({ label, value, bad }: { label: string; value: string; bad?: boole
       <dd className={cn("studio-meta mt-0.5 text-[13px]", bad ? "text-signal-orange-text" : "text-ink-primary")}>
         {value}
       </dd>
+    </div>
+  );
+}
+
+function Line({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <dt className="shrink-0 text-[12px] text-ink-muted">{label}</dt>
+      <dd className="truncate text-right text-[12px] text-ink-secondary">{value}</dd>
     </div>
   );
 }
