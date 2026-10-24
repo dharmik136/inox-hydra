@@ -998,6 +998,7 @@ export default function App() {
                   onOpenSetup={() => navigate("setup")}
                   onOpenActivity={() => navigate("activity")}
                   onOpenQueue={() => navigate("queue")}
+                  onOpenComposer={() => navigate("composer")}
                   onOpenLead={(leadId) => {
                     if (!navigate("leads")) return;
                     focusNonce.current += 1;
