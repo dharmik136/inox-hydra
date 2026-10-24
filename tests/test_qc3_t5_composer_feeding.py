@@ -125,6 +125,41 @@ def test_adding_the_engineering_pack_keeps_half_the_rail_for_the_creators_own_fo
     )
     # The warning is where the keystroke is, not only on the Swipe File screen.
     expect(rail).to_contain_text("first-person claims")
+    # And what these specimens are at all, which was the Swipe File's one
+    # honest sentence and had nowhere else to live once that screen went.
+    expect(rail).to_contain_text("not posts anyone measured")
+    expect(rail).to_contain_text("typed in by whoever wrote the form")
+    assert studio["errors"] == [], studio["errors"]
+
+
+def test_the_pack_can_be_taken_back_out_of_the_rail(studio):
+    """
+    Its control was on the Swipe File, which is gone. Without this, a creator
+    who had added the pack could never get back to their own forms.
+    """
+    client = studio["client"]
+    starters = client.get("/api/v1/intelligence/templates?limit=200").json()["templates"]
+    assert starters
+    assert client.post("/api/v1/intelligence/packs/engineering", json={"enabled": True}).status_code == 200
+
+    page = open_section(studio, "composer")
+    rail = page.locator('section[aria-label="Hook archetypes"]')
+    expect(rail).to_be_visible(timeout=10000)
+    expect(rail).to_contain_text("PACK")
+
+    rail.get_by_role("button", name="Remove the engineering pack").click()
+    # The rail is the creator's own again, and what happened is still said.
+    expect(rail).to_contain_text("Removed", timeout=10000)
+    counted = page.evaluate(
+        """() => {
+          const cards = Array.from(document.querySelectorAll('[aria-label^="Apply "]'));
+          return { total: cards.length, pack: cards.filter((c) => / PACK\\b/.test(c.innerText)).length };
+        }"""
+    )
+    assert counted["pack"] == 0, counted
+    assert counted["total"] == len(starters[:12]), counted
+    # Nothing offers to put another author's first-person claims back.
+    assert "Add the engineering pack" not in rail.inner_text()
     assert studio["errors"] == [], studio["errors"]
 
 

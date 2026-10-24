@@ -204,3 +204,34 @@ def test_a_pack_form_is_named_on_the_rail_and_the_warning_is_beside_it():
     assert "fromPack" in source
     assert "PACK" in source, "a pack form is not named on its own card"
     assert "first-person claims" in source, "the Composer still carries no warning about pack forms"
+
+
+def test_the_rail_says_what_these_specimens_are():
+    """
+    The Swipe File carried the one honest sentence about this library: these
+    are forms, not posts anyone measured, and the rating on a rated card was
+    typed in rather than measured. That screen is gone, and the rail is where
+    a form becomes somebody's opening line, so the claim lives here now.
+    """
+    with open(FILMSTRIP, encoding="utf-8") as handle:
+        source = handle.read()
+    assert "These are hook forms, not posts anyone measured." in source
+    assert "typed in by whoever wrote the form, not" in source, (
+        "the rail does not say the rating on a pack card was typed in rather than measured"
+    )
+
+
+def test_the_pack_can_be_taken_back_out_from_the_rail_and_is_not_offered_again():
+    """
+    The pack's only control was on the Swipe File. Without a way out, a
+    creator who had added it would keep its forms in the rail for good, one
+    keystroke from their opening line. The way out is here; the way in is
+    deliberately not, which the batch report argues.
+    """
+    with open(FILMSTRIP, encoding="utf-8") as handle:
+        source = handle.read()
+    assert "setEngineeringPack(false)" in source, "the rail offers no way out of the pack"
+    assert "Remove the engineering pack" in source
+    assert "Add the engineering pack" not in source, (
+        "the rail offers to add 36 first-person claims; that is a product decision, not a default"
+    )

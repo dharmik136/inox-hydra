@@ -12,6 +12,7 @@ against.
 
 from datetime import datetime, timedelta
 
+import pytest
 from playwright.sync_api import expect
 
 from qc2_r5_live import confirm_identity, open_section, seed_creator, server, studio  # noqa: F401
@@ -53,8 +54,17 @@ def test_a_post_sits_in_the_cell_whose_day_its_own_row_names(studio):
     lib/time.ts now, so they cannot disagree.
     """
     confirm_identity(studio["client"])
-    # Tomorrow, because the API will not schedule into the past.
-    when = (datetime.now() + timedelta(days=1)).replace(hour=9, minute=15, second=0, microsecond=0)
+    # Soon, because the API will not schedule into the past, and inside the
+    # week the grid draws, which runs Monday to Sunday: "tomorrow" is in the
+    # next week when this runs on a Sunday, and the post would then be in no
+    # cell at all.
+    now = datetime.now()
+    when = now + timedelta(minutes=90)
+    week_ends = (now + timedelta(days=7 - ((now.weekday() + 7) % 7))).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    if when >= week_ends:
+        pytest.skip("the next free moment is in next week, which this week's grid does not draw")
     _queue_a_post(studio["client"], "The one queued post.", when)
 
     page = open_section(studio, "queue")
