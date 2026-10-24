@@ -454,6 +454,13 @@ def patterns_overview() -> Dict[str, Any]:
     conn = get_db()
     try:
         settle = results.settled_after_hours(conn)
+        # How much of its final figures a post of this creator's has by each
+        # age, measured from their own readings. The studio holds 362,996 of
+        # them and nothing read them: two modules assumed "mostly arrived by
+        # a week" instead. settled_after_hours has already measured the curve
+        # by the line above, and it is cached per database, so carrying it
+        # here costs the screen nothing.
+        curve = results.settle_curve(conn)
         read = results.figures(conn)
         posts = [dict(r) for r in conn.execute(
             "SELECT activity_urn, text, published_at FROM own_posts WHERE text IS NOT NULL")]
@@ -511,6 +518,13 @@ def patterns_overview() -> Dict[str, Any]:
         "not_enough_posts": too_few,
         "min_per_side": results.MIN_PER_SIDE,
         "settled_after": settle,
+        # Each point is the share of its own highest reading a post had
+        # reached by that age, averaged over the posts read near it, with how
+        # many posts that was. A bucket resting on fewer than
+        # results.MIN_POSTS_PER_BUCKET posts is noise, and the screen says so
+        # rather than drawing it as a measurement.
+        "settle_curve": {**curve, "min_posts_per_bucket": results.MIN_POSTS_PER_BUCKET,
+                         "settled_share": results.SETTLED_SHARE},
         # Nothing here is a finding unless its own verdict says so.
         "no_difference": results.NO_DIFFERENCE,
     }

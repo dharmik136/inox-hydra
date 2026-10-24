@@ -2386,6 +2386,20 @@ export interface SettledAfter {
   posts: number;
 }
 
+/**
+ * How much of its final figures a post of this creator's has reached by each
+ * age, measured from their own readings (results.settle_curve). A point
+ * resting on fewer than min_posts_per_bucket posts is noise, and the screen
+ * says so rather than drawing it as a measurement.
+ */
+export interface SettleCurve {
+  points: { age_hours: number; posts: number; reactions_share: number; impressions_share: number }[];
+  measured_hours: number | null;
+  posts: number;
+  min_posts_per_bucket: number;
+  settled_share: number;
+}
+
 export interface PatternsInsights {
   posts_compared: number;
   metric: string;
@@ -2393,6 +2407,7 @@ export interface PatternsInsights {
   not_enough_posts: PatternFinding[];
   min_per_side: number;
   settled_after?: SettledAfter;
+  settle_curve?: SettleCurve;
 }
 
 export async function fetchPatternsInsights(): Promise<PatternsInsights> {
