@@ -7,12 +7,16 @@ import {
   fetchCadenceHealth,
   fetchCadenceInsights,
   fetchDuePosts,
+  fetchNextSlot,
+  fetchRecentDrafts,
   fetchSmartSlots,
   publishNow,
   returnToDrafts,
+  schedulePost,
   toggleQueuePause,
   type CadenceHealth,
   type CadenceInsights,
+  type DraftSummary,
   type QueueSlot,
   type ScheduledPost,
   type TodayDuePost,
@@ -23,33 +27,46 @@ import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+/**
+ * How many of the waiting drafts the Queue lists.
+ *
+ * Enough that a creator can see what is there and put one in a slot, few
+ * enough that this stays the Queue rather than a second drafts screen: an
+ * install with 150 drafts should not render 150 rows here.
+ */
+const DRAFTS_SHOWN = 8;
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-/** Monday of the week the given day falls in, at midnight local time. */
-function startOfWeek(now: Date): Date {
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  // getDay is 0 for Sunday; the week here starts on Monday, as the slots do.
-  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
-  return monday;
+/** Today at midnight local time, which is where the next seven days start. */
+function startOfToday(now: Date): Date {
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
 }
 
 /**
- * Which day of the displayed week a stored time falls on, or null for
- * another week.
+ * Which of the next seven days a stored time falls on, or null for a time
+ * outside them.
+ *
+ * The grid used to draw the calendar Monday to Sunday week containing today,
+ * which meant that on any day but Monday some of its cells were already
+ * past, and a post queued for next Tuesday landed in no cell at all while
+ * the cell headed TUE read EMPTY above the list naming that post's Tuesday.
+ * Seven days from today is the window the question is actually about: when
+ * does the next post go out.
  *
  * Parsed the way lib/time.ts parses it, so a post sits on the day the rest
  * of the screen prints beside it. Reading the stored string as UTC instead
  * put a Saturday 10:57 PM post in the Sunday cell on a clock five and a half
  * hours ahead, while the row below it said Saturday.
  */
-function dayInWeek(iso: string | null, weekStart: Date): number | null {
+function dayInWindow(iso: string | null, windowStart: Date): number | null {
   if (!iso) return null;
   const when = new Date(iso);
   if (Number.isNaN(when.getTime())) return null;
   // Midnight to midnight, rounded, so the hour a clock change adds or takes
   // from a day does not move a post into the day beside it.
   const day = new Date(when.getFullYear(), when.getMonth(), when.getDate());
-  const days = Math.round((day.getTime() - weekStart.getTime()) / 86_400_000);
+  const days = Math.round((day.getTime() - windowStart.getTime()) / 86_400_000);
   return days >= 0 && days < 7 ? days : null;
 }
 
@@ -78,21 +95,29 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
   const [dueNote, setDueNote] = useState<string | null>(null);
   const [health, setHealth] = useState<CadenceHealth | null>(null);
   const [rhythm, setRhythm] = useState<CadenceInsights | null>(null);
+  const [drafts, setDrafts] = useState<DraftSummary[]>([]);
+  const [draftNote, setDraftNote] = useState<string | null>(null);
+  const [queueing, setQueueing] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [dispatchNote, setDispatchNote] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [queue, cadence, duePosts] = await Promise.all([
+      const [queue, cadence, duePosts, waiting] = await Promise.all([
         fetchSmartSlots(),
         fetchCadenceHealth(),
         fetchDuePosts(),
+        // The drafts that could go in a slot. Bounded, because every draft
+        // is 259 KB on a three year install and this is a list of the few
+        // waiting, not the drafts screen.
+        fetchRecentDrafts(DRAFTS_SHOWN).catch(() => [] as DraftSummary[]),
       ]);
       setSlots(queue.slots);
       setScheduled(queue.scheduled);
       setDue(duePosts);
       setHealth(cadence);
+      setDrafts(waiting);
       setFailed(false);
     } catch {
       setFailed(true);
@@ -175,6 +200,35 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
       setDueNote(error instanceof Error ? error.message : "The studio refused to move it.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  /**
+   * Puts a waiting draft in the next slot the scheduler offers, from the
+   * screen that shows the slots.
+   *
+   * The same two routes the Publish dialog uses, in the same order, so the
+   * 12 hour rule and the collision check are the server's as they always
+   * were; whatever it says about the time it chose is repeated here.
+   */
+  async function onQueueDraft(draft: DraftSummary) {
+    setQueueing(draft.id);
+    setDraftNote(null);
+    try {
+      const slot = await fetchNextSlot();
+      if (!slot) {
+        setDraftNote("There is no slot to put it in. Add one under Weekly slots, and it can be queued.");
+        return;
+      }
+      await schedulePost(draft.id, slot.slot_datetime);
+      await load();
+      setDraftNote(
+        `Queued for ${formatLocal(slot.slot_datetime)}${slot.cooldown_satisfied ? "" : ", which is inside your 12 hour cooldown"}.`,
+      );
+    } catch (error) {
+      setDraftNote(error instanceof Error ? error.message : "The studio refused to queue it.");
+    } finally {
+      setQueueing(null);
     }
   }
 
@@ -349,7 +403,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
           </p>
           {scheduled.length === 0 ? (
             <p className="text-[13px] leading-relaxed text-ink-muted">
-              Nothing is queued. Queue a draft from the Composer and it takes the next open slot.
+              Nothing is queued yet. The drafts waiting below can go into the next open slot.
             </p>
           ) : (
             <ul className="flex flex-col divide-y divide-edge border-y border-edge">
@@ -370,6 +424,61 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
                       Edit text
                     </button>
                   )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* What could go in a slot. The screen used to send a creator to the
+            Composer to queue something while holding 150 drafts of their
+            own and leaving half of itself blank. */}
+        <section aria-labelledby="queue-drafts" className="mt-5">
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <p id="queue-drafts" className="studio-label">
+              Drafts waiting
+            </p>
+            {drafts.length > 0 && (
+              <span className="studio-meta shrink-0 text-[10px] text-ink-muted">
+                {drafts.length >= DRAFTS_SHOWN ? `NEWEST ${DRAFTS_SHOWN}` : `${drafts.length}`}
+              </span>
+            )}
+          </div>
+          {draftNote && (
+            <p role="status" className="mb-2 text-[12px] text-ink-secondary">
+              {draftNote}
+            </p>
+          )}
+          {drafts.length === 0 ? (
+            <p className="text-[13px] leading-relaxed text-ink-muted">
+              No drafts are waiting. What you write in the Composer appears here, ready for a slot.
+            </p>
+          ) : (
+            <ul className="flex flex-col divide-y divide-edge border-y border-edge">
+              {drafts.map((draft) => (
+                <li key={draft.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink-primary">
+                    {draft.content.split("\n")[0] || "Untitled draft"}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    {onEditText && (
+                      <button
+                        type="button"
+                        onClick={() => onEditText(draft.id)}
+                        className="rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+                      >
+                        Edit text
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={queueing !== null}
+                      onClick={() => void onQueueDraft(draft)}
+                      className="rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                    >
+                      Queue it
+                    </button>
+                  </span>
                 </li>
               ))}
             </ul>
@@ -411,37 +520,45 @@ function ThisWeek({
   scheduled: ScheduledPost[];
   due: TodayDuePost[];
 }) {
-  const weekStart = startOfWeek(new Date());
-  const today = Math.floor((new Date().getTime() - weekStart.getTime()) / 86_400_000);
+  const windowStart = startOfToday(new Date());
   const active = slots.filter((slot) => slot.is_active);
+  // The next seven days, today first, each with the real date it is, so the
+  // Monday in the grid cannot be mistaken for the Monday a post is queued
+  // for. getDay is 0 for Sunday; DAYS starts on Monday, as the slots do.
+  const days = Array.from({ length: 7 }, (_, offset) => {
+    const date = new Date(windowStart.getFullYear(), windowStart.getMonth(), windowStart.getDate() + offset);
+    return { offset, date, slotDay: (date.getDay() + 6) % 7 };
+  });
 
   return (
     <section aria-labelledby="queue-week-at-a-glance" className="mt-4">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <p id="queue-week-at-a-glance" className="studio-label">
-          This week
+          Next seven days
         </p>
         <span className="studio-meta text-[10px] text-ink-muted">
           {`${active.length} ${active.length === 1 ? "SLOT" : "SLOTS"} A WEEK · TIMES ARE THIS COMPUTER'S LOCAL TIME`}
         </span>
       </div>
       <ul className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-        {DAYS.map((day, index) => {
-          const daySlots = active.filter((slot) => slot.day_of_week === index);
-          const dayQueued = scheduled.filter((post) => dayInWeek(post.scheduled_for, weekStart) === index);
-          const dayDue = due.filter((post) => dayInWeek(post.scheduled_for, weekStart) === index);
+        {days.map(({ offset, date, slotDay }) => {
+          const daySlots = active.filter((slot) => slot.day_of_week === slotDay);
+          const dayQueued = scheduled.filter((post) => dayInWindow(post.scheduled_for, windowStart) === offset);
+          const dayDue = due.filter((post) => dayInWindow(post.scheduled_for, windowStart) === offset);
           const anyMissed = dayDue.some((post) => post.missed);
           return (
             <li
-              key={day}
+              key={date.toISOString()}
               className={cn(
                 "rounded-md border p-2",
-                anyMissed ? "border-signal-orange" : index === today ? "border-edge-strong bg-soft" : "border-edge",
+                anyMissed ? "border-signal-orange" : offset === 0 ? "border-edge-strong bg-soft" : "border-edge",
               )}
             >
               <div className="flex items-baseline justify-between gap-2">
-                <p className="studio-meta text-[10px] text-ink-muted">{day.toUpperCase()}</p>
-                {index === today && <span className="studio-meta text-[9px] text-ink-secondary">TODAY</span>}
+                <p className="studio-meta text-[10px] text-ink-muted">
+                  {DAYS[slotDay].toUpperCase()} {date.getDate()}
+                </p>
+                {offset === 0 && <span className="studio-meta text-[9px] text-ink-secondary">TODAY</span>}
               </div>
               {daySlots.length === 0 ? (
                 <p className="mt-1 text-[11px] text-ink-muted">No slot</p>

@@ -3087,3 +3087,17 @@ export interface WaitingCaptures {
 export async function fetchWaitingCaptures(): Promise<WaitingCaptures> {
   return call<WaitingCaptures>("/api/v1/extension/captures/waiting");
 }
+
+/**
+ * The newest few drafts, newest first.
+ *
+ * fetchDrafts answers with every draft, which the drafts panel wants and its
+ * search needs; a screen that shows the few waiting to be queued does not,
+ * and on a three year install every draft is 259 KB.
+ */
+export async function fetchRecentDrafts(limit: number): Promise<DraftSummary[]> {
+  const data = await call<{ posts?: PostRow[] }>(`/api/posts?status=draft&limit=${limit}`);
+  return (data.posts ?? [])
+    .map((row) => ({ id: row.id, content: row.content ?? "", created_at: row.created_at ?? null }))
+    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+}
