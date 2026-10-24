@@ -256,6 +256,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
       <ThisWeek slots={slots} scheduled={scheduled} due={due} />
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <div className="min-w-0">
         <section aria-labelledby="queue-due">
           <div className="mb-2 flex items-baseline justify-between gap-3">
             <p id="queue-due" className="studio-label">
@@ -337,7 +338,15 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
             </ul>
           )}
 
-          <p className="studio-label mt-5 mb-2">Queued posts</p>
+        </section>
+
+        {/* Its own region: what is due and what is merely queued are two
+            different questions, and a due post is the one with a decision
+            waiting on it. */}
+        <section aria-labelledby="queue-scheduled" className="mt-5">
+          <p id="queue-scheduled" className="studio-label mb-2">
+            Queued posts
+          </p>
           {scheduled.length === 0 ? (
             <p className="text-[13px] leading-relaxed text-ink-muted">
               Nothing is queued. Queue a draft from the Composer and it takes the next open slot.
@@ -366,6 +375,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
             </ul>
           )}
         </section>
+        </div>
 
         <div className="flex flex-col gap-4">
           <Cadence health={health} rhythm={rhythm} slots={slots} />
