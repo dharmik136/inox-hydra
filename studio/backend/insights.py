@@ -383,6 +383,10 @@ def outbound_overview() -> Dict[str, Any]:
                      if a["total"] >= 3 and not a["engaged_back"] and a["named_people"] <= 1][:12]
                     if judged else []),
         "reciprocal": [a["name"] for a in ranked if a["engaged_back"]][:12],
+        # Every account that has engaged back, not only those on the first
+        # page of the table: the figure above the lists counted the rows it
+        # could see and read "3 of 40" over a list of twelve names.
+        "reciprocal_count": sum(1 for a in ranked if a["engaged_back"]),
         # Names more than one captured person answers to, which is why their
         # row carries no reciprocity number.
         "shared_names": sum(1 for a in authors.values() if a["named_people"] > 1),

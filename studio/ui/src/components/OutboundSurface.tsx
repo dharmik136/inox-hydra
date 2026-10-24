@@ -93,7 +93,7 @@ export function OutboundSurface({
         <Figure label="People and pages" value={totals.authors.toLocaleString()} />
         <Figure
           label="Engaged back"
-          value={`${data.authors.filter((author) => author.engaged_back).length.toLocaleString()} of ${data.authors.length.toLocaleString()} ranked`}
+          value={`${data.reciprocal_count.toLocaleString()} of ${totals.authors.toLocaleString()}`}
         />
       </dl>
 
