@@ -184,16 +184,24 @@ def list_posts(status: Optional[str] = None, limit: Optional[int] = None):
         cursor = conn.cursor()
         capped = max(1, int(limit)) if limit is not None else None
         if status:
+            # The id breaks a tie on the date, in both directions, so that the
+            # last row of the whole list and the first row taken newest first
+            # are the same post. Without it, 150 drafts migrated in one go
+            # share a created_at, SQLite is free to order them as it likes,
+            # and asking for "the newest draft" with a limit reopened a
+            # different post in the editor than asking for all of them did.
             if capped is None:
                 cursor.execute(
-                    "SELECT * FROM posts WHERE status = ? ORDER BY COALESCE(scheduled_for, created_at) ASC",
+                    "SELECT * FROM posts WHERE status = ? "
+                    "ORDER BY COALESCE(scheduled_for, created_at) ASC, id ASC",
                     (status,))
             else:
                 # Taken newest first so the limit keeps the newest rows, then
                 # put back into ascending order below, which is the order
                 # every existing caller reads.
                 cursor.execute(
-                    "SELECT * FROM posts WHERE status = ? ORDER BY COALESCE(scheduled_for, created_at) DESC LIMIT ?",
+                    "SELECT * FROM posts WHERE status = ? "
+                    "ORDER BY COALESCE(scheduled_for, created_at) DESC, id DESC LIMIT ?",
                     (status, capped))
         elif capped is None:
             cursor.execute("SELECT * FROM posts ORDER BY created_at DESC")
