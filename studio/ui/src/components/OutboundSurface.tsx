@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { fetchOutboundInsights, type OutboundInsights } from "@/lib/api";
+import { fetchOutboundInsights, type GoneQuietAuthor, type OutboundInsights } from "@/lib/api";
 import { useStudioBack } from "@/lib/refresh";
+import { formatLocalDay } from "@/lib/time";
 import { EmptySurface } from "./EmptySurface";
 
 /**
@@ -9,12 +10,25 @@ import { EmptySurface } from "./EmptySurface";
  *
  * Built from your own reactions and comments on other people's posts. Who
  * "engaged back" is matched by display name, because a reaction records the
- * author's name and not their profile, and the screen says so. "One-way" is
- * shown only once the studio has read who engaged with at least half your
- * posts; before that it would list everyone, on the strength of the studio
- * not having looked.
+ * author's name and not their profile, and the screen says so. "One-way" and
+ * "gone quiet" are shown only once the studio has read who engaged with at
+ * least half your posts; before that both would list everyone, on the
+ * strength of the studio not having looked.
+ *
+ * Every author here came from one capture path: own_pages.js reading your own
+ * Activity page while it is open. LinkedIn's own export, which Setup's
+ * archive import reads, does not name the author of a post you reacted to, so
+ * an author only ever arrives the first way, one visit at a time. The rows an
+ * archive import left without one are counted in the opening line and never
+ * guessed into a name.
+ *
+ * Laid out across the window rather than down a reading column: this screen is
+ * rows of names and counts, and it used 34% of the width it was given.
  */
-export function OutboundSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}) {
+export function OutboundSurface({
+  onOpenSetup,
+  onOpenLead,
+}: { onOpenSetup?: () => void; onOpenLead?: (leadId: string) => void } = {}) {
   const [data, setData] = useState<OutboundInsights | null>(null);
   const [failed, setFailed] = useState(false);
   // Read again when the studio answers after an outage, so a screen that
@@ -43,7 +57,7 @@ export function OutboundSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
           {totals.reactions.toLocaleString()} reactions and {totals.comments.toLocaleString()} comments are imported,
           but LinkedIn&rsquo;s archive does not name the author of the posts they were on, so they cannot be ranked by
           person yet. In Setup, run &ldquo;Posts you reacted to&rdquo; and &ldquo;Comments you left&rdquo;: the bridge
-          reads the authors and adds them to these.
+          reads each card&rsquo;s author as it goes and adds them to these.
         </EmptySurface>
       );
     }
@@ -55,83 +69,208 @@ export function OutboundSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
     );
   }
 
+  const judged = coverage.one_way_judged;
+
   return (
-    <article className="mx-auto max-w-[80ch] px-8 py-8">
-      <p className="studio-label">Outbound</p>
-      <h1 className="studio-title mt-2">Where your attention goes</h1>
-      <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
-        {totals.reactions.toLocaleString()} reactions and {totals.comments.toLocaleString()} comments on posts by{" "}
-        {totals.authors.toLocaleString()} people and pages.
-        {totals.without_author > 0 &&
-          ` ${totals.without_author.toLocaleString()} more, from LinkedIn\u2019s archive or without an author recorded, ` +
-            "are not ranked: run \u201cPosts you reacted to\u201d and \u201cComments you left\u201d in Setup to add their authors."}
-      </p>
-
-      <section className="mt-6 grid gap-6 sm:grid-cols-2">
+    <div className="px-6 py-6 lg:px-8">
+      <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
         <div>
-          <p className="studio-label mb-2">Engaged back</p>
-          {data.reciprocal.length ? (
-            <ul className="flex flex-col gap-1 text-[13px] text-ink-secondary">
-              {data.reciprocal.map((name) => (
-                <li key={name}>{name}</li>
-              ))}
-            </ul>
-          ) : (
-            <Note>NOBODY YOU ENGAGE WITH HAS BEEN SEEN ON YOUR POSTS YET.</Note>
-          )}
+          <p className="studio-label">Outbound</p>
+          <h1 className="studio-title mt-1">Where your attention goes</h1>
         </div>
-        <div>
-          <p className="studio-label mb-2">One-way</p>
-          {coverage.one_way_judged ? (
-            data.one_way.length ? (
-              <ul className="flex flex-col gap-1 text-[13px] text-ink-secondary">
-                {data.one_way.map((name) => (
-                  <li key={name}>{name}</li>
-                ))}
-              </ul>
-            ) : (
-              <Note>EVERYONE YOU ENGAGE WITH OFTEN HAS ENGAGED BACK.</Note>
-            )
-          ) : (
-            <Note>
-              NOT JUDGED YET. THE STUDIO HAS READ WHO ENGAGED WITH {coverage.posts_read} OF YOUR{" "}
-              {coverage.posts_with_engagement} POSTS, AND NEEDS AT LEAST HALF. OPEN YOUR POSTS IN THE BRIDGE BROWSER,
-              OR USE POSTS TO OPEN THEM ONE BY ONE.
-            </Note>
-          )}
-        </div>
-      </section>
-
-      <section className="mt-8">
-        <p className="studio-label mb-2">Most engaged with</p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-[12px]">
-            <thead>
-              <tr className="studio-meta text-[10px] text-ink-muted">
-                <th className="py-1.5 font-normal">NAME</th>
-                <th className="py-1.5 text-right font-normal">REACTIONS</th>
-                <th className="py-1.5 text-right font-normal">COMMENTS</th>
-                <th className="py-1.5 text-right font-normal">ON YOUR POSTS</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-edge border-y border-edge">
-              {data.authors.map((author) => (
-                <tr key={author.name}>
-                  <td className="py-1.5 text-ink-primary">{author.name}</td>
-                  <td className="py-1.5 text-right tabular-nums text-ink-secondary">{author.reactions}</td>
-                  <td className="py-1.5 text-right tabular-nums text-ink-secondary">{author.comments}</td>
-                  <td className="py-1.5 text-right tabular-nums text-ink-secondary">{author.engaged_back || "–"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
-          &ldquo;ON YOUR POSTS&rdquo; IS MATCHED BY {data.matched_by.toUpperCase()}: A REACTION RECORDS THE AUTHOR&rsquo;S
-          NAME, NOT THEIR PROFILE.
+        <p className="max-w-[62ch] text-[12px] leading-snug text-ink-secondary">
+          {totals.reactions.toLocaleString()} reactions and {totals.comments.toLocaleString()} comments of yours, on
+          posts by {totals.authors.toLocaleString()} people and pages.
+          {totals.without_author > 0 &&
+            ` ${totals.without_author.toLocaleString()} more are not ranked: LinkedIn’s archive does not name the author of a post you reacted to, so the bridge reads it from the card instead. Run “Posts you reacted to” and “Comments you left” in Setup.`}
         </p>
-      </section>
-    </article>
+      </header>
+
+      {/* Four figures, each one counted rather than derived from a sample. */}
+      <dl className="mt-4 grid grid-cols-2 gap-px border border-edge bg-edge sm:grid-cols-4">
+        <Figure label="Reactions you gave" value={totals.reactions.toLocaleString()} />
+        <Figure label="Comments you left" value={totals.comments.toLocaleString()} />
+        <Figure label="People and pages" value={totals.authors.toLocaleString()} />
+        <Figure
+          label="Engaged back"
+          value={`${data.authors.filter((author) => author.engaged_back).length.toLocaleString()} of ${data.authors.length.toLocaleString()} ranked`}
+        />
+      </dl>
+
+      <div className="mt-4 grid gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <section>
+          <p className="studio-label mb-2">Most engaged with</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[12px]">
+              <thead>
+                <tr className="studio-meta text-[10px] text-ink-muted">
+                  <th className="py-1 font-normal">NAME</th>
+                  <th className="py-1 font-normal">WHAT YOU LAST SAID TO THEM</th>
+                  <th className="py-1 text-right font-normal">REACTIONS</th>
+                  <th className="py-1 text-right font-normal">COMMENTS</th>
+                  <th className="py-1 text-right font-normal">ON YOUR POSTS</th>
+                  <th className="py-1 text-right font-normal">LAST FROM THEM</th>
+                  <th className="py-1 text-right font-normal">LAST FROM YOU</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-edge border-y border-edge">
+                {data.authors.map((author) => (
+                  <tr key={author.name}>
+                    <td className="py-1 text-ink-primary">
+                      {/* Opens the person, so "they engaged back" can become a
+                          reply. Plain text when the name is not one lead's
+                          alone, because the match is by display name and a
+                          wrong dossier is worse than none. */}
+                      {author.lead_id && onOpenLead ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenLead(author.lead_id as string)}
+                          className="text-left text-ink-primary underline decoration-edge-strong underline-offset-2 transition-colors hover:text-signal-orange-text"
+                        >
+                          {author.name}
+                        </button>
+                      ) : (
+                        author.name
+                      )}
+                      {author.gone_quiet && judged && (
+                        <span className="studio-meta ml-2 text-[10px] text-signal-orange-text">QUIET</span>
+                      )}
+                    </td>
+                    {/* Your own words, which is the half of "where your
+                        attention goes" that a count cannot show. Reacting
+                        without commenting leaves nothing to show, and that
+                        reads as what it is rather than as a gap. */}
+                    <td className="max-w-[46ch] truncate py-1 text-ink-secondary">
+                      {author.last_comment ?? <span className="text-ink-muted">Only reactions</span>}
+                    </td>
+                    <td className="py-1 text-right tabular-nums text-ink-secondary">{author.reactions}</td>
+                    <td className="py-1 text-right tabular-nums text-ink-secondary">{author.comments}</td>
+                    {/* A name more than one captured person answers to is
+                        not a match: the studio cannot tell which of them
+                        engaged, so the row says that rather than adding them
+                        together. */}
+                    {author.named_people > 1 ? (
+                      <td colSpan={2} className="py-1 text-right text-ink-muted">
+                        {author.named_people} people of this name
+                      </td>
+                    ) : (
+                      <>
+                        <td className="py-1 text-right tabular-nums text-ink-secondary">{author.engaged_back || "0"}</td>
+                        <td className="py-1 text-right text-ink-secondary">
+                          {author.last_inbound_at
+                            ? formatLocalDay(author.last_inbound_at)
+                            : judged
+                              ? "None"
+                              : "Not read"}
+                        </td>
+                      </>
+                    )}
+                    <td className="py-1 text-right text-ink-secondary">
+                      {formatLocalDay(author.last_outbound_at, "Not measured")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
+            &ldquo;ON YOUR POSTS&rdquo; AND &ldquo;LAST FROM THEM&rdquo; ARE MATCHED BY {data.matched_by.toUpperCase()}:
+            A REACTION RECORDS THE AUTHOR&rsquo;S NAME, NOT THEIR PROFILE.{" "}
+            {data.shared_names > 0 &&
+              `${data.shared_names} OF THESE NAMES BELONG TO MORE THAN ONE PERSON YOU HAVE CAPTURED, SO THEY ARE NOT MATCHED. `}
+            {judged
+              ? "“NONE” MEANS THE STUDIO READ YOUR POSTS’ ENGAGERS AND THIS ACCOUNT WAS NOT AMONG THEM."
+              : "“NOT READ” MEANS THE STUDIO HAS NOT READ ENOUGH OF YOUR POSTS’ ENGAGERS TO SAY."}
+          </p>
+        </section>
+
+        <div className="flex flex-col gap-5">
+          <People label="Engaged back" names={data.reciprocal}>
+            NOBODY YOU ENGAGE WITH HAS BEEN SEEN ON YOUR POSTS YET.
+          </People>
+
+          {/* Separate from one-way on purpose: this is attention that used to
+              come back and has stopped, which is a different thing from
+              attention that never came back, and reads as a different thing. */}
+          <section>
+            <p className="studio-label mb-2">Gone quiet</p>
+            {judged ? (
+              data.gone_quiet.length ? (
+                <ul className="flex flex-col gap-1 text-[13px] text-ink-secondary">
+                  {data.gone_quiet.map((author: GoneQuietAuthor) => (
+                    <li key={author.name} className="flex items-baseline justify-between gap-3">
+                      <span>{author.name}</span>
+                      <span className="studio-meta shrink-0 text-[10px] text-ink-muted">
+                        {author.days_since.toLocaleString()} DAYS
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <Note>
+                  EVERYONE WHO HAS ENGAGED BACK HAS DONE SO WITHIN {data.gone_quiet_days} DAYS.
+                </Note>
+              )
+            ) : (
+              <Note>NOT JUDGED YET, FOR THE SAME REASON AS ONE-WAY.</Note>
+            )}
+            <p className="studio-meta mt-1 text-[10px] leading-snug text-ink-muted">
+              ENGAGED BACK BEFORE, BUT NOT ON ANY POST OF YOURS IN {data.gone_quiet_days} DAYS.
+            </p>
+          </section>
+
+          <section>
+            <p className="studio-label mb-2">One-way</p>
+            {judged ? (
+              data.one_way.length ? (
+                <ul className="flex flex-col gap-1 text-[13px] text-ink-secondary">
+                  {data.one_way.map((name) => (
+                    <li key={name}>{name}</li>
+                  ))}
+                </ul>
+              ) : (
+                <Note>EVERYONE YOU ENGAGE WITH OFTEN HAS ENGAGED BACK.</Note>
+              )
+            ) : (
+              <Note>
+                NOT JUDGED YET. THE STUDIO HAS READ WHO ENGAGED WITH {coverage.posts_read} OF YOUR{" "}
+                {coverage.posts_with_engagement} POSTS, AND NEEDS AT LEAST HALF. OPEN YOUR POSTS IN THE BRIDGE BROWSER,
+                OR USE POSTS TO OPEN THEM ONE BY ONE.
+              </Note>
+            )}
+            <p className="studio-meta mt-1 text-[10px] leading-snug text-ink-muted">
+              ENGAGED WITH THREE TIMES OR MORE, AND NEVER ONCE ON A POST OF YOURS.
+            </p>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Figure({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-ink px-3 py-1.5">
+      <dt className="studio-meta text-[10px] text-ink-muted">{label.toUpperCase()}</dt>
+      <dd className="text-[14px] tabular-nums text-ink-primary">{value}</dd>
+    </div>
+  );
+}
+
+function People({ label, names, children }: { label: string; names: string[]; children: React.ReactNode }) {
+  return (
+    <section>
+      <p className="studio-label mb-2">{label}</p>
+      {names.length ? (
+        <ul className="flex flex-col gap-1 text-[13px] text-ink-secondary">
+          {names.map((name) => (
+            <li key={name}>{name}</li>
+          ))}
+        </ul>
+      ) : (
+        <Note>{children}</Note>
+      )}
+    </section>
   );
 }
 

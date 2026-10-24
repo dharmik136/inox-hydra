@@ -383,7 +383,11 @@ def test_outbound_counts_the_rows_it_cannot_rank_yet(studio):
     _archive_outbound(25, 15, authored=3)
     page = _open(studio, "Outbound")
     page.wait_for_selector("text=Most engaged with")
-    assert "40 more, from LinkedIn’s archive or without an author recorded, are not ranked" in page.inner_text("body")
+    # The count of rows that cannot be ranked, and why. Reworded in cycle 3
+    # batch T7 to name the one capture path that can fill the author in.
+    body = page.inner_text("body")
+    assert "40 more are not ranked" in body, body[:400]
+    assert "does not name the author" in body, body[:400]
     assert not studio["errors"], studio["errors"]
 
 

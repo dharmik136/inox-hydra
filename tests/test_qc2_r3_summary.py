@@ -375,25 +375,67 @@ def test_evidence_exemplars_are_the_same(home):
 
 
 def test_outbound_reciprocity_is_the_same(home):
+    """
+    The screen's reciprocity number is the one the interactions say, for the
+    person the name resolves to.
+
+    Cycle 3 batch T7 sharpened what the name means. This used to add together
+    every captured person who answered to the author's display name, which on
+    this three year history merged dozens of strangers into one row (one read
+    533 of the creator's posts) and cost 51 seconds to compute. A name that
+    belongs to exactly one captured person is that person's; a name that
+    belongs to several is reported as several rather than as a number, and
+    `named_people` is how the screen knows which it has.
+    """
     import insights
     import onboarding
+    # Every generated name in this history belongs to several captured people,
+    # so one person of their own name is added: without them the matched path
+    # has nothing to check.
+    conn = _db()
+    try:
+        urn = conn.execute("SELECT activity_urn FROM own_posts LIMIT 1").fetchone()[0]
+        with conn:
+            conn.execute("INSERT INTO leads (id, name, headline, status) "
+                         "VALUES ('lead-only-one-of-these', 'Solveig Ravnsborg', 'Founder', 'New Lead')")
+            conn.execute("INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, interacted_at) "
+                         "VALUES ('lead-only-one-of-these', ?, 'COMMENT', '2026-10-01T00:00:00')", (urn,))
+            conn.execute("INSERT INTO outbound_engagements (target_activity_urn, target_author, kind, "
+                         "my_text_key, first_seen_at, last_seen_at) "
+                         "VALUES ('urn:li:activity:7399999999999999999', 'Solveig Ravnsborg', 'reaction', "
+                         "'', '2026-10-02T00:00:00', '2026-10-02T00:00:00')")
+    finally:
+        conn.close()
+
     conn = _db()
     try:
         own_ids = onboarding._own_activity_ids(conn)
-        engaged_back = {}
-        for row in conn.execute("SELECT COALESCE(l.full_name, l.name) AS name, i.post_urn FROM lead_interactions i "
-                                "JOIN leads l ON l.id = i.lead_id WHERE i.post_urn IS NOT NULL"):
+        people = {}
+        for row in conn.execute("SELECT l.id AS lead_id, COALESCE(l.full_name, l.name) AS name, i.post_urn "
+                                "FROM lead_interactions i JOIN leads l ON l.id = i.lead_id "
+                                "WHERE i.post_urn IS NOT NULL"):
             post = onboarding._activity_id(row["post_urn"])
             if post in own_ids:
-                engaged_back.setdefault(insights._name_key(row["name"]), set()).add(post)
+                people.setdefault(row["lead_id"], set()).add(post)
+        by_name = {}
+        for row in conn.execute("SELECT id, COALESCE(full_name, name) AS name FROM leads"):
+            by_name.setdefault(insights._name_key(row["name"]), []).append(row["id"])
         read_posts = {onboarding._activity_id(r[0]) for r in conn.execute(
             "SELECT DISTINCT post_urn FROM lead_interactions WHERE post_urn IS NOT NULL")}
     finally:
         conn.close()
     result = insights.outbound_overview()
     assert result["authors"], "the history has outbound authors"
+    matched = 0
     for author in result["authors"]:
-        assert author["engaged_back"] == len(engaged_back.get(insights._name_key(author["name"]), ())), author
+        ids = by_name.get(insights._name_key(author["name"]), [])
+        assert author["named_people"] == len(ids), author
+        if len(ids) == 1:
+            matched += 1
+            assert author["engaged_back"] == len(people.get(ids[0], ())), author
+        else:
+            assert author["engaged_back"] == 0, author
+    assert matched, "no author name resolved to one person, so nothing was checked"
     assert any(a["engaged_back"] for a in result["authors"])
     conn = _db()
     try:
