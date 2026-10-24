@@ -73,11 +73,15 @@ export function OutboundSurface({
   const judged = coverage.one_way_judged;
 
   return (
-    <div className="px-6 py-6 lg:px-8">
+    // tabIndex, because at phone width this screen is taller than the window
+    // and the region that scrolls holds nothing focusable, so a keyboard could
+    // not scroll it at all (axe: scrollable-region-focusable). Patterns and
+    // Today solved the same thing the same way.
+    <div className="px-6 py-6 lg:px-8" tabIndex={0} aria-labelledby="outbound-title">
       <header className="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
         <div>
           <p className="studio-label">Outbound</p>
-          <h1 className="studio-title mt-1">Where your attention goes</h1>
+          <h1 id="outbound-title" className="studio-title mt-1">Where your attention goes</h1>
         </div>
         <p className="max-w-[62ch] text-[12px] leading-snug text-ink-secondary">
           {totals.reactions.toLocaleString()} reactions and {totals.comments.toLocaleString()} comments of yours, on
