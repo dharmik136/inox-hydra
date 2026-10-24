@@ -412,6 +412,7 @@ function Dossier({
 
   const { lead, interactions } = data;
   const folded = data.folded_reactions ?? null;
+  const ownEngagements = ownPostEngagements(interactions);
   // A suggested reply is stored per interaction, so the most recent one that
   // carries a draft is the one worth offering.
   const suggested = interactions.find((entry) => entry.suggested_dm_reply)?.suggested_dm_reply ?? null;
@@ -439,7 +440,7 @@ function Dossier({
   // which on a wide window opens a gap between the two halves and makes the
   // split read as two unrelated panels.
   return (
-    <article className="max-w-[70ch] px-4 py-6 md:px-8 md:py-8">
+    <article className="max-w-[124ch] px-4 py-6 md:px-8 md:py-8">
       <p className="studio-label">{lead.status}</p>
       {/* A section of the Leads page, whose heading is the stream's label. */}
       <h2 className="studio-title mt-2">{lead.name}</h2>
@@ -459,7 +460,9 @@ function Dossier({
         </a>
       )}
 
-      <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-2 border-y border-edge py-4">
+      <div className="grid gap-x-10 xl:grid-cols-2">
+      <div>
+      <dl className="mt-6 grid grid-cols-1 gap-x-6 gap-y-2 border-y border-edge py-4 sm:grid-cols-2">
         <Field label="Company" value={lead.company} />
         <Field label="Seniority" value={lead.seniority_level} />
         {/* A captured lead is scored at capture, and a student's 0 is a low
@@ -476,6 +479,31 @@ function Dossier({
         />
         <Field label="First seen" value={lead.created_at ? localDate(lead.created_at) : null} />
       </dl>
+
+      {/* Where this person actually met the creator's writing, as opposed to
+          "Recent interactions" below, which is every interaction in order
+          regardless of whose post it was on. Omitted rather than shown empty
+          when nothing they did was on one of your posts: that is the ordinary
+          case for a lead captured from someone else's comment section. */}
+      {ownEngagements.length > 0 && (
+        <section className="mt-6">
+          <p className="studio-label mb-2">Engagement with your posts</p>
+          <ul className="flex flex-col gap-2">
+            {ownEngagements.map((row) => (
+              <li key={row.key} className="border-l border-edge pl-3">
+                <p className="text-[13px] leading-snug text-ink-secondary">{postNamed(row.excerpt) ?? "A post the studio does not hold the text of"}</p>
+                <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
+                  {row.commented > 0 && `${row.commented} comment${row.commented === 1 ? "" : "s"}`}
+                  {row.commented > 0 && row.other > 0 && ", "}
+                  {row.other > 0 && `${row.other} reaction${row.other === 1 ? "" : "s"}`}
+                  <span className="mx-1.5">·</span>
+                  LAST {localDate(row.lastAt).toUpperCase()}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <section className="mt-6">
         <p className="studio-label mb-2">Recent interactions</p>
@@ -541,6 +569,9 @@ function Dossier({
         )}
       </section>
 
+      </div>
+
+      <div>
       <LeadNotes
         leadId={lead.id}
         notes={lead.notes}
@@ -769,6 +800,8 @@ function Dossier({
           </p>
         )}
       </section>
+      </div>
+      </div>
 
       <ForgetLead lead={lead} onForgotten={() => onForgotten(lead.name)} />
     </article>
@@ -798,6 +831,41 @@ function postNamed(excerpt: string | null | undefined): string | null {
   }
   named = named || sentence.slice(0, 80);
   return named ? `“${named}”` : null;
+}
+
+/** One of the creator's own posts this person actually engaged with. */
+interface OwnPostEngagement {
+  key: string;
+  excerpt: string | null;
+  commented: number;
+  other: number;
+  lastAt: string;
+}
+
+/**
+ * This person's engagement history on the creator's own posts, one row per
+ * post, newest first: how many times they commented, how many times they
+ * reacted, and when they last did either.
+ *
+ * Grouped from the full interaction list, not the handful shown as "Recent
+ * interactions": a person who reacted to the same post three years running
+ * is one row here and three there. post_origin is only ever "yours" once a
+ * post's own identity resolves to a row in own_posts, which a split post
+ * identity used to leave wrong for over a third of posts.
+ */
+function ownPostEngagements(interactions: LeadInteraction[]): OwnPostEngagement[] {
+  const byPost = new Map<string, OwnPostEngagement>();
+  for (const entry of interactions) {
+    if (entry.post_origin !== "yours") continue;
+    const key = entry.post_urn || entry.post_id || "unknown";
+    const row = byPost.get(key) ?? { key, excerpt: entry.post_excerpt ?? null, commented: 0, other: 0, lastAt: entry.interacted_at };
+    if ((entry.interaction_type ?? "").toUpperCase() === "COMMENT") row.commented += 1;
+    else row.other += 1;
+    if (!row.excerpt && entry.post_excerpt) row.excerpt = entry.post_excerpt;
+    if (entry.interacted_at > row.lastAt) row.lastAt = entry.interacted_at;
+    byPost.set(key, row);
+  }
+  return Array.from(byPost.values()).sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
 }
 
 /**
