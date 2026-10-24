@@ -8,12 +8,13 @@ import { EmptySurface } from "./EmptySurface";
  * Outbound: whose content you spend your attention on, and whether it comes
  * back.
  *
- * Built from your own reactions and comments on other people's posts. Who
- * "engaged back" is matched by display name, because a reaction records the
- * author's name and not their profile, and the screen says so. "One-way" and
- * "gone quiet" are shown only once the studio has read who engaged with at
- * least half your posts; before that both would list everyone, on the
- * strength of the studio not having looked.
+ * Built from your own reactions and comments on other people's posts. A
+ * reaction records the author's display name and not their profile, so who
+ * "engaged back" is found by name: a name exactly one captured person answers
+ * to is theirs, and a name several answer to says how many rather than adding
+ * their engagement together. "One-way" and "gone quiet" are shown only once
+ * the studio has read who engaged with at least half your posts; before that
+ * both would list everyone, on the strength of the studio not having looked.
  *
  * Every author here came from one capture path: own_pages.js reading your own
  * Activity page while it is open. LinkedIn's own export, which Setup's
