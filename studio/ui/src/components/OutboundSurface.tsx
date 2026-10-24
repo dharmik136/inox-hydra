@@ -92,9 +92,12 @@ export function OutboundSurface({
         <Figure label="Reactions you gave" value={totals.reactions.toLocaleString()} />
         <Figure label="Comments you left" value={totals.comments.toLocaleString()} />
         <Figure label="People and pages" value={totals.authors.toLocaleString()} />
+        {/* Of the names that are one person's, not of every name: on a
+            history where no name belongs to one captured person this read
+            "0 of 1,540" and the reason was a footnote under the table. */}
         <Figure
-          label="Engaged back"
-          value={`${data.reciprocal_count.toLocaleString()} of ${totals.authors.toLocaleString()}`}
+          label={`Engaged back, of ${data.matched_names.toLocaleString()} named people`}
+          value={`${data.reciprocal_count.toLocaleString()} of ${data.matched_names.toLocaleString()}`}
         />
       </dl>
 

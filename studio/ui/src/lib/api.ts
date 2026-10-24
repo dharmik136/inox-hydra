@@ -2207,6 +2207,8 @@ export interface OutboundInsights {
   reciprocal: string[];
   /** Every account that has engaged back, counted over all of them, not the page. */
   reciprocal_count: number;
+  /** The names that are one captured person's, which reciprocity can be read for. */
+  matched_names: number;
   gone_quiet: GoneQuietAuthor[];
   gone_quiet_days: number;
   /** Names that more than one captured person answers to, so cannot be matched. */
