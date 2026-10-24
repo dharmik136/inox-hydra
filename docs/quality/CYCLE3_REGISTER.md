@@ -70,3 +70,21 @@ took 1,095 ms; and a root cause that was never the cause.
 | T8 | T8-6 | fixed | sent back, fixed | Four additions, no restructuring: the import exception in the page-reading paragraph; the update row now says nothing in the interface turns it on and |
 | T8 | T8-7 | fixed | accept-with-note | Section 3 no longer states a table count and points at database.py and migrations.py as the source of truth, saying the list is deliberately partial.  |
 | T8 | T8-8 | fixed | accept-with-note | The publish article gains a The first send from this studio asks you once section, a renumbered step 4, a row in its three-choices table and a row in  |
+
+## Found after the tag: one escape
+
+The first v2.7.0 tag built and published nothing. Recorded here because the
+defect lived through the whole cycle's QA and the register would be dishonest
+without it.
+
+| Batch | Finding | State | Review | What it was |
+| --- | --- | --- | --- | --- |
+| T5 | REL-1 | fixed | found by the release | Five of this batch's browser tests imported Playwright at module level instead of behind pytest.importorskip. The quality workflow installs Playwright, so the full suite ran green there all cycle. The release workflow's portable Windows job installs no browser, so the five raised ModuleNotFoundError during collection, and a collection error is not a skip: it ended the run. Forty other modules skipped cleanly in the same job, which is the contract the five had broken. Publish is every-asset-or-none, so it correctly shipped nothing rather than a part of a release. |
+
+What the escape says about the method: a suite that is only ever run with
+every optional dependency present does not test the environments it claims to
+support. The fix is one guard, tests/test_browser_tests_skip_without_playwright.py,
+which reads every module in the tree statically, so the next module to break
+the contract fails in the editor rather than at a tag. Reproduced locally by
+hiding Playwright behind a stub that raises, which gave the CI error exactly on
+the pre-fix module and then collected 2,761 tests clean.
