@@ -121,7 +121,8 @@ def test_it_does_not_credit_the_popup_with_a_count_it_does_not_show():
 
 def test_no_em_dashes():
     """The repository rule, and the policy is published text."""
-    assert "—" not in _read(POLICY)
+    # chr(0x2014), not the character: the same rule applies to this file.
+    assert chr(0x2014) not in _read(POLICY)
 
 
 def test_the_published_page_is_not_carrying_the_owner_instructions():

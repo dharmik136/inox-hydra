@@ -224,7 +224,10 @@ footer {{ margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--edge)
 def build():
     with open(SOURCE, encoding="utf-8") as handle:
         markdown = handle.read()
-    if "—" in markdown:
+    # chr(0x2014) rather than the character: this project forbids the
+    # literal in its own source, and tests/test_phase4_algorithmic_safety.py
+    # scans every tracked file for it, this one included.
+    if chr(0x2014) in markdown:
         raise ValueError("the policy contains an em-dash, which this project does not use")
     return PAGE.format(body=render(markdown))
 
