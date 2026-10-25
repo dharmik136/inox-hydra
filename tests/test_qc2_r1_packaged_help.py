@@ -98,6 +98,22 @@ def test_the_release_gates_refuse_internal_documents():
     assert "ships no maintainer or retired documents" in verify_package.GATE_SCRIPT
     assert "ships no maintainer or retired documents" in smoke_portable.SMOKE
 
+    # Both gates, and this module, must decide the same way: a document ships
+    # because a help section lists it. Each used to carry its own list of the
+    # documents allowed outside docs/help, so filing PRIVACY_POLICY.md under
+    # the help taught the test, then the verifier, then the smoke script, one
+    # failed CI round at a time. Asserting the shape of the rule is what stops
+    # a fourth copy appearing.
+    for name, script in (("verify_package", verify_package.GATE_SCRIPT),
+                         ("smoke_portable", smoke_portable.SMOKE)):
+        assert "document_ids" in script, (
+            f"{name} no longer decides from the sections, so it keeps its own "
+            "idea of what may ship"
+        )
+        assert "strategy_playbook" not in script, (
+            f"{name} names a document by hand again instead of asking the sections"
+        )
+
 def test_a_packaged_copy_ships_only_documents_a_help_section_lists(tmp_path):
     """
     The rule tools/verify_package.py applies to the built distributable, run

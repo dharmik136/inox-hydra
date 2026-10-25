@@ -101,10 +101,15 @@ with TestClient(
     help_count = sum(s["count"] for s in docs.get("sections", []) if s.get("kind") == "help")
     check("serves the help", help_count > 0, f"{help_count} help documents")
     if not SOURCE_TREE:
-        # A packaged copy carries the help and nothing written for maintainers.
-        shipped = [e["path"] for e in docs.get("library", [])]
-        internal = [path for path in shipped
-                    if not path.startswith("help/") and path != "strategy_playbook.md"]
+        # A packaged copy carries the help and nothing written for
+        # maintainers. Asked of the screen's own sections rather than a list
+        # of filenames: a document ships because a help section lists it, and
+        # three scripts each keeping their own list of the exceptions meant
+        # adding one document to the help passed the suite, passed
+        # verify_package and failed here.
+        filed = {doc_id for section in docs.get("sections", [])
+                 for doc_id in section.get("document_ids", [])}
+        internal = [e["path"] for e in docs.get("library", []) if e.get("id") not in filed]
         check("ships no maintainer or retired documents", not internal, ", ".join(internal[:3]))
     for ep in ("/api/analytics/kpis", "/api/posts", "/api/leads", "/api/v1/schema/status"):
         check(f"GET {ep}", c.get(ep).status_code == 200)
