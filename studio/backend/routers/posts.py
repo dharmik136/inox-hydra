@@ -221,6 +221,32 @@ def list_posts(status: Optional[str] = None, limit: Optional[int] = None):
         conn.close()
 
 
+@router.get("/api/posts/{post_id}")
+def read_post(post_id: str):
+    """
+    One post by id.
+
+    The interface had no way to ask for one, so reopening a draft read the
+    whole draft list and searched it in the browser: 259 KB and 1,044 rows on
+    a three year install to put one post in the editor. The client said so in
+    its own comment ("there is no single-post route, and the draft list is
+    small"), which stopped being true once a creator had three years of them.
+
+    Answers the same row shape as the list, so a caller can use either.
+    """
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT * FROM posts WHERE id = ?", (post_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="There is no such post.")
+        post = dict(row)
+        post["media_urls"] = json.loads(post["media_urls"]) if post["media_urls"] else []
+        post["tags"] = json.loads(post["tags"]) if post["tags"] else []
+        return {"status": "success", "post": post}
+    finally:
+        conn.close()
+
+
 @router.post("/api/posts")
 def create_post(post: PostCreate):
     if len(post.content) > 5000:

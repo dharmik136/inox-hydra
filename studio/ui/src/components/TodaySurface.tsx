@@ -26,6 +26,7 @@ import {
   type TodayPerson,
   type WaitingCaptures,
 } from "@/lib/api";
+import { NOT_MEASURED, formatDays, gapOrNotMeasured } from "@/lib/cadence";
 import { reportBridge } from "@/lib/bridgeState";
 import { useRefresh } from "@/lib/refresh";
 import { formatLocal, formatSlotTime } from "@/lib/time";
@@ -585,8 +586,6 @@ function Figure({ label, value, note }: { label: string; value: string; note?: s
   );
 }
 
-const NOT_MEASURED = "Not measured";
-
 /** A count as the screen prints it. Null is not zero; a captured zero is "0". */
 function count(value: number | null | undefined): string {
   if (value === null || value === undefined || Number.isNaN(value)) return NOT_MEASURED;
@@ -846,18 +845,16 @@ function Rhythm({ read }: { read: Read<CadenceInsights> }) {
         <>
           <span className="studio-meta text-[10px] text-ink-secondary">{count(cadence.posts)} POSTS READ</span>
           <span className="studio-meta text-[10px] text-ink-secondary">
-            {measured(cadence.days_since_last)
-              ? `${cadence.days_since_last!.toFixed(1)} DAYS SINCE YOUR LAST`
-              : "DAYS SINCE YOUR LAST: NOT MEASURED"}
+            {formatDays(cadence.days_since_last)
+              ? `${formatDays(cadence.days_since_last)!.toUpperCase()} SINCE YOUR LAST`
+              : `SINCE YOUR LAST: ${NOT_MEASURED.toUpperCase()}`}
           </span>
           <span className="studio-meta text-[10px] text-ink-secondary">
-            {measured(cadence.median_gap_days)
-              ? `USUAL GAP ${cadence.median_gap_days!.toFixed(1)} DAYS`
-              : "USUAL GAP NOT MEASURED"}
+            {`USUAL GAP ${gapOrNotMeasured(cadence.median_gap_days).toUpperCase()}`}
           </span>
           {cadence.longest_gap && (
             <span className="studio-meta text-[10px] text-ink-muted">
-              LONGEST GAP {cadence.longest_gap.days} DAYS
+              LONGEST GAP {gapOrNotMeasured(cadence.longest_gap.days).toUpperCase()}
             </span>
           )}
         </>

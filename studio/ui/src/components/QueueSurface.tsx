@@ -22,6 +22,7 @@ import {
   type TodayDuePost,
   updateQueueSlot,
 } from "@/lib/api";
+import { NOT_MEASURED, formatDays, gapOrNotMeasured } from "@/lib/cadence";
 import { useRefresh } from "@/lib/refresh";
 import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -649,22 +650,18 @@ function Cadence({
               <Line
                 label="Your usual gap"
                 value={
-                  usual === null || usual === undefined
-                    ? "Not measured"
-                    : `${usual.toFixed(1)} days between posts`
+                  formatDays(usual) === null
+                    ? NOT_MEASURED
+                    : `${formatDays(usual)} between posts`
                 }
               />
               <Line
                 label="Since your last"
-                value={
-                  rhythm.days_since_last === null || rhythm.days_since_last === undefined
-                    ? "Not measured"
-                    : `${rhythm.days_since_last.toFixed(1)} days`
-                }
+                value={gapOrNotMeasured(rhythm.days_since_last)}
               />
               <Line
                 label="These slots"
-                value={slotGap === null ? "No slots set" : `one post every ${slotGap.toFixed(1)} days`}
+                value={slotGap === null ? "No slots set" : `one post every ${formatDays(slotGap)}`}
               />
             </dl>
             {/* One sentence, and only when both numbers were measured. A
@@ -672,10 +669,10 @@ function Cadence({
             {slotGap !== null && usual !== null && usual !== undefined && (
               <p className="mt-2 text-[12px] leading-snug text-ink-secondary">
                 {slotGap < usual * 0.75
-                  ? `Your slots ask for more than you have posted: one every ${slotGap.toFixed(1)} days against your usual ${usual.toFixed(1)}.`
+                  ? `Your slots ask for more than you have posted: one every ${formatDays(slotGap)} against your usual ${formatDays(usual)}.`
                   : slotGap > usual * 1.5
-                    ? `Your slots ask for less than you have posted: one every ${slotGap.toFixed(1)} days against your usual ${usual.toFixed(1)}.`
-                    : `Your slots are about the rhythm you have kept: one every ${slotGap.toFixed(1)} days against your usual ${usual.toFixed(1)}.`}
+                    ? `Your slots ask for less than you have posted: one every ${formatDays(slotGap)} against your usual ${formatDays(usual)}.`
+                    : `Your slots are about the rhythm you have kept: one every ${formatDays(slotGap)} against your usual ${formatDays(usual)}.`}
               </p>
             )}
           </>

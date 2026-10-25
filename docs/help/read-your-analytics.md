@@ -53,8 +53,12 @@ These describe the numbers. They do not claim a cause.
 
 The table lists your LinkedIn posts, the ones imported from your activity pages or your archive, and any post you marked as published in the studio that has not been matched to one of them. Rate is (reactions + comments + reposts) divided by impressions, as a percentage.
 
+Fourteen posts are shown at a time, most seen first, which means most impressions. The line above the table says where you are, for example `1-14 of 1,418, most seen first`, and the two arrows beside it turn the page. The table used to list every post you have, which on three years of posting was 2.4 MB read before the screen could draw.
+
 > [!NOTE]
 > A figure the bridge has not read shows "not measured", never 0. Impressions are read only from a post's own analytics page, so most posts show "not measured" for impressions and rate. A post marked published in the studio has no figures of its own until it is matched to its LinkedIn post.
+
+If a note under the table says a post has more engagements recorded than impressions, so no rate can be measured, it counts the posts **on the page you are looking at**, not all of yours. Turn the page and the count is about the posts there.
 
 Click a row to see leads linked to it: a count of leads and interactions with names, or NO LEADS ATTRIBUTED TO THIS POST. An imported LinkedIn post carries the people the bridge captured on it. A post written in the studio is linked only once it has been matched to its LinkedIn post; until then expect NO LEADS ATTRIBUTED TO THIS POST.
 

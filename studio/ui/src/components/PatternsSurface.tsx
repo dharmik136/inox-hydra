@@ -13,6 +13,7 @@ import {
   type SettledAfter,
   type TopicAttributionInsights,
 } from "@/lib/api";
+import { gapOrNotMeasured } from "@/lib/cadence";
 import { useStudioBack } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
@@ -238,8 +239,8 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
             <p className="studio-label">Cadence</p>
             <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 border-y border-edge py-3 sm:grid-cols-4">
               <Stat label="Posts" value={`${cadence.posts}`} />
-              <Stat label="Since last post" value={`${Math.round(cadence.days_since_last ?? 0)} days`} />
-              <Stat label="Usual gap" value={cadence.median_gap_days != null ? `${Math.round(cadence.median_gap_days)} days` : "Unknown"} />
+              <Stat label="Since last post" value={gapOrNotMeasured(cadence.days_since_last)} />
+              <Stat label="Usual gap" value={gapOrNotMeasured(cadence.median_gap_days)} />
               <Stat
                 label="Queued, next 14 days"
                 value={`${cadence.queue?.scheduled_next_14_days ?? 0} of ${Math.min(cadence.queue?.weekly_slots ?? 0, 99) * 2} slots`}
@@ -247,7 +248,7 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
             </dl>
             {cadence.longest_gap && (
               <p className="mt-2 text-[12px] text-ink-muted">
-                Longest gap: {Math.round(cadence.longest_gap.days)} days, {cadence.longest_gap.from} to {cadence.longest_gap.to}.
+                Longest gap: {gapOrNotMeasured(cadence.longest_gap.days)}, {cadence.longest_gap.from} to {cadence.longest_gap.to}.
               </p>
             )}
 

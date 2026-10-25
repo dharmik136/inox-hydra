@@ -225,6 +225,9 @@ interface PostRow {
   id: string;
   content: string;
   created_at?: string;
+  // Read when one post is asked for by id, so a post that has gone out is not
+  // loaded into an editor whose Save would write over it.
+  status?: string;
 }
 
 /**
@@ -2087,14 +2090,20 @@ export async function searchEverything(query: string, limit = 6): Promise<Search
 /**
  * One draft by id, read fresh from the database the Composer saves to.
  *
- * There is no single-post route, and the draft list is small, so this reads
- * the list rather than adding one. Only drafts: a published or queued post is
- * never loaded into the editor, because Save writes over whatever it holds.
+ * Asks for the one post. This used to read every draft and search the list in
+ * the browser, because there was no single-post route: 259 KB and 1,044 rows
+ * on a three year install to put one post in the editor. GET /api/posts/{id}
+ * answers the one row.
+ *
+ * Only drafts: a published or queued post is never loaded into the editor,
+ * because Save writes over whatever it holds, so a post that has gone out is
+ * refused here even though the route would return it.
  */
 export async function fetchDraftById(id: string): Promise<Draft | null> {
-  const data = await call<{ posts?: PostRow[] }>("/api/posts?status=draft");
-  const row = (data.posts ?? []).find((post) => post.id === id);
-  return row ? { id: row.id, content: row.content } : null;
+  const data = await call<{ post?: PostRow }>(`/api/posts/${encodeURIComponent(id)}`);
+  const row = data.post;
+  if (!row || row.status !== "draft") return null;
+  return { id: row.id, content: row.content };
 }
 
 // -------------------------------------------------------------
