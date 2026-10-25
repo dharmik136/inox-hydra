@@ -660,6 +660,10 @@ HELP_SECTIONS = [
         "blurb": "What stays on this machine, what can leave it, your LinkedIn session, and backups.",
         "paths": [
             "help/what-leaves-this-machine.md",
+            # The published privacy policy, the same text that is served at
+            # the public address the browser stores require, so a creator can
+            # read it here rather than taking the store's word for it.
+            "PRIVACY_POLICY.md",
             "help/keep-each-creator-separate-and-enter-a-licence.md",
             "help/connect-your-linkedin-session.md",
             "help/back-up-restore-and-export.md",

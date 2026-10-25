@@ -35,6 +35,19 @@ def _staged_files(root):
     return sorted(found)
 
 
+# Documents outside docs/help that a creator is meant to have in their own
+# copy. The guard this list serves is "no internal documents", not "nothing but
+# help": the quality registers, the architecture notes and the briefs must not
+# ship, and these two must.
+#
+#   strategy_playbook.md   listed by the "Write and publish" section
+#   PRIVACY_POLICY.md      the published policy, listed by "Your data and
+#                          privacy", so a creator can read in the studio the
+#                          same text that is served at the public address the
+#                          browser stores require
+USER_FACING_OUTSIDE_HELP = ("strategy_playbook.md", "PRIVACY_POLICY.md")
+
+
 def test_only_the_help_is_staged(tmp_path):
     staged = str(tmp_path / "docs")
     result = prepare_package.stage_docs(staged)
@@ -43,10 +56,12 @@ def test_only_the_help_is_staged(tmp_path):
     files = _staged_files(staged)
     every_article = sorted("help/" + name for name in os.listdir(os.path.join(REPO_ROOT, "docs", "help"))
                            if name.endswith(".md"))
-    internal = [path for path in files if not path.startswith("help/") and path != "strategy_playbook.md"]
+    internal = [path for path in files if not path.startswith("help/")
+                and path not in USER_FACING_OUTSIDE_HELP]
     assert internal == [], f"a packaged copy would ship internal documents: {internal}"
     assert [path for path in files if path.startswith("help/")] == every_article
-    assert "strategy_playbook.md" in files, "a document a help section lists was left out"
+    for expected in USER_FACING_OUTSIDE_HELP:
+        assert expected in files, f"a document a help section lists was left out: {expected}"
 
 
 def test_the_packaged_docs_screen_lists_no_empty_or_retired_section(tmp_path):
