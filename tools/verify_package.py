@@ -67,9 +67,17 @@ with TestClient(
     # A packaged copy carries the help and nothing written for maintainers:
     # the retired module manuals, the architecture notes and the quality
     # records stay in the repository (prepare_package).
-    library = r.json().get("library", []) if r.status_code == 200 else []
-    internal = [e["path"] for e in library
-                if not e["path"].startswith("help/") and e["path"] != "strategy_playbook.md"]
+    # Asked of the screen's own table rather than a list of filenames kept
+    # here. A document ships because a help section lists it, so the check is
+    # that every document in the library is one some section carries: naming
+    # the exceptions instead meant this and tests/test_qc2_r1_packaged_help.py
+    # each held half a rule, and adding PRIVACY_POLICY.md to the help failed
+    # here after the test had been taught about it.
+    payload = r.json() if r.status_code == 200 else {}
+    library = payload.get("library", [])
+    sections = payload.get("sections", [])
+    filed = {doc_id for section in sections for doc_id in section.get("document_ids", [])}
+    internal = [e["path"] for e in library if e.get("id") not in filed]
     check("ships no maintainer or retired documents", not internal, ", ".join(internal[:3]))
 
     for entry in library[:3]:

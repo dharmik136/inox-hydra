@@ -20,7 +20,7 @@ into the database by hand, which is what made the batch's own 25.6% figure
 unreproducible.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -37,9 +37,22 @@ def _draft(client, text):
 
 
 def _queue_at(client, post_id, when):
+    """
+    Queues a post for a moment given in the machine's own time zone.
+
+    The route reads a naive timestamp as UTC, and the grid draws each post in
+    local time, so handing it a local wall clock put every post in the wrong
+    cell by the zone's offset. In India that is five and a half hours: a test
+    run after about half past five in the afternoon pushed each post into the
+    next day and the last one out of the drawn week entirely, so this failed
+    every evening and passed every morning. CI runs in UTC, where the offset
+    is zero and the fault cannot appear.
+    """
+    moment = when if when.tzinfo else when.astimezone()
+    as_utc = moment.astimezone(timezone.utc)
     moved = client.post(
         f"/api/posts/{post_id}/reschedule",
-        json={"scheduled_for": when.strftime("%Y-%m-%d %H:%M:%S")},
+        json={"scheduled_for": as_utc.strftime("%Y-%m-%d %H:%M:%S")},
     )
     assert moved.status_code == 200, moved.text
 
@@ -60,9 +73,13 @@ def test_every_post_queued_in_the_next_week_is_in_a_cell(studio):
     """
     client = studio["client"]
     confirm_identity(client)
-    now = datetime.now()
+    # Nine in the morning on each of the next six days, in this machine's own
+    # time. A fixed hour rather than "an hour from now", so the moment cannot
+    # roll into the following day when the test happens to run late.
+    now = datetime.now().astimezone()
     for day in range(1, 7):
-        _queue_at(client, _draft(client, f"Queued for day {day}."), now + timedelta(days=day, hours=1))
+        target = (now + timedelta(days=day)).replace(hour=9, minute=0, second=0, microsecond=0)
+        _queue_at(client, _draft(client, f"Queued for day {day}."), target)
 
     page = open_section(studio, "queue")
     expect(page.locator("section", has_text="Next seven days").first).to_be_visible(timeout=10000)

@@ -10,7 +10,7 @@ missed, and it had no reading of the creator's own rhythm to judge the slots
 against.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -24,9 +24,17 @@ def _queue_a_post(client, text, when):
     created = client.post("/api/posts", json={"content": text + "\n\nIts body.", "status": "draft"})
     assert created.status_code == 200, created.text
     post_id = created.json()["id"]
+    # `when` is a moment on this machine's clock. The route reads a naive
+    # timestamp as UTC and the grid draws local, so sending the local wall
+    # clock queues the post at the zone's offset from where the caller meant.
+    # These two tests survived that by accident, because both sides of what
+    # they compare move together; the window test in
+    # test_qc3_t5_queue_week_window.py did not, and failed every evening in a
+    # zone ahead of UTC.
+    moment = when if when.tzinfo else when.astimezone()
     moved = client.post(
         f"/api/posts/{post_id}/reschedule",
-        json={"scheduled_for": when.strftime("%Y-%m-%d %H:%M:%S")},
+        json={"scheduled_for": moment.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")},
     )
     assert moved.status_code == 200, moved.text
     return post_id

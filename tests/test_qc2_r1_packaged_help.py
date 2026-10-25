@@ -35,17 +35,15 @@ def _staged_files(root):
     return sorted(found)
 
 
-# Documents outside docs/help that a creator is meant to have in their own
-# copy. The guard this list serves is "no internal documents", not "nothing but
-# help": the quality registers, the architecture notes and the briefs must not
-# ship, and these two must.
-#
-#   strategy_playbook.md   listed by the "Write and publish" section
-#   PRIVACY_POLICY.md      the published policy, listed by "Your data and
-#                          privacy", so a creator can read in the studio the
-#                          same text that is served at the public address the
-#                          browser stores require
-USER_FACING_OUTSIDE_HELP = ("strategy_playbook.md", "PRIVACY_POLICY.md")
+# A document ships because a help section lists it, which is what
+# prepare_package.stage_docs stages from. Naming the exceptions here instead
+# (strategy_playbook.md, then PRIVACY_POLICY.md) put half the rule in this
+# file and half in tools/verify_package.py, and the two drifted the moment a
+# document was added: the test was taught and the verifier was not, so the
+# clean-install check failed on a document the help was meant to carry.
+def _outside_help():
+    return [path for path in prepare_package.served_help_paths()
+            if not path.startswith("help/")]
 
 
 def test_only_the_help_is_staged(tmp_path):
@@ -57,10 +55,12 @@ def test_only_the_help_is_staged(tmp_path):
     every_article = sorted("help/" + name for name in os.listdir(os.path.join(REPO_ROOT, "docs", "help"))
                            if name.endswith(".md"))
     internal = [path for path in files if not path.startswith("help/")
-                and path not in USER_FACING_OUTSIDE_HELP]
+                and path not in _outside_help()]
     assert internal == [], f"a packaged copy would ship internal documents: {internal}"
     assert [path for path in files if path.startswith("help/")] == every_article
-    for expected in USER_FACING_OUTSIDE_HELP:
+    outside = _outside_help()
+    assert outside, "no help section lists a document outside docs/help any more"
+    for expected in outside:
         assert expected in files, f"a document a help section lists was left out: {expected}"
 
 
@@ -97,3 +97,38 @@ def test_the_release_gates_refuse_internal_documents():
 
     assert "ships no maintainer or retired documents" in verify_package.GATE_SCRIPT
     assert "ships no maintainer or retired documents" in smoke_portable.SMOKE
+
+def test_a_packaged_copy_ships_only_documents_a_help_section_lists(tmp_path):
+    """
+    The rule tools/verify_package.py applies to the built distributable, run
+    here against the staged docs so the suite catches it on every platform
+    rather than only in the clean-install job at the end of CI.
+
+    That job is where PRIVACY_POLICY.md failed: it kept its own list of
+    filenames ("help/ and strategy_playbook.md"), this module kept another,
+    and teaching one did not teach the other. Both now ask the same question,
+    which is the one that was always meant: is this document filed under a
+    help section?
+    """
+    staged = str(tmp_path / "docs")
+    prepare_package.stage_docs(staged)
+
+    library = docs_engine.document_library(staged)
+    sections = docs_engine.help_sections(staged)
+    filed = {doc["id"] for section in sections for doc in section["documents"]}
+
+    unfiled = sorted(entry["path"] for entry in library if entry["id"] not in filed)
+    assert not unfiled, (
+        "a packaged copy would ship documents no help section lists, which is "
+        f"what the clean-install check refuses: {unfiled}"
+    )
+
+    # No assertion that every listed section is of kind "help": a packaged
+    # copy does list "For maintainers", carrying the help articles filed
+    # under it, which test_the_packaged_docs_screen_lists_no_empty_or_retired_section
+    # above already pins. What must not ship is a document no section lists.
+
+    # And the policy in particular, because it is the document that exposed
+    # the split rule and the one a store reviewer may open from the help.
+    assert "PRIVACY_POLICY.md" in {entry["path"] for entry in library}
+
