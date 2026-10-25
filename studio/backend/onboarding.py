@@ -260,6 +260,38 @@ EXTRACTORS = {
 OPT_IN_EXTRACTORS = ("voyager_feed_updates", "voyager_creator_analytics")
 
 CAPTURE_RETENTION = timedelta(days=7)
+# Every capture prunes the log, and the prune does not look at which extractor
+# a row belongs to, so the engagers reader (twenty six runs in a week on this
+# install) was deleting the only row the profile reader had. capture_health
+# then reported that reader as never run, and the Setup screen said NOT SEEN
+# YET about a reader that had read the creator's profile seven days earlier.
+#
+# The rarer the reader the sooner it lied: the profile is read once at setup
+# and seldom after, so a week into every install that row said the bridge had
+# never seen it. Creator analytics is weekly. The readers a creator most needs
+# to ask about were the ones the screen was least able to answer for.
+#
+# So the two rows the screen reads are kept whatever their age: the latest run
+# of each extractor, and the latest run of each that read something without
+# drift, which is the LAST WORKED date shown beside a drifting reader. Rows
+# the screen does not read still age out at the window above.
+PRUNE_CAPTURES = """
+DELETE FROM captures
+ WHERE observed_at < ?
+   AND id NOT IN (
+         SELECT keep.id FROM captures AS keep
+          WHERE keep.observed_at = (SELECT MAX(observed_at) FROM captures
+                                     WHERE extractor = keep.extractor)
+   )
+   AND id NOT IN (
+         SELECT keep.id FROM captures AS keep
+          WHERE keep.drift IS NULL AND COALESCE(keep.items_seen, 0) > 0
+            AND keep.observed_at = (SELECT MAX(observed_at) FROM captures
+                                     WHERE extractor = keep.extractor
+                                       AND drift IS NULL
+                                       AND COALESCE(items_seen, 0) > 0)
+   )
+"""
 DRIFT_RETENTION = timedelta(days=30)
 
 
@@ -288,7 +320,7 @@ def record_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
                  json.dumps([_text(d, 60) for d in drift]) if drift else None,
                  _text(payload.get("extension_version"), 40)),
             )
-            conn.execute("DELETE FROM captures WHERE observed_at < ?", ((now - CAPTURE_RETENTION).isoformat(),))
+            conn.execute(PRUNE_CAPTURES, ((now - CAPTURE_RETENTION).isoformat(),))
     finally:
         conn.close()
     return {"status": "success"}
