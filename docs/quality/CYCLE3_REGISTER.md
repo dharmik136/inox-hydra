@@ -71,15 +71,17 @@ took 1,095 ms; and a root cause that was never the cause.
 | T8 | T8-7 | fixed | accept-with-note | Section 3 no longer states a table count and points at database.py and migrations.py as the source of truth, saying the list is deliberately partial.  |
 | T8 | T8-8 | fixed | accept-with-note | The publish article gains a The first send from this studio asks you once section, a renumbered step 4, a row in its three-choices table and a row in  |
 
-## Found after the tag: one escape
+## Found after the tag: two escapes
 
-The first v2.7.0 tag built and published nothing. Recorded here because the
-defect lived through the whole cycle's QA and the register would be dishonest
-without it.
+The first v2.7.0 tag built and published nothing, and a later run was blocked
+by a timing test that was measuring the wrong thing. Both are recorded here
+because they lived through the whole cycle's QA and the register would be
+dishonest without them.
 
 | Batch | Finding | State | Review | What it was |
 | --- | --- | --- | --- | --- |
 | T5 | REL-1 | fixed | found by the release | Five of this batch's browser tests imported Playwright at module level instead of behind pytest.importorskip. The quality workflow installs Playwright, so the full suite ran green there all cycle. The release workflow's portable Windows job installs no browser, so the five raised ModuleNotFoundError during collection, and a collection error is not a skip: it ended the run. Forty other modules skipped cleanly in the same job, which is the contract the five had broken. Publish is every-asset-or-none, so it correctly shipped nothing rather than a part of a release. |
+| F5b | REL-2 | fixed | found by the release | /api/v1/insights/evidence and /api/analytics/posts were each timed once, on the first call after 2,000 posts were written. That call pays for work the endpoint does once and then keeps: the topic vocabulary derived from every post's text, each post classified under it, and SQLite's first read of the pages just written, which measured here is 135 ms of a 179 ms answer and 106 ms of a 125 ms answer. So a 750 ms budget written for the answer a creator waits on was partly spent on one-time work, and a cold Windows runner reported 765 ms and failed the suite. Nothing was slow; the sample was the wrong one. The first load and every load after it are now bounded separately, at 2,000 ms and the unchanged 750 ms, the second measured warm. |
 
 What the escape says about the method: a suite that is only ever run with
 every optional dependency present does not test the environments it claims to
@@ -88,3 +90,9 @@ which reads every module in the tree statically, so the next module to break
 the contract fails in the editor rather than at a tag. Reproduced locally by
 hiding Playwright behind a stub that raises, which gave the CI error exactly on
 the pre-fix module and then collected 2,761 tests clean.
+
+What the second escape says about it: a budget is a claim about what a person
+waits for, so it has to be measured on the call they wait on. One sample of a
+cold endpoint measures the machine as much as the code, which is why it passed
+on three platforms and failed on the fourth with nothing wrong. Each new bound
+was falsified in turn before the fix was kept.
