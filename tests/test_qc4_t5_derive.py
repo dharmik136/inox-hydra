@@ -255,3 +255,177 @@ def test_demographics_are_a_dated_series(client):
     series = client.get(f"/api/v1/insights/posts/{mine}").json()["demographics"]
     founder = [(e["observed_on"], e["percentage"]) for e in series if e["label"] == "Founder"]
     assert founder == [((NOW - timedelta(days=30)).strftime("%Y-%m-%d"), 18.0), (today, 25.0)]
+
+
+# ---------------------------------------------------------------------------
+# Item 20: the account series
+# ---------------------------------------------------------------------------
+
+def _daily_row(day):
+    conn = _db()
+    try:
+        row = conn.execute("SELECT * FROM analytics_daily WHERE date = ?", (day,)).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def test_a_profile_read_writes_followers_and_connections_to_the_daily_series(client):
+    """
+    The monthly profile visit used to overwrite one number in creator_identity
+    and leave no history. It is a point in the same series the analytics
+    page's follower card feeds, so Analytics can plot followers over time.
+    """
+    import onboarding
+    today = NOW.strftime("%Y-%m-%d")
+    onboarding.observe_profile({"vanity": ME, "follower_count": 8210, "connection_count": 1240})
+    row = _daily_row(today)
+    assert (row["followers"], row["connections"], row["period_label"], row["source"]) == (8210, 1240, "1d", "observed")
+    assert row["impressions"] is None, "a profile read says nothing about impressions, so the day holds none"
+    # The identity row keeps the latest count, as before; the series is where history lives.
+    conn = _db()
+    try:
+        assert conn.execute("SELECT follower_count FROM creator_identity WHERE id = 1").fetchone()[0] == 8210
+    finally:
+        conn.close()
+    # Read again the same day: the day's point moves, nothing is duplicated,
+    # and a count the page did not show keeps the earlier one.
+    onboarding.observe_profile({"vanity": ME, "follower_count": 8215})
+    row = _daily_row(today)
+    assert (row["followers"], row["connections"]) == (8215, 1240)
+    conn = _db()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM analytics_daily").fetchone()[0] == 1
+    finally:
+        conn.close()
+
+
+def test_a_profile_read_does_not_disturb_a_daily_figure_already_stored(client):
+    import onboarding
+    from linkedin_client import linkedin_client
+    today = NOW.strftime("%Y-%m-%d")
+    linkedin_client.ingest_analytics_payload({"series": [{
+        "date": today, "period_label": "1d", "precision": "exact", "impressions": 410, "reactions": 9}]})
+    onboarding.observe_profile({"vanity": ME, "follower_count": 8210})
+    row = _daily_row(today)
+    assert (row["impressions"], row["reactions"], row["followers"], row["period_label"]) == (410, 9, 8210, "1d")
+
+
+DAY = "2031-03-20"
+
+
+def test_a_seven_day_card_is_kept_as_a_week_and_shown_as_weekly(client):
+    """
+    The 2026 creator analytics page opens on "Past 7 days". That card was
+    refused outright, so a creator who never changes the range gave the
+    studio nothing but a follower count. It is kept now as what it is: a
+    reading over 7 days, keyed by the day it was read, never summed as a day.
+    """
+    from linkedin_client import linkedin_client
+    result = linkedin_client.ingest_analytics_payload({
+        "period_label": "7d", "precision": "rounded",
+        "series": [{"date": DAY, "period_label": "7d", "precision": "rounded",
+                    "impressions": 5400, "reactions": 120, "followers": 2310}]})
+    assert result["status"] == "window_mismatch" and result["saved"] == 0, "still not a daily figure"
+    assert result["windows_saved"] == 1
+    daily = _daily_row(DAY)
+    assert daily["impressions"] is None and daily["followers"] == 2310, "the daily row holds no weekly figure"
+    conn = _db()
+    try:
+        window = dict(conn.execute("SELECT * FROM analytics_windows WHERE date = ?", (DAY,)).fetchone())
+    finally:
+        conn.close()
+    assert (window["period_label"], window["impressions"], window["reactions"], window["precision"]) == (
+        "7d", 5400, 120, "rounded")
+    assert window["comments"] is None, "a figure the card did not show is not measured, never 0"
+
+    # Shown as weekly, beside the daily series, and never in the daily totals.
+    overview = client.get("/api/analytics/overview?range=30d").json()
+    weekly = [w for w in overview["windows"] if w["period_label"] == "7d"]
+    assert len(weekly) == 1 and weekly[0]["label"] == "weekly" and weekly[0]["covers"] == "7 days"
+    assert weekly[0]["impressions"] == 5400 and weekly[0]["precision"] == "rounded"
+    kpis = client.get("/api/analytics/kpis?range=7d").json()
+    assert kpis["impressions"] is None, "a weekly reading is not a captured day"
+
+    # Read again the same day: the window's row moves; another window is another row.
+    linkedin_client.ingest_analytics_payload({"series": [{"date": DAY, "period_label": "7d", "impressions": 5600}]})
+    linkedin_client.ingest_analytics_payload({"series": [{"date": DAY, "period_label": "28d", "impressions": 21000}]})
+    conn = _db()
+    try:
+        rows = conn.execute("SELECT period_label, impressions, reactions FROM analytics_windows WHERE date = ? "
+                            "ORDER BY period_label", (DAY,)).fetchall()
+    finally:
+        conn.close()
+    assert [tuple(r) for r in rows] == [("28d", 21000, None), ("7d", 5600, 120)]
+
+
+def test_a_windowed_card_with_no_window_the_reader_could_name_is_not_a_window(client):
+    """"unrecognised" is not a label a row can carry: nothing is kept as a window."""
+    from linkedin_client import linkedin_client
+    result = linkedin_client.ingest_analytics_payload({"period_label": "unrecognised", "series": [{
+        "date": DAY, "period_label": "unrecognised", "impressions": 5400, "followers": 2310}]})
+    assert result["status"] == "window_mismatch" and result.get("windows_saved", 0) == 0
+    conn = _db()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM analytics_windows").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def _hourly_readings(urn, days_old, days_read, source="post_analytics"):
+    """A post `days_old` days old, read every hour for `days_read` days after it went out."""
+    published = NOW - timedelta(days=days_old)
+    conn = _db()
+    with conn:
+        conn.execute("INSERT INTO own_posts (activity_urn, text, published_at, first_seen_at, last_seen_at) "
+                     "VALUES (?, 'p', ?, ?, ?)", (urn, published.isoformat(), published.isoformat(),
+                                                   published.isoformat()))
+        for hour in range(1, days_read * 24):
+            moment = published + timedelta(hours=hour, minutes=7)
+            conn.execute(
+                "INSERT INTO post_metric_observations (activity_urn, observed_at, observed_hour, age_hours, source, "
+                "impressions, reactions) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (urn, moment.isoformat(), moment.strftime("%Y-%m-%dT%H"), float(hour), source, 100 + hour * 3,
+                 5 + hour))
+    conn.close()
+
+
+def test_the_roll_up_keeps_the_first_reading_of_each_day_as_well_as_the_last(home):
+    """
+    The roll-up kept the last reading of each day, so a post's 2 hour and 20
+    hour readings collapsed into the later one after 30 days, and the early
+    point a half-life or a decay sentence rests on was gone. The first
+    reading of each day survives now too.
+    """
+    import retention
+    urn = "urn:li:activity:7100000000000000900"
+    _hourly_readings(urn, days_old=45, days_read=10)
+    assert retention.rules()["readings"] == "on", "a new install rolls up"
+
+    def per_day():
+        conn = _db()
+        try:
+            return {r["day"]: (r["first"], r["last"], r["outside_window"]) for r in conn.execute(
+                "SELECT substr(observed_hour, 1, 10) AS day, MIN(observed_hour) AS first, MAX(observed_hour) AS last, "
+                "SUM(CASE WHEN age_hours BETWEEN 36 AND 72 THEN 0 ELSE 1 END) AS outside_window "
+                "FROM post_metric_observations WHERE activity_urn = ? GROUP BY day", (urn,))}
+        finally:
+            conn.close()
+
+    before = per_day()
+    assert retention.run("readings")["removed"] > 0
+    after = per_day()
+    assert len(after) >= 9 and set(after) == set(before)
+    for day, (first, last, outside) in after.items():
+        assert (first, last) == before[day][:2], f"{day}: its first or its last reading is gone"
+        # A day that lies wholly inside the comparison window keeps every
+        # reading and has none outside it; any other day keeps two at most.
+        assert outside <= 2, f"{day} kept {outside} readings outside the comparison window"
+    # The very first reading, at one hour old, is the early point, and it survived.
+    conn = _db()
+    try:
+        assert conn.execute("SELECT MIN(age_hours) FROM post_metric_observations WHERE activity_urn = ?",
+                            (urn,)).fetchone()[0] == 1.0
+    finally:
+        conn.close()
+    assert retention.run("readings")["removed"] == 0, "the roll-up is not idempotent"

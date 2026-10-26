@@ -656,6 +656,39 @@ def _write_profile(conn, vanity: str, profile_url: Optional[str], clean: Dict[st
         )
 
 
+def _record_account_point(conn, clean: Dict[str, Any]) -> bool:
+    """
+    The profile's follower and connection counts as a point in the daily
+    series, on the day they were read.
+
+    creator_identity held one follower count, overwritten by every read, so
+    the monthly profile visit left no history and Analytics could not plot
+    followers unless the creator also opened the analytics page. The counts
+    go through the same path that page's follower card uses: a row for the
+    day with nothing but the two counts, or the day's row with its counts
+    filled in and every other figure left as it was. A count the page did not
+    show keeps the earlier one. creator_identity still carries the latest
+    count; this is where "over time" lives.
+    """
+    followers, connections = clean.get("follower_count"), clean.get("connection_count")
+    if followers is None and connections is None:
+        return False
+    conn.execute(
+        """
+        INSERT INTO analytics_daily (
+            date, followers, connections, precision, period_label, source,
+            impressions, unique_members_reached, reactions, comments, shares, engagement_rate
+        )
+        VALUES (?, ?, ?, NULL, '1d', 'observed', NULL, NULL, NULL, NULL, NULL, NULL)
+        ON CONFLICT(date) DO UPDATE SET
+            followers = COALESCE(excluded.followers, analytics_daily.followers),
+            connections = COALESCE(excluded.connections, analytics_daily.connections)
+        """,
+        (datetime.now(timezone.utc).strftime("%Y-%m-%d"), followers, connections),
+    )
+    return True
+
+
 def _write_entries(conn, table: str, key: tuple, rest: tuple, entries: List[Dict[str, Any]],
                    partial: bool, now: str) -> None:
     """Writes roles or schools: replacing the list from a full read, merging into it from a partial one."""
@@ -714,6 +747,7 @@ def observe_profile(payload: Dict[str, Any]) -> Dict[str, Any]:
                     return {"status": "ignored",
                             "reason": "this profile is not the confirmed creator's"}
                 _write_profile(conn, vanity, profile_url, clean)
+                _record_account_point(conn, clean)
                 return {"status": "updated", "vanity": vanity}
 
             if not evidence:

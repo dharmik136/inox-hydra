@@ -274,7 +274,12 @@ def test_the_reading_roll_up_leaves_todays_comparison_identical(home):
     assert retention.run("readings")["removed"] == 0, "the roll-up is not idempotent"
 
 
-def test_the_roll_up_keeps_one_reading_per_day_and_every_recent_reading(home):
+def test_the_roll_up_keeps_the_first_and_last_reading_per_day_and_every_recent_reading(home):
+    """
+    Cycle 4 (track 5, item 20): the first reading of each day is kept as
+    well as the last, so the early point a half-life rests on survives. A
+    day holds two readings after the roll-up, never more.
+    """
     _post_readings(posts=1, days_old=45)
     cut = (NOW - timedelta(days=30)).strftime("%Y-%m-%dT%H")
     recent_before = _count("SELECT COUNT(*) FROM post_metric_observations WHERE observed_hour >= ?", cut)
@@ -283,7 +288,7 @@ def test_the_roll_up_keeps_one_reading_per_day_and_every_recent_reading(home):
     per_day = _count(
         "SELECT MAX(n) FROM (SELECT COUNT(*) AS n FROM post_metric_observations WHERE observed_hour < ? "
         "AND NOT (age_hours BETWEEN 36 AND 72) GROUP BY source, substr(observed_hour, 1, 10))", cut)
-    assert per_day == 1
+    assert per_day == 2
 
 
 # ---------------------------------------------------------------------------

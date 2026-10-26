@@ -10,6 +10,7 @@ import csv
 import io
 import json
 import math
+import re
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Response, Path, Query
@@ -283,6 +284,19 @@ def get_kpis(range: str = "30d"):
         conn.close()
 
 
+def window_words(period_label: str) -> Dict[str, str]:
+    """
+    How a windowed reading is named on screen: a 7 day card is "weekly",
+    any other window is named by its length, never shown as a day.
+    """
+    match = re.match(r"^(\d{1,3})d$", period_label or "")
+    days = int(match.group(1)) if match else None
+    return {
+        "covers": f"{days} days" if days else "an unknown window",
+        "label": "weekly" if days == 7 else (f"{days}-day window" if days else "unknown window"),
+    }
+
+
 @router.get("/api/analytics/overview")
 def get_analytics_overview(range: str = "30d"):
     days = get_range_days(range)
@@ -290,13 +304,18 @@ def get_analytics_overview(range: str = "30d"):
     try:
         cursor = conn.cursor()
 
+        # Anchored on the latest day either table holds, so a creator whose
+        # only readings are weekly cards still sees them.
         cursor.execute("SELECT MAX(date) FROM analytics_daily")
         max_d_row = cursor.fetchone()
-        if not max_d_row or not max_d_row[0]:
+        cursor.execute("SELECT MAX(date) FROM analytics_windows")
+        max_w_row = cursor.fetchone()
+        latest = max(filter(None, ((max_d_row or [None])[0], (max_w_row or [None])[0])), default=None)
+        if not latest:
             conn.close()
-            return {"status": "success", "count": 0, "series": []}
+            return {"status": "success", "count": 0, "series": [], "windows": []}
 
-        end_date = datetime.strptime(max_d_row[0], "%Y-%m-%d").date()
+        end_date = datetime.strptime(latest, "%Y-%m-%d").date()
         start_date = end_date - timedelta(days=days - 1)
 
         cursor.execute("""
@@ -305,13 +324,23 @@ def get_analytics_overview(range: str = "30d"):
         ORDER BY date ASC
         """, (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
         rows = [dict(r) for r in cursor.fetchall()]
+        # Readings of the creator analytics page over a window (7 days by
+        # default on the 2026 page), each on the day it was read, labelled
+        # by what it covers. Beside the daily series, never in it: nothing
+        # here is summed into a day or a range.
+        cursor.execute("""
+        SELECT date, period_label, observed_at, impressions, reactions, comments, shares, followers, precision, source
+        FROM analytics_windows WHERE date >= ? AND date <= ? ORDER BY date ASC, period_label ASC
+        """, (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
+        windows = [{**dict(r), **window_words(r["period_label"])} for r in cursor.fetchall()]
         conn.close()
 
         return {
             "status": "success",
             "range": f"{days}d",
             "count": len(rows),
-            "series": rows
+            "series": rows,
+            "windows": windows,
         }
     finally:
         conn.close()
