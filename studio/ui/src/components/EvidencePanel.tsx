@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Sparkles, TrendingUp, TrendingDown, HelpCircle } from "lucide-react";
+import { ExternalLink, HardDrive, TrendingUp, TrendingDown, HelpCircle } from "lucide-react";
 import { fetchEvidenceBrief, type RetrievalEvidenceBrief, type EvidenceExemplar } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -137,16 +137,23 @@ export function EvidencePanel() {
         </section>
       )}
 
-      {/* Grounded Copilot Brief summary */}
+      {/* Where this evidence goes. It said the contrasts and exemplars were
+          put straight into the copilot's prompt, which they are not. The
+          brief reaches a prompt only through the copilot agent, which only
+          /api/copilot/optimize runs, and nothing in the interface calls
+          it; Re-Hook and Command send the voice pack and nothing else.
+          tests/test_qc4_t3_evidence_claim.py holds this sentence to the
+          code. */}
       {brief.brief_section && (
         <section className="border-t border-edge pt-4">
           <p className="studio-label mb-2 flex items-center gap-1.5">
-            <Sparkles className="size-3.5 text-signal-blue" aria-hidden="true" />
-            Active Copilot Grounding
+            <HardDrive className="size-3.5 text-ink-muted" aria-hidden="true" />
+            Where this goes
           </p>
           <p className="text-[11px] leading-relaxed text-ink-muted">
-            These exact contrast ratios and exemplar posts are injected directly into your BYO-AI
-            Copilot prompt context, ensuring recommendations quote real creator history.
+            Nowhere by itself. Nothing in the Composer sends these contrasts or exemplars to a model. Re-Hook
+            and Command send only your voice pack, which the Prompt tab lists; what is on this tab stays on
+            this machine.
           </p>
         </section>
       )}
