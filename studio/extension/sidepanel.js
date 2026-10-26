@@ -95,6 +95,14 @@ document.addEventListener("DOMContentLoaded", () => {
   const foldStatus = document.getElementById("sp-fold-status");
   const toast = document.getElementById("sp-toast");
 
+  // The header's two lines come from the worker's storage and follow it.
+  // Opening the panel is the creator seeing what the badge counted, so the
+  // worker is told to clear it.
+  followStorage("sp-last-capture", "sp-drift-notice");
+  try {
+    chrome.runtime.sendMessage({ action: "PANEL_OPENED" }, () => { void chrome.runtime.lastError; });
+  } catch (err) {}
+
   // Open on the post to make next: one that is due, else the next queued.
   loadQueuedPosts().then(result => {
     const posts = result.ok ? result.posts : [];
@@ -566,13 +574,19 @@ async function loadSideHealth() {
     // these was decided somewhere and shown nowhere.
     let html = await waitingAndRefusalPanel(health);
 
+    // The three honest states, in the studio's own sentence from the last
+    // heartbeat: off, on and seeing N calls with K matched, or on and
+    // matching nothing. An extension that has not reported the state is
+    // said to have not reported it, never shown as off or as standby.
+    const reading = health.network_reading;
+    const readingSentence = reading && reading.sentence
+      ? reading.sentence
+      : "Not reported by this extension yet. Reload the extension, then open a LinkedIn page.";
     html += `
       <div style="background: rgba(255,255,255,0.03); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px;">
-        <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-          <span style="color: var(--text-muted);">Network Interceptor</span>
-          <span style="font-weight: 600; color: ${voyagerActive ? "var(--success)" : "#f59e0b"};">
-            ${voyagerActive ? "🟢 Active (Exact JSON)" : "🟡 Standby"}
-          </span>
+        <div style="margin-bottom: 4px;">
+          <span style="color: var(--text-muted);">Network reading</span>
+          <div style="font-size: 10.5px; color: var(--text); margin-top: 2px;">${escapeHtml(readingSentence)}</div>
         </div>
         <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
           <span style="color: var(--text-muted);">Schema Registry</span>
@@ -624,4 +638,80 @@ async function loadSideHealth() {
 function escapeHtml(str) {
   if (!str) return "";
   return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+// -------------------------------------------------------------
+// What the worker last did, from the extension's own storage
+// -------------------------------------------------------------
+// The worker writes the last capture, the waiting count and the last drift
+// it noticed to chrome.storage.local the moment each happens, so these lines
+// are drawn from storage and follow storage.onChanged: no studio call, and
+// nothing drawn into LinkedIn's page (decision D3). A capture names the kind
+// of thing and when, never the person.
+const CAPTURE_WORDS = {
+  "/api/v1/crm/interactions/ingest": "an engager on your post",
+  "/api/v1/self/posts/ingest": "your posts",
+  "/api/v1/self/posts/analytics": "a post's analytics figures",
+  "/api/v1/self/outbound/ingest": "your comments and reactions",
+  "/api/v1/identity/observe": "your profile",
+  "/api/v1/posts/bind-urn": "a post linked to your draft",
+  "/api/v1/bridge/voyager-ingest": "a network reading",
+  "/api/analytics/ingest": "creator analytics"
+};
+
+function agoWords(iso) {
+  const then = Date.parse(iso || "");
+  if (!then) return "";
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 10) return "just now";
+  if (seconds < 60) return seconds + " s ago";
+  if (seconds < 3600) return Math.round(seconds / 60) + " min ago";
+  return "at " + new Date(then).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function captureLine(last, waiting) {
+  if (!last || !last.path) return "No capture yet this session.";
+  const what = CAPTURE_WORDS[last.path] || "a capture";
+  const first = what.charAt(0).toUpperCase() + what.slice(1);
+  if (last.kept) {
+    const inAll = waiting && typeof waiting.waiting === "number" ? " (" + waiting.waiting + " waiting in all)" : "";
+    return first + " is waiting for the studio" + inAll + ", kept " + agoWords(last.at) + ".";
+  }
+  if (!last.ok) return "The studio refused " + what + " " + agoWords(last.at) + ".";
+  return "Captured " + what + " " + agoWords(last.at) + ".";
+}
+
+function driftLine(drift) {
+  if (!drift || !Array.isArray(drift.fields) || !drift.fields.length) return "";
+  return "LinkedIn's " + (drift.page_kind || "page") + " page: cannot read " +
+    drift.fields.join(", ").replace(/_/g, " ") + ". See Capture health in Setup.";
+}
+
+function paintFromStorage(captureId, driftId) {
+  try {
+    chrome.storage.local.get(["lastCapture", "lastDrift", "waitingCaptures"], (items) => {
+      if (chrome.runtime.lastError) return;
+      const found = items || {};
+      const capture = document.getElementById(captureId);
+      if (capture) capture.textContent = captureLine(found.lastCapture, found.waitingCaptures);
+      const drift = document.getElementById(driftId);
+      if (drift) {
+        const line = driftLine(found.lastDrift);
+        drift.textContent = line;
+        drift.hidden = !line;
+      }
+    });
+  } catch (err) {
+    // Storage is unavailable only while the extension is being reloaded.
+  }
+}
+
+function followStorage(captureId, driftId) {
+  paintFromStorage(captureId, driftId);
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      if (changes.lastCapture || changes.lastDrift || changes.waitingCaptures) paintFromStorage(captureId, driftId);
+    });
+  } catch (err) {}
 }

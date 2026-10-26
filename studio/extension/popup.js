@@ -21,6 +21,8 @@ function paintNetworkReading(enabled) {
 
 document.addEventListener("DOMContentLoaded", async () => {
   checkServerAndSession();
+  // The last capture and the last drift noticed, from the worker's storage.
+  followStorage("popup-last-capture", "popup-drift-notice");
 
   // Off unless set. background.js registers or removes the interceptor when
   // this value changes, and refuses its captures while it is off.
@@ -154,4 +156,80 @@ function panelApi(path) {
       resolve({ ok: false, httpStatus: 0, data: {} });
     }
   });
+}
+
+// -------------------------------------------------------------
+// What the worker last did, from the extension's own storage
+// -------------------------------------------------------------
+// The worker writes the last capture, the waiting count and the last drift
+// it noticed to chrome.storage.local the moment each happens, so these lines
+// are drawn from storage and follow storage.onChanged: no studio call, and
+// nothing drawn into LinkedIn's page (decision D3). A capture names the kind
+// of thing and when, never the person.
+const CAPTURE_WORDS = {
+  "/api/v1/crm/interactions/ingest": "an engager on your post",
+  "/api/v1/self/posts/ingest": "your posts",
+  "/api/v1/self/posts/analytics": "a post's analytics figures",
+  "/api/v1/self/outbound/ingest": "your comments and reactions",
+  "/api/v1/identity/observe": "your profile",
+  "/api/v1/posts/bind-urn": "a post linked to your draft",
+  "/api/v1/bridge/voyager-ingest": "a network reading",
+  "/api/analytics/ingest": "creator analytics"
+};
+
+function agoWords(iso) {
+  const then = Date.parse(iso || "");
+  if (!then) return "";
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 10) return "just now";
+  if (seconds < 60) return seconds + " s ago";
+  if (seconds < 3600) return Math.round(seconds / 60) + " min ago";
+  return "at " + new Date(then).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function captureLine(last, waiting) {
+  if (!last || !last.path) return "No capture yet this session.";
+  const what = CAPTURE_WORDS[last.path] || "a capture";
+  const first = what.charAt(0).toUpperCase() + what.slice(1);
+  if (last.kept) {
+    const inAll = waiting && typeof waiting.waiting === "number" ? " (" + waiting.waiting + " waiting in all)" : "";
+    return first + " is waiting for the studio" + inAll + ", kept " + agoWords(last.at) + ".";
+  }
+  if (!last.ok) return "The studio refused " + what + " " + agoWords(last.at) + ".";
+  return "Captured " + what + " " + agoWords(last.at) + ".";
+}
+
+function driftLine(drift) {
+  if (!drift || !Array.isArray(drift.fields) || !drift.fields.length) return "";
+  return "LinkedIn's " + (drift.page_kind || "page") + " page: cannot read " +
+    drift.fields.join(", ").replace(/_/g, " ") + ". See Capture health in Setup.";
+}
+
+function paintFromStorage(captureId, driftId) {
+  try {
+    chrome.storage.local.get(["lastCapture", "lastDrift", "waitingCaptures"], (items) => {
+      if (chrome.runtime.lastError) return;
+      const found = items || {};
+      const capture = document.getElementById(captureId);
+      if (capture) capture.textContent = captureLine(found.lastCapture, found.waitingCaptures);
+      const drift = document.getElementById(driftId);
+      if (drift) {
+        const line = driftLine(found.lastDrift);
+        drift.textContent = line;
+        drift.hidden = !line;
+      }
+    });
+  } catch (err) {
+    // Storage is unavailable only while the extension is being reloaded.
+  }
+}
+
+function followStorage(captureId, driftId) {
+  paintFromStorage(captureId, driftId);
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      if (changes.lastCapture || changes.lastDrift || changes.waitingCaptures) paintFromStorage(captureId, driftId);
+    });
+  } catch (err) {}
 }
