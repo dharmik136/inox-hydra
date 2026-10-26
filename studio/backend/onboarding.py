@@ -208,31 +208,23 @@ _NETWORK_READING_FIELDS = {
     "switch": bool, "registered": bool, "injected": bool,
     "voyager_calls_seen": int, "matched": int, "captured": int, "last_capture_at": str,
 }
-# Entries the coverage meter may carry: "<pathname> <query name>" keys, each
-# a count. A key with a query string or a URN in it is refused, because the
-# meter exists to name what LinkedIn calls, never what it was asked.
-_VOYAGER_CALL_KEY = re.compile(r"^/[A-Za-z0-9_./-]{1,160}( [A-Za-z0-9_.-]{1,80})?$")
+# Entries the coverage meter may carry: "<path> <query name>" keys, each a
+# count. A key is kept only if its path is already the words of LinkedIn's
+# API (clean_voyager_path changes nothing in it) and its query name is one of
+# LinkedIn's shape or "other". The page cleans with the same list; a key that
+# was not cleaned, or was cleaned by an older rule, is refused, so no member
+# or post is ever kept here.
+_VOYAGER_CALL_KEY = re.compile(r"^/voyager/api(/[A-Za-z0-9_]{1,80}){0,8}( [A-Za-z0-9]{1,90})?$")
 _VOYAGER_CALLS_LIMIT = 100
-# LinkedIn's REST paths put what was asked about in the path: a member's
-# vanity after /profiles/, a post's URN after /socialActions/. The extension
-# replaces those segments with "_id_"; a key that still carries one, from an
-# extension that did not, is refused here, so no other member is ever kept.
-_ID_AFTER = {"profiles", "members", "people", "socialActions", "social", "conversations", "updates",
-             "comments", "organizations", "companies", "schools", "groups", "events", "jobs", "posts",
-             "activities", "shares", "ugcPosts", "reactions", "likes", "connections", "invitations",
-             "messages", "threads"}
 
 
 def _voyager_call_key_ok(key: str) -> bool:
     if not _VOYAGER_CALL_KEY.match(key):
         return False
-    segments = key.split(" ")[0].strip("/").split("/")
-    for previous, segment in zip([""] + segments, segments):
-        if segment == "_id_":
-            continue
-        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", segment) or re.search(r"\d{4,}", segment) or previous in _ID_AFTER:
-            return False
-    return True
+    path, _, name = key.partition(" ")
+    if clean_voyager_path(path) != path:
+        return False
+    return not name or name == "other" or bool(VOYAGER_QUERY_NAME.match(name))
 
 
 def _clean_network_reading(raw: Any) -> Optional[Dict[str, Any]]:
@@ -475,14 +467,14 @@ def clean_voyager_path(path: Any) -> str:
     text = str(path or "")
     text = re.sub(r"^[a-z]+://[^/]*", "", text).split("?", 1)[0].split("#", 1)[0]
     out, previous = [], ""
-    for index, segment in enumerate([s for s in text.split("/") if s][:8]):
-        word = _PATH_WORD.get(segment.lower())
-        if previous in _ID_AFTER_WORD:
-            word = None
+    for segment in [s for s in text.split("/") if s][:8]:
+        word = None if previous in _ID_AFTER_WORD else _PATH_WORD.get(segment.lower())
         if word is None and previous == "api" and VOYAGER_QUERY_NAME.match(segment):
             word = segment
         out.append(word or "_id_")
-        previous = segment.lower()
+        # What the segment was taken as, not the text it held: an identifier
+        # that happens to spell a collection's name takes no identifier after it.
+        previous = (word or "_id_").lower()
     return "/" + "/".join(out)
 
 # The states a reader's latest run can put it in. One list, so a screen

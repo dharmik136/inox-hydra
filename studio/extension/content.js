@@ -250,19 +250,49 @@ let coverageObserver = null;
 // A path names the resource LinkedIn was asked for, and its REST paths put
 // the thing asked about in the path itself: /identity/profiles/<vanity>/,
 // /socialActions/<urn>/. That is another member, or a post, and is never
-// kept: a segment that is not a plain word, carries a run of digits, or
-// follows a collection that takes an identifier is replaced by "_id_".
-const ID_AFTER = new Set(["profiles", "members", "people", "socialActions", "social", "conversations",
-  "updates", "comments", "organizations", "companies", "schools", "groups", "events", "jobs", "posts",
-  "activities", "shares", "ugcPosts", "reactions", "likes", "connections", "invitations", "messages", "threads"]);
+// kept. A segment is kept only if it is a word from this fixed list of the
+// words LinkedIn's data API puts in its paths, compared without regard to
+// case and written as listed; every other segment becomes "_id_", and so does
+// the segment after a collection that takes an identifier. An unknown word
+// costs a less specific key, never a person. The list used to be the other
+// way round, the identifiers to blank, and a plain-word vanity after any
+// collection it did not name went through. onboarding.VOYAGER_PATH_WORDS is
+// the studio's copy, which refuses anything else; a test holds the two equal.
+const VOYAGER_PATH_WORDS = [
+  "voyager", "api", "graphql", "me", "identity", "dash", "profiles", "miniProfiles", "profileView",
+  "profileContactInfo", "publicContactInfo", "networkinfo", "memberBadges", "memberIdentity",
+  "profileActions", "feed", "updates", "updatesV2", "social", "socialActions", "socialDetails", "comments",
+  "reactions", "likes", "followerInfo", "hashtags", "contentcreation", "normShares", "shares", "posts",
+  "activities", "creatorAnalytics", "analytics", "messaging", "conversations", "events", "messages",
+  "threads", "notifications", "badges", "relationships", "memberRelationships", "connections", "invitations",
+  "invitationViews", "search", "clusters", "blended", "typeahead", "hitsV2", "hits", "organization",
+  "organizations", "companies", "entities", "jobs", "jobPostings", "premium", "growth", "legoWidgets",
+  "pageContent", "settings", "highlights", "recommendations", "skills", "positions", "educations",
+  "featured", "followers", "following", "people", "members", "groups", "schools"
+];
+const VOYAGER_ID_AFTER = [
+  "profiles", "miniProfiles", "profileContactInfo", "publicContactInfo", "networkinfo", "memberBadges",
+  "profileActions", "updates", "updatesV2", "social", "socialActions", "socialDetails", "comments",
+  "reactions", "likes", "followerInfo", "hashtags", "shares", "posts", "activities", "conversations",
+  "events", "messages", "threads", "connections", "invitations", "organizations", "companies", "jobs",
+  "jobPostings", "people", "members", "groups", "schools"
+];
+const PATH_WORD = new Map(VOYAGER_PATH_WORDS.map((word) => [word.toLowerCase(), word]));
+const ID_AFTER = new Set(VOYAGER_ID_AFTER.map((word) => word.toLowerCase()));
+// A GraphQL query name has one shape: "voyager" and a capitalised name.
+// Anything else in that slot is "other".
+const VOYAGER_QUERY_NAME = /^voyager[A-Z][A-Za-z0-9]{1,78}$/;
 
 function cleanVoyagerPath(pathname) {
   const out = [];
   let previous = "";
   for (const segment of String(pathname).split("/").filter(Boolean).slice(0, 8)) {
-    const identifier = !/^[A-Za-z][A-Za-z0-9]*$/.test(segment) || /\d{4,}/.test(segment) || ID_AFTER.has(previous);
-    out.push(identifier ? "_id_" : segment);
-    previous = segment;
+    let word = ID_AFTER.has(previous) ? null : PATH_WORD.get(segment.toLowerCase()) || null;
+    if (!word && previous === "api" && VOYAGER_QUERY_NAME.test(segment)) word = segment;
+    out.push(word || "_id_");
+    // What the segment was taken as, not the text it held: an identifier that
+    // happens to spell a collection's name takes no identifier after it.
+    previous = (word || "_id_").toLowerCase();
   }
   return "/" + out.join("/");
 }
@@ -276,7 +306,8 @@ function voyagerCallKey(name) {
   }
   if (!url.pathname.includes("/voyager/api/")) return null;
   const queryId = url.searchParams.get("queryId");
-  const queryName = queryId ? String(queryId).split(".")[0].replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 80) : "";
+  const head = queryId ? String(queryId).split(".")[0] : "";
+  const queryName = queryId ? (VOYAGER_QUERY_NAME.test(head) ? head : "other") : "";
   return { key: cleanVoyagerPath(url.pathname).slice(0, 160) + (queryName ? " " + queryName : ""),
            path: url.origin + url.pathname };
 }

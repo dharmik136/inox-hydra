@@ -582,8 +582,8 @@ Five existing guards caught a draft of this work, and the code was changed to sa
   which tab it came from, never who; this session's count of captures per tab; and, until the
   browser closes, the last notice that a part of the capture could not read a page, naming the
   part, the kind of page and the fields." While network reading is on, the heartbeat also carries
-  counts of LinkedIn's data calls by the shape of their address and their query name, with every
-  part that names a member or a post removed; they are kept with the heartbeat log on this
+  counts of LinkedIn's data calls by the words of their address, from a fixed list of the words
+  LinkedIn's API uses, every other part written as a blank, and by GraphQL query name or "other"; they are kept with the heartbeat log on this
   computer for its seven days.
 - `studio/backend/docs_engine.py` files every document under `docs/` in a help section, and each
   track's record needs the same one-line addition beside `quality/CYCLE3_REGISTER.md`; this
