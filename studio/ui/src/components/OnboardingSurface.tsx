@@ -25,6 +25,7 @@ import { reportBridge } from "@/lib/bridgeState";
 import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { ArchiveImport, archiveStatus } from "./ArchiveImport";
+import { RecordSetupFields } from "./RecordSetupFields";
 
 /**
  * Setup: the studio learns who you are from your own LinkedIn.
@@ -334,6 +335,12 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
           )}
         </Step>
       </ol>
+
+      {/* From your record (cycle 4, track 7): three optional questions, each
+          with its reason and a Skip, kept as asks the section's cards match. */}
+      <div className="mb-8 rounded-md border border-edge p-4">
+        <RecordSetupFields />
+      </div>
 
       {finished && onOpenToday && (
         <div

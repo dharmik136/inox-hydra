@@ -256,9 +256,17 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # the unreachable column. Total 172 -> 171, reached stays 118, unreachable
 # 54 -> 53.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 171
-REACHED_BY_INTERFACE = 118
-UNREACHABLE = 53
+# Cycle 4, track 7, batches 4 and 6 (the section and its asks): sixteen paths
+# under /api/v1/record, the day's batch and earlier days, Suggest new, the
+# marks and Unhide all, More of this, Draft from this, Kept, What the studio
+# knows, the asks, the Setup fields, the settings and the monthly note. Every
+# one is called by the section's screen except the monthly note, which the
+# evaluation batch's "Did these help" calls. Total 171 -> 187, reached
+# 118 -> 133, unreachable 53 -> 54.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 187
+REACHED_BY_INTERFACE = 133
+UNREACHABLE = 54
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

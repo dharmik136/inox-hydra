@@ -680,6 +680,21 @@ export default function App() {
   }, [draftId, draft, mayDiscard, adopt]);
 
   /**
+   * From your record's "Draft from this": the server has made a draft that
+   * records the card it came from; open it in the Composer. Unsaved text in
+   * the Composer is asked about first, as opening any other draft is.
+   */
+  const onDraftFromCard = useCallback(
+    (made: { id: string; content: string }) => {
+      if (!mayDiscard("Open the draft made from this card")) return;
+      adopt({ id: made.id, content: made.content, status: "draft" });
+      setDraftsKey((key) => key + 1);
+      navigate("composer", true);
+    },
+    [mayDiscard, adopt, navigate],
+  );
+
+  /**
    * Opens a queued post from the Queue in the Composer, to correct its text.
    *
    * After Publish the Composer lets go of the post, so this is the way back
@@ -1008,7 +1023,7 @@ export default function App() {
                   }}
                 />
               )}
-              {active === "record" && <RecordSurface />}
+              {active === "record" && <RecordSurface onOpenDraft={onDraftFromCard} />}
               {active === "activity" && (
                 <ActivitySurface
                   onOpenLead={(leadId) => {

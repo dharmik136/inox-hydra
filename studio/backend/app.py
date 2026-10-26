@@ -1911,6 +1911,14 @@ except (ImportError, ValueError):
 
 app.include_router(storage_router_module.router)
 
+# From your record (cycle 4, track 7): the daily section's routes.
+try:
+    from .routers import record as record_router_module
+except (ImportError, ValueError):
+    from routers import record as record_router_module
+
+app.include_router(record_router_module.router)
+
 DOCS_DIR = search_router_module.DOCS_DIR
 MODULES_DIR = search_router_module.MODULES_DIR
 DOCS_MODULES = search_router_module.DOCS_MODULES
