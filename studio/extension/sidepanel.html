@@ -195,6 +195,18 @@
       min-height: 16px;
       margin-top: 6px;
     }
+    /* What the worker last did, read from the extension's own storage. */
+    .header-line {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      line-height: 1.4;
+    }
+    .header-line[hidden] { display: none; }
+    .header-line.notice {
+      color: var(--text);
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -207,6 +219,9 @@
     </div>
     <span class="status-badge" id="side-status">Engine Online</span>
   </div>
+  <p class="header-line notice" id="sp-page-notice" role="status" aria-live="polite" hidden></p>
+  <p class="header-line notice" id="sp-drift-notice" role="status" hidden></p>
+  <p class="header-line" id="sp-last-capture" role="status" aria-live="polite"></p>
 
   <div class="side-tabs">
     <button class="tab-btn active" id="tab-composer-btn">Composer</button>

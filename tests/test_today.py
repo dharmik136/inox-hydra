@@ -45,6 +45,11 @@ def clean():
         with conn:
             for table in TABLES:
                 conn.execute(f"DELETE FROM {table}")
+            # The posts made from those publications (post_identity.ensure_post)
+            # go with them, as forgetting the creator takes them: left behind,
+            # every module's imports made other modules' posts look like this
+            # creator's to Today.
+            conn.execute("DELETE FROM posts WHERE source = 'linkedin'")
             ids = [r[0] for r in conn.execute("SELECT id FROM leads WHERE name LIKE 'TodayProbe%'")]
             for lead_id in ids:
                 conn.execute("DELETE FROM lead_interactions WHERE lead_id = ?", (lead_id,))

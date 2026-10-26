@@ -57,10 +57,18 @@ def test_the_creator_analytics_response_survives_a_busy_page():
 
 
 def test_the_interceptor_reads_what_the_schema_registry_reads():
+    """
+    The endpoints of the schemas the studio keeps something from, and no
+    other: cycle 4 (own data only) stopped copying profiles, reactions on
+    posts and comments, which are about other members.
+    """
     with open(os.path.join(EXT, "voyager_interceptor.js"), encoding="utf-8") as handle:
         interceptor = handle.read()
     with open(os.path.join(EXT, "voyager_schema.js"), encoding="utf-8") as handle:
         schema = handle.read()
-    for endpoint in ("feed\\/updatesV2", "identity\\/dash\\/creatorAnalytics", "socialActions", "feed\\/comments"):
+    for endpoint in ("feed\\/updatesV2", "identity\\/dash\\/creatorAnalytics"):
         assert endpoint in schema
         assert endpoint in interceptor, f"the interceptor no longer lets {endpoint} through"
+    for endpoint in ("socialActions", "feed\\/comments", "identity\\/profiles"):
+        assert endpoint in schema
+        assert endpoint not in interceptor, f"the interceptor copies {endpoint}, which is about other members"

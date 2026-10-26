@@ -342,3 +342,95 @@ def test_no_help_article_still_sends_a_creator_to_setup_for_capture_health():
             if "CAPTURE HEALTH" in sentence and "Setup" in sentence and "Health" not in sentence.replace("CAPTURE HEALTH", ""):
                 offences.append(f"{name}: {sentence.strip()[:90]}")
     assert not offences, "help still sends a creator to Setup for capture health: " + "; ".join(offences)
+
+
+# ---------------------------------------------------------------------------
+# Track 1's states, drawn where capture health now lives (the 2.9.0 merge).
+# Track 1 gave capture_health five states and the bridge three network-reading
+# states, and drew them in Setup's capture health block, which this track had
+# moved here.
+# ---------------------------------------------------------------------------
+
+HEALTH_SURFACE = os.path.join(UI, "components", "HealthSurface.tsx")
+
+
+def _refused(extractor, when, reason="identity"):
+    from database import get_db
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept, refused, "
+                "extension_version) VALUES (?,?,?,?,?,?,?)",
+                (when.isoformat(), extractor, "own_profile", 1, 0, reason, "2.9.0"))
+    finally:
+        conn.close()
+
+
+def _reading(client, switch, seen=None, matched=None):
+    reading = {"switch": switch}
+    if seen is not None:
+        reading.update({"injected": True, "voyager_calls_seen": seen, "matched": matched, "captured": 0})
+    answer = client.post("/api/v1/bridge/heartbeat",
+                         json={"extension_version": "2.9.0", "page_kind": "feed", "network_reading": reading})
+    assert answer.status_code == 200, answer.text
+    return client.get("/api/v1/bridge/readers").json()
+
+
+def test_every_capture_state_has_words_on_health():
+    """A state Health has no words for would draw nothing; each of the five is a case of stateWords."""
+    import onboarding
+    words = _read(HEALTH_SURFACE).split("function stateWords")[1].split("\n}\n")[0]
+    for state in onboarding.CAPTURE_STATES:
+        assert f'case "{state}":' in words, f"Health has no words for the {state} state"
+    assert '"READ NOTHING"' in words and "`REFUSED: " in words
+
+
+def test_a_refused_reader_says_why_on_health_and_in_its_runs(client):
+    _capture("profile", _now() - timedelta(days=2), items_seen=1, items_kept=1)
+    _refused("profile", _now() - timedelta(hours=1))
+    profile = {r["extractor"]: r for r in client.get("/api/v1/bridge/readers").json()["readers"]}["profile"]
+    assert profile["state"] == "refused" and profile["refused"] == "identity"
+    assert profile["last_good_at"] is not None, "the refused run is not the last run that worked"
+    rows = client.get("/api/v1/bridge/readers/profile").json()["rows"]
+    assert [row["refused"] for row in rows] == ["identity", None]
+    assert "run.refused" in _read(HEALTH_SURFACE), "the reader's runs do not say which were refused"
+
+
+def test_a_reader_that_read_nothing_is_not_working(client):
+    _capture("activity_posts", _now() - timedelta(hours=1), items_seen=0, items_kept=0)
+    posts = {r["extractor"]: r for r in client.get("/api/v1/bridge/readers").json()["readers"]}["activity_posts"]
+    assert posts["state"] == "read_nothing"
+
+
+def test_network_reading_is_drawn_over_the_readers_in_its_three_states(client):
+    import onboarding
+    assert client.get("/api/v1/bridge/readers").json()["network_reading"] is None, (
+        "no heartbeat has carried the state: not reported, never off")
+
+    body = _reading(client, switch=False)
+    assert body["network_reading"]["state"] == "off"
+    assert body["network_reading"]["sentence"] == "Network reading is off."
+    assert not any(r["opt_in"] for r in body["readers"]), "with the switch off, a network reader that never ran is not listed"
+
+    body = _reading(client, switch=True, seen=40, matched=12)
+    assert body["network_reading"]["state"] == "seeing"
+    assert body["network_reading"]["sentence"] == onboarding.network_reading_sentence(body["network_reading"])
+    # The one listing rule: with the switch on, both network readers are
+    # listed, by Health and by the onboarding state alike.
+    health = [r["label"] for r in body["readers"]]
+    assert health == [h["label"] for h in client.get("/api/v1/onboarding/state").json()["health"]]
+    assert sum(r["opt_in"] for r in body["readers"]) == len(onboarding.OPT_IN_EXTRACTORS)
+
+    body = _reading(client, switch=True, seen=40, matched=0)
+    assert body["network_reading"]["state"] == "matching_nothing"
+    assert body["network_reading"]["sentence"].startswith("Network reading is on and matching nothing")
+
+    # Drawn over the readers' table, in the studio's sentence, each state with its own dot.
+    over_the_table = _read(HEALTH_SURFACE).split('id="readers-heading"')[1].split("<table")[0]
+    assert "reading.sentence" in over_the_table
+    dots = {"off": "bg-edge-strong", "seeing": "bg-signal-green", "matching_nothing": "bg-signal-orange"}
+    assert set(dots) == set(onboarding.NETWORK_READING_STATES), "a network-reading state Health has no dot for"
+    for state, dot in dots.items():
+        assert re.search(rf'reading\??\.state === "{state}"\)? && "{dot}"', over_the_table), f"the {state} state has no {dot} dot"
+    assert "not reported by this extension version" in over_the_table

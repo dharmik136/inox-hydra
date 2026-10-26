@@ -579,6 +579,10 @@ def search_posts(terms: List[str], limit: int = 6, conn=None) -> List[Dict[str, 
             FROM search_posts f JOIN search_docs d ON d.docid = f.rowid AND d.kind = 'post'
             JOIN posts p ON p.id = d.ref
             WHERE search_posts MATCH ?
+              -- A post made from a LinkedIn publication stands in for it, and
+              -- the publication is the result: published on LinkedIn, opened
+              -- in analytics (post_identity.ensure_post).
+              AND COALESCE(p.source, 'studio') != 'linkedin'
             ORDER BY COALESCE(p.published_at, p.scheduled_for, p.created_at) DESC, p.rowid
             """, (expression,)):
             examined += 1

@@ -1893,6 +1893,70 @@ def _migrate_reply_marks_and_capture_days(cursor: sqlite3.Cursor) -> None:
     """)
 
 
+def _migrate_reader_timing_and_network_reading(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 33:
+    Each reader says how long it took, and the bridge says whether network
+    reading is on.
+
+    Nothing in the bridge was timed: the capture log carried what a reader
+    saw and kept and nothing about time, so no claim that the bridge is
+    "smoother" could be checked and no optimisation could be chosen by
+    measurement. Each run now carries its own duration, the reads since the
+    last report, how many of them took over 50 ms, and the long tasks the
+    page's own timeline showed during those reads. A run the studio refused
+    carries why, so a reader that runs and is refused no longer reads as a
+    reader that never ran.
+
+    Neither heartbeat said whether the creator's network-reading switch was
+    on, whether the browser had registered the reader, or whether the page
+    carried it, so "off" and "on but capturing nothing" were the same
+    silence. The heartbeat now carries that state, and the page's count of
+    LinkedIn's data calls by path and query name, never a query string.
+
+    It drops what network reading kept about other members: readings of
+    posts that are not the creator's own, the summaries built from them, and
+    the drift events of the schemas that carry other members; the drift
+    events it keeps name nobody in their path. The feed ingest used to store
+    a reading for every post in LinkedIn's feed response.
+
+    And every publication has its post again. Migration 26 gave every
+    publication the studio held its posts row, once; one the bridge or the
+    archive found after it got none, so its engagers route answered 404 and
+    Posts said nobody was captured from it, however many had engaged (found
+    by cycle 4's track 3 on 2.7.0). Each such publication is given its post
+    here by post_identity.heal_publications, the rule every path now
+    follows: the posts row it already has, the one studio draft its words
+    match, or one made from it. The work still to do is what is still
+    without a post, so a second run changes nothing.
+    """
+    captures = {row[1] for row in cursor.execute("PRAGMA table_info(captures)")}
+    for column, kind in (("duration_ms", "REAL"), ("reads", "INTEGER"), ("slow_reads", "INTEGER"),
+                         ("long_tasks", "INTEGER"), ("long_task_ms", "REAL"), ("refused", "TEXT"),
+                         ("items_dropped", "INTEGER")):
+        if column not in captures:
+            cursor.execute(f"ALTER TABLE captures ADD COLUMN {column} {kind}")
+    heartbeats = {row[1] for row in cursor.execute("PRAGMA table_info(bridge_heartbeats)")}
+    for column in ("network_reading", "voyager_calls"):
+        if column not in heartbeats:
+            cursor.execute(f"ALTER TABLE bridge_heartbeats ADD COLUMN {column} TEXT")
+
+    try:
+        from . import post_identity
+    except (ImportError, ValueError):
+        import post_identity
+    post_identity.heal_publications(cursor.connection)
+
+    # And what network reading kept about other members goes: the feed ingest
+    # stored a reading for every post in LinkedIn's feed response, the
+    # creator's or not. After the ledger's backup, as every migration runs.
+    try:
+        from . import onboarding
+    except (ImportError, ValueError):
+        import onboarding
+    onboarding.forget_other_members_readings(cursor.connection)
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1931,6 +1995,9 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
      _migrate_account_and_content_readings),
     (32, "Replies the creator marked answered, and a day of each reader's runs kept past the week",
      _migrate_reply_marks_and_capture_days),
+    (33, "Each reader says how long it took, the bridge says whether network reading is on, "
+         "network reading keeps only your own posts, and every publication has its post again",
+     _migrate_reader_timing_and_network_reading),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

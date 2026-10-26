@@ -15,9 +15,11 @@ For exact figures for up to a year at once, import the file LinkedIn's own Expor
 
 One visit records one day. A second visit the same day updates that day. Days you do not visit have no figures, and nothing is filled in later. If the page is showing a longer range, such as the past 7 days it opens on, the figures are kept as a reading over that window, on the day you read it, labelled as weekly (or as the window they cover), never as a day and never summed into a range. No screen shows these readings yet, and the chart and the totals on **Analytics** use daily figures only. Your follower and connection counts are also recorded for the day whenever the extension reads your own profile page, so followers are a series even if you only open the analytics page now and then.
 
-| Notice on LinkedIn | Meaning |
+Anything that was not saved is said at the top of the extension's side panel, with a `!` on its badge until you open it; nothing is drawn into LinkedIn's page.
+
+| What you see | Meaning |
 | --- | --- |
-| "Inox Hydra: creator analytics synced to your local studio." | The studio saved today's figures. |
+| No notice in the side panel; the extension's badge counts one more and the side panel's header reads "Captured creator analytics just now." | The studio saved today's figures. |
 | "...so they were not saved as today's numbers. Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses as a daily figure and keeps as a reading over that window instead (see above). "Your follower count was saved." follows when the page showed one: followers are a count at one moment, so they are kept whatever the range. Change the range to 24 hours for a daily figure; the extension reads again. |
 | "Inox Hydra: could not reach your studio, so these analytics were not saved." | The studio is not running. Start it and reload the analytics page. |
 | "Inox Hydra: the studio refused this browser, so these analytics were not saved. ..." | This browser was never paired. Open the studio once in it, then reload the analytics page. |

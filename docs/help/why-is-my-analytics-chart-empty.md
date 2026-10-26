@@ -13,13 +13,13 @@ The studio never fetches your analytics. The browser extension reads the impress
 | **Comments** shows NOTHING MEASURED IN THIS RANGE | It is never captured, and a captured day now stores no figure for it. Profile views are not a measure on the chart either: they are counts over the window their page names, shown beside the chart under **Profile views and search appearances** | Nothing to fix. This is expected |
 | **Comments** is a flat line at 0 | Those days were captured by an earlier version, which stored 0 for comments. Days captured now store no figure | Nothing to fix. This is expected |
 | You just visited LinkedIn, but the page has not changed | Analytics reads once when you open it and again only when you change the range. It does not refresh on its own | Switch to another surface in the rail and back to **Analytics** |
-| LinkedIn showed a notice ending "Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses | Set LinkedIn's range selector to the past 24 hours. The extension reads again |
-| No Inox Hydra notice at all on the analytics page | The extension is not loaded in that browser, the page is not your creator analytics page (a single post's analytics page feeds that post's own readings, never this chart), or it found neither an impressions nor a followers card, so it sent nothing | Check the extension is loaded, then reload the LinkedIn analytics page |
+| The side panel showed a notice ending "Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses | Set LinkedIn's range selector to the past 24 hours. The extension reads again |
+| No notice in the side panel after visiting the analytics page | The extension is not loaded in that browser, the page is not your creator analytics page (a single post's analytics page feeds that post's own readings, never this chart), or it found neither an impressions nor a followers card, so it sent nothing | Check the extension is loaded, then reload the LinkedIn analytics page |
 | ANALYTICS UNAVAILABLE | The studio did not answer or refused the request | Check the studio is running, then reload the page |
 | LOADING ANALYTICS that never ends | The server has not answered | Treat it like ANALYTICS UNAVAILABLE |
 
 > [!NOTE]
-> The notice "Inox Hydra: creator analytics synced to your local studio." also appears when the studio could not be reached or refused the figures. Always confirm on **Analytics**.
+> A saved day is confirmed on the extension's badge and in the side panel's header ("Captured creator analytics just now."), from the extension's own record of what the studio answered; nothing is drawn into LinkedIn's page for it. A notice at the top of the side panel, with a `!` on the badge, means something was not saved. Confirm on **Analytics** either way.
 
 ## Analytics checklist
 

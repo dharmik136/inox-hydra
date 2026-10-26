@@ -66,7 +66,13 @@ def test_a_post_with_no_studio_row_lists_its_people(studio):
         "headline": "Head of Platform", "company": "Example", "interaction_type": "COMMENT",
         "comment_text": "Good point?", "post_urn": urn, "post_author": ME})
     assert engaged.status_code == 200, engaged.text
+    # Every path now gives a publication its post (track 1's fix, one rule in
+    # post_identity), so the state this route defends against exists only in
+    # a database from before that fix, and is made here directly.
     conn = get_db()
+    with conn:
+        conn.execute("UPDATE own_posts SET post_id = NULL WHERE activity_urn = ?", (urn,))
+        conn.execute("DELETE FROM posts WHERE activity_urn = ?", (urn,))
     try:
         rows = conn.execute("SELECT COUNT(*) FROM posts WHERE activity_urn = ?", (urn,)).fetchone()[0]
     finally:

@@ -1694,6 +1694,8 @@ export interface BridgeStatus {
   seconds_ago: number | null;
   extension_version: string | null;
   page_kind: string | null;
+  /** null until a heartbeat has carried the state: not measured, never off. */
+  network_reading: NetworkReadingState | null;
 }
 
 export interface IdentityCandidate {
@@ -1747,7 +1749,31 @@ export interface CaptureHealth {
   last_good_at: string | null;
   /** Required fields the latest run could not read on a page that had them. */
   drift: string[];
-  state: "never_run" | "working" | "drifting";
+  /** Why the studio refused the latest run, when it did ("identity"). */
+  refused: string | null;
+  state: "never_run" | "working" | "read_nothing" | "drifting" | "refused";
+  /** The reader's own timing on its latest run; null is not measured. */
+  duration_ms: number | null;
+  reads: number | null;
+  slow_reads: number | null;
+  long_tasks: number | null;
+  long_task_ms: number | null;
+}
+
+/** The three honest states of network reading, as the last heartbeat reported them. */
+export interface NetworkReadingState {
+  state: "off" | "seeing" | "matching_nothing";
+  sentence: string;
+  switch: boolean;
+  registered: boolean | null;
+  injected: boolean | null;
+  voyager_calls_seen: number | null;
+  matched: number | null;
+  captured: number | null;
+  last_capture_at: string | null;
+  reported_at: string;
+  reported_by: string | null;
+  voyager_calls: Record<string, number> | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -3777,6 +3803,8 @@ export interface HealthReaderRun {
   items_kept: number | null;
   /** Required fields the run could not read on a page that had them. */
   drift: string[];
+  /** Why the studio refused this run, when it did. */
+  refused: string | null;
   extension_version: string | null;
 }
 
@@ -3795,12 +3823,14 @@ export interface HealthReaderDay {
 export interface HealthReader {
   extractor: string;
   label: string;
-  /** A network-reading part. Listed only once it has run, because it runs only after the creator switches it on. */
+  /** A network-reading part: listed once it has run, or while the switch is reported on. */
   opt_in: boolean;
-  state: "never_run" | "working" | "drifting";
+  state: CaptureHealth["state"];
   last_run_at: string | null;
   last_good_at: string | null;
   drift: string[];
+  /** Why the studio refused the latest run, when it did ("identity"). */
+  refused: string | null;
   /** Runs inside the window, and what they saw and kept: null when no run measured it. */
   runs: number;
   items_seen: number | null;
@@ -3840,6 +3870,8 @@ export interface HealthReaders {
   /** How long the day rows are kept. */
   days_window: { days: number; label: string };
   readers: HealthReader[];
+  /** Network reading as the bridge last reported it; null when no heartbeat carried it (not reported, never off). */
+  network_reading: NetworkReadingState | null;
   /** Every reader together, a row per day, newest first. */
   by_day: {
     days: number;
@@ -3866,18 +3898,6 @@ export async function fetchHealthReader(extractor: string): Promise<HealthReader
   return call<HealthReaderDetail>(`/api/v1/bridge/readers/${encodeURIComponent(extractor)}`);
 }
 
-/**
- * The network-reading switch as the bridge last reported it, when the
- * extension is new enough to report it. An older extension sends nothing,
- * and the screen says so rather than reading absence as "off".
- */
-export interface NetworkReadingState {
-  switch: boolean;
-  state?: string;
-  sentence?: string;
-  reported_at?: string | null;
-}
-
 export interface SchemaDriftEvent {
   schema_name: string;
   schema_version: string;
@@ -3888,7 +3908,7 @@ export interface SchemaDriftEvent {
 }
 
 export interface ExtensionHealth {
-  bridge: BridgeStatus & { network_reading?: NetworkReadingState | null };
+  bridge: BridgeStatus;
   extractors: CaptureHealth[];
   voyager_active: boolean;
   voyager_24h_captures: number;

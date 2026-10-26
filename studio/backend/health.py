@@ -52,7 +52,7 @@ RUN_ROWS_PER_READER = 20
 
 def _reader_rows(conn, extractor: str, since: str) -> List[Dict[str, Any]]:
     rows = conn.execute(
-        "SELECT observed_at, page_kind, items_seen, items_kept, drift, extension_version FROM captures "
+        "SELECT observed_at, page_kind, items_seen, items_kept, drift, refused, extension_version FROM captures "
         "WHERE extractor = ? AND observed_at >= ? ORDER BY observed_at DESC",
         (extractor, since)).fetchall()
     return [{
@@ -61,6 +61,9 @@ def _reader_rows(conn, extractor: str, since: str) -> List[Dict[str, Any]]:
         "items_seen": r["items_seen"],
         "items_kept": r["items_kept"],
         "drift": json.loads(r["drift"]) if r["drift"] else [],
+        # Why the studio refused the run, when it did: a run that read and
+        # was refused is a run, not one that never happened.
+        "refused": r["refused"],
         "extension_version": r["extension_version"],
     } for r in rows]
 
@@ -118,30 +121,23 @@ def _windows() -> Dict[str, Any]:
     }
 
 
-def _listed(states: Dict[str, Dict[str, Any]]) -> List[str]:
-    """
-    The readers the screen lists, in the order the extension's table names
-    them. The rule Setup's list followed (cycle 2, SETUP-17): a
-    network-reading part is listed only once it has run. Network reading is
-    off unless the creator switches it on, so listed always it read NOT SEEN
-    YET for everyone, and the advice for that, open the matching page, does
-    nothing for it. The header's network-reading sentence speaks for it
-    until then. tests/test_qc4_t4_health.py holds this list to the
-    onboarding state's, so the two cannot disagree about which readers exist.
-    """
-    return [extractor for extractor in onboarding.EXTRACTORS
-            if not (extractor in onboarding.OPT_IN_EXTRACTORS and states[extractor]["state"] == "never_run")]
-
-
 def readers() -> Dict[str, Any]:
     """
     The first view: per reader, its state as capture_health decides it and
     its runs in the prune's window, as counts; then the heartbeat summary over
-    the same week. The runs themselves and the day rows are one level down,
-    in reader(), so the first paint stays small however long the studio runs.
+    the same week, and network reading as the bridge last reported it. The
+    runs themselves and the day rows are one level down, in reader(), so the
+    first paint stays small however long the studio runs.
+
+    The readers listed are onboarding.listed_health's, the one rule Setup's
+    state, the side panel and the extension health route follow: every page
+    reader, and a network-reading reader once it has run or while the switch
+    is reported on. Listed with the switch off before it ran, it read NOT
+    SEEN YET for a reader that cannot run (cycle 2, SETUP-17).
     """
     windows = _windows()
-    states = {entry["extractor"]: entry for entry in onboarding.capture_health()}
+    health = onboarding.capture_health()
+    reading = onboarding.bridge_status().get("network_reading")
     conn = get_db()
     try:
         # SUM is NULL when no run of the window measured the count, which is
@@ -153,8 +149,8 @@ def readers() -> Dict[str, Any]:
         held = {r["extractor"]: r["n"] for r in conn.execute(
             "SELECT extractor, COUNT(*) AS n FROM capture_days GROUP BY extractor")}
         listed = []
-        for extractor in _listed(states):
-            state = states[extractor]
+        for state in onboarding.listed_health(health, reading):
+            extractor = state["extractor"]
             counted = week.get(extractor)
             listed.append({
                 "extractor": extractor,
@@ -164,6 +160,7 @@ def readers() -> Dict[str, Any]:
                 "last_run_at": state["last_run_at"],
                 "last_good_at": state["last_good_at"],
                 "drift": state["drift"],
+                "refused": state["refused"],
                 "runs": counted["runs"] if counted else 0,
                 "items_seen": counted["items_seen"] if counted else None,
                 "items_kept": counted["items_kept"] if counted else None,
@@ -180,6 +177,9 @@ def readers() -> Dict[str, Any]:
         "window": windows["window"],
         "days_window": windows["days_window"],
         "readers": listed,
+        # The three honest states (onboarding.network_reading_sentence), or
+        # None when no heartbeat has carried the state: not reported, never off.
+        "network_reading": reading,
         "by_day": by_day,
         "heartbeats": beats,
     }

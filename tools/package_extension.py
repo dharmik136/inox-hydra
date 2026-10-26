@@ -34,7 +34,6 @@ REQUIRED_FILES = [
     "voyager_interceptor.js",
     "card_urns.js",
     "voyager_schema.js",
-    "content.css",
     "popup.html",
     "popup.js",
     "sidepanel.html",

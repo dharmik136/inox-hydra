@@ -87,6 +87,10 @@ def _ready_to_open():
     with conn:
         conn.execute("INSERT INTO self_import_requests (kind, requested_at, finished_at, items_seen, outcome) "
                      "VALUES ('posts', ?, ?, 5, 'end_of_list')", (datetime.now(timezone.utc).isoformat(),) * 2)
+        # The Activity page read today, so the weekly ask for it (track 1's
+        # cadence, which comes after the phone's request) has nothing to ask.
+        conn.execute("INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept) "
+                     "VALUES (?, 'activity_posts', 'in', 1, 1)", (datetime.now(timezone.utc).isoformat(),))
     conn.close()
 
 

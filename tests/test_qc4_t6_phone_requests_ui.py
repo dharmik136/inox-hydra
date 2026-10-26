@@ -61,6 +61,10 @@ def _ready_with_a_request():
                      "VALUES ('posts', ?, ?, 5, 'end_of_list')", (now, now))
         conn.execute("INSERT INTO post_metric_observations (activity_urn, observed_at, observed_hour, age_hours, "
                      "source, impressions) VALUES (?, ?, 'probe-now', 24.0, 'post_analytics', 500)", (latest, now))
+        # The Activity page read today, so the weekly ask for it (track 1's
+        # cadence, which comes after the phone's request) has nothing to ask.
+        conn.execute("INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept) "
+                     "VALUES (?, 'activity_posts', 'in', 1, 1)", (now,))
     asked = desk_requests.record(conn, older)
     refused = desk_requests.record(conn, _urn_days_ago(3, 3))
     conn.close()

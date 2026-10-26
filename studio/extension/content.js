@@ -83,21 +83,95 @@ function studioApi(path, body, method) {
 // The interceptor runs only while the creator has network reading switched
 // on (background.js registers it then). Messages claiming to come from it are
 // ignored while it is off: any script on the page can post one.
-let networkReadingOn = false;
+//
+// null until chrome.storage has answered. The interceptor runs at
+// document_start and LinkedIn's first responses arrive before the storage
+// read resolves, and every message that arrived in that gap used to be
+// dropped without a trace: the first captures of every page were lost. They
+// are held below and handled once the switch is known.
+let networkReadingOn = null;
+const EARLY_CAPTURES_LIMIT = 20;
+const earlyCaptures = [];
+// The schemas whose responses carry the creator's own data and nobody else's:
+// their own posts' figures and their follower count. onboarding.VOYAGER_KEPT
+// is the studio's list of the same, and a test holds the two equal.
+const FORWARDED_SCHEMAS = new Set(["feed_updates", "creator_analytics"]);
 // The LinkedIn account this browser is signed in to, as LinkedIn itself has
 // shown it (own_pages.js notes it on the creator's own profile; the worker
 // forgets it when the sign-in changes). Analytics carry it, because neither
 // the analytics page nor LinkedIn's response names the account, and the
 // studio refuses a reading that is not from the profile open in it.
 let signedInVanity = null;
+// own_pages.js runs in this same isolated world and is told by a function
+// call when the state changes, not by an event on LinkedIn's window, which
+// LinkedIn's own scripts can hear.
+const networkReadingListeners = [];
+window.__inoxOnNetworkReading = (fn) => {
+  if (typeof fn === "function") networkReadingListeners.push(fn);
+};
+function announceNetworkReading() {
+  networkReadingListeners.forEach((fn) => {
+    try { fn(); } catch (err) {}
+  });
+}
+
+// Whether this page carries the interceptor. It runs in LinkedIn's own
+// world, out of this script's sight, so the page is asked over the window
+// channel the interceptor already uses, and only while the switch is on:
+// with network reading off the page is never asked. null until it
+// has answered or the grace below has passed; a tab opened before the switch
+// was turned on carries no interceptor and does not answer. It used to mark
+// LinkedIn's root element with an attribute any script there could read.
+const INTERCEPTOR_GRACE_MS = 1500;
+let interceptorAnswered = null;
+let interceptorAskTimer = null;
+
+function askForInterceptor() {
+  if (interceptorAskTimer) clearTimeout(interceptorAskTimer);
+  interceptorAskTimer = null;
+  if (!networkReadingOn) {
+    interceptorAnswered = null;
+    return;
+  }
+  if (interceptorAnswered === true) return;
+  interceptorAnswered = null;
+  interceptorAskTimer = setTimeout(() => {
+    interceptorAskTimer = null;
+    if (interceptorAnswered === null && networkReadingOn) {
+      interceptorAnswered = false;
+      announceNetworkReading();
+    }
+  }, INTERCEPTOR_GRACE_MS);
+  try {
+    window.postMessage({ type: "INOX_VOYAGER_PING", source: "inox-bridge" }, window.location.origin);
+  } catch (err) {}
+}
+
+function noteInterceptor() {
+  if (!networkReadingOn || interceptorAnswered === true) return;
+  if (interceptorAskTimer) clearTimeout(interceptorAskTimer);
+  interceptorAskTimer = null;
+  interceptorAnswered = true;
+  announceNetworkReading();
+}
+
 try {
   chrome.storage.local.get(["networkReading", "signedInVanity"], (items) => {
     networkReadingOn = !chrome.runtime.lastError && !!items && items.networkReading === true;
     signedInVanity = (!chrome.runtime.lastError && items && items.signedInVanity) || null;
+    followNetworkReading();
+    askForInterceptor();
+    const held = earlyCaptures.splice(0, earlyCaptures.length);
+    if (networkReadingOn) held.forEach(handleVoyagerCapture);
+    // own_pages.js reports the state on its heartbeat; it is known now.
+    announceNetworkReading();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.networkReading) {
       networkReadingOn = changes.networkReading.newValue === true;
+      followNetworkReading();
+      askForInterceptor();
+      announceNetworkReading();
     }
     if (area === "local" && changes.signedInVanity) {
       signedInVanity = changes.signedInVanity.newValue || null;
@@ -107,19 +181,36 @@ try {
 
 const voyagerCaptureStats = {
   total: 0,
+  matched: 0,
   successful: 0,
   drifted: 0,
   lastCaptureTime: 0
 };
 
 window.addEventListener("message", (event) => {
-  // Only accept messages from the same page (our MAIN-world interceptor).
-  if (event.source !== window) return;
-  if (!event.data || event.data.type !== "INOX_VOYAGER_CAPTURE") return;
+  // Only accept messages from the same page (our MAIN-world scripts).
+  if (event.source !== window || !event.data) return;
+  if (event.data.source === "inox-voyager-interceptor" && event.data.type === "INOX_VOYAGER_PRESENT") {
+    noteInterceptor();
+    return;
+  }
+  if (event.data.source === "inox-card-urns" && event.data.type === "INOX_CARD_URNS_REPORT") {
+    forwardCardUrnsReport(event.data.report);
+    return;
+  }
+  if (event.data.type !== "INOX_VOYAGER_CAPTURE") return;
   if (event.data.source !== "inox-voyager-interceptor") return;
+  if (networkReadingOn === null) holdEarlyCapture(event.data);
   if (!networkReadingOn) return;
+  handleVoyagerCapture(event.data);
+});
 
-  const payload = event.data.payload;
+function holdEarlyCapture(data) {
+  if (earlyCaptures.length < EARLY_CAPTURES_LIMIT) earlyCaptures.push(data);
+}
+
+function handleVoyagerCapture(data) {
+  const payload = data && data.payload;
   if (!payload || !payload.url || !payload.body) return;
 
   // The schema registry is loaded as voyager_schema.js before this file and
@@ -139,21 +230,45 @@ window.addEventListener("message", (event) => {
       // This is normal for Voyager endpoints we don't care about.
       return;
     }
+    voyagerCaptureStats.matched++;
+    // Own data only. The registry also knows profiles, reactions on posts
+    // and comments, and those responses are about other members: they are
+    // matched and counted here, and nothing of them, not their data and not
+    // their drift, leaves the page. The studio refuses them too.
+    const schemaName = Object.keys(VSchema.VOYAGER_SCHEMAS).find((k) => VSchema.VOYAGER_SCHEMAS[k] === schema);
+    if (!FORWARDED_SCHEMAS.has(schemaName)) return;
 
     const result = VSchema.extractWithSchema(schema, payload.body);
+
+    // The run's drift, named the way the DOM readers name theirs: a field
+    // this reader cannot do without, missing from every entry of a response
+    // that plainly matched its endpoint, or a response with no list of
+    // entries at all. A missing optional figure is not drift for the reader
+    // (most of a feed is other members' posts, which carry no view count);
+    // it still goes to the drift log below. Every network run used to be
+    // written with no drift, and one whose first entry lacked a required
+    // field was not sent at all, so Setup could never say a network reader
+    // had stopped reading.
+    const entries = Array.isArray(result.data) ? result.data : (result.data ? [result.data] : []);
+    const answered = payload.status >= 200 && payload.status < 300;
+    const body = payload.body;
+    const runDrift = !answered ? []
+      : (body && typeof body === "object" && !Array.isArray(body.elements)) ? ["elements"]
+      : schema.required.filter((field) => entries.length > 0 &&
+          !entries.some((entry) => entry && entry[field] !== undefined && entry[field] !== null));
 
     if (result.success) {
       voyagerCaptureStats.successful++;
       voyagerCaptureStats.lastCaptureTime = Date.now();
-
+    }
+    if (result.success || runDrift.length || entries.length) {
       // Forward structured data to the backend.
       studioApi("/api/v1/bridge/voyager-ingest", {
-        schema_name: Object.keys(VSchema.VOYAGER_SCHEMAS).find(
-          k => VSchema.VOYAGER_SCHEMAS[k] === schema
-        ),
+        schema_name: schemaName,
         schema_version: result.schema_version,
         confidence: result.confidence,
-        data: result.data,
+        data: entries,
+        drift: runDrift,
         // Whose figures these are; see signedInVanity.
         vanity: signedInVanity,
         source_url: payload.url,
@@ -171,9 +286,7 @@ window.addEventListener("message", (event) => {
       voyagerCaptureStats.drifted++;
 
       studioApi("/api/v1/bridge/schema-drift", {
-        schema_name: Object.keys(VSchema.VOYAGER_SCHEMAS).find(
-          k => VSchema.VOYAGER_SCHEMAS[k] === schema
-        ),
+        schema_name: schemaName,
         schema_version: result.schema_version,
         drift_fields: result.drift,
         confidence: result.confidence,
@@ -197,6 +310,242 @@ window.addEventListener("message", (event) => {
     // Never interrupt the user experience for a capture failure.
     console.debug("[Studio Bridge] Voyager capture error:", err.message);
   }
+}
+
+// -------------------------------------------------------------
+// What LinkedIn calls, counted from the page's own timeline
+// -------------------------------------------------------------
+// The one question the studio could not answer about network reading was
+// why it captured nothing: the switch, the registration, the page and the
+// patterns all failed silently in the same direction. Resource Timing lists
+// every request the page made, so while the switch is on the page counts
+// its /voyager/api/ calls by path plus GraphQL query name (the part before
+// the dot; the hash after it rotates), never a query string or a URN, and
+// how many of them match the patterns the bridge reads. The heartbeat
+// carries the counts, so the studio can say "LinkedIn made N data calls on
+// this page, K matched" without anyone opening DevTools.
+const voyagerCalls = {};
+let voyagerCallsSeen = 0;
+let voyagerCallsMatched = 0;
+let coverageObserver = null;
+
+// A path names the resource LinkedIn was asked for, and its REST paths put
+// the thing asked about in the path itself: /identity/profiles/<vanity>/,
+// /socialActions/<urn>/. That is another member, or a post, and is never
+// kept. A segment is kept only if it is a word from this fixed list of the
+// words LinkedIn's data API puts in its paths, compared without regard to
+// case and written as listed; every other segment becomes "_id_", and so does
+// the segment after a collection that takes an identifier. An unknown word
+// costs a less specific key, never a person. The list used to be the other
+// way round, the identifiers to blank, and a plain-word vanity after any
+// collection it did not name went through. onboarding.VOYAGER_PATH_WORDS is
+// the studio's copy, which refuses anything else; a test holds the two equal.
+const VOYAGER_PATH_WORDS = [
+  "voyager", "api", "graphql", "me", "identity", "dash", "profiles", "miniProfiles", "profileView",
+  "profileContactInfo", "publicContactInfo", "networkinfo", "memberBadges", "memberIdentity",
+  "profileActions", "feed", "updates", "updatesV2", "social", "socialActions", "socialDetails", "comments",
+  "reactions", "likes", "followerInfo", "hashtags", "contentcreation", "normShares", "shares", "posts",
+  "activities", "creatorAnalytics", "analytics", "messaging", "conversations", "events", "messages",
+  "threads", "notifications", "badges", "relationships", "memberRelationships", "connections", "invitations",
+  "invitationViews", "search", "clusters", "blended", "typeahead", "hitsV2", "hits", "organization",
+  "organizations", "companies", "entities", "jobs", "jobPostings", "premium", "growth", "legoWidgets",
+  "pageContent", "settings", "highlights", "recommendations", "skills", "positions", "educations",
+  "featured", "followers", "following", "people", "members", "groups", "schools"
+];
+const VOYAGER_ID_AFTER = [
+  "profiles", "miniProfiles", "profileContactInfo", "publicContactInfo", "networkinfo", "memberBadges",
+  "profileActions", "updates", "updatesV2", "social", "socialActions", "socialDetails", "comments",
+  "reactions", "likes", "followerInfo", "hashtags", "shares", "posts", "activities", "conversations",
+  "events", "messages", "threads", "connections", "invitations", "organizations", "companies", "jobs",
+  "jobPostings", "people", "members", "groups", "schools"
+];
+const PATH_WORD = new Map(VOYAGER_PATH_WORDS.map((word) => [word.toLowerCase(), word]));
+const ID_AFTER = new Set(VOYAGER_ID_AFTER.map((word) => word.toLowerCase()));
+// A GraphQL query name has one shape: "voyager" and a capitalised name.
+// Anything else in that slot is "other".
+const VOYAGER_QUERY_NAME = /^voyager[A-Z][A-Za-z0-9]{1,78}$/;
+
+function cleanVoyagerPath(pathname) {
+  const out = [];
+  let previous = "";
+  for (const segment of String(pathname).split("/").filter(Boolean).slice(0, 8)) {
+    let word = ID_AFTER.has(previous) ? null : PATH_WORD.get(segment.toLowerCase()) || null;
+    if (!word && previous === "api" && VOYAGER_QUERY_NAME.test(segment)) word = segment;
+    out.push(word || "_id_");
+    // What the segment was taken as, not the text it held: an identifier that
+    // happens to spell a collection's name takes no identifier after it.
+    previous = (word || "_id_").toLowerCase();
+  }
+  return "/" + out.join("/");
+}
+
+function voyagerCallKey(name) {
+  let url;
+  try {
+    url = new URL(name);
+  } catch (err) {
+    return null;
+  }
+  if (!url.pathname.includes("/voyager/api/")) return null;
+  const queryId = url.searchParams.get("queryId");
+  const head = queryId ? String(queryId).split(".")[0] : "";
+  const queryName = queryId ? (VOYAGER_QUERY_NAME.test(head) ? head : "other") : "";
+  return { key: cleanVoyagerPath(url.pathname).slice(0, 160) + (queryName ? " " + queryName : ""),
+           path: url.origin + url.pathname };
+}
+
+function noteVoyagerCall(entry) {
+  const call = voyagerCallKey(entry && entry.name);
+  if (!call) return;
+  voyagerCallsSeen += 1;
+  voyagerCalls[call.key] = (voyagerCalls[call.key] || 0) + 1;
+  const VSchema = window.__InoxVoyagerSchema;
+  if (VSchema && VSchema.resolveSchema(call.path)) voyagerCallsMatched += 1;
+}
+
+function followNetworkReading() {
+  if (networkReadingOn && !coverageObserver && typeof PerformanceObserver !== "undefined") {
+    // A new observer is handed the page's buffered entries again, so the
+    // counts start again with it: switched off and on in one tab, the early
+    // calls would otherwise be counted twice. The page's buffer holds its
+    // first 250 entries, so on a heavy first load the count is of the calls
+    // the bridge saw, which is how the studio words it.
+    for (const key of Object.keys(voyagerCalls)) delete voyagerCalls[key];
+    voyagerCallsSeen = 0;
+    voyagerCallsMatched = 0;
+    try {
+      coverageObserver = new PerformanceObserver((list) => list.getEntries().forEach(noteVoyagerCall));
+      coverageObserver.observe({ type: "resource", buffered: true });
+    } catch (err) {
+      coverageObserver = null;
+    }
+  } else if (!networkReadingOn && coverageObserver) {
+    try { coverageObserver.disconnect(); } catch (err) {}
+    coverageObserver = null;
+  }
+}
+
+// The state of network reading as this page can see it, for the heartbeat
+// own_pages.js sends. null while the switch has not been read: the studio
+// shows that as not measured, never as off. `registered` is the worker's
+// to know, so the page leaves it null and the worker's heartbeat says it.
+window.__inoxNetworkReading = () => {
+  if (networkReadingOn === null) return null;
+  return {
+    switch: networkReadingOn,
+    registered: null,
+    injected: networkReadingOn ? interceptorAnswered : null,
+    voyager_calls_seen: networkReadingOn ? voyagerCallsSeen : null,
+    matched: networkReadingOn ? voyagerCallsMatched : null,
+    captured: networkReadingOn ? voyagerCaptureStats.total : null,
+    last_capture_at: voyagerCaptureStats.lastCaptureTime ? new Date(voyagerCaptureStats.lastCaptureTime).toISOString() : null,
+  };
+};
+window.__inoxVoyagerCalls = () => (networkReadingOn ? Object.assign({}, voyagerCalls) : null);
+
+// -------------------------------------------------------------
+// Reader self-timing
+// -------------------------------------------------------------
+// Nothing in the bridge was timed, so nothing could say whether capture was
+// smooth or which read cost the most. Each reader marks the start and end
+// of its read with performance.now(); the capture report carries this run's
+// duration, the reads since the last report, how many of them took over
+// 50 ms (Long Tasks' own threshold), and the long tasks the page's timeline
+// showed during a read. Long task entries name the frame, not the script,
+// and long animation frames carry no attribution for an isolated world, so
+// the overlap is the closest this script can come to naming its own cost.
+const SLOW_READ_MS = 50;
+const READ_WINDOWS_KEPT = 200;
+const readerTimings = {};
+const openReads = {};
+const readWindows = [];
+
+function timingFor(extractor) {
+  if (!readerTimings[extractor]) {
+    readerTimings[extractor] = { reads: 0, slow_reads: 0, last_ms: null, long_tasks: 0, long_task_ms: 0 };
+  }
+  return readerTimings[extractor];
+}
+
+function beginRead(extractor) {
+  openReads[extractor] = performance.now();
+}
+
+function endRead(extractor) {
+  const started = openReads[extractor];
+  if (started === undefined) return null;
+  delete openReads[extractor];
+  const end = performance.now();
+  const ms = Math.max(0, end - started);
+  const timing = timingFor(extractor);
+  timing.reads += 1;
+  if (ms > SLOW_READ_MS) timing.slow_reads += 1;
+  timing.last_ms = ms;
+  readWindows.push({ extractor, start: started, end });
+  if (readWindows.length > READ_WINDOWS_KEPT) readWindows.splice(0, readWindows.length - READ_WINDOWS_KEPT);
+  return ms;
+}
+
+// The figures since the last report, and this run's duration; the counters
+// start again. A reader that never began a read has no duration: null, so
+// the studio stores "not measured" rather than a zero.
+function takeTiming(extractor) {
+  const timing = timingFor(extractor);
+  const out = {
+    duration_ms: timing.last_ms === null ? null : Math.round(timing.last_ms * 10) / 10,
+    reads: timing.reads,
+    slow_reads: timing.slow_reads,
+    long_tasks: timing.long_tasks,
+    long_task_ms: Math.round(timing.long_task_ms * 10) / 10,
+  };
+  timing.reads = 0;
+  timing.slow_reads = 0;
+  timing.long_tasks = 0;
+  timing.long_task_ms = 0;
+  return out;
+}
+
+// A long frame's entry is delivered after the frame ends, so the frame that
+// overlaps a read is counted against that reader's reads and rides with its
+// next report: the figures on a capture row are the long frames delivered
+// since the reader's previous report.
+function noteLongTask(entry) {
+  if (!entry || typeof entry.startTime !== "number" || typeof entry.duration !== "number") return;
+  const start = entry.startTime;
+  const end = start + entry.duration;
+  for (const read of readWindows) {
+    // A read that ran inside the frame overlapped it, however short the
+    // read; the milliseconds counted are the part of the frame inside it.
+    if (read.end < start || read.start > end) continue;
+    const timing = timingFor(read.extractor);
+    timing.long_tasks += 1;
+    timing.long_task_ms += Math.max(0, Math.min(end, read.end) - Math.max(start, read.start));
+  }
+}
+
+// One source of long frames, so one slow frame is not counted twice: a long
+// animation frame (Chrome 123 and later) contains the long task inside it,
+// so where the browser has both, the frame is observed and the task is not.
+// LONG_FRAME_SOURCE says which, for the record of what a figure counts.
+let LONG_FRAME_SOURCE = null;
+try {
+  if (typeof PerformanceObserver !== "undefined") {
+    const supported = PerformanceObserver.supportedEntryTypes || [];
+    LONG_FRAME_SOURCE = supported.includes("long-animation-frame") ? "long-animation-frame"
+      : (supported.includes("longtask") ? "longtask" : null);
+    if (LONG_FRAME_SOURCE) {
+      new PerformanceObserver((list) => list.getEntries().forEach(noteLongTask))
+        .observe({ type: LONG_FRAME_SOURCE, buffered: true });
+    }
+  }
+} catch (err) {
+  LONG_FRAME_SOURCE = null;
+}
+
+// own_pages.js reads the creator's pages in this same world and times its
+// readers through this.
+window.__inoxReaderTiming = Object.freeze({
+  begin: beginRead, end: endRead, take: takeTiming, longFrameSource: () => LONG_FRAME_SOURCE
 });
 
 /**
@@ -209,22 +558,45 @@ window.addEventListener("message", (event) => {
  * Once per extractor per page per minute, so a busy feed is not a flood.
  */
 const lastCaptureReport = {};
-function reportCapture(extractor, itemsSeen, itemsKept, drift) {
+function reportCapture(extractor, itemsSeen, itemsKept, drift, timing) {
+  // The read ends here whether or not the report gets through the throttle,
+  // so every read is counted and a throttled report still stands for them.
+  endRead(extractor);
   // Keyed on whether this run drifted, so a clean read always gets through
-    // after a drifted one. Otherwise an early read that ran before the page
-    // finished rendering logged drift, and the good read that followed was
-    // throttled away, leaving a working reader marked broken for a minute.
-    const key = extractor + "|" + window.location.pathname + "|" + (drift && drift.length ? "drift" : "ok");
+  // after a drifted one. Otherwise an early read that ran before the page
+  // finished rendering logged drift, and the good read that followed was
+  // throttled away, leaving a working reader marked broken for a minute.
+  const key = extractor + "|" + window.location.pathname + "|" + (drift && drift.length ? "drift" : "ok");
   const now = Date.now();
   if (lastCaptureReport[key] && now - lastCaptureReport[key] < 60000) return;
   lastCaptureReport[key] = now;
-  studioApi("/api/v1/bridge/capture", {
+  studioApi("/api/v1/bridge/capture", Object.assign({
     extractor,
     page_kind: window.location.pathname.split("/")[1] || "home",
     items_seen: itemsSeen,
     items_kept: itemsKept,
     drift: drift && drift.length ? drift : null,
     extension_version: chrome.runtime.getManifest().version
+  }, timing || takeTiming(extractor)));
+}
+
+// The card stamper runs in the page's own world (card_urns.js) and cannot
+// reach the worker, so it posts its run on the window channel the
+// interceptor uses: how many feed cards were on screen, how many carry a
+// post id, and its own timing. Cards on screen with not one id among them is
+// the React properties changing shape, which is the drift that leaves every
+// feed engager without a post. It used to write the run onto LinkedIn's root
+// element, a mark any script on the page could read.
+function forwardCardUrnsReport(report) {
+  if (!report || typeof report !== "object") return;
+  const seen = Number(report.seen) || 0;
+  const stamped = Number(report.stamped) || 0;
+  reportCapture("card_urns", seen, stamped, seen >= 3 && stamped === 0 ? ["card_urn"] : [], {
+    duration_ms: typeof report.duration_ms === "number" ? Math.round(report.duration_ms * 10) / 10 : null,
+    reads: Number(report.reads) || 0,
+    slow_reads: Number(report.slow_reads) || 0,
+    long_tasks: 0,
+    long_task_ms: 0,
   });
 }
 
@@ -286,10 +658,9 @@ async function injectIntoLinkedInComposer(text) {
     }
   }
 
-  if (!editor) {
-    showInPageToast("⚠️ Please click 'Start a post' on LinkedIn first!", "warning");
-    return false;
-  }
+  // The answer is the side panel's to say, which asked: nothing is drawn
+  // into LinkedIn's page.
+  if (!editor) return false;
 
   // 3. Focus editor and insert text cleanly
   editor.focus();
@@ -309,38 +680,25 @@ async function injectIntoLinkedInComposer(text) {
   // Dispatch events to notify LinkedIn's React / Quill state
   editor.dispatchEvent(new Event('input', { bubbles: true }));
   editor.dispatchEvent(new Event('change', { bubbles: true }));
-
-  showInPageToast("✅ Inox Hydra: Formatted post injected into composer!", "success");
   return true;
 }
 
-// A status that screen readers announce (an alert for a warning), shown for
-// 6 s, and built as text: a notice can carry a studio reason or a name, which
-// must never be read as markup. It used to be innerHTML with no role, gone
-// after 3.5 s.
-function showInPageToast(message, type = "success") {
-  const existing = document.getElementById("studio-bridge-inpage-toast");
-  if (existing) existing.remove();
-
-  const toast = document.createElement("div");
-  toast.id = "studio-bridge-inpage-toast";
-  toast.className = `studio-inpage-toast ${type}`;
-  toast.setAttribute("role", type === "warning" ? "alert" : "status");
-  toast.setAttribute("aria-live", type === "warning" ? "assertive" : "polite");
-  const icon = document.createElement("div");
-  icon.className = "studio-toast-icon";
-  icon.setAttribute("aria-hidden", "true");
-  icon.textContent = "LS";
-  const text = document.createElement("div");
-  text.className = "studio-toast-msg";
-  text.textContent = message;
-  toast.append(icon, text);
-
-  document.body.appendChild(toast);
-  setTimeout(() => {
-    toast.classList.add("studio-toast-fade");
-    setTimeout(() => toast.remove(), 400);
-  }, 6000);
+// What the creator must act on, or must know was not saved, is said in the
+// side panel and never drawn into LinkedIn's page (decision D3; the last of
+// the in-page notices moved in cycle 4, the review's S7). The worker keeps
+// the sentence for this browser session, the action badge carries it ("!"
+// for a warning, orange while captures wait) until the panel opens, and the
+// panel shows it at its top the next time it opens, as text: a notice can
+// carry a studio reason or a name, never markup.
+function noticeToPanel(message, kind) {
+  try {
+    chrome.runtime.sendMessage({
+      action: "PAGE_NOTICE",
+      message: String(message || ""),
+      kind: kind === "waiting" ? "waiting" : "warning",
+      page_kind: window.location.pathname.split("/")[1] || "home"
+    }, () => { void chrome.runtime.lastError; });
+  } catch (err) {}
 }
 
 // -------------------------------------------------------------
@@ -372,21 +730,26 @@ function maybeExtractAnalytics(force) {
   analyticsReadTimer = setTimeout(extractAndSyncAnalytics, 2000);
 }
 
-// Announces in-app navigation by watching the URL, not by patching history.
+// Announces in-app navigation from the Navigation API, with the URL as a net.
 //
 // popstate covers back and forward only, and LinkedIn navigates with
 // pushState, which emits no event. The previous fix wrapped history.pushState
 // and replaceState, which looked right and did nothing: a content script runs
 // in an isolated world with its own copy of the page's JavaScript globals, so
 // the wrapper replaced this script's history methods while LinkedIn went on
-// calling its own. Every capture keyed to navigation therefore ran only on a
-// hard load, and a creator who clicked from the feed to their profile was
-// never seen arriving.
+// calling its own. The fix after that compared location.href on every DOM
+// mutation batch and on a 1 s poll, which saw the route late and cost a
+// whole-document observer in every LinkedIn tab.
 //
-// So the URL itself is the signal. A route change re-renders the page, which
-// the body observer below already sees, and the comparison costs one string
-// check per mutation batch. The interval is a fallback for a route change that
-// arrives before any mutation, and does nothing while the tab is hidden.
+// The browser dispatches the Navigation API's events on the shared
+// window.navigation object, as it does popstate, so the isolated world
+// receives them without any code in the page's world: currententrychange
+// fires once the new entry is current, in the same task as the pushState
+// (checked in headless Chromium 153 with an isolated-world script; the
+// record for cycle 4, track 1, item 7 holds the result). The URL is compared
+// in the handler, so a replaceState to the same address announces nothing.
+// The 5 s poll is a net for a browser without the API, and does nothing
+// while the tab is hidden.
 let lastSeenHref = window.location.href;
 
 function checkForNavigation() {
@@ -396,13 +759,12 @@ function checkForNavigation() {
   window.dispatchEvent(new Event("studio:locationchange"));
 }
 
-new MutationObserver(checkForNavigation).observe(document.documentElement, {
-  childList: true,
-  subtree: true,
-});
+if ("navigation" in window && window.navigation && typeof window.navigation.addEventListener === "function") {
+  window.navigation.addEventListener("currententrychange", checkForNavigation);
+}
 setInterval(() => {
   if (document.visibilityState === "visible") checkForNavigation();
-}, 1000);
+}, 5000);
 
 maybeExtractAnalytics();
 window.addEventListener("load", () => maybeExtractAnalytics());
@@ -528,6 +890,7 @@ function detectAnalyticsPeriod() {
 
 function extractAndSyncAnalytics() {
   try {
+    beginRead("analytics");
     const metricElements = document.querySelectorAll('[data-test-metric-value], .member-analytics-addon__metric-value, .creator-analytics-metric__value, .analytics-metric-summary');
     let impressions = null;
     let engagements = null;
@@ -555,6 +918,7 @@ function extractAndSyncAnalytics() {
     else if (impressions === null && followers === null) analyticsDrift.push("metric_labels");
     reportCapture("analytics", metricElements.length,
       [impressions, engagements, followers].filter(v => v !== null).length, analyticsDrift);
+    endRead("analytics");
 
     if (impressions === null && followers === null) return;
 
@@ -586,11 +950,11 @@ function extractAndSyncAnalytics() {
       // told their figures were saved.
       .then(result => {
         if (!result) {
-          showInPageToast("Inox Hydra: could not reach your studio, so these analytics were not saved.", "warning");
+          noticeToPanel("Inox Hydra: could not reach your studio, so these analytics were not saved.", "warning");
           return;
         }
         if (result.status === "refused") {
-          showInPageToast(
+          noticeToPanel(
             result.httpStatus === 401 || result.httpStatus === 403
               ? "Inox Hydra: the studio refused this browser, so these analytics were not saved. Open the studio once in this browser, then reload this page."
               : "Inox Hydra: the studio did not save these analytics" + (result.detail ? ": " + result.detail + "." : "."),
@@ -603,21 +967,22 @@ function extractAndSyncAnalytics() {
             ? "Inox Hydra: could not tell which period these figures cover"
             : "Inox Hydra: these figures cover " + (period || "an unknown period");
           const kept = result.followers_saved > 0 ? " Your follower count was saved." : "";
-          showInPageToast(
+          noticeToPanel(
             cover + ", so they were not saved as today's numbers." + kept +
             " Set the range to 24 hours to sync a daily figure.",
             "warning"
           );
           return;
         }
-        if (result.status === "success" && result.buckets_ingested > 0) {
-          showInPageToast("Inox Hydra: creator analytics synced to your local studio.", "success");
-          return;
-        }
-        showInPageToast("Inox Hydra: the studio saved nothing from this page.", "warning");
+        // A saved day is confirmed on the action badge and in the side
+        // panel, from the worker's own record of the relay (decision D3):
+        // nothing is drawn into LinkedIn's page for a capture that worked.
+        if (result.status === "success" && result.buckets_ingested > 0) return;
+        noticeToPanel("Inox Hydra: the studio saved nothing from this page.", "warning");
       })
       .catch(() => {});
   } catch (e) {
+    endRead("analytics");
     console.debug("[Studio Bridge] Passive analytics parse:", e);
   }
 }
@@ -782,19 +1147,15 @@ function maybeBindPostUrn() {
   studioApi("/api/v1/posts/bind-urn", { activity_urn: urn, post_text: body, post_author: postAuthorFor(document.body) })
     .then(result => {
       if (!result) return;
-      if (result.status === "bound") {
-        showInPageToast(
-          "Inox Hydra: this post is now linked to your draft. Engagement on it will be attributed.",
-          "success"
-        );
-        return;
-      }
+      // A post linked to its draft is confirmed on the badge and in the
+      // side panel, from the worker's record of the relay (decision D3).
+      if (result.status === "bound") return;
       // "ambiguous" means the studio holds more than one draft whose opening
       // matches this post and will not guess. Only the creator can settle it,
       // and nothing said so: this answer was read for "bound" and discarded.
       if (result.status === "ambiguous" && !shownRefusals.ambiguous_bind) {
         shownRefusals.ambiguous_bind = true;
-        showInPageToast(
+        noticeToPanel(
           "Inox Hydra: more than one of your drafts opens like this post, so it was not linked. " +
           "Open the studio's Posts screen to say which one it is.",
           "warning"
@@ -802,9 +1163,9 @@ function maybeBindPostUrn() {
         return;
       }
       if (result.status === "kept") {
-        showInPageToast(
+        noticeToPanel(
           "Inox Hydra: your studio was busy, so linking this post is waiting and will be sent again.",
-          "warning"
+          "waiting"
         );
       }
     })
@@ -1035,6 +1396,7 @@ function observeAndCaptureEngagers() {
   if (!isPostEngagementSurface()) return;
 
   lastCommentScrapeTime = Date.now();
+  beginRead("engagers");
 
   const leads = [];
 
@@ -1134,12 +1496,17 @@ function observeAndCaptureEngagers() {
   const reactorModals = Array.from(
     document.querySelectorAll('.artdeco-modal, div[role="dialog"], .social-details-reactors-tab')
   ).filter(looksLikeReactionsList);
+  // The reactors tab sits inside the dialog, and both match, so each list was
+  // read twice and every reactor counted twice. An item is read once.
+  const reactorsRead = new Set();
   reactorModals.forEach(modal => {
     try {
       const reactorItems = modal.querySelectorAll(
         'li.social-details-reactors-tab__item, .reactions-menu__item'
       );
       reactorItems.forEach(item => {
+        if (reactorsRead.has(item)) return;
+        reactorsRead.add(item);
         const linkEl = item.querySelector('a[href*="/in/"]');
         if (!linkEl) return;
 
@@ -1185,10 +1552,14 @@ function observeAndCaptureEngagers() {
   // markup changing, not an empty thread.
   const commentersRead = leads.length - leadsBeforeComments;
   const newLayoutList = !commentCards.length && document.querySelector('[data-testid*="commentList"]');
+  // What the reader saw is the comments and the reactors both: counting only
+  // comments made a reactions list read on its own a run that saw nothing.
   if (commentCards.length || reactorModals.length || newLayoutList) {
-    reportCapture("engagers", commentCards.length || newLayoutCommenters.length, leads.length,
+    reportCapture("engagers", (commentCards.length || newLayoutCommenters.length) + reactorsRead.size, leads.length,
       commentCards.length > 0 && commentersRead === 0 ? ["commenter_name"] : []);
   }
+  // The read is the DOM work above; what follows is sending.
+  endRead("engagers");
 
   // Only POST if we have valid leads
   if (leads.length) {
@@ -1203,7 +1574,7 @@ function observeAndCaptureEngagers() {
 
     if (!identified.length) {
       if (skipped > 0) {
-        showInPageToast(
+        noticeToPanel(
           `Inox Hydra: ${skipped} engager(s) had no profile link and were not saved.`,
           "warning"
         );
@@ -1260,7 +1631,7 @@ function observeAndCaptureEngagers() {
     //
     // Three outcomes now, not two. A refusal because the post is someone
     // else's is the rule working, and is silent: the feed is full of other
-    // people's posts, and announcing each one would turn the toast into noise
+    // people's posts, and announcing each one would turn the notice into noise
     // the creator learns to ignore.
     Promise.allSettled(writes).then(results => {
       const answers = results.map(r => (r.status === "fulfilled" ? r.value : null));
@@ -1292,21 +1663,26 @@ function observeAndCaptureEngagers() {
       // posts first", fired no notice at all.
       const toShow = answers.find(a => a && a.status === "refused" && a.show && a.message);
 
+      // Stored engagers are confirmed on the action badge and in the side
+      // panel, from the worker's own record of each relay (decision D3), so
+      // nothing is drawn into LinkedIn's page for a capture that worked.
+      // What the creator must act on, or must know was not saved, is said in
+      // the side panel (noticeToPanel).
       if (stored > 0) {
-        const note = skipped > 0 ? ` (${skipped} had no profile link)` : "";
-        const alsoKept = kept > 0 ? ` ${kept} are waiting for the studio.` : "";
-        showInPageToast(`Inox Hydra: ${stored} engager(s) on your post captured${note}.${alsoKept}`, "success");
+        if (skipped > 0) {
+          noticeToPanel(`Inox Hydra: ${skipped} engager(s) had no profile link and were not saved.`, "warning");
+        }
       } else if (kept > 0) {
-        showInPageToast(
+        noticeToPanel(
           `Inox Hydra: your studio was busy, so ${kept} capture(s) are kept and will be sent again. ` +
           `${waiting} waiting in all.`,
-          "warning"
+          "waiting"
         );
       } else if (toShow && !shownRefusals[toShow.reason || toShow.message]) {
         shownRefusals[toShow.reason || toShow.message] = true;
-        showInPageToast("Inox Hydra: " + toShow.message, "warning");
+        noticeToPanel("Inox Hydra: " + toShow.message, "warning");
       } else if (unreachable === answers.length) {
-        showInPageToast("Inox Hydra: could not reach your studio, so nothing was saved.", "warning");
+        noticeToPanel("Inox Hydra: could not reach your studio, so nothing was saved.", "warning");
       }
     });
   }

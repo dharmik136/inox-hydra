@@ -353,15 +353,75 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
             "AND observed_at >= ?", (latest["activity_urn"],
                                      (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat())).fetchone()
         if not recent:
+            ever = conn.execute(
+                "SELECT 1 FROM post_metric_observations WHERE activity_urn = ? AND source = 'post_analytics'",
+                (latest["activity_urn"],)).fetchone()
+            first_hours = not ever and latest["age_hours"] < FIRST_HOURS
             return {"action": "open", "url": latest["analytics_url"],
-                    "reason": "Your latest post is in its first three days and its figures were not read in the last 12 hours."}
+                    "reason": ("Your latest post has no reading yet in its first hours; a reading taken early "
+                               "is the first point its settle curve is built from."
+                               if first_hours else
+                               "Your latest post is in its first three days and its figures were not read in the last 12 hours.")}
+    # What the creator asked for from the phone comes before what the
+    # studio asks for (cycle 4, track 6, then track 1's cadence).
     asked = _phone_request_rule(conn)
+    if asked:
+        return asked
+    asked = _cadence_ask(state, latest, conn)
     if asked:
         return asked
     if latest:
         return {"action": "open", "url": latest["url"],
                 "reason": "Opening your latest post picks up anyone who has commented since."}
     return {"action": "setup", "reason": "No post of yours has been imported yet."}
+
+
+# The readings a settle curve needs that no natural visit supplies. Four
+# points matter for a post: about 2 hours, 24 hours, 48 hours and 7 days.
+# The first three come from the visits a creator makes anyway (the post soon
+# after posting, the next morning, the two-day check). The day-7 point and
+# the Activity page's late readings of older posts were never asked for.
+DAY_SEVEN_WINDOW_HOURS = (144.0, 240.0)
+# A post younger than this with no reading at all is in its first hours: the
+# earliest settle-curve point, about 2 hours, is still to be taken.
+FIRST_HOURS = 24.0
+# A reading taken when the post was at least this old counts as its week point.
+DAY_SEVEN_READ_AT_HOURS = 120.0
+ACTIVITY_ASK_AFTER = timedelta(days=7)
+
+
+def _cadence_ask(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) -> Optional[Dict[str, Any]]:
+    """
+    The day-7 ask, then the weekly Activity > Posts ask, or None.
+
+    The day-7 ask comes first because a post is at its week point for four
+    days and the reading is the denominator of its reach half-life; the
+    Activity page can be read any day. Both are a page the creator opens,
+    read by the extension as every page is; nothing here acts on LinkedIn.
+    """
+    if latest and latest.get("analytics_url") and \
+            DAY_SEVEN_WINDOW_HOURS[0] <= latest["age_hours"] <= DAY_SEVEN_WINDOW_HOURS[1]:
+        week_point = conn.execute(
+            "SELECT 1 FROM post_metric_observations WHERE activity_urn = ? AND source = 'post_analytics' "
+            "AND age_hours >= ?", (latest["activity_urn"], DAY_SEVEN_READ_AT_HOURS)).fetchone()
+        if not week_point:
+            return {"action": "open", "url": latest["analytics_url"],
+                    "reason": ("Your latest post is about a week old and has no reading from that age; "
+                               "a reading at about a week old is what your usual settle age rests on.")}
+    vanity = (state.get("identity") or {}).get("vanity")
+    # The Activity page gives late readings to posts the studio holds; with
+    # none held, Today says that instead.
+    if not vanity or not latest:
+        return None
+    posts_reader = next((h for h in state["health"] if h["extractor"] == "activity_posts"), None)
+    last_good = posts_reader["last_good_at"] if posts_reader else None
+    stale = last_good is None or \
+        datetime.fromisoformat(last_good) < datetime.now(timezone.utc) - ACTIVITY_ASK_AFTER
+    if stale:
+        return {"action": "open", "url": onboarding.profile_url_for(vanity) + "recent-activity/all/",
+                "reason": ("Your posts have not been read from your Activity page in the last week; one visit "
+                           "reads every post still on screen and gives your older posts their late readings.")}
+    return None
 
 
 def _phone_request_rule(conn) -> Optional[Dict[str, Any]]:
@@ -473,7 +533,9 @@ def today_brief() -> Dict[str, Any]:
         "freshness": {
             "bridge": state["bridge"],
             "drifting": drifting,
-            "last_capture_at": max((h["last_run_at"] for h in state["health"] if h["last_run_at"]), default=None),
+            # A run the studio refused is not a capture (capture_health).
+            "last_capture_at": max((h["last_capture_at"] for h in state["health"] if h["last_capture_at"]),
+                                   default=None),
             # Your posts the studio holds, however they arrived. With none of
             # the capture's runs recorded, the line read NOTHING CAPTURED YET
             # beside twelve imported posts.

@@ -430,6 +430,8 @@ const STALL_ROUNDS = 8;
 let importRunning = false;
 let stopRequested = false;
 const sentKeys = new Set();
+// What the page has offered once, for the import's running total (own_pages.js).
+const offeredKeys = new Set();
 const clean = (t) => (t || "").replace(/\s+/g, " ").trim();
 const pause = () => Promise.resolve();
 const humanPause = () => Promise.resolve();

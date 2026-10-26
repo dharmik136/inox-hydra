@@ -720,6 +720,7 @@ HELP_SECTIONS = [
             "quality/CYCLE3_REGISTER.md",
             "quality/CYCLE4_2026-10_PRD.md",
             "quality/CYCLE4_REGISTER.md",
+            "quality/cycle4/t1-bridge.md",
             "quality/cycle4/t5-derive.md",
             "quality/cycle4/t7-ideas.md",
             "quality/cycle4/t3-honesty.md",

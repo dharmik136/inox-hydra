@@ -88,11 +88,12 @@ except ImportError:
     from text_cut import clip
 
 try:
-    from . import archive_age, paths
+    from . import archive_age, paths, post_identity
     from .database import get_db
 except ImportError:
     import archive_age
     import paths
+    import post_identity
     from database import get_db
 
 # What kind of post each Shares row was, from its media and shared-link
@@ -1115,6 +1116,9 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Di
     tally = _counter()
     now = _now()
     twins = _Twins(conn, from_archive=True)
+    # Whether any studio record could be a post's source, asked once: the
+    # import makes no unbound record, so the answer holds for every row.
+    may_bind = post_identity.anything_to_bind(conn)
     for row in rows:
         if batches.row():
             twins.refresh(conn)
@@ -1140,6 +1144,9 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Di
                 "WHERE activity_urn = ?",
                 (when, clip(text, 10000) or None, clip(text, 10000) or None, same),
             )
+            # One post per publication, by the one rule, for a publication
+            # the bridge recorded before every path gave it its post.
+            post_identity.ensure_post(conn, same, bind=may_bind)
             post_format.record(conn, same, found)
             tally["already_there"] += 1
             continue
@@ -1148,6 +1155,10 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Di
             "reposts, impressions, first_seen_at, last_seen_at) VALUES (?, ?, ?, 'archive', NULL, NULL, NULL, NULL, ?, ?)",
             (urn, clip(text, 10000) or None, when, now, now),
         )
+        # Its post, bound to the studio draft it came from or made from it, by
+        # the one rule. The archive used to write the publication alone, so
+        # the post had no posts row and its engagers route answered 404.
+        post_identity.ensure_post(conn, urn, clip(text, 10000) or None, when, now, bind=may_bind)
         post_format.record(conn, urn, found)
         batches.add("posts", urn)
         tally["added"] += 1
@@ -1505,6 +1516,12 @@ def _remove(conn, brought: Dict[str, Any], batches: Optional[_Batches] = None) -
         for key in brought.get(kind) or []:
             if batches:
                 batches.row()
+            if kind == "posts" and conn.execute(
+                    "SELECT 1 FROM own_posts WHERE activity_urn = ? AND published_at_source = 'archive'",
+                    (key,)).fetchone():
+                # The post the import made for its publication goes with it,
+                # while nothing in the studio has touched it.
+                post_identity.forget_reconstruction(conn, key)
             # A bare key is from a record kept before rows carried their stamp.
             sql, params = (stamped, tuple(key)) if isinstance(key, list) and stamped else (plain, (key,))
             removed[kind] += conn.execute(sql, params).rowcount

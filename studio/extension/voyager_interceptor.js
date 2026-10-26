@@ -26,6 +26,25 @@
     if (window.__inox_voyager_intercepted__) return;
     Object.defineProperty(window, '__inox_voyager_intercepted__', { value: true, enumerable: false, writable: false });
 
+    // The extension's own scripts ask whether this page carries the reader:
+    // they run in another world and cannot see the flag above. They ask over
+    // the window channel the captures use, only while the switch is on, and
+    // this answers. A tab opened before the switch was turned on has no
+    // interceptor and does not answer, which the studio then names. It used to
+    // mark LinkedIn's root element with an attribute instead.
+    try {
+        window.addEventListener('message', (event) => {
+            try {
+                if (event.source !== window || !event.data) return;
+                if (event.data.source !== 'inox-bridge' || event.data.type !== 'INOX_VOYAGER_PING') return;
+                window.postMessage({ type: 'INOX_VOYAGER_PRESENT', source: 'inox-voyager-interceptor' },
+                    window.location.origin);
+            } catch (e) {}
+        });
+    } catch (e) {
+        // A window with no listeners to add: the page is simply not asked.
+    }
+
     // Rate limiting: max 30 requests per minute to avoid memory pressure
     // Past bug: Capturing too many large Voyager responses quickly caused OOM crashes
     // in the background worker. A simple sliding window fixes this.
@@ -42,12 +61,14 @@
     // feed's calls) is neither copied nor counted against the cap above. It
     // was counted first, so on a busy page the creator analytics response
     // was dropped without a trace.
+    //
+    // Own data only: the feed (whose entries the studio keeps only for the
+    // creator's own posts) and the creator's analytics. Profiles, reactions
+    // on posts and comments are about other members and are not copied at
+    // all; content.js and the studio would refuse them anyway.
     const READ_ENDPOINTS = [
         /\/voyager\/api\/feed\/updatesV2/i,
-        /\/(voyager\/api\/identity\/profiles|identity\/dash\/profiles)/i,
-        /\/voyager\/api\/identity\/dash\/creatorAnalytics/i,
-        /\/voyager\/api\/socialActions/i,
-        /\/voyager\/api\/feed\/comments/i
+        /\/voyager\/api\/identity\/dash\/creatorAnalytics/i
     ];
 
     function isRateLimited() {

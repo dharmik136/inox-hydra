@@ -7,8 +7,6 @@ The extension reads LinkedIn's pages, and LinkedIn changes how they are built wi
 
 It says whether the bridge browser has been heard from, which extension version it runs, and how long ago it last reported. If the extension is older than the studio expects, the line says to reload it; see [After an update, reload the browser extension](after-an-update-reload-the-extension.md).
 
-Under it, one sentence about network reading. Network reading is off unless you turn it on in the extension's popup. An extension that reports its switch state says here whether it is off, on and seeing LinkedIn's data calls, or on and matching nothing. An older extension does not report it, and the line says "not reported by this extension version" rather than guessing.
-
 ## The four figures
 
 | Figure | What it counts |
@@ -20,11 +18,19 @@ Under it, one sentence about network reading. Network reading is off unless you 
 
 ## Readers, last 7 days
 
+Over the table, one sentence says which of three states network reading is in, as the bridge last reported it. Network reading is off unless you turn it on in the extension's popup.
+
+- "Network reading is off.", with a grey dot.
+- "Network reading is on and seeing N LinkedIn data calls, K matched.", with a green dot.
+- "Network reading is on and matching nothing", in orange, with the count of data calls the LinkedIn tab that last reported saw and none matched. It adds "reload that tab" when that tab does not carry the reader, and "turn the switch off and on" when the browser has not registered it.
+
+An extension that has not reported the state says "not reported by this extension version" rather than "off". The same sentence is in Setup's step 1 and in the extension's side panel, under **Health**.
+
 One row per reader. The studio keeps a week of runs, which is why the table says **last 7 days**: a run older than that is gone from the log, except each reader's latest run and its latest run that worked, which are kept so the last two columns can always be answered.
 
 | Column | What it is |
 | --- | --- |
-| STATE | **WORKING**, **CANNOT READ** and the fields it could not read, or **NOT SEEN YET** when the extension has never run that reader |
+| STATE | One of five states, from the reader's latest run: **NOT SEEN YET** when the extension has not run it; **WORKING** when it read something; **READ NOTHING** when it ran and found nothing to read, which is an empty page or a page it no longer recognises; **CANNOT READ** and the fields it could not read, in orange; or **REFUSED: IDENTITY**, in orange, when the studio refused what it read |
 | RUNS | How many times the reader ran in the last 7 days |
 | SEEN and KEPT | How many items those runs found on the page, and how many the studio kept. **not measured** when no run of the week counted |
 | DRIFTED | How many of those runs could not read a field they need |
@@ -35,6 +41,8 @@ Click a reader's name to open its runs: each run's time, the kind of page, what 
 
 When a reader is **CANNOT READ**, the page was found but the fields it needs could not be read, which usually means LinkedIn has changed how the page is built. Nothing from that part is captured until the extension is updated. There is nothing to fix on your side; keep the studio up to date.
 
+When a reader is **REFUSED: IDENTITY**, it ran, and the studio refused what it read because the LinkedIn account signed in to the bridge browser is not the profile you confirmed in Setup, or has not been noted yet. Open your own profile in that browser once, and check that it is the account you confirmed. A refused run is listed with the reader's runs, marked "refused", and is never counted as the reader's last working run.
+
 ## All readers by day
 
 Under the readers, one row per day for the last 14 days, newest first, with every reader together: how many runs, how much they saw and kept, and how many could not read a field. These rows are kept for 180 days, so they outlive the week of runs. Days are counted in UTC.
@@ -44,11 +52,12 @@ Under the readers, one row per day for the last 14 days, newest first, with ever
 
 ## Which readers there are
 
-The table lists these seven parts, the same seven Setup used to list:
+The table lists these eight parts:
 
 | Part | What it reads |
 | --- | --- |
 | Comments and reactions on your posts | The people who become leads |
+| Post ids on feed cards | Which post each commenter or reactor belongs to, copied from the card onto the page |
 | Your profile | Your name and details, for Setup's step 3 |
 | Your posts | The **Posts you wrote** import |
 | Your comments | The **Comments you left** import |
@@ -56,7 +65,7 @@ The table lists these seven parts, the same seven Setup used to list:
 | Creator analytics | The figures in **Analytics** |
 | Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends, and where the page shows them followers gained, profile viewers, link visits, the share of impressions from inside and outside your network, and the viewer demographics. Only your recorded posts are read. Only a missing impressions, members reached, reactions, comments, reposts, saves or sends figure marks this reader as not reading the page. LinkedIn may not show the others to every member or on every post, so a missing one stores nothing and is not counted against the reader; if one never appears, the label may have changed |
 
-Network reading is off unless you turn it on in the extension's popup. If you do, two more parts appear in the table once they have run: **Network reading: your posts' figures** and **Network reading: creator analytics**. They are not listed while network reading has not run, because opening a page cannot start them.
+Network reading is off unless you turn it on in the extension's popup. While it is on, and once either has run, two more parts are listed: **Network reading: your posts' figures** and **Network reading: creator analytics**. They are not listed while the switch is off and neither has run, because opening a page cannot start them. Network reading keeps the figures of your own posts and your follower count, and nothing else: the other posts in LinkedIn's feed response are dropped before anything is written, and the profiles, reactions and comments LinkedIn's page also downloads are not sent to the studio at all.
 
 ## The blocks on the right
 

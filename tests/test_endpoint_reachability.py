@@ -367,6 +367,10 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # 148 reached, 57 unreachable. The four new readings routes have no screen
 # yet; 2.9.0 draws them.
 # ---------------------------------------------------------------------------
+# 2.8.0 merged into track 1 (the bridge), measured on the merged tree: 205
+# paths, 148 reached, 57 unreachable, unchanged. The bridge adds no path: its
+# heartbeat carries new fields on the route it already had.
+#
 # Track 4 merged with release 2.8.0 (track 5's phase 2 and the integration
 # fixes), measured on the merged tree: 214 paths, 163 reached, 51 unreachable
 # (release's 205 and 148 with track 4's nine paths and its six newly reached).
@@ -374,6 +378,10 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # /api/analytics/account-figures, and Posts calls
 # /api/analytics/content-figures and /api/v1/insights/reposts. Reached 166,
 # unreachable 48; POST /api/analytics/page-figures stays the extension's.
+#
+# Track 1 (the bridge) merged into track 4 for 2.9.0, measured on the merged
+# tree: 214 paths, 166 reached, 48 unreachable, unchanged. The bridge adds no
+# path, and Health reads the network-reading state from its own readers route.
 # ---------------------------------------------------------------------------
 TOTAL_API_PATHS = 214
 REACHED_BY_INTERFACE = 166

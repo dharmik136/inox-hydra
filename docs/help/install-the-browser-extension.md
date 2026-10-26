@@ -6,9 +6,11 @@ By default the studio makes no requests to LinkedIn itself. Apart from optional 
 
 ## Network reading is off unless you switch it on
 
-The extension's popup has a switch, **Read LinkedIn's network responses**. Off, which is how it starts, the bridge reads only what is on the pages you open. On, it also copies the figures LinkedIn's own app has already downloaded for those pages, which are exact rather than rounded, and notes which of LinkedIn's data requests they made (the address and status, not the contents). It does this by wrapping the page's `fetch` function. LinkedIn's page code can see that wrapping and may treat it as automation, so leave it off unless you want the exact figures.
+The extension's popup has a switch, **Read LinkedIn's network responses**. Off, which is how it starts, the bridge reads only what is on the pages you open. On, it also copies the figures LinkedIn's own app has already downloaded for those pages, which are exact rather than rounded: those of your own posts, and your follower count. The other posts in your feed, and the profiles, reactions and comments LinkedIn's page downloads, are not kept. It also notes which of LinkedIn's data requests the pages made (the address and status, not the contents). It does this by wrapping the page's `fetch` function. LinkedIn's page code can see that wrapping and may treat it as automation, so leave it off unless you want the exact figures.
 
 Switching it on applies to LinkedIn pages you open or reload afterwards. Switching it off stops the copying at once; a LinkedIn tab that was already open keeps the wrapper in place, doing nothing, until you reload it.
+
+The studio says which of three states it is in, in **Setup** step 1 and in the side panel's **Health** tab: "Network reading is off.", "Network reading is on and seeing N LinkedIn data calls, K matched." or "Network reading is on and matching nothing", with the number of data calls the LinkedIn tab that last reported saw. While it is on, each LinkedIn page also counts the data calls it makes, and sends the counts with its heartbeat. An address is counted only as the words of LinkedIn's own API, from a fixed list (such as `identity`, `profiles`, `feed`), with every other part written `_id_`, and a GraphQL call by its query name, or as `other` when the name is not one of LinkedIn's; nothing else of an address is kept, so the studio can name what LinkedIn calls without you opening the browser's developer tools. The sentence adds "reload that tab" when the page was opened before the switch, and "turn the switch off and on" when the browser did not register the reader.
 
 ## Which browser to use
 
@@ -75,11 +77,23 @@ The part of the extension that runs inside LinkedIn pages can reach only a fixed
 
 ## Check it works
 
-Open one of your posts with comments. A small notice appears on the LinkedIn page for people it has not already seen on that post since the page loaded:
+Open one of your posts with comments. A capture that worked is confirmed outside LinkedIn's page, from the extension's own record of it, with no call to the studio:
 
-- "Inox Hydra: N engager(s) on your post captured." The people are now in **Leads**. Reopen **Leads** to see them.
+- The extension's toolbar icon shows a count on a green badge: how many captures from this tab the studio stored this session. Only what the studio stored is counted, so the engagers of other people's posts, which the studio deliberately does not keep, never add to it. The count clears when you open the side panel.
+- The badge turns orange while captures are waiting for a studio that was busy or closed, and in a tab with no count of its own it then shows how many are waiting. It also turns orange, with a `!` in such a tab, after a part of the capture reported this session that it could not read a page. The icon's tooltip says which.
+- The side panel's header reads, for example, "Captured an engager on your post just now." It names the kind of thing and when, never the person, and it updates the moment the next capture lands. When the last page read gave the studio nothing new, it reads "Read LinkedIn just now; nothing new to keep." The popup shows the same line.
+- The people are now in **Leads**. Reopen **Leads** to see them.
+
+Nothing the extension says is drawn into LinkedIn's page. What you can act on, or must know was not saved, appears at the top of the side panel the next time you open it, and until then the badge shows a `!` and its tooltip gives the sentence. For example:
+
 - "Inox Hydra: N engager(s) had no profile link and were not saved."
 - "Inox Hydra: could not reach your studio, so nothing was saved." The studio is not running, or this browser was never paired.
+
+The one exception is a history import: its banner, with its **Stop** control, stays on the page while it runs, and a warning during the import is a sentence in that banner.
+
+When a part of the capture cannot read a page LinkedIn has rebuilt, the side panel's header says so once per kind of page per browser session, for example "LinkedIn's feed page: cannot read commenter name, noticed 2 min ago. See Capture health in Setup.", and the badge turns orange. The notice goes when that part next reads the same kind of page cleanly, and when you close the browser. Nothing about it is drawn into LinkedIn's page.
+
+The side panel's **Health** tab also lists the data calls seen in the LinkedIn tab that last reported while network reading was on, by query name and how many times, for example `voyagerFeedDashMainFeed (9)`, so you can see what LinkedIn calls without opening the browser's developer tools.
 
 ## If it does not work
 

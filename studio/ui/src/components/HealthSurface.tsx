@@ -160,6 +160,7 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
   const listed = readers?.readers ?? [];
   const working = listed.filter((r) => r.state === "working").length;
   const drifting = listed.filter((r) => r.state === "drifting").length;
+  const reading = readers?.network_reading ?? null;
   const bridge = extension?.bridge ?? null;
 
   return (
@@ -184,7 +185,6 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
           ) : (
             <p>The bridge&apos;s state was not answered by the studio on the last read.</p>
           )}
-          <p className="mt-1 text-ink-muted">{networkReadingLine(bridge)}</p>
         </div>
       </header>
 
@@ -217,6 +217,25 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
               THE STUDIO KEEPS A WEEK OF RUNS, AND A ROW PER READER PER DAY {readers ? readers.days_window.label.toUpperCase() : ""}
             </p>
           </div>
+          {readers && (
+            // Network reading in its three honest states, in the studio's one
+            // sentence (onboarding.network_reading_sentence): off, on and
+            // seeing LinkedIn's data calls, or on and matching nothing. It sits
+            // over the readers because its two readers are listed only while
+            // it is on or once they have run (onboarding.listed_health).
+            <p className={cn("mb-2 text-[12px] leading-snug", reading?.state === "matching_nothing" ? "text-signal-orange-text" : "text-ink-secondary")}>
+              <span
+                aria-hidden="true"
+                className={cn(
+                  "mr-1.5 inline-block size-1.5 rounded-full align-middle",
+                  reading?.state === "seeing" && "bg-signal-green",
+                  reading?.state === "matching_nothing" && "bg-signal-orange",
+                  (!reading || reading.state === "off") && "bg-edge-strong",
+                )}
+              />
+              {reading ? reading.sentence : "Whether network reading is on is not reported by this extension version."}
+            </p>
+          )}
           {!readers ? (
             <p className="text-[13px] text-ink-muted">The readers were not answered by the studio on the last read.</p>
           ) : (
@@ -251,6 +270,13 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
             <p className="mt-2 text-[12px] leading-snug text-ink-muted">
               A reader that cannot read found the page but not the fields it needs, which usually means LinkedIn has
               changed how the page is built. Nothing from that part is being captured until the extension is updated.
+            </p>
+          )}
+          {listed.some((r) => r.state === "refused" && r.refused === "identity") && (
+            <p className="mt-2 text-[12px] leading-snug text-ink-muted">
+              A reader REFUSED for IDENTITY ran, and the studio refused what it read: the LinkedIn account signed in to
+              the bridge browser is not the profile confirmed in Setup, or has not been noted yet. Open your own profile
+              in that browser once.
             </p>
           )}
 
@@ -289,7 +315,7 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
               </table>
             </div>
           )}
-          {listed.length > 0 && working + drifting === 0 && onOpenSetup && (
+          {listed.length > 0 && listed.every((r) => r.state === "never_run") && onOpenSetup && (
             <p className="mt-2 text-[12px] leading-snug text-ink-muted">
               No reader has run yet. Setup connects the bridge browser and opens the pages the readers read.{" "}
               <button type="button" onClick={onOpenSetup} className="underline decoration-edge-strong underline-offset-2 hover:text-ink-primary">
@@ -484,7 +510,7 @@ function ReaderRows({
   const Chevron = open ? ChevronDown : ChevronRight;
   return (
     <>
-      <tr className={cn(reader.state === "drifting" && "text-signal-orange-text")}>
+      <tr className={cn((reader.state === "drifting" || reader.state === "refused") && "text-signal-orange-text")}>
         <td className="py-1 text-ink-primary">
           <button
             type="button"
@@ -545,6 +571,7 @@ function ReaderDetail({ extractor }: { extractor: string }) {
               <span>{run.page_kind ?? "page not named"}</span>
               <span className="tabular-nums">seen {measured(run.items_seen)}, kept {measured(run.items_kept)}</span>
               {run.drift.length > 0 && <span className="text-signal-orange-text">could not read {run.drift.join(", ")}</span>}
+              {run.refused && <span className="text-signal-orange-text">refused: {run.refused}</span>}
               {run.extension_version && <span className="text-ink-muted">extension {run.extension_version}</span>}
             </li>
           ))}
@@ -587,10 +614,25 @@ function ReaderDetail({ extractor }: { extractor: string }) {
   );
 }
 
+/**
+ * Each of capture_health's five states (onboarding.CAPTURE_STATES), in the
+ * words Setup used before the block moved here. A run that read nothing and a
+ * run the studio refused are runs, and used to read WORKING. LAST READ and
+ * LAST WORKED are columns of their own, so the words do not repeat them.
+ */
 function stateWords(reader: HealthReader): string {
-  if (reader.state === "never_run") return "NOT SEEN YET";
-  if (reader.state === "drifting") return `CANNOT READ ${reader.drift.join(", ").toUpperCase().replace(/_/g, " ")}`;
-  return "WORKING";
+  switch (reader.state) {
+    case "never_run":
+      return "NOT SEEN YET";
+    case "working":
+      return "WORKING";
+    case "read_nothing":
+      return "READ NOTHING";
+    case "drifting":
+      return `CANNOT READ ${reader.drift.join(", ").toUpperCase().replace(/_/g, " ")}`;
+    case "refused":
+      return `REFUSED: ${(reader.refused ?? "reason not given").toUpperCase()}`;
+  }
 }
 
 function bridgeSentence(bridge: ExtensionHealth["bridge"]): string {
@@ -599,17 +641,6 @@ function bridgeSentence(bridge: ExtensionHealth["bridge"]): string {
   }
   if (bridge.seconds_ago !== null) return `Last heard from ${ago(bridge.seconds_ago)}. Open a LinkedIn tab in the bridge browser.`;
   return "Not seen yet. Open a LinkedIn tab in the bridge browser with the extension loaded.";
-}
-
-/**
- * The network-reading switch, as the heartbeat reports it. An extension older
- * than that field reports nothing, and absence is not "off".
- */
-function networkReadingLine(bridge: ExtensionHealth["bridge"] | null): string {
-  const reading = bridge?.network_reading;
-  if (reading && typeof reading.sentence === "string" && reading.sentence) return reading.sentence;
-  if (reading && typeof reading.switch === "boolean") return reading.switch ? "Network reading is on." : "Network reading is off.";
-  return "Whether network reading is on is not reported by this extension version.";
 }
 
 function driftEmptyLine(extension: ExtensionHealth): string {

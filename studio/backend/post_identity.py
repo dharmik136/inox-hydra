@@ -318,7 +318,12 @@ def _ref(conn, post: Any, matched: str) -> Dict[str, Any]:
     capture can be attributed to it.
     """
     publication = _publication_of(conn, post["id"], post["activity_urn"])
-    publication_urn = post["activity_urn"] or (publication["activity_urn"] if publication else None)
+    # The publication's own key, which is not the post's when the archive
+    # named the post by its share id and the bridge, reading it later, gave
+    # the publication its activity id: the engagement is filed under that one.
+    # This took the post's URN whenever the post had one, so the activity id
+    # dropped out and the engagers route answered with nobody.
+    publication_urn = (publication["activity_urn"] if publication else None) or post["activity_urn"]
     spellings = [u for u in (post["activity_urn"], publication_urn) if u and not is_local_urn(u)]
     return {
         "post_id": post["id"],
@@ -344,12 +349,21 @@ def bound_post(conn, urn: str) -> Optional[Any]:
     rows = _query(conn, f"SELECT {_POST_COLUMNS} FROM posts WHERE activity_urn = ?", (urn,))
     if rows:
         return rows[0], "activity_urn"
-    wanted = activity_id(urn)
-    if wanted:
-        for row in _query(conn, f"SELECT {_POST_COLUMNS} FROM posts WHERE activity_urn IS NOT NULL"):
-            if activity_id(row["activity_urn"]) == wanted:
-                return row, "activity_id"
+    # The same id in LinkedIn's other two namespaces, each looked up by the
+    # index. This read every bound post into Python and compared ids, which
+    # an archive import did once per post: 3,000 posts took 20 s.
+    spellings = _spellings(urn)
+    if spellings:
+        rows = _query(conn, f"SELECT {_POST_COLUMNS} FROM posts WHERE activity_urn IN (?, ?, ?)", spellings)
+        if rows:
+            return rows[0], "activity_id"
     return None
+
+
+def _spellings(urn: Any) -> Optional[tuple]:
+    """The three URNs one post's id is written as, or None."""
+    wanted = activity_id(urn)
+    return tuple(f"urn:li:{kind}:{wanted}" for kind in ("activity", "share", "ugcPost")) if wanted else None
 
 
 def resolve(conn, identifier: Any) -> Optional[Dict[str, Any]]:
@@ -391,13 +405,12 @@ def resolve(conn, identifier: Any) -> Optional[Dict[str, Any]]:
         if bound:
             return _ref(conn, bound[0], bound[1])
         # The publication record can know a post before the posts row does.
-        if _own_posts_has_post_id(conn):
-            wanted = activity_id(urn)
-            for row in _query(conn, "SELECT activity_urn, post_id FROM own_posts WHERE post_id IS NOT NULL"):
-                if activity_id(row["activity_urn"]) == wanted:
-                    found = _query(conn, f"SELECT {_POST_COLUMNS} FROM posts WHERE id = ?", (row["post_id"],))
-                    if found:
-                        return _ref(conn, found[0], "publication")
+        if _own_posts_has_post_id(conn) and _spellings(urn):
+            for row in _query(conn, "SELECT activity_urn, post_id FROM own_posts "
+                                    "WHERE activity_urn IN (?, ?, ?) AND post_id IS NOT NULL", _spellings(urn)):
+                found = _query(conn, f"SELECT {_POST_COLUMNS} FROM posts WHERE id = ?", (row["post_id"],))
+                if found:
+                    return _ref(conn, found[0], "publication")
 
     rows = _query(conn, f"SELECT {_POST_COLUMNS} FROM posts WHERE id = ?", (value,))
     if rows:
@@ -552,11 +565,21 @@ def bind_activity_urn(
         proven_own = True
 
     already = bound_post(conn, urn)
-    if already:
+    # A post made from a publication (ensure_post) is not where the post came
+    # from: it stands in for it, made because no studio record had matched
+    # yet. While nothing in the studio has touched it, it gives way below to
+    # the one studio post this binder would have bound had it not existed:
+    # the studio post the creator put into LinkedIn, whose engagers were read
+    # before the page's text was offered here, or the post the creator
+    # pastes in and marks published afterwards. Otherwise it stays the post.
+    provisional = already[0] if already and _stands_in(conn, already[0]["id"]) else None
+    if already and not provisional:
         return {"status": "already_bound", "bound": True, "post_id": already[0]["id"], "activity_urn": urn}
 
     body = text or ""
     if content_fingerprint(body) is None:
+        if provisional:
+            return {"status": "already_bound", "bound": True, "post_id": provisional["id"], "activity_urn": urn}
         return {"status": "too_short", "bound": False, "activity_urn": urn}
 
     posted = (_parse_moment(published_at) or _parse_moment(published_at_from_urn(urn))) if from_history else None
@@ -589,6 +612,8 @@ def bind_activity_urn(
     now_iso = datetime.now(timezone.utc).isoformat()
     if len(matched) == 1:
         row = matched[0]
+        if provisional:
+            _retire_provisional(conn, provisional["id"], row["id"])
         conn.execute(
             "UPDATE posts SET activity_urn = ?, status = 'published', "
             "content_fingerprint = COALESCE(content_fingerprint, ?), "
@@ -599,6 +624,10 @@ def bind_activity_urn(
         _claim_publication(conn, row["id"], urn, body, published_at)
         return {"status": "bound", "bound": True, "post_id": row["id"], "activity_urn": urn,
                 "candidates_considered": len(candidates), "how": "post"}
+
+    if provisional:
+        return {"status": "already_bound", "bound": True, "post_id": provisional["id"], "activity_urn": urn,
+                "candidates_considered": len(candidates)}
 
     if len(matched) > 1:
         return {"status": "ambiguous", "bound": False, "activity_urn": urn,
@@ -741,3 +770,218 @@ def record_publication(conn, post_id: str, published_at: Optional[str] = None) -
     post_summary.ensure_row(conn, urn)
     return {"status": "recorded", "post_id": post_id, "publication_urn": urn,
             "content_fingerprint": fingerprint, "published_at": moment}
+
+
+# ---------------------------------------------------------------------------
+# One post per publication, wherever the post is first found
+# ---------------------------------------------------------------------------
+#
+# Migration 26 gave every publication the studio held its posts row, once.
+# Nothing gave one to a publication first found after it: the history import
+# bound a post only when a studio draft matched it, the archive import wrote
+# the publication alone, and an engager read on the creator's own post left no
+# record of the post at all. resolve() then found no posts row, the engagers
+# route answered 404, and Posts said nobody was captured from a post people
+# had engaged with (found by cycle 4's track 3 on 2.7.0). This is migration
+# 26's rule, as a function every path that can first find a post calls:
+#
+#   1. The posts row the publication already names, or one already carrying
+#      this post's id in any of LinkedIn's three namespaces, is the post.
+#   2. Otherwise exactly one unbound posts row whose opening the publication's
+#      text matches binds to it, by bind_activity_urn: a publication is proven
+#      to be the creator's, so any writing of theirs may be its source.
+#   3. Otherwise a posts row is made from the publication, keyed by its URN,
+#      so making it twice makes one row.
+#
+# The publication record is pointed at the post. A post made before the
+# publication's words were known takes them when they arrive.
+
+_RECONSTRUCTED = "linkedin"
+
+
+def _posts_columns(conn) -> set:
+    return {row[1] for row in conn.execute("PRAGMA table_info(posts)")}
+
+
+def _stands_in(conn, post_id: str) -> bool:
+    """
+    A post made from a publication that nothing in the studio has touched
+    since: no tags, no media, not carried out of the drafts store. Its words
+    are its publication's, kept in step with them (a published post is not
+    edited here; it can be edited on LinkedIn, and the next read brings the
+    new words). It stands in for the post, and gives way to the studio's own
+    post when the binder proves which that is.
+    """
+    if "source" not in _posts_columns(conn):
+        return False
+    rows = _query(conn, "SELECT source, tags, media_urls, draft_id FROM posts WHERE id = ?", (post_id,))
+    if not rows:
+        return False
+    row = rows[0]
+    return (row["source"] == _RECONSTRUCTED and (row["tags"] or "") in ("", "[]")
+            and not row["media_urls"] and row["draft_id"] is None)
+
+
+def _retire_provisional(conn, provisional_id: str, successor_id: str) -> None:
+    """Hands what named a stand-in post to the post it stood in for, then removes it."""
+    if _own_posts_has_post_id(conn):
+        conn.execute("UPDATE own_posts SET post_id = ? WHERE post_id = ?", (successor_id, provisional_id))
+    conn.execute("DELETE FROM posts WHERE id = ?", (provisional_id,))
+
+
+def _publication_by_urn(conn, urn: str) -> Optional[Any]:
+    """The publication record of a post: by its URN, else by the same id in another of LinkedIn's namespaces."""
+    rows = _query(conn, "SELECT * FROM own_posts WHERE activity_urn = ?", (urn,))
+    if rows:
+        return rows[0]
+    wanted = activity_id(urn)
+    if wanted:
+        rows = _query(conn, "SELECT * FROM own_posts WHERE activity_urn IN (?, ?, ?)",
+                      tuple(f"urn:li:{kind}:{wanted}" for kind in ("activity", "share", "ugcPost")))
+        if rows:
+            return rows[0]
+    return None
+
+
+def _reconstruction_id(conn, urn: str) -> str:
+    """The key a post made from a publication gets: from its URN, as migration 26 made them."""
+    for salt in ("", "#2", "#3"):
+        post_id = f"post-{hashlib.sha256((urn + salt).encode('utf-8')).hexdigest()[:12]}"
+        rows = _query(conn, "SELECT activity_urn FROM posts WHERE id = ?", (post_id,))
+        if not rows or rows[0]["activity_urn"] == urn:
+            return post_id
+    raise RuntimeError(f"three posts already hold the keys made from {urn}")
+
+
+def _point(conn, urn: str, post_id: str) -> None:
+    if _own_posts_has_post_id(conn):
+        conn.execute("UPDATE own_posts SET post_id = ? WHERE activity_urn = ? AND post_id IS NOT ?",
+                     (post_id, urn, post_id))
+
+
+def ensure_post(conn, activity_urn: Any, text: Optional[str] = None, published_at: Optional[str] = None,
+                first_seen_at: Optional[str] = None, bind: bool = True) -> Optional[Dict[str, Any]]:
+    """
+    The posts row of one of the creator's publications, made when it has none.
+
+    Call it wherever a post of the creator's is first found, inside the
+    writer's transaction. Returns {"post_id", "how"}, how being "existing",
+    "post" or "draft" (it bound to that studio record) or "made"; None for an
+    identifier that is not a LinkedIn post. A caller that has asked
+    anything_to_bind() once for a whole import passes bind=False when it
+    answered no, and the binder is not asked again for every post.
+    """
+    urn = canonical_urn(activity_urn) if not is_local_urn(activity_urn) else None
+    if not urn:
+        return None
+    publication = _publication_by_urn(conn, urn)
+    if publication is not None:
+        urn = publication["activity_urn"]
+        text = text if text else publication["text"]
+        published_at = published_at or publication["published_at"]
+        first_seen_at = first_seen_at or publication["first_seen_at"]
+    published_at = published_at or published_at_from_urn(urn)
+
+    known = None
+    if publication is not None and _own_posts_has_post_id(conn) and publication["post_id"]:
+        rows = _query(conn, f"SELECT {_POST_COLUMNS} FROM posts WHERE id = ?", (publication["post_id"],))
+        known = rows[0] if rows else None
+    if known is None:
+        bound = bound_post(conn, urn)
+        known = bound[0] if bound else None
+
+    if known is not None and not _stands_in(conn, known["id"]):
+        _point(conn, urn, known["id"])
+        return {"post_id": known["id"], "how": "existing"}
+
+    if bind and text and content_fingerprint(text):
+        result = bind_activity_urn(conn, urn, text, published_at=published_at, from_history=True)
+        if result.get("bound") and result.get("status") == "bound":
+            _point(conn, urn, result["post_id"])
+            return {"post_id": result["post_id"], "how": result.get("how", "post")}
+
+    if known is not None:
+        # Still standing in for the post: its words follow the publication's.
+        if text and (known["content"] or "") != text:
+            conn.execute("UPDATE posts SET content = ?, content_fingerprint = ? WHERE id = ?",
+                         (text, content_fingerprint(text), known["id"]))
+        _point(conn, urn, known["id"])
+        return {"post_id": known["id"], "how": "existing"}
+
+    post_id = _reconstruction_id(conn, urn)
+    if not _query(conn, "SELECT 1 FROM posts WHERE id = ?", (post_id,)):
+        conn.execute(
+            "INSERT INTO posts (id, content, status, published_at, activity_urn, content_fingerprint, source, "
+            "created_at) VALUES (?, ?, 'published', ?, ?, ?, ?, ?)",
+            (post_id, text or "", published_at, urn, content_fingerprint(text or ""), _RECONSTRUCTED,
+             first_seen_at or published_at or datetime.now(timezone.utc).isoformat()),
+        )
+    _point(conn, urn, post_id)
+    return {"post_id": post_id, "how": "made"}
+
+
+def anything_to_bind(conn) -> bool:
+    """
+    Whether the binder has anything it could bind a publication to: a studio
+    post with words and no LinkedIn id, or a legacy draft no post carries.
+    Asked once for a whole import rather than once a post.
+    """
+    if _query(conn, "SELECT 1 FROM posts WHERE activity_urn IS NULL AND COALESCE(content, '') != '' LIMIT 1"):
+        return True
+    return _has_table(conn, "drafts") and bool(_query(
+        conn, "SELECT 1 FROM drafts d WHERE COALESCE(d.raw_content, '') != '' "
+              "AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.draft_id = d.id) LIMIT 1"))
+
+
+def forget_reconstructions(conn) -> int:
+    """
+    The posts made from the creator's publications, when the publications go
+    (forgetting the creator): each one that still stands in for its post and
+    is named by a publication. A post the creator wrote here, or touched, stays.
+    """
+    if not _own_posts_has_post_id(conn) or "source" not in _posts_columns(conn):
+        return 0
+    gone = 0
+    for row in _query(conn, "SELECT DISTINCT p.id FROM posts p JOIN own_posts o ON o.post_id = p.id "
+                            "WHERE p.source = ?", (_RECONSTRUCTED,)):
+        if _stands_in(conn, row["id"]):
+            conn.execute("DELETE FROM posts WHERE id = ?", (row["id"],))
+            gone += 1
+    return gone
+
+
+def heal_publications(conn) -> int:
+    """
+    Gives every publication left without a post its post, by ensure_post.
+    Track 1's migration (_migrate_reader_timing_and_network_reading) runs it
+    on installs the defect above reached. The work still
+    to do is what is still without a post, so running it twice does nothing
+    the second time. Returns how many publications it gave a post.
+    """
+    if not _own_posts_has_post_id(conn):
+        return 0
+    orphans = _query(
+        conn,
+        "SELECT activity_urn, text, published_at, first_seen_at FROM own_posts "
+        "WHERE activity_urn NOT LIKE ? AND (post_id IS NULL OR post_id NOT IN (SELECT id FROM posts))",
+        (LOCAL_URN_PREFIX + "%",))
+    bind = anything_to_bind(conn) if orphans else False
+    for row in orphans:
+        ensure_post(conn, row["activity_urn"], row["text"], row["published_at"], row["first_seen_at"], bind=bind)
+    return len(orphans)
+
+
+def forget_reconstruction(conn, activity_urn: str) -> None:
+    """
+    The post made from a publication that is being removed, when nothing in
+    the studio has touched it and no other publication names it. An archive
+    import made it, and removing the import takes it again.
+    """
+    if not _own_posts_has_post_id(conn) or "source" not in _posts_columns(conn):
+        return
+    for row in _query(conn, "SELECT post_id FROM own_posts WHERE activity_urn = ? AND post_id IS NOT NULL",
+                      (activity_urn,)):
+        others = _query(conn, "SELECT 1 FROM own_posts WHERE post_id = ? AND activity_urn != ?",
+                        (row["post_id"], activity_urn))
+        if not others and _stands_in(conn, row["post_id"]):
+            conn.execute("DELETE FROM posts WHERE id = ?", (row["post_id"],))

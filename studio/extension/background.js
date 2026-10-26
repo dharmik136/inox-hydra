@@ -475,13 +475,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // It asks this worker instead, and only for paths on the allowlist.
   if (message.action === "STUDIO_API") {
     const path = message.path || "";
+    const tabId = sender && sender.tab && typeof sender.tab.id === "number" ? sender.tab.id : null;
     if (NETWORK_READING_PATHS.has(path)) {
       networkReadingEnabled().then((enabled) => {
         if (!enabled) {
           sendResponse({ status: "error", error: "Network reading is off." });
           return;
         }
-        relayToStudio(message, path, sendResponse);
+        relayToStudio(message, path, sendResponse, tabId);
       });
       return true;
     }
@@ -489,7 +490,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ status: "error", error: "path not permitted: " + path });
       return true;
     }
-    relayToStudio(message, path, sendResponse);
+    relayToStudio(message, path, sendResponse, tabId);
+    return true;
+  }
+
+  // The side panel opened: the creator has seen what the badge counted, and
+  // the notice at the top of the panel.
+  if (message.action === "PANEL_OPENED") {
+    const fromOwnPage = !sender.tab && sender.id === chrome.runtime.id;
+    if (!fromOwnPage) {
+      sendResponse({ status: "refused" });
+      return true;
+    }
+    markNoticeSeen().then(clearBadgeCounts).then(() => sendResponse({ status: "cleared" }));
+    return true;
+  }
+
+  // A sentence one of this extension's scripts on a LinkedIn page has for
+  // the creator, which used to be drawn into LinkedIn's page (decision D3;
+  // the review's S7). Only from a LinkedIn tab.
+  if (message.action === "PAGE_NOTICE") {
+    const fromLinkedIn = !!sender.tab && sender.id === chrome.runtime.id &&
+      typeof sender.url === "string" && /^https:\/\/([a-z0-9-]+\.)*linkedin\.com\//i.test(sender.url);
+    if (!fromLinkedIn) {
+      sendResponse({ status: "refused" });
+      return true;
+    }
+    notePageNotice(message).then(() => sendResponse({ status: "noted" }));
     return true;
   }
 
@@ -547,7 +574,11 @@ const KEEP_WHEN_BUSY = new Set([
   "/api/v1/identity/observe",
   "/api/v1/posts/bind-urn",
   "/api/v1/bridge/voyager-ingest",
-  "/api/analytics/ingest"
+  "/api/analytics/ingest",
+  // The creator's own account and content figures (own_insights.js, 2.8.0):
+  // their own data, kept for a busy studio like the rest. The studio keeps
+  // one reading per page, window and hour, so a later replay is the same row.
+  "/api/analytics/page-figures"
 ]);
 // Draining used to happen only on browser start-up or after a later
 // successful relay, so a creator who closed LinkedIn with captures waiting
@@ -683,8 +714,12 @@ async function sendKeptCaptures() {
     const answer = await askStudio(item.path, "POST", item.body);
     if (answer.later) break;
     kept.shift();
-    if (answer.ok) sent += 1;
-    else await rememberRefusal(item.path, answer);
+    if (answer.ok) {
+      sent += 1;
+      await noteCapture(item.path, answer, null, false);
+    } else {
+      await rememberRefusal(item.path, answer);
+    }
   }
   await writeKeptCaptures(kept);
   await afterQueueChanged();
@@ -726,6 +761,7 @@ async function afterQueueChanged() {
   await storeLocal({ [WAITING_KEY]: { waiting: kept.length, oldest_at: kept.length ? kept[0].at : null } });
   if (kept.length > 0) scheduleDrain();
   else clearDrain();
+  await paintBadge();
   reportWaiting(kept);
 }
 
@@ -750,16 +786,22 @@ async function rememberRefusal(path, answer) {
 // number. It rides on the heartbeat, which already carries the version, and
 // is best effort: a studio that cannot be reached is the usual reason for a
 // queue in the first place.
-function reportWaiting(kept) {
+async function reportWaiting(kept) {
+  const body = {
+    extension_version: chrome.runtime.getManifest().version,
+    contract_version: INGEST_CONTRACT_VERSION,
+    page_kind: "service_worker",
+    waiting_captures: kept.length,
+    oldest_waiting_at: kept.length ? kept[0].at : null,
+    // What this worker can see of network reading: the switch and whether
+    // the browser holds the reader registered. A page's figures (whether
+    // it carries the reader, the calls it counted) are the page's to report, so they are
+    // null here and the studio keeps the newest page's.
+    network_reading: await workerNetworkReading()
+  };
   studioFetch("/api/v1/bridge/heartbeat", {
     method: "POST",
-    body: JSON.stringify({
-      extension_version: chrome.runtime.getManifest().version,
-      contract_version: INGEST_CONTRACT_VERSION,
-      page_kind: "service_worker",
-      waiting_captures: kept.length,
-      oldest_waiting_at: kept.length ? kept[0].at : null
-    })
+    body: JSON.stringify(body)
   }).then((response) => response.json().catch(() => ({})))
     .then((answer) => {
       const shake = answer && answer.handshake;
@@ -776,6 +818,317 @@ async function noteReloadNeeded(shake) {
   if (seen === shake.contract_version) return;
   await storeLocal({ [RELOAD_NOTICE_KEY]: shake.contract_version, studioHandshake: shake });
   console.warn("[Studio Bridge] " + shake.message);
+}
+
+// -------------------------------------------------------------
+// The capture confirmation: the badge and the panel, not the page
+// -------------------------------------------------------------
+// Every relayed write passes through here, so this worker knows the moment
+// a capture lands, before the studio draws anything. It writes the last
+// capture to the extension's storage for the side panel and popup, which
+// render from storage.onChanged with no studio call, and counts this
+// session's captures on the action badge, per tab. The confirmation used to
+// be a notice drawn into LinkedIn's page (decision D3 moved it here); what
+// the creator must act on still appears there.
+//
+// The colours are the studio's tokens as chrome.action takes them, a colour
+// array rather than a CSS variable, because the toolbar is not the studio's
+// document: --studio-orange, --studio-green and --studio-on-signal from
+// studio/ui/src/styles/tokens.css.
+const LAST_CAPTURE_KEY = "lastCapture";
+const BADGE_COUNTS_KEY = "badgeCounts";
+const LAST_DRIFT_KEY = "lastDrift";
+const LAST_VOYAGER_CAPTURE_KEY = "lastVoyagerCaptureAt";
+const BADGE_ORANGE = [233, 85, 44, 255];
+const BADGE_GREEN = [22, 138, 97, 255];
+const BADGE_TEXT = [10, 10, 10, 255];
+const DRIFT_NOTICED_PREFIX = "driftNoticed:";
+
+function actionApi() {
+  return typeof chrome !== "undefined" && chrome.action ? chrome.action : null;
+}
+
+function actionCall(method, details) {
+  return new Promise((resolve) => {
+    const api = actionApi();
+    if (!api || typeof api[method] !== "function") {
+      resolve(false);
+      return;
+    }
+    try {
+      api[method](details, () => {
+        void chrome.runtime.lastError;
+        resolve(true);
+      });
+    } catch (err) {
+      resolve(false);
+    }
+  });
+}
+
+// Whether the studio stored anything, read from its own answer. The engagers
+// route answers the ingest contract's outcome (ingest_contract.py: accepted
+// or nothing_new); the creator's own pages answer the counts and words their
+// routes have always answered: written, recorded, buckets_ingested,
+// followers_saved, items_kept, or bound, updated, candidate; and since 2.8.0
+// the counts of the readers track 5 added: readings_recorded and
+// points_recorded from the account and content pages, reposts_recorded from
+// the Activity page. A 200 that stored nothing is the usual answer on the
+// feed, where most engagers are on other people's posts, and it is never
+// counted as a capture: counting it would put a number on the badge that no
+// row in the studio stands behind.
+const STORED_COUNTS = ["written", "buckets_ingested", "followers_saved", "items_kept",
+  "readings_recorded", "points_recorded", "reposts_recorded"];
+const STORED_STATUSES = ["bound", "updated", "candidate"];
+
+function storedSomething(data) {
+  if (!data || typeof data !== "object") return false;
+  if (data.outcome === "accepted") return true;
+  if (data.outcome === "nothing_new" || data.status === "skipped") return false;
+  if (STORED_COUNTS.some((field) => typeof data[field] === "number" && data[field] > 0)) return true;
+  if (data.recorded === true) return true;
+  return STORED_STATUSES.includes(data.status);
+}
+
+// One record per relay of the creator's data: which path, when, what the
+// studio did with it, and from which tab. Never the capture itself: the panel
+// names the kind of thing and when, not the person.
+async function noteCapture(path, answer, tabId, kept) {
+  const data = (answer && answer.data) || {};
+  const ok = !!(answer && answer.ok);
+  const stored = ok && storedSomething(data);
+  await storeLocal({
+    [LAST_CAPTURE_KEY]: {
+      path,
+      at: new Date().toISOString(),
+      ok,
+      kept: kept === true,
+      stored,
+      httpStatus: answer ? answer.httpStatus : 0,
+      outcome: kept ? "kept" : (data.outcome || data.reason || data.status || null),
+      tabId
+    }
+  });
+  if (stored && path === "/api/v1/bridge/voyager-ingest") {
+    await storeLocal({ [LAST_VOYAGER_CAPTURE_KEY]: new Date().toISOString() });
+  }
+  if (stored && tabId !== null && tabId !== undefined) {
+    const counts = (await readLocal(BADGE_COUNTS_KEY)) || {};
+    counts[tabId] = (counts[tabId] || 0) + 1;
+    await storeLocal({ [BADGE_COUNTS_KEY]: counts });
+    await actionCall("setBadgeText", { tabId, text: String(counts[tabId]) });
+  }
+  await paintBadge();
+}
+
+// null hands a tab back to the badge's own text, which is Chrome's documented
+// reset; a browser that refuses null is given the empty text instead.
+async function resetTabBadge(tabId) {
+  if (!(await actionCall("setBadgeText", { tabId, text: null }))) {
+    await actionCall("setBadgeText", { tabId, text: "" });
+  }
+}
+
+async function clearBadgeCounts() {
+  const counts = (await readLocal(BADGE_COUNTS_KEY)) || {};
+  for (const tabId of Object.keys(counts)) {
+    await resetTabBadge(Number(tabId));
+  }
+  await storeLocal({ [BADGE_COUNTS_KEY]: {} });
+  await paintBadge();
+}
+
+// Badge persistence across worker restarts is undocumented, so the counts
+// are kept in storage and put back when the browser starts.
+async function restoreBadge() {
+  const counts = (await readLocal(BADGE_COUNTS_KEY)) || {};
+  for (const tabId of Object.keys(counts)) {
+    await actionCall("setBadgeText", { tabId: Number(tabId), text: String(counts[tabId]) });
+  }
+  await paintBadge();
+}
+
+// The drift notice lives in session storage, which the browser empties when
+// it closes, so "once per page kind per session" holds by construction and a
+// notice never outlives the session it was measured in. The side panel and
+// the popup read it from there. A browser without session storage keeps no
+// notice; every browser with a side panel has it.
+function sessionArea() {
+  try {
+    return chrome.storage && chrome.storage.session ? chrome.storage.session : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+function sessionGet(key) {
+  return new Promise((resolve) => {
+    const area = sessionArea();
+    if (!area) {
+      resolve(null);
+      return;
+    }
+    try {
+      area.get(key, (items) => resolve((items && items[key]) || null));
+    } catch (err) {
+      resolve(null);
+    }
+  });
+}
+
+function sessionSet(values) {
+  return new Promise((resolve) => {
+    const area = sessionArea();
+    if (!area) {
+      resolve();
+      return;
+    }
+    try {
+      area.set(values, () => resolve());
+    } catch (err) {
+      resolve();
+    }
+  });
+}
+
+function sessionRemove(key) {
+  return new Promise((resolve) => {
+    const area = sessionArea();
+    if (!area) {
+      resolve();
+      return;
+    }
+    try {
+      area.remove(key, () => resolve());
+    } catch (err) {
+      resolve();
+    }
+  });
+}
+
+// A reader reported fields it could not read on a page that plainly had
+// them. Said once per page kind per browser session, in the panel header
+// and the badge colour, never in the page: it is a measurement the reader
+// made, and the one failure a creator cannot see for themselves. A later
+// clean run of the same reader on the same kind of page is a newer
+// measurement, and takes the notice down.
+async function noteDrift(body) {
+  if (!body || typeof body !== "object") return;
+  const pageKind = String(body.page_kind || "page").slice(0, 40);
+  const extractor = String(body.extractor || "").slice(0, 40);
+  const fields = Array.isArray(body.drift) ? body.drift.filter((d) => typeof d === "string").slice(0, 10) : [];
+  if (!fields.length) {
+    if (Number(body.items_seen) > 0) {
+      const shown = await sessionGet(LAST_DRIFT_KEY);
+      if (shown && shown.extractor === extractor && shown.page_kind === pageKind) {
+        await sessionRemove(LAST_DRIFT_KEY);
+        await paintBadge();
+      }
+    }
+    return;
+  }
+  const key = DRIFT_NOTICED_PREFIX + pageKind;
+  if (await sessionGet(key)) return;
+  const at = new Date().toISOString();
+  await sessionSet({ [key]: at, [LAST_DRIFT_KEY]: { extractor, page_kind: pageKind, fields, at } });
+  await paintBadge();
+}
+
+// The newest notice a LinkedIn page had for the creator, kept in session
+// storage beside the drift notice, so it never outlives the browser session
+// it was said in. A warning puts "!" on the badge until the side panel
+// opens, which is the creator seeing it, and the panel shows it at its top;
+// a notice of captures kept for the studio is carried by the waiting count,
+// which is already on the badge. A notice already seen is not raised again
+// in the same session, so a studio that stays closed is said once.
+const PAGE_NOTICE_KEY = "pageNotice";
+
+async function notePageNotice(message) {
+  const text = String((message && message.message) || "").replace(/\s+/g, " ").trim().slice(0, 400);
+  if (!text) return;
+  const shown = await sessionGet(PAGE_NOTICE_KEY);
+  if (shown && shown.message === text && shown.seen) return;
+  await sessionSet({
+    [PAGE_NOTICE_KEY]: {
+      message: text,
+      kind: message.kind === "waiting" ? "waiting" : "warning",
+      page_kind: String(message.page_kind || "page").slice(0, 40),
+      at: new Date().toISOString(),
+      seen: false
+    }
+  });
+  await paintBadge();
+}
+
+async function markNoticeSeen() {
+  const shown = await sessionGet(PAGE_NOTICE_KEY);
+  if (!shown || shown.seen) return;
+  await sessionSet({ [PAGE_NOTICE_KEY]: Object.assign({}, shown, { seen: true }) });
+  await paintBadge();
+}
+
+async function paintBadge() {
+  const waiting = (await readLocal(WAITING_KEY)) || {};
+  const drift = await sessionGet(LAST_DRIFT_KEY);
+  const notice = await sessionGet(PAGE_NOTICE_KEY);
+  const warning = !!notice && !notice.seen && notice.kind === "warning";
+  const waitingCount = typeof waiting.waiting === "number" ? waiting.waiting : 0;
+  const attention = waitingCount > 0 || !!drift || warning;
+  await actionCall("setBadgeBackgroundColor", { color: attention ? BADGE_ORANGE : BADGE_GREEN });
+  await actionCall("setBadgeTextColor", { color: BADGE_TEXT });
+  // What a tab with no count of its own shows: how many captures are
+  // waiting, or a mark for a drift noticed this session. A badge with no
+  // text is not drawn, so without this the orange could not be seen in a
+  // tab where nothing had been captured yet. A tab's own count of captures
+  // takes its place in that tab, on the same colour.
+  await actionCall("setBadgeText", {
+    text: waitingCount > 0 ? String(Math.min(waitingCount, 999)) : (drift || warning ? "!" : "")
+  });
+  let title = "Inox Hydra Bridge";
+  if (waitingCount > 0) {
+    title = "Inox Hydra: " + waitingCount + " capture(s) waiting for the studio";
+  } else if (warning) {
+    title = "Inox Hydra: " + notice.message.replace(/^Inox Hydra:\s{0,3}/, "") + " The side panel has it.";
+  } else if (drift) {
+    title = "Inox Hydra: cannot read " + drift.fields.join(", ").replace(/_/g, " ") +
+      " on LinkedIn's " + drift.page_kind + " page. See Capture health in Setup.";
+  }
+  await actionCall("setTitle", { title });
+}
+
+async function workerNetworkReading() {
+  const enabled = await networkReadingEnabled();
+  let registered = null;
+  try {
+    const scripts = await chrome.scripting.getRegisteredContentScripts({ ids: [INTERCEPTOR_SCRIPT_ID] });
+    registered = Array.isArray(scripts) && scripts.length > 0;
+  } catch (err) {
+    registered = null;
+  }
+  return {
+    switch: enabled,
+    registered,
+    injected: null,
+    voyager_calls_seen: null,
+    matched: null,
+    captured: null,
+    last_capture_at: (await readLocal(LAST_VOYAGER_CAPTURE_KEY)) || null
+  };
+}
+
+try {
+  chrome.runtime.onStartup.addListener(() => { restoreBadge(); });
+  if (chrome.tabs && chrome.tabs.onRemoved) {
+    chrome.tabs.onRemoved.addListener(async (tabId) => {
+      const counts = (await readLocal(BADGE_COUNTS_KEY)) || {};
+      if (counts[tabId] !== undefined) {
+        delete counts[tabId];
+        await storeLocal({ [BADGE_COUNTS_KEY]: counts });
+      }
+    });
+  }
+} catch (err) {
+  // No action or tabs API: the badge is simply not drawn.
 }
 
 function scheduleDrain() {
@@ -813,9 +1166,10 @@ function stamped(body) {
   return payload;
 }
 
-async function relayToStudio(message, path, sendResponse) {
+async function relayToStudio(message, path, sendResponse, tabId) {
   const method = message.method || "POST";
   const body = message.body ? JSON.stringify(stamped(message.body)) : undefined;
+  if (tabId === undefined) tabId = null;
   let answer = { ok: false, httpStatus: 0, data: {}, busy: false, later: false, error: "not sent" };
   for (let attempt = 1; attempt <= BUSY_ATTEMPTS; attempt += 1) {
     answer = await askStudio(path, method, body);
@@ -831,6 +1185,10 @@ async function relayToStudio(message, path, sendResponse) {
     const shake = answer.data && answer.data.handshake;
     if (shake && shake.reload_required) noteReloadNeeded(shake);
     sendResponse({ status: "success", httpStatus: answer.httpStatus, data: answer.data });
+    // The creator's data landed: say so where the panel and badge read it.
+    // A heartbeat or a capture log row is about a moment, not a capture.
+    if (KEEP_WHEN_BUSY.has(path)) await noteCapture(path, answer, tabId, false);
+    else if (path === "/api/v1/bridge/capture") await noteDrift(message.body);
     // Something got through, so anything kept has a chance now.
     sendKeptCapturesLater();
     return;
@@ -840,6 +1198,7 @@ async function relayToStudio(message, path, sendResponse) {
   // creator opens it, and the capture is the creator's either way.
   if (answer.later && KEEP_WHEN_BUSY.has(path)) {
     await keepCapture(path, body);
+    await noteCapture(path, answer, tabId, true);
     const waiting = (await readLocal(WAITING_KEY)) || {};
     sendResponse({
       status: "error",
@@ -857,6 +1216,7 @@ async function relayToStudio(message, path, sendResponse) {
   // to whoever asked, and are remembered for the side panel: every one of
   // them used to be collapsed to an error with nothing said.
   await rememberRefusal(path, answer);
+  if (KEEP_WHEN_BUSY.has(path)) await noteCapture(path, answer, tabId, false);
   const refusal = answer.data || {};
   sendResponse({
     status: "error",

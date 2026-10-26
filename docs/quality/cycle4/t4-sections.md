@@ -141,3 +141,31 @@ Help: `read-your-analytics.md` and `why-is-my-analytics-chart-empty.md` no longe
 Outside this track's files: track 3's guard `tests/test_qc4_t3_profile_views_removed.py` asserted Analytics names no profile views at all, the premise of decision 8 ("removed until a reader exists"). Track 5's `own_insights.js` is that reader, so the guard now says what still holds: the chart offers no profile-views measure (the daily column is still written by nothing), every profile views Analytics names is the account-figures reading, its page or its panel, and a new test follows the drawn figure back to a reader installed on a real extension. Today's strip and the help's measure list are unchanged. Falsified by four planted faults (the measure offered, the KPI route's column drawn, the label drawn outside the panel, the reader left out of the manifest), each caught. The comment above `METRICS` says the same.
 
 The full suite on the merged tree, run as CI does before that fix: 3,698 passed, 17 skipped, 1 failed (that guard).
+
+## The merge with track 1 (the bridge), for 2.9.0
+
+`qc4/t1-bridge` at `83dcfee` (which already held 2.8.0) merged into this branch. Four files conflicted; everything else merged on its own and was checked.
+
+| File | How it was resolved |
+| --- | --- |
+| `studio/backend/migrations.py` | Rebuilt from this branch's file plus track 1's whole function, `_migrate_reader_timing_and_network_reading`, as 33: its ledger entry and the first line of its docstring, nothing else. This track's stays 32. `SCHEMA_VERSION` is 33 |
+| `studio/ui/src/components/OnboardingSurface.tsx` | Setup keeps its pointer to Health; track 1's `healthLine` and the capture health block's dot colours went with the block (below). Track 1's `bridgeLine` merged as written, so step 1 prints the network-reading sentence |
+| `docs/help/set-up-the-studio-from-your-linkedin.md` | Setup's article keeps its pointer to Health, now for eight parts, and says which of three states step 1 prints. Track 1's table row, its five states and its network-reading paragraph moved to `check-the-bridge-is-reading.md` |
+| `tests/test_endpoint_reachability.py` | Both sides' notes kept; the census measured on the merged tree: 214 paths, 166 reached, 48 unreachable, unchanged |
+
+`today.py` merged without a conflict and was checked: track 6's request from the phone, then track 1's `_cadence_ask`, then the latest post, as on track 1's branch, with the first-hours wording inside `_open_next`'s analytics branch and LAST CAPTURE read from `last_capture_at`; this track's Replies pieces (the marked comments skipped through `replies.MARKED_AT`, the brief's waiting count) and its drift sentence are as they were. The extension is track 1's wholesale (this branch changed no extension file). The privacy policy and `release/privacy.html` are track 1's, since this branch changed neither; `tools/build_privacy_page.py --check` passes. `docs_engine.py`, `app.py`, `api.ts` and the other shared help articles keep both sides.
+
+What Health draws of track 1's states, where Setup's capture health block now lives:
+
+- **The five capture states.** `stateWords` has a case for each of `onboarding.CAPTURE_STATES`: NOT SEEN YET, WORKING, READ NOTHING, CANNOT READ and REFUSED: IDENTITY, refused in orange as cannot read is; LAST READ and LAST WORKED stay their own columns. A reader's runs mark a refused run "refused: identity" (the run rows carry `refused`), and a short line says what to do when a reader is refused for identity. "No reader has run yet" now means every reader is NOT SEEN YET; it read "neither working nor drifting", which a reader that read nothing would have met.
+- **The three network-reading states.** The readers route carries `network_reading`, the studio's one report (`onboarding.bridge_status`), and the sentence is drawn over the readers' table with a dot per state: grey for off, green for on and seeing, orange for on and matching nothing, and "not reported by this extension version" when no heartbeat carried it, never "off". It moved there from the header, beside the two readers it starts.
+- **One listing rule.** Health's own rule for which readers to list is gone; it lists `onboarding.listed_health`'s, the rule Setup's state, the side panel and the extension health route follow, so with the switch on the two network readers are listed as NOT SEEN YET everywhere at once.
+- My provisional `NetworkReadingState` in `api.ts` gave way to track 1's (two declarations of one interface with different property types do not compile).
+
+Tests: four new in `tests/test_qc4_t4_health.py` (every capture state has words on Health; a refused reader says why there and in its runs; a reader that read nothing is not working; network reading drawn over the readers in its three states, with the one listing rule). Falsified by five planted faults, each caught: Health with no words for READ NOTHING, the old listing rule, the run rows without the refusal, the sentence not drawn over the table, and matching nothing without its dot (which the first draft of the test missed, since the state's name was still in the text colour; it now ties each state to its dot).
+
+The migration, measured on throwaway installs by running the studio's own startup (the app's lifespan, through a test client) on scratch homes: a fresh install stamped 33 and its second start applied nothing and made no backup; a database made by 2.8.0 (at 31, with three captures in it) took 32 and 33 behind one pre-migration backup, stamped 33 with the captures' columns, `network_reading` on the heartbeats, `reply_marks`, and two readers' day rows rolled up, and its second start applied nothing.
+
+Left for track 1, not changed here because the extension is track 1's: the drift notice in `popup.js:215`, `sidepanel.js:709` and `background.js:1094` (and its quotation in `install-the-browser-extension.md`) says "See Capture health in Setup."; Setup now holds a pointer to Health under that heading's old place, so the sentence still leads there, one click longer. "See Health in the studio." would be the direct words.
+
+The full suite on the merged tree, as CI runs it, after the interface was built: 3,843 passed, 18 skipped, 0 failed, in 660 s. The eighteenth skip is the retention test's own while the two hours before now cross midnight, as they did during the run.

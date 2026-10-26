@@ -20,7 +20,7 @@ The step ticks when the extension reports in, which it does every minute while a
 
 Click **Open my profile**. The bridge browser opens your own profile.
 
-A few seconds later a notice on the LinkedIn page reads "The studio found your profile. Confirm it's you in the studio's Setup screen." Back in the studio, Setup shows the name, headline and address it found, and why it thinks the profile is yours: either the edit controls only you see were on the page, or LinkedIn itself sent its "my profile" address there.
+A few seconds later the extension's badge shows a `!`, and the top line of its side panel reads "The studio found your profile. Confirm it's you in the studio's Setup screen." Back in the studio, Setup shows the name, headline and address it found, and why it thinks the profile is yours: either the edit controls only you see were on the page, or LinkedIn itself sent its "my profile" address there.
 
 Click **Yes, that's me**. If it is not you, click **No**.
 
@@ -99,7 +99,9 @@ When the required steps are ticked (the bridge, your profile, and your history r
 
 ## Check the capture is still working
 
-The extension reads LinkedIn's pages, and LinkedIn changes how they are built without notice. When a part of the capture stops matching, it finds nothing and says nothing, which looks exactly like nobody engaging. Whether each of the seven parts is still working is shown on **Health**, with each reader's runs in the last 7 days, what it read and what it could not read; Setup points there under its five steps. See [Check the bridge is reading](check-the-bridge-is-reading.md).
+The extension reads LinkedIn's pages, and LinkedIn changes how they are built without notice. When a part of the capture stops matching, it finds nothing and says nothing, which looks exactly like nobody engaging. Whether each of the eight parts is still working is shown on **Health**, with each reader's runs in the last 7 days, what it read and what it could not read; Setup points there under its five steps. See [Check the bridge is reading](check-the-bridge-is-reading.md).
+
+Network reading is off unless you turn it on in the extension's popup. Step 1 says which of three states it is in: "Network reading is off.", "Network reading is on and seeing N LinkedIn data calls, K matched." or "Network reading is on and matching nothing", with the count of data calls the LinkedIn tab that last reported saw. An extension that has not reported the state yet says nothing there, rather than "off". The same sentence is on **Health**, above its readers, and in the extension's side panel, under **Health**.
 
 The extension reports at most once a minute per part per page. The studio keeps a week of those reports, and a row per reader per day for longer. They say how much was found and kept, never what it was.
 

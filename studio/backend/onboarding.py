@@ -159,6 +159,14 @@ def _count(value: Any) -> Optional[int]:
     return number if number >= 0 else None
 
 
+def _post_identity():
+    try:
+        from . import post_identity
+    except ImportError:
+        import post_identity
+    return post_identity
+
+
 def find_archive_twin(conn, urn: str, text: str, archive_only: bool = True) -> Optional[str]:
     try:
         from .archive_import import find_twin
@@ -212,14 +220,79 @@ def published_at_from_urn(activity_urn: str) -> Optional[str]:
 # The bridge
 # ---------------------------------------------------------------------------
 
-def record_heartbeat(extension_version: Any = None, page_kind: Any = None) -> Dict[str, Any]:
+# What a heartbeat may say about network reading, and the shape each value
+# must have. Anything else is dropped rather than stored: a heartbeat is the
+# extension's claim about itself, and a claim in the wrong shape is not one.
+_NETWORK_READING_FIELDS = {
+    "switch": bool, "registered": bool, "injected": bool,
+    "voyager_calls_seen": int, "matched": int, "captured": int, "last_capture_at": str,
+}
+# Entries the coverage meter may carry: "<path> <query name>" keys, each a
+# count. A key is kept only if its path is already the words of LinkedIn's
+# API (clean_voyager_path changes nothing in it) and its query name is one of
+# LinkedIn's shape or "other". The page cleans with the same list; a key that
+# was not cleaned, or was cleaned by an older rule, is refused, so no member
+# or post is ever kept here.
+_VOYAGER_CALL_KEY = re.compile(r"^/voyager/api(/[A-Za-z0-9_]{1,80}){0,8}( [A-Za-z0-9]{1,90})?$")
+_VOYAGER_CALLS_LIMIT = 100
+
+
+def _voyager_call_key_ok(key: str) -> bool:
+    if not _VOYAGER_CALL_KEY.match(key):
+        return False
+    path, _, name = key.partition(" ")
+    if clean_voyager_path(path) != path:
+        return False
+    return not name or name == "other" or bool(VOYAGER_QUERY_NAME.match(name))
+
+
+def _clean_network_reading(raw: Any) -> Optional[Dict[str, Any]]:
+    """The state as the extension sent it, kept only where its shape is right."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("switch"), bool):
+        return None
+    clean: Dict[str, Any] = {}
+    for field, kind in _NETWORK_READING_FIELDS.items():
+        value = raw.get(field)
+        if kind is int and isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+            clean[field] = value
+        elif kind is bool and isinstance(value, bool):
+            clean[field] = value
+        elif kind is str and isinstance(value, str) and value.strip():
+            clean[field] = value.strip()[:40]
+        else:
+            clean[field] = None
+    return clean
+
+
+def _clean_voyager_calls(raw: Any) -> Optional[Dict[str, int]]:
+    if not isinstance(raw, dict):
+        return None
+    clean = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not _voyager_call_key_ok(key):
+            continue
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            continue
+        clean[key] = value
+        if len(clean) >= _VOYAGER_CALLS_LIMIT:
+            break
+    return clean
+
+
+def record_heartbeat(extension_version: Any = None, page_kind: Any = None,
+                     network_reading: Any = None, voyager_calls: Any = None) -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
+    reading = _clean_network_reading(network_reading)
+    calls = _clean_voyager_calls(voyager_calls) if reading else None
     conn = get_db()
     try:
         with conn:
             conn.execute(
-                "INSERT INTO bridge_heartbeats (seen_at, extension_version, page_kind) VALUES (?,?,?)",
-                (now.isoformat(), _text(extension_version, 40), _text(page_kind, 40)),
+                "INSERT INTO bridge_heartbeats (seen_at, extension_version, page_kind, network_reading, voyager_calls) "
+                "VALUES (?,?,?,?,?)",
+                (now.isoformat(), _text(extension_version, 40), _text(page_kind, 40),
+                 json.dumps(reading) if reading else None,
+                 json.dumps(calls) if calls is not None else None),
             )
             conn.execute(
                 "DELETE FROM bridge_heartbeats WHERE seen_at < ?",
@@ -230,6 +303,81 @@ def record_heartbeat(extension_version: Any = None, page_kind: Any = None) -> Di
     return {"status": "success", "seen_at": now.isoformat()}
 
 
+# The three honest states of network reading, and the one sentence each
+# screen prints. One definition: Setup, the side panel and the health route
+# all read this, so "off" and "broken" cannot drift back into one word.
+NETWORK_READING_STATES = ("off", "seeing", "matching_nothing")
+
+
+def network_reading_sentence(reading: Dict[str, Any]) -> str:
+    if not reading.get("switch"):
+        return "Network reading is off."
+    seen = reading.get("voyager_calls_seen")
+    matched = reading.get("matched") or 0
+    if seen is None:
+        base = "Network reading is on; no LinkedIn page has reported its data calls yet."
+    elif matched > 0:
+        base = f"Network reading is on and seeing {seen} LinkedIn data calls, {matched} matched."
+    else:
+        base = (f"Network reading is on and matching nothing: the LinkedIn tab that last reported saw {seen} "
+                "LinkedIn data calls, and none matched the bridge's patterns.")
+    notes = []
+    if reading.get("registered") is False:
+        notes.append("The browser has not registered the reader: turn the switch off and on in the extension's popup.")
+    if reading.get("injected") is False:
+        notes.append("The LinkedIn tab that last reported does not carry the reader, which a tab opened "
+                     "before the switch was turned on does not: reload that tab.")
+    return " ".join([base] + notes)
+
+
+def _network_reading_report(conn) -> Optional[Dict[str, Any]]:
+    """
+    What the bridge last said about network reading, or None when no
+    heartbeat has said anything (an extension older than this field).
+
+    The switch comes from the newest heartbeat that carried it, from either
+    side. The registration is the worker's to know and the page's counts are
+    the page's, so each is taken from the newest heartbeat of its own kind:
+    a worker heartbeat that arrived later must not blank the page's counts,
+    and a page heartbeat must not blank the worker's registration.
+    """
+    newest = conn.execute(
+        "SELECT seen_at, page_kind, network_reading FROM bridge_heartbeats "
+        "WHERE network_reading IS NOT NULL ORDER BY seen_at DESC LIMIT 1").fetchone()
+    if not newest:
+        return None
+    reading = json.loads(newest["network_reading"])
+    page = conn.execute(
+        "SELECT seen_at, page_kind, network_reading, voyager_calls FROM bridge_heartbeats "
+        "WHERE network_reading IS NOT NULL AND page_kind IS NOT 'service_worker' "
+        "ORDER BY seen_at DESC LIMIT 1").fetchone()
+    worker = conn.execute(
+        "SELECT network_reading FROM bridge_heartbeats "
+        "WHERE network_reading IS NOT NULL AND page_kind = 'service_worker' "
+        "ORDER BY seen_at DESC LIMIT 1").fetchone()
+    calls = None
+    if page:
+        page_reading = json.loads(page["network_reading"])
+        for field in ("injected", "voyager_calls_seen", "matched", "captured", "last_capture_at"):
+            if reading.get(field) is None:
+                reading[field] = page_reading.get(field)
+        calls = json.loads(page["voyager_calls"]) if page["voyager_calls"] else None
+    if worker and reading.get("registered") is None:
+        reading["registered"] = json.loads(worker["network_reading"]).get("registered")
+    if not reading.get("switch"):
+        state = "off"
+    elif reading.get("voyager_calls_seen") is None or (reading.get("matched") or 0) > 0:
+        state = "seeing"
+    else:
+        state = "matching_nothing"
+    reading["state"] = state
+    reading["sentence"] = network_reading_sentence(reading)
+    reading["reported_at"] = newest["seen_at"]
+    reading["reported_by"] = newest["page_kind"]
+    reading["voyager_calls"] = calls
+    return reading
+
+
 def bridge_status() -> Dict[str, Any]:
     conn = get_db()
     try:
@@ -237,12 +385,13 @@ def bridge_status() -> Dict[str, Any]:
             "SELECT seen_at, extension_version, page_kind FROM bridge_heartbeats "
             "ORDER BY seen_at DESC LIMIT 1"
         ).fetchone()
+        reading = _network_reading_report(conn) if row else None
     finally:
         conn.close()
 
     if not row:
         return {"connected": False, "last_seen_at": None, "seconds_ago": None,
-                "extension_version": None, "page_kind": None}
+                "extension_version": None, "page_kind": None, "network_reading": None}
 
     seen = datetime.fromisoformat(row["seen_at"])
     ago = max(0, int((datetime.now(timezone.utc) - seen).total_seconds()))
@@ -252,6 +401,7 @@ def bridge_status() -> Dict[str, Any]:
         "seconds_ago": ago,
         "extension_version": row["extension_version"],
         "page_kind": row["page_kind"],
+        "network_reading": reading,
     }
 
 
@@ -262,21 +412,101 @@ def bridge_status() -> Dict[str, Any]:
 # The extractors the extension reports on, in the words the Setup screen uses.
 EXTRACTORS = {
     "engagers": "Comments and reactions on your posts",
+    "card_urns": "Post ids on feed cards",
     "profile": "Your profile",
     "activity_posts": "Your posts",
     "activity_comments": "Your comments",
     "activity_reactions": "Your reactions",
     "analytics": "Creator analytics",
     "post_analytics": "Your posts' analytics pages",
+    # One per schema content.js forwards (FORWARDED_SCHEMAS), under the name
+    # it sends (voyager_<schema>). The registry's other three schemas
+    # (profiles, reactions on posts, comments) carry other members and never
+    # leave the page; see VOYAGER_KEPT.
     "voyager_feed_updates": "Network reading: your posts' figures",
     "voyager_creator_analytics": "Network reading: creator analytics",
 }
 
 # Network reading is off unless the creator switches it on in the extension's
-# popup, so these parts never run for most people. Setup lists them only once
-# they have: listed always, they read NOT SEEN YET for everyone, and the help's
-# advice for that, open the matching page, does nothing for them.
+# popup, so these parts never run for most people. Setup lists them while the
+# switch is on, or once they have run: listed with the switch off, they read
+# NOT SEEN YET for everyone, and the help's advice for that, open the matching
+# page, does nothing for them. With the switch on, a reader that has matched
+# nothing is exactly the one the creator is asking about.
 OPT_IN_EXTRACTORS = ("voyager_feed_updates", "voyager_creator_analytics")
+
+# What network reading keeps, per schema, and nothing else. Own data only:
+#   feed_updates        readings of the creator's own posts; every other post
+#                       in LinkedIn's feed response is dropped before anything
+#                       is written, and the run counts how many, as a number
+#   creator_analytics   the creator's follower count, for the confirmed account
+# The registry's identity_profiles, social_actions and feed_comments carry
+# other members' names, headlines, reactions and comments. They are read in
+# the page and never sent, and the studio refuses them: the one thing the
+# product keeps about another member, an engager on the creator's own post,
+# comes from the DOM engagers reader, by design.
+VOYAGER_KEPT = {
+    "feed_updates": "readings of your own posts",
+    "creator_analytics": "your follower count",
+}
+
+# The words LinkedIn's data API puts in its paths. A path is kept only as
+# these words, compared without regard to case and written as listed; every
+# other segment, whoever or whatever it names, becomes "_id_", and so does the
+# segment after a collection that takes one. An unknown word costs a less
+# specific path, never a person. content.js holds the same list
+# (VOYAGER_PATH_WORDS); tests/test_qc4_t1_voyager_paths.py holds the two equal.
+VOYAGER_PATH_WORDS = (
+    "voyager", "api", "graphql", "me", "identity", "dash", "profiles", "miniProfiles", "profileView",
+    "profileContactInfo", "publicContactInfo", "networkinfo", "memberBadges", "memberIdentity",
+    "profileActions", "feed", "updates", "updatesV2", "social", "socialActions", "socialDetails", "comments",
+    "reactions", "likes", "followerInfo", "hashtags", "contentcreation", "normShares", "shares", "posts",
+    "activities", "creatorAnalytics", "analytics", "messaging", "conversations", "events", "messages",
+    "threads", "notifications", "badges", "relationships", "memberRelationships", "connections",
+    "invitations", "invitationViews", "search", "clusters", "blended", "typeahead", "hitsV2", "hits",
+    "organization", "organizations", "companies", "entities", "jobs", "jobPostings", "premium", "growth",
+    "legoWidgets", "pageContent", "settings", "highlights", "recommendations", "skills", "positions",
+    "educations", "featured", "followers", "following", "people", "members", "groups", "schools",
+)
+VOYAGER_ID_AFTER = (
+    "profiles", "miniProfiles", "profileContactInfo", "publicContactInfo", "networkinfo", "memberBadges",
+    "profileActions", "updates", "updatesV2", "social", "socialActions", "socialDetails", "comments",
+    "reactions", "likes", "followerInfo", "hashtags", "shares", "posts", "activities", "conversations",
+    "events", "messages", "threads", "connections", "invitations", "organizations", "companies", "jobs",
+    "jobPostings", "people", "members", "groups", "schools",
+)
+_PATH_WORD = {word.lower(): word for word in VOYAGER_PATH_WORDS}
+_ID_AFTER_WORD = {word.lower() for word in VOYAGER_ID_AFTER}
+# A GraphQL query name has one shape: "voyager" and a capitalised name.
+VOYAGER_QUERY_NAME = re.compile(r"^voyager[A-Z][A-Za-z0-9]{1,78}$")
+
+
+def clean_voyager_path(path: Any) -> str:
+    """A Voyager path as the words of its address, every other segment "_id_"; no query, no host."""
+    text = str(path or "")
+    text = re.sub(r"^[a-z]+://[^/]*", "", text).split("?", 1)[0].split("#", 1)[0]
+    out, previous = [], ""
+    for segment in [s for s in text.split("/") if s][:8]:
+        word = None if previous in _ID_AFTER_WORD else _PATH_WORD.get(segment.lower())
+        if word is None and previous == "api" and VOYAGER_QUERY_NAME.match(segment):
+            word = segment
+        out.append(word or "_id_")
+        # What the segment was taken as, not the text it held: an identifier
+        # that happens to spell a collection's name takes no identifier after it.
+        previous = (word or "_id_").lower()
+    return "/" + "/".join(out)
+
+# The states a reader's latest run can put it in. One list, so a screen
+# cannot meet a state it does not draw.
+#   never_run     no row at all
+#   working       the latest run read something and named no drift
+#   read_nothing  the latest run ran, named no drift, and saw nothing: an
+#                 empty page, or a page the reader no longer recognises. It
+#                 used to read WORKING, which was the lie the sections report
+#                 measured at onboarding.py:359
+#   drifting      the latest run named fields it could not read
+#   refused       the studio refused the latest run, and says why
+CAPTURE_STATES = ("never_run", "working", "read_nothing", "drifting", "refused")
 
 CAPTURE_RETENTION = timedelta(days=7)
 # Every capture prunes the log, and the prune does not look at which extractor
@@ -291,10 +521,23 @@ CAPTURE_RETENTION = timedelta(days=7)
 # to ask about were the ones the screen was least able to answer for.
 #
 # So the two rows the screen reads are kept whatever their age: the latest run
-# of each extractor, and the latest run of each that read something without
-# drift, which is the LAST WORKED date shown beside a drifting reader. Rows
-# the screen does not read still age out at the window above.
-PRUNE_CAPTURES = """
+# of each extractor, and the latest good run of each, which is the LAST WORKED
+# date shown beside a drifting or refused reader. Rows the screen does not
+# read still age out at the window above.
+#
+# A good run read something, missed nothing it expected, and was not refused.
+# One rule, asked by capture_health and by the prune, unqualified so that it
+# reads the table of whichever query it sits in. Without the refused clause a
+# reader refused for identity every day since it last worked lost that day to
+# the prune, because its newest refused row looked like the good run to keep.
+#
+# A run read something if it saw items or kept any: a run that sent people to
+# the studio has read them, whatever it counted as seen. The engagers reader
+# counted only comments as seen, so a reactions list read on its own was READ
+# NOTHING beside the reactors it had just filed.
+READ_SOMETHING = "(COALESCE(items_seen, 0) > 0 OR COALESCE(items_kept, 0) > 0)"
+GOOD_RUN = f"drift IS NULL AND refused IS NULL AND {READ_SOMETHING}"
+PRUNE_CAPTURES = f"""
 DELETE FROM captures
  WHERE observed_at < ?
    AND id NOT IN (
@@ -304,11 +547,10 @@ DELETE FROM captures
    )
    AND id NOT IN (
          SELECT keep.id FROM captures AS keep
-          WHERE keep.drift IS NULL AND COALESCE(keep.items_seen, 0) > 0
+          WHERE {GOOD_RUN}
             AND keep.observed_at = (SELECT MAX(observed_at) FROM captures
                                      WHERE extractor = keep.extractor
-                                       AND drift IS NULL
-                                       AND COALESCE(items_seen, 0) > 0)
+                                       AND {GOOD_RUN})
    )
 """
 DRIFT_RETENTION = timedelta(days=30)
@@ -326,23 +568,60 @@ def record_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
     """
     if not isinstance(payload, dict) or payload.get("extractor") not in EXTRACTORS:
         raise RefusedCapture("unknown extractor")
-    drift = [d for d in (payload.get("drift") or []) if isinstance(d, str)][:10]
-    now = datetime.now(timezone.utc)
     conn = get_db()
     try:
         with conn:
-            conn.execute(
-                "INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept, drift, extension_version) "
-                "VALUES (?,?,?,?,?,?,?)",
-                (now.isoformat(), payload["extractor"], _text(payload.get("page_kind"), 40),
-                 _count(payload.get("items_seen")), _count(payload.get("items_kept")),
-                 json.dumps([_text(d, 60) for d in drift]) if drift else None,
-                 _text(payload.get("extension_version"), 40)),
-            )
-            conn.execute(PRUNE_CAPTURES, ((now - CAPTURE_RETENTION).isoformat(),))
+            _write_capture(conn, payload["extractor"], payload)
     finally:
         conn.close()
     return {"status": "success"}
+
+
+def _millis(value: Any) -> Optional[float]:
+    """A duration in milliseconds, or None when it is not one. Never negative."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if value < 0 or value != value or value > 3_600_000:
+        return None
+    return round(float(value), 1)
+
+
+def _write_capture(conn, extractor: str, payload: Dict[str, Any], refused: Optional[str] = None) -> None:
+    """
+    One row of the capture log, inside the caller's transaction.
+
+    The reader's own timing rides on the row: how long this run took, how
+    many reads it made since it last reported, how many of them took over
+    50 ms, and the long tasks the page's timeline showed during them. A
+    reader that sent none is not measured, which the row says with NULL.
+    """
+    drift = [d for d in (payload.get("drift") or []) if isinstance(d, str)][:10]
+    now = datetime.now(timezone.utc)
+    conn.execute(
+        "INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept, drift, extension_version, "
+        "duration_ms, reads, slow_reads, long_tasks, long_task_ms, refused, items_dropped) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        (now.isoformat(), extractor, _text(payload.get("page_kind"), 40),
+         _count(payload.get("items_seen")), _count(payload.get("items_kept")),
+         json.dumps([_text(d, 60) for d in drift]) if drift else None,
+         _text(payload.get("extension_version"), 40),
+         _millis(payload.get("duration_ms")), _count(payload.get("reads")), _count(payload.get("slow_reads")),
+         _count(payload.get("long_tasks")), _millis(payload.get("long_task_ms")),
+         _text(refused, 40), _count(payload.get("items_dropped"))),
+    )
+    conn.execute(PRUNE_CAPTURES, ((now - CAPTURE_RETENTION).isoformat(),))
+
+
+def listed_health(health: List[Dict[str, Any]], reading: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    The readers a screen lists: every one, except an opt-in network reader
+    that has never run while the switch is not known to be on. One rule for
+    Setup and the side panel, which listed all five as NOT SEEN YET with the
+    switch off.
+    """
+    switch_on = bool(reading) and reading.get("switch") is True
+    return [h for h in health
+            if h["extractor"] not in OPT_IN_EXTRACTORS or h["state"] != "never_run" or switch_on]
 
 
 def capture_health() -> List[Dict[str, Any]]:
@@ -356,26 +635,49 @@ def capture_health() -> List[Dict[str, Any]]:
         rows = {}
         for extractor in EXTRACTORS:
             latest = conn.execute(
-                "SELECT observed_at, items_seen, items_kept, drift FROM captures "
+                "SELECT observed_at, items_seen, items_kept, drift, refused, duration_ms, reads, slow_reads, "
+                f"long_tasks, long_task_ms, {READ_SOMETHING} AS read_something FROM captures "
                 "WHERE extractor = ? ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
             last_good = conn.execute(
-                "SELECT observed_at FROM captures WHERE extractor = ? AND drift IS NULL "
-                "AND COALESCE(items_seen, 0) > 0 ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
-            rows[extractor] = (latest, last_good)
+                f"SELECT observed_at FROM captures WHERE extractor = ? AND {GOOD_RUN} "
+                "ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
+            # A run the studio refused stored nothing, so it is not a capture.
+            last_capture = conn.execute(
+                "SELECT observed_at FROM captures WHERE extractor = ? AND refused IS NULL "
+                "ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
+            rows[extractor] = (latest, last_good, last_capture)
     finally:
         conn.close()
 
     health = []
     for extractor, label in EXTRACTORS.items():
-        latest, last_good = rows[extractor]
+        latest, last_good, last_capture = rows[extractor]
         drift = json.loads(latest["drift"]) if latest and latest["drift"] else []
+        if not latest:
+            state = "never_run"
+        elif latest["refused"]:
+            state = "refused"
+        elif drift:
+            state = "drifting"
+        elif latest["read_something"]:
+            state = "working"
+        else:
+            state = "read_nothing"
         health.append({
             "extractor": extractor,
             "label": label,
             "last_run_at": latest["observed_at"] if latest else None,
             "last_good_at": last_good["observed_at"] if last_good else None,
+            "last_capture_at": last_capture["observed_at"] if last_capture else None,
             "drift": drift,
-            "state": "never_run" if not latest else ("drifting" if drift else "working"),
+            "refused": latest["refused"] if latest else None,
+            "state": state,
+            # The reader's own timing on its latest run; None is not measured.
+            "duration_ms": latest["duration_ms"] if latest else None,
+            "reads": latest["reads"] if latest else None,
+            "slow_reads": latest["slow_reads"] if latest else None,
+            "long_tasks": latest["long_tasks"] if latest else None,
+            "long_task_ms": latest["long_task_ms"] if latest else None,
         })
     return health
 
@@ -388,6 +690,9 @@ def record_schema_drift(payload: Dict[str, Any]) -> Dict[str, Any]:
     schema_version = _text(payload.get("schema_version"), 40)
     if not schema_name or not schema_version:
         raise RefusedCapture("schema_name and schema_version required")
+    if schema_name not in VOYAGER_KEPT:
+        # A schema whose responses carry other members is not read here at all.
+        raise RefusedCapture("unknown extractor")
     drift_fields = payload.get("drift_fields") or []
     top_keys = payload.get("response_top_keys") or []
     now = datetime.now(timezone.utc)
@@ -408,7 +713,9 @@ def record_schema_drift(payload: Dict[str, Any]) -> Dict[str, Any]:
                     json.dumps(drift_fields) if drift_fields else None,
                     float(payload.get("confidence", 0.0)),
                     1 if payload.get("success") else 0,
-                    _text(payload.get("source_url"), 500),
+                    # The address as the words of LinkedIn's API, nothing that
+                    # names a member or a post (clean_voyager_path).
+                    clean_voyager_path(payload.get("source_url")) if payload.get("source_url") else None,
                     json.dumps(top_keys) if top_keys else None,
                     _text(payload.get("extension_version"), 40),
                 )
@@ -433,18 +740,36 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
     data = payload.get("data")
     if not schema_name or data is None:
         raise RefusedCapture("schema_name and data are required")
+    extractor = f"voyager_{schema_name}"
+    if extractor not in EXTRACTORS or schema_name not in VOYAGER_KEPT:
+        # Only the schemas that keep the creator's own data are read here.
+        # The ones that carry other members never leave the page.
+        raise RefusedCapture("unknown extractor")
 
     items_seen = len(data) if isinstance(data, list) else (1 if isinstance(data, dict) else 0)
     items_kept = 0
+    # Entries that are not the creator's own, dropped before anything is
+    # written and counted, never named.
+    items_dropped = 0
     now = datetime.now(timezone.utc)
+    refusal: Optional[RefusedCapture] = None
 
     conn = get_db()
     try:
         with conn:
             if schema_name == "feed_updates" and isinstance(data, list):
                 for item in data:
-                    urn = item.get("urn")
-                    if not urn or not _ACTIVITY_URN.match(urn):
+                    urn = item.get("urn") if isinstance(item, dict) else None
+                    # LinkedIn's feed response holds everyone's posts. Only a
+                    # post that is the creator's own is read at all: one of
+                    # their publications, or a post the studio carries, in any
+                    # of LinkedIn's three spellings. Every other entry is
+                    # dropped here, before any write, and only counted. It
+                    # used to be kept as a reading, which put other members'
+                    # posts and their figures in the creator's database.
+                    if (not isinstance(urn, str) or not _ACTIVITY_URN.match(urn)
+                            or not _creators_post(conn, urn)):
+                        items_dropped += 1
                         continue
                     metrics = {
                         "impressions": item.get("impressions"),
@@ -469,8 +794,14 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
                 # bridge names the account signed in to LinkedIn, and a reading
                 # from any other account (or none) is refused. It was filed
                 # under whichever profile was open in the studio.
-                _require_me(conn, payload.get("vanity"))
-                entry = data[0] if data else {}
+                # A refusal here is still a run of this reader. It used to
+                # raise before the row below was written, so a reader that
+                # ran and was refused every time read as one that never ran.
+                try:
+                    _require_me(conn, payload.get("vanity"))
+                except RefusedCapture as error:
+                    refusal = error
+                entry = data[0] if data and not refusal else {}
                 followers = _count(entry.get("followers"))
                 if followers is not None:
                     today = now.strftime("%Y-%m-%d")
@@ -490,26 +821,67 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
                     )
                     items_kept += 1
 
-            # Log to captures table for health visibility
-            conn.execute(
-                """
-                INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept, drift, extension_version)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    now.isoformat(),
-                    f"voyager_{schema_name}",
-                    "voyager_api",
-                    items_seen,
-                    items_kept,
-                    None,
-                    _text(payload.get("extension_version"), 40)
-                )
-            )
+            # The run itself, refused or not, for the health screen. Its drift
+            # is the page's, named as the DOM readers name theirs: a field the
+            # reader cannot do without, missing from a response that plainly
+            # matched its endpoint. It was never written, so Setup could not
+            # say a network reader had stopped reading.
+            _write_capture(conn, extractor, {
+                "page_kind": "voyager_api", "items_seen": items_seen, "items_kept": items_kept,
+                "items_dropped": items_dropped if schema_name == "feed_updates" else None,
+                "drift": payload.get("drift") if isinstance(payload.get("drift"), list) else None,
+                "extension_version": payload.get("extension_version"),
+            }, refused="identity" if refusal else None)
     finally:
         conn.close()
 
-    return {"status": "success", "items_seen": items_seen, "items_kept": items_kept}
+    if refusal:
+        raise refusal
+    return {"status": "success", "items_seen": items_seen, "items_kept": items_kept, "items_dropped": items_dropped}
+
+
+def _creators_post(conn, urn: str) -> bool:
+    """
+    Whether a post is one of the creator's own: a publication of theirs or a
+    post the studio carries, in any of LinkedIn's three spellings of its id,
+    each looked up by its index.
+    """
+    spellings = _post_identity()._spellings(urn)
+    if not spellings:
+        return False
+    if conn.execute("SELECT 1 FROM own_posts WHERE activity_urn IN (?, ?, ?) LIMIT 1", spellings).fetchone():
+        return True
+    return conn.execute("SELECT 1 FROM posts WHERE activity_urn IN (?, ?, ?) LIMIT 1", spellings).fetchone() is not None
+
+
+def forget_other_members_readings(conn) -> Dict[str, int]:
+    """
+    What network reading kept about other members before it kept the
+    creator's own posts only: readings of posts that are not the creator's,
+    the summaries built from them, and drift events whose schema carries
+    other members. Kept drift events keep a path that names nobody. Run by
+    this track's migration (_migrate_reader_timing_and_network_reading), after
+    the ledger's backup, inside its transaction.
+    """
+    gone = {"readings": 0, "drift_events": 0}
+    others = [row[0] for row in conn.execute("SELECT DISTINCT activity_urn FROM post_metric_observations")
+              if not _creators_post(conn, row[0] or "")]
+    for urn in others:
+        gone["readings"] += conn.execute("DELETE FROM post_metric_observations WHERE activity_urn = ?",
+                                         (urn,)).rowcount
+    if others:
+        # The deletes marked their summaries; recomputed, an empty one goes.
+        post_summary.refresh(conn, others)
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_drift_events'").fetchone():
+        gone["drift_events"] = conn.execute(
+            f"DELETE FROM schema_drift_events WHERE schema_name NOT IN ({', '.join('?' for _ in VOYAGER_KEPT)})",
+            tuple(VOYAGER_KEPT)).rowcount
+        for rowid, url in conn.execute("SELECT rowid, source_url FROM schema_drift_events "
+                                       "WHERE source_url IS NOT NULL").fetchall():
+            cleaned = clean_voyager_path(url)
+            if cleaned != url:
+                conn.execute("UPDATE schema_drift_events SET source_url = ? WHERE rowid = ?", (cleaned, rowid))
+    return gone
 
 
 def extension_health() -> Dict[str, Any]:
@@ -537,16 +909,21 @@ def extension_health() -> Dict[str, Any]:
         voyager_captures = conn.execute(
             """
             SELECT COUNT(*) FROM captures
-            WHERE extractor LIKE 'voyager_%' AND observed_at > ?
+            WHERE extractor LIKE 'voyager_%' AND refused IS NULL AND observed_at > ?
             """,
             ((datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),)
         ).fetchone()[0]
     finally:
         conn.close()
 
+    bridge = bridge_status()
     return {
-        "bridge": bridge_status(),
-        "extractors": capture_health(),
+        "bridge": bridge,
+        "extractors": listed_health(capture_health(), bridge.get("network_reading")),
+        # The three honest states, from the heartbeat, with the page's count
+        # of LinkedIn's data calls by path and query name. None when no
+        # heartbeat has carried it.
+        "network_reading": bridge.get("network_reading"),
         "voyager_active": voyager_captures > 0,
         "voyager_24h_captures": voyager_captures,
         "recent_drift": recent_drift,
@@ -885,6 +1262,10 @@ def forget_identity() -> Dict[str, Any]:
     conn = get_db()
     try:
         with conn:
+            # The posts made from the creator's publications go with them,
+            # where nothing in the studio has touched them: they hold the
+            # creator's post text and LinkedIn id and nothing written here.
+            _post_identity().forget_reconstructions(conn)
             for table in ("creator_identity", "creator_positions", "creator_education",
                           "creator_skills", "own_posts", "outbound_engagements", "self_import_requests",
                           "post_metric_observations",
@@ -1135,6 +1516,9 @@ def ingest_post_analytics(author: Any, activity_urn: Any, metrics: Any) -> Dict[
             _require_me(conn, author)
             if not conn.execute("SELECT 1 FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone():
                 raise RefusedCapture("this post is not one of your recorded posts; import your posts first")
+            # A publication recorded before every path gave it its post (an
+            # archive import, or the bridge before cycle 4) is given it here.
+            _post_identity().ensure_post(conn, urn)
             recorded = _record_observation(conn, urn, "post_analytics", metrics)
             demographics = _record_demographics(conn, urn, "post_analytics", metrics.get("demographics"))
             impressions = _count(metrics.get("impressions"))
@@ -1226,23 +1610,79 @@ def post_analytics_sightings() -> Dict[str, Any]:
 def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: Optional[str]) -> Optional[str]:
     """
     Connects one of the creator's LinkedIn posts to the studio record it came
-    from. Returns how it bound ("post", "draft"), or None.
+    from, and gives it one when there is none. Returns how it bound ("post",
+    "draft"), or None when it was already bound or a post was made for it.
 
     An imported own post is already proven to be the creator's, by its actor,
     so any writing of theirs may be its source. Which record it is is decided
-    by post_identity.bind_activity_urn, the one binder: this used to be a
-    second implementation of that rule, with a different candidate set and a
-    different tie break from the permalink route's, so a post could bind one
-    way and not the other.
+    by post_identity.bind_activity_urn, the one binder, called through
+    post_identity.ensure_post, the one rule for a publication's post: this
+    used to bind only, so a post that matched no studio draft was left with
+    no posts row and its engagers route answered 404.
     """
     try:
         from . import post_identity
     except ImportError:
         import post_identity
 
-    result = post_identity.bind_activity_urn(
-        conn, activity_urn, text, published_at=published_at, from_history=True)
-    return result.get("how") if result.get("bound") else None
+    result = post_identity.ensure_post(conn, activity_urn, text, published_at=published_at)
+    how = result.get("how") if result else None
+    return how if how in ("post", "draft") else None
+
+
+def note_own_post(post_urn: Any) -> Optional[str]:
+    """
+    The creator's post an engager was read on, made known to the studio.
+
+    The engagement gate lets an engager through when the post's author is the
+    confirmed creator, and a post the studio had never recorded was then left
+    holding people it could not answer for: no publication, no posts row, and
+    the engagers route said 404 (found by cycle 4's track 3 on 2.7.0). Its
+    publication is recorded here, with no words, which the page did not
+    send, and a date read from its id; an archive record of the same post is
+    joined rather than repeated; and its post comes from
+    post_identity.ensure_post, the one rule. Returns the post's id, or None
+    for a URN that is not an activity of the creator's to record.
+
+    Only an activity URN is recorded: a share or ugcPost id read off a feed
+    card cannot be told apart from the activity the bridge will later read
+    the same post under, so recording it would make one post two.
+    """
+    try:
+        from . import post_identity
+    except ImportError:
+        import post_identity
+
+    urn = post_identity.canonical_urn(post_urn) if isinstance(post_urn, str) else None
+    if not urn:
+        return None
+    conn = get_db()
+    try:
+        with conn:
+            known = post_identity._publication_by_urn(conn, urn)
+            if known is None:
+                # A post a studio record already carries is known, and its
+                # engagers already resolve to it: nothing is written.
+                carried = post_identity.bound_post(conn, urn)
+                if carried:
+                    return carried[0]["id"]
+            if known is None and not _ACTIVITY_URN.match(urn):
+                return None
+            if known is None:
+                twin = find_archive_twin(conn, urn, "", archive_only=True)
+                if twin:
+                    conn.execute("UPDATE own_posts SET activity_urn = ? WHERE activity_urn = ?", (urn, twin))
+                else:
+                    now = _now()
+                    published = published_at_from_urn(urn)
+                    conn.execute(
+                        "INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, "
+                        "first_seen_at, last_seen_at) VALUES (?, NULL, ?, ?, ?, ?)",
+                        (urn, published, "urn_decode" if published else None, now, now))
+            result = post_identity.ensure_post(conn, urn)
+    finally:
+        conn.close()
+    return result["post_id"] if result else None
 
 
 def ingest_outbound(actor: Any, items: Any) -> Dict[str, Any]:
@@ -1909,8 +2349,7 @@ def onboarding_state() -> Dict[str, Any]:
     chain = get_active_sync_chain()
     return {
         "archive": archive,
-        "health": [h for h in capture_health()
-                   if h["extractor"] not in OPT_IN_EXTRACTORS or h["state"] != "never_run"],
+        "health": listed_health(capture_health(), bridge.get("network_reading")),
         "session": session,
         "status": "success",
         "bridge": bridge,
