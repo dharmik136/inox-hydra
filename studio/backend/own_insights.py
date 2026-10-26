@@ -100,8 +100,11 @@ def _require_creator(author: Any) -> None:
     if not me:
         raise Refused("confirm your profile in Setup first, so the studio knows whose figures these are")
     if not named:
+        # The address ends its own literal, as the analytics router's does, so
+        # the distribution check sees LinkedIn's /in/me/ alias and nothing else.
         raise Refused("the bridge could not tell which LinkedIn account is signed in. Open your own profile at "
-                      "https://www.linkedin.com/in/me/ once in this browser, then reload the page")
+                      "https://www.linkedin.com/in/me/"
+                      " once in this browser, then reload the page")
     if named != me:
         raise Refused(f"these figures are from linkedin.com/in/{named}, not from linkedin.com/in/{me}, "
                       "the profile open in the studio")
