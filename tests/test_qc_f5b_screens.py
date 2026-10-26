@@ -207,26 +207,37 @@ def _own_posts(client, posts, year_ms=1780000000000, start=0):
     return [item["activity_urn"] for item in items]
 
 
-def test_imported_posts_are_compared_and_unread_figures_say_so(studio):
-    """AUDIENCE-09"""
+def test_imported_posts_are_listed_and_unread_figures_say_so(studio):
+    """
+    AUDIENCE-09: an imported post is listed, and a figure the bridge never
+    read says "not measured". Cycle 4 moved the post table from Analytics to
+    Posts, where every post is (track 3, batch 1), so the row is read there.
+    """
     _own_posts(studio["client"], [{"text": "Why sourdough needs patience", "reactions": 40, "comments": 3}])
     page = _open(studio, "Analytics")
-    page.wait_for_selector("text=Post comparison")
-    assert "NO PUBLISHED POSTS TO COMPARE" not in page.inner_text("body")
+    page.wait_for_selector("text=Every post")
+    assert page.locator("main tbody tr").count() == 0, "Analytics still draws a post table"
+    page = _open(studio, "Posts")
     row = page.locator("tbody tr", has_text="Why sourdough needs patience").first
-    cells = [c.strip() for c in row.locator("td").all_inner_texts()]
-    assert cells[1:] == ["not measured", "40", "3", "not measured"], cells
+    row.wait_for()
+    cells = " ".join(c.strip() for c in row.locator("td").all_inner_texts())
+    assert "40" in cells and "not measured" in cells, cells
     assert not studio["errors"], studio["errors"]
 
 
 def test_a_range_change_keeps_the_screen_and_reads_the_posts_once(studio):
-    """AUDIENCE-22"""
+    """
+    AUDIENCE-22. The posts are not read by Analytics at all now: the aside
+    reads the engine's best and weakest once a visit, and no range click
+    reads it again.
+    """
     _days(studio["client"], 34, impressions=1000)
     _own_posts(studio["client"], [{"text": "Why sourdough needs patience", "reactions": 40}])
     reads = []
-    studio["page"].on("request", lambda req: reads.append(req.url) if "/api/analytics/posts" in req.url else None)
+    studio["page"].on("request", lambda req: reads.append(req.url)
+                      if "/api/analytics/best" in req.url or "/api/analytics/posts" in req.url else None)
     page = _open(studio, "Analytics")
-    page.locator("tbody tr", has_text="Why sourdough needs patience").first.wait_for()
+    page.wait_for_selector("text=Every post")
     page.evaluate("""() => { window.__blanked = false; new MutationObserver(() => {
         if (document.body.innerText.includes('LOADING ANALYTICS')) window.__blanked = true; })
         .observe(document.body, {subtree: true, childList: true, characterData: true}); }""")
@@ -236,7 +247,8 @@ def test_a_range_change_keeps_the_screen_and_reads_the_posts_once(studio):
             "document.querySelector('[aria-label=\"Date range\"]').getAttribute('aria-busy') === 'false'")
     page.wait_for_load_state("networkidle")
     assert not page.evaluate("window.__blanked"), "a range change blanked the screen to LOADING ANALYTICS"
-    assert len(reads) == 1, f"the posts were read {len(reads)} times for one visit"
+    assert len(reads) == 1, f"the posts were read {len(reads)} times for one visit: {reads}"
+    assert "/api/analytics/best" in reads[0], "Analytics reads a page of post rows it does not draw"
     assert not studio["errors"], studio["errors"]
 
 

@@ -666,6 +666,7 @@ def get_post_engagers(post_id: str):
                 "status": "unbound",
                 "post_id": ref["post_id"],
                 "engagers": [],
+                "folded": {"people": 0, "reactions": 0},
                 "message": "This post has no LinkedIn URN yet. Open it on LinkedIn once to bind it.",
             }
 
@@ -695,6 +696,15 @@ def get_post_engagers(post_id: str):
             ref["engagement_urns"],
         )
         engagers = [dict(r) for r in cursor.fetchall()]
+        # The people the retention job folded into counts: reactions older
+        # than 24 months, from people who did nothing else on the post
+        # (retention.py). The Posts row counts them among the post's people
+        # and they have no names here, so the detail says how many. The
+        # Analytics drawer said it until its table moved to Posts (cycle 4).
+        folded = {"people": 0, "reactions": 0}
+        for entry in post_summary.folded(conn, ref["engagement_urns"]).values():
+            folded["people"] += int(entry.get("people") or 0)
+            folded["reactions"] += int(entry.get("reactions") or 0)
     finally:
         conn.close()
 
@@ -704,4 +714,5 @@ def get_post_engagers(post_id: str):
         "activity_urn": ref["publication_urn"],
         "count": len(engagers),
         "engagers": engagers,
+        "folded": folded,
     }

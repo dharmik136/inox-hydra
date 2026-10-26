@@ -518,6 +518,24 @@ def get_posts_leaderboard(limit: Optional[int] = Query(None, ge=1), offset: int 
         conn.close()
 
 
+@router.get("/api/analytics/best")
+def get_best_posts():
+    """
+    The posts that did best and worst against the creator's own median, from
+    the whole history (results.best), with each named post's figures.
+
+    What the Analytics aside reads. It came with a fourteen-row post table
+    that the Posts screen holds in full, sortable and searchable, so the
+    table moved to Posts (cycle 4, track 3, batch 1) and the aside reads the
+    engine's answer without a page of rows it would not draw.
+    """
+    conn = get_db()
+    try:
+        return {"status": "success", "best": results.best(conn, limit=2)}
+    finally:
+        conn.close()
+
+
 @router.get("/api/v1/analytics/posts/{post_id}/leads", tags=["Enterprise Reverse CRM", "Analytics"])
 def get_post_leads_attribution(post_id: str = Path(..., max_length=200),
                                account_id: str = Query("default", max_length=100)):

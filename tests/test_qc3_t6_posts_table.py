@@ -332,8 +332,11 @@ def test_the_comparison_table_names_the_order_it_is_actually_in(home):
     # order whichever posts the two happen to agree on.
     assert page["best"]["metric"] == "reactions"
 
+    # The table under Analytics' chart that printed this order moved to
+    # Posts in cycle 4 (track 3, batch 1): Analytics draws no rows, so it has
+    # no order to name, and still never calls anything "best first".
     source = _source("AnalyticsSurface.tsx")
-    assert "most seen first" in source, "the count line names the order the rows are in"
+    assert "<table" not in source and "most seen first" not in source, "Analytics draws a post table again"
     assert "best first" not in source.replace("read \"best first\"", ""), (
         "the screen calls this order by the engine's name for a different one")
 
@@ -379,8 +382,9 @@ def test_analytics_reads_the_strongest_post_from_the_engine():
     # Nothing re-ranks the rows of the page to find a strongest one.
     assert not re.search(r"posts[\s\S]{0,40}\.sort\(", source), "the page's rows are re-ranked on screen"
     assert not re.search(r"engagement_rate[\s\S]{0,30}(Math\.max|reduce\()", source)
-    # The impossible rate is named rather than printed.
-    assert "more_engagements_than_impressions" in source
+    # The impossible rate is named rather than printed, on the screen that
+    # prints a post's rate: Posts' detail, since cycle 4 moved the table.
+    assert "engagement_rate_note" in _source("PostDetail.tsx")
 
 
 def test_the_posts_screen_shows_the_count_and_a_control_that_reaches_the_rest():

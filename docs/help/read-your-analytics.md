@@ -1,6 +1,6 @@
 # Read your analytics
 
-See how your daily figures reach the studio, and read the chart, the three observations and the post comparison.
+See how your daily figures reach the studio, and read the figures, the chart and the panels beside it.
 
 ## How numbers get in
 
@@ -41,27 +41,20 @@ Profile views are not offered as a measure or a figure: nothing reads them yet, 
 
 ## The panels beside the figures
 
-The changes themselves are no longer in this list: each one now sits beside its own figure in the strip at the top, with a `~` where the source figure was rounded. What is left here is the reading, in up to four panels, some of which appear only when there is something to say.
+The changes themselves are no longer in this list: each one now sits beside its own figure in the strip at the top, with a `~` where the source figure was rounded. What is left here is the reading, in up to five panels, some of which appear only when there is something to say.
 
 - **How to read the figures**: the caveats that apply to the strip above. Impressions and Engagements (reactions, comments and shares) over the range, counting only days that hold a single day's figures, compared with the previous period of the same length by the level per captured day. A change is shown only when each period has that figure captured on at least 80 percent of its days (6 of 7, 24 of 30, 72 of 90), counted figure by figure: a day whose impressions were read and whose engagements were not counts for impressions only, and its engagements are not measured, never 0. Otherwise the change reads "not measured" and a note says on how many days each period has the figure. The engagement rate uses only days on which both were read. Days captured with an unknown range are left out, and a note under the list says how many. Followers is the difference between the last day's figure and the first day's. If either day has no figure, or the previous period holds nothing to compare with, the change reads "not measured" rather than 0 or +100.0%.
 - **What moved with it**: one sentence on how reach and engagement moved together.
 - **Your best and your weakest**: shown when enough of your posts have settled to name them.
 - **What to look at next**: your strongest post across all of your posts whose figures have settled, as a multiple of your usual, with the note that comparing its opening against the weaker ones is the one comparison this data supports. It is no longer the highest engagement rate on the page: that read the rate out of the rows in view, which could name a post with a handful of impressions. If nothing of yours has settled, it says so instead.
 
+- **Every post**: a sentence and **Open Posts**, which takes you to the **Posts** screen.
+
 These describe the numbers. They do not claim a cause.
 
-## Post comparison
+## Your posts
 
-The table lists your LinkedIn posts, the ones imported from your activity pages or your archive, and any post you marked as published in the studio that has not been matched to one of them. Rate is (reactions + comments + reposts) divided by impressions, as a percentage.
-
-Fourteen posts are shown at a time, most seen first, which means most impressions. The line above the table says where you are, for example `1-14 of 1,418, most seen first`, and the two arrows beside it turn the page. The table used to list every post you have, which on three years of posting was 2.4 MB read before the screen could draw.
-
-> [!NOTE]
-> A figure the bridge has not read shows "not measured", never 0. Impressions are read only from a post's own analytics page, so most posts show "not measured" for impressions and rate. A post marked published in the studio has no figures of its own until it is matched to its LinkedIn post.
-
-If a note under the table says a post has more engagements recorded than impressions, so no rate can be measured, it counts the posts **on the page you are looking at**, not all of yours. Turn the page and the count is about the posts there.
-
-Click a row to see leads linked to it: a count of leads and interactions with names, or NO LEADS ATTRIBUTED TO THIS POST. An imported LinkedIn post carries the people the bridge captured on it. A post written in the studio is linked only once it has been matched to its LinkedIn post; until then expect NO LEADS ATTRIBUTED TO THIS POST.
+Analytics no longer lists your posts. It drew fourteen of them at a time under the chart, over the same posts the **Posts** screen tables in full. Every post, with its figures against your usual and the people it brought, sorted, filtered and searched as you like, is on **Posts**: press **Open Posts** under **Every post** beside the chart. See [See what worked, and where your attention goes](see-what-worked-and-where-your-attention-goes.md).
 
 ## The seeded-data banner
 
@@ -78,6 +71,5 @@ Click **CSV** beside the range buttons. It downloads every stored day, whatever 
 | ANALYTICS UNAVAILABLE | The studio did not answer or refused the request. Check it is running and reload. |
 | NOTHING MEASURED IN THIS RANGE | No figures exist for that measure in this range. Visit your LinkedIn analytics page with the extension running. |
 | "not measured" | That figure was never captured for that day or post. Under **What changed**, one of the figures it compares was not captured, or the previous period holds nothing to compare with. |
-| NO PUBLISHED POSTS TO COMPARE | None of your LinkedIn posts has been imported, and no studio post is marked published. Import your posts in Setup. |
 
 Audience demographics are not shown anywhere in the studio.

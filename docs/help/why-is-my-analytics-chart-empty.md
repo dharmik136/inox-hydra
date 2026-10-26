@@ -17,8 +17,6 @@ The studio never fetches your analytics. The browser extension reads the impress
 | No Inox Hydra notice at all on the analytics page | The extension is not loaded in that browser, the page is not your creator analytics page (a single post's analytics page is never read), or it found neither an impressions nor a followers card, so it sent nothing | Check the extension is loaded, then reload the LinkedIn analytics page |
 | ANALYTICS UNAVAILABLE | The studio did not answer or refused the request | Check the studio is running, then reload the page |
 | LOADING ANALYTICS that never ends | The server has not answered | Treat it like ANALYTICS UNAVAILABLE |
-| NO PUBLISHED POSTS TO COMPARE | No post has the published status | Mark a post as published; see [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md) |
-| Post rows all read 0 | The extension does not capture per-post figures | Nothing to fix. This is expected |
 
 > [!NOTE]
 > The notice "Inox Hydra: creator analytics synced to your local studio." also appears when the studio could not be reached or refused the figures. Always confirm on **Analytics**.

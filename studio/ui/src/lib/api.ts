@@ -622,21 +622,6 @@ export async function fetchAnalyticsKpis(range: AnalyticsRange): Promise<Analyti
   return call<AnalyticsKpis>(`/api/analytics/kpis?range=${range}`);
 }
 
-export interface AnalyticsPost {
-  id: string;
-  content: string;
-  impressions: number | null;
-  reactions: number | null;
-  comments: number | null;
-  shares: number | null;
-  engagement_rate: number | null;
-  /** Why there is no rate, when there is none: the screen says it. */
-  engagement_rate_unmeasured?: string | null;
-  engagement_rate_note?: string | null;
-  figures_source?: string | null;
-  published_at: string | null;
-}
-
 /**
  * Which posts worked, from the whole history and one engine (results.py), not
  * from the page this screen happens to have fetched.
@@ -668,32 +653,14 @@ export interface AnalyticsBest {
 }
 
 /**
- * One page of the post comparison table, most seen first (the route orders
- * by impressions, then reactions), server side: this answered with every
- * post the creator had ever written, 2,432 KB on three years, with a `limit`
- * in the URL that was accepted and ignored.
- *
- * "Best" is results.best's word for a different ranking, which travels
- * beside the rows in `best` and is read from the whole history.
+ * The posts that did best and worst against the creator's own median, from
+ * the whole history (results.best), for the Analytics aside. It came beside
+ * a fourteen-row post table that the Posts screen holds in full; the table
+ * moved there, and the aside reads the engine's answer on its own.
  */
-export async function fetchAnalyticsPosts(
-  options: { limit?: number; offset?: number } = {},
-): Promise<{ posts: AnalyticsPost[]; best: AnalyticsBest | null } & Paging> {
-  const params = new URLSearchParams();
-  if (options.limit !== undefined) params.set("limit", String(options.limit));
-  if (options.offset !== undefined) params.set("offset", String(options.offset));
-  const data = await call<{ posts?: AnalyticsPost[]; best?: AnalyticsBest } & Partial<Paging>>(
-    `/api/analytics/posts${params.toString() ? `?${params}` : ""}`,
-  );
-  return {
-    posts: data.posts ?? [],
-    best: data.best ?? null,
-    total: data.total ?? 0,
-    limit: data.limit ?? options.limit ?? 0,
-    offset: data.offset ?? options.offset ?? 0,
-    returned: data.returned ?? (data.posts ?? []).length,
-    has_more: data.has_more ?? false,
-  };
+export async function fetchAnalyticsBest(): Promise<AnalyticsBest | null> {
+  const data = await call<{ best?: AnalyticsBest }>("/api/analytics/best");
+  return data.best ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1288,57 +1255,6 @@ export async function saveSessionCookies(liAt: string, jsessionId: string): Prom
     method: "POST",
     body: JSON.stringify({ li_at: liAt, JSESSIONID: jsessionId }),
   });
-}
-
-// ---------------------------------------------------------------------------
-// Post attribution
-// ---------------------------------------------------------------------------
-
-export interface AttributedLead {
-  lead_id: string;
-  name: string;
-  headline: string | null;
-  company: string | null;
-  icp_score: number;
-  lead_status: string | null;
-  qualification_tier: string | null;
-  latest_comment: string | null;
-}
-
-export interface PostAttribution {
-  post_identifier: string;
-  summary: {
-    total_leads_generated: number;
-    total_interactions: number;
-    vip_leads_count: number;
-    avg_icp_score: number;
-    comments_count: number;
-    likes_count: number;
-    /** Leads counted from reactions older than 24 months that were folded into counts: no names. */
-    folded_leads: number;
-  };
-  leads: AttributedLead[];
-}
-
-/** Which leads a given post actually produced. */
-export async function fetchPostAttribution(postId: string): Promise<PostAttribution> {
-  const data = await call<Record<string, any>>(
-    `/api/v1/analytics/posts/${encodeURIComponent(postId)}/leads`,
-  );
-  const summary = data.attribution_summary ?? {};
-  return {
-    post_identifier: typeof data.post_identifier === "string" ? data.post_identifier : postId,
-    summary: {
-      total_leads_generated: summary.total_leads_generated ?? 0,
-      total_interactions: summary.total_interactions ?? 0,
-      vip_leads_count: summary.vip_leads_count ?? 0,
-      avg_icp_score: summary.avg_icp_score ?? 0,
-      comments_count: summary.comments_count ?? 0,
-      likes_count: summary.likes_count ?? 0,
-      folded_leads: summary.folded_leads ?? 0,
-    },
-    leads: Array.isArray(data.leads) ? data.leads : [],
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -2324,16 +2240,21 @@ export interface PostEngager {
   interacted_at: string | null;
 }
 
-/** Who engaged with one post, for any identifier the product uses (post_identity.resolve). */
+/**
+ * Who engaged with one post, for any identifier the product uses
+ * (post_identity.resolve), and how many more are kept only as counts: the
+ * reactors the retention job folded, who have no names to list.
+ */
 export async function fetchPostEngagers(
   postId: string,
-): Promise<{ status: string; count: number; engagers: PostEngager[]; message?: string }> {
+): Promise<{ status: string; count: number; engagers: PostEngager[]; message?: string; folded_people: number }> {
   const data = await call<Record<string, any>>(`/api/v1/posts/${encodeURIComponent(postId)}/engagers`);
   return {
     status: data.status ?? "success",
     count: data.count ?? 0,
     engagers: data.engagers ?? [],
     message: data.message,
+    folded_people: data.folded?.people ?? 0,
   };
 }
 

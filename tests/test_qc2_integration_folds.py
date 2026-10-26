@@ -18,13 +18,20 @@ def _read(*parts):
 
 
 def test_the_drawer_says_how_many_leads_are_kept_only_as_counts():
+    """
+    The drawer lived under Analytics' post table, which cycle 4 moved to Posts
+    (track 3, batch 1). The property moved with it, to the detail the Posts
+    table opens into: the engagers route carries the post's folded people,
+    the detail says how many are counts only, and a post whose every engager
+    was folded is not shown as having nobody.
+    """
     api = _read("lib", "api.ts")
-    assert "folded_leads: summary.folded_leads ?? 0" in api
-    surface = _read("components", "AnalyticsSurface.tsx")
-    assert "attribution.summary.folded_leads > 0" in surface
-    assert "KEPT AS A COUNT" in surface
+    assert "folded_people: data.folded?.people ?? 0" in api
+    detail = _read("components", "PostDetail.tsx")
+    assert "foldedPeople > 0" in detail
+    assert "KEPT AS A COUNT" in detail
     # Every lead folded is still a lead: the empty line needs no count at all.
-    assert "attribution.leads.length === 0 && attribution.summary.total_leads_generated === 0" in surface
+    assert "engagers.length === 0 && foldedPeople === 0" in detail
 
 
 def test_the_fold_confirmation_says_a_list_of_names_can_be_shorter_than_the_count():

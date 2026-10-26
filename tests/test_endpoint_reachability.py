@@ -254,9 +254,18 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # /api/v1/insights/contrasts now. Total stays at 172, reached 118 -> 117,
 # unreachable 54 -> 55.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 172
+# The same batch took the post table off Analytics (a second copy of the Posts
+# screen's). GET /api/analytics/best is added for the aside, which reads the
+# engine's best and weakest without a page of rows (+1 declared, reached).
+# The table's per-row attribution, /api/v1/analytics/posts/*/leads, has no
+# caller in the interface now; it stays for the API and its index tests.
+# /api/analytics/posts was already counted unreached: its client wrote the
+# path in a template literal this file's pattern does not read.
+# Total 172 -> 173, reached stays 117, unreachable 55 -> 56.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 173
 REACHED_BY_INTERFACE = 117
-UNREACHABLE = 55
+UNREACHABLE = 56
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

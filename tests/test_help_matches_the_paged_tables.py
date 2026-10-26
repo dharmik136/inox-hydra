@@ -14,6 +14,9 @@ A page size written into prose drifts the moment the constant changes, and the
 creator who counts fourteen rows against an article saying twenty has no way
 to know which is wrong. So the numbers in the help are read back out of the
 code here, rather than trusted.
+
+Cycle 4 moved the Analytics table to Posts, so the Analytics article is held
+to saying so, and the Posts article to its table as before.
 """
 
 import io
@@ -41,44 +44,24 @@ def _constant(component, name):
     return int(found.group(1))
 
 
-def test_the_analytics_article_gives_the_page_size_the_screen_uses():
-    size = _constant("AnalyticsSurface.tsx", "ANALYTICS_PAGE_SIZE")
-    article = _read(os.path.join(HELP, "read-your-analytics.md"))
-    word = WORDS.get(size)
-    assert word, f"no word for a page of {size}; add it to WORDS"
-    assert re.search(rf"\b{word}\b", article, re.I) or f"{size} posts" in article, (
-        f"the Analytics screen shows {size} posts a page and the article does not say so"
-    )
-
-
-def test_the_analytics_article_says_the_comparison_can_be_paged():
-    article = _read(os.path.join(HELP, "read-your-analytics.md"))
-    section = article.split("## Post comparison", 1)[1].split("\n## ", 1)[0]
-    # Not the bare word "page": it already appeared in this section as "a
-    # post's own analytics page", so the first version of this assertion
-    # passed on an article that said nothing about paging at all.
-    assert "turn the page" in section.lower() or "at a time" in section.lower(), (
-        "the Post comparison section does not say the table is shown a page "
-        "at a time, or how to turn it"
-    )
-    assert "most seen first" in section, (
-        "the article does not give the order the table is actually in "
-        "(the screen prints 'most seen first')"
-    )
-
-
-def test_the_analytics_article_scopes_the_impossible_rate_note_to_the_page():
+def test_the_analytics_article_sends_the_reader_to_posts_for_the_table():
     """
-    The screen's note reads "N POSTS ON THIS PAGE HAVE MORE ENGAGEMENTS
-    RECORDED THAN IMPRESSIONS". A creator who read it as a count of all their
-    posts would draw the wrong conclusion from a page turn.
+    Cycle 4 took the post table off Analytics: it was a second copy of the
+    Posts screen's, fourteen rows at a time (track 3, batch 1). The article
+    held to its page size, its pager and its page-scoped note now has to say
+    the table is gone and where the posts are, and the screen has no page
+    size left for an article to drift from.
     """
     surface = _read(os.path.join(UI, "AnalyticsSurface.tsx"))
-    assert "ON THIS PAGE" in surface, "the screen no longer scopes that note to the page"
+    assert "ANALYTICS_PAGE_SIZE" not in surface and "<table" not in surface, "Analytics still draws a post table"
+    assert 'href="#/posts"' in surface, "the aside no longer links into Posts"
     article = _read(os.path.join(HELP, "read-your-analytics.md"))
-    assert "on the page you are looking at" in article, (
-        "the article does not say the impossible-rate note counts only the page in view"
+    assert "## Post comparison" not in article, "the article still describes the table"
+    section = article.split("## Your posts", 1)[1].split("\n## ", 1)[0]
+    assert "**Posts**" in section and "**Open Posts**" in section, (
+        "the article does not say where the posts went, or how to get there"
     )
+    assert "most seen first" not in article.lower() and "turn the page" not in article.lower()
 
 
 def test_the_posts_article_still_matches_its_table():
