@@ -525,7 +525,9 @@ export function archiveStatus(state: ArchiveState): string {
   if (state.last_import) {
     const posts = state.last_import.summary.posts;
     const added = posts && "added" in posts ? `, ${posts.added} new post${posts.added === 1 ? "" : "s"}` : "";
-    return `Imported ${localDate(state.last_import.imported_at)} from ${state.last_import.archive_name}${added}`;
+    // The age nudge is the server's sentence, said here and on Today alike.
+    const nudge = state.age_nudge ? `. ${state.age_nudge}` : "";
+    return `Imported ${localDate(state.last_import.imported_at)} from ${state.last_import.archive_name}${added}${nudge}`;
   }
   if (state.requested_at) return `Asked for ${localDate(state.requested_at)}. Waiting for it in your Downloads folder`;
   return "LinkedIn's own copy of your record: years of posts and comments, in one file";

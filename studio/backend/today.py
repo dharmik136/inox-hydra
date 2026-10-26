@@ -453,4 +453,6 @@ def today_brief() -> Dict[str, Any]:
         "queue": queue,
         "open_next": open_next,
         "demo_cleanup": demo_cleanup,
+        # The archive age nudge, from archive_state, the same sentence Setup says.
+        "archive_age": state["archive"].get("age_nudge"),
     }

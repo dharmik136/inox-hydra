@@ -1827,6 +1827,8 @@ export interface ArchiveState {
   waiting: boolean;
   /** LinkedIn export files in Downloads. Only GET /api/v1/archive looks; elsewhere this is empty. */
   found: FoundArchive[];
+  /** One sentence when the last import is older than a month; null otherwise. */
+  age_nudge?: string | null;
   last_import: { archive_name: string; imported_at: string; summary: Record<string, ArchiveKindTally> } | null;
 }
 
@@ -2178,6 +2180,8 @@ export interface TodayBrief {
   };
   /** What the demo cleanup removed, until dismissed; null when there is nothing to say. */
   demo_cleanup?: { removed: { kind: string; count: number }[]; backup: string | null; removed_at: string | null } | null;
+  /** The archive age nudge, the same sentence Setup's archive step says; null when the archive is recent. */
+  archive_age?: string | null;
 }
 
 export async function fetchToday(): Promise<TodayBrief> {

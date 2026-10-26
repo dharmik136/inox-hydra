@@ -72,9 +72,10 @@ except ImportError:
     from text_cut import clip
 
 try:
-    from . import paths
+    from . import archive_age, paths
     from .database import get_db
 except ImportError:
+    import archive_age
     import paths
     from database import get_db
 
@@ -1486,6 +1487,8 @@ def archive_state(look: bool = False) -> Dict[str, Any]:
         "watching": downloads_dirs() if look and waiting else [],
         "complete": bool(covered),
         "no_posts_at": no_posts_at,
+        # One sentence when the last import is a month old (archive_age.py).
+        "age_nudge": archive_age.sentence(last[1] if last else None),
         "last_import": {
             "archive_name": last[0],
             "imported_at": last[1],

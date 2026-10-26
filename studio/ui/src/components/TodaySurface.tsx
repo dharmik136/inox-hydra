@@ -289,6 +289,13 @@ export function TodaySurface({
         </p>
       )}
 
+      {/* The archive age nudge: the server's own sentence, the same one Setup's archive step says. */}
+      {brief.archive_age && (
+        <p role="status" className="studio-meta shrink-0 rounded-md border border-edge px-3 py-1.5 leading-snug text-ink-secondary">
+          {brief.archive_age.toUpperCase()}
+        </p>
+      )}
+
       {/* First, because it has a time on it. A queued post is not posted by
           the studio: at its time it waits here and on the Queue. */}
       {due.length > 0 && (
