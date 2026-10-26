@@ -2504,6 +2504,10 @@ export interface RetrievalEvidenceBrief {
   bottom_exemplars: EvidenceExemplar[];
   contrast_findings: ContrastFinding[];
   brief_section: string;
+  /** How many settled posts the brief needs before it says anything (results.MIN_FOR_MEDIAN). */
+  min_settled_posts: number;
+  /** How many posts each side of a contrast needs before it is a finding (results.MIN_PER_SIDE). */
+  min_per_side: number;
 }
 
 export async function fetchEvidenceBrief(): Promise<RetrievalEvidenceBrief> {

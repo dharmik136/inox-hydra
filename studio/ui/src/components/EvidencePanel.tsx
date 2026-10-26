@@ -6,8 +6,11 @@ import { cn } from "@/lib/utils";
 /**
  * CP2 Evidence-Backed Composer Panel.
  *
- * Sourced solely from real settled post contrasts (n >= 8 per arm guard)
- * and historical top/bottom post exemplars. Zero cloud egress.
+ * Sourced solely from the creator's own settled posts: the contrasts the
+ * engine calls conclusive, with its own minimum a side, and the top
+ * exemplars of the one ranking. Every minimum printed here is the brief's
+ * (results.MIN_FOR_MEDIAN, results.MIN_PER_SIDE), never this file's: it
+ * used to write both numbers out in its own words. Zero cloud egress.
  */
 export function EvidencePanel() {
   const [brief, setBrief] = useState<RetrievalEvidenceBrief | null>(null);
@@ -44,8 +47,8 @@ export function EvidencePanel() {
           <p className="studio-meta text-ink-muted mt-1">COLD START</p>
         </div>
         <p className="text-[12px] leading-relaxed text-ink-muted">
-          Fewer than 3 settled posts found in local database. Ingest your LinkedIn activity
-          to unlock contrast findings and grounded exemplars.
+          Fewer than {brief.min_settled_posts} settled posts found in local database. Ingest your LinkedIn
+          activity to unlock contrast findings and grounded exemplars.
         </p>
       </div>
     );
@@ -67,14 +70,14 @@ export function EvidencePanel() {
           <p className="studio-label">Observed Contrast Effects</p>
           <span className="text-[11px] text-ink-muted flex items-center gap-1">
             <HelpCircle className="size-3" aria-hidden="true" />
-            n &ge; 8 guard
+            {brief.min_per_side} posts a side
           </span>
         </div>
 
         {brief.contrast_findings.length === 0 ? (
           <div className="rounded-md border border-edge bg-soft/40 p-3 text-[12px] text-ink-muted leading-relaxed">
-            No format arm has reached n &ge; 8 settled posts with a statistically conclusive gap yet.
-            Continuing to publish builds this sample size.
+            No form has {brief.min_per_side} settled posts on both sides with a difference your own posts can
+            separate yet. Continuing to publish builds this sample.
           </div>
         ) : (
           <div className="flex flex-col gap-2">

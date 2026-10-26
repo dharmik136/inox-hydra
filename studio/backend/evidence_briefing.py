@@ -391,16 +391,23 @@ def get_retrieval_evidence_brief(limit_top: int = 3, limit_bottom: int = 2) -> D
     finally:
         conn.close()
 
-    if len(ranked) < 3:
+    # The engine's own minimums travel with the answer, so the panel prints
+    # what it is handed rather than a number of its own: it said "Fewer than
+    # 3" and "n >= 8" in its own words, which stop being true the day the
+    # engine's change.
+    minimums = {"min_settled_posts": results.MIN_FOR_MEDIAN, "min_per_side": results.MIN_PER_SIDE}
+
+    if len(ranked) < results.MIN_FOR_MEDIAN:
         return {
             "has_evidence": False,
-            "message": f"Cold start: fewer than 3 settled posts found ({len(ranked)}).",
+            "message": f"Cold start: fewer than {results.MIN_FOR_MEDIAN} settled posts found ({len(ranked)}).",
             "top_exemplars": [],
             "bottom_exemplars": [],
             "contrast_findings": [],
             "settled_posts_analyzed": len(ranked),
             "median_reactions": worked["usual"][results.RANKED_METRIC]["median"],
-            "brief_section": ""
+            "brief_section": "",
+            **minimums,
         }
 
     top_posts = [exemplar(urn) for urn in ranked[:limit_top]]
@@ -454,5 +461,6 @@ def get_retrieval_evidence_brief(limit_top: int = 3, limit_bottom: int = 2) -> D
         "median_reactions": worked["usual"][results.RANKED_METRIC]["median"],
         "settled_posts_analyzed": worked["ranked_posts"],
         "settled_after": {"hours": worked["settled_after_hours"]},
-        "brief_section": brief_section
+        "brief_section": brief_section,
+        **minimums,
     }
