@@ -255,7 +255,10 @@ def _engagement(people: List[sqlite3.Row]) -> Dict[str, Any]:
     }
 
 
-READING_FIELDS = ("age_hours", "impressions", "reactions", "comments", "reposts", "source")
+# precision is how the reading was read (migration 28): 'exact', 'rounded',
+# or None for one that did not say, so a screen can say "about" beside a
+# figure LinkedIn abbreviated rather than print 12K as 12,000 exactly.
+READING_FIELDS = ("age_hours", "impressions", "reactions", "comments", "reposts", "source", "precision")
 
 
 def _readings(conn, keys: Optional[List[str]]) -> Dict[str, Dict[str, Optional[str]]]:

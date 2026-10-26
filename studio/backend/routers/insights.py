@@ -10,11 +10,15 @@ from typing import Dict, Any, Optional
 
 try:
     from .. import insights
+    from .. import results
     from ..contrast_engine import compute_all_contrasts
+    from ..database import get_db
     from ..evidence_briefing import get_topic_attribution_map, get_retrieval_evidence_brief
 except (ImportError, ValueError):
     import insights
+    import results
     from contrast_engine import compute_all_contrasts
+    from database import get_db
     from evidence_briefing import get_topic_attribution_map, get_retrieval_evidence_brief
 
 router = APIRouter(tags=["Insights"])
@@ -35,13 +39,31 @@ def get_posts_insights(limit: Optional[int] = Query(None, ge=1), offset: int = Q
     return insights.posts_overview(limit=limit, offset=offset, sort=sort, settled_state=settled_state, q=q)
 
 
+def _derived(activity_urn: str) -> Dict[str, Any]:
+    """
+    What the readings of one post can say beyond its latest figures (cycle
+    4, track 5): how precisely that reading was read and which of its figures
+    LinkedIn rounded, so the screen says "about" beside those and nothing
+    beside the rest. Every rule is results.py's.
+    """
+    conn = get_db()
+    try:
+        figure = results.figures(conn, [activity_urn]).get(activity_urn) or {}
+    finally:
+        conn.close()
+    return {
+        "figures_precision": figure.get("precision"),
+        "approximate": results.approximate_fields(figure),
+    }
+
+
 @router.get("/api/v1/insights/posts/{activity_urn}")
 def get_post_detail(activity_urn: str) -> Dict[str, Any]:
     """One post's whole text and figures, for the detail view the Posts table opens into."""
     detail = insights.post_detail(activity_urn)
     if detail is None:
         raise HTTPException(status_code=404, detail="No such post")
-    return detail
+    return {**detail, **_derived(activity_urn)}
 
 
 @router.get("/api/v1/insights/patterns")

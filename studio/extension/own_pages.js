@@ -228,7 +228,13 @@
     "pl", "pt", "ro", "ru", "sv", "tr", "uk"];
   const MULTIPLIERS = { k: 1e3, tsd: 1e3, mil: 1e3, m: 1e6, mio: 1e6, mln: 1e6, mn: 1e6, b: 1e9, mrd: 1e9, md: 1e9 };
 
-  function parseCount(text) {
+  // The figure and whether LinkedIn abbreviated it. "1.2K" is anything from
+  // 1,150 to 1,249, so a reading built from it is rounded, and the studio
+  // keeps that beside the figure (migration 28 mirrors what migration 5 did
+  // for the analytics page) rather than let two rounded readings pass for a
+  // measured change. parseCount below is the figure alone, for every reader
+  // that only needs the number.
+  function parseFigure(text) {
     if (!text) return null;
     const normal = String(text).replace(/[   ]/g, " ");
     const match = /(\d(?:[\d.,']|\s(?=\d{3}(?!\d)))*)(?:\s*(k|tsd|mil|mio|mln|mn|mrd|md|m|b)\.?(?![a-z]))?/i.exec(normal);
@@ -253,7 +259,12 @@
     if (fraction && !suffix) return null;
     const value = parseFloat(whole.replace(/\D/g, "") + (fraction ? "." + fraction : ""));
     if (Number.isNaN(value)) return null;
-    return Math.round(value * (suffix ? MULTIPLIERS[suffix] : 1));
+    return { value: Math.round(value * (suffix ? MULTIPLIERS[suffix] : 1)), rounded: Boolean(suffix) };
+  }
+
+  function parseCount(text) {
+    const figure = parseFigure(text);
+    return figure ? figure.value : null;
   }
 
   // ---------------------------------------------------------------
@@ -1184,6 +1195,7 @@
       (el) => el.children.length === 0 && clean(el.textContent).length > 0 && clean(el.textContent).length < 40
     );
     const metrics = {};
+    const rounded = [];
     for (const el of leaves) {
       const text = clean(el.textContent).toLowerCase();
       const hit = POST_METRIC_LABELS.find(([label, key]) => metrics[key] === undefined && text.startsWith(label));
@@ -1194,9 +1206,20 @@
         const figure = Array.from(box.querySelectorAll("*")).find(
           (node) => node !== el && node.children.length === 0 && NUMBER_ONLY.test(clean(node.textContent))
         );
-        if (figure) metrics[hit[1]] = parseCount(clean(figure.textContent));
+        if (figure) {
+          const parsed = parseFigure(clean(figure.textContent));
+          if (parsed) {
+            metrics[hit[1]] = parsed.value;
+            if (parsed.rounded) rounded.push(hit[1]);
+          }
+        }
       }
     }
+    // One precision per reading, as the analytics page's reader sends it:
+    // 'rounded' when any figure stored was abbreviated, 'exact' otherwise.
+    // A figure that is not a multiple of its rounding step is exact
+    // whatever the row says, so the studio can still say which ones.
+    if (Object.keys(metrics).length) metrics.precision = rounded.length ? "rounded" : "exact";
     return metrics;
   }
 
@@ -1205,7 +1228,7 @@
     const me = await getConfirmedVanity();
     if (!urn || !me) return;
     const metrics = readPostAnalytics();
-    const found = Object.keys(metrics).length;
+    const found = Object.keys(metrics).filter((key) => key !== "precision").length;
     reportCapture("post_analytics", found, found, found ? [] : ["metric_labels"]);
     if (!found) return;
     // The creator is standing on their own post's analytics page, having

@@ -49,26 +49,11 @@ router = APIRouter()
 MIN_CAPTURED_SHARE_TO_COMPARE = results.MIN_CAPTURED_SHARE_TO_COMPARE
 
 
-def rounding_half_width(value, precision) -> float:
-    """
-    How far a stored figure can be from the true one, given how LinkedIn wrote it.
-
-    A row marked 'rounded' holds at least one figure LinkedIn abbreviated,
-    such as 1.2K stored as 1200, without saying which. LinkedIn writes compact
-    numbers the way the browser's compact number format does: one decimal
-    below 10K (1.2K, and 2K for 2.0K), whole thousands up to 999K (12K), one
-    decimal below 10M (1.2M), whole millions above. So the step a figure was
-    rounded to follows from its size: 100 below 10,000, 1,000 below a
-    million, 100,000 below 10 million, 1,000,000 above, and the figure is
-    half a step either way. A value that is not a multiple of its step
-    cannot be one LinkedIn abbreviated, so it was written out in full and is
-    exact. (This replaced reading the last non-zero digit, which gave a bare
-    20K a margin of 5,000.)
-    """
-    if precision != "rounded" or value is None or value < 1000:
-        return 0.0
-    step = 100 if value < 10_000 else 1_000 if value < 1_000_000 else 100_000 if value < 10_000_000 else 1_000_000
-    return step / 2.0 if value % step == 0 else 0.0
+# How far a rounded figure can be from the true one. The rule is the
+# engine's (results.rounding_half_width), since migration 28 gave post
+# readings the same precision flag and the Posts screens say "about" by the
+# same arithmetic; a second copy here would let the two screens disagree.
+rounding_half_width = results.rounding_half_width
 
 
 def get_range_days(range_str: str) -> int:

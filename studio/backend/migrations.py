@@ -1423,6 +1423,92 @@ def _migrate_current_scores(cursor: sqlite3.Cursor) -> None:
         cursor.execute("UPDATE post_engagement SET stale = stale | 2 WHERE (stale & 2) = 0")
 
 
+
+def _migrate_reading_precision_and_series(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 28:
+    A post reading says how precisely it was read, the figures the post
+    analytics page shows beside the seven already read get columns, viewer
+    demographics carry the day they were read, a post carries its format, and
+    a windowed analytics card is kept as the window it covers.
+
+    Precision mirrors migration 5. The post analytics reader turned "12K"
+    into 12000 with no flag, so growth between two rounded readings could be
+    the rounding step and nothing else: 12K read twice is anything from no
+    change to a thousand either way. A reading now says 'exact', 'rounded',
+    or NULL for one written before this migration or by a reader that does
+    not say.
+
+    The new figure columns are LinkedIn's own per-post figures from the same
+    page (followers gained from this post, profile viewers from this post,
+    link visits, article views, video views) and the in-network and
+    out-of-network share of impressions, stored as the percentage LinkedIn
+    printed. NULL means the page did not show it, never 0.
+
+    audience_demographics has no date, so demographics could never become a
+    series. audience_demographic_readings keeps one row per day per
+    dimension and label, for a post or for the account.
+
+    own_posts.format is one of post_format.FORMATS, or 'unknown' when neither
+    the archive's media field nor a card marker said. Nothing guesses.
+
+    analytics_windows keeps a creator analytics card that covers a window
+    (7 days by default on the 2026 page) as that window, keyed by day and
+    label, so a weekly figure is shown as weekly and never summed as a day.
+    analytics_daily keeps only daily figures, which is what get_kpis sums.
+    """
+    cursor.execute("PRAGMA table_info(post_metric_observations)")
+    columns = {row[1] for row in cursor.fetchall()}
+    for name, kind in (("precision", "TEXT"), ("followers_gained", "INTEGER"), ("profile_viewers", "INTEGER"),
+                       ("link_visits", "INTEGER"), ("article_views", "INTEGER"), ("video_views", "INTEGER"),
+                       ("in_network_pct", "REAL"), ("out_of_network_pct", "REAL")):
+        if name not in columns:
+            cursor.execute(f"ALTER TABLE post_metric_observations ADD COLUMN {name} {kind}")
+
+    cursor.execute("PRAGMA table_info(own_posts)")
+    if "format" not in {row[1] for row in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE own_posts ADD COLUMN format TEXT NOT NULL DEFAULT 'unknown'")
+
+    # grain: one row per day per dimension and label, for one post
+    # (activity_urn) or for the account (activity_urn ''). Re-reading the
+    # same page the same day refreshes the row rather than adding one.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audience_demographic_readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            observed_at TEXT NOT NULL,
+            observed_on TEXT NOT NULL,
+            activity_urn TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL,
+            dimension TEXT NOT NULL,
+            label TEXT NOT NULL,
+            percentage REAL NOT NULL,
+            UNIQUE (observed_on, activity_urn, source, dimension, label)
+        )
+    """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_demographic_readings_post "
+        "ON audience_demographic_readings(activity_urn, observed_on)"
+    )
+
+    # grain: one row per day per window the creator analytics page was read
+    # at. A figure the card did not show is NULL, never 0.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS analytics_windows (
+            date TEXT NOT NULL,
+            period_label TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            impressions INTEGER,
+            reactions INTEGER,
+            comments INTEGER,
+            shares INTEGER,
+            followers INTEGER,
+            precision TEXT,
+            source TEXT NOT NULL DEFAULT 'observed',
+            PRIMARY KEY (date, period_label)
+        )
+    """)
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1451,6 +1537,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (26, "One identity for a post: every publication has its post, and the dead queue is gone",
      _migrate_one_post_identity),
     (27, "A lead's score is recomputed when what it is computed from changes", _migrate_current_scores),
+    (28, "Precision on post readings, dated demographics, a format per post and windowed analytics as windows",
+     _migrate_reading_precision_and_series),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

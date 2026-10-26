@@ -932,6 +932,17 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
 
 METRIC_FIELDS = ("impressions", "members_reached", "reactions", "comments", "reposts", "saves", "sends")
 
+# How precisely a reading was read, as migration 5 records it for the
+# analytics page: 'exact' when every figure was written out, 'rounded' when
+# LinkedIn abbreviated one (12K), and None when the reader did not say. The
+# activity page's card reader sends no flag, so its readings are None, which
+# claims nothing either way.
+PRECISIONS = ("exact", "rounded")
+
+
+def _precision(value: Any) -> Optional[str]:
+    return value if value in PRECISIONS else None
+
 
 def _record_observation(conn, activity_urn: str, source: str, metrics: Dict[str, Any]) -> bool:
     """
@@ -939,7 +950,9 @@ def _record_observation(conn, activity_urn: str, source: str, metrics: Dict[str,
 
     One per post per source per hour: re-reading a page within the hour
     refreshes that hour's reading rather than adding another, so scrolling
-    the activity page twice does not double the history.
+    the activity page twice does not double the history. A reading refreshed
+    within the hour is rounded if either read was: a rounded figure cannot
+    become exact by being read again.
     """
     values = {k: _count(metrics.get(k)) for k in METRIC_FIELDS}
     if all(v is None for v in values.values()):
@@ -950,13 +963,16 @@ def _record_observation(conn, activity_urn: str, source: str, metrics: Dict[str,
     conn.execute(
         f"""
         INSERT INTO post_metric_observations
-            (activity_urn, observed_at, observed_hour, age_hours, source, {", ".join(METRIC_FIELDS)})
-        VALUES (?, ?, ?, ?, ?, {", ".join("?" for _ in METRIC_FIELDS)})
+            (activity_urn, observed_at, observed_hour, age_hours, source, precision, {", ".join(METRIC_FIELDS)})
+        VALUES (?, ?, ?, ?, ?, ?, {", ".join("?" for _ in METRIC_FIELDS)})
         ON CONFLICT(activity_urn, source, observed_hour) DO UPDATE SET
             observed_at = excluded.observed_at, age_hours = excluded.age_hours,
+            precision = CASE
+                WHEN excluded.precision = 'rounded' OR post_metric_observations.precision = 'rounded' THEN 'rounded'
+                ELSE COALESCE(excluded.precision, post_metric_observations.precision) END,
             {", ".join(f"{k} = COALESCE(excluded.{k}, post_metric_observations.{k})" for k in METRIC_FIELDS)}
         """,
-        (activity_urn, now.isoformat(), now.strftime("%Y-%m-%dT%H"), age, source,
+        (activity_urn, now.isoformat(), now.strftime("%Y-%m-%dT%H"), age, source, _precision(metrics.get("precision")),
          *[values[k] for k in METRIC_FIELDS]),
     )
     # The post's summary row keeps its two day and latest readings; the
@@ -1002,7 +1018,7 @@ def post_readings(activity_urn: str) -> List[Dict[str, Any]]:
     conn = get_db()
     try:
         return [dict(r) for r in conn.execute(
-            f"SELECT observed_at, age_hours, source, {', '.join(METRIC_FIELDS)} "
+            f"SELECT observed_at, age_hours, source, precision, {', '.join(METRIC_FIELDS)} "
             "FROM post_metric_observations WHERE activity_urn = ? ORDER BY observed_at", (activity_urn,))]
     finally:
         conn.close()

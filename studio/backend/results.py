@@ -227,7 +227,7 @@ SNAPSHOT = "snapshot"
 # a correlated subquery per post (measured: 62 ms for 1,417 posts over 362,996
 # readings, against 2,349 ms for the subquery shape).
 _NEWEST_READING = f"""
-    SELECT activity_urn AS urn, source, observed_at, age_hours,
+    SELECT activity_urn AS urn, source, observed_at, age_hours, precision,
            {', '.join(FIGURE_FIELDS)},
            MAX(observed_at || CASE source WHEN 'post_analytics' THEN '2' ELSE '1' END) AS ordering
     FROM post_metric_observations
@@ -271,6 +271,9 @@ def _from_summary(conn, urns: Optional[Sequence[str]]) -> Dict[str, Dict[str, An
             "source": reading["source"],
             "read_at": reading.get("observed_at"),
             "read_at_age_hours": reading.get("age_hours"),
+            # How precisely the reading was read (migration 28): 'exact',
+            # 'rounded', or None for a reading that did not say.
+            "precision": reading.get("precision"),
         }
     return out
 
@@ -313,6 +316,7 @@ def figures(conn, urns: Optional[Sequence[str]] = None) -> Dict[str, Dict[str, A
                 "source": row["source"],
                 "read_at": row["observed_at"],
                 "read_at_age_hours": row["age_hours"],
+                "precision": row["precision"],
             }
     where, params = _in_clause(urns, "activity_urn")
     for row in _rows(
@@ -328,6 +332,7 @@ def figures(conn, urns: Optional[Sequence[str]] = None) -> Dict[str, Dict[str, A
             "source": SNAPSHOT,
             "read_at": row["last_seen_at"],
             "read_at_age_hours": None,
+            "precision": None,
         }
     return out
 
@@ -368,6 +373,72 @@ def rate_reason_sentence(reason: Optional[str]) -> Optional[str]:
             "more engagements than impressions were read for this post, so the two figures came from "
             "different readings and no rate can be measured from them"),
     }.get(reason or "")
+
+
+# ---------------------------------------------------------------------------
+# How precisely a figure was read
+# ---------------------------------------------------------------------------
+#
+# LinkedIn abbreviates: 1.2K is anything from 1,150 to 1,249. The analytics
+# page's rows have said 'exact' or 'rounded' since migration 5 and the post
+# readings since migration 28. The width of that uncertainty was computed in
+# the analytics router alone, so the post side could not say "about"; it
+# lives here now and the router reads it.
+
+PRECISION_EXACT = "exact"
+PRECISION_ROUNDED = "rounded"
+
+
+def rounding_half_width(value, precision) -> float:
+    """
+    How far a stored figure can be from the true one, given how LinkedIn wrote it.
+
+    A row marked 'rounded' holds at least one figure LinkedIn abbreviated,
+    such as 1.2K stored as 1200, without saying which. LinkedIn writes compact
+    numbers the way the browser's compact number format does: one decimal
+    below 10K (1.2K, and 2K for 2.0K), whole thousands up to 999K (12K), one
+    decimal below 10M (1.2M), whole millions above. So the step a figure was
+    rounded to follows from its size: 100 below 10,000, 1,000 below a
+    million, 100,000 below 10 million, 1,000,000 above, and the figure is
+    half a step either way. A value that is not a multiple of its step
+    cannot be one LinkedIn abbreviated, so it was written out in full and is
+    exact. (This replaced reading the last non-zero digit, which gave a bare
+    20K a margin of 5,000.) An unknown precision (None) claims nothing.
+    """
+    if precision != PRECISION_ROUNDED or value is None or value < 1000:
+        return 0.0
+    step = 100 if value < 10_000 else 1_000 if value < 1_000_000 else 100_000 if value < 10_000_000 else 1_000_000
+    return step / 2.0 if value % step == 0 else 0.0
+
+
+def approximate_fields(figure: Optional[Dict[str, Any]], fields: Sequence[str] = FIGURE_FIELDS) -> List[str]:
+    """
+    Which of a reading's figures LinkedIn rounded, by name, so a screen can
+    say "about" beside those and nothing beside the rest.
+    """
+    if not figure:
+        return []
+    return [field for field in fields
+            if rounding_half_width(figure.get(field), figure.get("precision")) > 0]
+
+
+def growth(earlier: Optional[Dict[str, Any]], later: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    The change between two readings of one figure, and whether the readings
+    can separate it from their own rounding.
+
+    Each reading is {"value", "precision"}. The change is approximate when
+    either reading was rounded, and within rounding when it is no larger
+    than the two half widths together: 12K read twice is not "no growth",
+    it is a change of up to a thousand that the readings cannot see.
+    """
+    if not earlier or not later or earlier.get("value") is None or later.get("value") is None:
+        return {"change": None, "approximate": False, "within_rounding": False, "slack": 0.0}
+    slack = (rounding_half_width(earlier["value"], earlier.get("precision"))
+             + rounding_half_width(later["value"], later.get("precision")))
+    change = later["value"] - earlier["value"]
+    return {"change": change, "approximate": slack > 0, "within_rounding": slack > 0 and abs(change) <= slack,
+            "slack": slack}
 
 
 # ---------------------------------------------------------------------------
