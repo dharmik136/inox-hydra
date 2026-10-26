@@ -30,7 +30,7 @@ When nothing the cards are made from has changed since the last day (your posts 
 | **You engaged with** | A comment you left on someone else's post: your own words, the date and a link to the post. Without comments, a post you reacted to, reposted or saved, as a link and a date | Your own activity in turn. The other person's words are never put on a card. |
 | The fifth card | One idea from your own AI provider, or an entry of the Inox library that suits one of your topics | See the two sections below. Until either is set up, the card says how to fill it. |
 
-Every card shows, beside its title, how it was arrived at (for example "measured" or "resurfaced, not measured"), your own words in quotation marks, figures only where a page was read, and a line that starts "Because". **Why this?** opens the whole rule, the rows each figure was read from, and the card's label: MEASURED (read from a row, with when), DERIVED (worked out from measured rows by the stated rule), TYPED (sorted by a rule such as shared words, with nothing measured behind it), SUGGESTED (written by your model, then checked) or CURATED (from the Inox library). Before a card is shown, every row it cites is looked up; a card whose row is gone is dropped and counted under the title, never shown.
+Every card shows, beside its title, how it was arrived at (for example "measured" or "resurfaced, not measured"), your own words in quotation marks where it has any, figures only where a page was read, and a line that starts "Because". **Why this?** opens the whole rule, the rows each figure was read from, and the card's label: MEASURED (read from a row, with when), DERIVED (worked out from measured rows by the stated rule), TYPED (sorted by a rule such as shared words, with nothing measured behind it), SUGGESTED (written by your model, then checked) or CURATED (from the Inox library). Before a card is shown, every row it cites is looked up; a card whose row is gone is dropped and counted under the title, never shown.
 
 A card that cannot be filled yet is dashed and reads NOT YET, with a sentence saying what is missing and what fills it. It is never padded with another card.
 
@@ -38,9 +38,9 @@ A card that cannot be filled yet is dashed and reads NOT YET, with a sentence sa
 
 | Button | What it does |
 | --- | --- |
-| **Keep** | Puts the card in **Kept**. A drawn card (an opener, an ask, a comment, a library entry) becomes twice as likely to come back. Press **Kept** to undo it |
-| **Skip** | A drawn card stays away 14 days, then comes back half as often. **What worked** and **On this day** step aside for 14 days, and the next post in line takes their place |
-| **Hide** | The card is not shown again; for **What worked** and **On this day**, the next post in line takes its place. **Unhide all** on **What the studio knows** undoes every hide |
+| **Keep** | Puts the card in **Kept**. A drawn card (an opener, an ask, a recurring word, something you engaged with, a library entry) becomes twice as likely to come back. Press **Kept** to undo it |
+| **Skip** | A drawn card stays away 14 days, then comes back half as often. **What worked** steps aside for 14 days for the next post in the same ranking, and **On this day** for another post of the date or an opener |
+| **Hide** | The card is not shown again: **What worked** gives way to the next post in the same ranking, **On this day** to another post of the date or an opener. **Unhide all** on **What the studio knows** undoes every hide |
 | **More of this** | Keeps the card's topic as an ask: the recurring word of yours it goes under, or its own words when it goes under none |
 | **Draft from this** | Opens the **Composer** on a new draft holding the card's words, and records that you drafted from it. When that draft is published or sent, the card is marked as posted |
 | **Open on LinkedIn** | Opens the post in the bridge browser |
@@ -49,7 +49,7 @@ Marks change which cards come back, from the next day's cards. They never change
 
 ## Ask for something
 
-Your asks are the only things the section keeps that you typed, and each comes from something you did on purpose:
+An ask is kept only when you do one of these on purpose:
 
 - **Ask for something to write about**, under today's cards, then **Remember this ask**.
 - The three optional questions under **What you want from your record (optional)**, in **Setup** and on **What the studio knows**. What you want to write about is matched to your posts like any ask. Who you write for, and what the studio should never suggest, are told only to your own model, and only when its stage is on. Each can be skipped.
@@ -72,7 +72,7 @@ Everything the section holds about you, on one page, each part changeable:
 - The three optional questions, as in **Setup**.
 - **Your marks**: how many cards you kept, skipped, hid, drafted from and posted, the cards you hid, and **Unhide all**.
 - **From your LinkedIn archive**: how many saved posts, follows, poll votes, articles, reposts and searches your archive brought.
-- **How long the daily cards are kept**: 90 days, 365 days (the default) or for good. A day that a mark or a draft refers to is never removed. Asks and marks stay until you retire, remove or unhide them.
+- **How long the daily cards are kept**: 90 days, 365 days (the default) or for good. A day that a mark or a draft refers to is never removed. Nothing removes an ask or a mark on its own: an ask goes with **Remove for good**, a keep when you press **Kept**, a hide with **Unhide all**.
 - **Your own model** and **The Inox library**, below.
 - **The daily batch**: when the cards were last made.
 
@@ -88,7 +88,7 @@ What comes back is checked before it is shown. An idea is dropped, not repaired,
 
 - One call a day, or two if the first failed, with up to 1,200 tokens back.
 - A daily ceiling in US dollars, $0.10 unless you change it. The cost is estimated before the call from your provider's prices on a stated date; a call that could go over what is left is not made, and the line under the title says so. A model that is not in the studio's price table is estimated at its provider's dearest listed price. A provider with no listed price, such as Groq, is not called, because the studio could not keep it under your ceiling. A model on this computer costs nothing.
-- Beside the switch, the studio quotes what your provider says it keeps, and the date that was read.
+- Beside the switch, the studio says what your provider says it does with what it is sent, and the date that was read, or that it has not read your provider's terms.
 - The switch **Ask ... for one idea a day, the first time I open this section** turns it off: nothing is sent.
 - During the beta every studio has it. Once the beta ends it is part of the Creator licence. See [Keep each creator separate, and enter a licence](keep-each-creator-separate-and-enter-a-licence.md).
 

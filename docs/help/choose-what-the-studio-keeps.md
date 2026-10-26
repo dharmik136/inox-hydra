@@ -29,7 +29,7 @@ When you forget people or a cleanup removes rows, the space they took stays insi
 | Reactions older than 24 months | Folded into counts | On, Off | Comments, all of them; how many people reacted to each post; how many old reactions each person made |
 | People silent for 24 months | Listed for you to review | List them, Do not list them | Everyone you have not chosen to forget |
 | Your posts, drafts, notes, daily analytics, comments, connections | Kept for good | | All of it |
-| Your asks and the marks on your daily cards (From your record) | Kept until you retire or unhide them | On the section's **What the studio knows** page | Nothing is removed on its own |
+| Your asks and the marks on your daily cards (From your record) | Kept until you remove them | An ask on the section's **What the studio knows** page; a keep or a hide by taking it back | Nothing is removed on its own |
 | The daily batches of cards (From your record) | 365 days | 90, 365 days or for good, on the same page | A batch a mark or a draft still refers to |
 
 **Post readings.** The extension reads a post's figures many times while it is new. After 30 days, the studio keeps the last reading of each day. Today compares your latest post with your earlier ones at about two days old, so every reading from 36 to 72 hours after a post went out is kept, and Today's comparison and each post's latest figures stay exactly as they were.
