@@ -312,9 +312,12 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # no list held once Analytics' table moved. Total 173 -> 174, reached 117 ->
 # 118, unreachable stays 56.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 0
-REACHED_BY_INTERFACE = 0
-UNREACHABLE = 0
+# Integration of tracks 5, 7 and 3, measured on the merged tree: 192 paths,
+# 139 reached by the interface, 53 unreachable.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 192
+REACHED_BY_INTERFACE = 139
+UNREACHABLE = 53
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 
