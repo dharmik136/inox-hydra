@@ -712,6 +712,8 @@ HELP_SECTIONS = [
             "quality/CYCLE3_2026-10_PRD.md",
             "quality/CYCLE3_REGISTER.md",
             "quality/cycle4/t6-posture.md",
+            # Cycle 4, track 6: the phone pairing design (item 27).
+            "PHONE_PAIRING_DESIGN.md",
             "UI_CONVENTIONS.md",
             "ICON_SYSTEM.md",
             "UI_AGENT_WORKFLOW.md",
