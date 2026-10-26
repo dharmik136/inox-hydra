@@ -254,9 +254,15 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Track 4's Health section is its caller once that section is built; until
 # then it sits in the unreachable column, where it is visible.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 173
+# Cycle 4, track 5, phase 2: 173 -> 177 paths, unreachable 55 -> 59. Four new
+# paths: POST /api/analytics/page-figures, which only the extension calls
+# (own_insights.js), and GET /api/analytics/account-figures,
+# /api/analytics/content-figures and /api/v1/insights/reposts, which the
+# interface draws next. They sit in the unreachable column until it does.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 177
 REACHED_BY_INTERFACE = 118
-UNREACHABLE = 55
+UNREACHABLE = 59
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

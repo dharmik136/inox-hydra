@@ -1517,6 +1517,89 @@ def _migrate_reading_precision_and_series(cursor: sqlite3.Cursor) -> None:
     """)
 
 
+
+def _migrate_account_and_content_readings(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 29:
+    Readings of the creator's account figures, their own articles and
+    newsletters, their own reposts, the edited flag, and a video's watch time.
+
+    The creator opens these pages and nothing read them (the capture report's
+    coverage table): profile views and search appearances, the new followers
+    graph, "Who viewed your profile", an article's and a newsletter's own
+    analytics pages, and on their Activity tab their reposts and the "edited"
+    mark on their posts.
+
+      insight_readings      one row per read of a page per hour and window:
+                            the figures it showed, NULL for any it did not,
+                            never 0; the window it named ('' on a content page
+                            that names none); content_urn for a content page,
+                            '' for an account page. Counts and windows only:
+                            no viewer, searcher or company is ever a column.
+      insight_daily_points  per day points from a graph (new followers).
+      own_reposts           that the creator reposted, when, and the repost's
+                            own figures where the card tells them apart. The
+                            original's author, words and figures are never kept.
+      own_posts.edited_first_seen_at  when a post was first seen marked edited.
+      post_metric_observations.watch_time_seconds and average_watch_seconds,
+                            a video post's figures on its post analytics page.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS insight_readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            page TEXT NOT NULL,
+            content_urn TEXT NOT NULL DEFAULT '',
+            observed_at TEXT NOT NULL,
+            observed_hour TEXT NOT NULL,
+            period_label TEXT NOT NULL DEFAULT '',
+            precision TEXT,
+            profile_views INTEGER,
+            search_appearances INTEGER,
+            views INTEGER,
+            impressions INTEGER,
+            members_reached INTEGER,
+            reactions INTEGER,
+            comments INTEGER,
+            reposts INTEGER,
+            subscribers INTEGER,
+            email_sends INTEGER,
+            email_open_rate_pct REAL,
+            UNIQUE (page, content_urn, period_label, observed_hour)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_insight_readings_page ON insight_readings(page, observed_at)")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS insight_daily_points (
+            date TEXT NOT NULL,
+            figure TEXT NOT NULL,
+            value INTEGER NOT NULL,
+            precision TEXT,
+            source TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            PRIMARY KEY (date, figure, source)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS own_reposts (
+            activity_urn TEXT PRIMARY KEY,
+            reposted_at TEXT,
+            reactions INTEGER,
+            comments INTEGER,
+            reposts INTEGER,
+            impressions INTEGER,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("PRAGMA table_info(own_posts)")
+    if "edited_first_seen_at" not in {row[1] for row in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE own_posts ADD COLUMN edited_first_seen_at TEXT")
+    cursor.execute("PRAGMA table_info(post_metric_observations)")
+    columns = {row[1] for row in cursor.fetchall()}
+    for name in ("watch_time_seconds", "average_watch_seconds"):
+        if name not in columns:
+            cursor.execute(f"ALTER TABLE post_metric_observations ADD COLUMN {name} INTEGER")
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1547,6 +1630,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (27, "A lead's score is recomputed when what it is computed from changes", _migrate_current_scores),
     (28, "Precision on post readings, dated demographics, a format per post and windowed analytics as windows",
      _migrate_reading_precision_and_series),
+    (29, "Account figures, own article and newsletter readings, own reposts, edited posts and watch time",
+     _migrate_account_and_content_readings),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

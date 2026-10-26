@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional
 try:
     from .. import insights
     from .. import onboarding
+    from .. import own_insights
     from .. import results
     from ..contrast_engine import compute_all_contrasts
     from ..database import get_db
@@ -18,6 +19,7 @@ try:
 except (ImportError, ValueError):
     import insights
     import onboarding
+    import own_insights
     import results
     from contrast_engine import compute_all_contrasts
     from database import get_db
@@ -44,7 +46,7 @@ def get_posts_insights(limit: Optional[int] = Query(None, ge=1), offset: int = Q
 # LinkedIn's own per-post figures from the post analytics page, read as they
 # were printed and never derived: the newest reading of that page answers.
 PER_POST_FIELDS = ("followers_gained", "profile_viewers", "link_visits", "article_views", "video_views",
-                   "in_network_pct", "out_of_network_pct")
+                   "in_network_pct", "out_of_network_pct", "watch_time_seconds", "average_watch_seconds")
 
 
 def _derived(activity_urn: str) -> Dict[str, Any]:
@@ -64,8 +66,10 @@ def _derived(activity_urn: str) -> Dict[str, Any]:
         # sentences, with their reading counts and their abstentions.
         movement = results.movement(conn, activity_urn)
         half_life = results.half_life(conn, activity_urn)
-        # What kind of post it was (post_format.py), "unknown" unless a source said.
-        held = conn.execute("SELECT format FROM own_posts WHERE activity_urn = ?", (activity_urn,)).fetchone()
+        # What kind of post it was (post_format.py), "unknown" unless a source said,
+        # and when it was first seen marked edited (phase 2).
+        held = conn.execute("SELECT format, edited_first_seen_at FROM own_posts WHERE activity_urn = ?",
+                            (activity_urn,)).fetchone()
     finally:
         conn.close()
     readings = onboarding.post_readings(activity_urn)
@@ -89,7 +93,17 @@ def _derived(activity_urn: str) -> Dict[str, Any]:
         "movement": movement,
         "half_life": half_life,
         "format": held["format"] if held else None,
+        "edited_first_seen_at": held["edited_first_seen_at"] if held else None,
     }
+
+
+@router.get("/api/v1/insights/reposts")
+def get_own_reposts() -> Dict[str, Any]:
+    """
+    The creator's own reposts: when, and their own figures where the card
+    told them apart. Never the original's author, words or figures.
+    """
+    return {"status": "success", "reposts": own_insights.own_reposts()}
 
 
 @router.get("/api/v1/insights/posts/{activity_urn}")
