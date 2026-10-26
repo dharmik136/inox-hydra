@@ -9,10 +9,11 @@ panels. Line numbers are at the branch head this record was committed with.
 | | |
 |---|---|
 | Items built | 8 of 8: the stream, the bus, the backstop, the event trigger, the three intervals, Today's side panels, the header's mark, one stream per window closed when hidden |
-| New test modules | 3, 43 tests (`tests/test_qc4_t2_show_stream.py` 28, `tests/test_qc4_t2_show_browser.py` 10, `tests/test_qc4_t2_show_cost.py` 5) |
+| New test modules | 3, 44 tests (`tests/test_qc4_t2_show_stream.py` 29, `tests/test_qc4_t2_show_browser.py` 10, `tests/test_qc4_t2_show_cost.py` 5) |
 | Guards falsified | 34 planted faults (22 in the server, 12 in the interface), each seen failing; 2 guards were vacuous at first and were rebuilt (below) |
 | Setup, one idle minute in a real browser | 1,743 statements to 273; 684 SELECTs to 72; 125 connection opens to 17 |
 | Security checks | `security.py` unchanged; the stream passes Host, Origin and token as every route does |
+| Interface audit | `tools/ui_audit.py`, every section, dark and light, desktop and phone: 48 screens, 0 blocking findings, 0 console errors, 0 egress |
 | Migration | None needed |
 | Suite, as CI runs it | See the last section |
 
@@ -115,7 +116,8 @@ of the background database work and lets it go after (`studio/backend/support.py
 because Windows refuses to replace a file any handle holds; the reopened watcher tells the windows
 to read again.
 
-Tests: `test_a_write_the_bus_was_not_told_about_is_still_noticed`,
+Tests: `test_a_write_the_bus_was_not_told_about_is_still_noticed` (another connection),
+`test_a_write_from_another_process_is_noticed` (a child process writing with plain `sqlite3`),
 `test_an_announced_write_is_not_announced_twice`, `test_a_write_while_nobody_listened_is_reported_on_return`,
 `test_nothing_watches_the_database_while_nobody_listens`, `test_a_window_back_after_the_watcher_let_go_is_told_to_read_again`,
 `test_the_watcher_is_put_down_for_a_restore_and_picks_up_after` (through `support._put_the_database_down`).
@@ -145,7 +147,8 @@ it (`refresh.ts:115-121, 147`).
 Tests: `test_one_stream_for_the_window_whichever_screen_is_open` (one request across six screens;
 the studio counts one listener), `test_a_hidden_window_closes_its_stream_and_reopens_it_on_return`,
 `test_a_capture_while_the_window_was_hidden_is_read_on_return`, `test_a_window_back_with_nothing_changed_reads_nothing`,
-`test_a_window_back_after_a_while_reads_once_not_twice`.
+`test_a_window_back_after_a_while_reads_once_not_twice` (it watches Today's waiting count, which
+has no timer that could fire inside the count on a slow machine).
 
 Checked once by hand, because every browser test blocks service workers: with the studio's own
 pass-through worker in control of the page, the stream ran through it (`from_service_worker` true),
@@ -165,7 +168,9 @@ say it has. Test: `test_the_header_mark_follows_a_heartbeat_on_a_screen_that_doe
 What changed. Today 30 s to 120 s (`studio/ui/src/components/TodaySurface.tsx:79, 140`); Setup 3 s
 to a 30 s backstop (`studio/ui/src/components/OnboardingSurface.tsx:43, 85`); Activity 2.5 s to a
 30 s backstop while auto refresh is on (`studio/ui/src/components/ActivitySurface.tsx:117, 169`).
-Each screen reads with `ANY_CHANGE`, so a capture reaches it within about a second.
+Each screen reads with `ANY_CHANGE`, so a capture reaches it within about a second; the browser
+tests time it from the moment the capture was saved, not from before the write, and allow two
+seconds against the 30 s backstop. The probes measured 0.30 s.
 Tests: `test_an_idle_setup_reads_twice_a_minute`, `tests/test_qc4_t2_show_cost.py` (the ceiling),
 and `tests/test_qc2_r5_refresh.py::test_activity_does_not_poll_a_hidden_window`, which pinned the
 2.5 s poll (at least 3 reads in 10 visible seconds) and now pins the backstop (at least 2 reads in
@@ -236,7 +241,7 @@ interface faults were built before their browser test ran, and the bundle rebuil
 | The restore no longer puts the watcher down; never lets it go | `test_the_watcher_is_put_down_for_a_restore_and_picks_up_after` |
 | `/api/v1/events` added to the exempt list | `test_no_credential_is_refused`, `test_the_route_answers_behind_the_same_checks_as_every_other_route` |
 | Any origin allowed | `test_a_foreign_origin_is_refused_even_with_the_cookie` (3) |
-| The backstop never announces; announces hooked writes again | `test_a_write_the_bus_was_not_told_about_is_still_noticed`; `test_an_announced_write_is_not_announced_twice` |
+| The backstop never announces; announces hooked writes again | `test_a_write_the_bus_was_not_told_about_is_still_noticed` and `test_a_write_from_another_process_is_noticed`; `test_an_announced_write_is_not_announced_twice` |
 | No stop hook; a stopping server ends every stream | `test_the_server_stops_promptly_with_a_stream_open`; `test_a_stopping_server_ends_only_its_own_streams` |
 | Ids without the boot name | `test_a_reconnect_is_told_whether_anything_changed_while_it_was_away` |
 | A gone stream never let go | `test_a_client_that_goes_away_is_let_go` |
@@ -276,6 +281,8 @@ Residuals, each bounded by a backstop:
   (`studio/backend/app.py`, `post_bridge_heartbeat`); the quarter second a change waits makes the
   read land after the count, and a test holds it. Track 1's worker-owned heartbeat should keep the
   publish after both.
+- An ingest that kept nothing (every item skipped) still publishes its kind, so a listening
+  screen may read once for nothing; the once a second limit bounds it.
 - The header's minute read now fires on Today about once a minute (see the measurement). It could
   instead be scheduled for the moment the bridge's 150 seconds run out; not done, it is outside
   this track's items.
@@ -312,4 +319,9 @@ This track's scripts now live in a folder of their own. Tracks should not share 
 
 ## Suite, as CI runs it
 
-Pending at the time of writing; recorded in the commit that follows.
+`pytest tests studio/tests -q -rs` from the worktree with the project interpreter, at `e13acf0`:
+3,159 passed, 17 skipped, 0 failed, in 617 s. The skips are the suite's own platform and
+optional-dependency skips (Windows shell primitives, macOS only paths, a real desktop browser,
+`yaml` not installed). After that run, two of this track's tests were made sturdier on a slow
+machine and one was added (`test_a_write_from_another_process_is_noticed`); the run on the
+branch head is in the commit that follows.

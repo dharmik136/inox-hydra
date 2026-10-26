@@ -140,10 +140,10 @@ def test_a_capture_reaches_setup_within_about_a_second(studio):
     page.wait_for_selector("text=CAPTURE HEALTH")
     assert page.locator("text=WORKING, LAST READ").count() == 0
     assert _wait_until(lambda: _listening() == 1)
-    started = time.monotonic()
     _capture(studio["client"])
+    saved = time.monotonic()
     page.wait_for_selector("text=WORKING, LAST READ", timeout=5000)
-    took = time.monotonic() - started
+    took = time.monotonic() - saved
     assert took < 2.0, f"Setup showed the capture {took:.2f} s after it was saved"
 
 
@@ -154,12 +154,12 @@ def test_a_post_reaches_activity_within_about_a_second(studio):
     page.wait_for_selector("text=What the bridge has read")
     assert _wait_until(lambda: _listening() == 1)
     text = "Captured while you watched, a post for the stream."
-    started = time.monotonic()
     ingested = studio["client"].post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [
         {"activity_urn": urn_days_ago(0, 99), "actor": ME, "text": text, "reactions": 1, "comments": 0}]})
     assert ingested.status_code == 200, ingested.text
+    saved = time.monotonic()
     page.wait_for_selector(f"text={text}", timeout=5000)
-    took = time.monotonic() - started
+    took = time.monotonic() - saved
     assert took < 2.0, f"Activity showed the post {took:.2f} s after it was saved"
 
 
@@ -236,23 +236,33 @@ def test_an_idle_setup_reads_twice_a_minute(studio):
 
 def test_a_window_back_after_a_while_reads_once_not_twice(studio):
     """
-    Away fifteen seconds or more, the screen reads on coming back by age, and
-    the stream's hello says the same news a moment later; one read covers it.
+    Away fifteen seconds or more, a panel reads on coming back by age, and the
+    stream's hello says the same news a moment later; one read covers it. The
+    waiting count is the panel watched because nothing else reads it: it has
+    no timer that could fire inside the count on a slow machine.
     """
-    confirm_identity(studio["client"])
+    import ingest_contract
+
+    ingest_contract.forget()
+    seed_creator(studio["client"])
     page = studio["page"]
     page.add_init_script(VISIBILITY)
     page.clock.install()
-    reads = _reads_of(page, "/api/v1/onboarding/state")
-    open_section(studio, "setup")
-    page.wait_for_selector("text=CAPTURE HEALTH")
+    reads = _reads_of(page, "/api/v1/extension/captures/waiting")
+    open_section(studio, "today")
+    page.wait_for_selector("text=What to do in the next hour")
     assert _wait_until(lambda: _listening() == 1)
     _set_visibility(page, "hidden")
     assert _wait_until(lambda: _listening() == 0)
-    _capture(studio["client"])
+    beat = studio["client"].post("/api/v1/bridge/heartbeat", json={
+        "extension_version": "2.7.0", "page_kind": "service_worker", "contract_version": 1, "waiting_captures": 5})
+    assert beat.status_code == 200, beat.text
     page.clock.fast_forward("00:20")
     before = len(reads)
-    _set_visibility(page, "visible")
-    page.wait_for_selector("text=WORKING, LAST READ", timeout=5000)
-    page.wait_for_timeout(2500)
-    assert len(reads) - before == 1, f"coming back read Setup {len(reads) - before} times"
+    try:
+        _set_visibility(page, "visible")
+        page.wait_for_selector("text=5 CAPTURES WAITING FOR THE STUDIO", timeout=5000)
+        page.wait_for_timeout(2500)
+        assert len(reads) - before == 1, f"coming back read the waiting count {len(reads) - before} times"
+    finally:
+        ingest_contract.forget()

@@ -322,6 +322,31 @@ def test_a_write_the_bus_was_not_told_about_is_still_noticed(studio):
         stream.close()
 
 
+def test_a_write_from_another_process_is_noticed(studio):
+    """The command line or a second studio: a process the bus cannot hear at all."""
+    import subprocess
+
+    stream = Stream(studio["port"])
+    try:
+        stream.event()
+        writer = (
+            "import sqlite3, sys\n"
+            "conn = sqlite3.connect(sys.argv[1], timeout=10)\n"
+            "conn.execute(\"INSERT INTO bridge_heartbeats (seen_at, extension_version, page_kind) "
+            "VALUES ('2026-10-26T10:02:00+00:00', '2.7.0', 'other process')\")\n"
+            "conn.commit()\n"
+            "conn.close()\n"
+        )
+        done = subprocess.run([sys.executable, "-c", writer, paths.get_db_path()],
+                              capture_output=True, text=True, timeout=60)
+        assert done.returncode == 0, done.stderr
+        kinds, took = stream.change(timeout=4.0)
+        assert kinds == ["database"], kinds
+        assert took < changes.WATCH_EVERY_S + 1.0, f"the backstop took {took:.2f} s"
+    finally:
+        stream.close()
+
+
 def test_an_announced_write_is_not_announced_twice(studio):
     """A hooked write changes data_version too; the backstop must not repeat it."""
     stream = Stream(studio["port"])
