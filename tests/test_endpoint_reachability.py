@@ -253,10 +253,12 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # upload, preview, import and discard). Total 172 -> 179, reached 118 -> 125,
 # unreachable unchanged at 54. Then, in its review round, Today's Not now for
 # a post the phone asked for (/api/v1/desk-requests/{id}/dismiss): total 180,
-# reached 126, unreachable still 54.
+# reached 126, unreachable still 54; and the Local security panel's
+# Understood for a session removed from a profile beyond the first
+# (/api/auth/session-removed/dismiss): total 181, reached 127.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 180
-REACHED_BY_INTERFACE = 126
+TOTAL_API_PATHS = 181
+REACHED_BY_INTERFACE = 127
 UNREACHABLE = 54
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

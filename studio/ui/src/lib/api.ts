@@ -1260,10 +1260,20 @@ export interface AuthStatus {
   is_connected: boolean;
   /** Whether the client actually holds usable tokens, as opposed to a status string. */
   client_session: boolean;
+  /**
+   * Said once: the session an earlier version kept in this profile, which is
+   * not the first, was removed when this version started (decision D9).
+   */
+  session_removed?: { at: string; message: string } | null;
 }
 
 export async function fetchAuthStatus(): Promise<AuthStatus> {
   return call<AuthStatus>("/api/auth/status");
+}
+
+/** The creator has read the removed-session notice; it is not said again. */
+export async function dismissSessionRemovedNotice(): Promise<void> {
+  await call("/api/auth/session-removed/dismiss", { method: "POST" });
 }
 
 /**
@@ -3085,10 +3095,13 @@ export interface LinkedInSendRecord {
 export interface LinkedInSendState {
   ready: boolean;
   /**
-   * Why not: no_session, no_identity, account_unknown, other_account,
-   * author_unknown, egress_off or risk_not_acknowledged. The last one is the
-   * one-time, per-installation acknowledgement of the account risk, and the
-   * only one the dialog can settle itself, with acknowledgeLinkedInRisk below.
+   * Why not: not_first_profile (decision D9: sending works in the first
+   * creator profile only, and the reason is the sentence that says why),
+   * no_session, no_identity, account_unknown, other_account, author_unknown,
+   * egress_off or risk_not_acknowledged. The last one is the one-time
+   * acknowledgement of the account risk, kept in the profile's own settings,
+   * and the only one the dialog can settle itself, with
+   * acknowledgeLinkedInRisk below.
    */
   code: string | null;
   reason: string | null;

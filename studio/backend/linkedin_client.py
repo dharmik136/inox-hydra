@@ -29,11 +29,13 @@ try:
     from .vault import encrypt_token, decrypt_token
     from .rate_limiter import rate_limiter
     from . import accounts as _accounts
+    from . import paths as _paths
 except ImportError:
     from database import get_db
     from vault import encrypt_token, decrypt_token
     from rate_limiter import rate_limiter
     import accounts as _accounts
+    import paths as _paths
 
 
 # -------------------------------------------------------------
@@ -203,6 +205,94 @@ MEMBER_URN_PATTERN = re.compile(r"^urn:li:(?:fsd_profile|person|member):[A-Za-z0
 # How much of LinkedIn's answer is kept in the send record.
 ANSWER_LIMIT = 2000
 
+# Everything a profile keeps of a LinkedIn session.
+SESSION_KEYS = ("li_at", "JSESSIONID", "last_token_update", SESSION_ACCOUNT_KEY)
+# The once-said notice that a profile beyond the first had its session removed.
+SESSION_REMOVED_KEY = "linkedin_session_removed_notice"
+
+
+def _removed_message(at: str) -> str:
+    return (f"The LinkedIn session this profile held was removed on {at[:10]}, because sessions are kept for your "
+            "first creator profile only: each profile's session must come from that creator's own browser on that "
+            "creator's own machine.")
+
+
+def remove_session_beyond_first_profile(conn=None) -> bool:
+    """
+    Decision D9, made true for sessions kept before it: in a creator profile
+    beyond the first, any stored session is deleted, and a notice is left
+    for the profile's Local security panel to say so once. Returns whether
+    one was removed. The first profile is never touched.
+
+    It reads first and writes only when there is a session to remove, so the
+    places that call it on every read (the onboarding state, get_tokens) cost
+    one SELECT in a profile that holds none.
+    """
+    if _accounts.is_first_profile():
+        return False
+    own = conn is None
+    conn = conn or get_db()
+    try:
+        marks = ", ".join("?" for _ in SESSION_KEYS)
+        if not conn.execute(f"SELECT 1 FROM settings WHERE key IN ({marks}) LIMIT 1", SESSION_KEYS).fetchone():
+            return False
+        at = datetime.now(timezone.utc).isoformat()
+        with conn:
+            conn.execute(f"DELETE FROM settings WHERE key IN ({marks})", SESSION_KEYS)
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('session_status', 'disconnected')")
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
+                         (SESSION_REMOVED_KEY, json.dumps({"at": at, "message": _removed_message(at)})))
+        return True
+    finally:
+        if own:
+            conn.close()
+
+
+def remove_sessions_beyond_the_first_profile() -> List[str]:
+    """
+    Run when the studio starts. Each creator profile is its own folder with
+    its own database (paths.py), and the profile registry lists them; for
+    every profile in the registry but the first, licensed or not, a session
+    an earlier version kept in that profile's own database is deleted there.
+    Returns the profiles that had one.
+    """
+    removed = []
+    for profile_id in _paths.registered_profile_ids():
+        if profile_id == _paths.DEFAULT_PROFILE_ID:
+            continue
+        with _paths.using_profile(profile_id):
+            if not os.path.exists(_paths.get_db_path()):
+                continue
+            try:
+                if remove_session_beyond_first_profile():
+                    removed.append(profile_id)
+            except sqlite3.Error:
+                continue
+    return removed
+
+
+def session_removed_notice() -> Optional[Dict[str, Any]]:
+    """The once-said notice, or None when there is nothing to say."""
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ?", (SESSION_REMOVED_KEY,)).fetchone()
+    finally:
+        conn.close()
+    try:
+        notice = json.loads(row["value"]) if row and row["value"] else None
+    except (TypeError, ValueError):
+        notice = None
+    return notice if isinstance(notice, dict) and notice.get("message") else None
+
+
+def dismiss_session_removed_notice() -> bool:
+    conn = get_db()
+    try:
+        with conn:
+            return conn.execute("DELETE FROM settings WHERE key = ?", (SESSION_REMOVED_KEY,)).rowcount > 0
+    finally:
+        conn.close()
+
 
 class LinkedInClient:
     """
@@ -215,6 +305,15 @@ class LinkedInClient:
         self.circuit_breaker = CircuitBreaker()
 
     def get_tokens(self) -> dict:
+        # Decision D9: a profile beyond the first holds no session. One that
+        # reached it anyway, from a backup an earlier version made, is removed
+        # here as well as at startup, so nothing uses or reports it.
+        if not _accounts.is_first_profile():
+            try:
+                remove_session_beyond_first_profile()
+            except sqlite3.Error:
+                pass
+            return {}
         conn = None
         try:
             conn = get_db()
@@ -306,6 +405,8 @@ class LinkedInClient:
 
     def session_account(self) -> Optional[Dict[str, Any]]:
         """The account the saved session belongs to, or None when the bridge did not say."""
+        if not _accounts.is_first_profile():
+            return None
         conn = None
         try:
             conn = get_db()

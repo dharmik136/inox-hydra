@@ -57,6 +57,7 @@ try:
     from .repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from .leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from .linkedin_client import linkedin_client
+    from . import linkedin_client as linkedin_client_module
     from . import egress as egress_policy
     from .scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                             parse_datetime_flexible, normalize_datetime_to_utc_iso,
@@ -130,6 +131,7 @@ except ImportError:
     from repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from linkedin_client import linkedin_client
+    import linkedin_client as linkedin_client_module
     import egress as egress_policy
     from scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                            parse_datetime_flexible, normalize_datetime_to_utc_iso,
@@ -309,6 +311,14 @@ async def lifespan(app: FastAPI):
                 "Could not bring profile %s up to this build's schema.", _profile, exc_info=True)
     if not safe_mode.is_active():
         _seal_plaintext_secrets()
+        # Decision D9: no profile beyond the first keeps a LinkedIn session.
+        # One an earlier version kept is deleted now, in that profile's own
+        # database, and its Local security panel says so once.
+        try:
+            linkedin_client_module.remove_sessions_beyond_the_first_profile()
+        except Exception:
+            logging.getLogger("studio.linkedin").warning(
+                "Could not remove the sessions kept in profiles beyond the first.", exc_info=True)
     # The offline documentation index, built here rather than on whichever
     # search happened to run first. It was imported into this module and never
     # called, so the index was a snapshot of the corpus as it stood the first
@@ -1543,6 +1553,9 @@ def dismiss_demo_cleanup_notice():
 
 @app.get("/api/v1/onboarding/state", tags=["Onboarding"])
 def get_onboarding_state():
+    # Setup and the popup read the session from here: one restored into a
+    # profile beyond the first goes before they can say it is saved (D9).
+    linkedin_client_module.remove_session_beyond_first_profile()
     return onboarding.onboarding_state()
 
 
@@ -1922,10 +1935,19 @@ def get_auth_status():
         return {
             "status": status,
             "is_connected": status in ["connected", "ready"] and held,
-            "client_session": held
+            "client_session": held,
+            # Said once, where sessions are managed, when a session an earlier
+            # version kept in a profile beyond the first was removed (D9).
+            "session_removed": linkedin_client_module.session_removed_notice(),
         }
     finally:
         conn.close()
+
+
+@app.post("/api/auth/session-removed/dismiss")
+def dismiss_session_removed():
+    """The creator has read that this profile's session was removed; it is not said again."""
+    return {"status": "success", "dismissed": linkedin_client_module.dismiss_session_removed_notice()}
 
 
 ingest_live_analytics = analytics_router_module.ingest_live_analytics

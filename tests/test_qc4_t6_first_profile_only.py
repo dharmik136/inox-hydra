@@ -210,3 +210,88 @@ def test_the_popup_shows_the_studios_own_sentence_when_the_session_is_refused():
     handler = handler[:handler.index("function getCookie")]
     assert "detail" in handler and "message" in handler, "the popup never reads the studio's sentence"
     assert re.search(r"response\.json\(\)", handler), "the refusal body is not read"
+
+
+# ---------------------------------------------------------------------------
+# Review round, SF-1: a session kept before the upgrade does not survive it
+# ---------------------------------------------------------------------------
+
+def _write_a_2_7_0_session(profile_id):
+    """A session as 2.7.0 wrote it into a profile, which 2.7.0 allowed in any profile."""
+    from database import get_db
+    from vault import encrypt_token
+    with paths.using_profile(profile_id):
+        conn = get_db()
+        try:
+            with conn:
+                for key, value in (("li_at", encrypt_token("AQEDnotreal")), ("JSESSIONID", encrypt_token("ajax:1")),
+                                   ("session_status", "connected"), ("last_token_update", "2026-10-20T09:00:00+00:00"),
+                                   ("linkedin_session_account", '{"vanity": "client-b-person", "member_urn": null}')):
+                    conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value))
+        finally:
+            conn.close()
+
+
+def _session_keys(profile_id):
+    from database import get_db
+    with paths.using_profile(profile_id):
+        conn = get_db()
+        try:
+            return {r["key"] for r in conn.execute(
+                "SELECT key FROM settings WHERE key IN ('li_at', 'JSESSIONID', 'last_token_update', "
+                "'linkedin_session_account')")}
+        finally:
+            conn.close()
+
+
+def test_a_second_profiles_session_from_2_7_0_is_removed_when_the_new_version_starts(agency):
+    """
+    The reviewer's scenario: an Agency install on 2.7.0 synced a client's
+    session into a second profile. After the upgrade it was still stored,
+    reported as connected, and the popup said "Saved in the studio", while
+    the policy and the help said a second profile's session is never kept.
+    """
+    _write_a_2_7_0_session(SECOND)
+    _write_a_2_7_0_session(paths.DEFAULT_PROFILE_ID)
+    import app as app_module
+    with TestClient(app_module.app):
+        pass
+    assert _session_keys(SECOND) == set(), "the second profile's session survived the first start"
+    assert _session_keys(paths.DEFAULT_PROFILE_ID) == {"li_at", "JSESSIONID", "last_token_update",
+                                                        "linkedin_session_account"}, "the first profile's was touched"
+    status = agency.get("/api/auth/status").json()
+    assert status["client_session"] is False and status["is_connected"] is False
+    assert agency.get("/api/v1/onboarding/state").json()["session"]["stored"] is False, "the popup still says saved"
+
+
+def test_the_creator_is_told_once_where_sessions_are_managed(agency):
+    _write_a_2_7_0_session(SECOND)
+    import app as app_module
+    with TestClient(app_module.app):
+        pass
+    notice = agency.get("/api/auth/status").json()["session_removed"]
+    assert notice and "first creator profile only" in notice["message"] and "removed" in notice["message"]
+    assert agency.post("/api/auth/session-removed/dismiss").json()["dismissed"] is True
+    assert agency.get("/api/auth/status").json()["session_removed"] is None, "the notice is said more than once"
+    surface = _read("studio/ui/src/components/BrandStudioSurface.tsx")
+    assert "session_removed" in surface and "dismissSessionRemovedNotice" in surface
+
+
+def test_a_session_restored_into_a_second_profile_is_removed_when_it_is_read(agency):
+    """A 2.7.0 backup restored into a second profile, after startup: no read path reports or uses it."""
+    _write_a_2_7_0_session(SECOND)
+    assert agency.get("/api/v1/onboarding/state").json()["session"]["stored"] is False
+    assert _session_keys(SECOND) == set()
+    _write_a_2_7_0_session(SECOND)
+    import linkedin_client as client_module
+    with paths.using_profile(SECOND):
+        assert client_module.LinkedInClient().get_tokens() == {}
+        assert client_module.LinkedInClient().session_account() is None
+    assert _session_keys(SECOND) == set()
+
+
+def test_the_policy_and_the_help_say_it_on_upgrade_too():
+    policy = " ".join(_read("docs/PRIVACY_POLICY.md").split())
+    assert "deleted the first time this version starts" in policy
+    article = " ".join(_read("docs/help/connect-your-linkedin-session.md").split())
+    assert "deleted the first time this version starts" in article
