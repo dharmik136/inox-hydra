@@ -11,6 +11,7 @@ row. Line numbers are at the branch head this record was committed with.
 | New test modules | 9, 83 tests (`tests/test_qc4_t1_*.py`) |
 | Guards falsified | 21 planted faults, each seen failing and then passing with the fault removed; one guard was vacuous at first and was rebuilt |
 | Found by this track's own review | 13 defects after the first green runs, 1 of them a privacy defect; all fixed, listed below |
+| Defect found by track 3 on main | A post first found after migration 26 had no post; fixed in 43aadff, with four more found on the way |
 | Migration | One, numbered 28 in this branch: "Each reader says how long it took, and the bridge says whether network reading is on" |
 | Interface audit | Setup and Today, dark and light: 8 screens, 0 blocking findings |
 | Suite, as CI runs it | 3,199 passed, 17 skipped, 0 failed at 1a9c606; the runs before it are in the last section |
@@ -358,6 +359,104 @@ own tests were green. Each is fixed, with a test that failed before the fix.
 | A coverage observer started again counted the buffer again | Switching off and on in one tab doubled the early counts | b907ffe |
 | The popup was given the side panel's lines, the waiting count included | The privacy policy says Today shows the count; `tests/test_privacy_policy_matches_the_code.py` tripped on the first full run | b8287f8 |
 | The no-posts cadence guard could not fail | It protected nothing until rebuilt (item 10) | db0edc7 |
+
+## Defect found by track 3 on main: a post first found after migration 26 had no post
+
+Priority defect, present on `main` and so in the released 2.7.0, found and reproduced by track 3 on
+`cf0ba9d`. Fixed in 43aadff.
+
+What it did. A post the bridge or the archive first found after migration 26 got no row in
+`posts`. `post_identity.resolve` then found nothing, the engagers route answered 404, and Posts
+said "NOBODY CAPTURED FROM THIS POST YET." however many people had engaged.
+
+Cause. Migration 26 gave every publication the studio held its posts row, once: bind it to the one
+studio record its words match, else make one from it. Nothing applied that rule afterwards. The
+activity reader bound a post only when a studio draft matched (`onboarding._bind_to_studio`, which
+called the binder alone), the archive import wrote the publication alone, and an engager read on
+the creator's own post left no record of the post at all. The analytics reader refuses a post the
+studio has never recorded, by design, so it could only meet a publication already left without a
+post.
+
+What changed.
+
+- The rule is one function, `post_identity.ensure_post` (`studio/backend/post_identity.py:862`):
+  the post the publication already names or a post already carrying its id in any of LinkedIn's
+  three namespaces; else the one studio record the binder (`bind_activity_urn`) proves is its
+  source; else a post made from the publication, keyed by its URN as migration 26 keyed them.
+  `heal_publications` (`:953`), `anything_to_bind` (`:923`), `forget_reconstruction` (`:973`) and
+  `forget_reconstructions` (`:936`) are its companions.
+- Every path that can first find a post calls it: the activity reader (`onboarding.py:1261`, still
+  the one binder's caller, now through the rule); the engager route (`routers/crm.py:193`, through
+  `onboarding.note_own_post` at `onboarding.py:1284`, which records the publication of a post the
+  studio had never seen, joins an archive record of it, and writes nothing for a post a studio
+  record already carries, `:1317`); the post analytics reader (`onboarding.py:1239`); and the archive
+  import (`archive_import.py:1046, 1057`), whose removal takes the posts it made (`:1363`).
+- A post made from a publication stands in for it. While nothing in the studio has touched it (no
+  tags, no media, not from the drafts store) it gives way to the studio record the binder proves is
+  the source (`post_identity.py:575, 806`). Without this, an engager read before the page's text was
+  offered (the usual order on a post's own page) would have stopped the studio's own post from
+  binding, and a post pasted in and marked published afterwards (WRITE-18) would never link. Its
+  words follow its publication's, which LinkedIn lets the creator edit.
+- Migration 28 gives every publication left without a post its post on upgrade, by the same rule
+  (`migrations.py:1471`), and its name now says so. It stays the track's one migration.
+
+Found on the way, each fixed in the same commit with a test:
+
+- The engagers route answered with nobody for an archive post the bridge had read: `_ref` took the
+  post's URN as the publication's (`post_identity.py:326`), so the activity id the publication takes
+  when the bridge joins it, the id its engagers are filed under, dropped out.
+- Search showed a post made from a publication as an editable studio post instead of as the
+  publication, published on LinkedIn and opened in analytics (`universal_search.py:584`).
+- Forgetting the creator left the posts made from their publications, which hold their post text and
+  LinkedIn ids (`onboarding.py:1081`). Migration 26's own posts were already left this way.
+- The lookups the import repeats were scans: `bound_post` compared every bound post's id in Python
+  and the legacy-draft step scanned `posts` once a call. A 3,000-post archive went from 0.29 s on
+  `main` to 20.4 s; with indexed lookups (`post_identity.py:341, 363`) and the binder asked once per
+  import whether anything could bind (`archive_import.py:1019`), it takes 1.0 s.
+
+Tests that fail without it. `tests/test_qc4_t1_one_post_identity.py` (15): a post first read on
+the activity page, first seen through its engagers, known only from the archive and then read on its
+analytics page, and brought by an archive import, each answers for its engagers; the analytics page
+alone still does not make a post the creator's; a post read twice is one post; removing the archive
+import takes its posts; engagers filed under the activity id of an archive post are found; an engager
+read before the bind does not take the studio's post; a post made from its words gives way to the
+post marked published later; a post the creator has touched does not; an engager on a post the
+studio carries records nothing new; forgetting the creator takes the posts made from their
+publications; the upgrade gives every publication its post again, binding where a draft matches and
+running twice to the same result; and the guard below. Of the twelve written before the fix, eleven
+failed on `cf0ba9d`'s code and the analytics-alone test passed, which is the design it holds; the
+other three (the post marked published later, the touched post, the carried post) came with the
+stand-in rule and fail without it.
+
+The guard. `test_every_writer_of_a_post_or_its_engagement_goes_through_the_one_rule` reads every
+function in `studio/backend` from its syntax tree. A function that inserts into `own_posts` must
+pass a way through the rule after the insert, on the way out of the function; a function that writes
+an engagement must take one anywhere around it, because the route makes the post known first.
+Comments and docstrings do not count. The ways through are named, and each must itself call the next
+step down to `ensure_post`. Only the rule's own module, the one low-level engagement writer (its
+callers are held instead) and the migrations are exempt.
+
+Falsified. Thirteen planted faults, each run against its behaviour test and, for the three ingest
+paths, against the guard too: all sixteen checks failed with the fault and passed with it removed.
+The first version of the guard was function-granular and passed when the call beside the archive
+insert was removed (the function still called the rule in its other branch); it now follows the
+flow from each insert. The first version of the activity-reader test captured an engager before
+asking, so the engager path healed the post and the test passed with the activity reader broken; it
+now asks first. The first version of the stand-in rule kept a post made from words when a later
+studio post matched, which broke WRITE-18 and two existing binding tests; it now yields to whatever
+the binder would have bound.
+
+Existing tests changed by this fix. `tests/test_today.py`'s cleanup now also removes the posts made
+from the publications it removes: left behind, every module's imports made other modules' posts look
+like the creator's to Today. Nothing it asserts changed.
+
+Files outside this track's ownership: `studio/backend/routers/crm.py` (the engager ingest route
+only), `studio/backend/archive_import.py` (track 7's file; the posts insert and the posts removal
+only), `studio/backend/universal_search.py` (one clause), `tests/test_today.py` (its cleanup).
+
+Not done, with the reason. Network reading's `feed_updates` schema writes a reading for every post in
+LinkedIn's feed response, the creator's or not (`onboarding.record_voyager_ingest`); it writes no
+publication or post, so it is outside this defect, and it is listed for the coordinator.
 
 ## Guards that already existed and held
 
