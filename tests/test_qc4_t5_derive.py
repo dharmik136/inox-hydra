@@ -1257,3 +1257,74 @@ def test_the_data_export_carries_the_dated_demographics_and_the_windows(client, 
         tables = json.load(handle)["tables"]
     assert [r["label"] for r in tables["audience_demographic_readings"]] == ["Founder"]
     assert [(r["date"], r["period_label"]) for r in tables["analytics_windows"]] == [(DAY, "7d")]
+
+
+# ---------------------------------------------------------------------------
+# Review S6: the privacy policy names every figure the reader keeps
+# ---------------------------------------------------------------------------
+
+POLICY = os.path.join(REPO_ROOT, "docs", "PRIVACY_POLICY.md")
+# How the policy names each figure the post analytics reader keeps. A label
+# added to the reader without a line here fails the test below, which is
+# the point: the policy has to be told.
+POLICY_WORDS = {
+    "members_reached": "members reached", "impressions": "impressions", "reactions": "reactions",
+    "comments": "comments", "reposts": "reposts", "saves": "saves", "sends": "sends",
+    "followers_gained": "followers gained", "profile_viewers": "profile viewers", "link_visits": "link visits",
+    "article_views": "article views", "video_views": "video views",
+    "in_network_pct": "inside", "out_of_network_pct": "outside your network", "demographics": "demographics",
+}
+
+
+def _reader_keys(source):
+    keys = set()
+    for name in ("POST_METRIC_LABELS", "POST_SHARE_LABELS"):
+        match = re.search(rf"const {name} = \[(.*?)\n  \];", source, re.DOTALL)
+        assert match, f"{name} is gone from own_pages.js"
+        keys |= set(re.findall(r'\["[^"]+", "([a-z_]+)"\]', match.group(1)))
+    if "metrics.demographics = " in source:
+        keys.add("demographics")
+    return keys
+
+
+def _post_analytics_paragraph(policy):
+    match = re.search(r"From \*\*your post analytics pages\*\*.*?(?:\n\n|\Z)", policy, re.DOTALL)
+    assert match, "the policy has no paragraph for the post analytics pages"
+    return " ".join(match.group(0).split()).lower()
+
+
+def _policy_disagreements(source, policy):
+    keys, paragraph = _reader_keys(source), _post_analytics_paragraph(policy)
+    problems = [f"the reader keeps {key}, which the test does not know how the policy names" for key in
+                sorted(keys - set(POLICY_WORDS))]
+    problems += [f"the policy does not name {POLICY_WORDS[key]!r}" for key in sorted(keys & set(POLICY_WORDS))
+                 if POLICY_WORDS[key] not in paragraph]
+    if "own_pages.js" not in paragraph:
+        problems.append("the paragraph does not name own_pages.js, which reads these pages")
+    if "demographics" in keys and not ("aggregate percentages" in paragraph and "never names" in paragraph):
+        problems.append("the paragraph does not say demographics are aggregate percentages, never names")
+    return problems
+
+
+def test_the_privacy_policy_names_every_figure_the_post_analytics_reader_keeps():
+    with open(OWN_PAGES, encoding="utf-8") as handle:
+        source = handle.read()
+    with open(POLICY, encoding="utf-8") as handle:
+        policy = handle.read()
+    problems = _policy_disagreements(source, policy)
+    assert not problems, "the policy and the reader disagree:\n" + "\n".join(problems)
+
+
+def test_the_policy_guard_is_not_vacuous():
+    """A label added to the reader, or a figure dropped from the paragraph, is caught."""
+    with open(OWN_PAGES, encoding="utf-8") as handle:
+        source = handle.read()
+    with open(POLICY, encoding="utf-8") as handle:
+        policy = handle.read()
+    planted = source.replace('["video views", "video_views"],', '["video views", "video_views"],\n    ["watch time", "watch_time"],', 1)
+    assert any("watch_time" in p for p in _policy_disagreements(planted, policy))
+    start = policy.index("From **your post analytics pages**")
+    end = policy.index("\n\n", start)
+    assert "saves" in policy[start:end]
+    dropped = policy[:start] + policy[start:end].replace("saves", "keeps", 1) + policy[end:]
+    assert any("'saves'" in p for p in _policy_disagreements(source, dropped))

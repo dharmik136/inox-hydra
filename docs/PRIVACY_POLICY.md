@@ -45,8 +45,15 @@ profile addresses, headlines and comment or reaction details of people who
 commented on or reacted to a post, as those appear on the page, together with
 which post they engaged on. This is how the leads list in Inox Hydra is built.
 
-From **your post analytics pages** (`content.js`): the impression, reaction,
-comment and repost figures LinkedIn shows you for your own posts.
+From **your post analytics pages** (`own_pages.js`), for your own recorded
+posts only: the figures LinkedIn shows you there, which are impressions,
+members reached, reactions, comments, reposts, saves and sends, and, where the
+page shows them, followers gained from the post, profile viewers from the
+post, link visits, article views, video views, the share of impressions from
+inside and from outside your network, and the viewer demographics for the
+post, which are LinkedIn's aggregate percentages (such as the share of viewers
+with a job title or in a location), never names. Each reading is kept with the
+post's age and the day it was read.
 
 From **your own profile and activity pages** (`own_pages.js`), and only yours:
 your profile fields, experience, education and skills; the contact details on
