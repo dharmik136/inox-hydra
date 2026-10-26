@@ -554,3 +554,17 @@ def test_the_policy_and_the_help_name_the_model_stage():
     row = next(line for line in help_text.splitlines() if line.startswith("| `model` |"))
     assert "From your record" in row and "the first time you open that section each day" in row
     assert "never a figure" in row
+
+
+def test_an_ask_from_an_archive_search_is_never_sent(provider):
+    """A search is often a person's name: whatever the creator ticked, it does not leave."""
+    seed()
+    conn = db()
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute("INSERT INTO asks (text, source, origin_ref, status, created_at, updated_at) VALUES "
+                 "('hiring like Wren Example does', 'archive_search', 'archive_record:9', 'open', ?, ?)", (now, now))
+    conn.commit()
+    conn.close()
+    provider.answer = {"ideas": [good_idea()]}
+    run_model()
+    assert "Wren Example" not in json.dumps(provider.requests[0])

@@ -147,6 +147,44 @@ def sync_telegram_ideas(conn) -> int:
     return added
 
 
+def sync_archive_searches(conn) -> int:
+    """
+    A search the creator ticked to import from their archive (archive_import,
+    decision 6) becomes an ask only when it shares one of their own recurring
+    topic words: what they looked for about what they write about. A search
+    is often a person's name, so the rest stay in archive_records, counted on
+    What the studio knows and used by nothing, and no ask from a search is
+    ever sent to the model (record_model.build_bundle leaves them out).
+    """
+    try:
+        rows = conn.execute(
+            "SELECT id, detail, happened_at FROM archive_records WHERE kind = 'search_query' AND detail IS NOT NULL "
+            "AND ('archive_record:' || id) NOT IN (SELECT origin_ref FROM asks WHERE source = 'archive_search' "
+            "AND origin_ref IS NOT NULL)").fetchall()
+    except sqlite3.OperationalError:
+        return 0
+    if not rows:
+        return 0
+    try:
+        from . import evidence_briefing
+    except ImportError:
+        import evidence_briefing
+    vocabulary = evidence_briefing.derive_topic_vocabulary(
+        [r[0] for r in conn.execute("SELECT text FROM own_posts WHERE text IS NOT NULL")])
+    if not vocabulary:
+        return 0
+    now = _now().isoformat()
+    added = 0
+    for row in rows:
+        if evidence_briefing.classify_post_topic(row[1], vocabulary) == evidence_briefing.OTHER_TOPIC:
+            continue
+        conn.execute("INSERT INTO asks (text, source, origin_ref, status, created_at, updated_at) "
+                     "VALUES (?, 'archive_search', ?, 'open', ?, ?)",
+                     (" ".join(row[1].split())[:2000], f"archive_record:{row[0]}", row[2] or now, now))
+        added += 1
+    return added
+
+
 # ---------------------------------------------------------------------------
 # The open slot: the library's match, or the sentence that says what fills it
 # ---------------------------------------------------------------------------
@@ -244,6 +282,7 @@ def run_today(day: Optional[date] = None, conn=None, reroll: bool = False) -> Di
         # An idea sent from the phone is an ask, written in a transaction of
         # its own so the batch below is built from it.
         telegram = sync_telegram_ideas(conn)
+        searches = sync_archive_searches(conn)
         conn.commit()
         # Read and build holding no write lock: on three years this is the
         # long part, and a capture arriving meanwhile must not wait for it.
@@ -286,7 +325,9 @@ def run_today(day: Optional[date] = None, conn=None, reroll: bool = False) -> Di
                     "INSERT INTO daily_run (day, input_signature, started_at, finished_at, local_ok, local_note, "
                     "carried_from, seed, model_status, dropped_cards, note) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
                     (day.isoformat(), current, started, finished,
-                     f"{telegram} ideas from Telegram became asks" if telegram else None,
+                     "; ".join(said for said in (
+                         f"{telegram} ideas from Telegram became asks" if telegram else "",
+                         f"{searches} searches from your archive became asks" if searches else "") if said) or None,
                      carried_from, seed, "not_run", dropped, note))
             removed = prune(conn, day)
             conn.execute("COMMIT")

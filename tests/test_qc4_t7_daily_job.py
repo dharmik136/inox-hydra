@@ -341,3 +341,29 @@ def test_the_job_never_calls_a_model(home, monkeypatch):
         "the daily job imports the model stage"
     assert re.search(r"^\s*(from\s+\S*\s+)?import\s+[^\n]*(model_gateway|record_model)",
                      "    from . import record_model\n", re.M), "the import check is vacuous"
+
+
+def test_a_search_from_the_archive_becomes_an_ask_only_when_it_is_about_the_creators_topics(home):
+    """
+    Searches are imported only behind their own tick (decision 6), and a
+    search is often a person's name. One that shares a recurring topic word
+    of the creator's becomes an ask, once; the rest stay in archive_records.
+    """
+    import record_daily
+
+    add_posts()
+    conn = db()
+    for n, query in enumerate(("hiring without a recruiter", "Jordan Example", "pricing pages for studios")):
+        conn.execute("INSERT INTO archive_records (kind, detail, happened_at, dedupe_key, source_file, imported_at) "
+                     "VALUES ('search_query', ?, '2026-10-20T18:00:00+00:00', ?, 'SearchQueries.csv', '2026-10-25')",
+                     (query, f"k{n}"))
+    conn.commit()
+    conn.close()
+    record_daily.run_today(MONDAY)
+    record_daily.run_today(TUESDAY)
+    conn = db()
+    asks = sorted(r[0] for r in conn.execute("SELECT text FROM asks WHERE source = 'archive_search'"))
+    note = conn.execute("SELECT local_note FROM daily_run WHERE day = ?", (MONDAY.isoformat(),)).fetchone()[0]
+    conn.close()
+    assert asks == ["hiring without a recruiter", "pricing pages for studios"]
+    assert note == "2 searches from your archive became asks"

@@ -251,7 +251,10 @@ def build_bundle(conn) -> Dict[str, Any]:
             "text": scrub(" ".join(text.split())[:EXCERPT_CHARS], names),
         })
     asks, audience, avoid = [], [], []
+    # A search imported from the archive is often a person's name, so it is
+    # never sent, whatever the creator ticked; their typed asks are.
     for row in conn.execute("SELECT id, text, field FROM asks WHERE status != 'retired' AND hidden_at IS NULL "
+                            "AND source != 'archive_search' "
                             "ORDER BY updated_at DESC LIMIT 12"):
         cleaned = scrub(row["text"], names)
         if row["field"] == "audience":
