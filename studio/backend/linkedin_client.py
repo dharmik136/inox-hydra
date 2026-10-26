@@ -261,7 +261,9 @@ def remove_sessions_beyond_the_first_profile() -> List[str]:
         if profile_id == _paths.DEFAULT_PROFILE_ID:
             continue
         with _paths.using_profile(profile_id):
-            if not os.path.exists(_paths.get_db_path()):
+            # Found the way accounts.py counts a profile's rows: read only,
+            # without creating the folders of a profile never opened.
+            if not os.path.exists(os.path.join(_paths.get_profile_home(), "data", _paths.DB_FILENAME)):
                 continue
             try:
                 if remove_session_beyond_first_profile():
