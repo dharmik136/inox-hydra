@@ -1,6 +1,6 @@
 [package]
 name = "linkedin-studio-desktop"
-version = "2.8.0"
+version = "2.9.0"
 description = "Native shell for Inox Hydra"
 authors = ["Inox Hydra"]
 edition = "2021"

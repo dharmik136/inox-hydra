@@ -39,7 +39,18 @@ system; a second profile's 2.7.0 session that survived the upgrade; a
 demographics reader that paired labels with the wrong percentages. Each was
 fixed with a test before merge; the tracks' records carry the detail.
 
-## Carried to 2.9.0
+## In 2.9.0
+
+Tracks 1 (the bridge), 2 (the show path) and 4 (the new sections and the
+rail, and the screens for track 5's phase 2 readings), each merged with
+2.8.0 by its own engineer and then combined on track 4's branch. The
+combination caught one defect no single track could: track 1 moved the
+capture write into a helper, and track 2's publish line still read the
+helper's variables from the old place, so every capture would have
+answered 500 after its row was saved; it is fixed with a test. Records:
+`docs/quality/cycle4/t1-bridge.md`, `t2-show.md`, `t4-sections.md`.
+
+## Carried to 2.9.0, as planned at 2.8.0
 
 | Work | Why it waits |
 | --- | --- |

@@ -212,7 +212,7 @@ function driftLine(drift) {
   if (!drift || !Array.isArray(drift.fields) || !drift.fields.length) return "";
   return "LinkedIn's " + (drift.page_kind || "page") + " page: cannot read " +
     drift.fields.join(", ").replace(/_/g, " ") + ", noticed " + agoWords(drift.at) +
-    ". See Capture health in Setup.";
+    ". See Health in the studio.";
 }
 
 function readArea(area, keys) {

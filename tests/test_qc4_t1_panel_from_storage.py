@@ -108,7 +108,7 @@ def test_a_kept_capture_is_said_as_waiting_not_as_captured(pages):
 def test_the_drift_notice_is_in_the_panel_header(pages):
     page = _open(pages, PANEL, "sidepanel.js", {}, session={"lastDrift": DRIFT})
     notice = _text(page, "sp-drift-notice")
-    assert notice and "commenter name" in notice.lower() and "setup" in notice.lower()
+    assert notice and "commenter name" in notice.lower() and "health" in notice.lower()
     assert "noticed" in notice.lower(), "the notice does not say when it was measured"
 
 

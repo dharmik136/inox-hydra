@@ -5,6 +5,67 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
+## 2.9.0
+
+The studio now shows what the bridge reads the moment it arrives, gives each
+question its own section, and keeps only what is yours: the extension reads
+more smoothly, draws nothing into LinkedIn's pages but its own mark on your
+cards, and network reading keeps only your own posts.
+
+### Before you use 2.9.0
+
+- **Your database is upgraded** the first time you start it, from schema 31 to
+  33, after the usual automatic backup. It gains the Answered mark on replies,
+  a daily summary per reader, how long each reader took, and the network
+  reading state. If network reading was ever on, figures it kept for posts in
+  your feed that were not yours are removed, and a post the bridge first saw
+  after the 2.7.0 upgrade gets back its studio record.
+- **Reload the extension** once in the browser you capture with. Its notices
+  now appear in its side panel and on its badge rather than on LinkedIn's
+  page.
+
+### New
+
+- **Health**: whether each reader is reading, what it read in the last seven
+  days, what it could not read, and which new figures LinkedIn has not shown
+  on your recent pages. Setup is back to a first-run flow.
+- **Replies**: everyone who commented on your posts in the last two weeks,
+  grouped by post, with an Answered mark you set yourself. The studio only
+  knows when it saw a comment, so it says "seen by the studio", never when it
+  was written.
+- **Audience**: who keeps coming back across your posts, who has gone quiet,
+  and who is already a connection, ordered by what they did, never by a score.
+- **The rail** is grouped into Now, Make, Learn, Bridge and Studio, with labels
+  on a wide screen.
+- **Profile views and search appearances** on Analytics, each over the window
+  LinkedIn names; on Posts, a post's edited mark and watch time, and your own
+  reposts, articles and newsletters with their figures.
+- **What arrives shows at once.** A capture appears on Setup, Activity and
+  Health within about a second and on Today within fifteen seconds, instead
+  of on the next poll; idle Setup costs about a sixth of the database work it
+  did.
+
+### Changed
+
+- **The extension draws nothing into LinkedIn's pages** except its mark on your
+  feed cards and the import banner, which carries Stop. Captures are
+  confirmed on its badge and in its side panel.
+- **Network reading tells you its state** in Health: off, on and seeing
+  LinkedIn's data calls, or on and matching nothing, with the counts kept as
+  plain path words, never an address that names anyone. It keeps only your
+  own posts' figures and your analytics.
+- **No capture is lost** when the studio restarts during a history import, and
+  the new readings are kept when the studio is busy.
+- **Today asks for a post's week-old reading**, and for a weekly look at your
+  Activity tab when it is due.
+- A reader that read nothing, or was refused, no longer shows WORKING, and
+  network reading reports drift like every other reader.
+
+### Fixed from 2.8.0's known list
+
+- Network reading no longer keeps figures for other people's posts.
+- A post first seen after the 2.7.0 upgrade has its studio record again.
+
 ## 2.8.0
 
 The studio now works from your own record every day, reads more of what

@@ -91,7 +91,7 @@ Nothing the extension says is drawn into LinkedIn's page. What you can act on, o
 
 The one exception is a history import: its banner, with its **Stop** control, stays on the page while it runs, and a warning during the import is a sentence in that banner.
 
-When a part of the capture cannot read a page LinkedIn has rebuilt, the side panel's header says so once per kind of page per browser session, for example "LinkedIn's feed page: cannot read commenter name, noticed 2 min ago. See Capture health in Setup.", and the badge turns orange. The notice goes when that part next reads the same kind of page cleanly, and when you close the browser. Nothing about it is drawn into LinkedIn's page.
+When a part of the capture cannot read a page LinkedIn has rebuilt, the side panel's header says so once per kind of page per browser session, for example "LinkedIn's feed page: cannot read commenter name, noticed 2 min ago. See Health in the studio.", and the badge turns orange. The notice goes when that part next reads the same kind of page cleanly, and when you close the browser. Nothing about it is drawn into LinkedIn's page.
 
 The side panel's **Health** tab also lists the data calls seen in the LinkedIn tab that last reported while network reading was on, by query name and how many times, for example `voyagerFeedDashMainFeed (9)`, so you can see what LinkedIn calls without opening the browser's developer tools.
 

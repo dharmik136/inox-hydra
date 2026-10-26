@@ -1091,7 +1091,7 @@ async function paintBadge() {
     title = "Inox Hydra: " + notice.message.replace(/^Inox Hydra:\s{0,3}/, "") + " The side panel has it.";
   } else if (drift) {
     title = "Inox Hydra: cannot read " + drift.fields.join(", ").replace(/_/g, " ") +
-      " on LinkedIn's " + drift.page_kind + " page. See Capture health in Setup.";
+      " on LinkedIn's " + drift.page_kind + " page. See Health in the studio.";
   }
   await actionCall("setTitle", { title });
 }
