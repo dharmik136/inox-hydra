@@ -642,6 +642,35 @@ def bind_post_urn(req: BindUrnRequest):
         conn.close()
 
 
+def _publication_only(conn, identifier: str) -> Optional[Dict[str, Any]]:
+    """
+    A post the studio holds only as a publication, by its URN, or None.
+
+    A post first captured after migration 26 has no posts row: the migration
+    gave one to every publication it found, and the own-posts ingest binds a
+    capture only to a studio record that already matches it. resolve() needs
+    that row, so this route answered 404 for every such post, and Posts' detail
+    said nobody was captured beside a row that counted the post's people. The
+    people are filed under the URN, which is all this route reads, as the
+    attribution route always read them. Track 1 heals the missing rows; this
+    is the defence in depth. A URN no publication carries is still not found.
+    """
+    urn = post_identity.canonical_urn(identifier)
+    if not urn or post_identity.is_local_urn(urn):
+        return None
+    held = [row[0] for row in conn.execute("SELECT activity_urn FROM own_posts WHERE activity_urn = ?", (urn,))]
+    wanted = post_identity.activity_id(urn)
+    if not held and wanted:
+        # The same post written in another of LinkedIn's namespaces
+        # (urn:li:share:N in the archive, urn:li:activity:N on its page).
+        held = [row[0] for row in conn.execute(
+            "SELECT activity_urn FROM own_posts WHERE activity_urn LIKE ?", (f"%:{wanted}",))
+            if post_identity.activity_id(row[0]) == wanted]
+    if not held:
+        return None
+    return {"post_id": None, "publication_urn": held[0], "engagement_urns": list(dict.fromkeys([urn, *held]))}
+
+
 @router.get("/api/v1/posts/{post_id}/engagers", tags=["Post Identity"])
 def get_post_engagers(post_id: str):
     """
@@ -657,7 +686,7 @@ def get_post_engagers(post_id: str):
     """
     conn = get_db()
     try:
-        ref = post_identity.resolve(conn, post_id)
+        ref = post_identity.resolve(conn, post_id) or _publication_only(conn, post_id)
         if not ref:
             raise HTTPException(status_code=404, detail="No such post")
 
