@@ -28,7 +28,9 @@ Figures are read in the page's language: on a German or Italian page 8.210 is 82
 ## Read the page
 
 - **Range**: **7d**, **30d** (the default) or **90d**, counted back from the latest day the studio holds, not from today.
-- **Measure**: **Impressions**, **Reactions**, **Comments** or **Followers**. The chart plots one per day; hover to read a day, or open **TABLE VIEW** under the chart. Profile views are not offered: nothing reads them yet, so the measure could only ever say "not measured".
+- **Measure**: **Impressions**, **Reactions**, **Comments** or **Followers**. The chart plots one per day; hover to read a day, or open **TABLE VIEW** under the chart.
+
+Profile views are not offered as a measure or a figure: nothing reads them yet, so they could only ever say "not measured".
 
 | Measure | Where it comes from |
 | --- | --- |
