@@ -202,6 +202,54 @@ MEMBER_URN_PATTERN = re.compile(r"^urn:li:(?:fsd_profile|person|member):[A-Za-z0
 ANSWER_LIMIT = 2000
 
 
+# A window label a row can carry: LinkedIn's own ranges, as the reader names
+# them (7d, 28d, 90d, 365d). "unrecognised" and an unread window are not
+# windows and are never stored as one.
+_WINDOW_LABEL = re.compile(r"^(\d{1,3})d$")
+
+
+def _store_window(conn, day: str, period_label, metrics: dict, precision) -> bool:
+    """
+    One creator analytics card that covers a named window, kept as that
+    window on the day it was read. A figure the card did not show is NULL,
+    never 0; a second read of the same window the same day refreshes the
+    row; another window the same day is another row.
+    """
+    match = _WINDOW_LABEL.match(str(period_label or ""))
+    if not match or int(match.group(1)) < 2:
+        return False
+
+    def _read(*keys):
+        for key in keys:
+            value = metrics.get(key)
+            if value is not None:
+                return value
+        return None
+
+    figures = (_read("impressions"), _read("likes", "reactions"), _read("comments"), _read("shares"),
+               _read("followers"))
+    if all(value is None for value in figures):
+        return False
+    conn.execute(
+        """
+        INSERT INTO analytics_windows
+            (date, period_label, observed_at, impressions, reactions, comments, shares, followers, precision, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed')
+        ON CONFLICT(date, period_label) DO UPDATE SET
+            observed_at = excluded.observed_at,
+            impressions = COALESCE(excluded.impressions, analytics_windows.impressions),
+            reactions = COALESCE(excluded.reactions, analytics_windows.reactions),
+            comments = COALESCE(excluded.comments, analytics_windows.comments),
+            shares = COALESCE(excluded.shares, analytics_windows.shares),
+            followers = COALESCE(excluded.followers, analytics_windows.followers),
+            precision = COALESCE(excluded.precision, analytics_windows.precision)
+        """,
+        (day, match.group(0), datetime.now(timezone.utc).isoformat(), *figures,
+         precision if precision in ("exact", "rounded") else None),
+    )
+    return True
+
+
 class LinkedInClient:
     """
     Client for communicating with LinkedIn internal Voyager endpoints
@@ -358,6 +406,7 @@ class LinkedInClient:
             # Only those two columns are written; a daily figure stored for the
             # day keeps its own period and precision.
             followers_saved = 0
+            windows_saved = 0
             conn = get_db()
             try:
                 with conn:
@@ -366,6 +415,17 @@ class LinkedInClient:
                             continue
                         _m = _b.get("metrics") or _b
                         _day = _b.get("bucket") or _b.get("date")
+                        # The windowed figures are kept as the window they
+                        # cover (analytics_windows, migration 28): the 2026
+                        # page opens on "Past 7 days", and refusing that
+                        # card outright left a creator who never changes
+                        # the range with nothing but a follower count. A
+                        # 7 day reading keyed by the day it was read is
+                        # shown as weekly and never summed as a day; the
+                        # daily table, which get_kpis sums, stays daily.
+                        if _day and _store_window(conn, _day, _b.get("period_label") or declared_period, _m,
+                                                  _b.get("precision") or raw_data.get("precision")):
+                            windows_saved += 1
                         _fl, _cn = _m.get("followers"), _m.get("connections")
                         if not _day or (_fl is None and _cn is None):
                             continue
@@ -389,11 +449,14 @@ class LinkedInClient:
                 "status": "window_mismatch",
                 "saved": 0,
                 "followers_saved": followers_saved,
+                "windows_saved": windows_saved,
                 "period_label": offending,
                 "message": (
                     f"These figures cover {offending}, not a single day. "
                     f"Storing them as today's numbers would make every total "
                     f"that sums across days wrong."
+                    + (" They are kept as a reading over that window, never as a day."
+                       if windows_saved else "")
                 ),
             }
 
@@ -444,38 +507,32 @@ class LinkedInClient:
                 row_precision = bucket.get("precision") or declared_precision
 
                 cursor.execute("""
-                -- INSERT OR REPLACE deletes the old row and writes a new one,
-                -- so every column the statement does not name reverts to its
-                -- default. This named twelve of fourteen, which silently reset
-                -- unique_members_reached to 0 and created_at to now on every
-                -- re-sync of a day. The top_pv branch below already carried
-                -- reach forward with COALESCE; this one did not, so the two
-                -- fought each other and the last writer erased the other's
-                -- figure. Measured: a stored reach of 4200 became 0.
-                INSERT OR REPLACE INTO analytics_daily
-                (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source, period_label, precision, unique_members_reached, created_at)
-                VALUES (?, 
-                        COALESCE(?, (SELECT followers FROM analytics_daily WHERE date = ?)),
-                        COALESCE(?, (SELECT connections FROM analytics_daily WHERE date = ?)),
-                        COALESCE(?, (SELECT profile_views FROM analytics_daily WHERE date = ?)),
-                        -- No trailing 0. A metric never read stays NULL: the
-                        -- creator analytics card shows impressions, reactions
-                        -- and followers, never comments or shares, so those
-                        -- were stored as a measured 0 on every captured day.
-                        COALESCE(?, (SELECT impressions FROM analytics_daily WHERE date = ?)),
-                        COALESCE(?, (SELECT reactions FROM analytics_daily WHERE date = ?)),
-                        COALESCE(?, (SELECT comments FROM analytics_daily WHERE date = ?)),
-                        COALESCE(?, (SELECT shares FROM analytics_daily WHERE date = ?)),
-                        COALESCE(?, (SELECT engagement_rate FROM analytics_daily WHERE date = ?)),
-                        'observed', ?, ?,
-                        -- Reach is carried forward, never invented: the page
-                        -- does not show it, and a default 0 was exported as a
-                        -- measured zero reach for every captured day.
-                        (SELECT unique_members_reached FROM analytics_daily WHERE date = ?),
-                        COALESCE((SELECT created_at FROM analytics_daily WHERE date = ?), CURRENT_TIMESTAMP))
-                """, (dt, fl, dt, cn, dt, pv, dt,
-                      imp, dt, lk, dt, cm, dt, sh, dt, eng_rate, dt,
-                      row_period, row_precision, dt, dt))
+                -- One column per figure this reader read, and nothing else.
+                -- INSERT OR REPLACE deleted the old row and wrote a new one,
+                -- so every column the statement did not name was lost: reach
+                -- and created_at were reset once (a stored reach of 4200
+                -- became 0), and a column another writer fills the same day
+                -- (Track 6 adds new_followers from the export) would be
+                -- cleared on every read. An upsert sets only these columns;
+                -- a figure this read did not show keeps what the day held
+                -- (COALESCE), and a figure never read stays NULL, never 0.
+                INSERT INTO analytics_daily
+                (date, followers, connections, profile_views, impressions, reactions, comments, shares,
+                 engagement_rate, source, period_label, precision)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'observed', ?, ?)
+                ON CONFLICT(date) DO UPDATE SET
+                    followers = COALESCE(excluded.followers, analytics_daily.followers),
+                    connections = COALESCE(excluded.connections, analytics_daily.connections),
+                    profile_views = COALESCE(excluded.profile_views, analytics_daily.profile_views),
+                    impressions = COALESCE(excluded.impressions, analytics_daily.impressions),
+                    reactions = COALESCE(excluded.reactions, analytics_daily.reactions),
+                    comments = COALESCE(excluded.comments, analytics_daily.comments),
+                    shares = COALESCE(excluded.shares, analytics_daily.shares),
+                    engagement_rate = COALESCE(excluded.engagement_rate, analytics_daily.engagement_rate),
+                    source = 'observed',
+                    period_label = excluded.period_label,
+                    precision = excluded.precision
+                """, (dt, fl, cn, pv, imp, lk, cm, sh, eng_rate, row_period, row_precision))
                 # The rate is derived from the row, never from the payload.
                 #
                 # `engaged` above sums only the metrics THIS payload carried,
@@ -530,26 +587,24 @@ class LinkedInClient:
                 # get_kpis subtracts one day's follower count from another, so a
                 # profile views only payload took the whole dashboard down with a
                 # TypeError on None.
+                # Only profile views were read. A new day carries the last
+                # known follower and connection counts forward (get_kpis
+                # once failed on a NULL there, and the tests hold it); a day
+                # that already has a row keeps every column but profile
+                # views, so another writer's columns are never cleared, and
+                # a figure nobody read is NULL, never an invented 0.
                 cursor.execute("""
-                INSERT OR REPLACE INTO analytics_daily 
-                (date, followers, connections, profile_views, impressions, reactions, comments, shares, engagement_rate, source, period_label, precision, unique_members_reached)
-                VALUES (?, 
-                        COALESCE((SELECT followers FROM analytics_daily WHERE date = ?),
-                                 (SELECT followers FROM analytics_daily WHERE followers IS NOT NULL ORDER BY date DESC LIMIT 1), 0),
-                        COALESCE((SELECT connections FROM analytics_daily WHERE date = ?),
-                                 (SELECT connections FROM analytics_daily WHERE connections IS NOT NULL ORDER BY date DESC LIMIT 1), 0),
-                        ?,
-                        COALESCE((SELECT impressions FROM analytics_daily WHERE date = ?), 0),
-                        COALESCE((SELECT reactions FROM analytics_daily WHERE date = ?), 0),
-                        COALESCE((SELECT comments FROM analytics_daily WHERE date = ?), 0),
-                        COALESCE((SELECT shares FROM analytics_daily WHERE date = ?), 0),
-                        COALESCE((SELECT engagement_rate FROM analytics_daily WHERE date = ?), 0.0),
-                        'observed',
-                        (SELECT period_label FROM analytics_daily WHERE date = ?),
-                        (SELECT precision FROM analytics_daily WHERE date = ?),
-                        (SELECT unique_members_reached FROM analytics_daily WHERE date = ?))
-                """, (today_str, today_str, today_str, int(top_pv), today_str, today_str,
-                      today_str, today_str, today_str, today_str, today_str, today_str))
+                INSERT INTO analytics_daily
+                (date, followers, connections, profile_views, impressions, reactions, comments, shares,
+                 engagement_rate, source)
+                VALUES (?,
+                        COALESCE((SELECT followers FROM analytics_daily WHERE followers IS NOT NULL ORDER BY date DESC LIMIT 1), 0),
+                        COALESCE((SELECT connections FROM analytics_daily WHERE connections IS NOT NULL ORDER BY date DESC LIMIT 1), 0),
+                        ?, NULL, NULL, NULL, NULL, NULL, 'observed')
+                ON CONFLICT(date) DO UPDATE SET
+                    profile_views = excluded.profile_views,
+                    source = 'observed'
+                """, (today_str, int(top_pv)))
                 saved_count += 1
 
             # Handle demographics and viewer seniority if present

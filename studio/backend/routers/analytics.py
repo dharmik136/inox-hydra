@@ -10,6 +10,7 @@ import csv
 import io
 import json
 import math
+import re
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, Response, Path, Query
@@ -17,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Response, Path, Query
 try:
     from ..database import get_db
     from .. import insights
+    from .. import onboarding
     from .. import post_summary
     from .. import results
     from ..crm import reverse_crm, VIP_THRESHOLD
@@ -24,6 +26,7 @@ try:
 except (ImportError, ValueError):
     from database import get_db
     import insights
+    import onboarding
     import post_summary
     import results
     from crm import reverse_crm, VIP_THRESHOLD
@@ -49,26 +52,11 @@ router = APIRouter()
 MIN_CAPTURED_SHARE_TO_COMPARE = results.MIN_CAPTURED_SHARE_TO_COMPARE
 
 
-def rounding_half_width(value, precision) -> float:
-    """
-    How far a stored figure can be from the true one, given how LinkedIn wrote it.
-
-    A row marked 'rounded' holds at least one figure LinkedIn abbreviated,
-    such as 1.2K stored as 1200, without saying which. LinkedIn writes compact
-    numbers the way the browser's compact number format does: one decimal
-    below 10K (1.2K, and 2K for 2.0K), whole thousands up to 999K (12K), one
-    decimal below 10M (1.2M), whole millions above. So the step a figure was
-    rounded to follows from its size: 100 below 10,000, 1,000 below a
-    million, 100,000 below 10 million, 1,000,000 above, and the figure is
-    half a step either way. A value that is not a multiple of its step
-    cannot be one LinkedIn abbreviated, so it was written out in full and is
-    exact. (This replaced reading the last non-zero digit, which gave a bare
-    20K a margin of 5,000.)
-    """
-    if precision != "rounded" or value is None or value < 1000:
-        return 0.0
-    step = 100 if value < 10_000 else 1_000 if value < 1_000_000 else 100_000 if value < 10_000_000 else 1_000_000
-    return step / 2.0 if value % step == 0 else 0.0
+# How far a rounded figure can be from the true one. The rule is the
+# engine's (results.rounding_half_width), since migration 28 gave post
+# readings the same precision flag and the Posts screens say "about" by the
+# same arithmetic; a second copy here would let the two screens disagree.
+rounding_half_width = results.rounding_half_width
 
 
 def get_range_days(range_str: str) -> int:
@@ -298,6 +286,19 @@ def get_kpis(range: str = "30d"):
         conn.close()
 
 
+def window_words(period_label: str) -> Dict[str, str]:
+    """
+    How a windowed reading is named on screen: a 7 day card is "weekly",
+    any other window is named by its length, never shown as a day.
+    """
+    match = re.match(r"^(\d{1,3})d$", period_label or "")
+    days = int(match.group(1)) if match else None
+    return {
+        "covers": f"{days} days" if days else "an unknown window",
+        "label": "weekly" if days == 7 else (f"{days}-day window" if days else "unknown window"),
+    }
+
+
 @router.get("/api/analytics/overview")
 def get_analytics_overview(range: str = "30d"):
     days = get_range_days(range)
@@ -305,13 +306,22 @@ def get_analytics_overview(range: str = "30d"):
     try:
         cursor = conn.cursor()
 
+        # The range is counted back from the latest daily row, as get_kpis
+        # counts it, so the chart and the figures above it cover the same
+        # days. Windowed readings are listed inside that range; only with no
+        # daily row at all are they counted back from their own latest day.
         cursor.execute("SELECT MAX(date) FROM analytics_daily")
         max_d_row = cursor.fetchone()
-        if not max_d_row or not max_d_row[0]:
+        latest = max_d_row[0] if max_d_row else None
+        if not latest:
+            cursor.execute("SELECT MAX(date) FROM analytics_windows")
+            max_w_row = cursor.fetchone()
+            latest = max_w_row[0] if max_w_row else None
+        if not latest:
             conn.close()
-            return {"status": "success", "count": 0, "series": []}
+            return {"status": "success", "count": 0, "series": [], "windows": []}
 
-        end_date = datetime.strptime(max_d_row[0], "%Y-%m-%d").date()
+        end_date = datetime.strptime(latest, "%Y-%m-%d").date()
         start_date = end_date - timedelta(days=days - 1)
 
         cursor.execute("""
@@ -320,16 +330,37 @@ def get_analytics_overview(range: str = "30d"):
         ORDER BY date ASC
         """, (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
         rows = [dict(r) for r in cursor.fetchall()]
+        # Readings of the creator analytics page over a window (7 days by
+        # default on the 2026 page), each on the day it was read, labelled
+        # by what it covers. Beside the daily series, never in it: nothing
+        # here is summed into a day or a range.
+        cursor.execute("""
+        SELECT date, period_label, observed_at, impressions, reactions, comments, shares, followers, precision, source
+        FROM analytics_windows WHERE date >= ? AND date <= ? ORDER BY date ASC, period_label ASC
+        """, (start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
+        windows = [{**dict(r), **window_words(r["period_label"])} for r in cursor.fetchall()]
         conn.close()
 
         return {
             "status": "success",
             "range": f"{days}d",
             "count": len(rows),
-            "series": rows
+            "series": rows,
+            "windows": windows,
         }
     finally:
         conn.close()
+
+
+@router.get("/api/analytics/post-field-sightings")
+def get_post_field_sightings():
+    """
+    How long each figure the post analytics reader added in cycle 4 has gone
+    unread: onboarding.post_analytics_sightings, the one definition. An
+    absent one of those figures is not drift (owner, 2026-10-26), so this is
+    where a label that never appears shows.
+    """
+    return onboarding.post_analytics_sightings()
 
 
 @router.get("/api/analytics/export")
@@ -360,7 +391,7 @@ def export_analytics(format: str = "csv"):
         conn.close()
 
 
-def _rate(impressions, reactions, comments, shares):
+def _rate(impressions, reactions, comments, shares, by_figure=None):
     """
     (reactions + comments + shares) / impressions as a percentage, and the
     reason there is none when there is none.
@@ -371,7 +402,7 @@ def _rate(impressions, reactions, comments, shares):
     promoted exactly that post.
     """
     return results.engagement_rate({"impressions": impressions, "reactions": reactions,
-                                    "comments": comments, "reposts": shares})
+                                    "comments": comments, "reposts": shares, "by_figure": by_figure})
 
 
 @router.get("/api/analytics/posts")
@@ -418,6 +449,9 @@ def get_posts_leaderboard(limit: Optional[int] = Query(None, ge=1), offset: int 
                 "impressions": figure.get("impressions"), "reactions": figure.get("reactions"),
                 "comments": figure.get("comments"), "shares": figure.get("reposts"), "tags": r["tags"],
                 "figures_source": figure.get("source"), "figures_read_at": figure.get("read_at"),
+                # Which reading each figure came from (results.figures), so the
+                # rate below is measured only from one reading.
+                "figures_by_figure": figure.get("by_figure"),
                 "activity_urn": r["activity_urn"], "studio_post_id": r["post_id"],
             })
         for r in cursor.execute("""
@@ -492,7 +526,8 @@ def get_posts_leaderboard(limit: Optional[int] = Query(None, ge=1), offset: int 
 
         rows = []
         for d in listed:
-            rate, reason = _rate(d["impressions"], d["reactions"], d["comments"], d["shares"])
+            rate, reason = _rate(d["impressions"], d["reactions"], d["comments"], d["shares"],
+                                 d.get("figures_by_figure"))
             d["engagement_rate"] = rate
             # Why there is no rate, so the screen says it rather than leaving
             # a blank or printing an impossible number.

@@ -2151,6 +2151,19 @@ export interface TodayLatestPost {
   /** Present only when the post and enough earlier ones were read at about two days old. */
   comparison: Partial<Record<"impressions" | "reactions" | "comments", MetricComparison>> | null;
   not_compared_because: string | null;
+  /**
+   * Whether the post is still moving, from results.movement: the change
+   * between its last two readings as a sentence with its reading count, which
+   * abstains with one reading and says "about" when a reading was rounded.
+   */
+  movement?: {
+    verdict: string;
+    sentence: string;
+    readings: number;
+    approximate?: boolean;
+    /** What is usual at this age, from the settle curve, or its "not enough posts" below 20 a bucket. */
+    usual?: { verdict: string; sentence: string } | null;
+  } | null;
   /** Null for a post published from the studio that LinkedIn has not shown yet. */
   url: string | null;
   analytics_url: string | null;
@@ -2283,6 +2296,10 @@ export interface PostDetail {
   impressions: number | null;
   figures_source: string | null;
   figures_read_at: string | null;
+  /** How precisely the reading was read: "exact", "rounded", or null when the reader did not say. */
+  figures_precision?: string | null;
+  /** The figures LinkedIn abbreviated (12K), by name, so the screen says "about" beside those alone. */
+  approximate?: string[];
   engagement_rate: number | null;
   engagement_rate_unmeasured?: string | null;
   engagement_rate_note?: string | null;

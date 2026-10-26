@@ -983,6 +983,8 @@ function LatestPost({
           {post.current.read_at ? ` · ${ago(post.current.read_at)}` : ""}
         </p>
       )}
+      {/* Whether it is still moving, in readings and with their count, and what is usual at this age, from results.movement. */}
+      {post.movement?.sentence && <p className="mt-1 text-[12px] leading-snug text-ink-secondary first-letter:uppercase">{post.movement.sentence}.{post.movement.usual?.sentence ? ` Beside it: ${post.movement.usual.sentence}.` : ""}</p>}
 
       {rows.length > 0 ? (
         <div className="mt-2 border-t border-edge pt-2">

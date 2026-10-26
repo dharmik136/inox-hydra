@@ -43,11 +43,13 @@ The figure reads, for example, "70 vs 35 (2.0x) median of 4". Green is at least 
 
 When the comparison cannot be made, the screen says why instead of showing a number: the post is too new, it was not read at about two days old, or too few earlier posts were.
 
+A line under the figures says whether the post is still moving, from its last two readings of impressions on one page, for example "Still moving: +50 impressions since the reading 26 hours ago, over 2 readings on its analytics page, the latest 2 hours ago." The page is the one that has read that figure most often for this post, your post's analytics page on a tie, so a single visit to another page never replaces the series. With one reading it says a second one would tell. When either reading was a figure LinkedIn rounded, such as 12K, the change reads "about", and when the change is no larger than the two readings' rounding, the line says they cannot separate it rather than call it growth. Beside it is what is usual for your posts at that age: the share of their two-week impressions your own posts had reached by then, and how many posts that rests on. Until 20 of your posts were read near that age, it says there are not enough instead.
+
 ### Where the figures come from
 
 Each time your posts are imported or re-read, the counts LinkedIn shows on them are kept as a reading, with the post's age at that moment. At most one reading per post per hour is kept.
 
-**Open its analytics** opens the post's own analytics page, which only you can see. The extension reads impressions, members reached, reactions, comments, reposts, saves and sends from it, for your own recorded posts only.
+**Open its analytics** opens the post's own analytics page, which only you can see. The extension reads impressions, members reached, reactions, comments, reposts, saves and sends from it, for your own recorded posts only. Where the page shows them it also reads followers gained from this post, profile viewers from this post, link visits, article views and video views, the share of impressions from inside and outside your network, and the top viewer demographics, which are kept with the day they were read so a later visit adds a point rather than replacing one. A figure LinkedIn abbreviated, such as 12K, is stored as 12,000 and marked rounded, and the post's detail on **Posts** names it. LinkedIn may not show each of those newer figures to every member or on every post, so when one is missing nothing is stored for it, never a 0, and the reader is not marked as having stopped reading. The studio keeps, from its own readings, when each was last read and on how many of your posts' analytics pages it has been missing since; if one never appears, the label may have changed. Only a missing impressions, members reached, reactions, comments, reposts, saves or sends figure marks the reader as having stopped reading the page.
 
 ## Queue
 

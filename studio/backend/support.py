@@ -103,7 +103,10 @@ EXPORTABLE_TABLES = ("drafts", "posts", "leads", "lead_interactions",
                      "analytics_daily", "audience_demographics",
                      "creator_identity", "creator_positions", "creator_education", "creator_skills",
                      "own_posts", "post_metric_observations", "outbound_engagements", "lead_stage_events",
-                     "connections", "archive_imports")
+                     "connections", "archive_imports",
+                     # Cycle 4: each post's viewer demographics by day, and the
+                     # creator analytics page read over a longer range.
+                     "audience_demographic_readings", "analytics_windows")
 
 EXPORT_FORMATS = ("json", "csv", "obsidian")
 

@@ -247,9 +247,16 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # now, so the merge restored it. The pack has a way out and no way in until
 # its 36 first-person claims are rewritten, which is a decision, not a gap.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 172
+# Cycle 4, track 5: 172 -> 173 paths, unreachable 54 -> 55. The one new path is
+# GET /api/analytics/post-field-sightings: how long each figure the post
+# analytics reader added this cycle has gone unread, which is where such a
+# label shows now that an absent one is not drift (the owner, 2026-10-26).
+# Track 4's Health section is its caller once that section is built; until
+# then it sits in the unreachable column, where it is visible.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 173
 REACHED_BY_INTERFACE = 118
-UNREACHABLE = 54
+UNREACHABLE = 55
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

@@ -227,7 +227,7 @@ SNAPSHOT = "snapshot"
 # a correlated subquery per post (measured: 62 ms for 1,417 posts over 362,996
 # readings, against 2,349 ms for the subquery shape).
 _NEWEST_READING = f"""
-    SELECT activity_urn AS urn, source, observed_at, age_hours,
+    SELECT activity_urn AS urn, source, observed_at, age_hours, precision,
            {', '.join(FIGURE_FIELDS)},
            MAX(observed_at || CASE source WHEN 'post_analytics' THEN '2' ELSE '1' END) AS ordering
     FROM post_metric_observations
@@ -262,26 +262,59 @@ def _from_summary(conn, urns: Optional[Sequence[str]]) -> Dict[str, Dict[str, An
             reading = json.loads(row["latest_reading"])
         except (TypeError, ValueError):
             continue
-        if not reading.get("source"):
-            # Written before the reading carried the page it came from, so it
-            # cannot be named: the readings themselves answer for this post.
+        if not reading.get("source") or "by_figure" not in reading:
+            # Written before the reading carried the page it came from, or
+            # before each figure carried its own reading (cycle 4): the
+            # readings themselves answer for this post.
             continue
-        out[row["urn"]] = {
-            **{field: reading.get(field) for field in FIGURE_FIELDS},
-            "source": reading["source"],
-            "read_at": reading.get("observed_at"),
-            "read_at_age_hours": reading.get("age_hours"),
-        }
+        newest = {"source": reading["source"], "read_at": reading.get("observed_at"),
+                  "read_at_age_hours": reading.get("age_hours"), "precision": reading.get("precision")}
+        out[row["urn"]] = _merged(newest, {
+            field: {"value": entry.get("value"), "source": entry.get("source"), "read_at": entry.get("observed_at"),
+                    "read_at_age_hours": entry.get("age_hours"), "precision": entry.get("precision")}
+            for field, entry in (reading.get("by_figure") or {}).items() if field in FIGURE_FIELDS})
     return out
+
+
+def _merged(newest: Dict[str, Any], by_figure: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    One post's figures: each from the newest reading that has it (review S2,
+    and Track 6's export rows), with that reading named per figure, and the
+    newest reading of all named as the post's.
+    """
+    return {
+        **{field: (by_figure.get(field) or {}).get("value") for field in FIGURE_FIELDS},
+        **newest,
+        "by_figure": {field: {key: value for key, value in entry.items() if key != "value"}
+                      for field, entry in by_figure.items()},
+    }
+
+
+def _newest_with(conn, urns: Sequence[str], field: str) -> Dict[str, Dict[str, Any]]:
+    """Per post, the newest reading that carries this figure, in the order _NEWEST_READING uses."""
+    where, params = _in_clause(urns, "activity_urn")
+    rows = _rows(conn, f"""
+        SELECT activity_urn AS urn, source, observed_at, age_hours, precision, {field} AS value,
+               MAX(observed_at || CASE source WHEN 'post_analytics' THEN '2' ELSE '1' END) AS ordering
+        FROM post_metric_observations {where} {"AND" if where else "WHERE"} {field} IS NOT NULL
+        GROUP BY activity_urn
+    """, params).fetchall()
+    return {row["urn"]: {"value": row["value"], "source": row["source"], "read_at": row["observed_at"],
+                         "read_at_age_hours": row["age_hours"], "precision": row["precision"]} for row in rows}
 
 
 def figures(conn, urns: Optional[Sequence[str]] = None) -> Dict[str, Dict[str, Any]]:
     """
-    Each post's figures, keyed by activity URN: one reading, with its source
-    and when it was read, for the posts named or for every post.
+    Each post's figures, keyed by activity URN, for the posts named or for
+    every post: each figure from the newest reading that has it, named per
+    figure in "by_figure", and the newest reading of all named as the post's
+    "source" and "read_at".
 
-    Every figure in one answer comes from one reading, so a rate's numerator
-    and its denominator cannot come from different pages.
+    Each figure is the newest reading that has it (review S2): a newer
+    reading that lacks a figure, or comes from another page or from an
+    export, never makes an older figure "not measured". A rate still never
+    mixes two readings: engagement_rate measures one only where impressions
+    and reactions came from the same reading.
     """
     out = _from_summary(conn, urns)
     # The posts the summary could not answer for, read from the readings
@@ -289,9 +322,13 @@ def figures(conn, urns: Optional[Sequence[str]] = None) -> Dict[str, Dict[str, A
     # every post on a database whose summary has not been built yet.
     if urns is None:
         try:
+            # A summary row written before each figure carried its own
+            # reading (cycle 4) cannot answer, so its post is read from the
+            # readings until the summary is rewritten.
             asked = [row[0] for row in conn.execute(
                 "SELECT activity_urn FROM own_posts WHERE activity_urn NOT IN "
-                "(SELECT post_urn FROM post_engagement WHERE latest_reading IS NOT NULL AND (stale & 2) = 0)")]
+                "(SELECT post_urn FROM post_engagement WHERE latest_reading IS NOT NULL AND (stale & 2) = 0 "
+                "AND json_extract(latest_reading, '$.by_figure') IS NOT NULL)")]
         except sqlite3.OperationalError:
             # No summary table on this database: every post is read from the
             # readings, and the unfiltered pass over them is the cheap shape.
@@ -305,15 +342,23 @@ def figures(conn, urns: Optional[Sequence[str]] = None) -> Dict[str, Dict[str, A
         except sqlite3.OperationalError:
             # No readings table yet: the snapshot below is the whole answer.
             rows = []
+        lacking: Dict[str, List[str]] = {}
         for row in rows:
             if row["urn"] is None:
                 continue
-            out[row["urn"]] = {
-                **{field: row[field] for field in FIGURE_FIELDS},
-                "source": row["source"],
-                "read_at": row["observed_at"],
-                "read_at_age_hours": row["age_hours"],
-            }
+            newest = {"source": row["source"], "read_at": row["observed_at"],
+                      "read_at_age_hours": row["age_hours"], "precision": row["precision"]}
+            out[row["urn"]] = _merged(newest, {field: {"value": row[field], **newest}
+                                               for field in FIGURE_FIELDS if row[field] is not None})
+            for field in FIGURE_FIELDS:
+                if row[field] is None:
+                    lacking.setdefault(field, []).append(row["urn"])
+        # A figure the newest reading lacks is the newest reading that has it.
+        for field, missing in lacking.items():
+            for urn, entry in _newest_with(conn, missing, field).items():
+                figure = out[urn]
+                figure[field] = entry["value"]
+                figure["by_figure"][field] = {key: value for key, value in entry.items() if key != "value"}
     where, params = _in_clause(urns, "activity_urn")
     for row in _rows(
             conn, f"SELECT activity_urn AS urn, {', '.join(FIGURE_FIELDS)}, last_seen_at, published_at "
@@ -323,12 +368,9 @@ def figures(conn, urns: Optional[Sequence[str]] = None) -> Dict[str, Dict[str, A
             continue
         # A post nobody has read a reading of: the snapshot is all there is,
         # and a post imported from the archive has no figures at all.
-        out[row["urn"]] = {
-            **{field: row[field] for field in FIGURE_FIELDS},
-            "source": SNAPSHOT,
-            "read_at": row["last_seen_at"],
-            "read_at_age_hours": None,
-        }
+        snapshot = {"source": SNAPSHOT, "read_at": row["last_seen_at"], "read_at_age_hours": None, "precision": None}
+        out[row["urn"]] = _merged(snapshot, {field: {"value": row[field], **snapshot}
+                                             for field in FIGURE_FIELDS if row[field] is not None})
     return out
 
 
@@ -347,9 +389,21 @@ def engagement_rate(figure: Optional[Dict[str, Any]]) -> Tuple[Optional[float], 
     impressions, reactions = figure.get("impressions"), figure.get("reactions")
     if impressions is None or reactions is None:
         return None, "not_read"
+    # Each figure is the newest reading that has it (figures, review S2), so
+    # a rate is measured only where impressions and reactions came from one
+    # reading, and counts that reading's comments and reposts alone.
+    by_figure = figure.get("by_figure") or {}
+
+    def reading_of(field):
+        entry = by_figure.get(field)
+        return (entry.get("source"), entry.get("read_at")) if entry else None
+
+    if by_figure and reading_of("reactions") != reading_of("impressions"):
+        return None, "different_readings"
     if impressions <= 0:
         return None, "no_impressions_read"
-    engagements = reactions + (figure.get("comments") or 0) + (figure.get("reposts") or 0)
+    engagements = reactions + sum(figure.get(field) or 0 for field in ("comments", "reposts")
+                                  if not by_figure or reading_of(field) == reading_of("impressions"))
     if engagements > impressions:
         # More engagements than impressions cannot happen on one reading of
         # one post. It means the two figures were read from different pages
@@ -367,7 +421,95 @@ def rate_reason_sentence(reason: Optional[str]) -> Optional[str]:
         "more_engagements_than_impressions": (
             "more engagements than impressions were read for this post, so the two figures came from "
             "different readings and no rate can be measured from them"),
+        "different_readings": (
+            "its impressions and its reactions were last read on different readings, so no rate can be "
+            "measured from them"),
     }.get(reason or "")
+
+
+# ---------------------------------------------------------------------------
+# How precisely a figure was read
+# ---------------------------------------------------------------------------
+#
+# LinkedIn abbreviates: 1.2K is anything from 1,150 to 1,249. The analytics
+# page's rows have said 'exact' or 'rounded' since migration 5 and the post
+# readings since migration 28. The width of that uncertainty was computed in
+# the analytics router alone, so the post side could not say "about"; it
+# lives here now and the router reads it.
+
+PRECISION_EXACT = "exact"
+PRECISION_ROUNDED = "rounded"
+
+
+def rounding_half_width(value, precision) -> float:
+    """
+    How far a stored figure can be from the true one, given how LinkedIn wrote it.
+
+    A row marked 'rounded' holds at least one figure LinkedIn abbreviated,
+    such as 1.2K stored as 1200, without saying which. LinkedIn writes compact
+    numbers the way the browser's compact number format does: one decimal
+    below 10K (1.2K, and 2K for 2.0K), whole thousands up to 999K (12K), one
+    decimal below 10M (1.2M), whole millions above. So the step a figure was
+    rounded to follows from its size: 100 below 10,000, 1,000 below a
+    million, 100,000 below 10 million, 1,000,000 above, and the figure is
+    half a step either way. A value that is not a multiple of its step
+    cannot be one LinkedIn abbreviated, so it was written out in full and is
+    exact. (This replaced reading the last non-zero digit, which gave a bare
+    20K a margin of 5,000.) An unknown precision (None) claims nothing.
+    """
+    if precision != PRECISION_ROUNDED or value is None or value < 1000:
+        return 0.0
+    step = 100 if value < 10_000 else 1_000 if value < 1_000_000 else 100_000 if value < 10_000_000 else 1_000_000
+    return step / 2.0 if value % step == 0 else 0.0
+
+
+def reading_half_width(value, precision) -> float:
+    """
+    How far a post reading's figure can be from the true one (review S3).
+
+    A reading's flag is 'exact', 'rounded', or missing: every reading taken
+    before migration 28 and every Activity-tab reading carries none. Missing
+    is unknown, never exact, so a figure a rounded display could have
+    printed (12,000 as "12K") gets the half step rounding_half_width gives a
+    rounded one, and one it could not have printed (1,912) is exact either
+    way. The daily analytics rows keep migration 5's convention, under which
+    the reader has flagged every row since, through rounding_half_width.
+    """
+    return rounding_half_width(value, PRECISION_EXACT if precision == PRECISION_EXACT else PRECISION_ROUNDED)
+
+
+def approximate_fields(figure: Optional[Dict[str, Any]], fields: Sequence[str] = FIGURE_FIELDS) -> List[str]:
+    """
+    Which of a post's figures LinkedIn rounded, or may have rounded when its
+    reading did not say, by name, so a screen can say "about" beside those
+    and nothing beside the rest.
+    """
+    if not figure:
+        return []
+    by_figure = figure.get("by_figure") or {}
+    return [field for field in fields
+            if reading_half_width(figure.get(field),
+                                  (by_figure.get(field) or {}).get("precision", figure.get("precision"))) > 0]
+
+
+def growth(earlier: Optional[Dict[str, Any]], later: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    The change between two readings of one figure, and whether the readings
+    can separate it from their own rounding.
+
+    Each reading is {"value", "precision"}. The change is approximate when
+    either reading was rounded, or may have been because it did not say
+    (reading_half_width), and within rounding when it is no larger than the
+    two half widths together: 12K read twice is not "no growth", it is a
+    change of up to a thousand that the readings cannot see.
+    """
+    if not earlier or not later or earlier.get("value") is None or later.get("value") is None:
+        return {"change": None, "approximate": False, "within_rounding": False, "slack": 0.0}
+    slack = (reading_half_width(earlier["value"], earlier.get("precision"))
+             + reading_half_width(later["value"], later.get("precision")))
+    change = later["value"] - earlier["value"]
+    return {"change": change, "approximate": slack > 0, "within_rounding": slack > 0 and abs(change) <= slack,
+            "slack": slack}
 
 
 # ---------------------------------------------------------------------------
@@ -808,6 +950,303 @@ def window_complete(days_captured: int, days_needed: int) -> bool:
     Windows are trailing and whole, or there is no percentage.
     """
     return days_captured >= days_needed
+
+
+# ---------------------------------------------------------------------------
+# Whether a post is still moving, and its reach half-life
+# ---------------------------------------------------------------------------
+#
+# Both are read from the readings a post already has, never from a model of
+# how posts behave, and both are printed as readings with their count. What
+# is usual at an age is the settle curve's answer, which abstains below
+# MIN_POSTS_PER_BUCKET; a comparison between groups of posts' half-lives
+# goes through difference and spread, so Patterns cannot say what the Posts
+# screen would deny. A post's readings from the feed card and from its own
+# analytics page count different things, so only the page of the newest
+# reading is read.
+
+# One reading cannot move.
+MIN_READINGS_TO_MOVE = 2
+# A half-life is interpolated between the two readings that bracket the
+# halfway point, under a denominator read at or after the settled age.
+MIN_READINGS_FOR_HALF_LIFE = 3
+# The denominator is the first reading at or after this age, the settled
+# rule's own constant, so "day-7" and "settled" are one number.
+HALF_LIFE_AT_HOURS = SETTLED_AFTER_HOURS
+MOVING_METRICS = ("impressions", "reactions", "comments", "reposts", "members_reached")
+# The figures the settle curve measures a share of.
+CURVE_METRICS = ("impressions", "reactions")
+
+
+# The words a sentence uses for the page a series was read on.
+_SERIES_WORDS = {"post_analytics": "on its analytics page", "activity_page": "on your Activity tab",
+                 "voyager_network": "by network reading"}
+
+
+def series_words(source: Optional[str]) -> str:
+    return _SERIES_WORDS.get(source or "") or f"from {str(source).replace('_', ' ')}"
+
+
+def series_source(rows: Sequence[Dict[str, Any]]) -> Optional[str]:
+    """
+    The one page a post's figure is read as a series from: the page that
+    read it most often for that post; on a tie, the post's own analytics
+    page, LinkedIn's per-post figure; then the page read most recently.
+
+    One page and never two (review S2): the feed card and the analytics page
+    are read at different moments and may round differently, so a series
+    mixing them would interpolate between two counts. And the densest page,
+    because a series is only as good as its points: one stray reading from
+    a sparser page, an Activity visit that printed impressions or a row
+    from an export, never displaces a series of three.
+    """
+    counts: Dict[str, int] = {}
+    newest: Dict[str, str] = {}
+    for row in rows:
+        counts[row["source"]] = counts.get(row["source"], 0) + 1
+        newest[row["source"]] = row["observed_at"]
+    if not counts:
+        return None
+    top = max(counts.values())
+    tied = [source for source, count in counts.items() if count == top]
+    return "post_analytics" if "post_analytics" in tied else max(tied, key=lambda source: newest[source])
+
+
+def readings_of(conn, urn: str, metric: str = "impressions", source: Optional[str] = None) -> List[Dict[str, Any]]:
+    """
+    One post's readings of one figure from one page, oldest first: the page
+    series_source names unless one is given.
+    """
+    if metric not in MOVING_METRICS:
+        raise ValueError(f"not a figure the readings carry: {metric}")
+    try:
+        rows = _rows(conn, f"""
+            SELECT observed_at, age_hours, source, precision, {metric} AS value
+            FROM post_metric_observations
+            WHERE activity_urn = ? AND {metric} IS NOT NULL AND age_hours IS NOT NULL
+            ORDER BY observed_at, CASE source WHEN 'post_analytics' THEN 2 ELSE 1 END, id
+        """, (urn,)).fetchall()
+    except sqlite3.OperationalError:
+        # No readings table yet.
+        return []
+    if not rows:
+        return []
+    page = source or series_source(rows)
+    return [dict(row) for row in rows if row["source"] == page]
+
+
+def usual_at_age(conn, age_hours: float, metric: str = "impressions") -> Dict[str, Any]:
+    """
+    What is usual for this creator at an age: the share of a post's two-week
+    figure their posts have reached by the nearest point of the settle
+    curve, with how many posts that rests on. Abstains when no point is
+    within the band of the age, and below MIN_POSTS_PER_BUCKET posts.
+    """
+    if metric not in CURVE_METRICS:
+        raise ValueError(f"the settle curve does not measure {metric}")
+    nearest = min(SETTLE_BUCKETS, key=lambda bucket: abs(bucket - age_hours))
+    out = {"metric": metric, "age_hours": round(age_hours, 1), "bucket_hours": nearest,
+           "min_posts": MIN_POSTS_PER_BUCKET}
+    if abs(nearest - age_hours) > nearest * BAND_TOLERANCE:
+        return {**out, "verdict": "no_bucket", "posts": 0,
+                "sentence": f"no settle point is measured near {age_hours:.0f} hours old"}
+    point = next((p for p in settle_curve(conn)["points"] if p["age_hours"] == nearest), None)
+    posts = point["posts"] if point else 0
+    if posts < MIN_POSTS_PER_BUCKET:
+        return {**out, "verdict": "too_few_posts", "posts": posts,
+                "sentence": (f"not enough posts read at about {nearest} hours old to say what is usual "
+                             f"({posts} of {MIN_POSTS_PER_BUCKET})")}
+    share = point[f"{metric}_share"]
+    return {**out, "verdict": "measured", "posts": posts, "share": share,
+            "sentence": (f"your posts usually have {share:.0%} of their two-week {metric} by {nearest} hours, "
+                         f"measured on {posts} posts")}
+
+
+def _reading_value(reading: Dict[str, Any]) -> Dict[str, Any]:
+    return {"value": reading["value"], "precision": reading.get("precision")}
+
+
+def _ago(read_at: Optional[str]) -> str:
+    """When a reading was taken, from now, in the words a sentence uses."""
+    hours = age_hours(read_at)
+    if hours is None:
+        return "at an unknown time"
+    if hours < 1:
+        return "less than an hour ago"
+    if hours < 48:
+        return f"{hours:.0f} hour{'s' if round(hours) != 1 else ''} ago"
+    return f"{hours / 24:.0f} days ago"
+
+
+def _rounded_among(readings: Iterable[Dict[str, Any]]) -> bool:
+    return any(reading_half_width(r["value"], r.get("precision")) > 0 for r in readings)
+
+
+def movement(conn, urn: str, metric: str = "impressions") -> Dict[str, Any]:
+    """
+    Whether a post is still moving: the change between its last two readings
+    of one figure, as readings with their count, and what is usual for this
+    creator at that age.
+
+    Abstains below MIN_READINGS_TO_MOVE readings. Says "about" when either
+    reading was rounded, and says the readings cannot separate a change that
+    is within their rounding rather than call it growth or stillness. The
+    usual at this age is usual_at_age's, with its own abstention. Nothing
+    here is a cause or a forecast.
+    """
+    readings = readings_of(conn, urn, metric)
+    n = len(readings)
+    out = {"metric": metric, "readings": n, "min_readings": MIN_READINGS_TO_MOVE,
+           "source": readings[-1]["source"] if readings else None}
+    if n < MIN_READINGS_TO_MOVE:
+        sentence = (f"one reading of {metric} {series_words(out['source'])} so far, at "
+                    f"{readings[0]['age_hours']:.0f} hours old; a second one says whether it is still moving"
+                    if n == 1 else f"no reading of {metric} yet")
+        return {**out, "verdict": "too_few_readings", "sentence": sentence}
+    earlier, later = readings[-2], readings[-1]
+    change = growth(_reading_value(earlier), _reading_value(later))
+    hours = round(later["age_hours"] - earlier["age_hours"], 1)
+    delta = change["change"]
+    # "Since the reading K hours ago", with the latest named too: the change
+    # is known only up to the latest reading, which may itself be old.
+    since = f"since the reading {_ago(earlier['observed_at'])}"
+    count = f"over {n} readings {series_words(out['source'])}, the latest {_ago(later['observed_at'])}"
+    about = "about " if change["approximate"] else ""
+    if change["within_rounding"]:
+        verdict = "within_rounding"
+        sentence = (f"a change of {delta:+,} {metric} {since}, which the readings' rounding cannot separate "
+                    f"(up to {change['slack']:,.0f} either way), {count}")
+    elif delta > 0:
+        verdict = "moving"
+        sentence = f"still moving: {about}{delta:+,} {metric} {since}, {count}"
+    elif delta == 0:
+        verdict = "unchanged"
+        sentence = f"unchanged {since}, {count}"
+    else:
+        verdict = "fell"
+        sentence = (f"fell by {about}{-delta:,} {metric} {since}, {count}; LinkedIn's figures are estimates"
+                    + (" and a reaction can be withdrawn" if metric == "reactions" else ""))
+    usual = usual_at_age(conn, later["age_hours"], metric) if metric in CURVE_METRICS else None
+    return {
+        **out, "verdict": verdict, "change": delta, "approximate": change["approximate"],
+        "within_rounding": change["within_rounding"], "slack": change["slack"], "hours_between": hours,
+        "earlier": {"value": earlier["value"], "age_hours": earlier["age_hours"], "read_at": earlier["observed_at"],
+                    "precision": earlier.get("precision")},
+        "latest": {"value": later["value"], "age_hours": later["age_hours"], "read_at": later["observed_at"],
+                   "precision": later.get("precision")},
+        "sentence": sentence, "usual": usual,
+    }
+
+
+def _half_life_from(readings: List[Dict[str, Any]], metric: str) -> Dict[str, Any]:
+    n = len(readings)
+    days = HALF_LIFE_AT_HOURS / 24
+    source = readings[0]["source"] if readings else None
+    out = {"metric": metric, "readings": n, "min_readings": MIN_READINGS_FOR_HALF_LIFE, "at_hours": HALF_LIFE_AT_HOURS,
+           "source": source}
+    words = series_words(source)
+    if n < MIN_READINGS_FOR_HALF_LIFE:
+        return {**out, "verdict": "too_few_readings",
+                "sentence": (f"{n} reading{'s' if n != 1 else ''} of {metric}{' ' + words if n else ''}; a "
+                             f"half-life needs {MIN_READINGS_FOR_HALF_LIFE}, one of them at or after {days:.0f} days")}
+    final = next((r for r in readings if r["age_hours"] >= HALF_LIFE_AT_HOURS), None)
+    if final is None:
+        latest = readings[-1]["age_hours"]
+        return {**out, "verdict": "too_young", "latest_age_hours": latest,
+                "sentence": (f"its latest reading is {latest:.0f} hours old; the half-life waits for a reading "
+                             f"at or after {days:.0f} days, when the figure it is half of has arrived")}
+    if not final["value"] or final["value"] <= 0:
+        return {**out, "verdict": "not_measured",
+                "sentence": (f"its {metric} read 0 at {final['age_hours']:.0f} hours old, "
+                             f"so there is no half to reach")}
+    target = final["value"] / 2.0
+    base = {**out, "denominator": {"value": final["value"], "age_hours": final["age_hours"],
+                                   "precision": final.get("precision")}}
+    before = [r for r in readings if r["age_hours"] <= final["age_hours"]]
+    first = before[0]
+    # The denominator is named by the age it was read at, not called "day 7":
+    # the first reading at or after 7 days may be a month old.
+    whole = f"half of the {final['value']:,} {metric} it had at {final['age_hours']:.0f} hours old"
+    if first["value"] >= target:
+        approximate = _rounded_among((first, final))
+        under = "under an hour" if first["age_hours"] < 1 else f"under {first['age_hours']:.0f} hours"
+        return {**base, "verdict": "before_first_reading", "hours": first["age_hours"], "approximate": approximate,
+                "sentence": (f"{under} to {whole}: its first reading already held "
+                             f"{'about ' if approximate else ''}half, over {n} readings {words}")}
+    index = next(i for i, r in enumerate(before) if r["value"] >= target)
+    prev, cur = before[index - 1], before[index]
+    hours = prev["age_hours"] + (target - prev["value"]) / (cur["value"] - prev["value"]) * (
+        cur["age_hours"] - prev["age_hours"])
+    approximate = _rounded_among((prev, cur, final))
+    return {**base, "verdict": "measured", "hours": round(hours, 1),
+            "between_hours": [prev["age_hours"], cur["age_hours"]], "approximate": approximate,
+            "sentence": (f"{'about ' if approximate else ''}{hours:.0f} hours to {whole}, interpolated "
+                         f"between readings at {prev['age_hours']:.0f} and {cur['age_hours']:.0f} hours, "
+                         f"over {n} readings {words}")}
+
+
+def half_life(conn, urn: str, metric: str = "impressions") -> Dict[str, Any]:
+    """
+    Hours until a post had half of its day-7 figure, interpolated between the
+    two readings that bracket the halfway point.
+
+    Needs MIN_READINGS_FOR_HALF_LIFE readings of one figure from one page,
+    one of them at or after HALF_LIFE_AT_HOURS: a younger post's figure is
+    not final, so the answer would move. Partial by the coverage note's
+    class: the answer names the readings it was interpolated between, says
+    "about" when any of them was rounded, and is an upper bound when the
+    first reading already held half. LinkedIn's impressions are estimates.
+    """
+    return _half_life_from(readings_of(conn, urn, metric), metric)
+
+
+def _build_half_lives(conn, metric: str) -> Dict[str, Dict[str, Any]]:
+    if metric not in MOVING_METRICS:
+        raise ValueError(f"not a figure the readings carry: {metric}")
+    rows = _rows(conn, f"""
+        SELECT activity_urn AS urn, observed_at, age_hours, source, precision, {metric} AS value
+        FROM post_metric_observations WHERE {metric} IS NOT NULL AND age_hours IS NOT NULL
+        ORDER BY activity_urn, observed_at, CASE source WHEN 'post_analytics' THEN 2 ELSE 1 END, id
+    """).fetchall()
+    by_post: Dict[str, List[Dict[str, Any]]] = {}
+    for row in rows:
+        by_post.setdefault(row["urn"], []).append(dict(row))
+    out: Dict[str, Dict[str, Any]] = {}
+    for urn, readings in by_post.items():
+        page = series_source(readings)
+        answer = _half_life_from([r for r in readings if r["source"] == page], metric)
+        # An upper bound is not a measurement, so it is not a point in a distribution.
+        if answer["verdict"] == "measured":
+            out[urn] = answer
+    return out
+
+
+def half_lives(conn, metric: str = "impressions") -> Dict[str, Dict[str, Any]]:
+    """
+    Every post's measured half-life, keyed by URN; a post whose readings
+    cannot answer is absent. Cached per database as the curve and the bands
+    are: one pass over the readings, measured at 3 years of one creator.
+    """
+    return _cached(conn, f"half_lives_{metric}", lambda c: _build_half_lives(c, metric), {})
+
+
+def half_life_spread(conn, groups: Dict[str, Sequence[str]], metric: str = "impressions") -> Dict[str, Any]:
+    """Whether groups of posts differ in half-life at all: results.spread over the measured ones."""
+    lives = half_lives(conn, metric)
+    return spread({name: [lives[u]["hours"] for u in urns if u in lives] for name, urns in groups.items()})
+
+
+def half_life_difference(conn, with_urns: Sequence[str], without_urns: Sequence[str],
+                         metric: str = "impressions") -> Dict[str, Any]:
+    """What a two-sided half-life comparison may say: results.difference over the measured ones."""
+    lives = half_lives(conn, metric)
+    with_it = [lives[u]["hours"] for u in with_urns if u in lives]
+    without = [lives[u]["hours"] for u in without_urns if u in lives]
+    median_with = statistics.median(with_it) if with_it else None
+    median_without = statistics.median(without) if without else None
+    ratio = round(median_with / median_without, 2) if median_with is not None and median_without else None
+    return {**difference(ratio, len(with_it), len(without)),
+            "median_with": median_with, "median_without": median_without}
 
 
 # ---------------------------------------------------------------------------

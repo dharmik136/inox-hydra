@@ -53,6 +53,13 @@ def clean():
                 for table in TABLES:
                     conn.execute(f"DELETE FROM {table}")
                 conn.execute("DELETE FROM settings WHERE key = 'creator_profile'")
+                # A confirmed profile read also writes the day's follower and
+                # connection counts as a point in analytics_daily (cycle 4,
+                # track 5). Left behind in the shared database, that point is
+                # the latest day every Analytics range is counted back from.
+                conn.execute("DELETE FROM analytics_daily WHERE source = 'observed' AND impressions IS NULL "
+                             "AND reactions IS NULL AND comments IS NULL AND shares IS NULL "
+                             "AND profile_views IS NULL AND unique_members_reached IS NULL")
         finally:
             conn.close()
     wipe()
