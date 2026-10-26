@@ -463,17 +463,33 @@ def rounding_half_width(value, precision) -> float:
     return step / 2.0 if value % step == 0 else 0.0
 
 
+def reading_half_width(value, precision) -> float:
+    """
+    How far a post reading's figure can be from the true one (review S3).
+
+    A reading's flag is 'exact', 'rounded', or missing: every reading taken
+    before migration 28 and every Activity-tab reading carries none. Missing
+    is unknown, never exact, so a figure a rounded display could have
+    printed (12,000 as "12K") gets the half step rounding_half_width gives a
+    rounded one, and one it could not have printed (1,912) is exact either
+    way. The daily analytics rows keep migration 5's convention, under which
+    the reader has flagged every row since, through rounding_half_width.
+    """
+    return rounding_half_width(value, PRECISION_EXACT if precision == PRECISION_EXACT else PRECISION_ROUNDED)
+
+
 def approximate_fields(figure: Optional[Dict[str, Any]], fields: Sequence[str] = FIGURE_FIELDS) -> List[str]:
     """
-    Which of a reading's figures LinkedIn rounded, by name, so a screen can
-    say "about" beside those and nothing beside the rest.
+    Which of a post's figures LinkedIn rounded, or may have rounded when its
+    reading did not say, by name, so a screen can say "about" beside those
+    and nothing beside the rest.
     """
     if not figure:
         return []
     by_figure = figure.get("by_figure") or {}
     return [field for field in fields
-            if rounding_half_width(figure.get(field),
-                                   (by_figure.get(field) or {}).get("precision", figure.get("precision"))) > 0]
+            if reading_half_width(figure.get(field),
+                                  (by_figure.get(field) or {}).get("precision", figure.get("precision"))) > 0]
 
 
 def growth(earlier: Optional[Dict[str, Any]], later: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -482,14 +498,15 @@ def growth(earlier: Optional[Dict[str, Any]], later: Optional[Dict[str, Any]]) -
     can separate it from their own rounding.
 
     Each reading is {"value", "precision"}. The change is approximate when
-    either reading was rounded, and within rounding when it is no larger
-    than the two half widths together: 12K read twice is not "no growth",
-    it is a change of up to a thousand that the readings cannot see.
+    either reading was rounded, or may have been because it did not say
+    (reading_half_width), and within rounding when it is no larger than the
+    two half widths together: 12K read twice is not "no growth", it is a
+    change of up to a thousand that the readings cannot see.
     """
     if not earlier or not later or earlier.get("value") is None or later.get("value") is None:
         return {"change": None, "approximate": False, "within_rounding": False, "slack": 0.0}
-    slack = (rounding_half_width(earlier["value"], earlier.get("precision"))
-             + rounding_half_width(later["value"], later.get("precision")))
+    slack = (reading_half_width(earlier["value"], earlier.get("precision"))
+             + reading_half_width(later["value"], later.get("precision")))
     change = later["value"] - earlier["value"]
     return {"change": change, "approximate": slack > 0, "within_rounding": slack > 0 and abs(change) <= slack,
             "slack": slack}
@@ -1062,7 +1079,7 @@ def _ago(read_at: Optional[str]) -> str:
 
 
 def _rounded_among(readings: Iterable[Dict[str, Any]]) -> bool:
-    return any(rounding_half_width(r["value"], r.get("precision")) > 0 for r in readings)
+    return any(reading_half_width(r["value"], r.get("precision")) > 0 for r in readings)
 
 
 def movement(conn, urn: str, metric: str = "impressions") -> Dict[str, Any]:

@@ -114,7 +114,7 @@ export function PostDetail({
                 </p>
               )}
               {/* A figure LinkedIn wrote as 12K is about 12,000, and the detail says so. */}
-              {post.approximate && post.approximate.length > 0 && <p className="studio-meta mt-1 text-[10px] text-ink-muted">ROUNDED BY LINKEDIN (SUCH AS 12K), SO ABOUT: {post.approximate.join(", ").toUpperCase()}</p>}
+              {post.approximate && post.approximate.length > 0 && <p className="studio-meta mt-1 text-[10px] text-ink-muted">ABOUT: {post.approximate.join(", ").toUpperCase()}, WHICH LINKEDIN MAY HAVE ROUNDED (SUCH AS 12K)</p>}
 
               {post.url && <OpenThePost url={post.url} />}
 

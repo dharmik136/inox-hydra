@@ -1124,3 +1124,54 @@ def test_the_analytics_table_never_rates_two_readings_together(client):
     row = next(p for p in client.get("/api/analytics/posts?limit=200").json()["posts"] if p["id"] == mine)
     assert (row["impressions"], row["reactions"]) == (1000, 45)
     assert row["engagement_rate"] is None and row["engagement_rate_unmeasured"] == "different_readings"
+
+
+# ---------------------------------------------------------------------------
+# Review S3: a reading with no precision flag is unknown, never exact
+# ---------------------------------------------------------------------------
+
+def test_a_reading_with_no_flag_may_have_been_rounded():
+    """
+    Readings taken before migration 28 and every Activity-tab reading carry
+    no flag. A figure that a rounded display could have printed (12,000 as
+    "12K") is "about"; one it could not have printed (1,912) is exact.
+    """
+    import results
+    assert results.reading_half_width(12000, None) == 500 and results.reading_half_width(12000, "rounded") == 500
+    assert results.reading_half_width(12000, "exact") == 0 and results.reading_half_width(1912, None) == 0
+    same = results.growth({"value": 12000, "precision": None}, {"value": 12000, "precision": None})
+    assert same["within_rounding"] is True and same["approximate"] is True, "12K read twice is not 'unchanged'"
+    step = results.growth({"value": 12000, "precision": None}, {"value": 13000, "precision": None})
+    assert step["within_rounding"] is True
+    written = results.growth({"value": 1912, "precision": None}, {"value": 2205, "precision": None})
+    assert written["approximate"] is False and written["change"] == 293
+    # 2,200 could be "2.2K", so with no flag it is about, not exact.
+    assert results.growth({"value": 1912, "precision": None}, {"value": 2200, "precision": None})["approximate"]
+    assert results.approximate_fields({"impressions": 12000, "reactions": 41, "precision": None}) == ["impressions"]
+    # The daily analytics rows keep migration 5's convention, where the reader has flagged every row since.
+    assert results.rounding_half_width(12000, None) == 0.0
+
+
+def test_the_upgraded_database_case_never_reports_a_change_rounding_could_hide(client):
+    """The reviewer's probe: readings stored before the flag existed, 12000 then 13000 and 12000 twice."""
+    rising, flat = urn_hours_ago(52, 1), urn_hours_ago(53, 2)
+    _posts(client, rising, flat)
+    _reading(rising, 26.0, impressions=12000)
+    _reading(rising, 50.0, impressions=13000)
+    _reading(flat, 26.0, impressions=12000)
+    _reading(flat, 50.0, impressions=12000)
+    for urn in (rising, flat):
+        moved = _movement(urn)
+        assert moved["verdict"] == "within_rounding" and moved["approximate"] is True, moved["sentence"]
+        assert "cannot separate" in moved["sentence"]
+    written = urn_hours_ago(54, 3)
+    _posts(client, written)
+    _reading(written, 26.0, impressions=1912)
+    _reading(written, 50.0, impressions=2205)
+    exact = _movement(written)
+    assert exact["verdict"] == "moving" and exact["approximate"] is False
+    assert exact["sentence"].startswith("still moving: +293 impressions")
+    mine = urn_hours_ago(200, 5)
+    _posts(client, mine)
+    _reading(mine, 48.0, impressions=12000, reactions=41)
+    assert client.get(f"/api/v1/insights/posts/{mine}").json()["approximate"] == ["impressions"]
