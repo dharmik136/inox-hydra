@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
 import { Bold, Code, Eraser, Italic, Sparkles, Strikethrough, Underline } from "lucide-react";
 import type { FormatKind } from "@/lib/api";
@@ -38,8 +39,27 @@ const FORMATTERS: { kind: FormatKind; label: string; icon: typeof Bold }[] = [
  * their inverse, and Re-Hook replaces the author's sentence outright.
  */
 export function SelectionToolbar({ position, busy, onFormat, onReHook }: SelectionToolbarProps) {
+  // Centred on the selection, but kept inside the writing column. A
+  // selection at the start of a line put half the toolbar past the column's
+  // left edge, which at 1280 pixels with the labelled rail (cycle 4) fell
+  // under the rail, where its first buttons could not be clicked.
+  const ref = useRef<HTMLDivElement>(null);
+  const [left, setLeft] = useState(position.left);
+  useLayoutEffect(() => {
+    const toolbar = ref.current;
+    const column = toolbar?.offsetParent as HTMLElement | null;
+    if (!toolbar || !column) {
+      setLeft(position.left);
+      return;
+    }
+    const half = toolbar.offsetWidth / 2;
+    const furthest = Math.max(half, column.clientWidth - half);
+    setLeft(Math.min(Math.max(position.left, half), furthest));
+  }, [position.left]);
+
   return (
     <motion.div
+      ref={ref}
       initial={{ opacity: 0, y: 4, scale: 0.96 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 4, scale: 0.96 }}
@@ -48,7 +68,7 @@ export function SelectionToolbar({ position, busy, onFormat, onReHook }: Selecti
       transition={{ type: "spring", stiffness: 520, damping: 32, mass: 0.6 }}
       role="toolbar"
       aria-label="Formatting"
-      style={{ left: position.left, top: position.top }}
+      style={{ left, top: position.top }}
       className="absolute z-20 flex -translate-x-1/2 -translate-y-[calc(100%+10px)] items-center gap-0.5 rounded-md border border-edge bg-raised p-1 shadow-xl"
       /* The textarea loses focus on mousedown otherwise, which collapses the
          selection before the click ever lands. */
