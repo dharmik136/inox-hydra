@@ -623,7 +623,32 @@ function Cadence({
         <Stat label="Slots a week" value={String(weekly)} />
       </dl>
 
-      <div className="mt-3 border-b border-edge pb-3">
+      {/* When the next post can go out, before the rhythm it is judged
+          against: the rhythm grew when the cadence block moved here from
+          Patterns, and pushed this answer to the bottom edge of the first
+          view at 1440x900. */}
+      {health.next_smart_slot && (
+        <div className="mt-3 border-b border-edge pb-3">
+          <p className="studio-label mb-1">Next slot offered</p>
+          <p className="text-[13px] text-ink-primary">
+            {health.next_smart_slot.day_name} {formatSlotTime(health.next_smart_slot.time_slot)}
+            <span className="mx-2 text-ink-muted">·</span>
+            <span className="text-ink-secondary">{health.next_smart_slot.label}</span>
+          </p>
+          <p className="studio-meta mt-1">
+            {health.next_smart_slot.cooldown_satisfied ? (
+              <span className="text-signal-green-text">
+                {health.next_smart_slot.hours_clearance}H CLEAR OF THE LAST POST
+              </span>
+            ) : (
+              <span className="text-signal-orange-text">
+                ONLY {health.next_smart_slot.hours_clearance}H SINCE THE LAST POST
+              </span>
+            )}
+          </p>
+        </div>
+      )}
+      <div className="mt-3">
         <p className="studio-label mb-1.5">Against your own rhythm</p>
         {!rhythm ? (
           <p className="text-[13px] leading-relaxed text-ink-muted">
@@ -704,27 +729,6 @@ function Cadence({
         )}
       </div>
 
-      {health.next_smart_slot && (
-        <div className="mt-3">
-          <p className="studio-label mb-1">Next slot offered</p>
-          <p className="text-[13px] text-ink-primary">
-            {health.next_smart_slot.day_name} {formatSlotTime(health.next_smart_slot.time_slot)}
-            <span className="mx-2 text-ink-muted">·</span>
-            <span className="text-ink-secondary">{health.next_smart_slot.label}</span>
-          </p>
-          <p className="studio-meta mt-1">
-            {health.next_smart_slot.cooldown_satisfied ? (
-              <span className="text-signal-green-text">
-                {health.next_smart_slot.hours_clearance}H CLEAR OF THE LAST POST
-              </span>
-            ) : (
-              <span className="text-signal-orange-text">
-                ONLY {health.next_smart_slot.hours_clearance}H SINCE THE LAST POST
-              </span>
-            )}
-          </p>
-        </div>
-      )}
     </section>
   );
 }
