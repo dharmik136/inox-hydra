@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TelegramIngressPanel } from "./TelegramIngressPanel";
 import { useState as useLocalState } from "react";
 import { Archive, Check, Loader2, Network, RotateCcw, ShieldCheck } from "lucide-react";
 import {
@@ -450,6 +451,8 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
       <EgressLedger />
 
       <SessionConnection />
+
+      <TelegramIngressPanel />
     </div>
   );
 }

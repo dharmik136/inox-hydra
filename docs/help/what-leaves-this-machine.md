@@ -18,7 +18,7 @@ Your drafts, posts, leads, analytics, settings and media are one SQLite database
 | `linkedin` | **Send to LinkedIn**, and session or profile checks against LinkedIn | Your post text, its scheduled time and your LinkedIn session cookies | LinkedIn, at its own private scheduling API | No, and the first send from a studio also asks you to acknowledge the account risk once (see [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md)) | `INOX_ALLOW_LINKEDIN_EGRESS` |
 | `library` | A hook template sync. No button in the interface triggers it | A request for a template file | GitHub | Yes | `INOX_ALLOW_LIBRARY_EGRESS` |
 | `updates` | `python -m studio.cli update`, after you opt in with `update enable`. No button in the interface triggers it | A request for a version file | GitHub | Yes, but opt-in first | `INOX_ALLOW_UPDATE_EGRESS` |
-| `ingress` | Only if `TELEGRAM_BOT_TOKEN` or `PRUDENT_TELEGRAM_BOT_TOKEN` is set when the studio starts | Polling for bot messages | Telegram | Yes, but inert without the token | `INOX_ALLOW_INGRESS_EGRESS` |
+| `ingress` | Only if you set up a bot under **Your phone, through Telegram** in Brand Studio's **Local security** tab, or, for maintainers in dev mode, if `TELEGRAM_BOT_TOKEN` or `PRUDENT_TELEGRAM_BOT_TOKEN` is set when the studio starts | A request for your bot's messages; nothing of yours | Telegram | Yes, but inert without a bot | `INOX_ALLOW_INGRESS_EGRESS` |
 
 The update check runs in the command's own process, not in the server, so the ledger below does not count it, and a flag counts for it only if it is set in the terminal where you run the command.
 

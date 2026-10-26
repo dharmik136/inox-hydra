@@ -65,6 +65,7 @@ try:
     from .agno_agentos import orchestrator
     from .image_studio import image_studio_manager, image_providers
     from .ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
+    from .ingress import apply_settings as ingress_apply_settings
     from .crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from .rate_limiter import rate_limiter, write_actor
     from .intelligence_sync import intelligence_sync_engine
@@ -137,6 +138,7 @@ except ImportError:
     from agno_agentos import orchestrator
     from image_studio import image_studio_manager, image_providers
     from ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
+    from ingress import apply_settings as ingress_apply_settings
     from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from rate_limiter import rate_limiter, write_actor
     from intelligence_sync import intelligence_sync_engine
@@ -332,6 +334,14 @@ async def lifespan(app: FastAPI):
     if (os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN")) \
             and devtools.is_dev_mode():
         ingress_daemon.start_worker()
+    else:
+        # A bot the creator set up in Brand Studio's Local security tab runs
+        # without dev mode (cycle 4, decision D6); nothing starts without
+        # both the token and the chat id in the active profile's settings.
+        try:
+            ingress_apply_settings(at_startup=True)
+        except Exception:
+            logging.getLogger("studio.ingress").warning("Could not read the Telegram settings at startup.", exc_info=True)
     yield
     shutdown_scheduler()
     ingress_daemon.stop_worker()
@@ -2027,6 +2037,13 @@ except (ImportError, ValueError):
     from routers import storage as storage_router_module
 
 app.include_router(storage_router_module.router)
+
+# Your phone, through Telegram: the settings behind the Local security panel.
+try:
+    from .routers import phone as phone_router_module
+except ImportError:
+    from routers import phone as phone_router_module
+app.include_router(phone_router_module.router)
 
 DOCS_DIR = search_router_module.DOCS_DIR
 MODULES_DIR = search_router_module.MODULES_DIR

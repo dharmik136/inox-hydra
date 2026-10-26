@@ -177,7 +177,7 @@ extension, and only at the moment you use the feature that needs it.
 | A local image generator (AUTOMATIC1111, Forge or ComfyUI) or a local model through Ollama | If you chose it. These stay on your machine or your network. |
 | A program you connected as a grounding source (MCP) | Only if you add one yourself in Brand Studio. The studio starts that program and reads what it hands back, which you can preview; no writing control in the studio draws on it yet. What that program itself does on the network is its own, outside the studio's view, and `INOX_NO_EGRESS` cannot stop it. |
 | `github.com`, `raw.githubusercontent.com` | Checking whether a newer version has been released, and fetching the template bundle. Update checking is off by default, and nothing in the interface turns it on: you enable it yourself from the command line (`python -m studio.cli update enable`). |
-| `api.telegram.org` | An optional inbound bridge, inactive unless you set a `TELEGRAM_BOT_TOKEN` yourself. |
+| `api.telegram.org` | An optional inbound bridge, inactive unless you set up a bot of your own under Your phone, through Telegram in Brand Studio's Local security tab, or set a `TELEGRAM_BOT_TOKEN` yourself. While it is set up, Inox Hydra asks Telegram for the messages you sent your own bot and sends Telegram nothing but that request. Text you send becomes a draft; a LinkedIn post link becomes a reminder on Today to open that post's analytics at this computer, and the phone's message is never stored as a figure. Your messages pass through Telegram's servers. The bot token is sealed on your disk like an AI key. |
 
 If you configure an AI or image provider, that provider's own privacy policy
 governs what it does with what you send it. We do not see it, do not proxy it,

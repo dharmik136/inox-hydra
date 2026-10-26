@@ -2169,7 +2169,13 @@ export interface TodayBrief {
     /** Queued posts whose time has come, oldest first. The creator posts them. */
     due?: { post_id: string; scheduled_for: string; content: string; excerpt: string }[];
   };
-  open_next: { action: "open" | "setup"; url?: string; reason: string };
+  open_next: {
+    action: "open" | "setup";
+    url?: string;
+    reason: string;
+    /** Present when the page to open is one the phone asked for through the Telegram bot. */
+    phone_request?: { id: number; activity_urn: string; asked_at: string; source: string };
+  };
   /** What the demo cleanup removed, until dismissed; null when there is nothing to say. */
   demo_cleanup?: { removed: { kind: string; count: number }[]; backup: string | null; removed_at: string | null } | null;
 }
@@ -3262,4 +3268,42 @@ export async function fetchRecentDrafts(limit: number): Promise<DraftSummary[]> 
   return (data.posts ?? [])
     .map((row) => ({ id: row.id, content: row.content ?? "", created_at: row.created_at ?? null }))
     .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+}
+
+// -------------------------------------------------------------
+// Your phone, through Telegram: the settings behind Local security
+// -------------------------------------------------------------
+
+export interface IngressSettings {
+  profile: string;
+  /** Both the token and the chat id are set, so the studio asks Telegram for messages. */
+  configured: boolean;
+  /** Whether a token is held. The token itself is sealed and never answered. */
+  has_token: boolean;
+  chat_id: string;
+  /** The studio is asking Telegram for this profile's messages. */
+  running: boolean;
+  /** One bot is asked at a time, and the one being asked was set up in another profile. */
+  running_for_another_profile: boolean;
+  configured_from: "settings" | "environment" | null;
+  last_poll_at: string | null;
+  last_error: string | null;
+  total_messages_processed: number;
+  /** Posts the phone asked the desk to read that have not been read yet. */
+  open_requests: number;
+  tested_against_real_service: boolean;
+  /** The server's own sentence, shown until the owner has tested against the real service. */
+  not_yet_tested: string;
+}
+
+export async function fetchIngressSettings(): Promise<IngressSettings> {
+  return call<IngressSettings>("/api/v1/ingress/settings");
+}
+
+/** Both empty removes the bot and stops asking Telegram. */
+export async function saveIngressSettings(bot_token: string, chat_id: string): Promise<IngressSettings> {
+  return call<IngressSettings>("/api/v1/ingress/settings", {
+    method: "POST",
+    body: JSON.stringify({ bot_token, chat_id }),
+  });
 }

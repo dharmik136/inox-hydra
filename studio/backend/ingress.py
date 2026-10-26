@@ -17,6 +17,7 @@ Strict Invariants:
 - Nothing from the phone is a figure.
 """
 
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import json
@@ -34,11 +35,27 @@ import time
 
 try:
     from .database import get_db, create_draft, get_draft
-    from . import desk_requests, post_identity
+    from . import desk_requests, paths, post_identity, secret_settings
 except ImportError:
     from database import get_db, create_draft, get_draft
     import desk_requests
+    import paths
     import post_identity
+    import secret_settings
+
+# The bot, set up per profile in Brand Studio's Local security tab (cycle 4,
+# decision D6). The token is a secret setting, sealed at rest like the AI key
+# and never answered back; the chat id is the creator's own and is not.
+SETTINGS_TOKEN_KEY = "telegram_bot_token"
+SETTINGS_CHAT_KEY = "telegram_chat_id"
+# A bot token as BotFather issues one: the bot's number, a colon, a secret.
+TOKEN_SHAPE = re.compile(r"^\d{5,15}:[A-Za-z0-9_-]{20,}$")
+# A chat id is an integer; a group's is negative.
+CHAT_ID_SHAPE = re.compile(r"^-?\d{1,20}$")
+# Said by the panel and the help until the owner has run one end-to-end test
+# against the real service; the suite only ever simulates Telegram.
+NOT_YET_TESTED = ("This has not yet been tested against the real Telegram service, only against a "
+                  "simulated one.")
 
 # A LinkedIn address in a message. The app's share menu writes
 # /posts/<slug>-activity-<id>-<suffix> with tracking parameters; the feed
@@ -196,6 +213,15 @@ class TelegramIngressDaemon:
     ):
         self.bot_token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", "") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN", "")
         self.authorized_chat_id = authorized_chat_id or os.environ.get("TELEGRAM_CHAT_ID", "") or os.environ.get("PRUDENT_TELEGRAM_CHAT_ID", "")
+        # Where the token came from: "environment" (a maintainer, dev mode),
+        # "settings" (the Local security tab), or None. apply_settings only
+        # ever stops a worker it started itself.
+        self.configured_from: Optional[str] = "environment" if self.bot_token else None
+        # The creator profile a bot from the settings belongs to. Its messages
+        # are saved there whichever profile is open, so one creator's phone
+        # never files a draft in another creator's studio. None for a
+        # maintainer's bot from the environment, which saves to the open one.
+        self.profile_id: Optional[str] = None
         self.is_running = False
         self._stop_event = threading.Event()
         self.last_update_id = 0
@@ -223,6 +249,22 @@ class TelegramIngressDaemon:
         self.total_messages_processed = 0
         self.last_poll_at: Optional[str] = None
         self.last_error: Optional[str] = None
+
+    def configure(self, bot_token: str, authorized_chat_id: str, origin: Optional[str],
+                  profile_id: Optional[str] = None) -> None:
+        """
+        Points the worker at a bot, and at the profile its messages belong
+        to. The loop reads these on every poll, so a running worker follows a
+        change without a restart; the error ladder starts again, because the
+        old errors were the old bot's.
+        """
+        self.bot_token = bot_token or ""
+        self.authorized_chat_id = authorized_chat_id or ""
+        self.configured_from = origin if self.bot_token else None
+        self.profile_id = profile_id if self.bot_token else None
+        self.consecutive_errors = 0
+        self.rate_limited_until = 0.0
+        self.last_error = None
 
     def is_quiet_hours(self, current_time: Optional[datetime] = None) -> bool:
         """Determines if current time falls within low-power night window (23:00 to 06:00)."""
@@ -347,7 +389,19 @@ class TelegramIngressDaemon:
             else:
                 return None
 
-        # Parse message
+        # A message from Telegram is saved in the profile its bot was set up
+        # in. A message through the local simulate route is the open
+        # profile's, because that is where the person at the keyboard is.
+        pinned = self.profile_id if from_telegram else None
+        if pinned and pinned not in paths.profile_ids():
+            self.last_error = ("The profile this bot was set up in is closed or gone, so its messages are not "
+                               "saved. Set the bot up again in the profile you use.")
+            return None
+        with (paths.using_profile(pinned) if pinned else nullcontext()):
+            return self._store(text)
+
+    def _store(self, text: str) -> Optional[Dict[str, Any]]:
+        """Saves one accepted message: a desk request for a post link, a draft for any text."""
         parsed = IngressMessageParser.parse_message(text)
 
         # A post link is a request to read that post at the desk. Recorded
@@ -582,3 +636,127 @@ class TelegramIngressDaemon:
 
 # Global singleton daemon
 ingress_daemon = TelegramIngressDaemon()
+
+
+# ---------------------------------------------------------------------------
+# The settings behind the Local security panel (cycle 4, decision D6)
+# ---------------------------------------------------------------------------
+
+def read_settings(profile_id: Optional[str] = None) -> Dict[str, str]:
+    """The bot token (unsealed, for the worker) and chat id held in a profile, the open one by default."""
+    with (paths.using_profile(profile_id) if profile_id else nullcontext()):
+        conn = get_db()
+        try:
+            held = {r["key"]: r["value"] for r in conn.execute(
+                "SELECT key, value FROM settings WHERE key IN (?, ?)", (SETTINGS_TOKEN_KEY, SETTINGS_CHAT_KEY))}
+        finally:
+            conn.close()
+    return {
+        "token": secret_settings.unseal(SETTINGS_TOKEN_KEY, held.get(SETTINGS_TOKEN_KEY)),
+        "chat_id": str(held.get(SETTINGS_CHAT_KEY) or "").strip(),
+    }
+
+
+def apply_settings(at_startup: bool = False) -> bool:
+    """
+    Points the worker at a bot set up in the settings and starts it. Returns
+    whether one is running for a profile's settings.
+
+    One worker runs per studio, so one bot is asked at a time. On a save it
+    is the open profile's; at startup, the first profile the licence opens
+    that has one. When the open profile's bot is removed, a worker serving
+    that profile stops. A worker a maintainer started from the environment
+    is left alone.
+    """
+    active = paths.get_active_profile_id()
+    candidates = paths.profile_ids() if at_startup else [active]
+    for profile_id in candidates:
+        try:
+            held = read_settings(profile_id)
+        except Exception:
+            # A profile whose database cannot be read keeps no bot that can run.
+            continue
+        if held["token"] and held["chat_id"]:
+            ingress_daemon.configure(held["token"], held["chat_id"], origin="settings", profile_id=profile_id)
+            ingress_daemon.start_worker()
+            return True
+    if not at_startup and ingress_daemon.configured_from == "settings" and ingress_daemon.profile_id == active:
+        ingress_daemon.stop_worker()
+        ingress_daemon.configure("", "", origin=None)
+    return False
+
+
+def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
+    """
+    Keeps the token (sealed) and the chat id, then applies them. Both empty
+    removes them and stops the worker. A value of the wrong shape is refused
+    with a sentence and nothing is written.
+    """
+    token = (bot_token or "").strip()
+    chat = (chat_id or "").strip()
+    if not token and not chat:
+        conn = get_db()
+        try:
+            with conn:
+                conn.execute("DELETE FROM settings WHERE key IN (?, ?)", (SETTINGS_TOKEN_KEY, SETTINGS_CHAT_KEY))
+        finally:
+            conn.close()
+        apply_settings()
+        return describe_settings()
+    if not TOKEN_SHAPE.match(token):
+        return {"status": "error", "message": (
+            "That is not the shape of a Telegram bot token: BotFather issues a number, a colon and a secret, "
+            "for example 123456789:AAF... Paste it exactly as given. Nothing was stored.")}
+    if not CHAT_ID_SHAPE.match(chat):
+        return {"status": "error", "message": (
+            "Your chat id is a number, digits only. Without it the bot cannot tell you from anybody else, "
+            "so both are needed. Nothing was stored.")}
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+                (SETTINGS_TOKEN_KEY, secret_settings.seal(SETTINGS_TOKEN_KEY, token)))
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+                (SETTINGS_CHAT_KEY, chat))
+    finally:
+        conn.close()
+    apply_settings()
+    return describe_settings()
+
+
+def describe_settings() -> Dict[str, Any]:
+    """What the Local security panel shows. Never the token."""
+    held = read_settings()
+    status = ingress_daemon.get_daemon_status()
+    conn = get_db()
+    try:
+        waiting = desk_requests.open_count(conn)
+    finally:
+        conn.close()
+    active = paths.get_active_profile_id()
+    from_settings = ingress_daemon.configured_from == "settings"
+    # Asking Telegram for this profile: its own bot, or a maintainer's bot
+    # from the environment, which saves to whichever profile is open.
+    running_here = bool(status["is_running"]) and (
+        (from_settings and ingress_daemon.profile_id == active) or ingress_daemon.configured_from == "environment")
+    return {
+        "status": "success",
+        "profile": active,
+        "configured": bool(held["token"] and held["chat_id"]),
+        "has_token": bool(held["token"]),
+        "chat_id": held["chat_id"],
+        "running": running_here,
+        "running_for_another_profile": bool(status["is_running"]) and from_settings
+                                       and ingress_daemon.profile_id != active,
+        "configured_from": ingress_daemon.configured_from,
+        "last_poll_at": status["last_poll_at"],
+        "last_error": status["last_error"],
+        "total_messages_processed": status["total_messages_processed"],
+        "open_requests": waiting,
+        "tested_against_real_service": False,
+        "not_yet_tested": NOT_YET_TESTED,
+    }
