@@ -224,6 +224,25 @@ def test_the_day_rows_carry_their_own_window(client):
     assert detail["days"] == sorted(detail["days"], key=lambda d: d["day"], reverse=True)
 
 
+def test_all_readers_by_day_say_which_days_were_read_and_which_were_not_kept(client):
+    import health
+    _capture("engagers", _now() - timedelta(days=2), items_seen=4, items_kept=3)
+    _capture("profile", _now() - timedelta(days=2, hours=1), items_seen=1, items_kept=1, drift='["name"]')
+    _capture("engagers", _now() - timedelta(days=5), items_seen=None, items_kept=None)
+    by_day = client.get("/api/v1/bridge/readers").json()["by_day"]
+    assert by_day["label"] == f"last {health.BY_DAY_SHOWN} days"
+    rows = {r["day"]: r for r in by_day["rows"]}
+    assert len(rows) == health.BY_DAY_SHOWN
+
+    def day(n):
+        return (_now() - timedelta(days=n)).date().isoformat()
+
+    assert rows[day(2)] == {"day": day(2), "state": "read", "runs": 2, "items_seen": 5, "items_kept": 4, "drift_runs": 1}
+    assert rows[day(5)]["state"] == "read" and rows[day(5)]["items_seen"] is None, "a day that counted nothing is not 0"
+    assert rows[day(3)]["state"] == "nothing_read" and rows[day(3)]["runs"] is None
+    assert rows[day(9)]["state"] == "not_kept", "a day before the first one kept reads as silence"
+
+
 # ---------------------------------------------------------------------------
 # Heartbeat gaps and extension versions
 # ---------------------------------------------------------------------------

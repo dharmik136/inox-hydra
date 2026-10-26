@@ -3345,6 +3345,21 @@ export interface HealthReaders {
   /** How long the day rows are kept. */
   days_window: { days: number; label: string };
   readers: HealthReader[];
+  /** Every reader together, a row per day, newest first. */
+  by_day: {
+    days: number;
+    label: string;
+    /** The first day the studio kept; a day before it is "not_kept", never silence. */
+    first_held: string | null;
+    rows: {
+      day: string;
+      state: "read" | "nothing_read" | "not_kept";
+      runs: number | null;
+      items_seen: number | null;
+      items_kept: number | null;
+      drift_runs: number | null;
+    }[];
+  };
   heartbeats: HealthHeartbeats;
 }
 

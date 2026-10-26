@@ -41,6 +41,9 @@ except ImportError:
     import onboarding
     from database import get_db
 
+# All readers by day, on the first view: this many days, newest first.
+BY_DAY_SHOWN = 14
+
 # The newest runs a reader's detail lists. The count beside them is the whole
 # window's; the rows are a page of it, so a reader that ran four hundred
 # times this week does not send four hundred rows to the screen.
@@ -169,6 +172,7 @@ def readers() -> Dict[str, Any]:
             })
         heartbeat_days = onboarding.HEARTBEAT_RETENTION.days
         beats = _heartbeats(conn, (windows["now"] - onboarding.HEARTBEAT_RETENTION).isoformat(), heartbeat_days)
+        by_day = _by_day(conn, windows["now"])
     finally:
         conn.close()
     return {
@@ -176,8 +180,32 @@ def readers() -> Dict[str, Any]:
         "window": windows["window"],
         "days_window": windows["days_window"],
         "readers": listed,
+        "by_day": by_day,
         "heartbeats": beats,
     }
+
+
+def _by_day(conn, now: datetime) -> Dict[str, Any]:
+    """
+    Every reader together, one row per UTC day for the last BY_DAY_SHOWN
+    days, from the day rows the migration keeps. A day with no row after the
+    first day held is a day the bridge read nothing; a day before it is a day
+    the studio was not yet keeping, and says so rather than reading as silence.
+    """
+    first_held = conn.execute("SELECT MIN(day) FROM capture_days").fetchone()[0]
+    since = (now.date() - timedelta(days=BY_DAY_SHOWN - 1)).isoformat()
+    held = {r["day"]: r for r in conn.execute(
+        "SELECT day, SUM(runs) AS runs, SUM(items_seen) AS items_seen, SUM(items_kept) AS items_kept, "
+        "SUM(drift_runs) AS drift_runs FROM capture_days WHERE day >= ? GROUP BY day", (since,))}
+    rows = []
+    for n in range(BY_DAY_SHOWN):
+        day = (now.date() - timedelta(days=n)).isoformat()
+        row = held.get(day)
+        state = "read" if row else ("nothing_read" if first_held and day >= first_held else "not_kept")
+        rows.append({"day": day, "state": state,
+                     "runs": row["runs"] if row else None, "items_seen": row["items_seen"] if row else None,
+                     "items_kept": row["items_kept"] if row else None, "drift_runs": row["drift_runs"] if row else None})
+    return {"days": BY_DAY_SHOWN, "label": f"last {BY_DAY_SHOWN} days", "first_held": first_held, "rows": rows}
 
 
 def reader(extractor: str) -> Optional[Dict[str, Any]]:

@@ -19,7 +19,7 @@ import {
 } from "@/lib/api";
 import { reportBridge } from "@/lib/bridgeState";
 import { useRefresh } from "@/lib/refresh";
-import { formatLocal } from "@/lib/time";
+import { formatLocal, formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 /**
@@ -246,6 +246,42 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
               A reader that cannot read found the page but not the fields it needs, which usually means LinkedIn has
               changed how the page is built. Nothing from that part is being captured until the extension is updated.
             </p>
+          )}
+
+          {readers && (
+            <div className="mt-5">
+              <p className="studio-label mb-2">All readers by day, {readers.by_day.label}</p>
+              <table className="w-full text-left text-[12px]">
+                <thead>
+                  <tr className="studio-meta text-[10px] text-ink-muted">
+                    <th className="py-1 font-normal">DAY (UTC)</th>
+                    <th className="py-1 pl-3 text-right font-normal">RUNS</th>
+                    <th className="py-1 pl-3 text-right font-normal">SEEN</th>
+                    <th className="py-1 pl-3 text-right font-normal">KEPT</th>
+                    <th className="py-1 pl-3 text-right font-normal">DRIFTED</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-edge border-y border-edge">
+                  {readers.by_day.rows.map((row) => (
+                    <tr key={row.day}>
+                      <td className="py-0.5 text-ink-secondary">{formatLocalDay(`${row.day}T12:00:00Z`)}</td>
+                      {row.state === "read" ? (
+                        <>
+                          <td className="py-0.5 pl-3 text-right tabular-nums">{(row.runs ?? 0).toLocaleString()}</td>
+                          <td className="py-0.5 pl-3 text-right tabular-nums whitespace-nowrap">{measured(row.items_seen)}</td>
+                          <td className="py-0.5 pl-3 text-right tabular-nums whitespace-nowrap">{measured(row.items_kept)}</td>
+                          <td className="py-0.5 pl-3 text-right tabular-nums">{(row.drift_runs ?? 0).toLocaleString()}</td>
+                        </>
+                      ) : (
+                        <td colSpan={4} className="py-0.5 pl-3 text-right text-ink-muted">
+                          {row.state === "nothing_read" ? "nothing read" : "before the studio kept days"}
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
           {listed.length > 0 && working + drifting === 0 && onOpenSetup && (
             <p className="mt-2 text-[12px] leading-snug text-ink-muted">

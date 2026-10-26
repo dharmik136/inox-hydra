@@ -35,6 +35,13 @@ Click a reader's name to open its runs: each run's time, the kind of page, what 
 
 When a reader is **CANNOT READ**, the page was found but the fields it needs could not be read, which usually means LinkedIn has changed how the page is built. Nothing from that part is captured until the extension is updated. There is nothing to fix on your side; keep the studio up to date.
 
+## All readers by day
+
+Under the readers, one row per day for the last 14 days, newest first, with every reader together: how many runs, how much they saw and kept, and how many could not read a field. These rows are kept for 180 days, so they outlive the week of runs. Days are counted in UTC.
+
+- **nothing read**: a day the studio was keeping, on which no reader ran. The bridge browser was closed, or no LinkedIn page was open.
+- **before the studio kept days**: a day before the studio began keeping these rows, which it did from the version that added them, starting with the week of runs it still held. Not a day of silence.
+
 ## Which readers there are
 
 The table lists these seven parts, the same seven Setup used to list:
