@@ -661,12 +661,24 @@ def test_half_lives_are_compared_through_spread_and_difference(home):
         conn.close()
 
 
-DERIVATIONS = ("movement", "half_life", "half_lives", "usual_at_age", "growth", "rounding_half_width",
-               "approximate_fields", "readings_of", "half_life_spread", "half_life_difference")
+DERIVATIONS = ("movement", "half_life", "half_lives", "half_life_spread", "half_life_difference", "usual_at_age",
+               "growth", "readings_of", "series_source", "series_words", "rounding_half_width",
+               "reading_half_width", "approximate_fields")
+# The sentence's wording, which may live in results.py only. Compared with
+# whitespace, quotes and plus signs removed, so a sentence split across
+# string literals ("still " + "moving") is the same sentence.
+SENTENCE_PHRASES = ("still moving", "since the reading", "the readings' rounding cannot separate",
+                    "interpolated between readings", "its first reading already held", "a half-life needs",
+                    "the half-life waits")
+UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 
 
-def _code_strings(tree):
-    """Every string literal in the code, docstrings left out: a docstring may describe a sentence it does not print."""
+def _flat(text):
+    return re.sub(r"[\s'\"`+]", "", text.lower())
+
+
+def _python_strings(tree):
+    """Every string literal in source order, docstrings left out: a docstring may describe a sentence."""
     docstrings = set()
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -674,20 +686,61 @@ def _code_strings(tree):
             if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
                     and isinstance(body[0].value.value, str):
                 docstrings.add(id(body[0].value))
-    return [node.value for node in ast.walk(tree)
-            if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings]
+    found = [node for node in ast.walk(tree)
+             if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings]
+    return [node.value for node in sorted(found, key=lambda n: (n.lineno, n.col_offset))]
 
 
-def _second_definitions(sources):
-    """Files that define one of the engine's derivations or print its sentence themselves."""
+def _python_bindings(relative, tree):
+    """
+    A derivation defined or bound outside results.py: a def or class of its
+    name anywhere, a lambda bound to it anywhere, or a module or class level
+    binding that is not an alias to the engine (results.<name>). A local
+    holding the engine's answer (half_life = results.half_life(...)) is not one.
+    """
+    found = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.name in DERIVATIONS:
+            found.append(f"{relative}:{node.lineno}: def {node.name}")
+    top = list(tree.body)
+    for node in list(top):
+        if isinstance(node, ast.ClassDef):
+            top.extend(node.body)
+        if isinstance(node, (ast.If, ast.Try)):
+            for field in ("body", "orelse", "finalbody"):
+                top.extend(getattr(node, field, []) or [])
+    top_ids = {id(node) for node in top}
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
+            continue
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        names = [t.id for target in targets for t in ast.walk(target) if isinstance(t, ast.Name)]
+        alias = (isinstance(node.value, ast.Attribute) and isinstance(node.value.value, ast.Name)
+                 and node.value.value.id == "results")
+        for name in names:
+            if name in DERIVATIONS and (isinstance(node.value, ast.Lambda) or (id(node) in top_ids and not alias)):
+                found.append(f"{relative}:{node.lineno}: {name} bound outside results.py")
+    return found
+
+
+def _ui_text(source):
+    """Interface source with its comments taken out: a comment may describe a sentence."""
+    source = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
+    return re.sub(r"(?m)//.*$", "", source)
+
+
+def _one_definition_offences(py_sources, ts_sources):
     offenders = []
-    for relative, text in sources.items():
+    for relative, text in py_sources.items():
         tree = ast.parse(text)
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef) and node.name in DERIVATIONS:
-                offenders.append(f"{relative}:{node.lineno}: def {node.name}()")
-        if any(re.search(r"still moving|hours to half of the", value) for value in _code_strings(tree)):
-            offenders.append(f"{relative}: prints the engine's sentence itself")
+        offenders += _python_bindings(relative, tree)
+        flat = _flat("".join(_python_strings(tree)))
+        offenders += [f"{relative}: prints the engine's sentence ({phrase!r})" for phrase in SENTENCE_PHRASES
+                      if _flat(phrase) in flat]
+    for relative, text in ts_sources.items():
+        flat = _flat(_ui_text(text))
+        offenders += [f"{relative}: builds the engine's sentence ({phrase!r})" for phrase in SENTENCE_PHRASES
+                      if _flat(phrase) in flat]
     return offenders
 
 
@@ -705,10 +758,25 @@ def _backend_sources():
     return out
 
 
+def _ui_sources():
+    out = {}
+    for root, _dirs, files in os.walk(UI_SRC):
+        for name in sorted(files):
+            if name.endswith((".ts", ".tsx")):
+                path = os.path.join(root, name)
+                with open(path, encoding="utf-8") as handle:
+                    out[os.path.relpath(path, UI_SRC)] = handle.read()
+    return out
+
+
 def test_the_decay_sentence_and_the_half_life_have_one_definition():
-    """The guard: a second copy of a derivation is how screens come to disagree."""
-    offenders = _second_definitions(_backend_sources())
-    assert not offenders, "a module derives for itself what results.py owns:\n" + "\n".join(offenders)
+    """
+    The guard: the derivations and the sentence's wording live in results.py
+    and nowhere else in studio/backend or studio/ui/src. A second copy is how
+    screens come to disagree.
+    """
+    offenders = _one_definition_offences(_backend_sources(), _ui_sources())
+    assert not offenders, "a module derives or words for itself what results.py owns:\n" + "\n".join(offenders)
     with open(os.path.join(BACKEND, "today.py"), encoding="utf-8") as handle:
         assert "results.movement(" in handle.read(), "Today prints a sentence it did not ask the engine for"
     with open(os.path.join(BACKEND, "routers", "insights.py"), encoding="utf-8") as handle:
@@ -721,8 +789,8 @@ def test_the_one_definition_guard_is_not_vacuous():
     planted = {"today.py": "def half_life(conn, urn):\n    return None\n",
                "routers/insights.py": 'SENTENCE = "still moving: +1"\n',
                "fine.py": 'def tell():\n    """Says whether it is still moving."""\n    return None\n'}
-    found = _second_definitions(planted)
-    assert any("def half_life()" in f for f in found) and any("insights.py: prints" in f for f in found)
+    found = _one_definition_offences(planted, {})
+    assert any("def half_life" in f for f in found) and any("insights.py: prints" in f for f in found)
     assert not any(f.startswith("fine.py") for f in found)
 
 
@@ -1328,3 +1396,30 @@ def test_the_policy_guard_is_not_vacuous():
     assert "saves" in policy[start:end]
     dropped = policy[:start] + policy[start:end].replace("saves", "keeps", 1) + policy[end:]
     assert any("'saves'" in p for p in _policy_disagreements(source, dropped))
+
+
+# ---------------------------------------------------------------------------
+# Review N12 and the coordinator's item 8: the one-definition guard, widened
+# ---------------------------------------------------------------------------
+
+ESCAPES_PY = {
+    "today.py": "movement = lambda conn, urn: None\n",
+    "routers/insights.py": 'SENTENCE = "still " + "moving: +1"\n',
+}
+ESCAPE_TSX = {"components/TodaySurface.tsx": 'export const line = () => <p>{"Still " + "moving"}: +1</p>;\n'}
+ALLOWED_PY = {
+    "fine.py": ('def tell():\n    """Says whether it is still moving."""\n    return None\n\n'
+                "rounding_half_width = results.rounding_half_width\n\n"
+                "def detail(conn, urn):\n    half_life = results.half_life(conn, urn)\n    return half_life\n"),
+}
+ALLOWED_TSX = {"components/Fine.tsx": "// Whether it is still moving, from results.movement.\n"
+                                      "{/* still moving, said by the engine */}\nexport const x = 1;\n"}
+
+
+def test_the_widened_guard_catches_the_reviewers_three_escapes():
+    found = _one_definition_offences(ESCAPES_PY, ESCAPE_TSX)
+    assert any("today.py" in f and "movement" in f for f in found), found
+    assert any("routers/insights.py" in f for f in found), found
+    assert any("TodaySurface.tsx" in f for f in found), found
+    assert not _one_definition_offences(ALLOWED_PY, ALLOWED_TSX), "a description, an alias or a result is not a copy"
+
