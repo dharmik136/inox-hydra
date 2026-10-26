@@ -73,6 +73,31 @@ def test_the_guard_catches_the_cut_that_shipped():
     assert not _own_cuts("ratioTone(ratio)"), "a surface reading the one cut is flagged"
 
 
+def _help_cuts():
+    """Every cut the help states as "Green is at least X times your usual, orange is Y times or less"."""
+    found = []
+    help_dir = os.path.join(REPO_ROOT, "docs", "help")
+    for name in sorted(os.listdir(help_dir)):
+        if not name.endswith(".md"):
+            continue
+        text = _read(os.path.join(help_dir, name))
+        for high, low in re.findall(r"Green is at least ([0-9.]+) times your usual, orange is ([0-9.]+) times or less", text):
+            found.append((name, float(high), float(low)))
+    return found
+
+
+def test_the_help_states_the_engines_cut():
+    """
+    Two articles said green from 1.2 for as long as the screens did; a cut
+    written into prose drifts the same way one written into a component does.
+    """
+    cuts = _help_cuts()
+    assert cuts, "no help article states the colour cut any more; drop this test or say it again"
+    wrong = [(name, high, low) for name, high, low in cuts
+             if (high, low) != (results.NOTABLE_HIGH, results.NOTABLE_LOW)]
+    assert not wrong, f"the help colours at a cut the engine does not use: {wrong}"
+
+
 def test_every_surface_that_colours_a_ratio_reads_the_one_module():
     colouring = []
     for name in sorted(os.listdir(COMPONENTS)):

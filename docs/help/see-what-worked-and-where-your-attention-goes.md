@@ -15,7 +15,7 @@ The posts are a table, one row each, with columns for the post, its date (for ex
 - **Sort** offers newest, oldest, most reactions, most impressions and most comments.
 - The count reads, for example, `1-20 of 1,417`, with **Previous** and **Next** and PAGE 1 OF 71. Twenty rows are shown at a time.
 
-Each figure on a settled row is followed by how it compares with your usual, for example "55 REACTIONS (1.8x)". Green is at least 1.2 times your usual, orange is 0.8 times or less. A post that has not settled yet is marked **STILL GROWING** and not compared, because its numbers are still arriving. Reach and response are given as percentiles against your other posts, for example `p72/p48`, or say the post was not read at a comparable age.
+Each figure on a settled row is followed by how it compares with your usual, for example "55 REACTIONS (1.8x)". Green is at least 1.25 times your usual, orange is 0.8 times or less, and anything between is no difference your posts can separate, so it is not coloured. A post that has not settled yet is marked **STILL GROWING** and not compared, because its numbers are still arriving. Reach and response are given as percentiles against your other posts, for example `p72/p48`, or say the post was not read at a comparable age.
 
 The settled posts furthest above your usual reactions are marked **WORTH REPURPOSING**, and the ones furthest below **UNDERPERFORMED**.
 

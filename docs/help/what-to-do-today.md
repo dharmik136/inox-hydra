@@ -39,7 +39,7 @@ When it can be done fairly, the studio compares it with your usual:
 - Your usual is the median of your earlier posts read at that age, up to your last 20.
 - At least three earlier posts must have a reading at that age.
 
-The figure reads, for example, "70 vs 35 (2.0x) median of 4". Green is at least 1.2 times your usual, orange is 0.8 times or less.
+The figure reads, for example, "70 vs 35 (2.0x) median of 4". Green is at least 1.25 times your usual, orange is 0.8 times or less, and anything between is no difference your posts can separate, so it is not coloured.
 
 When the comparison cannot be made, the screen says why instead of showing a number: the post is too new, it was not read at about two days old, or too few earlier posts were.
 
