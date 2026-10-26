@@ -941,6 +941,87 @@ def test_the_watcher_is_put_down_for_a_restore_and_picks_up_after(studio):
         stream.close()
 
 
+def test_a_fresh_home_is_left_alone_until_init_db_has_set_it_up(studio, monkeypatch):
+    """
+    2.9.0's Windows run: a test switched INOX_HYDRA_HOME to a brand-new home,
+    and init_db failed inside get_db with "database is locked". The watcher,
+    following the active database, opened the new file the moment it existed,
+    while init_db was switching it to WAL and running the migrations, and
+    Windows refuses that work while another connection holds the file. The
+    product's case is creating or switching to a new creator profile.
+
+    Here the watcher looks every 10 ms while a window listens, init_db runs on
+    a fresh home in another thread, and every database the watcher opens is
+    checked: it must never open one whose schema is not there yet, init_db must
+    succeed, and the watcher must follow the new database once it is ready.
+    """
+    import sqlite_open
+
+    monkeypatch.setattr(changes, "WATCH_EVERY_S", 0.01)
+    real_connect = sqlite_open.connect
+    opened = []
+
+    def watched_connect(*args, **kwargs):
+        conn = real_connect(*args, **kwargs)
+        if threading.current_thread().name == "studio-changes-watch":
+            opened.append((str(args[0]), int(conn.execute("PRAGMA user_version").fetchall()[0][0])))
+        return conn
+
+    monkeypatch.setattr(sqlite_open, "connect", watched_connect)
+    stream = Stream(studio["port"])
+    try:
+        stream.event()
+        assert _wait_until(lambda: changes.watch_state()["ticking"], timeout=3.0)
+        # Past any one second sleep the thread was already in, and looking
+        # every 10 ms, so it cannot sleep through init_db's tens of milliseconds.
+        time.sleep(changes.IDLE_CLOSE_S and 1.2)
+        before = changes.watch_state()["looks"]
+        time.sleep(0.2)
+        assert changes.watch_state()["looks"] - before >= 5, "the watcher is not looking fast enough to test this"
+        fresh = tempfile.mkdtemp(prefix="inox_t2_fresh_home_")
+        monkeypatch.setenv("INOX_HYDRA_HOME", fresh)
+        # The file exists, in WAL, and its schema is not there yet: held open
+        # long enough that a watcher looking every 10 ms cannot miss it.
+        real_ensure = database.ensure_schema
+
+        def slow_ensure(*args, **kwargs):
+            time.sleep(0.2)
+            return real_ensure(*args, **kwargs)
+
+        monkeypatch.setattr(database, "ensure_schema", slow_ensure)
+        failure = []
+
+        def set_up():
+            try:
+                database.init_db()
+            except Exception as error:  # pragma: no cover - the fault this test exists for
+                failure.append(error)
+
+        worker = threading.Thread(target=set_up)
+        worker.start()
+        worker.join(timeout=60)
+        assert not worker.is_alive() and not failure, f"init_db on a fresh home failed: {failure}"
+        new_path = paths.get_db_path()
+        assert _wait_until(lambda: changes.watch_state()["path"] == new_path and changes.watch_state()["open"],
+                           timeout=5.0), f"the watcher did not follow the new database: {changes.watch_state()}"
+        early = [(path, version) for path, version in opened if version == 0]
+        assert not early, f"the watcher opened a database before its schema was there: {early}"
+    finally:
+        stream.close()
+        monkeypatch.undo()
+
+
+def test_the_watcher_creates_no_database_file(studio, monkeypatch):
+    """A home whose database does not exist yet is never given one by the watcher."""
+    empty = tempfile.mkdtemp(prefix="inox_t2_no_db_")
+    monkeypatch.setenv("INOX_HYDRA_HOME", empty)
+    target = paths.get_db_path()
+    assert not os.path.exists(target)
+    changes._watch.look()
+    assert not os.path.exists(target), "the watcher created a database file"
+    assert changes.watch_state()["open"] is False
+
+
 def test_the_test_client_can_read_the_stream_too(studio):
     """
     The in-process client the rest of the suite uses sees the same first

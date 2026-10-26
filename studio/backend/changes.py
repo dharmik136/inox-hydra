@@ -53,6 +53,7 @@ import sqlite3
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
@@ -110,6 +111,32 @@ IDLE_CLOSE_S = 60.0
 # The hold a restore puts on the database files, shared between both import
 # names of sqlite_open; see that module.
 _FILES = sys.modules.get("_inox_database_files")
+
+
+# How long one look waits for a lock another connection holds, at most.
+WATCH_BUSY_S = 5.0
+
+# SQLite's file header: the first 16 bytes, and user_version, the schema
+# version the migrations stamp, as four big-endian bytes at offset 60.
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+def _initialised(path: str) -> bool:
+    """
+    Whether a database file is there and set up, read from its header with
+    plain file reads, never through SQLite. A file init_db is still creating,
+    switching to WAL or migrating has a user_version of 0 until its migrations
+    are written back into it, and it is left alone until then: on Windows
+    another connection on the file while that runs is refused with "database
+    is locked", which is how 2.9.0's Windows run failed on a fresh home, and
+    how creating or switching to a new creator profile would have.
+    """
+    try:
+        with open(path, "rb") as handle:
+            header = handle.read(100)
+    except OSError:
+        return False
+    return len(header) == 100 and header[:16] == _SQLITE_MAGIC and int.from_bytes(header[60:64], "big") > 0
 
 
 def _files_free() -> bool:
@@ -349,15 +376,23 @@ class _Watch:
         path = paths.get_db_path()
         if self.conn is None or path != self.path:
             had_one = self.version is not None
+            # Let go of the old file before looking at the new one: a home or
+            # profile change, or a restore that has just let go.
             self._close_locked()
-            if not os.path.exists(path):
+            if not _initialised(path):
                 return "closed"
             try:
-                # Closed from the restore's thread, so not bound to this one.
-                # Read only; the connection never writes, so it never holds
-                # a lock a writer waits on.
-                self.conn = sqlite_open.connect(path, timeout=5.0, check_same_thread=False)
+                # mode=rw opens the file without ever creating it. Closed from
+                # the restore's thread, so not bound to this one. Query only:
+                # it never writes, so it never holds a lock a writer waits on,
+                # and fetchall ends every statement, so it holds no read
+                # transaction between looks.
+                self.conn = sqlite_open.connect(Path(path).as_uri() + "?mode=rw", uri=True,
+                                                timeout=WATCH_BUSY_S, check_same_thread=False)
                 self.conn.execute("PRAGMA query_only = ON")
+                if not int(self.conn.execute("PRAGMA user_version").fetchall()[0][0]):
+                    self._close_locked()
+                    return "closed"
                 self.version = self._read_locked()
             except sqlite3.Error as why:
                 _log.warning("The change watcher could not open the database: %s", why)
