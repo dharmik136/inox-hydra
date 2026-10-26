@@ -327,12 +327,64 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
             "AND observed_at >= ?", (latest["activity_urn"],
                                      (datetime.now(timezone.utc) - timedelta(hours=12)).isoformat())).fetchone()
         if not recent:
+            ever = conn.execute(
+                "SELECT 1 FROM post_metric_observations WHERE activity_urn = ? AND source = 'post_analytics'",
+                (latest["activity_urn"],)).fetchone()
             return {"action": "open", "url": latest["analytics_url"],
-                    "reason": "Your latest post is in its first three days and its figures were not read in the last 12 hours."}
+                    "reason": ("Your latest post has no reading yet in its first hours; a reading taken early "
+                               "is the first point its settle curve is built from."
+                               if not ever else
+                               "Your latest post is in its first three days and its figures were not read in the last 12 hours.")}
+    asked = _cadence_ask(state, latest, conn)
+    if asked:
+        return asked
     if latest:
         return {"action": "open", "url": latest["url"],
                 "reason": "Opening your latest post picks up anyone who has commented since."}
     return {"action": "setup", "reason": "No post of yours has been imported yet."}
+
+
+# The readings a settle curve needs that no natural visit supplies. Four
+# points matter for a post: about 2 hours, 24 hours, 48 hours and 7 days.
+# The first three come from the visits a creator makes anyway (the post soon
+# after posting, the next morning, the two-day check). The day-7 point and
+# the Activity page's late readings of older posts were never asked for.
+DAY_SEVEN_WINDOW_HOURS = (144.0, 240.0)
+# A reading taken when the post was at least this old counts as its week point.
+DAY_SEVEN_READ_AT_HOURS = 120.0
+ACTIVITY_ASK_AFTER = timedelta(days=7)
+
+
+def _cadence_ask(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) -> Optional[Dict[str, Any]]:
+    """
+    The day-7 ask, then the weekly Activity > Posts ask, or None.
+
+    The day-7 ask comes first because a post is at its week point for four
+    days and the reading is the denominator of its reach half-life; the
+    Activity page can be read any day. Both are a page the creator opens,
+    read by the extension as every page is; nothing here acts on LinkedIn.
+    """
+    if latest and latest.get("analytics_url") and \
+            DAY_SEVEN_WINDOW_HOURS[0] <= latest["age_hours"] <= DAY_SEVEN_WINDOW_HOURS[1]:
+        week_point = conn.execute(
+            "SELECT 1 FROM post_metric_observations WHERE activity_urn = ? AND source = 'post_analytics' "
+            "AND age_hours >= ?", (latest["activity_urn"], DAY_SEVEN_READ_AT_HOURS)).fetchone()
+        if not week_point:
+            return {"action": "open", "url": latest["analytics_url"],
+                    "reason": ("Your latest post is about a week old and has no reading from that age; "
+                               "a reading at about a week old is what your usual settle age rests on.")}
+    vanity = (state.get("identity") or {}).get("vanity")
+    if not vanity:
+        return None
+    posts_reader = next((h for h in state["health"] if h["extractor"] == "activity_posts"), None)
+    last_good = posts_reader["last_good_at"] if posts_reader else None
+    stale = last_good is None or \
+        datetime.fromisoformat(last_good) < datetime.now(timezone.utc) - ACTIVITY_ASK_AFTER
+    if stale:
+        return {"action": "open", "url": onboarding.profile_url_for(vanity) + "recent-activity/all/",
+                "reason": ("Your posts have not been read from your Activity page in the last week; one visit "
+                           "reads every post still on screen and gives your older posts their late readings.")}
+    return None
 
 
 # What the demo cleanup removed, written by database.clean_up_demo_data with
