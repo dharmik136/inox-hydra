@@ -107,7 +107,7 @@ The extension reads LinkedIn's pages, and LinkedIn changes how they are built wi
 | Your comments | The **Comments you left** import |
 | Your reactions | The **Posts you reacted to** import |
 | Creator analytics | The figures in **Analytics** |
-| Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends. Only your recorded posts are read |
+| Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends, and where the page shows them followers gained, profile viewers, link visits, the share of impressions from inside and outside your network, and the viewer demographics. Only your recorded posts are read. A documented label the reader cannot find on a page that plainly is this page is listed here as drift, by name, until its wording is checked against a live page |
 
 Network reading is off unless you turn it on in the extension's popup. If you do, two more parts appear here once they have run: **Network reading: your posts' figures** and **Network reading: creator analytics**. They are not listed while network reading has not run, because opening a page cannot start them.
 

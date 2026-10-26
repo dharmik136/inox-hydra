@@ -68,7 +68,8 @@ def _sent(pages, page):
 
 
 def _capture(pages, page):
-    return [m["body"] for m in pages.sent(page) if m.get("path") == "/api/v1/captures"
+    """The capture log entries the reader sent, oldest first; drift is null on a clean read."""
+    return [m["body"] for m in pages.sent(page) if m.get("path") == "/api/v1/bridge/capture"
             and m["body"].get("extractor") == "post_analytics"]
 
 
@@ -90,3 +91,68 @@ def test_figures_written_out_in_full_are_sent_as_exact(pages):
     metrics = _sent(pages, page)[0]["metrics"]
     assert metrics["impressions"] == 1912
     assert metrics["precision"] == "exact"
+# ---------------------------------------------------------------------------
+# Item 19: the fourteen figures, the percentage split and demographics
+# ---------------------------------------------------------------------------
+
+def test_the_seven_new_labels_are_read_from_the_page(pages):
+    page = _read(pages, f"<main><ul>{FOURTEEN}</ul></main>")
+    metrics = _sent(pages, page)[0]["metrics"]
+    assert metrics["followers_gained"] == 12
+    assert metrics["profile_viewers"] == 38
+    assert metrics["link_visits"] == 21
+    assert metrics["article_views"] == 15
+    assert metrics["video_views"] == 0
+    assert metrics["in_network_pct"] == 62 and metrics["out_of_network_pct"] == 38
+    assert metrics["demographics"] == [
+        {"dimension": "job_title", "label": "Founder", "percentage": 21},
+        {"dimension": "job_title", "label": "Software Engineer", "percentage": 14},
+        {"dimension": "job_title", "label": "Marketing Manager", "percentage": 9},
+    ]
+    capture = _capture(pages, page)[-1]
+    assert not capture["drift"], "every label was found, so nothing drifted"
+    assert capture["items_seen"] == 14
+
+
+def test_a_percentage_is_never_read_as_a_count(pages):
+    """NUMBER_ONLY refuses "62%", so the split cannot land in members reached."""
+    body = """<main><ul>
+      <li><p class="label">Members reached</p><p>62%</p><p>2,900</p></li>
+      <li><p class="label">Impressions</p><p>4,100</p></li>
+    </ul></main>"""
+    page = _read(pages, body)
+    metrics = _sent(pages, page)[0]["metrics"]
+    assert metrics["members_reached"] == 2900 and metrics["impressions"] == 4100
+
+
+def test_an_absent_unverified_label_is_drift_not_silence(pages):
+    """
+    The page plainly is the post analytics page (the seven measured labels
+    are there), so each documented label it lacks is reported, by name.
+    """
+    page = _read(pages, f"<main><ul>{SEVEN}</ul></main>")
+    capture = _capture(pages, page)[-1]
+    assert capture["items_seen"] == 7
+    assert set(capture["drift"]) == {"followers_gained", "profile_viewers", "in_network_pct", "out_of_network_pct",
+                                     "demographics"}
+    metrics = _sent(pages, page)[0]["metrics"]
+    assert "link_visits" not in metrics and "demographics" not in metrics, "a figure not on the page is not sent"
+
+
+def test_content_specific_labels_are_not_drift_when_absent(pages):
+    """A text post has no link visits, article views or video views; their absence says nothing."""
+    page = _read(pages, f"<main><ul>{SEVEN}</ul></main>")
+    assert not {"link_visits", "article_views", "video_views"} & set(_capture(pages, page)[-1]["drift"] or [])
+
+
+def test_a_page_with_no_labels_at_all_reports_only_the_labels(pages):
+    """Not the post analytics page as the reader knows it: the one drift it always reported, nothing sent."""
+    page = _read(pages, "<main><p>Something else entirely</p></main>")
+    assert _capture(pages, page)[-1]["drift"] == ["metric_labels"]
+    assert _sent(pages, page) == []
+
+
+def test_a_demographics_heading_with_no_readable_entries_is_drift(pages):
+    body = f"<main><ul>{SEVEN}</ul><section><h3>Viewer demographics</h3><p>Not enough data yet</p></section></main>"
+    page = _read(pages, body)
+    assert "demographics_entries" in _capture(pages, page)[-1]["drift"]

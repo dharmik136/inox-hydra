@@ -183,3 +183,75 @@ def test_the_rounding_width_has_one_definition():
     assert analytics.rounding_half_width is results.rounding_half_width
     assert results.rounding_half_width(12000, "rounded") == 500
     assert results.rounding_half_width(12000, None) == 0.0, "unknown precision claims nothing either way"
+
+
+# ---------------------------------------------------------------------------
+# Item 19: the seven missing fields, the network split and dated demographics
+# ---------------------------------------------------------------------------
+
+def test_the_new_post_figures_and_the_network_split_land_in_the_reading(client):
+    import onboarding
+    mine = urn_hours_ago(30)
+    _posts(client, mine)
+    client.post("/api/v1/self/posts/analytics", json={"author": ME, "activity_urn": mine, "metrics": {
+        "impressions": 4100, "followers_gained": 12, "profile_viewers": 38, "link_visits": 21, "article_views": 15,
+        "video_views": 0, "in_network_pct": 62, "out_of_network_pct": 38, "precision": "exact"}})
+    readings = onboarding.post_readings(mine)
+    assert len(readings) == 1
+    reading = readings[0]
+    assert (reading["followers_gained"], reading["profile_viewers"], reading["link_visits"]) == (12, 38, 21)
+    assert (reading["article_views"], reading["video_views"]) == (15, 0)
+    assert (reading["in_network_pct"], reading["out_of_network_pct"]) == (62.0, 38.0)
+    detail = client.get(f"/api/v1/insights/posts/{mine}").json()
+    assert detail["per_post"]["followers_gained"] == 12 and detail["per_post"]["in_network_pct"] == 62.0
+    assert detail["per_post"]["read_at_age_hours"] == pytest.approx(30, abs=1)
+    assert detail["readings"][0]["out_of_network_pct"] == 38.0
+    # A reading from the activity page carries none of them, and says so with NULL.
+    other = urn_hours_ago(40, 1)
+    client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [
+        {"activity_urn": other, "actor": ME, "reactions": 30}]})
+    assert client.get(f"/api/v1/insights/posts/{other}").json()["per_post"] is None
+
+
+def test_a_share_outside_the_range_or_a_percentage_sent_as_a_count_is_not_stored(client):
+    import onboarding
+    mine = urn_hours_ago(30)
+    _posts(client, mine)
+    client.post("/api/v1/self/posts/analytics", json={"author": ME, "activity_urn": mine, "metrics": {
+        "impressions": 4100, "in_network_pct": 162, "out_of_network_pct": -3, "followers_gained": "62%"}})
+    reading = onboarding.post_readings(mine)[0]
+    assert reading["impressions"] == 4100
+    assert reading["in_network_pct"] is None and reading["out_of_network_pct"] is None
+    assert reading["followers_gained"] is None
+
+
+def test_demographics_are_a_dated_series(client):
+    mine = urn_hours_ago(30)
+    _posts(client, mine)
+    first = client.post("/api/v1/self/posts/analytics", json={"author": ME, "activity_urn": mine, "metrics": {
+        "impressions": 4100, "demographics": [
+            {"dimension": "job_title", "label": "Founder", "percentage": 21},
+            {"dimension": "job_title", "label": "Software Engineer", "percentage": 14},
+            {"dimension": "job_title", "label": "Broken", "percentage": "many"}]}})
+    assert first.json()["demographics_recorded"] == 2, "an entry with no readable percentage is not stored"
+    # The same day again: the row is refreshed, not duplicated.
+    client.post("/api/v1/self/posts/analytics", json={"author": ME, "activity_urn": mine, "metrics": {
+        "impressions": 4200, "demographics": [{"dimension": "job_title", "label": "Founder", "percentage": 25}]}})
+    today = NOW.strftime("%Y-%m-%d")
+    conn = _db()
+    try:
+        rows = conn.execute("SELECT observed_on, label, percentage FROM audience_demographic_readings "
+                            "WHERE activity_urn = ? ORDER BY label", (mine,)).fetchall()
+        assert [(r["observed_on"], r["label"], r["percentage"]) for r in rows] == [
+            (today, "Founder", 25.0), (today, "Software Engineer", 14.0)]
+        # Another day's reading is another point.
+        with conn:
+            conn.execute("INSERT INTO audience_demographic_readings (observed_at, observed_on, activity_urn, source, "
+                         "dimension, label, percentage) VALUES (?, ?, ?, 'post_analytics', 'job_title', 'Founder', 18)",
+                         ((NOW - timedelta(days=30)).isoformat(), (NOW - timedelta(days=30)).strftime("%Y-%m-%d"),
+                          mine))
+    finally:
+        conn.close()
+    series = client.get(f"/api/v1/insights/posts/{mine}").json()["demographics"]
+    founder = [(e["observed_on"], e["percentage"]) for e in series if e["label"] == "Founder"]
+    assert founder == [((NOW - timedelta(days=30)).strftime("%Y-%m-%d"), 18.0), (today, 25.0)]

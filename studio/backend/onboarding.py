@@ -930,7 +930,30 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
             "bound_to_posts": bound["post"], "bound_to_drafts": bound["draft"]}
 
 
-METRIC_FIELDS = ("impressions", "members_reached", "reactions", "comments", "reposts", "saves", "sends")
+# The counts the post analytics page shows. The first seven have been read
+# since cycle 2; the rest are LinkedIn's own per-post figures from the same
+# page (migration 28): followers gained from this post, profile viewers from
+# this post, link visits, and the article and video figures a post of that
+# kind carries. Never derived from analytics_daily.followers: two posts in
+# one week share that window.
+METRIC_FIELDS = ("impressions", "members_reached", "reactions", "comments", "reposts", "saves", "sends",
+                 "followers_gained", "profile_viewers", "link_visits", "article_views", "video_views")
+# The share of impressions from inside and outside the creator's network, as
+# the percentage LinkedIn printed (0 to 100). A share is not a count: it is
+# stored as read and never summed.
+SHARE_FIELDS = ("in_network_pct", "out_of_network_pct")
+READING_FIELDS = METRIC_FIELDS + SHARE_FIELDS
+
+
+def _share(value: Any) -> Optional[float]:
+    """A percentage from a capture, 0 to 100, or None when the page did not show one."""
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return round(number, 2) if 0.0 <= number <= 100.0 else None
 
 # How precisely a reading was read, as migration 5 records it for the
 # analytics page: 'exact' when every figure was written out, 'rounded' when
@@ -955,6 +978,7 @@ def _record_observation(conn, activity_urn: str, source: str, metrics: Dict[str,
     become exact by being read again.
     """
     values = {k: _count(metrics.get(k)) for k in METRIC_FIELDS}
+    values.update({k: _share(metrics.get(k)) for k in SHARE_FIELDS})
     if all(v is None for v in values.values()):
         return False
     now = datetime.now(timezone.utc)
@@ -963,22 +987,62 @@ def _record_observation(conn, activity_urn: str, source: str, metrics: Dict[str,
     conn.execute(
         f"""
         INSERT INTO post_metric_observations
-            (activity_urn, observed_at, observed_hour, age_hours, source, precision, {", ".join(METRIC_FIELDS)})
-        VALUES (?, ?, ?, ?, ?, ?, {", ".join("?" for _ in METRIC_FIELDS)})
+            (activity_urn, observed_at, observed_hour, age_hours, source, precision, {", ".join(READING_FIELDS)})
+        VALUES (?, ?, ?, ?, ?, ?, {", ".join("?" for _ in READING_FIELDS)})
         ON CONFLICT(activity_urn, source, observed_hour) DO UPDATE SET
             observed_at = excluded.observed_at, age_hours = excluded.age_hours,
             precision = CASE
                 WHEN excluded.precision = 'rounded' OR post_metric_observations.precision = 'rounded' THEN 'rounded'
                 ELSE COALESCE(excluded.precision, post_metric_observations.precision) END,
-            {", ".join(f"{k} = COALESCE(excluded.{k}, post_metric_observations.{k})" for k in METRIC_FIELDS)}
+            {", ".join(f"{k} = COALESCE(excluded.{k}, post_metric_observations.{k})" for k in READING_FIELDS)}
         """,
         (activity_urn, now.isoformat(), now.strftime("%Y-%m-%dT%H"), age, source, _precision(metrics.get("precision")),
-         *[values[k] for k in METRIC_FIELDS]),
+         *[values[k] for k in READING_FIELDS]),
     )
     # The post's summary row keeps its two day and latest readings; the
     # trigger marked them, and they are recomputed here, in this transaction.
     post_summary.refresh(conn, [activity_urn])
     return True
+
+
+# One reading of the viewer demographics block holds at most this many
+# entries: six dimensions of a top five each is thirty.
+DEMOGRAPHIC_ENTRIES = 60
+
+
+def _record_demographics(conn, activity_urn: str, source: str, entries: Any) -> int:
+    """
+    The top viewer demographics as the page showed them, dated.
+
+    One row per day per dimension and label (migration 28): a second read
+    the same day refreshes the percentage, a read on another day adds a
+    point, so "LinkedIn's top five on date D against date E" can be asked.
+    audience_demographics, which has no date, is left as it was.
+    """
+    if not isinstance(entries, list):
+        return 0
+    now = datetime.now(timezone.utc)
+    recorded = 0
+    for entry in entries[:DEMOGRAPHIC_ENTRIES]:
+        if not isinstance(entry, dict):
+            continue
+        dimension = _text(entry.get("dimension"), 40)
+        label = _text(entry.get("label"), 120)
+        percentage = _share(entry.get("percentage"))
+        if not dimension or not label or percentage is None:
+            continue
+        conn.execute(
+            """
+            INSERT INTO audience_demographic_readings
+                (observed_at, observed_on, activity_urn, source, dimension, label, percentage)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(observed_on, activity_urn, source, dimension, label) DO UPDATE SET
+                observed_at = excluded.observed_at, percentage = excluded.percentage
+            """,
+            (now.isoformat(), now.strftime("%Y-%m-%d"), activity_urn, source, dimension.lower(), label, percentage),
+        )
+        recorded += 1
+    return recorded
 
 
 def ingest_post_analytics(author: Any, activity_urn: Any, metrics: Any) -> Dict[str, Any]:
@@ -1004,22 +1068,35 @@ def ingest_post_analytics(author: Any, activity_urn: Any, metrics: Any) -> Dict[
             if not conn.execute("SELECT 1 FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone():
                 raise RefusedCapture("this post is not one of your recorded posts; import your posts first")
             recorded = _record_observation(conn, urn, "post_analytics", metrics)
+            demographics = _record_demographics(conn, urn, "post_analytics", metrics.get("demographics"))
             impressions = _count(metrics.get("impressions"))
             if impressions is not None:
                 conn.execute("UPDATE own_posts SET impressions = ?, last_seen_at = ? WHERE activity_urn = ?",
                              (impressions, _now(), urn))
     finally:
         conn.close()
-    return {"status": "success", "recorded": recorded}
+    return {"status": "success", "recorded": recorded, "demographics_recorded": demographics}
 
 
 def post_readings(activity_urn: str) -> List[Dict[str, Any]]:
-    """Every reading of one post, oldest first."""
+    """Every reading of one post, oldest first, with how precisely each was read."""
     conn = get_db()
     try:
         return [dict(r) for r in conn.execute(
-            f"SELECT observed_at, age_hours, source, precision, {', '.join(METRIC_FIELDS)} "
+            f"SELECT observed_at, age_hours, source, precision, {', '.join(READING_FIELDS)} "
             "FROM post_metric_observations WHERE activity_urn = ? ORDER BY observed_at", (activity_urn,))]
+    finally:
+        conn.close()
+
+
+def post_demographics(activity_urn: str) -> List[Dict[str, Any]]:
+    """Every dated demographics entry read for one post, oldest day first, largest share first within a day."""
+    conn = get_db()
+    try:
+        return [dict(r) for r in conn.execute(
+            "SELECT observed_on, observed_at, source, dimension, label, percentage "
+            "FROM audience_demographic_readings WHERE activity_urn = ? "
+            "ORDER BY observed_on, dimension, percentage DESC, label", (activity_urn,))]
     finally:
         conn.close()
 

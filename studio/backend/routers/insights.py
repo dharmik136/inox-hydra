@@ -10,12 +10,14 @@ from typing import Dict, Any, Optional
 
 try:
     from .. import insights
+    from .. import onboarding
     from .. import results
     from ..contrast_engine import compute_all_contrasts
     from ..database import get_db
     from ..evidence_briefing import get_topic_attribution_map, get_retrieval_evidence_brief
 except (ImportError, ValueError):
     import insights
+    import onboarding
     import results
     from contrast_engine import compute_all_contrasts
     from database import get_db
@@ -39,21 +41,40 @@ def get_posts_insights(limit: Optional[int] = Query(None, ge=1), offset: int = Q
     return insights.posts_overview(limit=limit, offset=offset, sort=sort, settled_state=settled_state, q=q)
 
 
+# LinkedIn's own per-post figures from the post analytics page, read as they
+# were printed and never derived: the newest reading of that page answers.
+PER_POST_FIELDS = ("followers_gained", "profile_viewers", "link_visits", "article_views", "video_views",
+                   "in_network_pct", "out_of_network_pct")
+
+
 def _derived(activity_urn: str) -> Dict[str, Any]:
     """
     What the readings of one post can say beyond its latest figures (cycle
     4, track 5): how precisely that reading was read and which of its figures
     LinkedIn rounded, so the screen says "about" beside those and nothing
-    beside the rest. Every rule is results.py's.
+    beside the rest; every reading, oldest first; the per-post figures the
+    post analytics page shows, from its newest reading; and the viewer
+    demographics as a dated series. Every rule is results.py's.
     """
     conn = get_db()
     try:
         figure = results.figures(conn, [activity_urn]).get(activity_urn) or {}
     finally:
         conn.close()
+    readings = onboarding.post_readings(activity_urn)
+    page = [r for r in readings if r["source"] == "post_analytics"]
+    newest = page[-1] if page else None
+    per_post = None
+    if newest and any(newest.get(field) is not None for field in PER_POST_FIELDS):
+        per_post = {**{field: newest.get(field) for field in PER_POST_FIELDS},
+                    "read_at": newest["observed_at"], "read_at_age_hours": newest["age_hours"],
+                    "precision": newest["precision"]}
     return {
         "figures_precision": figure.get("precision"),
         "approximate": results.approximate_fields(figure),
+        "readings": readings,
+        "per_post": per_post,
+        "demographics": onboarding.post_demographics(activity_urn),
     }
 
 

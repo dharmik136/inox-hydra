@@ -1166,6 +1166,14 @@
   // reached, saves and sends appear nowhere else. Read by label rather than
   // by class name: each figure sits near the words LinkedIn prints for it, and
   // those words change far less often than the markup around them.
+  //
+  // The first seven labels are measured. The rest are the figures LinkedIn's
+  // Help documents on this page (followers gained from this post, profile
+  // viewers from this post, link visits, article views, video views) in the
+  // Help's wording; the wording on a 2026 page is unverified, so a page that
+  // plainly is this page and lacks a label every post should show is
+  // reported as drift (POST_LABELS_ON_EVERY_POST), never silently walked
+  // past. A label may be spelt two ways; the first spelling found wins.
 
   const POST_METRIC_LABELS = [
     ["members reached", "members_reached"],
@@ -1175,8 +1183,93 @@
     ["reposts", "reposts"],
     ["saves", "saves"],
     ["sends", "sends"],
+    ["followers gained", "followers_gained"],
+    ["profile viewers", "profile_viewers"],
+    ["profile views", "profile_viewers"],
+    ["link visits", "link_visits"],
+    ["link clicks", "link_visits"],
+    ["article views", "article_views"],
+    ["video views", "video_views"],
   ];
+  // The share of impressions from inside and outside the creator's network,
+  // printed as percentages. NUMBER_ONLY refuses a percentage on purpose: a
+  // share is never a count, so it has its own pattern and its own parser.
+  const POST_SHARE_LABELS = [
+    ["in your network", "in_network_pct"],
+    ["in network", "in_network_pct"],
+    ["from your network", "in_network_pct"],
+    ["outside your network", "out_of_network_pct"],
+    ["out of network", "out_of_network_pct"],
+    ["beyond your network", "out_of_network_pct"],
+  ];
+  // Absent on a page that plainly is the post analytics page, these are
+  // drift. Link visits, article views and video views are not: a text post
+  // has none, and their absence says nothing about the reader.
+  const POST_LABELS_ON_EVERY_POST = ["followers_gained", "profile_viewers", "in_network_pct",
+    "out_of_network_pct", "demographics"];
   const NUMBER_ONLY = /^[\d.,]+\s*[KkMm]?$/;
+  const PERCENT_ONLY = /^\d{1,3}(?:[.,]\d+)?\s*%$/;
+  const PERCENT_IN_TEXT = /(\d{1,3}(?:[.,]\d+)?)\s*%/;
+
+  // A percentage as LinkedIn prints it, 0 to 100, or null.
+  function parsePercent(text) {
+    const match = PERCENT_IN_TEXT.exec(clean(text || ""));
+    if (!match) return null;
+    const value = parseFloat(match[1].replace(",", "."));
+    return Number.isNaN(value) || value > 100 ? null : value;
+  }
+
+  // The viewer demographics block: a heading naming demographics, a control
+  // naming the dimension (job titles, locations, industries, company size,
+  // companies, seniority) and the top entries, each a label beside a
+  // percentage. The block's markup is unverified: a heading with no readable
+  // entries is reported as drift ("demographics_entries"), and an entry is
+  // kept only when a label sits directly before its percentage.
+  const DEMOGRAPHIC_DIMENSIONS = [
+    [/^job titles?$/, "job_title"], [/^locations?$/, "location"], [/^industr(y|ies)$/, "industry"],
+    [/^company sizes?$/, "company_size"], [/^compan(y|ies)$/, "company"], [/^seniority( levels?)?$/, "seniority"],
+  ];
+
+  function dimensionOf(text) {
+    const lower = clean(text).toLowerCase();
+    const hit = DEMOGRAPHIC_DIMENSIONS.find(([pattern]) => pattern.test(lower));
+    return hit ? hit[1] : null;
+  }
+
+  // null when the page has no demographics heading; [] when it has one and
+  // no entries the reader can pair; otherwise the entries, in page order.
+  function readPostDemographics(leaves) {
+    const heading = leaves.find((el) => /demographics/i.test(clean(el.textContent)));
+    if (!heading) return null;
+    // The block is the nearest ancestor holding at least two percentages.
+    let box = heading.parentElement;
+    let percents = [];
+    for (let depth = 0; depth < 4 && box; depth += 1, box = box.parentElement) {
+      percents = leaves.filter((el) => box.contains(el) && PERCENT_ONLY.test(clean(el.textContent)));
+      if (percents.length >= 2) break;
+    }
+    if (!box || percents.length < 2) return [];
+    let dimension = "unknown";
+    const entries = [];
+    let label = null;
+    for (const el of leaves) {
+      if (!box.contains(el) || el === heading) continue;
+      const text = clean(el.textContent);
+      if (PERCENT_ONLY.test(text)) {
+        const percentage = parsePercent(text);
+        if (label && percentage !== null) entries.push({ dimension, label, percentage });
+        label = null;
+        continue;
+      }
+      const named = entries.length ? null : dimensionOf(text);
+      if (named) {
+        dimension = named;
+        continue;
+      }
+      label = text;
+    }
+    return entries;
+  }
 
   function postAnalyticsUrn() {
     let path = window.location.pathname;
@@ -1198,6 +1291,21 @@
     const rounded = [];
     for (const el of leaves) {
       const text = clean(el.textContent).toLowerCase();
+      // The network split: the percentage may sit in the label's own leaf
+      // ("62% in your network") or in a sibling leaf beside it.
+      const share = POST_SHARE_LABELS.find(([label, key]) => metrics[key] === undefined && text.includes(label));
+      if (share) {
+        let percentage = parsePercent(text);
+        let box = el.parentElement;
+        for (let depth = 0; depth < 3 && box && percentage === null; depth += 1, box = box.parentElement) {
+          const figure = Array.from(box.querySelectorAll("*")).find(
+            (node) => node !== el && node.children.length === 0 && PERCENT_ONLY.test(clean(node.textContent))
+          );
+          if (figure) percentage = parsePercent(clean(figure.textContent));
+        }
+        if (percentage !== null) metrics[share[1]] = percentage;
+        continue;
+      }
       const hit = POST_METRIC_LABELS.find(([label, key]) => metrics[key] === undefined && text.startsWith(label));
       if (!hit) continue;
       // The figure is a sibling leaf within a few levels of the label.
@@ -1220,16 +1328,28 @@
     // A figure that is not a multiple of its rounding step is exact
     // whatever the row says, so the studio can still say which ones.
     if (Object.keys(metrics).length) metrics.precision = rounded.length ? "rounded" : "exact";
-    return metrics;
+    const demographics = readPostDemographics(leaves);
+    if (demographics && demographics.length) metrics.demographics = demographics;
+    return { metrics, demographics };
+  }
+
+  // What a page that plainly is the post analytics page failed to show the
+  // reader, by name, so an unverified label shows in Setup as drift rather
+  // than as a figure that quietly never arrives.
+  function postAnalyticsDrift(metrics, demographics) {
+    const drift = POST_LABELS_ON_EVERY_POST.filter((key) => key !== "demographics" && metrics[key] === undefined);
+    if (demographics === null) drift.push("demographics");
+    else if (!demographics.length) drift.push("demographics_entries");
+    return drift;
   }
 
   async function capturePostAnalytics() {
     const urn = postAnalyticsUrn();
     const me = await getConfirmedVanity();
     if (!urn || !me) return;
-    const metrics = readPostAnalytics();
-    const found = Object.keys(metrics).filter((key) => key !== "precision").length;
-    reportCapture("post_analytics", found, found, found ? [] : ["metric_labels"]);
+    const { metrics, demographics } = readPostAnalytics();
+    const found = Object.keys(metrics).filter((key) => key !== "precision" && key !== "demographics").length;
+    reportCapture("post_analytics", found, found, found ? postAnalyticsDrift(metrics, demographics) : ["metric_labels"]);
     if (!found) return;
     // The creator is standing on their own post's analytics page, having
     // opened it on purpose, so a refusal here is worth a sentence on the page.

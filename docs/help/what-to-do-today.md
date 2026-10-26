@@ -47,7 +47,7 @@ When the comparison cannot be made, the screen says why instead of showing a num
 
 Each time your posts are imported or re-read, the counts LinkedIn shows on them are kept as a reading, with the post's age at that moment. At most one reading per post per hour is kept.
 
-**Open its analytics** opens the post's own analytics page, which only you can see. The extension reads impressions, members reached, reactions, comments, reposts, saves and sends from it, for your own recorded posts only.
+**Open its analytics** opens the post's own analytics page, which only you can see. The extension reads impressions, members reached, reactions, comments, reposts, saves and sends from it, for your own recorded posts only. Where the page shows them it also reads followers gained from this post, profile viewers from this post, link visits, article views and video views, the share of impressions from inside and outside your network, and the top viewer demographics, which are kept with the day they were read so a later visit adds a point rather than replacing one. A figure LinkedIn abbreviated, such as 12K, is stored as 12,000 and marked rounded, and the studio says "about" beside it. The exact wording of the newer labels on LinkedIn's 2026 page has not yet been checked against a live page, so until it is, Setup may list this reader as drifting and name the label it could not find; the seven figures above are read either way.
 
 ## Queue
 
