@@ -380,3 +380,41 @@ def test_a_notice_already_seen_is_not_raised_again_and_a_new_one_is(run):
 def test_a_waiting_notice_is_carried_by_the_waiting_count_not_a_mark(run):
     """A capture kept for the studio is on the badge as the waiting count already."""
     assert run["waitingNoticeBadge"] == "", run["waitingNoticeBadge"]
+
+
+# ---------------------------------------------------------------------------
+# A path added to the relay is kept, counted and named, or is bookkeeping
+# ---------------------------------------------------------------------------
+
+# What a page may relay that is about a moment, or a question, rather than
+# the creator's data: never kept for a busy studio and never a capture.
+BOOKKEEPING = {"/api/v1/bridge/heartbeat", "/api/v1/bridge/capture", "/api/v1/bridge/schema-drift",
+               "/api/v1/identity/me", "/api/v1/self/imports/pending", "/api/v1/self/imports/event"}
+
+
+def _paths(source, opening):
+    import re
+    return set(re.findall(r'"(/api/[^"]+)"', source.split(opening, 1)[1].split("]);", 1)[0]))
+
+
+def test_every_path_a_page_may_relay_is_kept_and_named_or_is_bookkeeping():
+    """
+    2.8.0 added /api/analytics/page-figures to the relay (track 5's account
+    and content pages) and to nothing else, so a busy studio dropped those
+    figures without a trace, and a reading that stored figures read as
+    "nothing new to keep". A path that carries the creator's data is kept
+    for a busy studio, counted on the badge, and named in the panel and the
+    popup; every other relayable path is named here as bookkeeping.
+    """
+    import re
+    with open(os.path.join(EXT, "background.js"), encoding="utf-8") as handle:
+        worker = handle.read()
+    relayable = _paths(worker, "RELAYABLE_PATHS = new Set([")
+    kept = _paths(worker, "KEEP_WHEN_BUSY = new Set([")
+    assert relayable - kept == BOOKKEEPING, (
+        f"relayed but neither kept nor bookkeeping: {sorted(relayable - kept - BOOKKEEPING)}")
+    for page in ("sidepanel.js", "popup.js"):
+        with open(os.path.join(EXT, page), encoding="utf-8") as handle:
+            source = handle.read()
+        words = set(re.findall(r'"(/api/[^"]+)":', source.split("const CAPTURE_WORDS = {", 1)[1].split("};", 1)[0]))
+        assert kept <= words, f"{page} has no words for {sorted(kept - words)}"

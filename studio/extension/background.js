@@ -574,7 +574,11 @@ const KEEP_WHEN_BUSY = new Set([
   "/api/v1/identity/observe",
   "/api/v1/posts/bind-urn",
   "/api/v1/bridge/voyager-ingest",
-  "/api/analytics/ingest"
+  "/api/analytics/ingest",
+  // The creator's own account and content figures (own_insights.js, 2.8.0):
+  // their own data, kept for a busy studio like the rest. The studio keeps
+  // one reading per page, window and hour, so a later replay is the same row.
+  "/api/analytics/page-figures"
 ]);
 // Draining used to happen only on browser start-up or after a later
 // successful relay, so a creator who closed LinkedIn with captures waiting
@@ -866,11 +870,15 @@ function actionCall(method, details) {
 // route answers the ingest contract's outcome (ingest_contract.py: accepted
 // or nothing_new); the creator's own pages answer the counts and words their
 // routes have always answered: written, recorded, buckets_ingested,
-// followers_saved, items_kept, or bound, updated, candidate. A 200 that stored
-// nothing is the usual answer on the feed, where most engagers are on other
-// people's posts, and it is never counted as a capture: counting it would put
-// a number on the badge that no row in the studio stands behind.
-const STORED_COUNTS = ["written", "buckets_ingested", "followers_saved", "items_kept"];
+// followers_saved, items_kept, or bound, updated, candidate; and since 2.8.0
+// the counts of the readers track 5 added: readings_recorded and
+// points_recorded from the account and content pages, reposts_recorded from
+// the Activity page. A 200 that stored nothing is the usual answer on the
+// feed, where most engagers are on other people's posts, and it is never
+// counted as a capture: counting it would put a number on the badge that no
+// row in the studio stands behind.
+const STORED_COUNTS = ["written", "buckets_ingested", "followers_saved", "items_kept",
+  "readings_recorded", "points_recorded", "reposts_recorded"];
 const STORED_STATUSES = ["bound", "updated", "candidate"];
 
 function storedSomething(data) {

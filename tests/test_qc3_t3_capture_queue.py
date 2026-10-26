@@ -128,6 +128,7 @@ const CARRIES_DATA = [
   "/api/v1/identity/observe",
   "/api/v1/posts/bind-urn",
   "/api/analytics/ingest",
+  "/api/analytics/page-figures",
 ];
 const BOOKKEEPING = [
   "/api/v1/bridge/heartbeat",

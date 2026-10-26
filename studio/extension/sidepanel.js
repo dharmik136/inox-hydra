@@ -670,7 +670,8 @@ const CAPTURE_WORDS = {
   "/api/v1/identity/observe": "your profile",
   "/api/v1/posts/bind-urn": "a post linked to your draft",
   "/api/v1/bridge/voyager-ingest": "a network reading",
-  "/api/analytics/ingest": "creator analytics"
+  "/api/analytics/ingest": "creator analytics",
+  "/api/analytics/page-figures": "figures from your own analytics pages"
 };
 
 function agoWords(iso) {
