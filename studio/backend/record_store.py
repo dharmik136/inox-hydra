@@ -44,10 +44,11 @@ from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import evidence_briefing, record_daily
+    from . import evidence_briefing, record_cards, record_daily
     from .database import get_db
 except ImportError:  # top-level import mode
     import evidence_briefing
+    import record_cards
     import record_daily
     from database import get_db
 
@@ -234,12 +235,30 @@ def mark(day: Any, card_id: str, which: str) -> Dict[str, Any]:
                 conn.execute("DELETE FROM card_marks WHERE day = ? AND card_id = ? AND mark = 'skip'", (day, card_id))
             elif which == "skip":
                 conn.execute("DELETE FROM card_marks WHERE day = ? AND card_id = ? AND mark = 'keep'", (day, card_id))
-        said = {"keep": "Kept. It is on the Kept list now, and it comes back more often.",
-                "skip": "Skipped. It stays away for two weeks, and comes back less often after.",
-                "hide": "Hidden. It is not shown again until you choose Unhide all on What the studio knows."}[which]
-        return {"status": "marked", "mark": which, "message": f"{said} {TOMORROW}"}
+        return {"status": "marked", "mark": which, "message": f"{mark_said(which, card['kind'])} {TOMORROW}"}
     finally:
         conn.close()
+
+
+def mark_said(which: str, kind: str) -> str:
+    """
+    What a mark does to this kind of card, and nothing it does not: keep and
+    skip move a drawn card's chance, only set aside a card the record
+    chooses, and change nothing about a card that is never shown twice.
+    """
+    if kind in record_cards.DRAWN_KINDS:
+        return {"keep": "Kept. It is on the Kept list now, and it comes back more often.",
+                "skip": f"Skipped. It stays away for {record_cards.SKIP_HOLD_DAYS} days, and comes back less often after.",
+                "hide": "Hidden. It is not shown again until you choose Unhide all on What the studio knows."}[which]
+    if kind in record_cards.CHOSEN_KINDS:
+        return {"keep": "Kept. It is on the Kept list now. Your record, not your marks, decides when it comes back.",
+                "skip": f"Skipped. It stays away for {record_cards.SKIP_HOLD_DAYS} days, and the next one in line takes "
+                        "its place.",
+                "hide": "Hidden. The next one in line takes its place until you choose Unhide all on What the studio "
+                        "knows."}[which]
+    return {"keep": "Kept. It is on the Kept list now.",
+            "skip": "Skipped. A card like this is never shown twice in any case.",
+            "hide": "Hidden, and left out of Kept. A card like this is never shown twice in any case."}[which]
 
 
 def unmark(day: Any, card_id: str, which: str) -> Dict[str, Any]:

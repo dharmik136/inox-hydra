@@ -356,3 +356,103 @@ def test_every_stored_card_names_its_label_and_rule(conn):
         assert card["provenance"]["verification"]["ids_exist"] is True
         if card["status"] == "shown":
             assert card["payload"]["because"].startswith("Because"), card["payload"]
+
+
+# ---------------------------------------------------------------------------
+# A mark on a card the record chooses: Hide and Skip set it aside
+# ---------------------------------------------------------------------------
+#
+# What worked and On this day are chosen by the record, not drawn, so a
+# draw's weights never touched them: Hide on the best post said "It is not
+# shown again" and the same post came back the next morning. A hide now
+# passes it over for good and a skip for two weeks, for the next post in
+# results.ranking's own order, and the card says one was passed over.
+
+def _mark(conn, card_id, mark, at):
+    conn.execute("INSERT INTO card_marks (day, card_id, mark, at) VALUES (?, ?, ?, ?)",
+                 (at.date().isoformat(), card_id, mark, at.isoformat()))
+    conn.commit()
+
+
+def test_a_hidden_best_post_gives_way_to_the_next_in_the_same_ranking(conn):
+    import record_cards
+    import results
+
+    add_posts(conn)
+    for n, reactions in enumerate((30, 12, 18, 9)):
+        add_reading(conn, n, reactions, days_ago=40 + n)
+    order = results.ranking(conn)["order"]
+    assert order[:2] == [urn(0), urn(2)], order
+
+    _mark(conn, f"worked:{urn(0)}", "hide", datetime(2026, 10, 20, 9, tzinfo=timezone.utc))
+    card = record_cards.what_worked(conn, record_cards._posts(conn), record_cards._history(conn, DAY), DAY)
+    assert card["provenance"]["source_rows"] == [{"table": "own_posts", "id": urn(2)}], (
+        "a hidden best post came back")
+    assert "with 1 post above it set aside" in card["payload"]["because"]
+    # Its figures are still its own row's, read by the one ranking.
+    assert {f["name"]: f["value"] for f in card["provenance"]["figures"]}["reactions"] == 18
+
+    # Without the marks, the same call names the best post: the order is not changed, only stepped through.
+    plain = record_cards.what_worked(conn, record_cards._posts(conn))
+    assert plain["provenance"]["source_rows"] == [{"table": "own_posts", "id": urn(0)}]
+
+
+def test_a_skip_sets_the_best_post_aside_for_two_weeks_only(conn):
+    import record_cards
+
+    add_posts(conn)
+    for n, reactions in enumerate((30, 12, 18, 9)):
+        add_reading(conn, n, reactions, days_ago=40 + n)
+    skipped_on = datetime(2026, 10, 20, 9, tzinfo=timezone.utc)
+    _mark(conn, f"worked:{urn(0)}", "skip", skipped_on)
+    within = skipped_on.date() + timedelta(days=record_cards.SKIP_HOLD_DAYS - 1)
+    after = skipped_on.date() + timedelta(days=record_cards.SKIP_HOLD_DAYS)
+    held = record_cards.what_worked(conn, record_cards._posts(conn), record_cards._history(conn, within), within)
+    back = record_cards.what_worked(conn, record_cards._posts(conn), record_cards._history(conn, after), after)
+    assert held["provenance"]["source_rows"][0]["id"] == urn(2)
+    assert back["provenance"]["source_rows"][0]["id"] == urn(0)
+
+
+def test_every_ranked_post_hidden_is_said_not_padded(conn):
+    import record_cards
+    import results
+
+    add_posts(conn)
+    for n, reactions in enumerate((30, 12, 18, 9)):
+        add_reading(conn, n, reactions, days_ago=40 + n)
+    for ranked in results.ranking(conn)["order"]:
+        _mark(conn, f"worked:{ranked}", "hide", datetime(2026, 10, 20, 9, tzinfo=timezone.utc))
+    card = record_cards.what_worked(conn, record_cards._posts(conn), record_cards._history(conn, DAY), DAY)
+    assert card["label"] == "abstained"
+    assert card["payload"]["sentence"].startswith("You hid or skipped every post the ranking holds.")
+
+
+def test_a_hidden_post_of_this_day_gives_way_to_an_opener(conn):
+    import record_cards
+
+    add_posts(conn)
+    first = record_cards.compute_local(conn, DAY, record_cards.seed_for(DAY))
+    assert cards_of(first)[2]["kind"] == "on_this_day"
+    _mark(conn, cards_of(first)[2]["card_id"], "hide", datetime(2026, 10, 25, 9, tzinfo=timezone.utc))
+    again = record_cards.compute_local(conn, DAY, record_cards.seed_for(DAY))
+    assert cards_of(again)[2]["kind"] == "opener", cards_of(again)[2]
+
+
+def test_each_mark_says_only_what_it_does_to_that_kind_of_card():
+    import record_cards
+    import record_store
+
+    drawn = record_store.mark_said("keep", "opener")
+    chosen = record_store.mark_said("keep", "what_worked")
+    once = record_store.mark_said("keep", "idea")
+    assert "comes back more often" in drawn
+    assert "comes back more often" not in chosen and "comes back more often" not in once
+    assert "next one in line" in record_store.mark_said("hide", "on_this_day")
+    assert "never shown twice" in record_store.mark_said("skip", "idea")
+    # Every kind a card can have is one of the three, so no mark falls through to the wrong sentence.
+    kinds = set(record_cards.DRAWN_KINDS) | set(record_cards.CHOSEN_KINDS) | {"idea", "monday"}
+    assert set(record_cards.DRAWN_KINDS).isdisjoint(record_cards.CHOSEN_KINDS)
+    source = io.open(os.path.join(BACKEND, "record_cards.py"), encoding="utf-8").read()
+    built = set(re.findall(r'_card\([^,]+, \d, "\w+", "(\w+)"', source))
+    built |= {"library", "idea"}  # library_bundle.match_card and record_model.verify_ideas
+    assert built and built <= kinds, built - kinds

@@ -86,6 +86,13 @@ POOL_QUARTILE = 0.25
 ENGAGED_RECENT_DAYS = 90
 
 LABELS = ("measured", "derived", "typed", "suggested", "retrieved", "curated", "abstained")
+# What a mark can do depends on how a card was arrived at. A drawn card's
+# chance moves with keep and skip; a card the record chooses (the best post,
+# the post of this day) is not drawn, so a mark can only set it aside: hide
+# for good, skip for SKIP_HOLD_DAYS. A model's idea or the Monday card is
+# never shown twice in any case.
+DRAWN_KINDS = ("opener", "ask", "theme", "comment", "reaction", "saved", "library")
+CHOSEN_KINDS = ("what_worked", "on_this_day")
 BLOCKS = {"working_for_you": "Working for you", "you_asked": "You asked", "you_engaged_with": "You engaged with",
           "monday": "This week", "model": "Suggested by the model", "library": "From the Inox library"}
 
@@ -244,6 +251,22 @@ def _weight(card_id: str, history: Dict[str, Any], day: date) -> float:
     return weight
 
 
+def _set_aside(card_id: str, history: Optional[Dict[str, Any]], day: Optional[date]) -> bool:
+    """
+    Whether the creator hid this card, or skipped it within SKIP_HOLD_DAYS.
+
+    For the cards the record chooses rather than draws: Hide said "do not
+    show me this again" on every card, and a card that ignored it would make
+    the button a lie.
+    """
+    if not history or day is None:
+        return False
+    marks = history["marks"].get(card_id, {})
+    if "hide" in marks:
+        return True
+    return "skip" in marks and (day - marks["skip"]).days < SKIP_HOLD_DAYS
+
+
 def _draw(items: List[Tuple[Any, ...]], history: Dict[str, Any], day: date, seed: int) -> Optional[Tuple[str, Any]]:
     """
     One weighted draw with a seed that is stored on the run, so the day can be
@@ -306,11 +329,15 @@ def _figure_rows(urn: str, figure: Optional[Dict[str, Any]]) -> List[Dict[str, A
 # Slot 1: what worked, through results.ranking
 # ---------------------------------------------------------------------------
 
-def what_worked(conn, posts: List[Dict[str, Any]]) -> Dict[str, Any]:
+def what_worked(conn, posts: List[Dict[str, Any]], history: Optional[Dict[str, Any]] = None,
+                day: Optional[date] = None) -> Dict[str, Any]:
     """
     The post that did best against the creator's own median reactions, with
     every figure from the row it was read from, or the sentence that says
     why there is none yet. results.best is the one definition of "worked".
+
+    A post the creator hid, or skipped in the last SKIP_HOLD_DAYS, is passed
+    over for the next one in the same order, and the card says so.
     """
     block, kind = "working_for_you", "what_worked"
     rule = ("ranked by results.ranking: settled posts only, reactions against your own median; "
@@ -332,6 +359,18 @@ def what_worked(conn, posts: List[Dict[str, Any]]) -> Dict[str, Any]:
                           f"judged once it is {settle['hours'] / 24:g} days old; the studio ranks nothing on fewer.",
                           rule)
     urn = answer["best"][0]
+    passed_over = 0
+    if _set_aside(f"worked:{urn}", history, day):
+        # The same ranking's order, not a second one: only what the creator
+        # set aside is stepped over.
+        order = results.ranking(conn, read=every)["order"]
+        free = [u for u in order if not _set_aside(f"worked:{u}", history, day)]
+        if not free:
+            return _abstained(1, block, kind, "You hid or skipped every post the ranking holds. Unhide all on What the "
+                              f"studio knows brings back what you hid; a skip lasts {SKIP_HOLD_DAYS} days.", rule)
+        passed_over = order.index(free[0])
+        answer = results.best(conn, limit=passed_over + 1, read=every)
+        urn = answer["best"][passed_over]
     named = answer["named"][urn]
     text = next((p.get("text") for p in posts if p["activity_urn"] == urn), None)
     published = next((p.get("published_at") for p in posts if p["activity_urn"] == urn), None)
@@ -343,6 +382,9 @@ def what_worked(conn, posts: List[Dict[str, Any]]) -> Dict[str, Any]:
                f"{usual['median']:g} across {usual['posts']} settled posts, read from the "
                f"{'post analytics' if read.get('source') == 'post_analytics' else 'activity' if read.get('source') == 'activity_page' else 'archive snapshot'} page on "
                f"{_said_date(read.get('read_at'))}")
+    if passed_over:
+        because += (f"; the best of your posts you have not hidden or skipped, with {passed_over} "
+                    f"{'post' if passed_over == 1 else 'posts'} above it set aside")
     payload = {
         "title": "What worked",
         "badge": "measured",
@@ -369,10 +411,15 @@ def what_worked(conn, posts: List[Dict[str, Any]]) -> Dict[str, Any]:
 # Slot 2: on this day, or a resurfaced opener
 # ---------------------------------------------------------------------------
 
-def on_this_day(conn, posts: List[Dict[str, Any]], day: date) -> Optional[Dict[str, Any]]:
-    """A post of theirs from this calendar day in an earlier year, with its measured date."""
+def on_this_day(conn, posts: List[Dict[str, Any]], day: date,
+                history: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    """
+    A post of theirs from this calendar day in an earlier year, with its
+    measured date; one the creator hid or skipped lately is passed over.
+    """
     same_day = [p for p in posts if (when := _day_of(p.get("published_at"))) and when.month == day.month
-                and when.day == day.day and when.year < day.year and (p.get("text") or "").strip()]
+                and when.day == day.day and when.year < day.year and (p.get("text") or "").strip()
+                and not _set_aside(f"otd:{p['activity_urn']}", history, day)]
     if not same_day:
         return None
     post = same_day[-1]
@@ -809,8 +856,8 @@ def compute_local(conn, day: date, seed: int) -> Dict[str, Any]:
     _vocabulary, topics_of, topic_counts = _topics(posts) if posts else ([], {}, {})
     history = _history(conn, day)
     cards: List[Dict[str, Any]] = []
-    cards.append(what_worked(conn, posts))
-    second = on_this_day(conn, posts, day) or resurfaced_opener(conn, posts, topics_of, history, day, seed)
+    cards.append(what_worked(conn, posts, history, day))
+    second = on_this_day(conn, posts, day, history) or resurfaced_opener(conn, posts, topics_of, history, day, seed)
     if second is None and posts:
         second = _abstained(2, "working_for_you", "opener", "No opener of yours is free to resurface today: every one "
                             "is held back after a showing, or was hidden. Unhide all on What the studio knows brings them back.",
