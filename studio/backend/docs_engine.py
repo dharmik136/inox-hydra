@@ -708,6 +708,7 @@ HELP_SECTIONS = [
             "quality/CYCLE2_2026-10_PRD.md",
             "quality/CYCLE3_2026-10_PRD.md",
             "quality/CYCLE3_REGISTER.md",
+            "quality/cycle4/t1-bridge.md",
             "UI_CONVENTIONS.md",
             "ICON_SYSTEM.md",
             "UI_AGENT_WORKFLOW.md",
