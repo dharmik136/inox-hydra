@@ -42,6 +42,11 @@ from database import init_db  # noqa: E402
 
 # The start of a text box: Control+Home everywhere but macOS, where it is Command+Up.
 TO_START = "Meta+ArrowUp" if sys.platform == "darwin" else "Control+Home"
+# And its end. On macOS Playwright sends End as scrollToEndOfDocument, which
+# scrolls and leaves the caret where it was, as a Mac does; Command+Down moves
+# it. A selection the test made was still selected, and the words typed after
+# "End" replaced it (2.9.0's macOS run).
+TO_END = "Meta+ArrowDown" if sys.platform == "darwin" else "Control+End"
 
 
 def _free_port() -> int:
@@ -339,7 +344,7 @@ def test_words_typed_while_a_save_runs_are_not_called_saved(new_page, studio_url
     )
     page.get_by_role("button", name="Save", exact=True).click()
     editor.click()
-    page.keyboard.press("End")
+    page.keyboard.press(TO_END)
     page.keyboard.type(" and more")
     page.wait_for_timeout(1500)
     expect(_status(page)).to_contain_text("UNSAVED")
@@ -418,7 +423,7 @@ def test_typing_while_a_format_request_runs_is_kept(new_page, studio_url, api):
     for _ in range(7):
         page.keyboard.press("Shift+ArrowRight")
     page.get_by_role("button", name="Bold", exact=True).click()
-    page.keyboard.press("End")
+    page.keyboard.press(TO_END)
     page.keyboard.type(" and here is why")
     page.wait_for_timeout(1800)
     value = editor.input_value()

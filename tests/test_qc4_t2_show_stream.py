@@ -17,6 +17,7 @@ while a stream is open.
 
 import http.client
 import json
+import math
 import os
 import shutil
 import signal
@@ -288,13 +289,22 @@ def test_a_heartbeat_reaches_an_open_stream(studio):
 
 
 def test_a_burst_is_one_message_not_ten(studio):
-    """Ten captures a hundred milliseconds apart in all reach the window as one message."""
+    """
+    Ten captures in a burst reach the window as one message per quarter second
+    the burst lasted, never one each. The bound is taken from how long the
+    burst really took: 2.9.0's macOS runner stretched ten 10 ms sleeps past one
+    window and sent three messages, which a fixed "at most two" called a fault.
+    """
+    from routers import events as events_route
+
     stream = Stream(studio["port"])
     try:
         stream.event()
+        started = time.monotonic()
         for _ in range(10):
             changes.publish("capture")
             time.sleep(0.01)
+        lasted = time.monotonic() - started
         messages = [stream.change(timeout=3.0)[0]]
         try:
             while True:
@@ -302,9 +312,13 @@ def test_a_burst_is_one_message_not_ten(studio):
         except (EOFError, socket.timeout, TimeoutError, OSError):
             pass
         assert all(kinds == ["capture"] for kinds in messages), messages
-        # One, or two on a machine slow enough to stretch the burst past the
-        # quarter second a change waits for the rest of it; never ten.
-        assert len(messages) <= 2, f"a burst of ten reached the window as {len(messages)} messages"
+        # Each message closes a window that opened at the first change after
+        # the last one, so a burst lasting `lasted` spans at most this many.
+        windows = math.ceil(lasted / events_route.COALESCE_S) + 1
+        assert len(messages) <= windows, (
+            f"a burst of ten over {lasted:.2f} s reached the window as {len(messages)} messages, "
+            f"more than its {windows} coalescing windows")
+        assert len(messages) < 10, "the burst was not coalesced at all"
     finally:
         stream.close()
 
