@@ -1238,14 +1238,17 @@
 
   // null when the page has no demographics heading; [] when it has one and
   // no entries the reader can pair; otherwise the entries, in page order.
+  // Only what follows the heading is read, so a block that shares an
+  // ancestor with the network split never takes its percentages.
   function readPostDemographics(leaves) {
     const heading = leaves.find((el) => /demographics/i.test(clean(el.textContent)));
     if (!heading) return null;
-    // The block is the nearest ancestor holding at least two percentages.
+    const after = (el) => Boolean(heading.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+    // The block is the nearest ancestor holding at least two percentages after the heading.
     let box = heading.parentElement;
     let percents = [];
     for (let depth = 0; depth < 4 && box; depth += 1, box = box.parentElement) {
-      percents = leaves.filter((el) => box.contains(el) && PERCENT_ONLY.test(clean(el.textContent)));
+      percents = leaves.filter((el) => box.contains(el) && after(el) && PERCENT_ONLY.test(clean(el.textContent)));
       if (percents.length >= 2) break;
     }
     if (!box || percents.length < 2) return [];
@@ -1253,7 +1256,7 @@
     const entries = [];
     let label = null;
     for (const el of leaves) {
-      if (!box.contains(el) || el === heading) continue;
+      if (!box.contains(el) || !after(el)) continue;
       const text = clean(el.textContent);
       if (PERCENT_ONLY.test(text)) {
         const percentage = parsePercent(text);
@@ -1327,17 +1330,28 @@
     // 'rounded' when any figure stored was abbreviated, 'exact' otherwise.
     // A figure that is not a multiple of its rounding step is exact
     // whatever the row says, so the studio can still say which ones.
+    // The two shares are complementary, so a pair that does not add up to
+    // about 100 is a misread (two labels that found one percentage), and is
+    // dropped and reported rather than stored.
+    let splitMisread = false;
+    if (metrics.in_network_pct !== undefined && metrics.out_of_network_pct !== undefined &&
+        Math.abs(metrics.in_network_pct + metrics.out_of_network_pct - 100) > 1) {
+      delete metrics.in_network_pct;
+      delete metrics.out_of_network_pct;
+      splitMisread = true;
+    }
     if (Object.keys(metrics).length) metrics.precision = rounded.length ? "rounded" : "exact";
     const demographics = readPostDemographics(leaves);
     if (demographics && demographics.length) metrics.demographics = demographics;
-    return { metrics, demographics };
+    return { metrics, demographics, splitMisread };
   }
 
   // What a page that plainly is the post analytics page failed to show the
   // reader, by name, so an unverified label shows in Setup as drift rather
   // than as a figure that quietly never arrives.
-  function postAnalyticsDrift(metrics, demographics) {
+  function postAnalyticsDrift(metrics, demographics, splitMisread) {
     const drift = POST_LABELS_ON_EVERY_POST.filter((key) => key !== "demographics" && metrics[key] === undefined);
+    if (splitMisread) drift.push("network_split");
     if (demographics === null) drift.push("demographics");
     else if (!demographics.length) drift.push("demographics_entries");
     return drift;
@@ -1347,9 +1361,10 @@
     const urn = postAnalyticsUrn();
     const me = await getConfirmedVanity();
     if (!urn || !me) return;
-    const { metrics, demographics } = readPostAnalytics();
+    const { metrics, demographics, splitMisread } = readPostAnalytics();
     const found = Object.keys(metrics).filter((key) => key !== "precision" && key !== "demographics").length;
-    reportCapture("post_analytics", found, found, found ? postAnalyticsDrift(metrics, demographics) : ["metric_labels"]);
+    reportCapture("post_analytics", found, found,
+                  found ? postAnalyticsDrift(metrics, demographics, splitMisread) : ["metric_labels"]);
     if (!found) return;
     // The creator is standing on their own post's analytics page, having
     // opened it on purpose, so a refusal here is worth a sentence on the page.

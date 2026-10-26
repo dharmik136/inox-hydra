@@ -156,3 +156,33 @@ def test_a_demographics_heading_with_no_readable_entries_is_drift(pages):
     body = f"<main><ul>{SEVEN}</ul><section><h3>Viewer demographics</h3><p>Not enough data yet</p></section></main>"
     page = _read(pages, body)
     assert "demographics_entries" in _capture(pages, page)[-1]["drift"]
+
+
+# ---------------------------------------------------------------------------
+# Telling the split and the demographics apart from what sits near them
+# ---------------------------------------------------------------------------
+
+def test_a_network_split_that_does_not_add_up_is_drift_and_never_stored(pages):
+    """
+    The two shares are complementary. In a column layout both labels can
+    find the same percentage first; 62 and 62 is a misread, not a figure.
+    """
+    body = f"""<main><ul>{SEVEN}</ul>
+      <section><div><span>In your network</span><span>Outside your network</span></div>
+               <div><span>62%</span><span>38%</span></div></section></main>"""
+    page = _read(pages, body)
+    metrics = _sent(pages, page)[0]["metrics"]
+    assert "in_network_pct" not in metrics and "out_of_network_pct" not in metrics
+    assert "network_split" in _capture(pages, page)[-1]["drift"]
+
+
+def test_demographics_never_take_the_network_split_above_their_heading(pages):
+    body = f"""<main><ul>{SEVEN}</ul>
+      <section><div><span>In your network</span><span>62%</span></div>
+               <div><span>Outside your network</span><span>38%</span></div>
+               <h3>Viewer demographics</h3><p>Founder</p><p>21%</p><p>Engineer</p><p>14%</p></section></main>"""
+    page = _read(pages, body)
+    metrics = _sent(pages, page)[0]["metrics"]
+    assert (metrics["in_network_pct"], metrics["out_of_network_pct"]) == (62, 38)
+    labels = [entry["label"] for entry in metrics["demographics"]]
+    assert labels == ["Founder", "Engineer"], labels
