@@ -220,11 +220,14 @@ def get_topic_attribution_map() -> Dict[str, Any]:
     """
     conn = get_db()
     try:
-        # Fetch posts
-        post_rows = conn.execute(
-            "SELECT activity_urn, text, reactions, comments FROM own_posts WHERE text IS NOT NULL"
-        ).fetchall()
-        posts = [dict(r) for r in post_rows]
+        # Each post's reactions from the one engine, results.figures: the
+        # newest reading the studio holds, with its source. This summed the
+        # own_posts snapshot, which the activity page overwrites, so a topic's
+        # total could disagree with the figures Posts showed for the same
+        # posts in the same minute.
+        read = results.figures(conn)
+        posts = [dict(r, reactions=(read.get(r["activity_urn"]) or {}).get("reactions"))
+                 for r in conn.execute("SELECT activity_urn, text FROM own_posts WHERE text IS NOT NULL").fetchall()]
 
         # Who engaged with each post, from the per-post summary, and which
         # leads count as qualified. Every interaction joined to its lead used
