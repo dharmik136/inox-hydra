@@ -69,18 +69,22 @@ def _derived(activity_urn: str) -> Dict[str, Any]:
     finally:
         conn.close()
     readings = onboarding.post_readings(activity_urn)
-    page = [r for r in readings if r["source"] == "post_analytics"]
-    newest = page[-1] if page else None
-    per_post = None
-    if newest and any(newest.get(field) is not None for field in PER_POST_FIELDS):
-        per_post = {**{field: newest.get(field) for field in PER_POST_FIELDS},
-                    "read_at": newest["observed_at"], "read_at_age_hours": newest["age_hours"],
-                    "precision": newest["precision"]}
+    # Each figure from the newest analytics-page reading that has it (review
+    # S2 and N7), with that reading's time, age and precision: a figure read
+    # at 26 hours and not shown at 50 is still the figure read at 26.
+    per_post: Dict[str, Any] = {}
+    for reading in readings:
+        if reading["source"] != "post_analytics":
+            continue
+        for field in PER_POST_FIELDS:
+            if reading.get(field) is not None:
+                per_post[field] = {"value": reading[field], "read_at": reading["observed_at"],
+                                   "read_at_age_hours": reading["age_hours"], "precision": reading["precision"]}
     return {
         "figures_precision": figure.get("precision"),
         "approximate": results.approximate_fields(figure),
         "readings": readings,
-        "per_post": per_post,
+        "per_post": per_post or None,
         "demographics": onboarding.post_demographics(activity_urn),
         "movement": movement,
         "half_life": half_life,

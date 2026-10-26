@@ -1490,6 +1490,14 @@ def _migrate_reading_precision_and_series(cursor: sqlite3.Cursor) -> None:
         "ON audience_demographic_readings(activity_urn, observed_on)"
     )
 
+    # Each figure of a post is now the newest reading that has it (review
+    # S2), and the per-post summary keeps that per figure. Rows written
+    # before carry one reading for all four, so they are marked for the
+    # catch-up to rewrite, as a new reading would mark them; until it has,
+    # results.figures reads those posts from the readings themselves.
+    if cursor.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'post_engagement'").fetchone():
+        cursor.execute("UPDATE post_engagement SET stale = stale | 2 WHERE latest_reading IS NOT NULL")
+
     # grain: one row per day per window the creator analytics page was read
     # at. A figure the card did not show is NULL, never 0.
     cursor.execute("""

@@ -203,8 +203,9 @@ def test_the_new_post_figures_and_the_network_split_land_in_the_reading(client):
     assert (reading["article_views"], reading["video_views"]) == (15, 0)
     assert (reading["in_network_pct"], reading["out_of_network_pct"]) == (62.0, 38.0)
     detail = client.get(f"/api/v1/insights/posts/{mine}").json()
-    assert detail["per_post"]["followers_gained"] == 12 and detail["per_post"]["in_network_pct"] == 62.0
-    assert detail["per_post"]["read_at_age_hours"] == pytest.approx(30, abs=1)
+    assert detail["per_post"]["followers_gained"]["value"] == 12
+    assert detail["per_post"]["in_network_pct"]["value"] == 62.0
+    assert detail["per_post"]["followers_gained"]["read_at_age_hours"] == pytest.approx(30, abs=1)
     assert detail["readings"][0]["out_of_network_pct"] == 38.0
     # A reading from the activity page carries none of them, and says so with NULL.
     other = urn_hours_ago(40, 1)
@@ -478,7 +479,7 @@ def test_the_decay_sentence_names_the_change_the_interval_and_its_reading_count(
     assert moved["approximate"] is False
     # The brief's form: "+N since the reading K hours ago, over M readings", with the latest named.
     assert moved["sentence"] == ("still moving: +50 impressions since the reading 26 hours ago, "
-                                 "over 2 readings, the latest 2 hours ago")
+                                 "over 2 readings on its analytics page, the latest 2 hours ago")
     # What is usual at this age rests on the settle curve, which holds one post here: this one.
     assert moved["usual"]["verdict"] == "too_few_posts" and moved["usual"]["posts"] == 1
     assert "not enough posts" in moved["usual"]["sentence"] and "(1 of 20)" in moved["usual"]["sentence"]
@@ -488,7 +489,8 @@ def test_the_decay_sentence_names_the_change_the_interval_and_its_reading_count(
     # A figure that did not change says so; it never says "still moving".
     _reading(mine, 51.0, precision="exact", impressions=1250, reactions=41)
     assert _movement(mine)["verdict"] == "unchanged"
-    assert _movement(mine)["sentence"] == "unchanged since the reading 2 hours ago, over 3 readings, the latest 1 hour ago"
+    assert _movement(mine)["sentence"] == ("unchanged since the reading 2 hours ago, over 3 readings on its analytics "
+                                           "page, the latest 1 hour ago")
 
 
 def test_rounded_readings_make_the_sentence_say_about_or_abstain(client):
@@ -507,6 +509,12 @@ def test_rounded_readings_make_the_sentence_say_about_or_abstain(client):
     held = _movement(other)
     assert held["verdict"] == "within_rounding" and held["within_rounding"] is True
     assert "cannot separate" in held["sentence"] and "still moving" not in held["sentence"]
+    # Review N5: one rounded reading is enough, and the sentence does not say "two".
+    one = urn_hours_ago(54, 4)
+    _posts(client, one)
+    _reading(one, 26.0, precision="exact", impressions=12345)
+    _reading(one, 50.0, precision="rounded", impressions=12000)
+    assert "cannot separate" in _movement(one)["sentence"] and "two rounded" not in _movement(one)["sentence"]
 
 
 def _curve_posts(count, days_old_from=40, first=0):
@@ -573,9 +581,11 @@ def test_the_half_life_needs_three_readings_and_a_day_seven_point(client):
     # Half of 10,000 is 5,000, reached between 1,000 at 2 h and 6,000 at 24 h: 2 + 4/5 of 22.
     assert measured["hours"] == 19.6 and measured["between_hours"] == [2.0, 24.0]
     assert measured["denominator"] == {"value": 10000, "age_hours": 170.0, "precision": "exact"}
+    assert measured["source"] == "post_analytics"
     assert measured["approximate"] is False and measured["readings"] == 4
     assert measured["sentence"] == ("20 hours to half of the 10,000 impressions it had at 170 hours old, "
-                                    "interpolated between readings at 2 and 24 hours, over 4 readings")
+                                    "interpolated between readings at 2 and 24 hours, over 4 readings on its "
+                                    "analytics page")
     detail = client.get(f"/api/v1/insights/posts/{mine}").json()
     assert detail["half_life"]["hours"] == 19.6 and detail["movement"]["readings"] == 4
 
@@ -590,19 +600,24 @@ def test_a_half_life_reached_before_the_first_reading_is_an_upper_bound(client):
     assert bound["verdict"] == "before_first_reading" and bound["hours"] == 20.0
     assert bound["approximate"] is True, "8K is a rounded figure"
     assert bound["sentence"] == ("under 20 hours to half of the 10,000 impressions it had at 180 hours old: "
-                                 "its first reading already held about half, over 3 readings")
+                                 "its first reading already held about half, over 3 readings on its analytics page")
 
 
 def test_readings_from_different_pages_are_never_mixed(client):
-    """The feed card and the post's own analytics page count different things."""
+    """
+    The feed card and the post's own analytics page count different things,
+    so a series is one page's: the page that read the figure most often
+    (review S2), here the Activity tab's two readings, never 10 -> 20 -> 30
+    across both pages.
+    """
     mine = urn_hours_ago(52)
     _posts(client, mine)
     _reading(mine, 26.0, source="activity_page", reactions=10)
     _reading(mine, 40.0, source="activity_page", reactions=20)
     _reading(mine, 50.0, source="post_analytics", reactions=30)
     moved = _movement(mine, "reactions")
-    assert moved["source"] == "post_analytics" and moved["readings"] == 1
-    assert moved["verdict"] == "too_few_readings"
+    assert moved["source"] == "activity_page" and moved["readings"] == 2
+    assert moved["change"] == 10 and "on your Activity tab" in moved["sentence"]
 
 
 def test_half_lives_are_compared_through_spread_and_difference(home):
@@ -991,3 +1006,121 @@ def test_sightings_say_how_long_each_new_field_has_gone_unread(client):
     assert {f["field"]: f["readings_since"] for f in route["fields"]} == {
         f: fields[f]["readings_since"] for f in fields}
     assert "may not show" in route["meaning"] and "label may have changed" in route["meaning"]
+
+
+# ---------------------------------------------------------------------------
+# Review S2 and Track 6's finding: a newer reading never erases what older
+# readings say. Each figure's latest value is the newest reading that has
+# it; a derivation reads one page's series per figure.
+# ---------------------------------------------------------------------------
+
+def _figures_both_ways(urn):
+    """results.figures read before and after the per-post summary is rebuilt: the two paths must agree."""
+    import post_summary
+    import results
+    conn = _db()
+    try:
+        raw = results.figures(conn, [urn])[urn]
+        with conn:
+            post_summary.refresh(conn, [urn])
+        summary = results.figures(conn, [urn])[urn]
+    finally:
+        conn.close()
+    assert raw == summary, (raw, summary)
+    return raw
+
+
+def test_a_newer_reading_that_lacks_a_figure_keeps_the_older_value(client):
+    import results
+    mine = urn_hours_ago(300)
+    _posts(client, mine)
+    _reading(mine, 48.0, precision="exact", impressions=1000, reactions=40, comments=4)
+    _reading(mine, 100.0, source="activity_page", reactions=45, comments=5)
+    figure = _figures_both_ways(mine)
+    assert (figure["impressions"], figure["reactions"], figure["comments"]) == (1000, 45, 5)
+    assert figure["by_figure"]["impressions"]["source"] == "post_analytics"
+    assert figure["by_figure"]["reactions"]["source"] == "activity_page"
+    assert figure["source"] == "activity_page", "the newest reading is still named as the newest"
+    # A rate never mixes two readings: impressions and reactions came from two.
+    assert results.engagement_rate(figure) == (None, "different_readings")
+    assert "different readings" in results.rate_reason_sentence("different_readings")
+
+
+def test_a_newer_reading_from_another_source_does_not_make_a_figure_unmeasured(client):
+    """Track 6's case: an export row, merged, became the newest reading and reactions read not measured."""
+    import results
+    mine = urn_hours_ago(300)
+    _posts(client, mine)
+    _reading(mine, 48.0, precision="exact", impressions=1000, reactions=40)
+    _reading(mine, 120.0, source="analytics_export", impressions=1200)
+    figure = _figures_both_ways(mine)
+    assert (figure["impressions"], figure["reactions"]) == (1200, 40)
+    assert figure["by_figure"]["impressions"]["source"] == "analytics_export"
+    assert figure["by_figure"]["reactions"]["source"] == "post_analytics"
+    # One reading with both still gives its rate.
+    _reading(mine, 130.0, source="analytics_export", impressions=1300, reactions=52)
+    assert results.engagement_rate(_figures_both_ways(mine)) == (4.0, None)
+
+
+def test_one_stray_reading_from_another_page_never_displaces_a_series(client):
+    """Review S2: one Activity-tab reading that printed impressions erased a measured half-life."""
+    import results
+    mine = urn_hours_ago(400)
+    _posts(client, mine)
+    _reading(mine, 2.0, precision="exact", impressions=1000)
+    _reading(mine, 24.0, precision="exact", impressions=6000)
+    _reading(mine, 170.0, precision="exact", impressions=10000)
+    _reading(mine, 200.0, source="activity_page", impressions=10500)
+    life = _half_life(mine)
+    assert life["verdict"] == "measured" and life["hours"] == 19.6 and life["readings"] == 3
+    assert life["source"] == "post_analytics" and "over 3 readings on its analytics page" in life["sentence"]
+    moved = _movement(mine)
+    assert moved["readings"] == 3 and moved["source"] == "post_analytics"
+    assert moved["change"] == 4000 and "over 3 readings on its analytics page" in moved["sentence"]
+    conn = _db()
+    try:
+        results.forget_cache()
+        assert mine in results.half_lives(conn)
+    finally:
+        conn.close()
+
+
+def test_the_denser_page_is_the_series_and_the_sentence_names_it(client):
+    mine = urn_hours_ago(300)
+    _posts(client, mine)
+    _reading(mine, 30.0, precision="exact", reactions=20)
+    _reading(mine, 60.0, precision="exact", reactions=30)
+    for age, reactions in ((40.0, 22), (70.0, 31), (100.0, 35), (130.0, 38)):
+        _reading(mine, age, source="activity_page", reactions=reactions)
+    moved = _movement(mine, "reactions")
+    assert moved["source"] == "activity_page" and moved["readings"] == 4
+    assert moved["change"] == 3 and "over 4 readings on your Activity tab" in moved["sentence"]
+
+
+def test_per_post_figures_come_from_the_newest_page_reading_that_has_each(client):
+    """Review N7: a figure read at 26 hours and absent at 50 showed as not read."""
+    mine = urn_hours_ago(60)
+    _posts(client, mine)
+    client.post("/api/v1/self/posts/analytics", json={"author": ME, "activity_urn": mine, "metrics": {
+        "impressions": 900, "followers_gained": 4}})
+    conn = _db()
+    with conn:
+        conn.execute("UPDATE post_metric_observations SET observed_hour = 'earlier', "
+                     "observed_at = ? WHERE activity_urn = ?", ((NOW - timedelta(hours=24)).isoformat(), mine))
+    conn.close()
+    client.post("/api/v1/self/posts/analytics", json={"author": ME, "activity_urn": mine, "metrics": {
+        "impressions": 1400, "profile_viewers": 9}})
+    per_post = client.get(f"/api/v1/insights/posts/{mine}").json()["per_post"]
+    assert per_post["followers_gained"]["value"] == 4 and per_post["profile_viewers"]["value"] == 9
+    assert per_post["followers_gained"]["read_at"] < per_post["profile_viewers"]["read_at"]
+
+
+def test_the_analytics_table_never_rates_two_readings_together(client):
+    """The leaderboard rebuilt the figures for its rate, so it must carry where each came from."""
+    mine = urn_hours_ago(300)
+    _posts(client, mine)
+    _reading(mine, 48.0, precision="exact", impressions=1000, reactions=40)
+    _reading(mine, 100.0, source="activity_page", reactions=45)
+    row = next(p for p in client.get("/api/analytics/posts?limit=200").json()["posts"] if p["id"] == mine)
+    assert (row["impressions"], row["reactions"]) == (1000, 45)
+    assert row["engagement_rate"] is None and row["engagement_rate_unmeasured"] == "different_readings"

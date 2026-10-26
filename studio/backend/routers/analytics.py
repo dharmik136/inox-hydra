@@ -391,7 +391,7 @@ def export_analytics(format: str = "csv"):
         conn.close()
 
 
-def _rate(impressions, reactions, comments, shares):
+def _rate(impressions, reactions, comments, shares, by_figure=None):
     """
     (reactions + comments + shares) / impressions as a percentage, and the
     reason there is none when there is none.
@@ -402,7 +402,7 @@ def _rate(impressions, reactions, comments, shares):
     promoted exactly that post.
     """
     return results.engagement_rate({"impressions": impressions, "reactions": reactions,
-                                    "comments": comments, "reposts": shares})
+                                    "comments": comments, "reposts": shares, "by_figure": by_figure})
 
 
 @router.get("/api/analytics/posts")
@@ -449,6 +449,9 @@ def get_posts_leaderboard(limit: Optional[int] = Query(None, ge=1), offset: int 
                 "impressions": figure.get("impressions"), "reactions": figure.get("reactions"),
                 "comments": figure.get("comments"), "shares": figure.get("reposts"), "tags": r["tags"],
                 "figures_source": figure.get("source"), "figures_read_at": figure.get("read_at"),
+                # Which reading each figure came from (results.figures), so the
+                # rate below is measured only from one reading.
+                "figures_by_figure": figure.get("by_figure"),
                 "activity_urn": r["activity_urn"], "studio_post_id": r["post_id"],
             })
         for r in cursor.execute("""
@@ -523,7 +526,8 @@ def get_posts_leaderboard(limit: Optional[int] = Query(None, ge=1), offset: int 
 
         rows = []
         for d in listed:
-            rate, reason = _rate(d["impressions"], d["reactions"], d["comments"], d["shares"])
+            rate, reason = _rate(d["impressions"], d["reactions"], d["comments"], d["shares"],
+                                 d.get("figures_by_figure"))
             d["engagement_rate"] = rate
             # Why there is no rate, so the screen says it rather than leaving
             # a blank or printing an impossible number.

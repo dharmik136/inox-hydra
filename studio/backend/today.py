@@ -146,8 +146,8 @@ def _latest_post(conn) -> Optional[Dict[str, Any]]:
 def _movement(conn, latest: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """
     Whether the latest post is still moving, as readings with their count,
-    from the one engine: "+N since the reading K hours before the latest
-    one, over M readings". results.movement abstains with one reading, says
+    from the one engine: "+N since the reading K hours ago, over M readings
+    on its analytics page". results.movement abstains with one reading, says
     "about" when a reading was rounded, says when two rounded readings cannot
     separate a change from their rounding, and names what is usual at this
     age only where the settle curve rests on enough posts. Nothing here is
