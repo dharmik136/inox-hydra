@@ -668,9 +668,14 @@ def get_post_engagers(post_id: str):
         # and leads.id is TEXT, so a join written l.id = i.lead_id applies
         # numeric affinity and the leads primary key cannot serve it. Written
         # that way this read scanned all 49,142 leads (7.66 ms for one post of
-        # three years); by the index it is 0.12 ms, for the same rows in the
-        # same order. The last two sort keys are the order the old scan met
-        # rows in.
+        # three years); by the index it is 0.12 ms.
+        #
+        # Newest engagement first. This answered ORDER BY l.icp_score DESC,
+        # so the Posts detail listed a post's people by a keyword guess about
+        # their job titles, which the product says it does not do
+        # (today.py; tests/test_no_ranking_of_people_by_score.py). When
+        # someone engaged is a fact. The last two keys break ties the way the
+        # old scan met rows.
         cursor.execute(
             f"""
             SELECT l.id, l.full_name, l.name, l.headline, l.company,
@@ -678,7 +683,7 @@ def get_post_engagers(post_id: str):
                    i.interaction_type, i.comment_text, i.interacted_at
             FROM lead_interactions i {post_summary.LEAD_JOIN}
             WHERE i.post_urn IN ({', '.join('?' for _ in ref['engagement_urns'])})
-            ORDER BY l.icp_score DESC, l.rowid, i.id
+            ORDER BY i.interacted_at DESC, l.rowid, i.id
             """,
             ref["engagement_urns"],
         )
