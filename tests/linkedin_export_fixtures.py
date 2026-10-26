@@ -67,8 +67,13 @@ def _column(index: int) -> str:
     return name
 
 
-def build(sheets: Sequence[Tuple[str, List[List[Any]]]], inline: bool = False) -> bytes:
-    """An .xlsx with these sheets: text as shared strings (as Excel writes it) or inline, numbers as numbers."""
+def build(sheets: Sequence[Tuple[str, List[List[Any]]]], inline: bool = False, date1904: bool = False,
+          compression: int = zipfile.ZIP_DEFLATED) -> bytes:
+    """
+    An .xlsx with these sheets: text as shared strings (as Excel writes it) or
+    inline, numbers as numbers. `date1904` marks the workbook as using the
+    1904 date system, which Excel for Mac could save in.
+    """
     shared: List[str] = []
     index_of = {}
 
@@ -103,7 +108,8 @@ def build(sheets: Sequence[Tuple[str, List[List[Any]]]], inline: bool = False) -
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-        f'<sheets>{workbook_sheets}</sheets></workbook>')
+        + ('<workbookPr date1904="1"/>' if date1904 else '')
+        + f'<sheets>{workbook_sheets}</sheets></workbook>')
     rels = "".join(
         f'<Relationship Id="rId{n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
         f'Target="worksheets/sheet{n}.xml"/>' for n in range(1, len(sheets) + 1))
@@ -122,7 +128,7 @@ def build(sheets: Sequence[Tuple[str, List[List[Any]]]], inline: bool = False) -
         '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
         '<Default Extension="xml" ContentType="application/xml"/></Types>')
     buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+    with zipfile.ZipFile(buffer, "w", compression) as archive:
         for name, text in parts.items():
             archive.writestr(name, text)
     return buffer.getvalue()

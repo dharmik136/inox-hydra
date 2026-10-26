@@ -106,7 +106,12 @@ MAX_COLUMNS = 64
 MAX_CELL_CHARS = 2000
 HEADER_SCAN = 15
 UPLOAD_TTL = timedelta(hours=24)
+# Day 0 of a workbook's serial dates. Excel's usual system counts from the
+# last day of 1899; a workbook marked date1904 (Excel for Mac could save one)
+# counts from 1 January 1904, 1,462 days later. Read in the wrong system, a
+# date lands four years and a day away and still looks certain.
 EXCEL_EPOCH = date(1899, 12, 30)
+EXCEL_EPOCH_1904 = date(1904, 1, 1)
 
 NS_MAIN = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 NS_REL = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
@@ -384,11 +389,14 @@ def _shared_strings(parts: _Parts) -> List[str]:
     return [_text_of(item) for item in _xml(data).iter(f"{NS_MAIN}si")]
 
 
-def _sheet_parts(parts: _Parts) -> List[Tuple[str, str]]:
-    """(sheet name, part name) in workbook order."""
+def _sheet_parts(parts: _Parts) -> Tuple[List[Tuple[str, str]], date]:
+    """(sheet name, part name) in workbook order, and the day its serial dates count from."""
     workbook = parts.get("xl/workbook.xml")
     if workbook is None:
         raise ExportError("That file is not a spreadsheet: it has no workbook in it.")
+    root = _xml(workbook)
+    settings = root.find(f"{NS_MAIN}workbookPr")
+    date1904 = settings is not None and (settings.get("date1904") or "").strip().lower() in ("1", "true")
     targets: Dict[str, str] = {}
     rels = parts.get("xl/_rels/workbook.xml.rels")
     if rels is not None:
@@ -397,12 +405,12 @@ def _sheet_parts(parts: _Parts) -> List[Tuple[str, str]]:
             target = target[1:] if target.startswith("/") else (target if target.startswith("xl/") else "xl/" + target)
             targets[rel.get("Id") or ""] = target
     found = []
-    for sheet in _xml(workbook).iter(f"{NS_MAIN}sheet"):
+    for sheet in root.iter(f"{NS_MAIN}sheet"):
         part = targets.get(sheet.get(f"{NS_REL}id") or "") or f"xl/worksheets/sheet{len(found) + 1}.xml"
         found.append((sheet.get("name") or f"Sheet{len(found) + 1}", part))
         if len(found) >= MAX_SHEETS:
             break
-    return found
+    return found, (EXCEL_EPOCH_1904 if date1904 else EXCEL_EPOCH)
 
 
 def _column_index(reference: str) -> Optional[int]:
@@ -480,13 +488,14 @@ def read_workbook(path: str) -> Dict[str, Any]:
         parts = _Parts(archive)
         strings = _shared_strings(parts)
         sheets = []
-        for name, part in _sheet_parts(parts):
+        named, epoch = _sheet_parts(parts)
+        for name, part in named:
             data = parts.get(part)
             if data is None:
                 continue
             rows, truncated = _rows(data, strings)
             sheets.append({"name": name, "rows": rows, "truncated": truncated})
-    return {"bytes": size, "sheets": sheets}
+    return {"bytes": size, "sheets": sheets, "epoch": epoch}
 
 
 # ---------------------------------------------------------------------------
@@ -516,13 +525,13 @@ def _safe_date(year: int, month: int, day: int) -> Optional[date]:
         return None
 
 
-def _date_cell(value: Any) -> Tuple[Optional[date], Optional[Tuple[int, int, int]]]:
+def _date_cell(value: Any, epoch: date = EXCEL_EPOCH) -> Tuple[Optional[date], Optional[Tuple[int, int, int]]]:
     """A date, or, for a slashed date, its (first, second, year) for the column to put in order."""
     if value is None or isinstance(value, bool):
         return None, None
     if isinstance(value, (int, float)):
         if 20000 <= value <= 80000:
-            return EXCEL_EPOCH + timedelta(days=int(value)), None
+            return epoch + timedelta(days=int(value)), None
         return None, None
     text = str(value).strip()
     found = _ISO.match(text)
@@ -581,9 +590,10 @@ UNORDERED = ("its dates are written as numbers with slashes and nothing in the f
              "month comes first")
 
 
-def _dates(values: List[Any], within: Optional[Tuple[date, date]]) -> Tuple[List[Optional[date]], Optional[str]]:
+def _dates(values: List[Any], within: Optional[Tuple[date, date]],
+           epoch: date = EXCEL_EPOCH) -> Tuple[List[Optional[date]], Optional[str]]:
     """Each value's date, a column's slashed dates put in one order, or the reason they could not be."""
-    parsed = [_date_cell(value) for value in values]
+    parsed = [_date_cell(value, epoch) for value in values]
     slashed = [parts for _d, parts in parsed if parts]
     order = _order(slashed, within) if slashed else None
     if slashed and order is None:
@@ -684,7 +694,8 @@ def _kind(sheet: Dict[str, Any]) -> Optional[str]:
 # Reading each kind of sheet into figures
 # ---------------------------------------------------------------------------
 
-def _daily_table(rows: List[List[Any]], kind: str, within: Optional[Tuple[date, date]]) -> Dict[str, Any]:
+def _daily_table(rows: List[List[Any]], kind: str, within: Optional[Tuple[date, date]],
+                 epoch: date = EXCEL_EPOCH) -> Dict[str, Any]:
     """A table of days: {days: {date: {field: count}}, recognised, unknown, problem, rows}."""
     vocabulary = VOCABULARY[kind]
     for at, row in enumerate(rows[:HEADER_SCAN]):
@@ -692,7 +703,7 @@ def _daily_table(rows: List[List[Any]], kind: str, within: Optional[Tuple[date, 
         if "date" in found and len(found) >= 2:
             body = [r for r in rows[at + 1:] if any(c is not None and str(c).strip() != "" for c in r)]
             column = found["date"]
-            dates, problem = _dates([r[column] if column < len(r) else None for r in body], within)
+            dates, problem = _dates([r[column] if column < len(r) else None for r in body], within, epoch)
             days: Dict[date, Dict[str, int]] = {}
             skipped = 0
             for r, day in zip(body, dates):
@@ -711,7 +722,8 @@ def _daily_table(rows: List[List[Any]], kind: str, within: Optional[Tuple[date, 
 TOTAL_FOLLOWERS = re.compile(r"^total followers on (.+)$")
 
 
-def _followers_total(rows: List[List[Any]], within: Optional[Tuple[date, date]]) -> Optional[Dict[str, Any]]:
+def _followers_total(rows: List[List[Any]], within: Optional[Tuple[date, date]],
+                     epoch: date = EXCEL_EPOCH) -> Optional[Dict[str, Any]]:
     """The 'Total followers on <date>' line: {date, followers} or {problem}."""
     for label, raw, value in _pairs(rows[:HEADER_SCAN]):
         found = TOTAL_FOLLOWERS.match(label)
@@ -719,7 +731,7 @@ def _followers_total(rows: List[List[Any]], within: Optional[Tuple[date, date]])
             continue
         count = _count(value)
         when_text = raw.split(" on ", 1)[1].rstrip(":").strip() if " on " in raw else found.group(1)
-        dates, problem = _dates([when_text], within)
+        dates, problem = _dates([when_text], within, epoch)
         if count is None or dates[0] is None:
             return {"problem": problem or "its date or its figure could not be read"}
         return {"date": dates[0], "followers": count}
@@ -848,6 +860,7 @@ def _name_range(name: str) -> Optional[Tuple[date, date]]:
 def _understand(name: str, workbook: Dict[str, Any], modified: Optional[datetime]) -> Dict[str, Any]:
     """Every sheet recognised or not, what each would write, and the range the export covers."""
     within = _name_range(name)
+    epoch = workbook.get("epoch", EXCEL_EPOCH)
     sheets = []
     daily_dates: List[date] = []
     for sheet in workbook["sheets"]:
@@ -866,11 +879,11 @@ def _understand(name: str, workbook: Dict[str, Any], modified: Optional[datetime
         entry.update(label=LABELS[kind], writes=WRITES.get(kind), default=DEFAULTS.get(kind, False))
         problem = None
         if kind in ("engagement", "followers"):
-            read = _daily_table(rows, kind, within)
+            read = _daily_table(rows, kind, within, epoch)
             entry.update(recognised=read["recognised"], not_recognised=read["unknown"], rows=read["rows"])
             entry["read"] = read
             if kind == "followers":
-                total = _followers_total(rows, within)
+                total = _followers_total(rows, within, epoch)
                 entry["total"] = total
                 if total and "date" in total:
                     entry["recognised"] = entry["recognised"] + ["total followers"]
@@ -882,6 +895,7 @@ def _understand(name: str, workbook: Dict[str, Any], modified: Optional[datetime
                 daily_dates.extend(read["days"])
         elif kind == "top_posts":
             read = _top_posts(rows)
+            read["epoch"] = epoch
             entry.update(recognised=read["recognised"], not_recognised=read["unknown"], rows=read["rows"])
             entry["read"] = read
             problem = read["problem"]
@@ -1015,7 +1029,7 @@ def _write_days(conn, days: Dict[date, Dict[str, int]]) -> Dict[str, int]:
     return {"added": added, "updated": updated, "kept_as_read": kept}
 
 
-def _published(conn, urn: str, fallback: Any) -> Optional[date]:
+def _published(conn, urn: str, fallback: Any, epoch: date = EXCEL_EPOCH) -> Optional[date]:
     """When a post was published: the studio's record of it, its activity id, or the export's own date."""
     row = conn.execute("SELECT published_at FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone()
     when = _instant(row["published_at"]) if row and row["published_at"] else None
@@ -1027,7 +1041,7 @@ def _published(conn, urn: str, fallback: Any) -> Optional[date]:
         when = _instant(onboarding.published_at_from_urn(urn))
     if when is not None:
         return when.date()
-    dates, _problem = _dates([fallback], None)
+    dates, _problem = _dates([fallback], None, epoch)
     return dates[0]
 
 
@@ -1071,7 +1085,7 @@ def _write_top_posts(conn, read: Dict[str, Any], span: Dict[str, Any], columns: 
         if not _held(conn, urn):
             not_yours += 1
             continue
-        published = _published(conn, urn, entry.get("published"))
+        published = _published(conn, urn, entry.get("published"), read.get("epoch", EXCEL_EPOCH))
         if published is None:
             undated += 1
             continue

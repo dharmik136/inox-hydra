@@ -405,3 +405,29 @@ def test_setup_and_analytics_carry_the_two_entry_points():
     assert "<AnalyticsExportImport" in setup
     analytics = _read("studio/ui/src/components/AnalyticsSurface.tsx")
     assert 'href="#/setup"' in analytics and "analytics export" in analytics.lower()
+
+
+# ---------------------------------------------------------------------------
+# Review round, SF-4: the 1904 date system
+# ---------------------------------------------------------------------------
+
+def test_a_workbook_in_the_1904_date_system_lands_on_its_own_days(studio):
+    """
+    The reviewer's file: serials 44853 to 44855 in a workbook marked
+    date1904 are 20 to 22 October 2026. Read in the 1900 system they were
+    imported four years and a day early, as exact figures.
+    """
+    sheets = [("ENGAGEMENT", [["Date", "Impressions", "Engagements"], [44853, 100, 5], [44854, 110, 6],
+                              [44855, 120, 7]])]
+    preview = _upload(studio["client"], fx.build(sheets, date1904=True), name="analytics.xlsx").json()
+    assert preview["range"] == {"start": "2026-10-20", "end": "2026-10-22", "from": "the days in the file"}
+    studio["client"].post("/api/v1/analytics-export/import", json={"source": preview["source"]})
+    days = [r["date"] for r in _rows(studio["db"], "SELECT date FROM analytics_daily ORDER BY date")]
+    assert days == ["2026-10-20", "2026-10-21", "2026-10-22"]
+
+
+def test_the_1900_system_is_still_read_as_before(studio):
+    sheets = [("ENGAGEMENT", [["Date", "Impressions", "Engagements"], [46315, 100, 5], [46317, 120, 7]])]
+    preview = _upload(studio["client"], fx.build(sheets), name="analytics.xlsx").json()
+    assert preview["range"]["start"] == "2026-10-20" and preview["range"]["end"] == "2026-10-22"
+
