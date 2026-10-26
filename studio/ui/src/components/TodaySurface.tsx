@@ -153,7 +153,7 @@ export function TodaySurface({
   const [backups, readBackups] = useRead(useCallback(() => fetchBackupSchedule(), []));
   useRefresh(readEvidence, undefined, ["posts", "readings"]);
   useRefresh(readCadence, undefined, ["posts", "queue"]);
-  useRefresh(readKpis, undefined, ["readings"]);
+  useRefresh(readKpis, undefined, ["account"]);
   useRefresh(readSlots, undefined, ["queue"]);
   // Only the extension knows how many captures it holds, and it says so on
   // its heartbeat.

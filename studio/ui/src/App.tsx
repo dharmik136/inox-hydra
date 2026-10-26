@@ -329,13 +329,14 @@ export default function App() {
   }, [showsHeader, readBridge]);
   useRefresh(readBridge, 60_000);
   // The mark follows the stream. A heartbeat is the moment the bridge can
-  // turn connected, so after one the header reads the state itself unless a
-  // screen reported it first. The minute above stays: nothing is written
-  // when the bridge goes quiet, so only time can say it has.
+  // turn connected, and a write nothing named may be one too, so after
+  // either the header reads the state itself unless a screen reported it
+  // first. The minute above stays: nothing is written when the bridge goes
+  // quiet, so only time can say it has.
   useEffect(() => {
     let waiting: number | undefined;
     const stop = onStudioChange((kinds) => {
-      if (!kinds.includes("heartbeat") || waiting !== undefined) return;
+      if (!(kinds.includes("heartbeat") || kinds.includes("database")) || waiting !== undefined) return;
       const heardAt = Date.now();
       waiting = window.setTimeout(() => {
         waiting = undefined;

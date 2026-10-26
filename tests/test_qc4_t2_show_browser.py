@@ -43,6 +43,20 @@ def _wait_until(condition, timeout=5.0):
     return condition()
 
 
+def _page_wait_until(page, condition, timeout=5.0):
+    """
+    _wait_until for a condition on what the page did. Playwright hands its
+    events to Python only while Python is inside a Playwright call, so a plain
+    sleep would never see a request the page made meanwhile.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        page.wait_for_timeout(50)
+    return condition()
+
+
 def _listening():
     import changes
 
@@ -85,7 +99,7 @@ def test_a_hidden_window_closes_its_stream_and_reopens_it_on_return(studio):
 
     _set_visibility(page, "visible")
     assert _wait_until(lambda: _listening() == 1), "the window did not open its stream again on return"
-    assert len(opened) == 2, opened
+    assert _page_wait_until(page, lambda: len(opened) == 2), opened
     assert "since=" not in opened[0] and "since=" in opened[1], \
         f"the window did not name what it last heard when it came back: {opened}"
 
@@ -266,3 +280,95 @@ def test_a_window_back_after_a_while_reads_once_not_twice(studio):
         assert len(reads) - before == 1, f"coming back read the waiting count {len(reads) - before} times"
     finally:
         ingest_contract.forget()
+
+
+# ---------------------------------------------------------------------------
+# A write nothing announced: every screen reads it as "anything may have changed"
+# ---------------------------------------------------------------------------
+
+def _write_from_another_process(sql, params=()):
+    """What the command line or a second studio does: a plain sqlite3 connection in a child process."""
+    import json as _json
+    import subprocess
+
+    import paths
+
+    writer = (
+        "import json, sqlite3, sys\n"
+        "conn = sqlite3.connect(sys.argv[1], timeout=10)\n"
+        "conn.execute(sys.argv[2], json.loads(sys.argv[3]))\n"
+        "conn.commit()\n"
+        "conn.close()\n"
+    )
+    done = subprocess.run([sys.executable, "-c", writer, paths.get_db_path(), sql, _json.dumps(list(params))],
+                          capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr
+
+
+def test_todays_panels_read_again_after_a_write_nothing_announced(studio):
+    """The thirty day totals listened for one kind; a write the studio could not name reached no panel."""
+    seed_creator(studio["client"])
+    page = studio["page"]
+    page.clock.install()
+    totals = _reads_of(page, "/api/analytics/kpis")
+    open_section(studio, "today")
+    page.wait_for_selector("text=What to do in the next hour")
+    assert _wait_until(lambda: _listening() == 1)
+    # Long enough that no panel's last read is recent.
+    page.clock.fast_forward("00:20")
+    before = len(totals)
+    _write_from_another_process(
+        "INSERT INTO analytics_daily (date, impressions, period_label, source) VALUES (?, ?, '1d', 'observed') "
+        "ON CONFLICT(date) DO UPDATE SET impressions = excluded.impressions",
+        ("2026-10-25", 777))
+    assert _page_wait_until(page, lambda: len(totals) > before, timeout=6.0), "the totals were not read again"
+
+
+def test_the_header_reads_the_bridge_after_a_write_nothing_announced(studio):
+    """A heartbeat a second studio recorded: the header learns of it from the backstop."""
+    from datetime import datetime, timezone
+
+    confirm_identity(studio["client"])
+    import database
+
+    conn = database.get_db()
+    try:
+        with conn:
+            conn.execute("UPDATE bridge_heartbeats SET seen_at = '2000-01-01T00:00:00+00:00'")
+    finally:
+        conn.close()
+    page = studio["page"]
+    page.clock.install()
+    open_section(studio, "queue")
+    page.wait_for_selector("h1:has-text('Queue')")
+
+    def mark():
+        return page.locator("header button", has_text="Activity").first.text_content() or ""
+
+    assert _wait_until(lambda: ", bridge not connected" in mark()), mark()
+    assert _wait_until(lambda: _listening() == 1)
+    page.clock.fast_forward("00:20")
+    _write_from_another_process(
+        "INSERT INTO bridge_heartbeats (seen_at, extension_version, page_kind) VALUES (?, '2.7.0', 'feed')",
+        (datetime.now(timezone.utc).isoformat(),))
+    assert _wait_until(lambda: ", bridge connected" in mark(), timeout=8.0), mark()
+
+
+def test_todays_totals_read_again_when_the_analytics_page_is_read(studio):
+    """The creator analytics page writes the daily totals and now says so, as "account"."""
+    from datetime import datetime
+
+    seed_creator(studio["client"])
+    page = studio["page"]
+    page.clock.install()
+    totals = _reads_of(page, "/api/analytics/kpis")
+    open_section(studio, "today")
+    page.wait_for_selector("text=What to do in the next hour")
+    assert _wait_until(lambda: _listening() == 1)
+    page.clock.fast_forward("00:20")
+    before = len(totals)
+    read = studio["client"].post("/api/analytics/ingest", json={
+        "author": ME, "period_label": "1d",
+        "series": [{"date": datetime.now().strftime("%Y-%m-%d"), "impressions": 900, "reactions": 9, "followers": 400}]})
+    assert read.status_code == 200, read.text
+    assert _page_wait_until(page, lambda: len(totals) > before, timeout=6.0), "the totals were not read again"

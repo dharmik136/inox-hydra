@@ -73,6 +73,7 @@ try:
     from .internal_sheet import internal_sheet_manager
     from . import onboarding
     from . import ingest_contract
+    from . import changes
     from . import accounts
     from . import licensing
     from . import archive_import
@@ -145,6 +146,7 @@ except ImportError:
     from internal_sheet import internal_sheet_manager
     import onboarding
     import ingest_contract
+    import changes
     import accounts
     import licensing
     import archive_import
@@ -1610,7 +1612,7 @@ def get_waiting_captures():
 @app.post("/api/v1/identity/observe", tags=["Onboarding"])
 def post_identity_observe(payload: Dict[str, Any]):
     try:
-        return onboarding.observe_profile(payload)
+        return changes.published(onboarding.observe_profile(payload), "identity", ("updated", "candidate"))
     except onboarding.RefusedCapture as error:
         _refusal(error)
 

@@ -488,6 +488,82 @@ def test_the_creators_outbound_activity_says_outbound(studio, creator):
     assert "outbound" in kinds, kinds
 
 
+def test_the_creators_analytics_page_says_account(studio, creator):
+    """The daily totals' own writer. It said nothing, so the backstop called it "database"."""
+    from datetime import datetime
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    kinds = _published_by(studio["port"], "/api/analytics/ingest", {
+        "author": ME, "period_label": "1d", "series": [{"date": today, "impressions": 900, "reactions": 9,
+                                                        "followers": 400}]})
+    assert kinds == ["account"], kinds
+
+
+def test_a_network_reading_of_the_account_says_account(studio, creator):
+    kinds = _published_by(studio["port"], "/api/v1/bridge/voyager-ingest", {
+        "schema_name": "creator_analytics", "vanity": ME, "data": [{"followers": 401}]})
+    assert kinds == ["account"], kinds
+
+
+def test_an_engagement_on_the_creators_post_says_people(studio, creator):
+    kinds = _published_by(studio["port"], "/api/v1/crm/interactions/ingest", {
+        "full_name": "Test Person", "profile_url": "https://www.linkedin.com/in/test-person-t2",
+        "headline": "Engineer", "company": "Example", "interaction_type": "COMMENT",
+        "comment_text": "A comment for the stream.", "post_urn": creator["urn"], "post_author": ME})
+    assert kinds == ["people"], kinds
+
+
+def test_the_creators_own_profile_page_says_identity(studio, creator):
+    kinds = _published_by(studio["port"], "/api/v1/identity/observe", {
+        "vanity": ME, "self_evidence": ["owner_edit_controls"], "display_name": "Test Creator",
+        "headline": "Engineer, now at a new place"})
+    assert kinds == ["identity"], kinds
+
+
+def test_an_import_event_says_imports(studio, creator):
+    status, text = _post(studio["port"], "/api/v1/self/imports", {"kind": "posts"})
+    assert status == 200, text
+    request_id = json.loads(text)["id"]
+    kinds = _published_by(studio["port"], "/api/v1/self/imports/event", {"id": request_id, "event": "started"})
+    assert kinds == ["imports"], kinds
+
+
+# What the extension writes through, and what each says. A path the extension
+# starts relaying has to be added here, announced or with the reason it is not.
+EXTENSION_WRITES = {
+    "/api/analytics/ingest": "account",
+    "/api/v1/crm/interactions/ingest": "people",
+    "/api/v1/bridge/heartbeat": "heartbeat",
+    "/api/v1/bridge/capture": "capture",
+    "/api/v1/bridge/voyager-ingest": "readings or account",
+    "/api/v1/identity/observe": "identity",
+    "/api/v1/self/posts/ingest": "posts",
+    "/api/v1/self/posts/analytics": "readings",
+    "/api/v1/self/outbound/ingest": "outbound",
+    "/api/v1/self/imports/event": "imports",
+    # Not announced, each for its reason; the backstop reports them as
+    # "database", which every screen reads as "anything may have changed".
+    "/api/v1/posts/bind-urn": "unannounced: writes only when a post binds, which is rare",
+    "/api/v1/bridge/schema-drift": "unannounced: no studio screen shows drift events",
+    "/api/v1/identity/me": "unannounced: a read",
+    "/api/v1/self/imports/pending": "unannounced: a read that may expire an old request",
+}
+
+
+def test_every_path_the_extension_writes_through_is_accounted_for():
+    import re as _re
+
+    with open(os.path.join(REPO_ROOT, "studio", "extension", "background.js"), encoding="utf-8") as handle:
+        source = handle.read()
+    relayed = set()
+    for name in ("RELAYABLE_PATHS", "KEEP_WHEN_BUSY"):
+        block = _re.search(name + r" = new Set\(\[(.*?)\]\)", source, _re.S)
+        assert block, f"{name} is no longer where this test reads it"
+        relayed |= set(_re.findall(r'"(/api/[^"]+)"', block.group(1)))
+    missing = sorted(relayed - set(EXTENSION_WRITES))
+    assert not missing, f"the extension writes through paths this test does not account for: {missing}"
+
+
 def test_a_post_the_queue_marks_due_says_queue(studio):
     from datetime import datetime, timedelta, timezone
 

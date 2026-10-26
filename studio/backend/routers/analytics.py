@@ -21,6 +21,7 @@ try:
     from .. import results
     from ..crm import reverse_crm, VIP_THRESHOLD
     from ..linkedin_client import linkedin_client
+    from .. import changes
 except (ImportError, ValueError):
     from database import get_db
     import insights
@@ -28,6 +29,7 @@ except (ImportError, ValueError):
     import results
     from crm import reverse_crm, VIP_THRESHOLD
     from linkedin_client import linkedin_client
+    import changes
 
 try:
     from studio.core.telemetry_shard import telemetry_engine, telemetry_buffer
@@ -565,5 +567,6 @@ def ingest_live_analytics(payload: dict):
             pass
 
     result = linkedin_client.ingest_analytics_payload(payload)
+    changes.publish_written(account=result.get("buckets_ingested") or result.get("followers_saved"), people=(result.get("leads_added") or 0) + (result.get("leads_updated") or 0), database=result.get("posts_updated"))
     return result
 

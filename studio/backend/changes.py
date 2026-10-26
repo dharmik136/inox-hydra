@@ -11,8 +11,10 @@ instead, and a screen reads again only then.
 Two sources feed one stream:
 
 - The ingest paths call `publish(kind)` after their write commits: a capture
-  logged, a heartbeat, the creator's posts or readings or outbound activity,
-  a post the queue moved. A kind is a word for what changed, so a window can
+  logged, a heartbeat, the creator's posts, a post's readings, the account's
+  daily figures, an engagement on one of the creator's posts, the creator's
+  own engagement elsewhere, the creator's profile, an import's progress, a
+  post the queue moved. A kind is a word for what changed, so a window can
   decide what to read again, never a figure.
 - A watcher reads `PRAGMA data_version` on one long-lived connection about
   once a second while any window is listening. SQLite changes that value
@@ -50,7 +52,7 @@ import sqlite3
 import sys
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     from . import paths, sqlite_open
@@ -60,9 +62,14 @@ except ImportError:
 
 _log = logging.getLogger("studio.changes")
 
-# The words a change can carry. "database" is the watcher's: something was
-# committed that no publisher named.
-KINDS = ("capture", "heartbeat", "posts", "readings", "outbound", "queue", "database")
+# The words a change can carry. "readings" are one post's figures and
+# "account" the creator's daily figures; "people" is someone engaging with one
+# of the creator's posts and "outbound" the creator engaging elsewhere.
+# "database" is the watcher's, something was committed that no publisher
+# named, and a writer of several unrelated things says it too: either way a
+# window takes it as "anything may have changed".
+KINDS = ("capture", "heartbeat", "posts", "readings", "account", "people", "outbound",
+         "identity", "imports", "queue", "database")
 
 # How often the watcher looks at data_version while anyone listens. One look
 # is one PRAGMA on an open connection, well under a millisecond; a second is
@@ -164,6 +171,27 @@ def publish(kind: str) -> None:
         except RuntimeError:
             # The loop is closed; the stream it served is already gone.
             pass
+
+
+def publish_written(**written: Any) -> None:
+    """
+    Publishes each kind a writer says it wrote, by its own count: for one
+    whose answer counts several things, so that a write of nothing says
+    nothing. `publish_written(account=3, people=0)` publishes "account".
+    """
+    for kind, count in written.items():
+        if count:
+            publish(kind)
+
+
+def published(result: Dict[str, Any], kind: str, statuses: Tuple[str, ...]) -> Dict[str, Any]:
+    """
+    Publishes `kind` when a writer's answer has one of `statuses`, and hands
+    the answer back, for a route that returns its writer's answer as it is.
+    """
+    if isinstance(result, dict) and result.get("status") in statuses:
+        publish(kind)
+    return result
 
 
 def subscriber_count() -> int:

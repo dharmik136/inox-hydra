@@ -23,10 +23,24 @@ const EVENTS_PATH = "/api/v1/events";
 
 /**
  * What the studio says changed, in its own words (studio/backend/changes.py).
- * "database" is a write nothing announced: the command line, a second studio,
- * or a path that does not say what it wrote.
+ * "readings" are one post's figures and "account" the creator's daily
+ * figures; "people" is someone engaging with a post of the creator's and
+ * "outbound" the creator engaging elsewhere. "database" is a write nothing
+ * announced (the command line, a second studio, a path that does not say what
+ * it wrote): every listener takes it as "anything may have changed".
  */
-export type StudioChange = "capture" | "heartbeat" | "posts" | "readings" | "outbound" | "queue" | "database";
+export type StudioChange =
+  | "capture"
+  | "heartbeat"
+  | "posts"
+  | "readings"
+  | "account"
+  | "people"
+  | "outbound"
+  | "identity"
+  | "imports"
+  | "queue"
+  | "database";
 
 /** Every kind, for a screen whose one read shows whatever the bridge writes. */
 export const ANY_CHANGE: readonly StudioChange[] = [
@@ -34,7 +48,11 @@ export const ANY_CHANGE: readonly StudioChange[] = [
   "heartbeat",
   "posts",
   "readings",
+  "account",
+  "people",
   "outbound",
+  "identity",
+  "imports",
   "queue",
   "database",
 ];
@@ -208,7 +226,8 @@ export function useRefresh(load: () => unknown, everyMs?: number, on?: readonly 
     let waiting: number | undefined;
     const stopChange = kinds.length
       ? onStudioChange((changed, returnedAt) => {
-          if (!changed.some((kind) => kinds.includes(kind))) return;
+          // A write nothing named may be anything, so every listener reads it.
+          if (!changed.some((kind) => kind === "database" || kinds.includes(kind))) return;
           if (returnedAt !== null && lastRead.current >= returnedAt - RETURN_SLACK_MS) return;
           if (waiting !== undefined) return;
           const wait = lastRead.current + CHANGE_GAP_MS - Date.now();

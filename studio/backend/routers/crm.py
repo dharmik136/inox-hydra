@@ -24,7 +24,7 @@ try:
         export_leads_csv,
     )
     from ..crm import ICPScoringEngine, ReverseCRMManager, reverse_crm, qualification_tier
-    from .. import onboarding, retention, ingest_contract
+    from .. import onboarding, retention, ingest_contract, changes
 except (ImportError, ValueError):
     from database import get_db
     from leads import (
@@ -42,6 +42,7 @@ except (ImportError, ValueError):
     import onboarding
     import retention
     import ingest_contract
+    import changes
 
 router = APIRouter()
 
@@ -216,6 +217,7 @@ def ingest_crm_interaction(req: IngestInteractionRequest):
         post_topic=req.post_topic,
         capture_context=req.capture_context,
     )
+    changes.publish("people")
     result["id"] = result.get("lead_id")
     result["qualification_tier"] = result.get("tier")
     return ingest_contract.accepted(interaction=result, lead=result,

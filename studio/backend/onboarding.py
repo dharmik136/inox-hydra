@@ -493,7 +493,7 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
             )
     finally:
         conn.close()
-    changes.publish("readings")
+    changes.publish("account" if schema_name == "creator_analytics" else "readings")
 
     return {"status": "success", "items_seen": items_seen, "items_kept": items_kept}
 
@@ -1625,6 +1625,7 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
             res["all_completed"] = True
             res["is_chain"] = True
 
+    changes.publish("imports")
     return res
 
 
