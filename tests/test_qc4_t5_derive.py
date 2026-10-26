@@ -1214,3 +1214,26 @@ def test_a_windowed_reading_does_not_claim_a_screen_shows_it(client):
     answer = linkedin_client.ingest_analytics_payload({"series": [{
         "date": DAY, "period_label": "7d", "impressions": 5400}]})
     assert answer["windows_saved"] == 1 and "shown" not in answer["message"]
+
+
+# ---------------------------------------------------------------------------
+# Review S4: forgetting the identity takes the dated demographics with it
+# ---------------------------------------------------------------------------
+
+def test_forgetting_the_identity_forgets_the_dated_demographics(client):
+    mine = urn_hours_ago(30)
+    _posts(client, mine)
+    client.post("/api/v1/self/posts/analytics", json={"author": ME, "activity_urn": mine, "metrics": {
+        "impressions": 4100, "demographics": [{"dimension": "job_title", "label": "Founder", "percentage": 21}]}})
+    conn = _db()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM audience_demographic_readings").fetchone()[0] == 1
+    finally:
+        conn.close()
+    assert client.delete("/api/v1/identity").json()["status"] == "forgotten"
+    conn = _db()
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM post_metric_observations").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM audience_demographic_readings").fetchone()[0] == 0
+    finally:
+        conn.close()
