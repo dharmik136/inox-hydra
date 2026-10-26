@@ -90,9 +90,12 @@ def studio(monkeypatch):
     conn.execute("INSERT INTO creator_positions (ordinal, title, company, observed_at) VALUES (0, ?, 'Example Studio', ?)", (ROLE, NOW))
     conn.execute("INSERT INTO creator_positions (ordinal, title, company, observed_at) VALUES (1, ?, 'PayCo', ?)", (EARLIER, NOW))
     conn.execute("INSERT INTO creator_skills (skill, observed_at) VALUES (?, ?)", (SKILL, NOW))
+    # Dated and settled: the openers are the one ranking's (results.ranking,
+    # cycle 4), which ranks a post only once it is old enough to judge.
     for n, (text, reactions) in enumerate([(OPENER + "\n\nMore.", 90), ("Pricing is design.\n\nYes.", 40), ("A note.", 5)]):
         conn.execute(
-            "INSERT INTO own_posts (activity_urn, text, reactions, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO own_posts (activity_urn, text, reactions, published_at, first_seen_at, last_seen_at) "
+            "VALUES (?, ?, ?, '2026-08-01T09:00:00+00:00', ?, ?)",
             (f"urn:li:activity:73811100000000000{n:02d}", text, reactions, NOW, NOW),
         )
     conn.commit()
