@@ -2118,6 +2118,8 @@ export interface TodayPerson {
   posts_engaged: number;
   commented: boolean;
   latest_comment: string | null;
+  /** When the studio first saw their latest comment, not when it was last re-read. */
+  engaged_at: string | null;
   last_seen_at: string | null;
 }
 

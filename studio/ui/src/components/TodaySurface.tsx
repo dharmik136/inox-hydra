@@ -925,10 +925,7 @@ function DemoCleanupNotice({
   );
 }
 
-/** engaged_at: when the studio first saw their latest comment, not when it was last re-read. */
-type ReplyPerson = TodayPerson & { engaged_at?: string | null };
-
-function Person({ person, onOpen }: { person: ReplyPerson; onOpen: () => void }) {
+function Person({ person, onOpen }: { person: TodayPerson; onOpen: () => void }) {
   return (
     <li>
       <button type="button" onClick={onOpen} className="w-full py-2 text-left transition-colors hover:bg-soft/60">
