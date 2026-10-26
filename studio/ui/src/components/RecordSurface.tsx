@@ -137,8 +137,10 @@ export function RecordSurface({ onOpenDraft }: { onOpenDraft?: (draft: { id: str
           )}
           {today.run && today.run.dropped_cards > 0 && (
             <p className="mt-1 text-[12px] text-signal-orange-text">
-              {today.run.dropped_cards} {today.run.dropped_cards === 1 ? "card was" : "cards were"} dropped: a row it cited
-              was not found, so it is not shown.
+              {/* The count covers both checks: a local card whose cited row was gone, and an idea of the model's
+                  that failed record_model.verify_ideas, whose reasons the model's note above names. */}
+              {today.run.dropped_cards} {today.run.dropped_cards === 1 ? "card failed a check and is" : "cards failed a check and are"}{" "}
+              not shown: a row it cited was not found, or, for an idea from your model, the reason in the line above.
             </p>
           )}
         </div>

@@ -130,7 +130,7 @@ The extension reports at most once a minute per part per page, and the studio ke
 
 ## Delete it
 
-Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU**. Nothing is deleted yet. Setup lists what would go, with counts: your identity and profile, your imported posts and every reading of their figures, your comments and reactions, your connections, the record of your archive and history imports, and the Brand Studio fields Setup filled. Your leads and drafts are kept.
+Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU**. Nothing is deleted yet. Setup lists what would go, with counts: your identity and profile, your imported posts and every reading of their figures, your comments and reactions, your connections, the record of your archive and history imports, what you asked **From your record** for with its daily cards, your marks and your notes, the saved posts, follows, votes, articles and searches your archive brought, and the Brand Studio fields Setup filled. Your leads and drafts are kept.
 
 It also says whether a backup of the studio exists, and **Back up first** takes one. Type `delete` and click **Delete everything** to go ahead, or **Keep it** to leave everything as it is. It cannot be undone except from a backup. The next time you open your profile, Setup asks again.
 

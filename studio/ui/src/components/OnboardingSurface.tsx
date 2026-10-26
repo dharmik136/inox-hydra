@@ -772,6 +772,11 @@ function ForgetPanel({
           {counts.connections !== undefined ? `${plural(counts.connections, "connection")} and ` : ""}the record of your
           archive and history imports
         </li>
+        {/* From your record (cycle 4, track 7): forgetting clears these too. */}
+        <li>
+          What you asked From your record for, its daily cards, your marks on them and your notes, and the saved posts,
+          follows, votes, articles and searches your archive brought
+        </li>
         <li>The name, headline and company Setup filled in Brand Studio, unless you changed them</li>
       </ul>
       <p className="mt-2 text-[12px] text-ink-muted">Your leads, drafts and the posts you wrote in the studio are kept.</p>
