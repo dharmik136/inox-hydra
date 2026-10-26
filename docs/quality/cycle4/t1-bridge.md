@@ -458,6 +458,92 @@ Not done, with the reason. Network reading's `feed_updates` schema writes a read
 LinkedIn's feed response, the creator's or not (`onboarding.record_voyager_ingest`); it writes no
 publication or post, so it is outside this defect, and it is listed for the coordinator.
 
+## Second round: the review of f18e610, and two defects before it
+
+The independent review of `f18e610` found no blockers, nine should-fix findings and eighteen notes.
+The coordinator added two items first: the privacy defect below, and the sections report's row 5,
+Voyager drift. Each finding has its own commit and a failing test first.
+
+### Privacy defect: network reading kept other members' posts
+
+Raised by the coordinator from a gap this track left listed. Fixed in 0afff61.
+
+What it did. With network reading on, the feed ingest stored a reading for every post in the
+creator's LinkedIn feed response: other members' post identities and their engagement figures, with
+a summary row for each, in the creator's database. The three schemas that carry other members
+(profiles, reactions on posts, comments) were relayed to the studio as well; the studio stored
+nothing of their data, but logged a run for each and kept their drift events, whose address for a
+profile names the member.
+
+What changed.
+
+- The feed ingest keeps a reading only for a post that is the creator's own: one of their
+  publications, or a post the studio carries, in any of LinkedIn's three spellings of its id, each
+  looked up by its index (`onboarding._creators_post`, `studio/backend/onboarding.py:810`). Every
+  other entry is dropped before anything is written (`:732`), and the run records how many, as a
+  number only, in a new `captures.items_dropped` column (migration 28).
+- What each schema keeps (`VOYAGER_KEPT`, `onboarding.py:437`):
+
+  | Schema | What it keeps |
+  | --- | --- |
+  | `feed_updates` | readings of the creator's own posts; every other post in the response is dropped and counted |
+  | `creator_analytics` | the creator's follower count, for the confirmed account |
+  | `identity_profiles` | nothing: not copied by the interceptor, not sent by the page, refused by the studio |
+  | `social_actions` | nothing, likewise |
+  | `feed_comments` | nothing, likewise |
+
+  The one thing the product keeps about another member, an engager on the creator's own post, comes
+  from the DOM engagers reader, by design, and is unchanged.
+- The interceptor copies only the two kept schemas' responses (`voyager_interceptor.js:67`);
+  `content.js` forwards only those two (`FORWARDED_SCHEMAS`, `content.js:98, 176`); the studio
+  refuses the other three on both of its routes (`onboarding.py:547, 667, 719`). `EXTRACTORS` lists
+  the two network readers that keep something.
+- A drift event keeps its address as the words of LinkedIn's API, every other segment `_id_`
+  (`clean_voyager_path`, `onboarding.py:473, 690`), the allowlist finding S1 asks for, used here first.
+- Migration 28, after the ledger's backup, deletes the readings of posts that are not the creator's,
+  recomputes their summaries (an empty one is removed), deletes the drift events of the three
+  schemas, and cleans the address of the rest (`forget_other_members_readings`, `onboarding.py:824`,
+  called at `migrations.py:1487`).
+
+Tests that fail without it. `tests/test_qc4_t1_voyager_privacy.py` (10): a feed response mixing
+the creator's posts with other members' keeps only the creator's, with no summary, publication or
+post for the others and their count only on the run; a feed of other members writes nothing about
+them; a post the studio carries counts as the creator's; each of the three schemas is refused with
+nothing written; a drift event keeps a path that names nobody, and one for profiles is refused; the
+upgrade removes what the old behaviour stored, on a database built with both kinds of rows.
+`tests/test_qc4_t1_routes_and_gate.py::test_a_response_about_other_members_never_leaves_the_page`
+holds the page.
+
+Falsified, by planting the old behaviour, one fault at a time: the feed ingest keeping every post (2
+tests failed), the studio taking any schema (3 failed), a drift event keeping its raw address,
+migration 28 without the clean-up, the page forwarding every schema, and the interceptor copying
+reactions again; each failed and passed again with the fault removed. A first plant, one of the
+studio's two refusals removed, was caught by neither guard, because the other refusal still held;
+the plant was replaced by the old behaviour itself.
+
+Existing tests changed by this fix. `tests/test_qc_f3_network_reading.py`'s endpoint test asserted
+the interceptor copied reactions and comments; it now asserts it copies the kept schemas' endpoints
+and not the three about other members. `tests/test_qc4_t1_capture_rows.py` and
+`tests/test_qc4_t1_network_reading_state.py` follow the two network readers.
+
+The privacy policy. Two sentences in `docs/PRIVACY_POLICY.md`, section "Only if you switch 'Read
+LinkedIn's network responses' on", no longer match the code, and the coordinator applies the change
+at merge (tracks 6 and 7 own the policy):
+
+- Item 1 says the script copies the JSON of responses for "feed updates, profiles, creator
+  analytics, social actions and comments". It now copies only feed updates and creator analytics,
+  and keeps from them the figures of the creator's own posts and their follower count; every other
+  post in the feed response is dropped before anything is written.
+- Item 2 says the extension notes "the address, the HTTP status and the method" of each data
+  request. What is stored is the address cut before any part that names a member (by
+  `studio/core/telemetry_shard._path_shape`, unchanged here), the status and the method; the
+  coverage meter, if the policy mentions it, sends counts by the words of an address and a GraphQL
+  query name only (finding S1 below).
+
+Checked and left. The worker's request observer forwards the address of three request families to
+the telemetry store, which already cuts a path before `/identity/profiles` and replaces URNs; it is
+outside this fix and unchanged.
+
 ## Guards that already existed and held
 
 Five existing guards caught a draft of this work, and the code was changed to satisfy each:
