@@ -569,3 +569,56 @@ def test_todays_panels_and_the_header_read_nothing_for_reactions(studio):
     evidence = grew.pop("/api/v1/insights/evidence")
     assert all(count == 0 for count in grew.values()), f"reactions made Today read: {grew}"
     assert evidence <= 1, f"the evidence panel read {evidence} times inside one window"
+
+
+# ---------------------------------------------------------------------------
+# The Composer: a studio change never moves the writer's caret
+# ---------------------------------------------------------------------------
+
+TO_START = "Meta+ArrowUp" if sys.platform == "darwin" else "Control+Home"
+TO_END = "Meta+ArrowDown" if sys.platform == "darwin" else "Control+End"
+
+CARET = """() => { const t = document.querySelector('[aria-label="Post body"]');
+  return {focused: document.activeElement === t, selection: [t.selectionStart, t.selectionEnd]}; }"""
+
+
+def test_a_studio_change_while_a_format_request_runs_moves_no_caret(studio):
+    """
+    The stream re-renders the shell when the bridge is heard from, and the
+    Composer lives inside it. A heartbeat and a capture arrive while a Bold
+    request is out, before and after the writer moves to the end: the selection
+    stays, the caret stays where the writer put it, the typing lands there.
+    """
+    page = studio["page"]
+    open_section(studio, "composer")
+    editor = page.get_by_label("Post body")
+    editor.wait_for()
+    assert _wait_until(lambda: _listening() == 1)
+    page.evaluate("""() => { const real = window.fetch;
+        window.fetch = (input, init) => String(input).includes('/api/format/')
+          ? new Promise(r => setTimeout(r, 2500)).then(() => real(input, init)) : real(input, init); }""")
+    editor.fill("pricing is a design problem")
+    editor.click()
+    page.keyboard.press(TO_START)
+    for _ in range(7):
+        page.keyboard.press("Shift+ArrowRight")
+    page.get_by_role("button", name="Bold", exact=True).click()
+
+    _capture(studio["client"])
+    page.wait_for_timeout(600)
+    assert page.evaluate(CARET) == {"focused": True, "selection": [0, 7]}, "a studio change moved the selection"
+
+    page.keyboard.press(TO_END)
+    end = len("pricing is a design problem")
+    # The first heartbeat this studio hears turns the shell's bridge mark
+    # connected, so the shell, and the Composer inside it, render again.
+    _beat(studio["client"])
+    _capture(studio["client"])
+    page.wait_for_timeout(600)
+    assert page.evaluate(CARET) == {"focused": True, "selection": [end, end]}, "a studio change moved the caret"
+
+    page.keyboard.type(" and here is why")
+    page.wait_for_timeout(3000)
+    value = editor.input_value()
+    assert value.endswith(" and here is why"), f"the words typed during the request are gone: {value!r}"
+    assert value.startswith("\U0001d5fd\U0001d5ff"), f"the format was not applied: {value!r}"
