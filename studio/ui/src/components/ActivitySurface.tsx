@@ -17,7 +17,7 @@ import {
 } from "@/lib/api";
 import { importEnding } from "@/lib/importOutcome";
 import { reportBridge } from "@/lib/bridgeState";
-import { useRefresh } from "@/lib/refresh";
+import { ANY_CHANGE, useRefresh } from "@/lib/refresh";
 import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -158,7 +158,7 @@ export function ActivitySurface({
   // used to poll a hidden tab at the same rate for as long as it stayed open,
   // the largest steady load the interface put on the database while the
   // bridge was writing. Also read on coming back, and after an outage.
-  useRefresh(loadData, autoRefresh ? 2500 : undefined);
+  useRefresh(loadData, autoRefresh ? 2500 : undefined, autoRefresh ? ANY_CHANGE : undefined);
 
   // One list out of the five the studio answers with, newest first. Built
   // from the answer alone, so a kind the creator filters to is already here

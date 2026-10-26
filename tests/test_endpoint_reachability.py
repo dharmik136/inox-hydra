@@ -253,10 +253,13 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # changed instead of on a fast timer. Declared here before the interface
 # opens it, so it sits in the unreachable column for one commit.
 # Total 172 -> 173, reached stays at 118, unreachable 54 -> 55.
+# Then the window opens it (studio/ui/src/lib/refresh.ts, one stream per
+# window, called by the shell), so it is reached.
+# Reached 118 -> 119, unreachable 55 -> 54, total stays at 173.
 # ---------------------------------------------------------------------------
 TOTAL_API_PATHS = 173
-REACHED_BY_INTERFACE = 118
-UNREACHABLE = 55
+REACHED_BY_INTERFACE = 119
+UNREACHABLE = 54
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

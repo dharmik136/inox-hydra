@@ -22,7 +22,7 @@ import {
   type SelfImportKind,
 } from "@/lib/api";
 import { reportBridge } from "@/lib/bridgeState";
-import { useRefresh } from "@/lib/refresh";
+import { ANY_CHANGE, useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { ArchiveImport, archiveStatus } from "./ArchiveImport";
 
@@ -77,7 +77,7 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
     fetchBrowserBridge().then(setBridge).catch(() => setBridge({ browsers: [], extension_path: "" }));
   }, [refresh]);
   // Every POLL_MS while the window is in view; a hidden one is not polled.
-  useRefresh(refresh, POLL_MS);
+  useRefresh(refresh, POLL_MS, ANY_CHANGE);
 
   // The browser that carries the extension, if any. "auto" lets the backend
   // pick, which it does by the same measured rule the Leads screen uses.

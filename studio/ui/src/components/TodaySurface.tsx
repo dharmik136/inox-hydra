@@ -28,7 +28,7 @@ import {
 } from "@/lib/api";
 import { NOT_MEASURED, formatDays, gapOrNotMeasured } from "@/lib/cadence";
 import { reportBridge } from "@/lib/bridgeState";
-import { useRefresh } from "@/lib/refresh";
+import { ANY_CHANGE, useRefresh } from "@/lib/refresh";
 import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -129,7 +129,7 @@ export function TodaySurface({
   // Captures arrive while this screen is open, from the other window. Read
   // again every 30 seconds while the window is in view (a hidden one is not
   // polled), on coming back to it, and when the studio is back after an outage.
-  useRefresh(load, 30000);
+  useRefresh(load, 30000, ANY_CHANGE);
 
   // The panels beside Today's own read. Each is its own endpoint, and none of
   // them is polled: evidence, cadence, the thirty day totals, the week's
