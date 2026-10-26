@@ -44,6 +44,8 @@ export interface CardActions {
   onDraft?: (draft: { id: string; content: string }) => void;
   /** Read the batch again after a mark. */
   onChanged?: () => void;
+  /** Opens a document of the help in Docs, at a section. */
+  onOpenHelp?: (documentId: string, section: string) => void;
 }
 
 export function RecordCardView({ card, actions, compact = false }: { card: RecordCard; actions?: CardActions; compact?: boolean }) {
@@ -111,6 +113,23 @@ export function RecordCardView({ card, actions, compact = false }: { card: Recor
             </li>
           ))}
         </ul>
+      )}
+      {!compact && payload.playbook && (
+        <p className="mt-2 text-[12px] leading-snug text-ink-secondary">
+          In the studio&rsquo;s playbook: {payload.playbook.section}
+          {actions?.onOpenHelp && (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={() => actions.onOpenHelp?.(payload.playbook!.document_id, payload.playbook!.section)}
+                className="text-[11px] underline underline-offset-2 hover:text-ink-primary"
+              >
+                Open it in Docs
+              </button>
+            </>
+          )}
+        </p>
       )}
       <p className="mt-2 text-[12px] leading-snug text-ink-secondary">{payload.because}</p>
       {!compact && (

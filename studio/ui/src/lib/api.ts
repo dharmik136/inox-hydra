@@ -3313,6 +3313,8 @@ export interface RecordCardPayload {
   angle?: string;
   model_why?: string;
   quote?: string;
+  /** The section of the studio's playbook that shares an ask's words: its heading and its document in Docs. */
+  playbook?: { document_id: string; section: string } | null;
 }
 
 export interface RecordCard {

@@ -293,7 +293,7 @@ def test_the_screen_has_one_heading_three_levels_and_the_ask_box():
     ui = os.path.join(REPO_ROOT, "studio", "ui", "src", "components")
     surface = open(os.path.join(ui, "RecordSurface.tsx"), encoding="utf-8").read()
     assert surface.count("<h1") == 1
-    for level in ('"Today"', '"Kept"', '"What the studio knows"'):
+    for level in ('"Today\'s cards"', '"Kept"', '"What the studio knows"', '"Did these help?"'):
         assert level in surface, f"the {level} level is missing"
     assert "Remember this ask" in surface and 'addRecordAsk(text.trim(), "ask_box")' in surface
     card = open(os.path.join(ui, "RecordCardView.tsx"), encoding="utf-8").read()
@@ -303,3 +303,14 @@ def test_the_screen_has_one_heading_three_levels_and_the_ask_box():
     assert "<RecordSetupFields />" in setup, "Setup does not offer the three questions"
     fields = open(os.path.join(ui, "RecordSetupFields.tsx"), encoding="utf-8").read()
     assert fields.count("why: \"") == 3 and "Skip" in fields
+
+
+def test_a_playbook_section_is_named_and_opened_in_docs_never_quoted():
+    """The card names the section and links to it; the App sends the link to Docs at that section."""
+    ui = os.path.join(REPO_ROOT, "studio", "ui", "src")
+    card = open(os.path.join(ui, "components", "RecordCardView.tsx"), encoding="utf-8").read()
+    assert "In the studio&rsquo;s playbook: {payload.playbook.section}" in card
+    assert "onOpenHelp?.(payload.playbook!.document_id, payload.playbook!.section)" in card
+    app = open(os.path.join(ui, "App.tsx"), encoding="utf-8").read()
+    opened = app.split("<RecordSurface", 1)[1].split("/>", 1)[0]
+    assert 'navigate("docs")' in opened and 'section: "docs"' in opened, "the link does not reach Docs"

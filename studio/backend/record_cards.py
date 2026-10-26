@@ -84,6 +84,9 @@ POOL_FROM_RANKING_AT = 8
 POOL_QUARTILE = 0.25
 # A comment made longer ago than this is still the creator's, but the recent ones come first.
 ENGAGED_RECENT_DAYS = 90
+# The studio's own playbook, in Docs under Write and publish, which an ask is
+# matched to beside the creator's posts (the report's batch 6).
+PLAYBOOK_FILE = "strategy_playbook.md"
 
 LABELS = ("measured", "derived", "typed", "suggested", "retrieved", "curated", "abstained")
 # What a mark can do depends on how a card was arrived at. A drawn card's
@@ -543,6 +546,43 @@ def matches_in_own_posts(conn, text: str, limit: int = 3) -> List[Dict[str, Any]
     return found
 
 
+def playbook_section(conn, text: str) -> Optional[Dict[str, str]]:
+    """
+    The section of the studio's playbook that shares the most of a text's
+    meaningful words, by the Docs search index (the same FTS5 table and
+    stemming Docs searches with, bm25 order), or None.
+
+    Only the section's heading and where it lives are kept: the card names
+    the section and links to it in Docs, and quotes nothing of it. The index
+    is read, never built here: a profile whose Docs index does not exist yet
+    gets no playbook line rather than a rebuild inside the daily job.
+    """
+    keys = list(dict.fromkeys(key for key, _form, _tag in evidence_briefing._words(text or "")))[:8]
+    words = [re.sub(r'[^\w]', '', key) for key in keys]
+    words = [word for word in words if word]
+    if not words:
+        return None
+    # How many of the words each section holds, by the index's own stemming,
+    # so one shared word in a long text is not a match: at least half of
+    # them must be there.
+    shared: Dict[int, int] = {}
+    for word in words:
+        for row in _rows(conn, "SELECT rowid FROM docs_index WHERE docs_index MATCH ? AND filename = ?",
+                         ('{section content} : "' + word + '"', PLAYBOOK_FILE)):
+            shared[row["rowid"]] = shared.get(row["rowid"], 0) + 1
+    needed = max(1, math.ceil(len(words) / 2))
+    match = "{section content} : (" + " OR ".join(f'"{word}"' for word in words) + ")"
+    for row in _rows(conn, "SELECT rowid, section, content FROM docs_index WHERE docs_index MATCH ? AND filename = ? "
+                           "ORDER BY rank LIMIT 20", (match, PLAYBOOK_FILE)):
+        # The title's own section is the playbook's introduction, which says
+        # nothing about any one ask.
+        if str(row["content"] or "").lstrip().startswith("# ") or not row["section"]:
+            continue
+        if shared.get(row["rowid"], 0) >= needed:
+            return {"document_id": PLAYBOOK_FILE[:-3], "section": row["section"]}
+    return None
+
+
 def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], history: Dict[str, Any],
               day: date, seed: int) -> Dict[str, Any]:
     """
@@ -557,11 +597,13 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
         if drawn:
             card_id, ask = drawn
             matches = matches_in_own_posts(conn, ask["text"])
+            playbook = playbook_section(conn, ask["text"])
             where = {"setup": "at Setup", "ask_box": "on this section", "composer": "in the Composer",
                      "telegram": "from Telegram", "archive_search": "on LinkedIn, in your archive",
                      "more_of_this": "with More of this"}.get(ask["source"], "")
             rule = ("your own asks, in turn, each matched to your own posts by the words they share (the studio's "
-                    "search index, bm25); nothing is read from anywhere else")
+                    "search index, bm25), and to the section of the studio's playbook that shares the most of them "
+                    "(the Docs index); nothing is read from anywhere else")
             payload = {
                 "title": "Something you asked for",
                 "badge": "typed",
@@ -572,6 +614,7 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
                 "figure_sentence": (f"{len(matches)} of your own posts share its words" if matches
                                     else "none of your own posts shares its words yet"),
                 "matches": matches,
+                "playbook": playbook,
                 "because": (f"Because you asked for “{_excerpt(ask['text'], 80)}” {where} on "
                             f"{_said_weekday(ask.get('created_at'))}"
                             f"{', and ' + str(len(matches)) + ' of your own posts share its words' if matches else ''} "
@@ -592,6 +635,7 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
         if drawn:
             card_id, (label, count) = drawn
             matches = matches_in_own_posts(conn, label)
+            playbook = playbook_section(conn, label)
             rule = (f"{evidence_briefing.TOPIC_GROUPING}; a post goes under the first of up to "
                     f"{evidence_briefing.MAX_TOPICS} topics it mentions; a keyword grouping, not a reading of what a post means")
             total = sum(topic_counts.values())
@@ -605,6 +649,7 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
                              "observed_at": None, "source": f"count of your posts whose topic is {label}"}],
                 "figure_sentence": f"{count} of your {total} posts go under it",
                 "matches": matches,
+                "playbook": playbook,
                 "because": f"Because {count} of your {total} posts go under {label}; nothing was asked yet, so your own "
                            f"recurring words stand in · rule: You asked",
                 "source_sentence": f"from the words that recur across your {total} posts",

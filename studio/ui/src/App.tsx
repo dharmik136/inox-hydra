@@ -1023,7 +1023,16 @@ export default function App() {
                   }}
                 />
               )}
-              {active === "record" && <RecordSurface onOpenDraft={onDraftFromCard} />}
+              {active === "record" && (
+                <RecordSurface
+                  onOpenDraft={onDraftFromCard}
+                  onOpenHelp={(documentId, section) => {
+                    if (!navigate("docs")) return;
+                    focusNonce.current += 1;
+                    setFocus({ section: "docs", target: { id: documentId, anchor: section, nonce: focusNonce.current } });
+                  }}
+                />
+              )}
               {active === "activity" && (
                 <ActivitySurface
                   onOpenLead={(leadId) => {

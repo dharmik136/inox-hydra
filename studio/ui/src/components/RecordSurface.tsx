@@ -32,7 +32,13 @@ import { RecordEvaluationPanel } from "./RecordEvaluationPanel";
  */
 type Level = "today" | "kept" | "knows" | "helped";
 
-export function RecordSurface({ onOpenDraft }: { onOpenDraft?: (draft: { id: string; content: string }) => void } = {}) {
+export function RecordSurface({
+  onOpenDraft,
+  onOpenHelp,
+}: {
+  onOpenDraft?: (draft: { id: string; content: string }) => void;
+  onOpenHelp?: (documentId: string, section: string) => void;
+} = {}) {
   const [level, setLevel] = useState<Level>("today");
   const [today, setToday] = useState<RecordToday | null>(null);
   const [failed, setFailed] = useState(false);
@@ -113,7 +119,7 @@ export function RecordSurface({ onOpenDraft }: { onOpenDraft?: (draft: { id: str
   const monday = cards.find((card) => card.kind === "monday");
   const slots = cards.filter((card) => card.slot >= 1).sort((a, b) => a.slot - b.slot);
   const isToday = showingDay === today.day;
-  const actions = { onDraft: onOpenDraft, onChanged: () => void load() };
+  const actions = { onDraft: onOpenDraft, onOpenHelp, onChanged: () => void load() };
 
   return (
     <div className="px-6 py-6 lg:px-8" tabIndex={0} aria-labelledby="record-title">

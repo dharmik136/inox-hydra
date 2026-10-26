@@ -471,3 +471,47 @@ def test_a_repost_fills_the_engaged_with_slot_as_a_link_and_a_date(conn):
     assert card["payload"]["url"].endswith("7350000000000000003") and card["payload"]["excerpt"] == ""
     assert card["payload"]["because"].startswith("Because you reposted this post on 1 August 2026")
     assert card["provenance"]["source_rows"] == [{"table": "archive_records", "id": 1}]
+
+
+
+# ---------------------------------------------------------------------------
+# An ask is matched to the studio's playbook too (the report's batch 6)
+# ---------------------------------------------------------------------------
+
+def test_an_ask_is_matched_to_the_playbook_section_that_shares_its_words(conn):
+    import docs_engine
+    import record_cards
+
+    docs_engine.init_docs_search_index(conn)
+    add_posts(conn)
+    add_ask(conn, "hooks that get comments")
+    card = cards_of(record_cards.compute_local(conn, DAY, record_cards.seed_for(DAY)))[3]
+    assert card["kind"] == "ask"
+    playbook = card["payload"]["playbook"]
+    assert playbook["document_id"] == "strategy_playbook"
+    sections = {row[0] for row in conn.execute("SELECT section FROM docs_index WHERE filename = 'strategy_playbook.md'")}
+    assert playbook["section"] in sections and "Hook" in playbook["section"]
+    # Named and linked, never quoted: nothing of the section's text is on the card.
+    content = conn.execute("SELECT content FROM docs_index WHERE filename = 'strategy_playbook.md' AND section = ?",
+                           (playbook["section"],)).fetchone()[0]
+    body = [line for line in content.splitlines()[1:] if len(line.strip()) > 30]
+    assert body and not any(line.strip() in json.dumps(card) for line in body)
+    assert "playbook" in card["method"]
+
+
+def test_one_shared_word_of_several_is_not_a_playbook_match(conn):
+    import docs_engine
+    import record_cards
+
+    docs_engine.init_docs_search_index(conn)
+    # "person" is in the playbook (as "Personal"), "pricing", "studio" and "two" are not.
+    assert record_cards.playbook_section(conn, "pricing for a two person studio") is None
+    assert record_cards.playbook_section(conn, "the the and") is None
+
+
+def test_no_docs_index_means_no_playbook_line_and_no_rebuild(conn):
+    import record_cards
+
+    conn.execute("DROP TABLE IF EXISTS docs_index")
+    assert record_cards.playbook_section(conn, "hooks that get comments") is None
+    assert conn.execute("SELECT name FROM sqlite_master WHERE name = 'docs_index'").fetchone() is None
