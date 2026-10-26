@@ -1,6 +1,6 @@
 # Privacy policy: Inox Hydra Bridge
 
-**Last updated: 26 October 2026. Applies to Inox Hydra Bridge version 2.8.0.**
+**Last updated: 27 October 2026. Applies to Inox Hydra Bridge version 2.8.0.**
 
 Inox Hydra Bridge is a browser extension that connects the LinkedIn pages you
 open to Inox Hydra, a program that runs on your own computer. The extension has
@@ -95,17 +95,28 @@ While it is on, two further things happen:
 
 1. A script runs inside LinkedIn's own page context
    (`voyager_interceptor.js`) and wraps the page's `fetch` function so that it
-   can copy the JSON of responses LinkedIn's own application has **already**
-   downloaded for the page you are looking at: feed updates, profiles, creator
-   analytics, social actions and comments. The figures in those responses are
-   exact rather than rounded, which is the reason the option exists. The script
-   never issues a request of its own and never modifies a request or a
-   response.
+   can copy the JSON of two kinds of response LinkedIn's own application has
+   **already** downloaded for the page you are looking at: feed updates and
+   your creator analytics. From a feed response Inox Hydra keeps the figures of
+   your own posts only: every other post in it is dropped before anything is
+   written, and only how many were dropped is recorded. From your creator
+   analytics it keeps your follower count, for the account you confirmed in
+   Inox Hydra. Responses about other members, such as profiles, reactions on
+   posts and comments, are not copied, and Inox Hydra refuses them if they
+   arrive. The figures are exact rather than rounded, which is the reason the
+   option exists. The script never issues a request of its own and never
+   modifies a request or a response.
 2. The extension notes which of LinkedIn's internal data requests a page made
-   (`background.js`, using `chrome.webRequest.onCompleted`): the address, the
-   HTTP status and the method. **Not the contents.** This log is what Inox
-   Hydra uses to tell you when LinkedIn has changed something and a reading has
-   stopped working.
+   (`background.js`, using `chrome.webRequest.onCompleted`): the address, cut
+   before any part that would name a member and with any LinkedIn id in it
+   blanked, the HTTP status and the method. **Not the contents.** Each LinkedIn page you
+   open also counts the data requests it made and sends Inox Hydra the counts
+   with its regular check-in, by address and query name: an address is kept
+   only as words from a fixed list of the words LinkedIn's data addresses use,
+   with every other part written as a blank, and a query name only in
+   LinkedIn's own form, otherwise as "other". Never a query string. Inox Hydra
+   keeps those counts for seven days. These records are what it uses to tell
+   you when LinkedIn has changed something and a reading has stopped working.
 
 While the setting is off, the first script is not registered in your browser at
 all, and Inox Hydra refuses the two data paths that feed from it.
@@ -143,7 +154,14 @@ previous account.
 
 **In the browser**, under the extension's own storage: whether network reading
 is on; the profile name of the LinkedIn account this browser is signed in to;
-that member's LinkedIn id; the cookie digest described above; and the captures
+that member's LinkedIn id; the cookie digest described above; a record of the
+last capture, saying what kind of thing it was, when, what Inox Hydra answered
+and which tab it came from, never who; this session's count of captures per
+tab, for the toolbar badge; when network reading last stored something; and,
+until the browser closes, the last notice that a part of the capture could not
+read a page (naming the part, the kind of page and the fields) and the last
+notice a LinkedIn page had for you, in Inox Hydra's own words, which the side
+panel shows instead of drawing it into LinkedIn's page; and the captures
 Inox Hydra did not take, so that your own activity is not lost. A capture is
 held when Inox Hydra is not running, when its database is busy and it asks to
 be tried again, and when it refuses this browser because the browser has not
