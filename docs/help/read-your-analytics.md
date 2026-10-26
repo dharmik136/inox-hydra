@@ -11,7 +11,7 @@ The studio does not fetch your analytics. The browser extension reads them from 
 3. Set LinkedIn's range selector to the past 24 hours.
 4. Wait a couple of seconds. The extension reads the impressions, engagements and followers cards and saves them under today's date (UTC).
 
-One visit records one day. A second visit the same day updates that day. Days you do not visit have no figures, and nothing is filled in later. If the page is showing a longer range, such as the past 7 days it opens on, the figures are kept as a reading over that window, on the day you read it, labelled as weekly (or as the window they cover), never as a day and never summed into a range. The chart and the totals on **Analytics** use daily figures only. Your follower and connection counts are also recorded for the day whenever the extension reads your own profile page, so followers are a series even if you only open the analytics page now and then.
+One visit records one day. A second visit the same day updates that day. Days you do not visit have no figures, and nothing is filled in later. If the page is showing a longer range, such as the past 7 days it opens on, the figures are kept as a reading over that window, on the day you read it, labelled as weekly (or as the window they cover), never as a day and never summed into a range. No screen shows these readings yet, and the chart and the totals on **Analytics** use daily figures only. Your follower and connection counts are also recorded for the day whenever the extension reads your own profile page, so followers are a series even if you only open the analytics page now and then.
 
 | Notice on LinkedIn | Meaning |
 | --- | --- |
