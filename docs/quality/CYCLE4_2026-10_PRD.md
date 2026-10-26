@@ -78,7 +78,7 @@ Every open decision in the three reports is adopted at the report's recommendati
 | 11 | The seven-day capture prune | Rows stay seven days; a per-reader daily summary row is kept longer |
 | 12 | Missed-post history | Persisted |
 | 13 | Library's writer | The keep, skip and used marks of the personalised section are the writer; Library as a separate section is not built |
-| 14 | The capture additions | Scheduled after the precision column; the reader change ships with drift reporting so an unverified label shows as drift rather than as silence |
+| 14 | The capture additions | Scheduled after the precision column. Amended by the owner on 2026-10-26, when track 5 showed the cost: only the labels the reader captured before this cycle can report drift. A new label LinkedIn does not show on a page is recorded as not read, never as drift and never as 0, because low-reach posts carry no demographics and a Basic member may never see profile viewers, and a reader marked drifting for that would send the creator to Setup for nothing. A new label that is never read stays visible instead as a count in Health: "not read on any of the last N post analytics pages" |
 | 15 | Group headers | Five headers, never clickable |
 | 16 | The rail at desktop width | Expanded with labels at 1200 px and above |
 | 17 | The show path | Server-Sent Events |
