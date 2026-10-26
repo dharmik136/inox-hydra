@@ -119,6 +119,7 @@ try {
 
 const voyagerCaptureStats = {
   total: 0,
+  matched: 0,
   successful: 0,
   drifted: 0,
   lastCaptureTime: 0
@@ -358,29 +359,39 @@ function noteLongTask(entry) {
   const start = entry.startTime;
   const end = start + entry.duration;
   for (const read of readWindows) {
-    const overlap = Math.min(end, read.end) - Math.max(start, read.start);
-    if (overlap <= 0) continue;
+    // A read that ran inside the frame overlapped it, however short the
+    // read; the milliseconds counted are the part of the frame inside it.
+    if (read.end < start || read.start > end) continue;
     const timing = timingFor(read.extractor);
     timing.long_tasks += 1;
-    timing.long_task_ms += overlap;
+    timing.long_task_ms += Math.max(0, Math.min(end, read.end) - Math.max(start, read.start));
   }
 }
 
+// One source of long frames, so one slow frame is not counted twice: a long
+// animation frame (Chrome 123 and later) contains the long task inside it,
+// so where the browser has both, the frame is observed and the task is not.
+// LONG_FRAME_SOURCE says which, for the record of what a figure counts.
+let LONG_FRAME_SOURCE = null;
 try {
   if (typeof PerformanceObserver !== "undefined") {
-    for (const type of ["longtask", "long-animation-frame"]) {
-      try {
-        new PerformanceObserver((list) => list.getEntries().forEach(noteLongTask)).observe({ type, buffered: true });
-      } catch (err) {
-        // Not every browser has both entry types; the one it has is observed.
-      }
+    const supported = PerformanceObserver.supportedEntryTypes || [];
+    LONG_FRAME_SOURCE = supported.includes("long-animation-frame") ? "long-animation-frame"
+      : (supported.includes("longtask") ? "longtask" : null);
+    if (LONG_FRAME_SOURCE) {
+      new PerformanceObserver((list) => list.getEntries().forEach(noteLongTask))
+        .observe({ type: LONG_FRAME_SOURCE, buffered: true });
     }
   }
-} catch (err) {}
+} catch (err) {
+  LONG_FRAME_SOURCE = null;
+}
 
 // own_pages.js reads the creator's pages in this same world and times its
 // readers through this.
-window.__inoxReaderTiming = Object.freeze({ begin: beginRead, end: endRead, take: takeTiming });
+window.__inoxReaderTiming = Object.freeze({
+  begin: beginRead, end: endRead, take: takeTiming, longFrameSource: () => LONG_FRAME_SOURCE
+});
 
 /**
  * Records one extractor run in the studio's capture log.
