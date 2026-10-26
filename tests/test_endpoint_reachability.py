@@ -247,9 +247,18 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # now, so the merge restored it. The pack has a way out and no way in until
 # its 36 first-person claims are rewritten, which is a decision, not a gap.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 172
+# ---------------------------------------------------------------------------
+# Cycle 4, track 7, batch 0 (honesty prerequisites): GET /api/inspirations is
+# retired. It served viral_templates under the retired Swipe File's name with
+# counts set to None at render time, nothing in the interface called it, and
+# it was the one way a library of other people's posts could have come back
+# (ideas report, "Other people's posts stay out of the database"). It sat in
+# the unreachable column. Total 172 -> 171, reached stays 118, unreachable
+# 54 -> 53.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 171
 REACHED_BY_INTERFACE = 118
-UNREACHABLE = 54
+UNREACHABLE = 53
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

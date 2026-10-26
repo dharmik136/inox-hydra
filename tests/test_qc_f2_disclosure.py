@@ -91,9 +91,12 @@ def studio(monkeypatch):
     conn.execute("INSERT INTO creator_positions (ordinal, title, company, observed_at) VALUES (1, ?, 'PayCo', ?)", (EARLIER, NOW))
     conn.execute("INSERT INTO creator_skills (skill, observed_at) VALUES (?, ?)", (SKILL, NOW))
     for n, (text, reactions) in enumerate([(OPENER + "\n\nMore.", 90), ("Pricing is design.\n\nYes.", 40), ("A note.", 5)]):
+        # Published long enough ago to have settled: the openers come through
+        # results.ranking now, which ranks settled posts only.
         conn.execute(
-            "INSERT INTO own_posts (activity_urn, text, reactions, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?)",
-            (f"urn:li:activity:73811100000000000{n:02d}", text, reactions, NOW, NOW),
+            "INSERT INTO own_posts (activity_urn, text, reactions, published_at, first_seen_at, last_seen_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (f"urn:li:activity:73811100000000000{n:02d}", text, reactions, NOW, NOW, NOW),
         )
     conn.commit()
     conn.close()
@@ -120,7 +123,7 @@ EVIDENCE = {
     "your earlier roles": EARLIER,
     "the skills on your profile": SKILL,
     "the first 400 characters of your About section": ABOUT,
-    "the opening lines of your 3 most-reacted posts": OPENER,
+    "the opening lines of the 3 posts that did best against your usual reactions": OPENER,
 }
 
 
@@ -171,4 +174,4 @@ def test_the_prompt_tab_and_the_help_stop_saying_less_than_is_sent():
 
     help_text = open(os.path.join(REPO_ROOT, "docs", "help", "connect-your-own-ai-provider.md"), encoding="utf-8").read()
     assert "Your instruction only" not in help_text
-    assert "About section" in help_text and "most-reacted posts" in help_text
+    assert "About section" in help_text and "did best against your usual reactions" in help_text

@@ -13,8 +13,9 @@ The pack has three parts, each only when there is something real to put in it:
   habits      measured from their own posts: typical length, how many
               paragraphs, how often they open with a question, emoji and
               hashtag use; only with at least MIN_POSTS_FOR_HABITS posts
-  openers     the first lines of their posts that drew the most reactions,
-              as examples of their voice rather than templates to copy
+  openers     the first lines of the posts that did best against their own
+              median reactions, by results.ranking (settled posts only), as
+              examples of their voice rather than templates to copy
 
 It is the creator's own public profile and their own published posts. It goes
 to a hosted model only when one is configured, on the same path and under the
@@ -26,13 +27,17 @@ Strict Invariants:
 - Nothing invented: a part with no data is omitted, never filled.
 """
 
+import json
 import re
+import sqlite3
 import statistics
 from typing import Any, Dict, List
 
 try:
+    from . import results
     from .database import get_db
 except ImportError:
+    import results
     from database import get_db
 
 MIN_POSTS_FOR_HABITS = 3
@@ -107,22 +112,38 @@ def _habits(texts: List[str]) -> List[str]:
 
 
 def _openers(conn, limit: int) -> List[str]:
-    rows = conn.execute(
-        """
-        SELECT text FROM own_posts
-        WHERE text IS NOT NULL AND TRIM(text) != '' AND reactions IS NOT NULL
-        ORDER BY reactions DESC, published_at DESC
-        LIMIT ?
-        """,
-        (limit,),
-    ).fetchall()
+    """
+    The first lines of the posts that did best against the creator's own
+    median reactions, best first, through results.ranking and nothing else.
+
+    This ordered by raw own_posts.reactions with no settled rule, the one
+    ranking left outside results.py after six modules were brought into it:
+    a three hour old post could be a "most-reacted opener", and a creator
+    with two readings had openers ranked on them. The engine abstains below
+    its minimums (three settled posts for a median), and so does this: no
+    ranked post, no openers, never a guess from raw counts.
+    """
+    try:
+        order = results.ranking(conn)["order"]
+    except sqlite3.OperationalError:
+        return []
+    if not order:
+        return []
+    # Only the ranked posts' text is read, and only as many as can be wanted:
+    # a post with no words (an image, a document) is passed over.
+    wanted = order[: limit * 4]
+    texts = {row["activity_urn"]: row["text"] for row in conn.execute(
+        "SELECT activity_urn, text FROM own_posts WHERE activity_urn IN (SELECT value FROM json_each(?)) "
+        "AND text IS NOT NULL AND TRIM(text) != ''", (json.dumps(wanted),))}
     openers = []
-    for row in rows:
-        line = _first_line(row["text"])
+    for urn in wanted:
+        line = _first_line(texts.get(urn, ""))
         if len(line) > OPENER_CHARS:
             line = line[:OPENER_CHARS].rsplit(" ", 1)[0] + "..."
         if line:
             openers.append(f'- "{line}"')
+        if len(openers) >= limit:
+            break
     return openers
 
 
@@ -189,7 +210,7 @@ def disclosure(max_openers: int = 3) -> List[str]:
             "length, paragraphs, opening questions, emoji and hashtags"
         )
     if openers:
-        said.append(f"the opening lines of your {len(openers)} most-reacted posts")
+        said.append(f"the opening lines of the {len(openers)} posts that did best against your usual reactions")
     return said
 
 
@@ -211,7 +232,7 @@ def get_voice_pack(max_openers: int = 3) -> Dict[str, Any]:
         sections.append("\n".join(habits))
         parts.append("habits")
     if openers:
-        sections.append("Openers of theirs that drew the most reactions:\n" + "\n".join(openers))
+        sections.append("Openers of theirs that did best against their own median reactions:\n" + "\n".join(openers))
         parts.append("openers")
 
     if not sections:

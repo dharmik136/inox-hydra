@@ -65,11 +65,13 @@ def _confirm_creator(confirmed=True):
     conn.close()
 
 
-def _post(n, text, reactions):
+def _post(n, text, reactions, published_at=NOW):
+    """A post old enough to have settled, unless `published_at` says otherwise."""
     conn = _db()
     conn.execute(
-        "INSERT INTO own_posts (activity_urn, text, reactions, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?)",
-        (f"urn:li:activity:73800000000000000{n:02d}", text, reactions, NOW, NOW),
+        "INSERT INTO own_posts (activity_urn, text, reactions, published_at, first_seen_at, last_seen_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (f"urn:li:activity:73800000000000000{n:02d}", text, reactions, published_at, NOW, NOW),
     )
     conn.commit()
     conn.close()
@@ -115,8 +117,41 @@ def test_openers_are_their_best_first_lines(home):
     _post(2, "The loud one.\n\nBody.", 90)
     _post(3, "The middle one.\n\nBody.", 40)
     text = get_voice_pack(max_openers=2)["brief_section"]
-    openers = text.split("drew the most reactions:\n")[1].splitlines()
+    openers = text.split("did best against their own median reactions:\n")[1].splitlines()
     assert openers == ['- "The loud one."', '- "The middle one."']
+
+
+def test_openers_come_through_the_one_ranking(home):
+    """
+    results.ranking, settled posts only (cycle 4, track 7, batch 0). The
+    openers ordered by raw reactions with no settled rule, so a post read
+    minutes after it went out, with the most reactions so far, led the list.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    _post(1, "A settled post.\n\nBody.", 20)
+    _post(2, "Another settled post.\n\nBody.", 30)
+    _post(3, "A third settled post.\n\nBody.", 10)
+    fresh = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+    _post(4, "Three hours old and already loud.\n\nBody.", 900, published_at=fresh)
+    text = get_voice_pack(max_openers=3)["brief_section"]
+    assert "already loud" not in text, "an unsettled post was ranked as an opener"
+    openers = text.split("did best against their own median reactions:\n")[1].splitlines()
+    assert openers[0] == '- "Another settled post."'
+
+
+def test_openers_abstain_below_the_engine_minimum(home):
+    """Two settled posts give no median (results.MIN_FOR_MEDIAN), so no opener is named."""
+    _post(1, "One.\n\nBody.", 50)
+    _post(2, "Two.\n\nBody.", 5)
+    assert "openers" not in get_voice_pack()["parts"]
+
+
+def test_no_second_ranking_of_openers_exists():
+    """The guard: the module orders nothing by reactions itself."""
+    source = open(os.path.join(BACKEND, "voice_pack.py"), encoding="utf-8").read()
+    assert "ORDER BY reactions" not in source
+    assert "results.ranking(" in source
 
 
 def test_the_copilot_carries_the_pack_and_says_so(home, monkeypatch):

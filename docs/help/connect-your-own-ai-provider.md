@@ -50,7 +50,7 @@ Re-Hook and Command also send what the studio knows about how you write, so the 
 
 - once you have confirmed your profile: your headline, your current role and up to two earlier roles, the skills on your profile, and the first 400 characters of your About section
 - once at least three of your posts are imported: how your posts are usually shaped (length, paragraphs, opening questions, emoji and hashtags)
-- the opening lines of your 3 most-reacted posts
+- the opening lines of the 3 posts that did best against your usual reactions, measured the way Posts measures them: settled posts only, against your own median, so nothing is listed until three of your posts have settled with figures
 
 The **Prompt** tab lists exactly which of these the studio holds for you, under **What a provider would receive**, and each Command answer ends with what was sent with it. The model is told not to mention your title or employer unless your text does. There is no setting that leaves this out while a provider is connected.
 

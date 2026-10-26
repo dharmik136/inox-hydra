@@ -6,7 +6,8 @@ Validates all 4 parts of the Swipe File modernization:
 2. Filter by archetype and free-text search queries work accurately.
 3. 36 seeded author blueprints across 6 core taxonomies (no PII, no third-party copyright).
 4. Migration 2 cleanly migrates legacy inspirations into viral_templates and drops inspirations.
-5. Backward-compatible /api/inspirations seamlessly proxies viral_templates.
+5. Migration 2 is final: nothing recreates the inspirations table at boot, and
+   the /api/inspirations route that proxied viral_templates is retired.
 6. Zero em-dashes across all modified components.
 """
 
@@ -91,34 +92,28 @@ def test_intelligence_templates_endpoint_and_filtering():
     assert any("sqlite" in t["hook_text"].lower() or "sqlite" in t["pacing_style"].lower() for t in query_data["templates"])
 
 
-def test_migration_2_and_backward_compatible_inspirations_proxy():
-    """Verifies that Migration 2 drops inspirations and /api/inspirations adapts smoothly."""
+def test_migration_2_is_final_and_the_proxy_route_is_retired():
+    """
+    Migration 2 drops inspirations, init_db no longer puts an empty shell of
+    it back on every boot, migration 2 tolerates its absence, and the route
+    that proxied viral_templates under its name answers 404 (cycle 4, track
+    7, batch 0).
+    """
     init_db()
     conn = get_db()
     cursor = conn.cursor()
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspirations'")
+    assert cursor.fetchone() is None, "init_db recreated the table migration 2 drops"
 
-    # Apply migration 2 logic explicitly if inspirations still exists
-    _migrate_inspirations(cursor)
+    _migrate_inspirations(cursor)  # a no-op on a database without the table
     conn.commit()
-
-    # inspirations table should be dropped
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspirations'")
     assert cursor.fetchone() is None
-
-    # Call /api/inspirations: must not crash with OperationalError, but adapt viral_templates
-    res = client.get("/api/inspirations?limit=20")
-    assert res.status_code == 200
-    data = res.json()
-    assert data["status"] == "success"
-    assert data["count"] > 0
-    assert len(data["inspirations"]) > 0
-
-    first_item = data["inspirations"][0]
-    assert "author_name" in first_item
-    assert "archetype" in first_item
-    assert "pacing_style" in first_item
-    assert "key_hook" in first_item
     conn.close()
+
+    assert client.get("/api/inspirations?limit=20").status_code == 404
+    res = client.get("/api/v1/intelligence/templates?limit=20")
+    assert res.status_code == 200 and res.json()["count"] > 0
 
 
 def test_zero_em_dash_compliance_in_swipe_files():
