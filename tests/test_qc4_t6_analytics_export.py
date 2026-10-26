@@ -467,3 +467,84 @@ def test_a_damaged_or_unusual_member_is_refused_with_a_sentence(studio, kind, wo
     assert res.status_code == 400, f"{kind}: {res.status_code} {res.text[:200]}"
     assert words in res.json()["detail"], res.json()["detail"]
     assert os.listdir(analytics_export._uploads_dir()) == [], "the uploaded copy was left behind"
+
+
+# ---------------------------------------------------------------------------
+# Review round, notes N-9 to N-15
+# ---------------------------------------------------------------------------
+
+def _zip_with(members):
+    import zipfile as _zip
+    buffer = io.BytesIO()
+    with _zip.ZipFile(buffer, "w", _zip.ZIP_STORED) as archive:
+        for name, data in members.items():
+            archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def test_a_part_larger_than_a_real_export_needs_is_refused(studio):
+    """N-9: a part far below the old 40 MB cap still cost the reader a gigabyte; real exports' parts are small."""
+    data = _zip_with({"xl/workbook.xml": os.urandom(11 * 1024 * 1024)})
+    res = _upload(studio["client"], data)
+    assert res.status_code == 400 and "far larger than a spreadsheet should be" in res.json()["detail"]
+
+
+def test_a_part_not_written_in_utf8_is_refused(studio):
+    """N-10: the DOCTYPE check read bytes, so a UTF-16 part slipped past it to the parser."""
+    workbook = '<?xml version="1.0" encoding="UTF-16"?><!DOCTYPE w [<!ENTITY a "x">]><workbook/>'.encode("utf-16")
+    res = _upload(studio["client"], _zip_with({"xl/workbook.xml": workbook}))
+    assert res.status_code == 400 and "UTF-8" in res.json()["detail"]
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("1,234", 1234), ("12,345,678", 12345678), ("1234", 1234),
+    ("1,2,3", None), ("12,34", None), ("1.234", None), ("1.2K", None), ("-5", None),
+])
+def test_a_figure_with_commas_is_read_only_as_thousands(text, expected):
+    """N-11: every comma was stripped, so "1,2,3" read as 123."""
+    assert analytics_export._count(text) == expected
+
+
+def test_an_empty_workbook_says_so(studio):
+    """N-12: a workbook with no sheets previewed as a blank list."""
+    empty = _zip_with({"xl/workbook.xml": '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                                         '<sheets/></workbook>'})
+    res = _upload(studio["client"], empty)
+    assert res.status_code == 400 and "no sheets" in res.json()["detail"]
+
+
+def test_a_sheet_whose_part_is_missing_is_listed_not_dropped(studio):
+    """N-12: a sheet the workbook names but the file does not hold vanished from the preview."""
+    data = fx.build(fx.dashboard_sheets())
+    import zipfile as _zip
+    source = _zip.ZipFile(io.BytesIO(data))
+    kept = {name: source.read(name) for name in source.namelist() if name != "xl/worksheets/sheet2.xml"}
+    preview = _upload(studio["client"], _zip_with(kept)).json()
+    engagement = _sheet(preview, "ENGAGEMENT")
+    assert engagement["importable"] is False and "holds no contents for it" in engagement["note"]
+
+
+def test_a_top_post_reading_is_never_dated_after_now(studio):
+    """N-14: a range ending today dated its readings 23:59:59 today, later than now."""
+    from datetime import datetime as _dt, timezone as _tz
+    today = _dt.now(_tz.utc).date()
+    conn = studio["db"]()
+    with conn:
+        conn.execute("UPDATE own_posts SET published_at = ? WHERE activity_urn = ?",
+                     (f"{today.isoformat()}T00:00:01+00:00", fx.INSIDE))
+    conn.close()
+    sheets = [s for s in fx.dashboard_sheets() if s[0] == "TOP POSTS"]
+    name = f"Content_{today.isoformat()}_{today.isoformat()}_SampleCreator.xlsx"
+    preview = _upload(studio["client"], fx.build(sheets), name=name).json()
+    studio["client"].post("/api/v1/analytics-export/import", json={"source": preview["source"]})
+    reading = _rows(studio["db"], "SELECT observed_at FROM post_metric_observations WHERE activity_urn = ?",
+                    (fx.INSIDE,))[0]
+    assert _dt.fromisoformat(reading["observed_at"]) <= _dt.now(_tz.utc)
+
+
+def test_the_setup_block_does_not_state_the_unverified_layout_as_fact():
+    """N-15: the intro said, as fact, what the file holds; that is the studio's best understanding."""
+    block = _read("studio/ui/src/components/AnalyticsExportImport.tsx")
+    assert "the file it writes holds your impressions, engagements and new followers by day" not in block
+    assert "help says the file holds your impressions and engagements" in block
+    assert "preview.recognised" in block, "a file with nothing recognised is not said to be so"

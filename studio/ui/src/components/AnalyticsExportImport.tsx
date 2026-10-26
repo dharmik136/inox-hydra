@@ -91,9 +91,9 @@ export function AnalyticsExportImport({
       </p>
       <p className="mt-1.5 text-[13px] leading-relaxed text-ink-secondary">
         The archive carries your posts but no figures. On LinkedIn&apos;s analytics page, choose a range of up to a
-        year and press Export: the file it writes holds your impressions, engagements and new followers by day, and
-        your top posts, exact rather than rounded. Bring it here and nothing is written until you have seen what is in
-        it.
+        year and press Export. LinkedIn&apos;s help says the file holds your impressions and engagements for that
+        range, exact rather than rounded; the studio also looks in it for new followers by day and your top posts.
+        Bring it here and nothing is written until you have seen what is in it.
       </p>
       <p className="studio-meta mt-1.5 leading-relaxed text-signal-orange-text">{state.verification.toUpperCase()}</p>
 
@@ -184,6 +184,11 @@ export function AnalyticsExportImport({
               ? `COVERS ${preview.range.start} TO ${preview.range.end}, READ FROM ${(preview.range.from ?? "").toUpperCase()}`
               : "THE RANGE IT COVERS COULD NOT BE READ"}
           </p>
+          {!preview.recognised && (
+            <p className="mt-2 text-[12px] leading-relaxed text-signal-orange-text">
+              Nothing in this file is recognised, so nothing can be imported from it.
+            </p>
+          )}
           <ul className="mt-3 flex flex-col gap-2.5">
             {preview.sheets.map((sheet) => (
               <li key={sheet.name} className="text-[12px] leading-relaxed">

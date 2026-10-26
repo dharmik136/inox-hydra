@@ -97,8 +97,11 @@ NAME_RANGE = re.compile(r"(\d{4}-\d{2}-\d{2})[_ ](\d{4}-\d{2}-\d{2})")
 NAME_ACTIVITY = re.compile(r"(?<!\d)(\d{19})(?!\d)")
 
 MAX_FILE_BYTES = 25 * 1024 * 1024
-MAX_PART_BYTES = 40 * 1024 * 1024
-MAX_TOTAL_BYTES = 120 * 1024 * 1024
+# A real export's parts are well under a megabyte (a year of days, fifty
+# posts). The reader builds each part's whole tree in memory, about a hundred
+# times the part's size, so these keep a hostile file to a bounded cost.
+MAX_PART_BYTES = 10 * 1024 * 1024
+MAX_TOTAL_BYTES = 40 * 1024 * 1024
 MAX_RATIO = 200
 MAX_MEMBERS = 400
 MAX_SHEETS = 25
@@ -372,6 +375,11 @@ class _Parts:
                               "could not be read.") from error
         except OSError as error:
             raise ExportError(f"That file could not be read: {error.strerror or 'the disk refused it'}.") from error
+        # Every part of a spreadsheet is UTF-8. One in UTF-16 would also slip
+        # past the byte check below, which reads 8-bit text.
+        if data[:2] in (b"\xff\xfe", b"\xfe\xff") or b"\x00" in data[:4096]:
+            raise ExportError("A part of that file is not written in UTF-8, as every part of a spreadsheet is, "
+                              "so it was not read.")
         if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
             raise ExportError("That file carries markup a spreadsheet never does, so it was not read.")
         return data
@@ -504,9 +512,13 @@ def read_workbook(path: str) -> Dict[str, Any]:
         strings = _shared_strings(parts)
         sheets = []
         named, epoch = _sheet_parts(parts)
+        if not named:
+            raise ExportError("That file holds no sheets, so there is nothing in it to read.")
         for name, part in named:
             data = parts.get(part)
             if data is None:
+                # Named by the workbook and absent from the file: listed, not dropped.
+                sheets.append({"name": name, "rows": [], "truncated": False, "missing": True})
                 continue
             rows, truncated = _rows(data, strings)
             sheets.append({"name": name, "rows": rows, "truncated": truncated})
@@ -624,7 +636,11 @@ def _count(value: Any) -> Optional[int]:
         return value if value >= 0 else None
     if isinstance(value, float):
         return int(value) if value.is_integer() and value >= 0 else None
-    text = str(value).strip().replace(",", "")
+    text = str(value).strip()
+    # A comma is read only as a thousands separator: "1,234" is 1234, while
+    # "1,2,3" or "12,34" is no figure, not 123 or 1234.
+    if re.fullmatch(r"\d{1,3}(?:,\d{3})+", text):
+        return int(text.replace(",", ""))
     return int(text) if re.fullmatch(r"\d+", text) else None
 
 
@@ -884,6 +900,12 @@ def _understand(name: str, workbook: Dict[str, Any], modified: Optional[datetime
         first = [str(c) for c in (rows[0] if rows else []) if c is not None][:10]
         entry: Dict[str, Any] = {"name": sheet["name"], "kind": kind, "truncated": sheet["truncated"],
                                  "recognised": [], "not_recognised": [], "left_out": [], "rows": 0}
+        if sheet.get("missing"):
+            entry.update(label=LABELS.get(kind, sheet["name"]) if kind else sheet["name"], importable=False,
+                         default=False, writes=None,
+                         note="Not read: the file names this sheet but holds no contents for it.")
+            sheets.append(entry)
+            continue
         if kind is None:
             entry.update(label=sheet["name"], importable=False, default=False, writes=None,
                          note=(f"Not recognised: the studio does not know a sheet called {sheet['name']}, so "
@@ -1093,7 +1115,9 @@ def _write_top_posts(conn, read: Dict[str, Any], span: Dict[str, Any], columns: 
         return {"left_out": "the range the export covers could not be read, so whether a figure covers a post's "
                             "whole life cannot be told"}, []
     start, end = date.fromisoformat(span["start"]), date.fromisoformat(span["end"])
-    at = datetime(end.year, end.month, end.day, 23, 59, 59, tzinfo=timezone.utc)
+    # The end of the range's last day, or now when that is still to come: a
+    # reading dated in the future would stand as the post's newest until then.
+    at = min(datetime(end.year, end.month, end.day, 23, 59, 59, tzinfo=timezone.utc), datetime.now(timezone.utc))
     added = not_yours = before = undated = 0
     urns = []
     for urn, entry in read["posts"].items():
