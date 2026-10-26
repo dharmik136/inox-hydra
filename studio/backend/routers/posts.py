@@ -216,7 +216,14 @@ def list_posts(status: Optional[str] = None, limit: Optional[int] = None):
             rows.append(d)
         if status and capped is not None:
             rows.reverse()
-        return {"status": "success", "posts": rows}
+        # How many posts the status holds, beside the rows asked for, so a
+        # screen that says how many drafts are waiting reads one row rather
+        # than every draft (259 KB on a three year install).
+        if status:
+            total = cursor.execute("SELECT COUNT(*) FROM posts WHERE status = ?", (status,)).fetchone()[0]
+        else:
+            total = cursor.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+        return {"status": "success", "posts": rows, "total": total}
     finally:
         conn.close()
 

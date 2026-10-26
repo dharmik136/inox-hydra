@@ -21,7 +21,9 @@ Open **Queue** in the rail. The top row shows:
 
 **Weekly slots** shows a card per day with each slot's time and label, or None. **Queued posts** lists every queued post, earliest time first, with its time in this computer's local time and its first line, or NOTHING IS QUEUED.
 
-To add a post, use **Publish** then **Queue it** on the Composer.
+To add a post, use **Publish** then **Queue it** on the Composer, or press **Queue the newest draft** under **Drafts waiting**.
+
+**Drafts waiting** says how many drafts you have saved and gives the first line of the newest. **Queue the newest draft** puts that one in the next slot clear of the 12-hour rule, through the same check **Queue it** uses, and the sentence under the heading says which time it chose. The drafts themselves are listed once, under **Drafts** in the Composer. If the count could not be read, the block says so instead of reporting no drafts.
 
 ## The 12-hour rule
 

@@ -6,9 +6,9 @@ import {
   dispatchQueueNow,
   fetchCadenceHealth,
   fetchCadenceInsights,
+  fetchDraftsWaiting,
   fetchDuePosts,
   fetchNextSlot,
-  fetchRecentDrafts,
   fetchSmartSlots,
   publishNow,
   returnToDrafts,
@@ -17,6 +17,7 @@ import {
   type CadenceHealth,
   type CadenceInsights,
   type DraftSummary,
+  type DraftsWaiting,
   type QueueSlot,
   type ScheduledPost,
   type TodayDuePost,
@@ -28,15 +29,6 @@ import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-/**
- * How many of the waiting drafts the Queue lists.
- *
- * Enough that a creator can see what is there and put one in a slot, few
- * enough that this stays the Queue rather than a second drafts screen: an
- * install with 150 drafts should not render 150 rows here.
- */
-const DRAFTS_SHOWN = 8;
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 /** Today at midnight local time, which is where the next seven days start. */
@@ -96,7 +88,9 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
   const [dueNote, setDueNote] = useState<string | null>(null);
   const [health, setHealth] = useState<CadenceHealth | null>(null);
   const [rhythm, setRhythm] = useState<CadenceInsights | null>(null);
-  const [drafts, setDrafts] = useState<DraftSummary[]>([]);
+  // How many drafts are waiting, and the newest; null when that read did not
+  // come back, which is said rather than drawn as no drafts at all.
+  const [drafts, setDrafts] = useState<DraftsWaiting | null>(null);
   const [draftNote, setDraftNote] = useState<string | null>(null);
   const [queueing, setQueueing] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -109,10 +103,10 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
         fetchSmartSlots(),
         fetchCadenceHealth(),
         fetchDuePosts(),
-        // The drafts that could go in a slot. Bounded, because every draft
-        // is 259 KB on a three year install and this is a list of the few
-        // waiting, not the drafts screen.
-        fetchRecentDrafts(DRAFTS_SHOWN).catch(() => [] as DraftSummary[]),
+        // How many drafts could go in a slot, and the newest: one row and a
+        // count. A failed read is null, never an empty list, so it cannot
+        // read as "no drafts are waiting".
+        fetchDraftsWaiting().catch(() => null),
       ]);
       setSlots(queue.slots);
       setScheduled(queue.scheduled);
@@ -404,7 +398,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
           </p>
           {scheduled.length === 0 ? (
             <p className="text-[13px] leading-relaxed text-ink-muted">
-              Nothing is queued yet. The drafts waiting below can go into the next open slot.
+              Nothing is queued yet. The newest draft waiting below can go into the next open slot.
             </p>
           ) : (
             <ul className="flex flex-col divide-y divide-edge border-y border-edge">
@@ -431,58 +425,50 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
           )}
         </section>
 
-        {/* What could go in a slot. The screen used to send a creator to the
-            Composer to queue something while holding 150 drafts of their
-            own and leaving half of itself blank. */}
+        {/* What could go in a slot: how many drafts are waiting, the newest
+            of them, and the one action this screen takes on them. It listed
+            the newest eight, each with Edit text and Queue it, while the
+            Composer's Drafts lists every one, so two screens listed the same
+            drafts (cycle 4, decision 6: a count, with one action). */}
         <section aria-labelledby="queue-drafts" className="mt-5">
-          <div className="mb-2 flex items-baseline justify-between gap-3">
-            <p id="queue-drafts" className="studio-label">
-              Drafts waiting
-            </p>
-            {drafts.length > 0 && (
-              <span className="studio-meta shrink-0 text-[10px] text-ink-muted">
-                {drafts.length >= DRAFTS_SHOWN ? `NEWEST ${DRAFTS_SHOWN}` : `${drafts.length}`}
-              </span>
-            )}
-          </div>
+          <p id="queue-drafts" className="studio-label mb-2">
+            Drafts waiting
+          </p>
           {draftNote && (
             <p role="status" className="mb-2 text-[12px] text-ink-secondary">
               {draftNote}
             </p>
           )}
-          {drafts.length === 0 ? (
+          {drafts === null ? (
             <p className="text-[13px] leading-relaxed text-ink-muted">
-              No drafts are waiting. What you write in the Composer appears here, ready for a slot.
+              How many drafts are waiting could not be read. It is read again with the rest of this screen.
+            </p>
+          ) : drafts.total === 0 || !drafts.newest ? (
+            <p className="text-[13px] leading-relaxed text-ink-muted">
+              No drafts are waiting. What you write and save in the Composer can be queued from here.
             </p>
           ) : (
-            <ul className="flex flex-col divide-y divide-edge border-y border-edge">
-              {drafts.map((draft) => (
-                <li key={draft.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink-primary">
-                    {draft.content.split("\n")[0] || "Untitled draft"}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    {onEditText && (
-                      <button
-                        type="button"
-                        onClick={() => onEditText(draft.id)}
-                        className="rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
-                      >
-                        Edit text
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      disabled={queueing !== null}
-                      onClick={() => void onQueueDraft(draft)}
-                      className="rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
-                    >
-                      Queue it
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-y border-edge py-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-[12px] leading-snug text-ink-primary">
+                  {drafts.total === null
+                    ? "Drafts are waiting."
+                    : `${drafts.total.toLocaleString()} ${drafts.total === 1 ? "draft is" : "drafts are"} waiting.`}
+                </p>
+                <p className="mt-0.5 truncate text-[12px] text-ink-secondary">
+                  Newest: {drafts.newest.content.split("\n")[0] || "Untitled draft"}
+                </p>
+                <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">EVERY DRAFT IS UNDER DRAFTS IN THE COMPOSER.</p>
+              </div>
+              <button
+                type="button"
+                disabled={queueing !== null}
+                onClick={() => drafts.newest && void onQueueDraft(drafts.newest)}
+                className="shrink-0 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+              >
+                Queue the newest draft
+              </button>
+            </div>
           )}
         </section>
         </div>

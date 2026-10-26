@@ -3278,16 +3278,27 @@ export async function setEngineeringPack(enabled: boolean): Promise<{ added?: nu
   });
 }
 
+/** How many drafts are waiting, and the newest of them. */
+export interface DraftsWaiting {
+  /** Null when the studio answered without a count, so no number is printed. */
+  total: number | null;
+  newest: DraftSummary | null;
+}
+
 /**
- * The newest few drafts, newest first.
+ * How many drafts are waiting, and the newest, for the Queue's one action.
  *
- * fetchDrafts answers with every draft, which the drafts panel wants and its
- * search needs; a screen that shows the few waiting to be queued does not,
- * and on a three year install every draft is 259 KB.
+ * One row and the count beside it. The Queue listed the newest eight here
+ * while the Composer's Drafts lists every one (decision 6: a count, with one
+ * action); fetchDrafts answers with every draft, 259 KB on a three year
+ * install, which only the drafts panel and its search need.
  */
-export async function fetchRecentDrafts(limit: number): Promise<DraftSummary[]> {
-  const data = await call<{ posts?: PostRow[] }>(`/api/posts?status=draft&limit=${limit}`);
-  return (data.posts ?? [])
-    .map((row) => ({ id: row.id, content: row.content ?? "", created_at: row.created_at ?? null }))
-    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+export async function fetchDraftsWaiting(): Promise<DraftsWaiting> {
+  const data = await call<{ posts?: PostRow[]; total?: number }>("/api/posts?status=draft&limit=1");
+  const rows = data.posts ?? [];
+  const newest = rows[rows.length - 1];
+  return {
+    total: typeof data.total === "number" ? data.total : null,
+    newest: newest ? { id: newest.id, content: newest.content ?? "", created_at: newest.created_at ?? null } : null,
+  };
 }
