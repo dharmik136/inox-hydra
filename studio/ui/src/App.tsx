@@ -10,6 +10,7 @@ import { Inspector } from "@/components/Inspector";
 import { LeadsSurface } from "@/components/LeadsSurface";
 import { OnboardingSurface } from "@/components/OnboardingSurface";
 import { TodaySurface } from "@/components/TodaySurface";
+import { RecordSurface } from "@/components/RecordSurface";
 import { ActivitySurface } from "@/components/ActivitySurface";
 import { PostsSurface } from "@/components/PostsSurface";
 import { OutboundSurface } from "@/components/OutboundSurface";
@@ -1007,6 +1008,7 @@ export default function App() {
                   }}
                 />
               )}
+              {active === "record" && <RecordSurface />}
               {active === "activity" && (
                 <ActivitySurface
                   onOpenLead={(leadId) => {
