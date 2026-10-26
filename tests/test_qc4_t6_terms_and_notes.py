@@ -104,7 +104,7 @@ def test_the_landscape_says_what_happened_to_shield_and_kleo():
     landscape = _flat(_read(LANDSCAPE))
     assert "status uncertain" not in landscape
     assert "Wound down May 2026" in landscape
-    assert "shut down 2025-06-20" in landscape
+    assert "2025-06-20" in landscape and "jakezward" in landscape, "Kleo's date lost its source"
     assert "tolerated in practice, not permitted in text" in landscape
 
 
@@ -161,3 +161,45 @@ def test_the_background_claim_says_what_runs_there():
     article = _flat(_read(ARTICLE))
     assert "never runs in the background" not in article
     assert "never acts on LinkedIn in the background" in article
+
+
+# ---------------------------------------------------------------------------
+# Review round, SF-7: every quotation in the notes has a source to check
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+QUOTED = _re.compile(r'"([^"\n]+)"')
+
+
+def _unsourced(text):
+    """Quotations of four words or more in a paragraph or table row that names no source address."""
+    found = []
+    for block in _re.split(r"\n\s*\n|\n(?=\|)", _re.sub(r"`[^`\n]*`", "", text)):
+        if "http://" in block or "https://" in block:
+            continue
+        found += [quote for quote in QUOTED.findall(block) if len(quote.split()) >= 4]
+    return found
+
+
+def test_every_quotation_in_the_two_notes_names_a_source_the_reader_can_check():
+    """
+    Review finding SF-7: the risk note put a dated, verbatim sentence in a
+    co-founder's mouth with no address. Each quotation now carries the
+    address it can be checked at, in the same paragraph or table row.
+    """
+    for path in (RISK, LANDSCAPE):
+        assert _unsourced(_read(path)) == [], f"{os.path.basename(path)} quotes without a source"
+
+
+def test_the_quotation_guard_can_fail():
+    assert _unsourced('A paragraph that says "these words were never written anywhere".') == [
+        "these words were never written anywhere"]
+    assert _unsourced('| row | "four words quoted here" | no address |') == ["four words quoted here"]
+    assert _unsourced('"four words quoted here" https://example.com/source') == []
+
+
+def test_kleos_post_is_cited_where_it_can_be_read():
+    note = _read(RISK)
+    assert "https://www.linkedin.com/posts/jakezward_i-didnt-want-to-post-this-but-i-have-to-activity-7341796212687175681-JjZx" in note
+    assert "2025-06-20" in note
