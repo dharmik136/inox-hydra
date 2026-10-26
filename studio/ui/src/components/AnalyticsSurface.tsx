@@ -630,12 +630,12 @@ function AccountPanel({ account }: { account: AccountFigures | null | "failed" }
 
 function Row({ label, value, note, muted }: { label: string; value: string; note?: string; muted?: boolean }) {
   return (
-    <div>
-      <div className="flex items-baseline justify-between gap-3">
-        <dt className="text-[12px] text-ink-secondary">{label}</dt>
-        <dd className={cn("text-right text-[12px] tabular-nums", muted ? "text-ink-muted" : "text-ink-primary")}>{value}</dd>
-      </div>
-      {note && <p className="studio-meta text-[10px] text-ink-muted">{note.toUpperCase()}</p>}
+    // One group per figure, holding only its dt and dd, so a screen reader
+    // pairs the label with its value and its reading note (axe: dlitem).
+    <div className="grid grid-cols-[1fr_auto] items-baseline gap-x-3">
+      <dt className="text-[12px] text-ink-secondary">{label}</dt>
+      <dd className={cn("text-right text-[12px] tabular-nums", muted ? "text-ink-muted" : "text-ink-primary")}>{value}</dd>
+      {note && <dd className="studio-meta col-span-2 text-[10px] text-ink-muted">{note.toUpperCase()}</dd>}
     </div>
   );
 }
