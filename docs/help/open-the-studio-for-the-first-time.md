@@ -46,7 +46,7 @@ The server listens only on `127.0.0.1`, so only this PC can reach it. Your draft
 
 A new database starts almost empty, on purpose. Nothing about you or your account is invented.
 
-The studio opens on **Setup** until Setup is done, all five of its steps, and on **Today** afterwards (see [What to do today](what-to-do-today.md)). Each screen has its own address, such as `#/leads` after the studio's address, so reloading keeps you on the screen you were on, a bookmark or link opens that screen, and the browser's Back and Forward buttons move between the screens you visited. It connects the bridge browser and reads your own LinkedIn: see [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).
+The studio opens on **Setup** until its required steps are done (the bridge heard from, your profile confirmed and read, and your posts read to the end), and on **Today** afterwards (see [What to do today](what-to-do-today.md)). Importing LinkedIn's archive is offered in Setup and is not required. Each screen has its own address, such as `#/leads` after the studio's address, so reloading keeps you on the screen you were on, a bookmark or link opens that screen, and the browser's Back and Forward buttons move between the screens you visited. It connects the bridge browser and reads your own LinkedIn: see [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).
 
 - **Composer**: an empty editor. Above it, the hook rail shows the 12 starter hook forms a new studio is seeded with.
 - **Queue**: 11 default weekly posting slots and no posts.

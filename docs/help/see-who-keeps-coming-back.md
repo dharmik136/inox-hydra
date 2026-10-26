@@ -14,7 +14,7 @@ A time here is when the bridge first read the engagement, not when the person re
 | Figure | What it counts |
 | --- | --- |
 | Repeat engagers | People who engaged with two or more of your posts, among the posts whose engagers were read. The label says how many posts that is |
-| Gone quiet | Repeat engagers not seen since your last five posts whose engagers were read began. **not judged yet** until five posts have been read |
+| Gone quiet | Repeat engagers not seen on your last five posts whose engagers were read. **not judged yet** until five posts have been read |
 | New people this week, partial | People the studio first saw engage with one of your posts this week. **nothing read yet** when the bridge has read no engagement this week |
 | Connections | Your first-degree connections, from LinkedIn's data archive, as of the day you imported it. **no archive imported** until you have |
 
@@ -24,7 +24,7 @@ The repeat engagers, the most posts first, then the most recent. Each row shows 
 
 ## Gone quiet
 
-People who engaged with two or more of your posts and have not been seen engaging since your last five posts whose engagers were read began; the date beside the title is that day. Until the engagers of five of your posts have been read, the list says it has not judged, because "not seen" would only mean "not looked".
+People who engaged with two or more of your posts and are not seen on any of your last five posts whose engagers were read. Someone who reacted to an older post since is still listed: the list is about those five posts. Until the engagers of five of your posts have been read, the list says it has not judged, because "not seen" would only mean "not looked".
 
 This is not the cleanup review in **Storage and privacy**, which lists people untouched for 24 months so you can choose to remove them. See [Choose what the studio keeps](choose-what-the-studio-keeps.md).
 

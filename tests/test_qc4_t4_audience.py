@@ -162,13 +162,33 @@ def test_a_repeat_engager_says_when_the_studio_first_and_last_saw_them_engage(cl
 # Who has gone quiet
 # ---------------------------------------------------------------------------
 
-def test_gone_quiet_is_a_repeat_engager_not_seen_since_the_last_five_read_posts_began(client):
+def test_gone_quiet_is_a_repeat_engager_not_seen_on_the_last_five_read_posts(client):
     quiet = client.get("/api/v1/audience").json()["quiet"]
     assert quiet["judged"] is True
     assert quiet["recent_posts"] == 5
-    # The fifth most recent post whose engagers were read is P3, forty days old.
-    assert quiet["since"][:10] == (datetime.now(timezone.utc) - timedelta(days=40)).date().isoformat()
+    # The label says exactly what is measured.
+    assert quiet["label"] == "not seen on your last 5 posts whose engagers were read"
+    # The last five posts whose engagers were read are P7 to P3; Asha engaged
+    # only with P1 and P2.
     assert [p["name"] for p in quiet["people"]] == ["Asha Rao"]
+
+
+def test_a_late_engagement_on_an_older_post_is_still_not_seen_on_the_last_five(client):
+    """
+    Exactly what the label says: Dev reacting today to P2, an old post, does
+    not put him on any of the last five posts, so he is listed.
+    """
+    from database import get_db
+    from migrations import interaction_comment_key
+    conn = get_db()
+    with conn:
+        conn.execute(
+            "INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, comment_text, interacted_at, "
+            "comment_key, first_seen_at, last_seen_at) VALUES ('lead-d', ?, 'LIKE', NULL, ?, ?, ?, ?)",
+            (POSTS["P2"][0], _stamp(0), interaction_comment_key(None), _stamp(0), _stamp(0)))
+    conn.close()
+    names = [p["name"] for p in client.get("/api/v1/audience").json()["quiet"]["people"]]
+    assert "Dev Patel" in names and "Asha Rao" in names
 
 
 def test_gone_quiet_abstains_until_enough_posts_were_read(client):

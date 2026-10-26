@@ -119,7 +119,7 @@ export function AudienceSurface({
       <dl className="mt-4 grid grid-cols-2 gap-px border border-edge bg-edge sm:grid-cols-4">
         <Figure label={`Repeat engagers, ${repeat.label}`} value={repeat.count.toLocaleString()} />
         <Figure
-          label={`Gone quiet, since your last ${quiet.recent_posts} read posts began`}
+          label={`Gone quiet, ${quiet.label}`}
           value={quiet.judged ? quiet.count.toLocaleString() : "not judged yet"}
         />
         <Figure
@@ -167,10 +167,7 @@ export function AudienceSurface({
             )}
           </Column>
 
-          <Column
-            title="Gone quiet"
-            note={quiet.judged && quiet.since ? `not seen since ${day(quiet.since)}` : undefined}
-          >
+          <Column title="Gone quiet">
             {!quiet.judged ? (
               <Muted>
                 Not judged until the engagers of {quiet.recent_posts} of your posts have been read; {quiet.posts_read} have
@@ -178,15 +175,12 @@ export function AudienceSurface({
               </Muted>
             ) : quiet.people.length === 0 ? (
               <Muted>
-                Nobody who engaged with two or more of your posts has gone quiet since your last {quiet.recent_posts} posts
-                whose engagers were read began, on {day(quiet.since)}.
+                Everyone who engaged with two or more of your posts was seen on at least one of your last{" "}
+                {quiet.recent_posts} posts whose engagers were read.
               </Muted>
             ) : (
               <>
-                <Muted>
-                  Engaged with two or more of your posts, and not seen engaging since your last {quiet.recent_posts} posts
-                  whose engagers were read began.
-                </Muted>
+                <Muted>Engaged with two or more of your posts, and {quiet.label}.</Muted>
                 <div className="mt-2">
                   <People people={quiet.people} total={quiet.count} onOpenLead={onOpenLead} />
                 </div>

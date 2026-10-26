@@ -15,11 +15,11 @@ three of your posts" means three of the posts whose engagers were read, and
 the repeat list carries how many posts that is. A week in which the bridge
 read nothing is not a week in which nobody new arrived.
 
-Gone quiet is relative to what was read: a person who engaged with two or
-more of your posts and has not been seen engaging since the last
-QUIET_RECENT_POSTS posts whose engagers were read began. Until that many posts
-have been read the list abstains, because "not seen" would only mean "not
-looked". The silent-lead review in Storage and privacy is a different
+Gone quiet is relative to what was read, and its label says exactly what it
+measures: a person who engaged with two or more of your posts and is not
+seen on your last QUIET_RECENT_POSTS posts whose engagers were read. Until
+that many posts have been read the list abstains, because "not seen" would
+only mean "not looked". The silent-lead review in Storage and privacy is a different
 question (who can be removed after 24 months untouched) and keeps its own
 rule in retention.py.
 
@@ -64,7 +64,7 @@ except ImportError:
 REPEAT_MIN_POSTS = 2
 # People listed in each of the first view's lists; the count beside each is the whole set.
 PEOPLE_SHOWN = 25
-# Gone quiet: not seen since this many of the most recent posts whose engagers were read began.
+# Gone quiet: not seen on this many of the most recent posts whose engagers were read.
 QUIET_RECENT_POSTS = 5
 # New people, by week, for this many weeks ending with this one.
 WEEKS_SHOWN = 12
@@ -90,14 +90,6 @@ FUNNEL_LABELS.setdefault("ARCHIVED", "Archived")
 
 def _monday(day: date) -> date:
     return day - timedelta(days=day.weekday())
-
-
-def _post_moment(post_id: str) -> Optional[datetime]:
-    """When a post was made, from its id: LinkedIn's ids carry the millisecond in their high bits."""
-    try:
-        return datetime.fromtimestamp((int(post_id) >> 22) / 1000.0, tz=timezone.utc)
-    except (TypeError, ValueError, OverflowError, OSError):
-        return None
 
 
 def vanity_of(url: Optional[str]) -> str:
@@ -302,7 +294,8 @@ def _engagement_view(conn) -> Dict[str, Any]:
 
     Times are compared as "YYYY-MM-DD HH:MM:SS" strings, not parsed: on a
     three year install nearly everyone engaged with two posts or more, and
-    parsing each of their times cost 100 ms on its own.
+    parsing each of their times cost 100 ms on its own. Gone quiet is a set
+    test against the last QUIET_RECENT_POSTS posts read, so it parses nothing.
     """
     this_week = _monday(datetime.now(timezone.utc).date())
     first_week = (this_week - timedelta(weeks=WEEKS_SHOWN - 1)).isoformat()
@@ -327,8 +320,7 @@ def _engagement_view(conn) -> Dict[str, Any]:
 
             posts_read = sorted(state.posts_read, key=lambda p: int(p), reverse=True)
             judged = len(posts_read) >= QUIET_RECENT_POSTS
-            since = _post_moment(posts_read[QUIET_RECENT_POSTS - 1]) if judged else None
-            since_at = _canonical(since.isoformat()) if since else None
+            recent = set(posts_read[:QUIET_RECENT_POSTS]) if judged else set()
 
             repeat: List[Tuple[int, str, str, Optional[str]]] = []
             quiet: List[Tuple[int, str, str, Optional[str]]] = []
@@ -343,7 +335,7 @@ def _engagement_view(conn) -> Dict[str, Any]:
                     continue
                 entry = (engaged, latest or "", lead, first)
                 repeat.append(entry)
-                if since_at and latest and latest < since_at:
+                if judged and not (posts & recent):
                     quiet.append(entry)
             # By posts engaged, then the most recent engagement, then the lead
             # id, so ties come out the same every time. Never by score.
@@ -355,7 +347,6 @@ def _engagement_view(conn) -> Dict[str, Any]:
     return {
         "posts_read": len(posts_read),
         "judged": judged,
-        "since": since.isoformat() if since else None,
         "repeat_count": len(repeat),
         "repeat": heapq.nlargest(PEOPLE_SHOWN, repeat, key=by_facts),
         "quiet_count": len(quiet),
@@ -446,7 +437,7 @@ def overview() -> Dict[str, Any]:
             "judged": view["judged"],
             "recent_posts": QUIET_RECENT_POSTS,
             "posts_read": n_read,
-            "since": view["since"],
+            "label": f"not seen on your last {QUIET_RECENT_POSTS} posts whose engagers were read",
             "count": view["quiet_count"],
             "people": [_person(entry, named) for entry in view["quiet"]],
         },

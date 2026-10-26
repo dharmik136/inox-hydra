@@ -211,13 +211,14 @@ def test_the_bridge_chip_says_what_was_heard_and_opens_health(studio):
     expect(page.locator("h1")).to_have_text("Is the bridge reading?")
 
 
-def _finish_setup(client):
-    """Every step Setup counts: the bridge heard, you confirmed, the archive step done, your posts read to the end."""
+def _finish_setup(client, archive=True):
+    """The required steps: the bridge heard, you confirmed, your posts read to the end; the archive only if asked."""
     from database import get_db
     seed_creator(client)
     conn = get_db()
     with conn:
-        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('archive_no_posts_at', '2026-10-01T00:00:00+00:00')")
+        if archive:
+            conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('archive_no_posts_at', '2026-10-01T00:00:00+00:00')")
         conn.execute("INSERT INTO self_import_requests (kind, requested_at, started_at, finished_at, items_seen, outcome) "
                      "VALUES ('posts', '2026-10-01T00:00:00+00:00', '2026-10-01T00:00:00+00:00', "
                      "'2026-10-01T00:05:00+00:00', 5, 'end_of_list')")
@@ -239,3 +240,11 @@ def test_a_creator_whose_setup_is_done_lands_on_today(studio):
     page.goto(studio["url"] + "/", wait_until="networkidle")
     expect(page.locator("h1")).to_have_text("What to do in the next hour", timeout=10000)
     assert page.url.endswith("#/today"), page.url
+
+
+def test_skipping_the_archive_does_not_send_a_creator_back_to_setup(studio):
+    """Importing LinkedIn's archive is offered in Setup, not required to land on Today."""
+    _finish_setup(studio["client"], archive=False)
+    page = studio["page"]
+    page.goto(studio["url"] + "/", wait_until="networkidle")
+    expect(page.locator("h1")).to_have_text("What to do in the next hour", timeout=10000)

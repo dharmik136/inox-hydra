@@ -90,7 +90,7 @@ Click **Import**. The bridge browser opens that activity page, and the extension
 
 Your comments and reactions are kept as your own activity. They never become leads.
 
-When every step is ticked, a line under step 5 says Setup is done, with a **Go to Today** button.
+When the required steps are ticked (the bridge, your profile, and your history read to the end), a line under step 5 says Setup is done, with a **Go to Today** button. Importing your archive is offered here and is not required for that.
 
 > [!NOTE]
 > Importing is the only time the bridge acts on a LinkedIn page to read it, and it does so only on your own activity pages, only after you click **Import** or **Import your history**. It clicks LinkedIn's own "Show more results" control and scrolls, and with **Import your history** it also moves from one of your activity pages to the next by itself. It reads what the page shows. The extension makes no requests to LinkedIn of its own. (Placing a draft in LinkedIn's composer is the one other thing it does to a page; it never posts.)

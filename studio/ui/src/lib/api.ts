@@ -3585,7 +3585,8 @@ export interface AudienceOverview {
     judged: boolean;
     recent_posts: number;
     posts_read: number;
-    since: string | null;
+    /** Exactly what is measured: "not seen on your last 5 posts whose engagers were read". */
+    label: string;
     count: number;
     people: AudiencePerson[];
   };
