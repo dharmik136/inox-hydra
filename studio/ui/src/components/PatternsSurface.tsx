@@ -95,7 +95,14 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
   // than printed as a finding: a 1.1x line over 1,417 posts read as a rule to
   // follow when it is noise.
   const verdict = (p: PatternFinding) => p.difference?.verdict;
-  const cleanUnordered = patterns.patterns.filter((p) => !p.different_period && verdict(p) !== "none");
+  // Enough posts on both sides, but no ratio: the posts without the form
+  // have a median of 0 reactions, so there is nothing to divide by. Such a
+  // line sat in the list of findings and, opened, was worded "not enough
+  // posts to say", which is a different verdict. It is named for what it is.
+  const unmeasured = patterns.patterns.filter((p) => verdict(p) === "not_measured");
+  const cleanUnordered = patterns.patterns.filter(
+    (p) => !p.different_period && verdict(p) !== "none" && verdict(p) !== "not_measured",
+  );
   const clean =
     patternOrder === "sample"
       ? [...cleanUnordered].sort((a, b) => b.with_posts + b.without_posts - (a.with_posts + a.without_posts))
@@ -220,6 +227,16 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
                 ))}
               </ul>
             </section>
+          )}
+
+          {unmeasured.length > 0 && (
+            <p className="studio-meta mt-3 text-[10px] leading-snug text-ink-muted">
+              NO RATIO CAN BE MEASURED FOR:{" "}
+              {unmeasured
+                .map((p) => `${p.label.toUpperCase()} (MEDIAN ${p.without_median} REACTIONS ON THE ${p.without_posts} POSTS WITHOUT IT)`)
+                .join("; ")}
+              . A MEDIAN OF 0 ON ONE SIDE LEAVES NOTHING TO COMPARE AGAINST.
+            </p>
           )}
 
           {patterns.not_enough_posts.length > 0 && (
@@ -368,8 +385,12 @@ function verdictWord(pattern: PatternFinding): string {
       return "went with fewer reactions";
     case "none":
       return "no difference your own posts can separate";
-    default:
+    case "too_few_posts":
       return "not enough posts to say";
+    case "not_measured":
+      return "has no ratio: the posts without it have a median of 0 reactions";
+    default:
+      return "was not judged";
   }
 }
 
