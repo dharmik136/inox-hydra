@@ -1423,6 +1423,47 @@ def _migrate_current_scores(cursor: sqlite3.Cursor) -> None:
         cursor.execute("UPDATE post_engagement SET stale = stale | 2 WHERE (stale & 2) = 0")
 
 
+def _migrate_desk_requests_and_export_totals(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 28 (cycle 4, track 6):
+    A post link shared from the phone is a desk request, and LinkedIn's
+    analytics export has a home for the totals it carries.
+
+    desk_requests: one row per post the phone asked the desk to read. The
+    Telegram ingress writes it when a message carries a LinkedIn post link;
+    Today surfaces the oldest open one as the page to open; it is done when
+    that post's analytics page is next read after it was asked, and after a
+    week unread. `note` holds the refusal sentence for a post the studio does
+    not hold, rather than an invented post.
+
+    analytics_daily.engagements and analytics_daily.new_followers: LinkedIn's
+    export gives one engagements figure a day, not reactions, comments and
+    reposts apart, and new followers a day, not a follower count. Neither
+    fits a column that exists, and writing a total into `reactions` would be
+    a figure the studio made up. post_metric_observations.engagements holds
+    the same total per post from the export's top posts. Every new column is
+    NULL for every row that exists: nothing is measured by this migration.
+    """
+    # grain: one row per request, however many times the same post is shared.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS desk_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            activity_urn TEXT NOT NULL,
+            asked_at TEXT NOT NULL,
+            done_at TEXT,
+            note TEXT,
+            source TEXT NOT NULL DEFAULT 'telegram'
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_desk_requests_open ON desk_requests(done_at, asked_at)")
+    for table, column in (("analytics_daily", "engagements"),
+                          ("analytics_daily", "new_followers"),
+                          ("post_metric_observations", "engagements")):
+        cursor.execute(f"PRAGMA table_info({table})")
+        if column not in {row[1] for row in cursor.fetchall()}:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1451,6 +1492,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (26, "One identity for a post: every publication has its post, and the dead queue is gone",
      _migrate_one_post_identity),
     (27, "A lead's score is recomputed when what it is computed from changes", _migrate_current_scores),
+    (28, "A post link from the phone is a desk request, and the analytics export's totals have a home",
+     _migrate_desk_requests_and_export_totals),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
