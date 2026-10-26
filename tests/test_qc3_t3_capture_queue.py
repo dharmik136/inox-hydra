@@ -407,7 +407,9 @@ def test_the_analytics_page_says_on_the_page_what_the_studio_refused():
     assert 'announce(await studioCall("/api/v1/self/posts/analytics"' in own
     announce = own[own.index("function announce(answer, path)"):]
     announce = announce[:announce.index("\n  }\n")]
-    assert "toast(" in announce and "answer.message" in announce
+    # Said in the side panel, or in the import's banner while one runs
+    # (cycle 4, the review's S7): never drawn into the page on its own.
+    assert "notice(" in announce and "answer.message" in announce
     assert "waiting in all" in announce, "a kept capture does not say how many are waiting"
 
 

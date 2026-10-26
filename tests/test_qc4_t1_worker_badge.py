@@ -208,6 +208,43 @@ const busy = { status: 503, retryAfter: 0.01, body: { detail: { code: "studio_bu
   await tick(60);
   out.badgeOnStartup = badge.text.filter((d) => d.tabId === 4).map((d) => d.text);
 
+  // 8. A notice from a LinkedIn page (the review's S7): kept in session
+  //    storage for the side panel, "!" on the badge until the panel opens,
+  //    and not raised again once seen.
+  storage.waitingCaptures = { waiting: 0 };
+  delete session.lastDrift;
+  delete session.pageNotice;
+  const fromTab = (message) => new Promise((resolve) => {
+    const sender = { tab: { id: 7, url: "https://www.linkedin.com/feed/" }, id: "self", url: "https://www.linkedin.com/feed/" };
+    for (const fn of listeners.message) fn(message, sender, resolve);
+  });
+  const lastGlobal = () => { const g = badge.text.filter((d) => d.tabId === undefined); return g.length ? g[g.length - 1].text : null; };
+  const unreachable = "Inox Hydra: could not reach your studio, so nothing was saved.";
+  out.noticeAnswer = await fromTab({ action: "PAGE_NOTICE", message: unreachable, kind: "warning", page_kind: "feed" });
+  await tick(40);
+  out.noticeStored = session.pageNotice || null;
+  out.noticeInLocal = storage.pageNotice !== undefined;
+  out.badgeAfterNotice = lastGlobal();
+  out.titleAfterNotice = badge.title.length ? badge.title[badge.title.length - 1].title : null;
+  out.colourAfterNotice = badge.background[badge.background.length - 1];
+  out.fromPanelAnswer = await fromPanel({ action: "PAGE_NOTICE", message: "Said by the panel.", kind: "warning" });
+  out.noticeAfterPanelTried = session.pageNotice ? session.pageNotice.message : null;
+  await fromPanel({ action: "PANEL_OPENED" });
+  await tick(40);
+  out.noticeAfterPanel = session.pageNotice || null;
+  out.badgeAfterPanelNotice = lastGlobal();
+  await fromTab({ action: "PAGE_NOTICE", message: unreachable, kind: "warning", page_kind: "feed" });
+  await tick(40);
+  out.sameNoticeAgain = session.pageNotice || null;
+  out.badgeAfterSameNotice = lastGlobal();
+  await fromTab({ action: "PAGE_NOTICE", message: "Inox Hydra: the studio saved nothing from this page.", kind: "warning" });
+  await tick(40);
+  out.newNotice = session.pageNotice || null;
+  out.badgeAfterNewNotice = lastGlobal();
+  await fromTab({ action: "PAGE_NOTICE", message: "Inox Hydra: your studio was busy, so 2 capture(s) are kept.", kind: "waiting" });
+  await tick(40);
+  out.waitingNoticeBadge = lastGlobal();
+
   process.stdout.write(JSON.stringify(out));
 })();
 """
@@ -304,3 +341,42 @@ def test_the_worker_heartbeat_carries_the_switch_and_the_registration(run):
 
 def test_the_badge_is_put_back_on_startup(run):
     assert run["badgeOnStartup"] == ["2"]
+
+
+def test_a_notice_from_linkedins_page_is_kept_for_the_side_panel(run):
+    """
+    The review's S7: every notice the bridge drew into LinkedIn's page goes
+    to the side panel. The worker keeps the sentence for this browser
+    session, never in local storage, and the badge shows "!" until the
+    panel opens.
+    """
+    assert run["noticeAnswer"] == {"status": "noted"}
+    notice = run["noticeStored"]
+    assert notice and notice["message"] == "Inox Hydra: could not reach your studio, so nothing was saved."
+    assert notice["kind"] == "warning" and notice["seen"] is False and notice["page_kind"] == "feed"
+    assert run["noticeInLocal"] is False, "the notice outlives the browser session in local storage"
+    assert run["badgeAfterNotice"] == "!"
+    assert run["colourAfterNotice"]["color"] == [233, 85, 44, 255]
+    assert "could not reach your studio" in (run["titleAfterNotice"] or "")
+
+
+def test_only_a_linkedin_page_can_leave_a_notice(run):
+    assert run["fromPanelAnswer"] == {"status": "refused"}
+    assert run["noticeAfterPanelTried"] == "Inox Hydra: could not reach your studio, so nothing was saved."
+
+
+def test_opening_the_panel_is_seeing_the_notice(run):
+    assert run["noticeAfterPanel"]["seen"] is True
+    assert run["badgeAfterPanelNotice"] == "", "the badge still asks to be opened after the panel was"
+
+
+def test_a_notice_already_seen_is_not_raised_again_and_a_new_one_is(run):
+    assert run["sameNoticeAgain"]["seen"] is True, "a studio that stays closed is announced on every read"
+    assert run["badgeAfterSameNotice"] == ""
+    assert run["newNotice"]["seen"] is False and "saved nothing" in run["newNotice"]["message"]
+    assert run["badgeAfterNewNotice"] == "!"
+
+
+def test_a_waiting_notice_is_carried_by_the_waiting_count_not_a_mark(run):
+    """A capture kept for the studio is on the badge as the waiting count already."""
+    assert run["waitingNoticeBadge"] == "", run["waitingNoticeBadge"]

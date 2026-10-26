@@ -299,13 +299,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }, 3500);
   }
 
-  // The header's two lines come from the worker's storage and follow it.
-  // Opening the panel is the creator seeing what the badge counted, so the
-  // worker is told to clear it. Last, so nothing here can stop the controls
-  // above from being wired.
+  // The header's lines come from the worker's storage and follow it.
+  // Opening the panel is the creator seeing what the badge counted and the
+  // notice at the top, so the worker is told, once the first paint has read
+  // the notice. Last, so nothing here can stop the controls above from being
+  // wired.
   try {
-    followStorage("sp-last-capture", "sp-drift-notice");
-    chrome.runtime.sendMessage({ action: "PANEL_OPENED" }, () => { void chrome.runtime.lastError; });
+    followStorage("sp-last-capture", "sp-drift-notice", "sp-page-notice").then(tellPanelOpened);
   } catch (err) {}
 });
 
@@ -708,6 +708,23 @@ function driftLine(drift) {
     ". See Capture health in Setup.";
 }
 
+// A notice a LinkedIn page had for the creator this session: shown at the
+// top of the panel the next time it opens, kept in view while that panel is
+// open, and not shown again once seen. The page used to draw it into
+// LinkedIn's document (decision D3; the review's S7).
+let noticeShownAt = null;
+
+function noticeLine(notice) {
+  if (!notice || !notice.message) return "";
+  return String(notice.message) + " Noticed " + agoWords(notice.at) + ".";
+}
+
+function tellPanelOpened() {
+  try {
+    chrome.runtime.sendMessage({ action: "PANEL_OPENED" }, () => { void chrome.runtime.lastError; });
+  } catch (err) {}
+}
+
 function readArea(area, keys) {
   return new Promise((resolve) => {
     if (!area) {
@@ -732,10 +749,12 @@ function storageArea(name) {
   }
 }
 
-function paintFromStorage(captureId, driftId) {
-  Promise.all([
+// Resolves true when it put a notice on screen that the worker has not yet
+// been told was seen.
+function paintFromStorage(captureId, driftId, noticeId) {
+  return Promise.all([
     readArea(storageArea("local"), ["lastCapture", "waitingCaptures"]),
-    readArea(storageArea("session"), ["lastDrift"])
+    readArea(storageArea("session"), ["lastDrift", "pageNotice"])
   ]).then(([found, noticed]) => {
     const capture = document.getElementById(captureId);
     if (capture) capture.textContent = captureLine(found.lastCapture, found.waitingCaptures);
@@ -745,17 +764,28 @@ function paintFromStorage(captureId, driftId) {
       drift.textContent = line;
       drift.hidden = !line;
     }
+    const box = noticeId ? document.getElementById(noticeId) : null;
+    if (!box) return false;
+    const notice = noticed.pageNotice;
+    const unseen = !!(notice && notice.message && !notice.seen);
+    if (unseen) noticeShownAt = notice.at;
+    const line = notice && notice.at === noticeShownAt ? noticeLine(notice) : "";
+    box.textContent = line;
+    box.hidden = !line;
+    return unseen;
   });
 }
 
-function followStorage(captureId, driftId) {
-  paintFromStorage(captureId, driftId);
+function followStorage(captureId, driftId, noticeId) {
+  const first = paintFromStorage(captureId, driftId, noticeId);
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if ((area === "local" && (changes.lastCapture || changes.waitingCaptures)) ||
-          (area === "session" && changes.lastDrift)) {
-        paintFromStorage(captureId, driftId);
+          (area === "session" && (changes.lastDrift || changes.pageNotice))) {
+        // A notice that arrives while the panel is open is seen as it lands.
+        paintFromStorage(captureId, driftId, noticeId).then((unseen) => { if (unseen) tellPanelOpened(); });
       }
     });
   } catch (err) {}
+  return first;
 }

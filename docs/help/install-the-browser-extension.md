@@ -84,10 +84,12 @@ Open one of your posts with comments. A capture that worked is confirmed outside
 - The side panel's header reads, for example, "Captured an engager on your post just now." It names the kind of thing and when, never the person, and it updates the moment the next capture lands. When the last page read gave the studio nothing new, it reads "Read LinkedIn just now; nothing new to keep." The popup shows the same line.
 - The people are now in **Leads**. Reopen **Leads** to see them.
 
-Two notices still appear on the LinkedIn page itself, because they are things you can act on:
+Nothing the extension says is drawn into LinkedIn's page. What you can act on, or must know was not saved, appears at the top of the side panel the next time you open it, and until then the badge shows a `!` and its tooltip gives the sentence. For example:
 
 - "Inox Hydra: N engager(s) had no profile link and were not saved."
 - "Inox Hydra: could not reach your studio, so nothing was saved." The studio is not running, or this browser was never paired.
+
+The one exception is a history import: its banner, with its **Stop** control, stays on the page while it runs, and a warning during the import is a sentence in that banner.
 
 When a part of the capture cannot read a page LinkedIn has rebuilt, the side panel's header says so once per kind of page per browser session, for example "LinkedIn's feed page: cannot read commenter name, noticed 2 min ago. See Capture health in Setup.", and the badge turns orange. The notice goes when that part next reads the same kind of page cleanly, and when you close the browser. Nothing about it is drawn into LinkedIn's page.
 

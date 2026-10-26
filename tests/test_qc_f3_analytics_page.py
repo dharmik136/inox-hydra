@@ -17,7 +17,7 @@ These run the shipped content.js in headless Chromium (see qc_f3_pages.py).
 
 import pytest
 
-from qc_f3_pages import Pages, page_html, toast_text
+from qc_f3_pages import Pages, notice_text, page_html
 
 INGEST = "/api/analytics/ingest"
 
@@ -92,7 +92,7 @@ def _notice(pages, answer, label="Past 24 hours"):
                       storage={"signedInVanity": "test-creator"})
     page.evaluate("(a) => { window.__answers['/api/analytics/ingest'] = a; }", answer)
     page.clock.run_for(2500)
-    text = toast_text(page)
+    text = notice_text(page)
     page.context.close()
     return text or ""
 
@@ -114,7 +114,8 @@ def test_a_saved_day_draws_nothing_into_the_page(pages):
     Cycle 4, decision D3: the capture confirmation lives on the action badge
     and in the side panel, from the worker's own record of the relay
     (tests/test_qc4_t1_worker_badge.py), and nothing is drawn into LinkedIn's
-    page for a capture that worked. What was not saved is still said here.
+    page for a capture that worked. What was not saved is said in the side
+    panel (the review's S7), and a saved day says nothing at all.
     """
     text = _notice(pages, {"status": "success", "buckets_ingested": 1})
     assert text == ""

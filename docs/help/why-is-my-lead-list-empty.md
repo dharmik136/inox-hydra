@@ -19,11 +19,11 @@ Every link in this chain has to hold:
 
 | What you see | Why | What to do |
 |---|---|---|
-| No notice at all on LinkedIn | The post is not yours, the extension is not running in this browser, the page is not one it reads, or no comments or reactions list is open. It stays quiet about other people's posts on purpose, and about people it has already sent from this tab. | Check that you are in Edge or Brave with the extension loaded, open the comments or the reactions list on a post, and wait a few seconds. The extension checks at most once every 4 seconds as the page changes. |
+| No count on the extension's badge and no notice in its side panel | The post is not yours, the extension is not running in this browser, the page is not one it reads, or no comments or reactions list is open. It stays quiet about other people's posts on purpose, and about people it has already sent from this tab. | Check that you are in Edge or Brave with the extension loaded, open the comments or the reactions list on a post, and wait a few seconds. The extension checks at most once every 4 seconds as the page changes. |
 | "Inox Hydra: could not reach your studio, so nothing was saved." | The studio is not running, or this browser has no studio token, so the studio refused the request. | Start the studio, open `http://127.0.0.1:8000` once in this browser, then **reload the LinkedIn tab**. Without a reload, the tab does not resend people it already tried. |
 | "Inox Hydra: confirm your profile in the studio's Setup screen to start capturing leads from your posts." | The studio does not yet know which posts are yours, so it kept nobody. Shown once per page. | Open **Setup** in the studio and confirm your profile. |
 | "Inox Hydra: N engager(s) had no profile link and were not saved." | A person with no profile link cannot be told apart from anyone else with the same name, so they are skipped on purpose. | Nothing to fix. Other people on the same post are still saved. |
-| A "captured" notice appeared, but Leads is still empty | Leads was already open and has not reread the list. | Switch to another surface and back to Leads. |
+| The side panel said an engager was captured, but Leads is still empty | Leads was already open and has not reread the list. | Switch to another surface and back to Leads. |
 | LEAD PIPELINE UNAVAILABLE | The interface could not read the lead list from the studio. | See [The studio will not open or shows an error](the-studio-will-not-open.md). |
 
 > [!NOTE]

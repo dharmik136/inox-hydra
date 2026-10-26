@@ -5,7 +5,8 @@ The page heartbeat says whether network reading is on and what LinkedIn calls.
 Cycle 4, track 1, items 2 and 3 (the page side). The heartbeat carried the
 version and the page kind and nothing about the switch, so the studio could
 not tell "off" from "on and matching nothing". It now carries the switch,
-whether the interceptor's marker is in the document, the Resource Timing
+whether the page carries the interceptor (it answers when asked, over the
+window channel; it used to mark the document), the Resource Timing
 count of the page's /voyager/api/ calls, how many match the bridge's
 patterns, and the counts by path and GraphQL query name, never a query
 string or a URN.
@@ -76,7 +77,7 @@ def test_with_the_switch_on_the_heartbeat_counts_calls_by_path_and_query_name(pa
     assert not any("?" in key or "urn:" in key or "memberIdentity" in key for key in calls)
 
 
-def test_the_interceptors_marker_is_reported_as_injected(pages):
+def test_an_interceptor_that_answers_is_reported_as_injected(pages):
     page = pages.open("/feed/", page_html("<main></main>"),
                       scripts=("voyager_interceptor.js",) + SCRIPTS, storage={"networkReading": True})
     page.clock.run_for(100)

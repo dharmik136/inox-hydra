@@ -7,10 +7,11 @@
  * isolated world. This copies each card's id onto the card as a data-urn
  * attribute, so content.js knows which post a commenter or reactor belongs to.
  *
- * It reads the page and adds one attribute. It does not wrap fetch, read
- * network responses, or send anything anywhere. It used to live inside
- * voyager_interceptor.js, so switching network reading off (the default) also
- * left feed engagers without a post.
+ * It reads the page and adds one attribute to a feed card. It does not wrap
+ * fetch or read network responses, and the only thing it posts is its own
+ * count and timing, to the extension's isolated world on this page. It used
+ * to live inside voyager_interceptor.js, so switching network reading off
+ * (the default) also left feed engagers without a post.
  */
 (() => {
     'use strict';
@@ -46,15 +47,15 @@
     }
 
     // This runs in the page's own world, where the extension's worker is out
-    // of reach, so it reports the way it works: by marking the page. One
-    // attribute on the root element carries how many feed cards are on
-    // screen, how many carry a post id, and its own timing (each run is timed
-    // with performance.now(); runs over 50 ms are counted), written once
-    // after the first tick and then at most once a minute while there is
-    // something on screen. content.js watches that attribute and forwards it
-    // to the capture log as the "card_urns" reader. It sends nothing and
-    // posts nothing.
-    const REPORT_ATTRIBUTE = 'data-inox-card-urns';
+    // of reach, so it posts its run on the window channel the interceptor
+    // uses: how many feed cards are on screen, how many carry a post id, and
+    // its own timing (each run is timed with performance.now(); runs over
+    // 50 ms are counted), once after the first tick and then at most once a
+    // minute while there is something on screen. content.js forwards it to
+    // the capture log as the "card_urns" reader. It used to write the run
+    // onto LinkedIn's root element as an attribute, a mark any script on the
+    // page could read for as long as the tab was open (the review's S7); a
+    // message leaves nothing behind in the document.
     const SLOW_RUN_MS = 50;
     const REPORT_EVERY_MS = 60000;
     let runs = 0;
@@ -69,9 +70,10 @@
 
     function report(seen, stamped) {
         try {
-            document.documentElement.setAttribute(REPORT_ATTRIBUTE, JSON.stringify({
-                seen: seen, stamped: stamped, duration_ms: lastRunMs, reads: runs, slow_reads: slowRuns, at: Date.now()
-            }));
+            window.postMessage({
+                type: 'INOX_CARD_URNS_REPORT', source: 'inox-card-urns',
+                report: { seen: seen, stamped: stamped, duration_ms: lastRunMs, reads: runs, slow_reads: slowRuns }
+            }, window.location.origin);
         } catch (e) {}
         runs = 0;
         slowRuns = 0;

@@ -162,7 +162,11 @@ class Pages:
         self._pw.stop()
 
 
-def toast_text(page):
-    return page.evaluate(
-        "() => { const t = document.getElementById('studio-bridge-inpage-toast'); return t ? t.innerText.replace(/\\s+/g, ' ').trim() : null; }"
-    )
+def notice_text(page):
+    """
+    The last notice the page scripts gave the worker for the side panel, or
+    None. Notices used to be drawn into LinkedIn's page; they go to the side
+    panel now (cycle 4, decision D3 and the review's S7).
+    """
+    notices = [m for m in page.evaluate("() => window.__sent") if m.get("action") == "PAGE_NOTICE"]
+    return notices[-1]["message"] if notices else None

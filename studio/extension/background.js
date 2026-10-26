@@ -479,14 +479,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  // The side panel opened: the creator has seen what the badge counted.
+  // The side panel opened: the creator has seen what the badge counted, and
+  // the notice at the top of the panel.
   if (message.action === "PANEL_OPENED") {
     const fromOwnPage = !sender.tab && sender.id === chrome.runtime.id;
     if (!fromOwnPage) {
       sendResponse({ status: "refused" });
       return true;
     }
-    clearBadgeCounts().then(() => sendResponse({ status: "cleared" }));
+    markNoticeSeen().then(clearBadgeCounts).then(() => sendResponse({ status: "cleared" }));
+    return true;
+  }
+
+  // A sentence one of this extension's scripts on a LinkedIn page has for
+  // the creator, which used to be drawn into LinkedIn's page (decision D3;
+  // the review's S7). Only from a LinkedIn tab.
+  if (message.action === "PAGE_NOTICE") {
+    const fromLinkedIn = !!sender.tab && sender.id === chrome.runtime.id &&
+      typeof sender.url === "string" && /^https:\/\/([a-z0-9-]+\.)*linkedin\.com\//i.test(sender.url);
+    if (!fromLinkedIn) {
+      sendResponse({ status: "refused" });
+      return true;
+    }
+    notePageNotice(message).then(() => sendResponse({ status: "noted" }));
     return true;
   }
 
@@ -760,8 +775,8 @@ async function reportWaiting(kept) {
     waiting_captures: kept.length,
     oldest_waiting_at: kept.length ? kept[0].at : null,
     // What this worker can see of network reading: the switch and whether
-    // the browser holds the reader registered. A page's figures (the
-    // marker, the calls it counted) are the page's to report, so they are
+    // the browser holds the reader registered. A page's figures (whether
+    // it carries the reader, the calls it counted) are the page's to report, so they are
     // null here and the studio keeps the newest page's.
     network_reading: await workerNetworkReading()
   };
@@ -996,11 +1011,46 @@ async function noteDrift(body) {
   await paintBadge();
 }
 
+// The newest notice a LinkedIn page had for the creator, kept in session
+// storage beside the drift notice, so it never outlives the browser session
+// it was said in. A warning puts "!" on the badge until the side panel
+// opens, which is the creator seeing it, and the panel shows it at its top;
+// a notice of captures kept for the studio is carried by the waiting count,
+// which is already on the badge. A notice already seen is not raised again
+// in the same session, so a studio that stays closed is said once.
+const PAGE_NOTICE_KEY = "pageNotice";
+
+async function notePageNotice(message) {
+  const text = String((message && message.message) || "").replace(/\s+/g, " ").trim().slice(0, 400);
+  if (!text) return;
+  const shown = await sessionGet(PAGE_NOTICE_KEY);
+  if (shown && shown.message === text && shown.seen) return;
+  await sessionSet({
+    [PAGE_NOTICE_KEY]: {
+      message: text,
+      kind: message.kind === "waiting" ? "waiting" : "warning",
+      page_kind: String(message.page_kind || "page").slice(0, 40),
+      at: new Date().toISOString(),
+      seen: false
+    }
+  });
+  await paintBadge();
+}
+
+async function markNoticeSeen() {
+  const shown = await sessionGet(PAGE_NOTICE_KEY);
+  if (!shown || shown.seen) return;
+  await sessionSet({ [PAGE_NOTICE_KEY]: Object.assign({}, shown, { seen: true }) });
+  await paintBadge();
+}
+
 async function paintBadge() {
   const waiting = (await readLocal(WAITING_KEY)) || {};
   const drift = await sessionGet(LAST_DRIFT_KEY);
+  const notice = await sessionGet(PAGE_NOTICE_KEY);
+  const warning = !!notice && !notice.seen && notice.kind === "warning";
   const waitingCount = typeof waiting.waiting === "number" ? waiting.waiting : 0;
-  const attention = waitingCount > 0 || !!drift;
+  const attention = waitingCount > 0 || !!drift || warning;
   await actionCall("setBadgeBackgroundColor", { color: attention ? BADGE_ORANGE : BADGE_GREEN });
   await actionCall("setBadgeTextColor", { color: BADGE_TEXT });
   // What a tab with no count of its own shows: how many captures are
@@ -1009,11 +1059,13 @@ async function paintBadge() {
   // tab where nothing had been captured yet. A tab's own count of captures
   // takes its place in that tab, on the same colour.
   await actionCall("setBadgeText", {
-    text: waitingCount > 0 ? String(Math.min(waitingCount, 999)) : (drift ? "!" : "")
+    text: waitingCount > 0 ? String(Math.min(waitingCount, 999)) : (drift || warning ? "!" : "")
   });
   let title = "Inox Hydra Bridge";
   if (waitingCount > 0) {
     title = "Inox Hydra: " + waitingCount + " capture(s) waiting for the studio";
+  } else if (warning) {
+    title = "Inox Hydra: " + notice.message.replace(/^Inox Hydra:\s{0,3}/, "") + " The side panel has it.";
   } else if (drift) {
     title = "Inox Hydra: cannot read " + drift.fields.join(", ").replace(/_/g, " ") +
       " on LinkedIn's " + drift.page_kind + " page. See Capture health in Setup.";

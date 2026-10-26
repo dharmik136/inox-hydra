@@ -140,8 +140,13 @@ def test_feed_cards_get_their_post_id_whether_or_not_network_reading_is_on():
     with open(os.path.join(EXT, "card_urns.js"), encoding="utf-8") as handle:
         stamper = handle.read()
     assert "data-urn" in stamper and "__reactProps" in stamper
-    for forbidden in ("fetch", "postMessage", "XMLHttpRequest", "chrome."):
-        assert forbidden not in stamper.split("*/", 1)[1], f"card_urns.js uses {forbidden}; it must only read the page"
+    code = stamper.split("*/", 1)[1]
+    for forbidden in ("fetch", "XMLHttpRequest", "chrome."):
+        assert forbidden not in code, f"card_urns.js uses {forbidden}; it must only read the page"
+    # Its one message is its own count and timing, to the isolated world on
+    # this page (the review's S7: it used to mark LinkedIn's root element).
+    assert code.count("postMessage(") == 1, "card_urns.js posts something besides its run"
+    assert "INOX_CARD_URNS_REPORT" in code and "window.location.origin" in code
     with open(os.path.join(EXT, "voyager_interceptor.js"), encoding="utf-8") as handle:
         assert "stampCardUrns" not in handle.read()
 

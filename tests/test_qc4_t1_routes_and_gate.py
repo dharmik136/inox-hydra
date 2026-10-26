@@ -73,14 +73,17 @@ def test_the_same_route_is_not_announced_twice(pages):
 
 def test_the_document_observer_is_gone_and_the_poll_is_a_five_second_net():
     content = _source("content.js")
-    # An observer of the whole document's subtree is what cost every tab; an
-    # observer of one attribute on the root (the card stamper's report) is not.
+    # An observer of the whole document's subtree is what cost every tab.
     for found in re.finditer(r"observe\(document\.(documentElement|body),\s*\{([^}]*)\}", content):
         assert "subtree" not in found.group(2) or found.group(1) == "body", (
             "the whole-document route observer is still there")
     block = content[content.index("function checkForNavigation()"):content.index("maybeExtractAnalytics();")]
     assert '"navigation" in window' in block, "the Navigation API is not feature-detected"
-    assert "currententrychange" in block and '"navigate"' in block
+    assert "currententrychange" in block
+    # The navigate listener announced an event on LinkedIn's window that no
+    # reader used and LinkedIn's own scripts could hear (the review's N7 and
+    # S7); it is gone until a reader needs it.
+    assert '"navigate"' not in block and "studio:navigating" not in content
     polls = re.findall(r"setInterval\([\s\S]*?\}, (\d+)\);", block)
     assert polls == ["5000"], f"the fallback poll is {polls}, not a 5 s net"
 
@@ -138,9 +141,19 @@ def test_a_capture_that_arrives_before_a_switch_that_is_off_is_dropped(pages):
     assert not pages.sent(page, "/api/v1/bridge/voyager-ingest")
 
 
-def test_the_interceptor_marks_the_document_for_the_isolated_world(pages):
-    page = pages.open("/feed/", page_html("<main></main>"), scripts=("voyager_interceptor.js",))
-    assert page.evaluate("() => document.documentElement.getAttribute('data-inox-voyager')") == "1"
+def test_the_interceptor_answers_the_isolated_world_and_marks_nothing(pages):
+    """
+    The isolated world asks whether the page carries the interceptor; it used
+    to read an attribute the interceptor wrote on LinkedIn's root element
+    (the review's S7).
+    """
+    page = pages.open("/feed/", page_html("<main></main>"), scripts=("voyager_interceptor.js",),
+                      before="() => { window.__heard = []; window.addEventListener('message', (e) => window.__heard.push(e.data)); }")
+    page.evaluate("() => window.postMessage({ type: 'INOX_VOYAGER_PING', source: 'inox-bridge' }, window.location.origin)")
+    page.wait_for_timeout(50)
+    heard = page.evaluate("() => window.__heard")
+    assert {"type": "INOX_VOYAGER_PRESENT", "source": "inox-voyager-interceptor"} in heard
+    assert page.evaluate("() => document.documentElement.getAttributeNames()") == []
 
 
 def test_a_response_about_other_members_never_leaves_the_page(pages):

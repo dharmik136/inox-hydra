@@ -14,7 +14,7 @@ and send it the message the side panel sends.
 
 import pytest
 
-from qc_f3_pages import Pages, page_html, toast_text
+from qc_f3_pages import Pages, notice_text, page_html
 
 DRAFT = "Three things I learned shipping a local-first app this year."
 
@@ -97,4 +97,7 @@ def test_with_no_composer_to_open_nothing_is_typed_anywhere(pages):
     boxes = page.evaluate(BOXES)
     assert boxes == {"comment-box": "", "dm-dialog": ""}
     assert answer == {"status": "failed"}
-    assert "injected" not in (toast_text(page) or "")
+    # The side panel, which asked, words the answer; nothing is drawn into
+    # LinkedIn's page (the review's S7).
+    assert notice_text(page) is None
+    assert page.evaluate("() => document.querySelectorAll('[id^=studio-]').length") == 0

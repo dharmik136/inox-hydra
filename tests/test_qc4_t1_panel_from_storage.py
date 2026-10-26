@@ -26,6 +26,8 @@ with open(os.path.join(EXT, "popup.html"), encoding="utf-8") as handle:
 LAST = {"path": "/api/v1/crm/interactions/ingest", "at": "2026-10-26T10:00:00.000Z", "ok": True, "kept": False,
         "stored": True, "httpStatus": 200, "outcome": "accepted", "tabId": 3}
 DRIFT = {"extractor": "engagers", "page_kind": "feed", "fields": ["commenter_name"], "at": "2026-10-26T10:01:00.000Z"}
+NOTICE = {"message": "Inox Hydra: could not reach your studio, so nothing was saved.", "kind": "warning",
+          "page_kind": "feed", "at": "2026-10-26T10:02:00.000Z", "seen": False}
 
 HEALTH = {
     "bridge": {"connected": True}, "extractors": [], "recent_drift": [], "voyager_active": False,
@@ -161,3 +163,35 @@ def test_the_popup_says_a_kept_capture_without_a_count(pages):
     line = _text(page, "popup-last-capture") or ""
     assert "kept for the studio" in line and "sent again" in line
     assert "4" not in line, "the popup shows the waiting count"
+
+
+# ---------------------------------------------------------------------------
+# The review's S7: what the page used to draw is said at the top of the panel
+# ---------------------------------------------------------------------------
+
+def test_a_notice_from_linkedins_page_is_the_first_line_of_the_panel(pages):
+    page = _open(pages, PANEL, "sidepanel.js", {}, session={"pageNotice": NOTICE})
+    line = _text(page, "sp-page-notice")
+    assert line and line.startswith("Inox Hydra: could not reach your studio, so nothing was saved."), line
+    assert "noticed" in line.lower(), "the notice does not say when it was said"
+    order = page.evaluate("() => Array.from(document.querySelectorAll('.header-line')).map((e) => e.id)")
+    assert order[0] == "sp-page-notice", order
+    assert page.evaluate("() => window.__sent.some((m) => m.action === 'PANEL_OPENED')")
+    # The worker marks it seen when told; this panel keeps it in view.
+    page.evaluate("(n) => chrome.storage.session.set({ pageNotice: Object.assign({}, n, { seen: true }) })", NOTICE)
+    page.clock.run_for(50)
+    assert _text(page, "sp-page-notice") == line
+
+
+def test_a_notice_already_seen_is_not_shown_on_the_next_opening(pages):
+    page = _open(pages, PANEL, "sidepanel.js", {}, session={"pageNotice": {**NOTICE, "seen": True}})
+    assert not _text(page, "sp-page-notice")
+
+
+def test_a_notice_that_arrives_while_the_panel_is_open_is_shown_and_seen(pages):
+    page = _open(pages, PANEL, "sidepanel.js", {})
+    opened = page.evaluate("() => window.__sent.filter((m) => m.action === 'PANEL_OPENED').length")
+    page.evaluate("(n) => chrome.storage.session.set({ pageNotice: n })", NOTICE)
+    page.clock.run_for(50)
+    assert (_text(page, "sp-page-notice") or "").startswith("Inox Hydra: could not reach your studio")
+    assert page.evaluate("() => window.__sent.filter((m) => m.action === 'PANEL_OPENED').length") == opened + 1

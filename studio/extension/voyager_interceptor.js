@@ -26,21 +26,23 @@
     if (window.__inox_voyager_intercepted__) return;
     Object.defineProperty(window, '__inox_voyager_intercepted__', { value: true, enumerable: false, writable: false });
 
-    // One attribute on the document, so the extension's own scripts can say
-    // whether this page carries the reader: they run in another world and
-    // cannot see the flag above, but the DOM is shared. A tab opened before
-    // the switch was turned on has no marker, which the studio then names.
-    function markDocument() {
-        try {
-            if (typeof document === 'undefined' || !document.documentElement) return false;
-            document.documentElement.setAttribute('data-inox-voyager', '1');
-            return true;
-        } catch (e) {
-            return false;
-        }
-    }
-    if (!markDocument() && typeof document !== 'undefined') {
-        try { document.addEventListener('DOMContentLoaded', markDocument, { once: true }); } catch (e) {}
+    // The extension's own scripts ask whether this page carries the reader:
+    // they run in another world and cannot see the flag above. They ask over
+    // the window channel the captures use, only while the switch is on, and
+    // this answers. A tab opened before the switch was turned on has no
+    // interceptor and does not answer, which the studio then names. It used to
+    // mark LinkedIn's root element with an attribute instead.
+    try {
+        window.addEventListener('message', (event) => {
+            try {
+                if (event.source !== window || !event.data) return;
+                if (event.data.source !== 'inox-bridge' || event.data.type !== 'INOX_VOYAGER_PING') return;
+                window.postMessage({ type: 'INOX_VOYAGER_PRESENT', source: 'inox-voyager-interceptor' },
+                    window.location.origin);
+            } catch (e) {}
+        });
+    } catch (e) {
+        // A window with no listeners to add: the page is simply not asked.
     }
 
     // Rate limiting: max 30 requests per minute to avoid memory pressure

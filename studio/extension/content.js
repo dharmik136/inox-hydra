@@ -102,21 +102,76 @@ const FORWARDED_SCHEMAS = new Set(["feed_updates", "creator_analytics"]);
 // the analytics page nor LinkedIn's response names the account, and the
 // studio refuses a reading that is not from the profile open in it.
 let signedInVanity = null;
+// own_pages.js runs in this same isolated world and is told by a function
+// call when the state changes, not by an event on LinkedIn's window, which
+// LinkedIn's own scripts can hear.
+const networkReadingListeners = [];
+window.__inoxOnNetworkReading = (fn) => {
+  if (typeof fn === "function") networkReadingListeners.push(fn);
+};
+function announceNetworkReading() {
+  networkReadingListeners.forEach((fn) => {
+    try { fn(); } catch (err) {}
+  });
+}
+
+// Whether this page carries the interceptor. It runs in LinkedIn's own
+// world, out of this script's sight, so the page is asked over the window
+// channel the interceptor already uses, and only while the switch is on:
+// with network reading off the bridge posts nothing at all. null until it
+// has answered or the grace below has passed; a tab opened before the switch
+// was turned on carries no interceptor and does not answer. It used to mark
+// LinkedIn's root element with an attribute any script there could read.
+const INTERCEPTOR_GRACE_MS = 1500;
+let interceptorAnswered = null;
+let interceptorAskTimer = null;
+
+function askForInterceptor() {
+  if (interceptorAskTimer) clearTimeout(interceptorAskTimer);
+  interceptorAskTimer = null;
+  if (!networkReadingOn) {
+    interceptorAnswered = null;
+    return;
+  }
+  if (interceptorAnswered === true) return;
+  interceptorAnswered = null;
+  interceptorAskTimer = setTimeout(() => {
+    interceptorAskTimer = null;
+    if (interceptorAnswered === null && networkReadingOn) {
+      interceptorAnswered = false;
+      announceNetworkReading();
+    }
+  }, INTERCEPTOR_GRACE_MS);
+  try {
+    window.postMessage({ type: "INOX_VOYAGER_PING", source: "inox-bridge" }, window.location.origin);
+  } catch (err) {}
+}
+
+function noteInterceptor() {
+  if (!networkReadingOn || interceptorAnswered === true) return;
+  if (interceptorAskTimer) clearTimeout(interceptorAskTimer);
+  interceptorAskTimer = null;
+  interceptorAnswered = true;
+  announceNetworkReading();
+}
+
 try {
   chrome.storage.local.get(["networkReading", "signedInVanity"], (items) => {
     networkReadingOn = !chrome.runtime.lastError && !!items && items.networkReading === true;
     signedInVanity = (!chrome.runtime.lastError && items && items.signedInVanity) || null;
     followNetworkReading();
+    askForInterceptor();
     const held = earlyCaptures.splice(0, earlyCaptures.length);
     if (networkReadingOn) held.forEach(handleVoyagerCapture);
     // own_pages.js reports the state on its heartbeat; it is known now.
-    window.dispatchEvent(new Event("studio:networkreading"));
+    announceNetworkReading();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.networkReading) {
       networkReadingOn = changes.networkReading.newValue === true;
       followNetworkReading();
-      window.dispatchEvent(new Event("studio:networkreading"));
+      askForInterceptor();
+      announceNetworkReading();
     }
     if (area === "local" && changes.signedInVanity) {
       signedInVanity = changes.signedInVanity.newValue || null;
@@ -133,9 +188,17 @@ const voyagerCaptureStats = {
 };
 
 window.addEventListener("message", (event) => {
-  // Only accept messages from the same page (our MAIN-world interceptor).
-  if (event.source !== window) return;
-  if (!event.data || event.data.type !== "INOX_VOYAGER_CAPTURE") return;
+  // Only accept messages from the same page (our MAIN-world scripts).
+  if (event.source !== window || !event.data) return;
+  if (event.data.source === "inox-voyager-interceptor" && event.data.type === "INOX_VOYAGER_PRESENT") {
+    noteInterceptor();
+    return;
+  }
+  if (event.data.source === "inox-card-urns" && event.data.type === "INOX_CARD_URNS_REPORT") {
+    forwardCardUrnsReport(event.data.report);
+    return;
+  }
+  if (event.data.type !== "INOX_VOYAGER_CAPTURE") return;
   if (event.data.source !== "inox-voyager-interceptor") return;
   if (networkReadingOn === null) holdEarlyCapture(event.data);
   if (!networkReadingOn) return;
@@ -352,7 +415,7 @@ window.__inoxNetworkReading = () => {
   return {
     switch: networkReadingOn,
     registered: null,
-    injected: !!document.documentElement && document.documentElement.getAttribute("data-inox-voyager") === "1",
+    injected: networkReadingOn ? interceptorAnswered : null,
     voyager_calls_seen: networkReadingOn ? voyagerCallsSeen : null,
     matched: networkReadingOn ? voyagerCallsMatched : null,
     captured: networkReadingOn ? voyagerCaptureStats.total : null,
@@ -499,18 +562,13 @@ function reportCapture(extractor, itemsSeen, itemsKept, drift, timing) {
 }
 
 // The card stamper runs in the page's own world (card_urns.js) and cannot
-// reach the worker, so it writes its run onto the root element, the way it
-// writes a post id onto a card: how many feed cards were on screen, how many
-// carry a post id, and its own timing. Cards on screen with not one id among
-// them is the React properties changing shape, which is the drift that
-// leaves every feed engager without a post.
-function forwardCardUrnsReport() {
-  let report;
-  try {
-    report = JSON.parse(document.documentElement.getAttribute("data-inox-card-urns") || "null");
-  } catch (err) {
-    return;
-  }
+// reach the worker, so it posts its run on the window channel the
+// interceptor uses: how many feed cards were on screen, how many carry a
+// post id, and its own timing. Cards on screen with not one id among them is
+// the React properties changing shape, which is the drift that leaves every
+// feed engager without a post. It used to write the run onto LinkedIn's root
+// element, a mark any script on the page could read.
+function forwardCardUrnsReport(report) {
   if (!report || typeof report !== "object") return;
   const seen = Number(report.seen) || 0;
   const stamped = Number(report.stamped) || 0;
@@ -522,13 +580,6 @@ function forwardCardUrnsReport() {
     long_task_ms: 0,
   });
 }
-
-try {
-  new MutationObserver(forwardCardUrnsReport).observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ["data-inox-card-urns"],
-  });
-} catch (err) {}
 
 console.log("[Inox Hydra Bridge] Content script active on linkedin.com");
 
@@ -588,10 +639,9 @@ async function injectIntoLinkedInComposer(text) {
     }
   }
 
-  if (!editor) {
-    showInPageToast("⚠️ Please click 'Start a post' on LinkedIn first!", "warning");
-    return false;
-  }
+  // The answer is the side panel's to say, which asked: nothing is drawn
+  // into LinkedIn's page.
+  if (!editor) return false;
 
   // 3. Focus editor and insert text cleanly
   editor.focus();
@@ -611,38 +661,25 @@ async function injectIntoLinkedInComposer(text) {
   // Dispatch events to notify LinkedIn's React / Quill state
   editor.dispatchEvent(new Event('input', { bubbles: true }));
   editor.dispatchEvent(new Event('change', { bubbles: true }));
-
-  showInPageToast("✅ Inox Hydra: Formatted post injected into composer!", "success");
   return true;
 }
 
-// A status that screen readers announce (an alert for a warning), shown for
-// 6 s, and built as text: a notice can carry a studio reason or a name, which
-// must never be read as markup. It used to be innerHTML with no role, gone
-// after 3.5 s.
-function showInPageToast(message, type = "success") {
-  const existing = document.getElementById("studio-bridge-inpage-toast");
-  if (existing) existing.remove();
-
-  const toast = document.createElement("div");
-  toast.id = "studio-bridge-inpage-toast";
-  toast.className = `studio-inpage-toast ${type}`;
-  toast.setAttribute("role", type === "warning" ? "alert" : "status");
-  toast.setAttribute("aria-live", type === "warning" ? "assertive" : "polite");
-  const icon = document.createElement("div");
-  icon.className = "studio-toast-icon";
-  icon.setAttribute("aria-hidden", "true");
-  icon.textContent = "LS";
-  const text = document.createElement("div");
-  text.className = "studio-toast-msg";
-  text.textContent = message;
-  toast.append(icon, text);
-
-  document.body.appendChild(toast);
-  setTimeout(() => {
-    toast.classList.add("studio-toast-fade");
-    setTimeout(() => toast.remove(), 400);
-  }, 6000);
+// What the creator must act on, or must know was not saved, is said in the
+// side panel and never drawn into LinkedIn's page (decision D3; the last of
+// the in-page notices moved in cycle 4, the review's S7). The worker keeps
+// the sentence for this browser session, the action badge carries it ("!"
+// for a warning, orange while captures wait) until the panel opens, and the
+// panel shows it at its top the next time it opens, as text: a notice can
+// carry a studio reason or a name, never markup.
+function noticeToPanel(message, kind) {
+  try {
+    chrome.runtime.sendMessage({
+      action: "PAGE_NOTICE",
+      message: String(message || ""),
+      kind: kind === "waiting" ? "waiting" : "warning",
+      page_kind: window.location.pathname.split("/")[1] || "home"
+    }, () => { void chrome.runtime.lastError; });
+  } catch (err) {}
 }
 
 // -------------------------------------------------------------
@@ -705,13 +742,6 @@ function checkForNavigation() {
 
 if ("navigation" in window && window.navigation && typeof window.navigation.addEventListener === "function") {
   window.navigation.addEventListener("currententrychange", checkForNavigation);
-  // The early signal: the page is leaving this route. Announced for readers
-  // that want to drop a pending read; the URL has not changed yet, so the
-  // route itself is announced by currententrychange above.
-  window.navigation.addEventListener("navigate", (event) => {
-    const destination = event && event.destination ? event.destination.url : null;
-    window.dispatchEvent(new CustomEvent("studio:navigating", { detail: { url: destination } }));
-  });
 }
 setInterval(() => {
   if (document.visibilityState === "visible") checkForNavigation();
@@ -901,11 +931,11 @@ function extractAndSyncAnalytics() {
       // told their figures were saved.
       .then(result => {
         if (!result) {
-          showInPageToast("Inox Hydra: could not reach your studio, so these analytics were not saved.", "warning");
+          noticeToPanel("Inox Hydra: could not reach your studio, so these analytics were not saved.", "warning");
           return;
         }
         if (result.status === "refused") {
-          showInPageToast(
+          noticeToPanel(
             result.httpStatus === 401 || result.httpStatus === 403
               ? "Inox Hydra: the studio refused this browser, so these analytics were not saved. Open the studio once in this browser, then reload this page."
               : "Inox Hydra: the studio did not save these analytics" + (result.detail ? ": " + result.detail + "." : "."),
@@ -918,7 +948,7 @@ function extractAndSyncAnalytics() {
             ? "Inox Hydra: could not tell which period these figures cover"
             : "Inox Hydra: these figures cover " + (period || "an unknown period");
           const kept = result.followers_saved > 0 ? " Your follower count was saved." : "";
-          showInPageToast(
+          noticeToPanel(
             cover + ", so they were not saved as today's numbers." + kept +
             " Set the range to 24 hours to sync a daily figure.",
             "warning"
@@ -929,7 +959,7 @@ function extractAndSyncAnalytics() {
         // panel, from the worker's own record of the relay (decision D3):
         // nothing is drawn into LinkedIn's page for a capture that worked.
         if (result.status === "success" && result.buckets_ingested > 0) return;
-        showInPageToast("Inox Hydra: the studio saved nothing from this page.", "warning");
+        noticeToPanel("Inox Hydra: the studio saved nothing from this page.", "warning");
       })
       .catch(() => {});
   } catch (e) {
@@ -1106,7 +1136,7 @@ function maybeBindPostUrn() {
       // and nothing said so: this answer was read for "bound" and discarded.
       if (result.status === "ambiguous" && !shownRefusals.ambiguous_bind) {
         shownRefusals.ambiguous_bind = true;
-        showInPageToast(
+        noticeToPanel(
           "Inox Hydra: more than one of your drafts opens like this post, so it was not linked. " +
           "Open the studio's Posts screen to say which one it is.",
           "warning"
@@ -1114,9 +1144,9 @@ function maybeBindPostUrn() {
         return;
       }
       if (result.status === "kept") {
-        showInPageToast(
+        noticeToPanel(
           "Inox Hydra: your studio was busy, so linking this post is waiting and will be sent again.",
-          "warning"
+          "waiting"
         );
       }
     })
@@ -1525,7 +1555,7 @@ function observeAndCaptureEngagers() {
 
     if (!identified.length) {
       if (skipped > 0) {
-        showInPageToast(
+        noticeToPanel(
           `Inox Hydra: ${skipped} engager(s) had no profile link and were not saved.`,
           "warning"
         );
@@ -1582,7 +1612,7 @@ function observeAndCaptureEngagers() {
     //
     // Three outcomes now, not two. A refusal because the post is someone
     // else's is the rule working, and is silent: the feed is full of other
-    // people's posts, and announcing each one would turn the toast into noise
+    // people's posts, and announcing each one would turn the notice into noise
     // the creator learns to ignore.
     Promise.allSettled(writes).then(results => {
       const answers = results.map(r => (r.status === "fulfilled" ? r.value : null));
@@ -1617,22 +1647,23 @@ function observeAndCaptureEngagers() {
       // Stored engagers are confirmed on the action badge and in the side
       // panel, from the worker's own record of each relay (decision D3), so
       // nothing is drawn into LinkedIn's page for a capture that worked.
-      // What the creator must act on, or must know was not saved, stays.
+      // What the creator must act on, or must know was not saved, is said in
+      // the side panel (noticeToPanel).
       if (stored > 0) {
         if (skipped > 0) {
-          showInPageToast(`Inox Hydra: ${skipped} engager(s) had no profile link and were not saved.`, "warning");
+          noticeToPanel(`Inox Hydra: ${skipped} engager(s) had no profile link and were not saved.`, "warning");
         }
       } else if (kept > 0) {
-        showInPageToast(
+        noticeToPanel(
           `Inox Hydra: your studio was busy, so ${kept} capture(s) are kept and will be sent again. ` +
           `${waiting} waiting in all.`,
-          "warning"
+          "waiting"
         );
       } else if (toShow && !shownRefusals[toShow.reason || toShow.message]) {
         shownRefusals[toShow.reason || toShow.message] = true;
-        showInPageToast("Inox Hydra: " + toShow.message, "warning");
+        noticeToPanel("Inox Hydra: " + toShow.message, "warning");
       } else if (unreachable === answers.length) {
-        showInPageToast("Inox Hydra: could not reach your studio, so nothing was saved.", "warning");
+        noticeToPanel("Inox Hydra: could not reach your studio, so nothing was saved.", "warning");
       }
     });
   }

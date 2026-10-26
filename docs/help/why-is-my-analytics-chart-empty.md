@@ -13,15 +13,15 @@ The studio never fetches your analytics. The browser extension reads the impress
 | **Profile views** or **Comments** shows NOTHING MEASURED IN THIS RANGE | Neither is ever captured, and a captured day now stores no figure for them | Nothing to fix. This is expected |
 | **Comments** is a flat line at 0 | Those days were captured by an earlier version, which stored 0 for comments. Days captured now store no figure | Nothing to fix. This is expected |
 | You just visited LinkedIn, but the page has not changed | Analytics reads once when you open it and again only when you change the range. It does not refresh on its own | Switch to another surface in the rail and back to **Analytics** |
-| LinkedIn showed a notice ending "Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses | Set LinkedIn's range selector to the past 24 hours. The extension reads again |
-| No Inox Hydra notice at all on the analytics page | The extension is not loaded in that browser, the page is not your creator analytics page (a single post's analytics page is never read), or it found neither an impressions nor a followers card, so it sent nothing | Check the extension is loaded, then reload the LinkedIn analytics page |
+| The side panel showed a notice ending "Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses | Set LinkedIn's range selector to the past 24 hours. The extension reads again |
+| No notice in the side panel after visiting the analytics page | The extension is not loaded in that browser, the page is not your creator analytics page (a single post's analytics page is never read), or it found neither an impressions nor a followers card, so it sent nothing | Check the extension is loaded, then reload the LinkedIn analytics page |
 | ANALYTICS UNAVAILABLE | The studio did not answer or refused the request | Check the studio is running, then reload the page |
 | LOADING ANALYTICS that never ends | The server has not answered | Treat it like ANALYTICS UNAVAILABLE |
 | NO PUBLISHED POSTS TO COMPARE | No post has the published status | Mark a post as published; see [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md) |
 | Post rows all read 0 | The extension does not capture per-post figures | Nothing to fix. This is expected |
 
 > [!NOTE]
-> A saved day is confirmed on the extension's badge and in the side panel's header ("Captured creator analytics just now."), from the extension's own record of what the studio answered; nothing is drawn into LinkedIn's page for it. A notice on the page means something was not saved. Confirm on **Analytics** either way.
+> A saved day is confirmed on the extension's badge and in the side panel's header ("Captured creator analytics just now."), from the extension's own record of what the studio answered; nothing is drawn into LinkedIn's page for it. A notice at the top of the side panel, with a `!` on the badge, means something was not saved. Confirm on **Analytics** either way.
 
 ## Analytics checklist
 

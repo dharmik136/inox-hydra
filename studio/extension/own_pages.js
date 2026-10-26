@@ -735,7 +735,7 @@
 
     const result = await studio("/api/v1/identity/observe", payload);
     if (result && result.status === "candidate") {
-      toast("The studio found your profile. Confirm it's you in the studio's Setup screen.");
+      notice("The studio found your profile. Confirm it's you in the studio's Setup screen.", "warning");
     }
   }
 
@@ -1177,8 +1177,8 @@
     // which is what `skipped` got until now.
     const stored = answer && answer.ok ? answer.data || {} : {};
     if (answer && answer.ok && stored.skipped && !stored.written) {
-      toast("Inox Hydra: the studio understood " + stored.skipped +
-            " of these and stored none. They are already recorded, or not in a shape it reads.");
+      notice("Inox Hydra: the studio understood " + stored.skipped +
+             " of these and stored none. They are already recorded, or not in a shape it reads.", "warning");
     }
     return added;
   }
@@ -1246,28 +1246,53 @@
     reportCapture("post_analytics", found, found, found ? [] : ["metric_labels"]);
     if (!found) return;
     // The creator is standing on their own post's analytics page, having
-    // opened it on purpose, so a refusal here is worth a sentence on the page.
-    // Both this answer and the one below were thrown away.
+    // opened it on purpose, so a refusal here is worth a sentence in the side
+    // panel. Both this answer and the one below were thrown away.
     announce(await studioCall("/api/v1/self/posts/analytics",
                               { author: me, activity_urn: urn, metrics }),
              "/api/v1/self/posts/analytics");
   }
 
-  // Says on the page what the studio answered, when the studio asked for it
-  // to be said or is holding the work. A success is silent: the creator asked
-  // for a page, not for a running commentary.
+  // Says what the studio answered, when the studio asked for it to be said
+  // or is holding the work. A success is silent: the creator asked for a
+  // page, not for a running commentary.
   function announce(answer, path) {
     if (!answer || answer.ok) return answer;
     if (answer.kept) {
-      toast("Inox Hydra: your studio was busy, so this is kept and will be sent again. " +
-            answer.waiting + " waiting in all.");
+      notice("Inox Hydra: your studio was busy, so this is kept and will be sent again. " +
+             answer.waiting + " waiting in all.", "waiting");
       return answer;
     }
     if (answer.show && answer.message) {
-      toast("Inox Hydra: " + answer.message);
+      notice("Inox Hydra: " + answer.message, "warning");
       rememberRefusal(path, answer);
     }
     return answer;
+  }
+
+  // What the creator must know is said in the side panel, by way of the
+  // worker, and never drawn into LinkedIn's page (decision D3; the review's
+  // S7 moved the last notices drawn here). The worker keeps the sentence for
+  // the browser session and the badge carries it until the panel opens. The
+  // one exception is a warning while a history import runs: that is a
+  // sentence in the import's own banner, which is on screen already, not a
+  // new element.
+  let importWarning = "";
+  function notice(message, kind) {
+    const text = String(message || "");
+    if (importRunning) {
+      const plain = text.replace(/^Inox Hydra:\s{0,3}/, "");
+      importWarning = plain.charAt(0).toUpperCase() + plain.slice(1);
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage({
+        action: "PAGE_NOTICE",
+        message: text,
+        kind: kind === "waiting" ? "waiting" : "warning",
+        page_kind: window.location.pathname.split("/")[1] || "home",
+      }, () => { void chrome.runtime.lastError; });
+    } catch (err) {}
   }
 
   // ---------------------------------------------------------------
@@ -1296,7 +1321,7 @@
     }
     el.textContent = "";
     const label = document.createElement("span");
-    label.textContent = text;
+    label.textContent = importWarning ? text + " " + importWarning : text;
     el.appendChild(label);
     if (withStop) {
       const stop = document.createElement("button");
@@ -1358,6 +1383,7 @@
     if (importRunning) return;
     importRunning = true;
     stopRequested = false;
+    importWarning = "";
     sentKeys.clear();
     offeredKeys.clear();
     await studio("/api/v1/self/imports/event", { id: request.id, event: "started" });
@@ -1462,7 +1488,7 @@
   // watching captures fail on a field name that moved. Said once per browser
   // session, by the service worker's own record of it.
   // It also carries the state of network reading as this page sees it
-  // (content.js keeps it: the switch, the interceptor's marker, the count of
+  // (content.js keeps it: the switch, whether the interceptor answered, the count of
   // LinkedIn's data calls by path and query name), so the studio can tell
   // "off" from "on and matching nothing". Nothing is sent about it while the
   // switch has not been read, which the studio shows as not measured.
@@ -1482,13 +1508,8 @@
     const shake = answer && answer.handshake;
     if (shake && shake.reload_required && shake.message && !reloadNoticeShown) {
       reloadNoticeShown = true;
-      toast("Inox Hydra: " + shake.message);
+      notice("Inox Hydra: " + shake.message, "warning");
     }
-  }
-
-  function toast(message) {
-    banner(message, false);
-    clearBanner(7000);
   }
 
   // ---------------------------------------------------------------
@@ -1534,9 +1555,13 @@
   // The first heartbeat leaves before content.js has read the network
   // reading switch (both scripts run in one task; the storage read answers
   // after), so it carries no state. content.js says when the switch is
-  // known, and when it changes, and the page reports at once rather than a
-  // minute later.
-  window.addEventListener("studio:networkreading", () => { heartbeat(); });
+  // known, when it changes and when the page has said whether it carries
+  // the reader, and the page reports at once rather than a minute later. A
+  // function call in this world: an event on LinkedIn's window would be
+  // heard by LinkedIn's own scripts.
+  if (typeof window.__inoxOnNetworkReading === "function") {
+    window.__inoxOnNetworkReading(() => { heartbeat(); });
+  }
   document.addEventListener("visibilitychange", () => {
     heartbeat();
     if (document.visibilityState === "visible") onRoute();

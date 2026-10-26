@@ -20,7 +20,7 @@ The step ticks when the extension reports in, which it does every minute while a
 
 Click **Open my profile**. The bridge browser opens your own profile.
 
-A few seconds later a notice on the LinkedIn page reads "The studio found your profile. Confirm it's you in the studio's Setup screen." Back in the studio, Setup shows the name, headline and address it found, and why it thinks the profile is yours: either the edit controls only you see were on the page, or LinkedIn itself sent its "my profile" address there.
+A few seconds later the extension's badge shows a `!`, and the top line of its side panel reads "The studio found your profile. Confirm it's you in the studio's Setup screen." Back in the studio, Setup shows the name, headline and address it found, and why it thinks the profile is yours: either the edit controls only you see were on the page, or LinkedIn itself sent its "my profile" address there.
 
 Click **Yes, that's me**. If it is not you, click **No**.
 

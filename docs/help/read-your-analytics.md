@@ -13,9 +13,11 @@ The studio does not fetch your analytics. The browser extension reads them from 
 
 One visit records one day. A second visit the same day updates that day. Days you do not visit have no figures, and nothing is filled in later.
 
+Anything that was not saved is said at the top of the extension's side panel, with a `!` on its badge until you open it; nothing is drawn into LinkedIn's page.
+
 | What you see | Meaning |
 | --- | --- |
-| No notice on LinkedIn; the extension's badge counts one more and the side panel's header reads "Captured creator analytics just now." | The studio saved today's figures. |
+| No notice in the side panel; the extension's badge counts one more and the side panel's header reads "Captured creator analytics just now." | The studio saved today's figures. |
 | "...so they were not saved as today's numbers. Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses. "Your follower count was saved." follows when the page showed one: followers are a count at one moment, so they are kept whatever the range. Change the range; the extension reads again. |
 | "Inox Hydra: could not reach your studio, so these analytics were not saved." | The studio is not running. Start it and reload the analytics page. |
 | "Inox Hydra: the studio refused this browser, so these analytics were not saved. ..." | This browser was never paired. Open the studio once in it, then reload the analytics page. |
