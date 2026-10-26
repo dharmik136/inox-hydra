@@ -151,7 +151,7 @@ more of), nothing typed anywhere else; the marks you put on the daily cards
 comes from a card); the daily batch of cards itself, one dated row per card
 with the rows it was built from; a monthly note you may write about whether
 the cards helped; and, only for the files you ticked at import, what your own
-LinkedIn archive says you saved, followed, voted on and searched for, each row
+LinkedIn archive says you saved, followed, voted on, reposted and searched for, each row
 with the file it came from and the date it was imported. Asks and marks are
 kept until you retire or unhide them on the section's "What the studio knows"
 page; dated batches are kept for the number of days you set there, 365 by

@@ -36,10 +36,11 @@ What is read, by file:
                                                     company, position, date;
                                                     never email addresses)
   Saved_Items.csv, what they saved, followed,   -> archive_records, one row
-  Member_Follows,  voted on and published          per item with the file it
-  Company Follows,                                 came from and the import
+  Member_Follows,  voted on, published and         per item with the file it
+  Company Follows, reposted without words          came from and the import
   Votes.csv,                                       date (cycle 4, track 7)
-  Articles.csv
+  Articles.csv,
+  InstantReposts
   SearchQueries    what they searched for       -> archive_records, only
                                                     behind a tick at import,
                                                     off by default: the most
@@ -189,7 +190,7 @@ FILES: Dict[str, Dict[str, Any]] = {
         "columns": {"first": ["first name"], "last": ["last name"], "url": ["url", "profile url"]},
         "optional": {"company": ["company"], "position": ["position"], "connected": ["connected on"]},
     },
-    # What the creator saved, followed, voted on and published (cycle 4,
+    # What the creator saved, followed, voted on, published and reposted (cycle 4,
     # track 7, batch 2). The column names come from third-party descriptions
     # of the export and the files themselves, not from a LinkedIn page, which
     # is why each has aliases and why a file whose columns match none of them
@@ -227,6 +228,16 @@ FILES: Dict[str, Dict[str, Any]] = {
         "record": "article",
         "columns": {"link": ["link", "url", "article url"]},
         "optional": {"title": ["title", "headline"], "date": ["date", "published", "published on", "created", "time"]},
+    },
+    # A repost with no words of the creator's added: their act on somebody
+    # else's post, kept as a link and a date like a saved post, never the
+    # post itself.
+    "instant_reposts": {
+        "file": "instantreposts.csv", "aliases": ["instant_reposts.csv", "instant reposts.csv"],
+        "label": "Posts you reposted without adding words (links and dates only)", "default": True,
+        "record": "instant_repost",
+        "columns": {"link": ["link", "url", "shared url", "share link", "sharelink", "original url"]},
+        "optional": {"date": ["date", "created date", "reposted on", "time"]},
     },
     "search_queries": {
         "file": "searchqueries.csv", "aliases": ["search_queries.csv", "search queries.csv"],
@@ -1301,7 +1312,7 @@ def _import_connections(conn, rows: List[Dict[str, str]], batches: _Batches) -> 
 def _record_importer(kind: str):
     """
     An importer for one of the record categories: saved items, follows,
-    votes, articles and search queries, into archive_records.
+    votes, articles, instant reposts and search queries, into archive_records.
 
     Each row keeps what the file says and no more: a link, a title, a name,
     a choice or a query, the date where one can be read (an unreadable date
@@ -1325,7 +1336,7 @@ def _record_importer(kind: str):
             when = _when(row.get("date", "")) if row.get("date") else None
             # The one thing each category needs, or the row is nothing.
             needed = {"saved_item": url, "member_follow": name, "company_follow": name, "vote": url,
-                      "article": url, "search_query": detail}[record_kind]
+                      "article": url, "instant_repost": url, "search_query": detail}[record_kind]
             if not needed:
                 tally["skipped"] += 1
                 continue
@@ -1357,6 +1368,7 @@ _IMPORTERS = {
     "company_follows": _record_importer("company_follows"),
     "votes": _record_importer("votes"),
     "articles": _record_importer("articles"),
+    "instant_reposts": _record_importer("instant_reposts"),
     "search_queries": _record_importer("search_queries"),
 }
 

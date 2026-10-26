@@ -11,7 +11,7 @@ The panel acts on the open creator profile only. Each profile keeps its own data
 
 ## What this profile holds
 
-The first section lists each kind of data with its number of rows and its size inside the database: your posts, drafts and queue; post readings; leads and their engagement; your comments and reactions on other posts; connections from your LinkedIn archive; what your archive says you saved, followed, voted on and searched for; From your record (your asks, the daily cards, their marks and your notes); daily analytics; logs; the help search index; and settings. Below them are the database file, the network readings log (a separate file), your media and the backups folder.
+The first section lists each kind of data with its number of rows and its size inside the database: your posts, drafts and queue; post readings; leads and their engagement; your comments and reactions on other posts; connections from your LinkedIn archive; what your archive says you saved, followed, voted on, reposted and searched for; From your record (your asks, the daily cards, their marks and your notes); daily analytics; logs; the help search index; and settings. Below them are the database file, the network readings log (a separate file), your media and the backups folder.
 
 If this computer's copy of SQLite cannot measure the parts of the database, each part says "not measured" and only the file sizes are shown.
 

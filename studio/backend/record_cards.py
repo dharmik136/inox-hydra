@@ -91,7 +91,7 @@ LABELS = ("measured", "derived", "typed", "suggested", "retrieved", "curated", "
 # the post of this day) is not drawn, so a mark can only set it aside: hide
 # for good, skip for SKIP_HOLD_DAYS. A model's idea or the Monday card is
 # never shown twice in any case.
-DRAWN_KINDS = ("opener", "ask", "theme", "comment", "reaction", "saved", "library")
+DRAWN_KINDS = ("opener", "ask", "theme", "comment", "reaction", "saved", "repost", "library")
 CHOSEN_KINDS = ("what_worked", "on_this_day")
 BLOCKS = {"working_for_you": "Working for you", "you_asked": "You asked", "you_engaged_with": "You engaged with",
           "monday": "This week", "model": "Suggested by your model", "library": "From the Inox library"}
@@ -626,15 +626,15 @@ def you_asked(conn, posts: List[Dict[str, Any]], topic_counts: Dict[str, int], h
 def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str, Any], day: date,
                      seed: int) -> Dict[str, Any]:
     """
-    A post of somebody else's the creator commented on, reacted to or saved:
-    the link, the date, the kind, and for a comment their own words.
+    A post of somebody else's the creator commented on, reacted to, saved or
+    reposted: the link, the date, the kind, and for a comment their own words.
 
     outbound_engagements.target_author and .target_excerpt are never read:
     other people's posts do not belong on a card any more than in the
     database (migration 2's reason), and a card quotes nothing of the other
     person's beyond what the creator's own comment already does. A comment is
-    preferred, because it carries what the creator thinks; a reaction or a
-    saved post is a link, a kind and a date. "Because" counts the creator's
+    preferred, because it carries what the creator thinks; a reaction, a
+    saved post or a repost is a link, a kind and a date. "Because" counts the creator's
     own comments by the topic of their own words, never by person.
     """
     block = "you_engaged_with"
@@ -695,6 +695,9 @@ def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str,
     for row in _rows(conn, "SELECT id, url, happened_at FROM archive_records WHERE kind = 'saved_item' AND url IS NOT NULL "
                            "ORDER BY happened_at DESC LIMIT 200"):
         others.append((f"saved:{row['id']}", {"what": "saved", **dict(row)}))
+    for row in _rows(conn, "SELECT id, url, happened_at FROM archive_records WHERE kind = 'instant_repost' "
+                           "AND url IS NOT NULL ORDER BY happened_at DESC LIMIT 200"):
+        others.append((f"repost:{row['id']}", {"what": "reposted", **dict(row)}))
     drawn = _draw(others, history, day, seed + 4) if others else None
     if drawn:
         card_id, item = drawn
@@ -718,6 +721,24 @@ def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str,
             }
             return _card(card_id, 4, block, "reaction", "measured", rule, payload,
                          [{"table": "outbound_engagements", "id": item["id"]}])
+        if item["what"] == "reposted":
+            rule = "the posts you reposted without adding words, from your archive: a link and a date, never the post's text"
+            payload = {
+                "title": "You reposted this",
+                "badge": "from your archive",
+                "excerpt": "",
+                "date": item.get("happened_at"),
+                "url": item["url"],
+                "figures": [],
+                "figure_sentence": "",
+                "because": f"Because you reposted this post on {_said_date(item.get('happened_at'))} · rule: You engaged with",
+                "source_sentence": f"reposted on {_said_date(item.get('happened_at'))}, from your archive",
+                "method_sentence": rule,
+                "draft_text": "",
+                "block_label": BLOCKS[block],
+            }
+            return _card(card_id, 4, block, "repost", "measured", rule, payload,
+                         [{"table": "archive_records", "id": item["id"]}])
         rule = "the posts you saved on LinkedIn, from your archive: a link and a date, never the post's text"
         payload = {
             "title": "You saved this",
@@ -737,10 +758,10 @@ def you_engaged_with(conn, vocabulary: List[Tuple[str, str]], history: Dict[str,
     if pool or others:
         return _abstained(4, block, "comment", "Every post you engaged with was shown in the last few days or hidden. "
                           "One comes back as its hold ends, and Unhide all on What the studio knows brings back what "
-                          "you hid.", "your own comments, reactions and saved posts, each held back after a showing")
-    return _abstained(4, block, "comment", "No comments, reactions or saved posts of yours imported yet. Import your "
-                      "archive in Setup, or run Comments you left; this card fills from your own activity.",
-                      "your own comments, reactions and saved posts")
+                          "you hid.", "your own comments, reactions, reposts and saved posts, each held back after a showing")
+    return _abstained(4, block, "comment", "No comments, reactions, reposts or saved posts of yours imported yet. Import "
+                      "your archive in Setup, or run Comments you left; this card fills from your own activity.",
+                      "your own comments, reactions, reposts and saved posts")
 
 
 # ---------------------------------------------------------------------------

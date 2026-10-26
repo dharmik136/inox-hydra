@@ -1,10 +1,11 @@
 """
-The archive's saved items, follows, votes and articles land; searches only behind a tick.
-=========================================================================================
+The archive's saved items, follows, votes, articles and reposts land; searches only behind a tick.
+==================================================================================================
 
 Cycle 4, track 7, batch 2 of the personalised daily ideas report, and
 decision 6. The importer read eight categories and discarded Saved Items,
-Member Follows, Company Follows, Votes, Articles and Search Queries, which
+Member Follows, Company Follows, Votes, Articles, Instant Reposts (which the
+report's batch 2 lists beside them) and Search Queries, which
 are the creator's own record of what they chose to see and keep, under the
 same sanctioned export. They land now, each row with the file it came from
 and the import date, in a table of their own. Search Queries, the most
@@ -53,10 +54,12 @@ COMPANY_FOLLOWS = "Organization,Followed On\nExample Engines,Wed Jan 15 10:00:00
 VOTES = "Date,Link,OptionText\n2026-09-02 12:00:00,https://www.linkedin.com/feed/update/urn:li:activity:7360000000000000009,Hire slowly\n"
 ARTICLES = "Date,Title,Link\n2025-06-01 07:00:00,Why compilers are for people,https://www.linkedin.com/pulse/why-compilers-grace/\n"
 SEARCHES = "Time,Search Query\n2026-10-20 18:00:00,hiring without a recruiter\n2026-10-21 18:00:00,example member\n"
+REPOSTS = "Date,Link\n2026-08-01 09:00:00,https://www.linkedin.com/feed/update/urn:li:activity:7350000000000000003\n"
 
 FULL = {
     "Shares.csv": SHARES, "Profile.csv": PROFILE, "Saved_Items.csv": SAVED, "Member_Follows.csv": MEMBER_FOLLOWS,
     "Company Follows.csv": COMPANY_FOLLOWS, "Votes.csv": VOTES, "Articles.csv": ARTICLES, "SearchQueries.csv": SEARCHES,
+    "InstantReposts.csv": REPOSTS,
 }
 
 
@@ -116,14 +119,16 @@ def _records(kind=None):
         conn.close()
 
 
-def test_the_preview_lists_the_six_categories_and_only_searches_are_unticked(client):
+def test_the_preview_lists_the_seven_categories_and_only_searches_are_unticked(client):
     preview = _upload(client)
     by_kind = {f["kind"]: f for f in preview["files"]}
-    for kind in ("saved_items", "member_follows", "company_follows", "votes", "articles", "search_queries"):
+    for kind in ("saved_items", "member_follows", "company_follows", "votes", "articles", "instant_reposts",
+                 "search_queries"):
         assert kind in by_kind, f"{kind} is not offered"
         assert by_kind[kind]["importable"], by_kind[kind]
     assert by_kind["search_queries"]["default"] is False
-    assert all(by_kind[k]["default"] for k in ("saved_items", "member_follows", "company_follows", "votes", "articles"))
+    assert all(by_kind[k]["default"] for k in ("saved_items", "member_follows", "company_follows", "votes", "articles",
+                                                "instant_reposts"))
     assert "most personal" in by_kind["search_queries"]["label"]
     # Nothing in the "not read" list is one of the six.
     assert not [o for o in preview["not_imported"] if "Saved" in o["file"] or "Votes" in o["file"]]
@@ -132,13 +137,13 @@ def test_the_preview_lists_the_six_categories_and_only_searches_are_unticked(cli
 def test_each_category_lands_with_its_file_and_the_import_date(client):
     preview = _upload(client)
     summary = _import(client, preview["source"])["summary"]
-    for kind in ("saved_items", "member_follows", "company_follows", "votes", "articles"):
+    for kind in ("saved_items", "member_follows", "company_follows", "votes", "articles", "instant_reposts"):
         assert summary[kind]["added"] >= 1, (kind, summary[kind])
     assert summary["search_queries"] == {"left_out": True}, "searches were imported without a tick"
 
     rows = _records()
     kinds = {r["kind"] for r in rows}
-    assert kinds == {"saved_item", "member_follow", "company_follow", "vote", "article"}
+    assert kinds == {"saved_item", "member_follow", "company_follow", "vote", "article", "instant_repost"}
     conn = _db()
     import_id = conn.execute("SELECT id FROM archive_imports ORDER BY id DESC LIMIT 1").fetchone()[0]
     conn.close()
@@ -160,6 +165,10 @@ def test_each_category_lands_with_its_file_and_the_import_date(client):
     assert company["name"] == "Example Engines"
     member = _records("member_follow")[0]
     assert member["name"] == "Example Member" and member["detail"] == "Active"
+    # A repost is the creator's act: a link and a date, never the post that was reposted.
+    repost = _records("instant_repost")[0]
+    assert repost["url"].endswith("7350000000000000003") and repost["happened_at"] == "2026-08-01T09:00:00+00:00"
+    assert repost["title"] is None and repost["detail"] is None and repost["source_file"] == "InstantReposts.csv"
 
 
 def test_an_unreadable_date_stays_empty_rather_than_today(client):
@@ -207,7 +216,8 @@ def test_the_same_archive_twice_adds_nothing_twice_and_removal_takes_it_out(clie
     preview = _upload(client)
     again = _import(client, preview["source"])["summary"]
     assert again["votes"]["added"] == 0 and again["votes"]["already_there"] == first["votes"]["added"]
-    assert len(_records()) == sum(first[k]["added"] for k in ("saved_items", "member_follows", "company_follows", "votes", "articles"))
+    assert len(_records()) == sum(first[k]["added"] for k in ("saved_items", "member_follows", "company_follows", "votes",
+                                                              "articles", "instant_reposts"))
 
     res = client.post("/api/v1/archive/undo")
     assert res.status_code == 200, res.text
@@ -221,7 +231,8 @@ def test_the_same_archive_twice_adds_nothing_twice_and_removal_takes_it_out(clie
 def test_the_module_says_an_absent_file_is_not_guessed_about():
     source = open(os.path.join(os.path.dirname(archive_import.__file__), "archive_import.py"), encoding="utf-8").read()
     assert "A file that is absent is not guessed at" in source
-    for kind in ("saved_items", "member_follows", "company_follows", "votes", "articles", "search_queries"):
+    for kind in ("saved_items", "member_follows", "company_follows", "votes", "articles", "instant_reposts",
+                 "search_queries"):
         assert kind in archive_import.FILES and kind in archive_import._IMPORTERS
     assert archive_import.FILES["search_queries"]["default"] is False
 
@@ -229,5 +240,5 @@ def test_the_module_says_an_absent_file_is_not_guessed_about():
 def test_the_help_names_the_files_and_the_tick():
     article = open(os.path.join(os.path.dirname(__file__), "..", "docs", "help",
                                 "set-up-the-studio-from-your-linkedin.md"), encoding="utf-8").read()
-    assert "`Saved_Items.csv`" in article and "`SearchQueries.csv`" in article
+    assert "`Saved_Items.csv`" in article and "`SearchQueries.csv`" in article and "`InstantReposts.csv`" in article
     assert "Unticked unless you tick it" in article

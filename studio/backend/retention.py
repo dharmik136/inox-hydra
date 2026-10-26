@@ -259,11 +259,11 @@ CATEGORIES = (
     ("outbound", "Your comments and reactions on other posts", ("outbound_engagements",)),
     ("connections", "Connections from your LinkedIn archive", ("connections", "archive_imports")),
     # Cycle 4, track 7: the daily section's own rows, and what the archive
-    # says the creator saved, followed, voted on and searched for. The
+    # says the creator saved, followed, voted on, reposted and searched for. The
     # company's signed library sits with the hook forms under posts.
     ("record", "From your record: your asks, the daily cards, their marks and your notes",
      ("asks", "daily_view", "daily_run", "card_marks", "record_notes")),
-    ("archive_records", "What your LinkedIn archive says you saved, followed, voted on and searched for",
+    ("archive_records", "What your LinkedIn archive says you saved, followed, voted on, reposted and searched for",
      ("archive_records",)),
     ("analytics", "Daily analytics", ("analytics_daily", "audience_demographics")),
     ("logs", "Capture, health and cleanup logs",

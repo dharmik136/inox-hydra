@@ -456,3 +456,18 @@ def test_each_mark_says_only_what_it_does_to_that_kind_of_card():
     built = set(re.findall(r'_card\([^,]+, \d, "\w+", "(\w+)"', source))
     built |= {"library", "idea"}  # library_bundle.match_card and record_model.verify_ideas
     assert built and built <= kinds, built - kinds
+
+
+def test_a_repost_fills_the_engaged_with_slot_as_a_link_and_a_date(conn):
+    import record_cards
+
+    add_posts(conn)
+    conn.execute("INSERT INTO archive_records (kind, url, happened_at, dedupe_key, source_file, imported_at) "
+                 "VALUES ('instant_repost', 'https://www.linkedin.com/feed/update/urn:li:activity:7350000000000000003', "
+                 "'2026-08-01T09:00:00+00:00', 'r1', 'InstantReposts.csv', '2026-10-25')")
+    conn.commit()
+    card = cards_of(record_cards.compute_local(conn, TUESDAY, record_cards.seed_for(TUESDAY)))[4]
+    assert card["kind"] == "repost" and card["label"] == "measured"
+    assert card["payload"]["url"].endswith("7350000000000000003") and card["payload"]["excerpt"] == ""
+    assert card["payload"]["because"].startswith("Because you reposted this post on 1 August 2026")
+    assert card["provenance"]["source_rows"] == [{"table": "archive_records", "id": 1}]

@@ -27,7 +27,7 @@ When nothing the cards are made from has changed since the last day (your posts 
 | **Working for you**: What worked | The post of yours that did best against your usual reactions, with its figures and the page and date they were read from | Settled posts only, against your own median, ranked the way **Posts** ranks them. Until three of your posts have settled with figures, it says how many have, for example "Not enough settled posts yet: 1 of 3." |
 | **Working for you**: On this day, or Opener to reuse | A post of yours from this date in an earlier year; when there is none, the first line of one of your posts | The opener comes from the top quarter of your ranked posts once eight are ranked, otherwise from all of them, each with the chance of its topic's share of your posts. A line once shown is held back 7 days, then 14, then 28, and its chance halves each time. |
 | **You asked** | Something you asked for, with up to three of your own posts that share its words | Your asks in turn. With nothing asked yet, one of the words that recur across your posts. |
-| **You engaged with** | A comment you left on someone else's post: your own words, the date and a link to the post. Without comments, a post you reacted to or saved, as a link and a date | Your own activity in turn. The other person's words are never put on a card. |
+| **You engaged with** | A comment you left on someone else's post: your own words, the date and a link to the post. Without comments, a post you reacted to, reposted or saved, as a link and a date | Your own activity in turn. The other person's words are never put on a card. |
 | The fifth card | One idea from your own AI provider, or an entry of the Inox library that suits one of your topics | See the two sections below. Until either is set up, the card says how to fill it. |
 
 Every card shows, beside its title, how it was arrived at (for example "measured" or "resurfaced, not measured"), your own words in quotation marks, figures only where a page was read, and a line that starts "Because". **Why this?** opens the whole rule, the rows each figure was read from, and the card's label: MEASURED (read from a row, with when), DERIVED (worked out from measured rows by the stated rule), TYPED (sorted by a rule such as shared words, with nothing measured behind it), SUGGESTED (written by your model, then checked) or CURATED (from the Inox library). Before a card is shown, every row it cites is looked up; a card whose row is gone is dropped and counted under the title, never shown.
@@ -71,7 +71,7 @@ Everything the section holds about you, on one page, each part changeable:
 - **Your asks**: each with where it came from and when. **Edit**, **Retire** (kept but no longer used; **Use again** brings it back) or **Remove for good**.
 - The three optional questions, as in **Setup**.
 - **Your marks**: how many cards you kept, skipped, hid, drafted from and posted, the cards you hid, and **Unhide all**.
-- **From your LinkedIn archive**: how many saved posts, follows, poll votes, articles and searches your archive brought.
+- **From your LinkedIn archive**: how many saved posts, follows, poll votes, articles, reposts and searches your archive brought.
 - **How long the daily cards are kept**: 90 days, 365 days (the default) or for good. A day that a mark or a draft refers to is never removed. Asks and marks stay until you retire, remove or unhide them.
 - **Your own model** and **The Inox library**, below.
 - **The daily batch**: when the cards were last made.

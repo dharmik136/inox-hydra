@@ -775,7 +775,7 @@ function ForgetPanel({
         {/* From your record (cycle 4, track 7): forgetting clears these too. */}
         <li>
           What you asked From your record for, its daily cards, your marks on them and your notes, and the saved posts,
-          follows, votes, articles and searches your archive brought
+          follows, votes, articles, reposts and searches your archive brought
         </li>
         <li>The name, headline and company Setup filled in Brand Studio, unless you changed them</li>
       </ul>

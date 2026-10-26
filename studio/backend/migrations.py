@@ -1432,7 +1432,7 @@ def _migrate_record_section(cursor: sqlite3.Cursor) -> None:
     (asks), what the studio worked out for them once a day (daily_run and
     daily_view), the marks they put on it (card_marks), a monthly note in
     their own words (record_notes), what their own LinkedIn archive says they
-    saved, followed, voted on and searched for (archive_records, each row
+    saved, followed, voted on, reposted and searched for (archive_records, each row
     with the file it came from and the import date), and the company's
     signed library of forms and patterns (library_entries), which is the one
     table that is not about the creator at all. Other people's posts have no
@@ -1520,7 +1520,8 @@ def _migrate_record_section(cursor: sqlite3.Cursor) -> None:
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS archive_records (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        kind TEXT NOT NULL CHECK (kind IN ('saved_item', 'member_follow', 'company_follow', 'vote', 'article', 'search_query')),
+        kind TEXT NOT NULL CHECK (kind IN ('saved_item', 'member_follow', 'company_follow', 'vote', 'article',
+                                           'instant_repost', 'search_query')),
         url TEXT,
         title TEXT,
         name TEXT,

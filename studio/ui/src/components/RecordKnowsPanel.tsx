@@ -35,6 +35,7 @@ const ARCHIVE_WORDS: Record<string, string> = {
   company_follow: "companies you follow",
   vote: "poll votes",
   article: "articles you published",
+  instant_repost: "posts you reposted",
   search_query: "searches you made",
 };
 
@@ -145,8 +146,8 @@ export function RecordKnowsPanel() {
           </p>
           {archive.length === 0 ? (
             <p className="text-[12px] text-ink-muted">
-              Nothing beyond your posts, comments and reactions. Saved posts, follows, poll votes and articles arrive with
-              your archive in Setup; searches only if you tick them there.
+              Nothing beyond your posts, comments and reactions. Saved posts, follows, poll votes, articles and reposts
+              arrive with your archive in Setup; searches only if you tick them there.
             </p>
           ) : (
             <p className="text-[12px] leading-snug text-ink-secondary">
