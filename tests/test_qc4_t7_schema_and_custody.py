@@ -45,7 +45,7 @@ COLUMNS = {
                   "dropped_cards", "note"},
     "daily_view": {"day", "card_id", "slot", "block", "kind", "label", "method", "payload_json",
                    "provenance_json", "status", "created_at"},
-    "card_marks": {"id", "day", "card_id", "mark", "at", "draft_id"},
+    "card_marks": {"id", "day", "card_id", "mark", "at", "post_id"},
     "record_notes": {"month", "text", "at"},
     "archive_records": {"id", "kind", "url", "title", "name", "detail", "happened_at", "dedupe_key",
                         "source_file", "imported_at", "import_id"},
@@ -93,7 +93,7 @@ def test_a_fresh_database_has_every_table_with_its_columns(home):
     for table in NEW_TABLES:
         assert table in tables, f"{table} is missing"
         assert COLUMNS[table] <= _columns(conn, table), f"{table} lacks {COLUMNS[table] - _columns(conn, table)}"
-    assert {"origin_card_id", "origin_day"} <= _columns(conn, "drafts"), "a draft cannot record the card it came from"
+    assert {"origin_card_id", "origin_day"} <= _columns(conn, "posts"), "a draft cannot record the card it came from"
     conn.close()
 
 

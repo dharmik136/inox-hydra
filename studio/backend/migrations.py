@@ -1505,7 +1505,7 @@ def _migrate_record_section(cursor: sqlite3.Cursor) -> None:
         card_id TEXT NOT NULL,
         mark TEXT NOT NULL CHECK (mark IN ('keep', 'skip', 'used', 'posted', 'hide')),
         at TEXT NOT NULL,
-        draft_id INTEGER,
+        post_id TEXT,
         UNIQUE (day, card_id, mark)
     )
     """)
@@ -1551,13 +1551,27 @@ def _migrate_record_section(cursor: sqlite3.Cursor) -> None:
     """)
     # A draft made from a card records which card, so "used" and "posted"
     # can be told apart from a draft the creator started on their own: a
-    # draft's origin was not recorded at all before this.
-    cursor.execute("PRAGMA table_info(drafts)")
+    # draft's origin was not recorded at all before this. The Composer's
+    # drafts are posts rows (status draft), so the origin is kept there.
+    cursor.execute("PRAGMA table_info(posts)")
     columns = {row[1] for row in cursor.fetchall()}
     if "origin_card_id" not in columns:
-        cursor.execute("ALTER TABLE drafts ADD COLUMN origin_card_id TEXT")
+        cursor.execute("ALTER TABLE posts ADD COLUMN origin_card_id TEXT")
     if "origin_day" not in columns:
-        cursor.execute("ALTER TABLE drafts ADD COLUMN origin_day TEXT")
+        cursor.execute("ALTER TABLE posts ADD COLUMN origin_day TEXT")
+    # "Posted" is the studio's mark, not the creator's: written when a post
+    # that came from a card goes out, by whichever path takes it there
+    # (Publish, the queue, Send to LinkedIn, or the bridge binding it), so no
+    # path can forget it.
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS record_card_posted AFTER UPDATE OF status ON posts
+        WHEN NEW.origin_card_id IS NOT NULL AND NEW.origin_day IS NOT NULL
+             AND NEW.status IN ('published', 'sent') AND OLD.status IS NOT NEW.status
+        BEGIN
+            INSERT OR IGNORE INTO card_marks (day, card_id, mark, at, post_id)
+            VALUES (NEW.origin_day, NEW.origin_card_id, 'posted', strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now'), NEW.id);
+        END
+    """)
 
 
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
