@@ -295,6 +295,48 @@ def test_the_backtest_reports_shares_and_nothing_of_the_posts(tmp_path, monkeypa
     assert "| Month |" in done.stdout
 
 
+def test_the_snapshot_holds_every_column_the_engine_reads_and_an_older_database_still_ranks(tmp_path):
+    """
+    The snapshot was built from a fixed list of columns, so when migration 28
+    gave readings a precision the engine's newest-reading query failed on it
+    and every month ranked nothing. It copies the source's columns now; on a
+    database from before that migration the column is NULL, which the engine
+    reads as a reading that does not say how it was read.
+    """
+    sys.path.insert(0, os.path.join(REPO_ROOT, "tools"))
+    import backtest_record
+
+    older = str(tmp_path / "older.db")
+    conn = sqlite3.connect(older)
+    conn.execute("CREATE TABLE own_posts (activity_urn TEXT PRIMARY KEY, text TEXT, published_at TEXT, "
+                 "published_at_source TEXT, reactions INTEGER, comments INTEGER, reposts INTEGER, impressions INTEGER, "
+                 "first_seen_at TEXT, last_seen_at TEXT)")
+    conn.execute("CREATE TABLE post_metric_observations (activity_urn TEXT, observed_at TEXT, observed_hour TEXT, "
+                 "age_hours REAL, source TEXT, impressions INTEGER, members_reached INTEGER, reactions INTEGER, "
+                 "comments INTEGER, reposts INTEGER, saves INTEGER, sends INTEGER)")
+    start = datetime(2025, 1, 6, 9, tzinfo=timezone.utc)
+    for n, reactions in enumerate((30, 12, 18, 9)):
+        published = start + timedelta(days=7 * n)
+        conn.execute("INSERT INTO own_posts VALUES (?, 'a post', ?, 'activity_page', NULL, NULL, NULL, NULL, ?, ?)",
+                     (urn(n), published.isoformat(), published.isoformat(), published.isoformat()))
+        observed = published + timedelta(days=10)
+        conn.execute("INSERT INTO post_metric_observations VALUES (?, ?, ?, 240.0, 'post_analytics', ?, NULL, ?, 0, 0, "
+                     "NULL, NULL)", (urn(n), observed.isoformat(), observed.strftime("%Y-%m-%dT%H"), reactions * 50,
+                                     reactions))
+    conn.commit()
+    conn.close()
+    source = backtest_record.open_read_only(older)
+    try:
+        moment = datetime(2025, 6, 1, tzinfo=timezone.utc)
+        snap = backtest_record.snapshot(source, moment.isoformat())
+        columns = {row[1] for row in snap.execute("PRAGMA table_info(post_metric_observations)")}
+        assert "precision" in columns
+        assert snap.execute("SELECT COUNT(*) FROM post_metric_observations WHERE precision IS NULL").fetchone()[0] == 4
+        assert backtest_record._ranking(snap, moment)["order"][0] == urn(0)
+    finally:
+        source.close()
+
+
 def test_a_months_picks_use_nothing_read_after_it(tmp_path, monkeypatch):
     """The leak check: a post read only after the month cannot be one of that month's picks."""
     monkeypatch.delenv("INOX_DEMO_DATA", raising=False)
