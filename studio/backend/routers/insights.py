@@ -64,6 +64,8 @@ def _derived(activity_urn: str) -> Dict[str, Any]:
         # sentences, with their reading counts and their abstentions.
         movement = results.movement(conn, activity_urn)
         half_life = results.half_life(conn, activity_urn)
+        # What kind of post it was (post_format.py), "unknown" unless a source said.
+        held = conn.execute("SELECT format FROM own_posts WHERE activity_urn = ?", (activity_urn,)).fetchone()
     finally:
         conn.close()
     readings = onboarding.post_readings(activity_urn)
@@ -82,6 +84,7 @@ def _derived(activity_urn: str) -> Dict[str, Any]:
         "demographics": onboarding.post_demographics(activity_urn),
         "movement": movement,
         "half_life": half_life,
+        "format": held["format"] if held else None,
     }
 
 

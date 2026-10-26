@@ -78,6 +78,13 @@ except ImportError:
     import paths
     from database import get_db
 
+# What kind of post each Shares row was, from its media and shared-link
+# fields (cycle 4, track 5): unknown unless one of them says.
+try:
+    from . import post_format
+except ImportError:
+    import post_format
+
 DOWNLOAD_PAGE = "https://www.linkedin.com/mypreferences/d/download-my-data"
 ARCHIVE_NAME = re.compile(r"linkedin.*data.*export.*\.zip$|linkedindataexport.*\.zip$", re.IGNORECASE)
 REQUESTED_KEY = "archive_requested_at"
@@ -1024,6 +1031,7 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Di
             tally["skipped"] += 1
             continue
         when = _when(row.get("date", "")) or (_moment(urn).isoformat() if _moment(urn) else None)
+        found = post_format.from_archive(row.get("media"), row.get("shared"))
         existing = conn.execute("SELECT published_at FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone()
         same = urn if existing else twins.find(urn, text, when)
         if same:
@@ -1037,6 +1045,7 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Di
                 "WHERE activity_urn = ?",
                 (when, clip(text, 10000) or None, clip(text, 10000) or None, same),
             )
+            post_format.record(conn, same, found)
             tally["already_there"] += 1
             continue
         conn.execute(
@@ -1044,6 +1053,7 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Di
             "reposts, impressions, first_seen_at, last_seen_at) VALUES (?, ?, ?, 'archive', NULL, NULL, NULL, NULL, ?, ?)",
             (urn, clip(text, 10000) or None, when, now, now),
         )
+        post_format.record(conn, urn, found)
         batches.add("posts", urn)
         tally["added"] += 1
     return tally

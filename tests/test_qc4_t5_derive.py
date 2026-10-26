@@ -709,3 +709,166 @@ def test_the_one_definition_guard_is_not_vacuous():
     found = _second_definitions(planted)
     assert any("def half_life()" in f for f in found) and any("insights.py: prints" in f for f in found)
     assert not any(f.startswith("fine.py") for f in found)
+
+
+# ---------------------------------------------------------------------------
+# Item 22: a format per post, compared through the contrast engine
+# ---------------------------------------------------------------------------
+
+def test_the_archives_media_field_names_a_format_or_says_unknown():
+    """
+    The archive's MediaUrl and SharedUrl shapes are not verified against a
+    real export, so only a marker that says what the post carries names a
+    format. Everything else is unknown: a post with neither field could be
+    text, a poll or an event, and nothing here guesses which.
+    """
+    import post_format
+    assert post_format.from_archive("https://media.licdn.com/dms/image/sample/1", "") == "image"
+    assert post_format.from_archive("https://www.linkedin.com/dms/prv/vid/v2/D4E05AQ/abc", "") == "video"
+    assert post_format.from_archive("https://media.licdn.com/dms/document/pdf/v2/C4D1F/deck.pdf", "") == "document"
+    assert post_format.from_archive("", "https://www.linkedin.com/feed/update/urn:li:activity:7100000000000000000") \
+        == "repost"
+    assert post_format.from_archive("", "https://www.linkedin.com/pulse/pricing-lessons-t5-creator") == "article"
+    assert post_format.from_archive("", "https://www.linkedin.com/newsletters/the-pricing-letter-7000") == "newsletter"
+    assert post_format.from_archive("", "") == "unknown", "no media is not proof of a text post"
+    assert post_format.from_archive("https://media.licdn.com/dms/something-new/1", "") == "unknown"
+    assert post_format.from_archive("", "https://example.com/my-blog-post") == "unknown", "a link is not a format here"
+    assert set(post_format.FORMATS) == {"text", "image", "document", "video", "poll", "article", "newsletter",
+                                        "repost"}
+
+
+def test_card_markers_name_a_format_only_when_they_agree():
+    """The contract for the card reader's markers (wiring is Track 1's region; see the record)."""
+    import post_format
+    assert post_format.from_markers(["document"]) == "document"
+    assert post_format.from_markers(["image", "image"]) == "image"
+    assert post_format.from_markers(["image", "video"]) == "unknown", "two markers that disagree say nothing"
+    assert post_format.from_markers([]) == "unknown"
+    assert post_format.from_markers(["sparkles"]) == "unknown"
+    assert post_format.from_markers(None) == "unknown"
+
+
+SHARES = "Date,ShareLink,ShareCommentary,SharedUrl,MediaUrl,Visibility\n"
+
+
+def _snow(moment, salt):
+    return (int(moment.timestamp() * 1000) << 22) | (salt & ((1 << 22) - 1))
+
+
+def _share(moment, salt, text="", shared="", media="", kind="share"):
+    link = f"https://www.linkedin.com/feed/update/urn%3Ali%3A{kind}%3A{_snow(moment, salt)}"
+    quoted = '"' + text.replace('"', '""') + '"' if text else ""
+    return f"{moment.strftime('%Y-%m-%d %H:%M:%S')},{link},{quoted},{shared},{media},MEMBER_NETWORK\n"
+
+
+def _import_shares(client, shares):
+    import io
+    import zipfile
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("Shares.csv", SHARES + shares)
+    uploaded = client.post("/api/v1/archive/upload", content=buffer.getvalue(), headers={
+        "Content-Type": "application/zip", "X-Archive-Name": "Complete_LinkedInDataExport_10-19-2026.zip"})
+    assert uploaded.status_code == 200, uploaded.text
+    done = client.post("/api/v1/archive/import", json={"source": uploaded.json()["source"], "include": ["posts"],
+                                                       "confirm_owner": True})
+    assert done.status_code == 200, done.text
+    return done.json()
+
+
+def test_an_archive_import_records_each_posts_format(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    from datetime import datetime as dt_
+    days = [dt_(2024, 3, d, 9, 0, tzinfo=timezone.utc) for d in (4, 5, 6, 7)]
+    # A post the bridge already holds, under its activity id, as the archive's twin by id and time.
+    bridge = f"urn:li:activity:{_snow(days[3], 4242)}"
+    conn = _db()
+    with conn:
+        conn.execute("INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, reactions, "
+                     "first_seen_at, last_seen_at) VALUES (?, NULL, ?, 'urn_decode', 3, 'x', 'x')",
+                     (bridge, days[3].isoformat()))
+    conn.close()
+    _import_shares(client, "".join((
+        _share(days[0], 1, text="A photo from the offsite", media="https://media.licdn.com/dms/image/sample/1"),
+        _share(days[1], 2, text="Our pricing deck", media="https://media.licdn.com/dms/document/pdf/v2/deck.pdf"),
+        _share(days[2], 3, text="Just words, or a poll: the archive cannot say"),
+        _share(days[3], 4242, media="https://media.licdn.com/dms/image/sample/2", kind="ugcPost"),
+    )))
+    conn = _db()
+    try:
+        formats = {r["text"]: r["format"] for r in conn.execute("SELECT text, format FROM own_posts")}
+        assert formats["A photo from the offsite"] == "image"
+        assert formats["Our pricing deck"] == "document"
+        assert formats["Just words, or a poll: the archive cannot say"] == "unknown"
+        assert conn.execute("SELECT format FROM own_posts WHERE activity_urn = ?", (bridge,)).fetchone()[0] == "image"
+        # A known format is never overwritten by a later, vaguer read.
+        with conn:
+            conn.execute("UPDATE own_posts SET format = 'video' WHERE activity_urn = ?", (bridge,))
+    finally:
+        conn.close()
+    _import_shares(client, _share(days[3], 4242, media="https://media.licdn.com/dms/image/sample/2", kind="ugcPost"))
+    conn = _db()
+    try:
+        assert conn.execute("SELECT format FROM own_posts WHERE activity_urn = ?", (bridge,)).fetchone()[0] == "video"
+    finally:
+        conn.close()
+    assert client.get(f"/api/v1/insights/posts/{bridge}").json()["format"] == "video"
+
+
+def _formatted_posts(groups):
+    """Settled posts with reactions read, `groups` maps a format to (count, reactions each)."""
+    conn = _db()
+    n = 0
+    with conn:
+        for fmt, (count, reactions) in groups.items():
+            for _ in range(count):
+                published = NOW - timedelta(days=30 + n)
+                urn = f"urn:li:activity:{7400000000000000000 + n}"
+                conn.execute(
+                    "INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, reactions, "
+                    "first_seen_at, last_seen_at, format) VALUES (?, ?, ?, 'activity', ?, ?, ?, ?)",
+                    (urn, None if fmt == "image" else f"post {n}", published.isoformat(), reactions,
+                     published.isoformat(), published.isoformat(), fmt))
+                n += 1
+    conn.close()
+
+
+def test_format_comparisons_run_through_the_contrast_engine_with_its_abstentions(home):
+    import contrast_engine
+    import results
+    _formatted_posts({"image": (10, 90), "document": (9, 30), "video": (5, 30), "unknown": (6, 500)})
+    out = contrast_engine.compute_all_contrasts()
+    by_format = {c["format"]: c for c in out["format_contrasts"]}
+    assert set(by_format) == set(contrast_engine.post_format.FORMATS)
+    image = by_format["image"]
+    # Image posts against every other known format; the six unknown posts are on neither side.
+    assert (image["n_with"], image["n_without"], image["n_unknown"]) == (10, 14, 6)
+    assert image["status"] == "conclusive" and image["ratio"] == 3.0
+    assert image["difference"]["verdict"] == "more" and image["min_required"] == results.MIN_PER_SIDE
+    # Captionless image posts count: the seven text features skip posts with no text, formats do not.
+    video = by_format["video"]
+    assert video["status"] == "not_enough_data" and video["difference"]["verdict"] == "too_few_posts"
+    assert by_format["poll"]["n_with"] == 0 and by_format["poll"]["status"] == "not_enough_data"
+    assert out["format_coverage"] == {"settled_posts": 30, "format_known": 24, "format_unknown": 6,
+                                      "by_format": {"image": 10, "document": 9, "video": 5}}
+    # The seven text features are untouched by the format comparisons.
+    assert [c["key"] for c in out["contrasts"]] == [key for key, _label, _test in results.BINARY_FEATURES]
+
+
+def test_format_comparisons_flag_different_periods(home):
+    import contrast_engine
+    conn = _db()
+    with conn:
+        for n in range(20):
+            # Image posts two years before the others: the difference may be about when, not how.
+            days_old = 30 + n + (730 if n < 10 else 0)
+            published = NOW - timedelta(days=days_old)
+            conn.execute(
+                "INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, reactions, "
+                "first_seen_at, last_seen_at, format) VALUES (?, 'p', ?, 'activity', ?, ?, ?, ?)",
+                (f"urn:li:activity:{7500000000000000000 + n}", published.isoformat(), 90 if n < 10 else 30,
+                 published.isoformat(), published.isoformat(), "image" if n < 10 else "document"))
+    conn.close()
+    image = next(c for c in contrast_engine.compute_all_contrasts()["format_contrasts"] if c["format"] == "image")
+    assert image["status"] == "different_period" and image["difference"]["notable"] is False
