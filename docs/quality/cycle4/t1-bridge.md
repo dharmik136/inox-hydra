@@ -12,10 +12,11 @@ row. Line numbers are at the branch head this record was committed with.
 | Guards falsified | 21 planted faults, each seen failing and then passing with the fault removed; one guard was vacuous at first and was rebuilt |
 | Found by this track's own review | 13 defects after the first green runs, 1 of them a privacy defect; all fixed, listed below |
 | Defect found by track 3 on main | A post first found after migration 26 had no post; fixed in 43aadff, with four more found on the way |
-| Migration | One, numbered 28 in this branch: "Each reader says how long it took, the bridge says whether network reading is on, network reading keeps only your own posts, and every publication has its post again" |
+| Migration | One: "Each reader says how long it took, the bridge says whether network reading is on, network reading keeps only your own posts, and every publication has its post again". Numbered 32 since 2.8.0 merged in (2.8.0's ledger runs to 31), and 33 once track 4's takes 32 |
+| 2.8.0 merged in | 7b40aca, merging `main` at bc98deb (v2.8.0); the privacy policy applied (b811d80); the endpoint census 205 paths, 148 reached, 57 unreachable, unchanged |
 | Second round | The privacy defect, review findings S1, S2, S3 and S7, and the sections report's row 5 (Voyager drift), each with a failing test first and its own commit; S4, S5, S6, S8, S9 and the eighteen notes deferred by the coordinator, listed below |
 | Interface audit | Setup and Today, dark and light: 8 screens, 0 blocking findings |
-| Suite, as CI runs it | 3,255 passed, 17 skipped, 0 failed at 8a3175d; the runs before it are in the last section |
+| Suite, as CI runs it | 3,744 passed, 18 skipped, 0 failed at 80f03fe, after 2.8.0 merged in; the runs before it are in the last section |
 
 | Item | State | Commits | Review |
 |---|---|---|---|
@@ -696,6 +697,67 @@ The coordinator trimmed the round to capability. Each of these is left as the re
 - N17: a post analytics reading with NULL `age_hours` never satisfies the day-7 rule.
 - N18: the early-render drift also flashes the badge orange on an ordinary page load.
 
+## 2.8.0 merged in, for 2.9.0
+
+`main` at bc98deb (2.8.0, the same commit as `qc4/release-2.8.0`) is merged into this branch in
+7b40aca. Every addition from both sides is kept.
+
+| File | How it was resolved |
+| --- | --- |
+| `studio/backend/migrations.py` | Rebuilt from 2.8.0's file, whose ledger runs to 31, plus this track's whole migration function and its entry |
+| `studio/extension/manifest.json` | `own_insights.js` joins the content scripts; `content.css` stays removed, since S7 left no toast to style |
+| `studio/backend/today.py` | After the first-hours reading, track 6's request from the phone, then this track's cadence asks, then the latest post |
+| `studio/backend/archive_import.py` | The post rule (`post_identity.ensure_post`) and the post's format record (`post_format.record`) both run, for a matching row and a new one |
+| `studio/backend/docs_engine.py` | Every track's record is listed |
+| `read-your-analytics.md`, `why-is-my-analytics-chart-empty.md` | The side panel as the place for notices, with 2.8.0's words for a reading over a window |
+| `onboarding.py`, `app.py`, `background.js`, `own_pages.js`, `api.ts`, `OnboardingSurface.tsx`, `universal_search.py` | Merged without a conflict, and checked: the post analytics ingest keeps its demographics and the post rule, the own posts ingest its own reposts and the binding, and forgetting the creator removes 2.8.0's tables and this track's reconstructions |
+
+The migration's number. The instruction was 33, with track 4's to be 32. The schema version is
+the baseline plus the number of entries in the ledger (`SCHEMA_VERSION = BASELINE_VERSION +
+len(MIGRATIONS)`), so a ledger ending 30, 31, 33 has a schema version of 32 while its last
+migration stamps 33. Measured on a throwaway install, the first start stamped the database 33 and
+the second refused it: "This database is at schema version 33, but this build only understands up
+to 32". So it is 32 in this branch. When track 4's migration takes 32, this one becomes 33 by its
+number in the ledger and the first line of its docstring, nothing else: every test finds it by its
+function, its name or its columns.
+
+What the merge needed besides its conflicts:
+
+- Two of this track's upgrade tests asserted the migration's number, against the rule. They find
+  it by its function now, and still upgrade a database from 2.7.0's schema, through 2.8.0's four
+  migrations and this one (7b40aca).
+- The page-marks guard counted a detached `cloneNode` as drawing into the page. `own_insights.js`
+  reads a repost's own figures from a copy that never enters the page, so a copy no longer counts;
+  the guard reads `own_insights.js` as it reads every content script, and it draws nothing
+  (7b40aca).
+- Track 3's defence for a post with no studio row
+  (`tests/test_qc4_t3_engagers_without_a_studio_row.py`) built that state through the ingest
+  route, which now gives every publication its post. The test builds it directly, as a database
+  from before the fix holds it (7b40aca).
+- Track 6's test that its rule is what surfaces a request, and its Today screen test, now read the
+  Activity page in their fixtures, so the weekly ask that sits between the phone's request and the
+  latest post has nothing to ask (7b40aca).
+- `/api/analytics/page-figures`, which 2.8.0 added to the worker's relay for track 5's account and
+  content pages, was not kept for a busy studio, not counted on the badge, and had no words in the
+  panel or the popup. It is all three now, and a guard classifies every path a page may relay as
+  kept, counted and named, or as bookkeeping; it failed on the merged tree first (808f8f6).
+- This track's docstrings called its migration "migration 28", which is track 5's in 2.8.0; they
+  name the function now (78d7a22).
+
+The privacy policy, handed to this track for 2.9.0, is applied in b811d80, with
+`release/privacy.html` rebuilt by `tools/build_privacy_page.py` (`--check` passes): network reading
+copies feed updates and creator analytics only, keeps the creator's own posts' figures and the
+follower count, and does not copy profiles, reactions or comments, which the studio refuses; the
+request log keeps an address cut before any part that names a member, and each page's counts keep
+an address only as words from the fixed list, a query name only in LinkedIn's form; and the
+browser's storage lists the last capture's record, this session's count per tab, when network
+reading last stored something, and, until the browser closes, the drift notice and the page notice
+that S7 moved into the side panel. The record listed four browser items; the fifth is S7's notice.
+
+The endpoint census, measured on the merged tree with `tests/test_endpoint_reachability.py`: 205
+API paths, 148 reached by the interface, 57 unreachable, the same as 2.8.0. This track adds no
+path; 80f03fe records the measurement in the test's ledger.
+
 ## Guards that already existed and held
 
 Five existing guards caught a draft of this work, and the code was changed to satisfy each:
@@ -729,16 +791,10 @@ Five existing guards caught a draft of this work, and the code was changed to sa
 
 ## For the coordinator
 
-- The privacy policy (`docs/PRIVACY_POLICY.md`, tracks 6 and 7) lists what the extension keeps
-  "In the browser". This track adds four keys, none holding anyone's name, and the policy should
-  say so before release. Suggested words, after "so that your own activity is not lost": "; a
-  record of the last capture, saying what kind of thing it was, when, what Inox Hydra answered and
-  which tab it came from, never who; this session's count of captures per tab; and, until the
-  browser closes, the last notice that a part of the capture could not read a page, naming the
-  part, the kind of page and the fields." While network reading is on, the heartbeat also carries
-  counts of LinkedIn's data calls by the words of their address, from a fixed list of the words
-  LinkedIn's API uses, every other part written as a blank, and by GraphQL query name or "other"; they are kept with the heartbeat log on this
-  computer for its seven days.
+- The privacy policy is applied in b811d80 (see the merge section); the words this section used
+  to propose are in it, with S7's page notice added.
+- At integration, after track 4's migration takes 32, this track's becomes 33: its number in the
+  ledger and the first line of its docstring.
 - `studio/backend/docs_engine.py` files every document under `docs/` in a help section, and each
   track's record needs the same one-line addition beside `quality/CYCLE3_REGISTER.md`; this
   branch adds `quality/cycle4/t1-bridge.md`. A prefix rule for `quality/cycle4/` at integration
@@ -786,6 +842,7 @@ Five existing guards caught a draft of this work, and the code was changed to sa
 | Final, at 1a9c606 | 3,199 | 17 | 0 |
 | After the defect track 3 found, at 55a6c37 | 3,214 | 17 | 0 |
 | Second round, at 8a3175d | 3,255 | 17 | 0 |
+| 2.8.0 merged in, at 80f03fe | 3,744 | 18 | 0 |
 
 The 17 skips are the suite's own and none is in this track's modules: Windows and macOS
 primitives (the tray, autostart, the mutex, Job Objects, the Keychain, LaunchAgent), a desktop
@@ -793,4 +850,8 @@ with browsers installed, one interface state the suite marks as current, and `py
 interpreter does not have. The second round's run was at 8a3175d; two commits came after it, a
 one-line comment correction in `content.js` (checked with the three modules that read that file's
 network-reading code) and this record's update (checked with `tests/test_docs_library.py` and
-`tests/test_phase4_algorithmic_safety.py`).
+`tests/test_phase4_algorithmic_safety.py`). The run after 2.8.0 merged in was at 80f03fe; its
+eighteenth skip is a retention test that does not run while the two hours before now cross
+midnight, as they did when it ran at 00:20, and none of the eighteen is in this track's modules.
+This record's update for the merge came after that run, and was checked with the same two
+modules.
