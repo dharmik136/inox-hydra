@@ -1747,6 +1747,8 @@ export interface BridgeStatus {
   seconds_ago: number | null;
   extension_version: string | null;
   page_kind: string | null;
+  /** null until a heartbeat has carried the state: not measured, never off. */
+  network_reading: NetworkReadingState | null;
 }
 
 export interface IdentityCandidate {
@@ -1800,7 +1802,31 @@ export interface CaptureHealth {
   last_good_at: string | null;
   /** Required fields the latest run could not read on a page that had them. */
   drift: string[];
-  state: "never_run" | "working" | "drifting";
+  /** Why the studio refused the latest run, when it did ("identity"). */
+  refused: string | null;
+  state: "never_run" | "working" | "read_nothing" | "drifting" | "refused";
+  /** The reader's own timing on its latest run; null is not measured. */
+  duration_ms: number | null;
+  reads: number | null;
+  slow_reads: number | null;
+  long_tasks: number | null;
+  long_task_ms: number | null;
+}
+
+/** The three honest states of network reading, as the last heartbeat reported them. */
+export interface NetworkReadingState {
+  state: "off" | "seeing" | "matching_nothing";
+  sentence: string;
+  switch: boolean;
+  registered: boolean | null;
+  injected: boolean | null;
+  voyager_calls_seen: number | null;
+  matched: number | null;
+  captured: number | null;
+  last_capture_at: string | null;
+  reported_at: string;
+  reported_by: string | null;
+  voyager_calls: Record<string, number> | null;
 }
 
 // ---------------------------------------------------------------------------

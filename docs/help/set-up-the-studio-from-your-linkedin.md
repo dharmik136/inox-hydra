@@ -97,11 +97,12 @@ When every step is ticked, a line under step 5 says Setup is done, with a **Go t
 
 ## Check the capture is still working
 
-The extension reads LinkedIn's pages, and LinkedIn changes how they are built without notice. When a part of the capture stops matching, it finds nothing and says nothing, which looks exactly like nobody engaging. Setup shows whether each of these seven parts is still working, under **CAPTURE HEALTH**:
+The extension reads LinkedIn's pages, and LinkedIn changes how they are built without notice. When a part of the capture stops matching, it finds nothing and says nothing, which looks exactly like nobody engaging. Setup shows whether each of these eight parts is still working, under **CAPTURE HEALTH**:
 
 | Part | What it reads |
 | --- | --- |
 | Comments and reactions on your posts | The people who become leads |
+| Post ids on feed cards | Which post each commenter or reactor belongs to, copied from the card onto the page |
 | Your profile | Your name and details, for step 3 |
 | Your posts | The **Posts you wrote** import |
 | Your comments | The **Comments you left** import |
@@ -109,13 +110,15 @@ The extension reads LinkedIn's pages, and LinkedIn changes how they are built wi
 | Creator analytics | The figures in **Analytics** |
 | Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends. Only your recorded posts are read |
 
-Network reading is off unless you turn it on in the extension's popup. If you do, two more parts appear here once they have run: **Network reading: your posts' figures** and **Network reading: creator analytics**. They are not listed while network reading has not run, because opening a page cannot start them.
+Network reading is off unless you turn it on in the extension's popup. While it is on, and once any of them has run, five more parts are listed: **Network reading: your posts' figures**, **Network reading: creator analytics**, **Network reading: profiles**, **Network reading: reactions on posts** and **Network reading: comments on posts**. They are not listed while the switch is off and none has run, because opening a page cannot start them. Step 1 says which of three states network reading is in: "Network reading is off.", "Network reading is on and seeing N LinkedIn data calls, K matched." or "Network reading is on and matching nothing", with the count of data calls the last page made. The same sentence is in the extension's side panel, under **Health**.
 
-Each part shows one of three states:
+Each part shows one of five states:
 
 - **NOT SEEN YET**, with a grey dot: the extension has not run that part in the last week. Open the matching LinkedIn page in the bridge browser.
 - **WORKING, LAST READ** and a date and time, with a green dot.
+- **READ NOTHING, LAST RUN** and a date and time, with a grey dot: the part ran and found nothing to read, which is an empty page or a page it no longer recognises. **LAST WORKED** and a date follow when it has worked before.
 - **CANNOT READ** and what it cannot read, for example `CANNOT READ NAME`, with an orange dot, and **LAST WORKED** and a date when it has worked before. The page was found, but the fields it needs could not be read.
+- **REFUSED: IDENTITY**, with an orange dot: the part ran, and the studio refused what it read because the LinkedIn account signed in to the bridge browser is not the profile confirmed in step 2, or has not been noted yet. Open your own profile in that browser once, and check that it is the account you confirmed.
 
 When a part is orange, Setup adds: "A part marked in orange found the page but could not read it, which usually means LinkedIn has changed how the page is built. Nothing from that part is being captured until the extension is updated." There is nothing to fix on your side. Keep the studio up to date; see [After an update, reload the browser extension](after-an-update-reload-the-extension.md).
 

@@ -364,8 +364,8 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
                   className={cn(
                     "size-1.5 rounded-full",
                     entry.state === "working" && "bg-signal-green",
-                    entry.state === "drifting" && "bg-signal-orange",
-                    entry.state === "never_run" && "bg-edge-strong",
+                    (entry.state === "drifting" || entry.state === "refused") && "bg-signal-orange",
+                    (entry.state === "never_run" || entry.state === "read_nothing") && "bg-edge-strong",
                   )}
                 />
                 {entry.label}
@@ -373,7 +373,7 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
               <span
                 className={cn(
                   "studio-meta text-right text-[10px]",
-                  entry.state === "drifting" ? "text-signal-orange-text" : "text-ink-muted",
+                  entry.state === "drifting" || entry.state === "refused" ? "text-signal-orange-text" : "text-ink-muted",
                 )}
               >
                 {healthLine(entry)}
@@ -485,18 +485,29 @@ function counted(count: number, noun: string): string {
 
 function bridgeLine(state: OnboardingState): string {
   const { bridge } = state;
-  if (bridge.connected) return `Connected${bridge.extension_version ? `, extension ${bridge.extension_version}` : ""}`;
+  // The network-reading sentence is the studio's, from the last heartbeat
+  // that carried the state; an extension that has not reported it says
+  // nothing here rather than "off".
+  const reading = bridge.network_reading ? ` ${bridge.network_reading.sentence}` : "";
+  if (bridge.connected) {
+    return `Connected${bridge.extension_version ? `, extension ${bridge.extension_version}` : ""}.${reading}`;
+  }
   if (bridge.seconds_ago !== null) return `Last heard from ${ago(bridge.seconds_ago)}. Open a LinkedIn tab in the bridge browser.`;
   return "Not seen yet";
 }
 
 function healthLine(entry: CaptureHealth): string {
   if (entry.state === "never_run") return "NOT SEEN YET";
+  const since = entry.last_good_at ? `, LAST WORKED ${entry.last_good_at.slice(0, 10)}` : "";
+  const ran = (entry.last_run_at ?? "").slice(0, 16).replace("T", " ");
   if (entry.state === "drifting") {
-    const since = entry.last_good_at ? `, LAST WORKED ${entry.last_good_at.slice(0, 10)}` : "";
     return `CANNOT READ ${entry.drift.join(", ").toUpperCase().replace(/_/g, " ")}${since}`;
   }
-  return `WORKING, LAST READ ${(entry.last_run_at ?? "").slice(0, 16).replace("T", " ")}`;
+  // A run the studio refused, and a run that found nothing, are runs: they
+  // used to read WORKING (the sections report's capture_health row).
+  if (entry.state === "refused") return `REFUSED: ${(entry.refused ?? "").toUpperCase()}${since}`;
+  if (entry.state === "read_nothing") return `READ NOTHING, LAST RUN ${ran}${since}`;
+  return `WORKING, LAST READ ${ran}`;
 }
 
 function profileLine(identity: CreatorIdentity): string {
