@@ -1169,10 +1169,17 @@ export async function validateCadence(scheduledFor: string, postId?: string): Pr
   };
 }
 
-export async function schedulePost(postId: string, scheduledFor: string): Promise<void> {
+/**
+ * Puts a post in a slot. `expectedStatus` is the state the caller read the
+ * post in: given, the server moves the post only if it is still in that
+ * state at the moment of the write, and refuses with a sentence otherwise,
+ * so a stale screen cannot move a post queued since or requeue one published
+ * since. A published post is never requeued, whoever asks.
+ */
+export async function schedulePost(postId: string, scheduledFor: string, expectedStatus?: string): Promise<void> {
   await call(`/api/posts/${encodeURIComponent(postId)}/reschedule`, {
     method: "POST",
-    body: JSON.stringify({ scheduled_for: scheduledFor }),
+    body: JSON.stringify({ scheduled_for: scheduledFor, ...(expectedStatus ? { expected_status: expectedStatus } : {}) }),
   });
 }
 

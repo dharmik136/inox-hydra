@@ -36,7 +36,7 @@ Under them, **POSTS BY MONTH** draws one bar per month and says how many posts t
 
 To add a post, use **Publish** then **Queue it** on the Composer, or press **Queue the newest draft** under **Drafts waiting**.
 
-**Drafts waiting** says how many drafts you have saved and gives the first line of the newest. **Queue the newest draft** puts that one in the next slot the Queue offers, through the same check **Queue it** uses: the next of your slots at least 12 hours from your other posts, or, when none is, a time 24 hours ahead. The sentence under the heading says which time it chose, and when that time is inside your 12-hour cooldown. The drafts themselves are listed once, under **Drafts** in the Composer. If the count could not be read, the block says so instead of reporting no drafts.
+**Drafts waiting** says how many drafts you have saved and gives the first line of the newest. **Queue the newest draft** puts that one in the next slot the Queue offers, through the same check **Queue it** uses: the next of your slots at least 12 hours from your other posts, or, when none is, a time 24 hours ahead. The sentence under the heading says which time it chose, and when that time is inside your 12-hour cooldown. It moves the post only if it is still a draft at that moment: if it was queued or published since the screen last read it, the studio leaves it as it is, says so, and reads the block again. The drafts themselves are listed once, under **Drafts** in the Composer. If the count could not be read, the block says so instead of reporting no drafts.
 
 ## The 12-hour rule
 

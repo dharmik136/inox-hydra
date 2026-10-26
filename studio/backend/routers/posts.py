@@ -144,6 +144,12 @@ DRAFT_CHANGED_ELSEWHERE = "This draft was changed in another window"
 
 class ReschedulePayload(BaseModel):
     scheduled_for: str
+    # The state the caller read the post in. When given, the post is moved
+    # only if it is still in that state at the moment of the write: the
+    # Queue's Queue the newest draft sends "draft", so a screen that is up to
+    # 30 seconds stale cannot move a post queued since or requeue one
+    # published since (review round 2, S5).
+    expected_status: Optional[str] = Field(None, max_length=20)
 
 
 class FormatRequest(BaseModel):
@@ -393,7 +399,35 @@ def reschedule_post(post_id: str, payload: ReschedulePayload):
             raise HTTPException(status_code=400, detail=cadence_val["error"])
 
         normalized_sched = normalize_datetime_to_utc_iso(payload.scheduled_for) or payload.scheduled_for
-        cursor.execute("UPDATE posts SET scheduled_for = ?, status = 'scheduled' WHERE id = ?", (normalized_sched, post_id))
+        # One conditional UPDATE, not the read above and then a write: the
+        # post moves only if, at this moment, it is in the state the caller
+        # expects, and a published or sent post is never put back in the
+        # queue, whoever asks. It used to set any post to scheduled, so a
+        # stale screen could requeue a post already published, which then
+        # came due and asked to be posted a second time.
+        if payload.expected_status:
+            cursor.execute(
+                "UPDATE posts SET scheduled_for = ?, status = 'scheduled' WHERE id = ? AND status = ?",
+                (normalized_sched, post_id, payload.expected_status))
+        else:
+            cursor.execute(
+                "UPDATE posts SET scheduled_for = ?, status = 'scheduled' "
+                "WHERE id = ? AND status NOT IN ('published', 'sent')",
+                (normalized_sched, post_id))
+        if cursor.rowcount == 0:
+            conn.rollback()
+            now = conn.execute("SELECT status FROM posts WHERE id = ?", (post_id,)).fetchone()
+            status_now = now["status"] if now else None
+            if status_now is None:
+                detail = "This post was removed since this screen read it, so nothing was moved."
+            elif payload.expected_status == "draft":
+                became = "published" if status_now in ("published", "sent") else "queued"
+                detail = f"It is no longer a draft: it was {became} since this screen read it, so it was left as it is."
+            elif status_now in ("published", "sent"):
+                detail = "This post is already published, so it was not put back in the queue."
+            else:
+                detail = f"This post is no longer {payload.expected_status}, so it was left as it is."
+            raise HTTPException(status_code=409, detail=detail)
         conn.commit()
     finally:
         conn.close()

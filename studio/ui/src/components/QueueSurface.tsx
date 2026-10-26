@@ -215,13 +215,18 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
         setDraftNote("There is no slot to put it in. Add one under Weekly slots, and it can be queued.");
         return;
       }
-      await schedulePost(draft.id, slot.slot_datetime);
+      // Moved only if it is still a draft when the server writes: this block
+      // can be up to 30 seconds old, and the post may have been queued or
+      // published since (review round 2, S5).
+      await schedulePost(draft.id, slot.slot_datetime, "draft");
       await load();
       setDraftNote(
         `Queued for ${formatLocal(slot.slot_datetime)}${slot.cooldown_satisfied ? "" : ", which is inside your 12 hour cooldown"}.`,
       );
     } catch (error) {
       setDraftNote(error instanceof Error ? error.message : "The studio refused to queue it.");
+      // What the server refused on is what the screen shows next.
+      await load();
     } finally {
       setQueueing(null);
     }
