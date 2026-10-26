@@ -352,6 +352,8 @@ def _phone_request_rule(conn) -> Optional[Dict[str, Any]]:
     in front of the latest-post rule for good. A post the studio does not
     hold is answered with the same refusal the reading would meet.
     """
+    if not desk_requests.open_count(conn):
+        return None
     desk_requests.settle(conn)
     request = desk_requests.oldest_open(conn)
     if not request:

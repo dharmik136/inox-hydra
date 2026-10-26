@@ -314,3 +314,33 @@ def test_the_analytics_url_is_the_one_the_latest_post_rule_builds():
     urn = urn_days_ago(2, 23)
     assert desk_requests.analytics_url(urn) == f"https://www.linkedin.com/analytics/post-summary/{urn}/"
     assert desk_requests.analytics_url("local:draft-1") is None
+
+
+@pytest.mark.parametrize("host", ["www.linkedin.com", "m.linkedin.com", "uk.linkedin.com", "linkedin.com"])
+def test_a_post_link_from_any_linkedin_host_names_the_post(host):
+    urn = urn_days_ago(2, 30)
+    parsed = IngressMessageParser.parse_message(f"https://{host}/feed/update/{urn}/")
+    assert parsed["read_request"] and parsed["read_request"]["activity_urn"] == urn
+
+
+def test_with_nothing_asked_today_writes_nothing_for_the_phone(monkeypatch):
+    """Today refreshes every half minute; the phone's rule reads, and writes only when there is a request."""
+    _ready_to_open()
+    _posts(urn_days_ago(1, 31))
+    called = []
+    monkeypatch.setattr(desk_requests, "settle", lambda conn, now=None: called.append(True) or {})
+    assert client.get("/api/v1/today").status_code == 200
+    assert called == [], "the phone's rule settled requests when none was asked"
+
+
+def test_settling_with_nothing_to_close_issues_no_write():
+    conn = get_db()
+    desk_requests.record(conn, urn_days_ago(2, 32))
+    statements = []
+    conn.set_trace_callback(statements.append)
+    try:
+        desk_requests.settle(conn)
+    finally:
+        conn.set_trace_callback(None)
+        conn.close()
+    assert not [s for s in statements if s.lstrip().upper().startswith(("UPDATE", "INSERT", "DELETE", "BEGIN"))], statements

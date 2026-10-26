@@ -62,7 +62,7 @@ NOT_YET_TESTED = ("This has not yet been tested against the real Telegram servic
 # writes /feed/update/urn:li:activity:<id>/. post_identity.extract_activity_urn
 # reads both. An lnkd.in short link names nothing the studio can resolve
 # without fetching it, which it will not do, so it stays ordinary text.
-LINKEDIN_URL = re.compile(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/[^\s<>\"']+", re.IGNORECASE)
+LINKEDIN_URL = re.compile(r"https?://(?:[a-z]{1,3}\.)?linkedin\.com/[^\s<>\"']+", re.IGNORECASE)
 
 MAX_UPDATE_ATTEMPTS = 3
 

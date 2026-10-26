@@ -101,30 +101,36 @@ def settle(conn, now: Optional[datetime] = None) -> Dict[str, int]:
     made: an observation under source 'post_analytics' with observed_at past
     asked_at. Expired when asked more than REQUEST_TTL ago, with a note that
     says so, so the row still tells the story.
+
+    Found by reading first and written only when there is something to
+    close, because Today asks on every refresh, and a write there would take
+    the database's write lock on a read path the captures contend with.
     """
     moment = now or _now()
     stamp = moment.isoformat()
-    with conn:
-        read = conn.execute(
-            """
-            UPDATE desk_requests SET done_at = (
-                SELECT MIN(o.observed_at) FROM post_metric_observations o
-                WHERE o.activity_urn = desk_requests.activity_urn AND o.source = 'post_analytics'
-                  AND o.observed_at > desk_requests.asked_at
-            )
-            WHERE done_at IS NULL AND EXISTS (
-                SELECT 1 FROM post_metric_observations o
-                WHERE o.activity_urn = desk_requests.activity_urn AND o.source = 'post_analytics'
-                  AND o.observed_at > desk_requests.asked_at
-            )
-            """
-        ).rowcount
-        expired = conn.execute(
-            "UPDATE desk_requests SET done_at = ?, note = CASE WHEN note IS NULL OR note = '' THEN ? "
-            "ELSE note || ' ' || ? END WHERE done_at IS NULL AND asked_at < ?",
-            (stamp, EXPIRED_NOTE, EXPIRED_NOTE, (moment - REQUEST_TTL).isoformat()),
-        ).rowcount
-    return {"read": read, "expired": expired}
+    read = conn.execute(
+        """
+        SELECT d.id AS id, MIN(o.observed_at) AS read_at
+        FROM desk_requests d JOIN post_metric_observations o
+          ON o.activity_urn = d.activity_urn AND o.source = 'post_analytics' AND o.observed_at > d.asked_at
+        WHERE d.done_at IS NULL
+        GROUP BY d.id
+        """).fetchall()
+    read_ids = {row["id"] for row in read}
+    expired = [row["id"] for row in conn.execute(
+        "SELECT id FROM desk_requests WHERE done_at IS NULL AND asked_at < ?",
+        ((moment - REQUEST_TTL).isoformat(),)) if row["id"] not in read_ids]
+    if read or expired:
+        with conn:
+            for row in read:
+                conn.execute("UPDATE desk_requests SET done_at = ? WHERE id = ? AND done_at IS NULL",
+                             (row["read_at"], row["id"]))
+            for request_id in expired:
+                conn.execute(
+                    "UPDATE desk_requests SET done_at = ?, note = CASE WHEN note IS NULL OR note = '' THEN ? "
+                    "ELSE note || ' ' || ? END WHERE id = ? AND done_at IS NULL",
+                    (stamp, EXPIRED_NOTE, EXPIRED_NOTE, request_id))
+    return {"read": len(read), "expired": len(expired)}
 
 
 def oldest_open(conn) -> Optional[Dict[str, Any]]:
