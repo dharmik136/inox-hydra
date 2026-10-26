@@ -269,3 +269,99 @@ def test_startup_finds_the_bot_in_the_first_profile_that_has_one(studio, monkeyp
     import paths
     assert ingress.ingress_daemon.profile_id == paths.DEFAULT_PROFILE_ID
     assert started == [True]
+
+
+# ---------------------------------------------------------------------------
+# Review round, SF-3: a new bot is polled from its own beginning
+# ---------------------------------------------------------------------------
+
+BOT_A = "111111:" + "A" * 35
+BOT_B = "222222:" + "B" * 35
+
+
+class _Answer:
+    status_code = 200
+
+    def __init__(self, result):
+        self._result = result
+
+    def json(self):
+        return {"ok": True, "result": self._result}
+
+
+def _fake_telegram(monkeypatch, answers, calls, during=None):
+    """getUpdates answered from a list, nothing on the network; `during` runs while a request waits."""
+    def fake_get(url, params=None, timeout=None):
+        calls.append((url.split("/bot", 1)[1].split("/", 1)[0], dict(params or {})))
+        if during:
+            during(len(calls))
+        return _Answer(answers.pop(0) if answers else [])
+    monkeypatch.setattr(ingress.requests, "get", fake_get)
+    monkeypatch.setattr(ingress._egress, "require", lambda url, category: None)
+
+
+def test_a_new_bot_is_polled_from_its_own_beginning(monkeypatch):
+    """
+    The reviewer's case. Update ids are per bot, and Telegram treats every
+    update below the offset as confirmed. Bot A had reached update
+    900,000,000; carried over, that offset confirmed bot B's queue unread.
+    """
+    daemon = ingress.TelegramIngressDaemon(bot_token=BOT_A, authorized_chat_id=CHAT)
+    calls = []
+    _fake_telegram(monkeypatch, [[{"update_id": 900000000, "message": {"chat": {"id": 999}, "text": "x"}}]], calls)
+    daemon.poll_once()
+    assert daemon.last_update_id == 900000000
+    daemon.configure(BOT_B, CHAT, origin="settings", profile_id="default")
+    daemon.poll_once()
+    assert calls[-1] == ("222222:" + "B" * 35, {"offset": 1, "timeout": 30}), (
+        "the new bot was asked from the old bot's offset, which confirms its pending messages unread")
+
+
+def test_the_same_bot_saved_again_keeps_its_place(monkeypatch):
+    daemon = ingress.TelegramIngressDaemon(bot_token=BOT_A, authorized_chat_id=CHAT)
+    daemon.last_update_id = 41
+    daemon.configure(BOT_A, CHAT, origin="settings", profile_id="default")
+    assert daemon.last_update_id == 41
+
+
+def test_an_answer_for_a_bot_replaced_while_it_waited_is_neither_read_nor_confirmed(monkeypatch):
+    """A long poll waits up to 30 seconds; if the bot changes meanwhile, its answer is the old bot's."""
+    daemon = ingress.TelegramIngressDaemon(bot_token=BOT_A, authorized_chat_id=CHAT)
+    calls = []
+    handled = []
+    monkeypatch.setattr(daemon, "process_incoming_update", lambda update, from_telegram=True: handled.append(update))
+    _fake_telegram(monkeypatch, [[{"update_id": 77, "message": {"chat": {"id": int(CHAT)}, "text": "Idea: x"}}]],
+                   calls, during=lambda n: daemon.configure(BOT_B, CHAT, origin="settings", profile_id="default"))
+    assert daemon.poll_once() == []
+    assert handled == [], "the old bot's message was handled under the new bot's settings"
+    assert daemon.last_update_id == 0, "the old bot's message was confirmed under the new bot's offset"
+
+
+def test_restarting_the_worker_leaves_one_thread_polling(monkeypatch):
+    """
+    Note N-6: a poll waiting on Telegram outlived stop_worker's join, and a
+    start right after cleared the shared stop flag, so the old loop carried
+    on beside the new one, and Telegram answers two pollers with 409.
+    """
+    import threading
+    import time
+
+    release = threading.Event()
+    daemon = ingress.TelegramIngressDaemon(bot_token=BOT_A, authorized_chat_id=CHAT)
+    monkeypatch.setattr(daemon, "STOP_JOIN_SECONDS", 0.05)
+    monkeypatch.setattr(daemon, "poll_once", lambda: release.wait(5))
+    monkeypatch.setattr(daemon, "calculate_next_poll_interval", lambda has_error=False: 0.01)
+    daemon.start_worker()
+    first = daemon._thread
+    time.sleep(0.05)
+    daemon.stop_worker()
+    daemon.start_worker()
+    second = daemon._thread
+    release.set()
+    first.join(2)
+    try:
+        assert not first.is_alive(), "the first loop is still polling beside the second"
+        assert second.is_alive()
+    finally:
+        daemon.stop_worker()
+        second.join(2)

@@ -206,6 +206,11 @@ class IngressMessageParser:
 class TelegramIngressDaemon:
     """Outbound long-polling worker for Telegram Bot API with zero open ports."""
 
+    # How long stop_worker waits for the loop to finish. A poll can be waiting
+    # on Telegram for up to 30 seconds, so the loop is told to stop rather
+    # than waited for, and a loop that outlives this wait stops after its poll.
+    STOP_JOIN_SECONDS = 3.0
+
     def __init__(
         self,
         bot_token: Optional[str] = None,
@@ -258,7 +263,14 @@ class TelegramIngressDaemon:
         change without a restart; the error ladder starts again, because the
         old errors were the old bot's.
         """
-        self.bot_token = bot_token or ""
+        token = bot_token or ""
+        if token != self.bot_token:
+            # Update ids are each bot's own, and Telegram treats every update
+            # below the offset as confirmed. Carried from one bot to another,
+            # the old offset confirmed the new bot's waiting messages unread.
+            self.last_update_id = 0
+            self._failed_updates = {}
+        self.bot_token = token
         self.authorized_chat_id = authorized_chat_id or ""
         self.configured_from = origin if self.bot_token else None
         self.profile_id = profile_id if self.bot_token else None
@@ -483,7 +495,8 @@ class TelegramIngressDaemon:
         if not self.bot_token:
             return []
 
-        url = f"https://api.telegram.org/bot{self.bot_token}/getUpdates"
+        token = self.bot_token
+        url = f"https://api.telegram.org/bot{token}/getUpdates"
         params = {
             "offset": self.last_update_id + 1,
             "timeout": 30,
@@ -496,6 +509,12 @@ class TelegramIngressDaemon:
             # Refuses rather than connecting when this category is off. See egress.py.
             _egress.require(url, "ingress")
             res = requests.get(url, params=params, timeout=35)
+            if token != self.bot_token:
+                # The bot changed while this request waited on Telegram. The
+                # answer is the old bot's: nothing in it is handled under the
+                # new bot's settings, and nothing is confirmed, so the old
+                # bot's messages wait with Telegram for its next poll.
+                return []
             if res.status_code == 200:
                 data = res.json()
                 if data.get("ok"):
@@ -603,12 +622,16 @@ class TelegramIngressDaemon:
         if self.is_running:
             return
         self.is_running = True
-        self._stop_event.clear()
+        # Each loop has its own stop flag. A loop still waiting on Telegram
+        # when it was stopped used to find the shared flag cleared by the
+        # next start, and polled on beside the new loop.
+        stop = threading.Event()
+        self._stop_event = stop
 
         def _loop():
-            while self.is_running and not self._stop_event.is_set():
+            while not stop.is_set():
                 if not self.bot_token:
-                    if self._stop_event.wait(30.0):
+                    if stop.wait(30.0):
                         break
                     continue
 
@@ -620,7 +643,7 @@ class TelegramIngressDaemon:
                     logger.error("Worker loop error: %s", self._redact(str(e)))
 
                 delay = self.calculate_next_poll_interval(has_error=has_err)
-                if self._stop_event.wait(delay):
+                if stop.wait(delay):
                     break
 
         self._thread = threading.Thread(target=_loop, daemon=True, name="TelegramIngressWorker")
@@ -631,7 +654,7 @@ class TelegramIngressDaemon:
         self.is_running = False
         self._stop_event.set()
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=3)
+            self._thread.join(timeout=self.STOP_JOIN_SECONDS)
 
 
 # Global singleton daemon
