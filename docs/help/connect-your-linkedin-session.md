@@ -7,6 +7,10 @@ Only **Send to LinkedIn** uses the session. It is the one control that hands a s
 
 The session is two LinkedIn cookies, `li_at` and `JSESSIONID`.
 
+## One profile only
+
+Syncing a session and **Send to LinkedIn** work in your first creator profile only. Each profile's session must come from that creator's own browser on that creator's own machine: LinkedIn's User Agreement bars using another person's account by "sharing log-in credentials or copying cookies", and the studio cannot tell whose browser a session came from. So in a second or later profile, **Sync LinkedIn Session** and **Save to vault** are refused with that sentence, nothing is stored, and the Publish dialog says the same in place of the button. A creator who wants to send from the studio runs it on their own machine, as their first profile. See [Where each feature stands with LinkedIn's terms](where-each-feature-stands-with-linkedins-terms.md).
+
 > [!CAUTION]
 > `li_at` is a full LinkedIn login. Anyone holding it can act as you. Paste it only into the studio, never into a chat, a document or a support request.
 

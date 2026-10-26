@@ -1865,10 +1865,14 @@ def receive_cookies(payload: CookiePayload):
     # load and every 15 minute alarm produced a request the creator never made.
     # The sync is still available on its own endpoint for anyone who opts into
     # egress deliberately.
-    linkedin_client.save_tokens(
+    saved = linkedin_client.save_tokens(
         payload.li_at, payload.JSESSIONID,
         account={"vanity": onboarding.normalise_vanity(payload.vanity or ""), "member_urn": payload.member_urn},
     )
+    if saved.get("status") == "refused":
+        # A creator profile beyond the first (decision D9). The detail is the
+        # sentence the popup and the Local security tab show, not a bare 409.
+        raise HTTPException(status_code=409, detail={"code": saved["code"], "message": saved["message"]})
     return {
         "status": "success",
         "message": "LinkedIn session tokens saved to local studio",
@@ -2401,6 +2405,11 @@ def send_readiness() -> Dict[str, Any]:
             "egress_allowed": egress_policy.allowed("linkedin"),
         }
 
+    # Decision D9, before everything: a creator profile beyond the first
+    # cannot send, whatever session it holds, and the reason is a sentence.
+    refusal = accounts.profile_refusal("send_to_linkedin")
+    if refusal:
+        return verdict("not_first_profile", refusal)
     if not linkedin_client.is_authenticated():
         return verdict("no_session", (
             "Nothing can be sent: this studio has no saved LinkedIn session. In the browser where you "
@@ -2635,6 +2644,7 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
     # account after the dialog opened cannot send as them.
     readiness = send_readiness()
     if readiness["code"] in (
+        "not_first_profile",
         "no_session", "no_identity", "account_unknown", "other_account", "author_unknown",
         # The one-time, per-installation risk acknowledgement. Checked before
         # anything reaches LinkedIn, same as the identity checks above it, and

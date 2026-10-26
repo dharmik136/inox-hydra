@@ -28,10 +28,12 @@ try:
     from .database import get_db
     from .vault import encrypt_token, decrypt_token
     from .rate_limiter import rate_limiter
+    from . import accounts as _accounts
 except ImportError:
     from database import get_db
     from vault import encrypt_token, decrypt_token
     from rate_limiter import rate_limiter
+    import accounts as _accounts
 
 
 # -------------------------------------------------------------
@@ -236,12 +238,20 @@ class LinkedInClient:
         tokens = self.get_tokens()
         return bool(tokens.get("li_at") and tokens.get("JSESSIONID"))
 
-    def save_tokens(self, li_at: str, jsessionid: str, account: Optional[Dict[str, Any]] = None):
+    def save_tokens(self, li_at: str, jsessionid: str, account: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Stores the session, and which account it belongs to when the bridge
         said. A session saved without one replaces any account recorded
         earlier, because the old one may not be this session's.
+
+        In a creator profile beyond the first nothing is stored, and the
+        answer is the sentence that says why (decision D9): the studio cannot
+        tell whose browser a session came from, and a second profile's
+        session is the shape LinkedIn's terms name.
         """
+        refusal = _accounts.profile_refusal("session_sync")
+        if refusal:
+            return {"status": "refused", "code": "not_first_profile", "message": refusal}
         enc_li_at = encrypt_token(li_at)
         enc_jsessionid = encrypt_token(jsessionid)
         conn = None
@@ -275,6 +285,7 @@ class LinkedInClient:
                     pass
         self.circuit_breaker.reset()
         print("Session tokens encrypted and saved successfully!")
+        return {"status": "success"}
 
     def clear_tokens(self) -> None:
         """
@@ -962,7 +973,15 @@ class LinkedInClient:
         POST https://www.linkedin.com/voyager/api/contentcreation/normShares
         Payload contains scheduledAt (epoch ms) and lifecycleState: SCHEDULED.
         Supports offline mock mode for testing and air-gapped execution.
+
+        Refused outright in a creator profile beyond the first, before the
+        mock path and before any token is read (decision D9). send_readiness
+        says the same thing on the screen; this is the client answering for
+        itself, so no caller can send from a second profile by skipping it.
         """
+        refusal = _accounts.profile_refusal("send_to_linkedin")
+        if refusal:
+            return {"status": "refused", "code": "not_first_profile", "message": refusal}
         tokens = self.get_tokens()
         li_at = tokens.get("li_at", "")
         jsessionid = tokens.get("JSESSIONID", "")
