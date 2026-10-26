@@ -75,7 +75,10 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
 
   useEffect(() => {
     void refresh();
-    fetchBrowserBridge().then(setBridge).catch(() => setBridge({ browsers: [], extension_path: "" }));
+    // A read that fails is said to have failed: an empty list of browsers
+    // read as a computer with none, and sent a creator to install Edge over
+    // an outage.
+    fetchBrowserBridge().then(setBridge).catch(() => setBridge({ browsers: [], extension_path: "", unreachable: true }));
   }, [refresh]);
   // Every POLL_MS while the window is in view; a hidden one is not polled.
   useRefresh(refresh, POLL_MS);
@@ -831,7 +834,10 @@ function LoadByHand({ bridge }: { bridge: BrowserBridge }) {
   return (
     <div className="mt-4 rounded-md border border-edge p-3">
       <p className="text-[13px] leading-relaxed text-ink-secondary">
-        {none
+        {/* Not asked is not the same as none found. */}
+        {bridge.unreachable
+          ? "The studio could not be asked which browsers this computer has, so none is listed. Check that it is running, then come back to this step."
+          : none
           ? "No Chromium browser was found on this computer. Install Microsoft Edge or Brave, which load the bridge by themselves, then click the button above."
           : `${[
               names(bridge.browsers.filter((b) => b.carries_extension === false), "cannot load the bridge by itself"),

@@ -608,25 +608,18 @@ export interface AnalyticsKpis {
   follower_growth: number | null;
   profile_views: number | null;
   profile_views_delta_pct: number | null;
+  /**
+   * Fields built from a figure LinkedIn rounded, such as 1.2K, which is
+   * anything from 1,150 to 1,249. Every screen that draws these figures
+   * marks them: Analytics did, and Today's thirty days drew them unmarked.
+   */
+  approximate?: string[];
+  /** Changes not shown because they are smaller than that rounding. */
+  within_rounding?: string[];
 }
 
 export async function fetchAnalyticsKpis(range: AnalyticsRange): Promise<AnalyticsKpis> {
   return call<AnalyticsKpis>(`/api/analytics/kpis?range=${range}`);
-}
-
-export interface AnalyticsPost {
-  id: string;
-  content: string;
-  impressions: number | null;
-  reactions: number | null;
-  comments: number | null;
-  shares: number | null;
-  engagement_rate: number | null;
-  /** Why there is no rate, when there is none: the screen says it. */
-  engagement_rate_unmeasured?: string | null;
-  engagement_rate_note?: string | null;
-  figures_source?: string | null;
-  published_at: string | null;
 }
 
 /**
@@ -660,32 +653,14 @@ export interface AnalyticsBest {
 }
 
 /**
- * One page of the post comparison table, most seen first (the route orders
- * by impressions, then reactions), server side: this answered with every
- * post the creator had ever written, 2,432 KB on three years, with a `limit`
- * in the URL that was accepted and ignored.
- *
- * "Best" is results.best's word for a different ranking, which travels
- * beside the rows in `best` and is read from the whole history.
+ * The posts that did best and worst against the creator's own median, from
+ * the whole history (results.best), for the Analytics aside. It came beside
+ * a fourteen-row post table that the Posts screen holds in full; the table
+ * moved there, and the aside reads the engine's answer on its own.
  */
-export async function fetchAnalyticsPosts(
-  options: { limit?: number; offset?: number } = {},
-): Promise<{ posts: AnalyticsPost[]; best: AnalyticsBest | null } & Paging> {
-  const params = new URLSearchParams();
-  if (options.limit !== undefined) params.set("limit", String(options.limit));
-  if (options.offset !== undefined) params.set("offset", String(options.offset));
-  const data = await call<{ posts?: AnalyticsPost[]; best?: AnalyticsBest } & Partial<Paging>>(
-    `/api/analytics/posts${params.toString() ? `?${params}` : ""}`,
-  );
-  return {
-    posts: data.posts ?? [],
-    best: data.best ?? null,
-    total: data.total ?? 0,
-    limit: data.limit ?? options.limit ?? 0,
-    offset: data.offset ?? options.offset ?? 0,
-    returned: data.returned ?? (data.posts ?? []).length,
-    has_more: data.has_more ?? false,
-  };
+export async function fetchAnalyticsBest(): Promise<AnalyticsBest | null> {
+  const data = await call<{ best?: AnalyticsBest }>("/api/analytics/best");
+  return data.best ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1194,10 +1169,17 @@ export async function validateCadence(scheduledFor: string, postId?: string): Pr
   };
 }
 
-export async function schedulePost(postId: string, scheduledFor: string): Promise<void> {
+/**
+ * Puts a post in a slot. `expectedStatus` is the state the caller read the
+ * post in: given, the server moves the post only if it is still in that
+ * state at the moment of the write, and refuses with a sentence otherwise,
+ * so a stale screen cannot move a post queued since or requeue one published
+ * since. A published post is never requeued, whoever asks.
+ */
+export async function schedulePost(postId: string, scheduledFor: string, expectedStatus?: string): Promise<void> {
   await call(`/api/posts/${encodeURIComponent(postId)}/reschedule`, {
     method: "POST",
-    body: JSON.stringify({ scheduled_for: scheduledFor }),
+    body: JSON.stringify({ scheduled_for: scheduledFor, ...(expectedStatus ? { expected_status: expectedStatus } : {}) }),
   });
 }
 
@@ -1280,57 +1262,6 @@ export async function saveSessionCookies(liAt: string, jsessionId: string): Prom
     method: "POST",
     body: JSON.stringify({ li_at: liAt, JSESSIONID: jsessionId }),
   });
-}
-
-// ---------------------------------------------------------------------------
-// Post attribution
-// ---------------------------------------------------------------------------
-
-export interface AttributedLead {
-  lead_id: string;
-  name: string;
-  headline: string | null;
-  company: string | null;
-  icp_score: number;
-  lead_status: string | null;
-  qualification_tier: string | null;
-  latest_comment: string | null;
-}
-
-export interface PostAttribution {
-  post_identifier: string;
-  summary: {
-    total_leads_generated: number;
-    total_interactions: number;
-    vip_leads_count: number;
-    avg_icp_score: number;
-    comments_count: number;
-    likes_count: number;
-    /** Leads counted from reactions older than 24 months that were folded into counts: no names. */
-    folded_leads: number;
-  };
-  leads: AttributedLead[];
-}
-
-/** Which leads a given post actually produced. */
-export async function fetchPostAttribution(postId: string): Promise<PostAttribution> {
-  const data = await call<Record<string, any>>(
-    `/api/v1/analytics/posts/${encodeURIComponent(postId)}/leads`,
-  );
-  const summary = data.attribution_summary ?? {};
-  return {
-    post_identifier: typeof data.post_identifier === "string" ? data.post_identifier : postId,
-    summary: {
-      total_leads_generated: summary.total_leads_generated ?? 0,
-      total_interactions: summary.total_interactions ?? 0,
-      vip_leads_count: summary.vip_leads_count ?? 0,
-      avg_icp_score: summary.avg_icp_score ?? 0,
-      comments_count: summary.comments_count ?? 0,
-      likes_count: summary.likes_count ?? 0,
-      folded_leads: summary.folded_leads ?? 0,
-    },
-    leads: Array.isArray(data.leads) ? data.leads : [],
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1683,6 +1614,12 @@ export interface DetectedBrowser {
 export interface BrowserBridge {
   browsers: DetectedBrowser[];
   extension_path: string;
+  /**
+   * The studio could not be asked which browsers this computer has, so an
+   * empty list means nothing. Setup printed "No Chromium browser was found"
+   * over an outage, because the failure was swallowed into an empty list.
+   */
+  unreachable?: boolean;
 }
 
 export async function fetchBrowserBridge(): Promise<BrowserBridge> {
@@ -2016,7 +1953,6 @@ export interface ActivityStreamData {
     leads_count: number;
     bridge_connected: boolean;
     bridge_last_seen: string | null;
-    bridge_carrier: string | null;
     active_sync_chain: {
       sequence: string[];
       current_index: number;
@@ -2118,6 +2054,8 @@ export interface TodayPerson {
   posts_engaged: number;
   commented: boolean;
   latest_comment: string | null;
+  /** When the studio first saw their latest comment, not when it was last re-read. */
+  engaged_at: string | null;
   last_seen_at: string | null;
 }
 
@@ -2326,17 +2264,40 @@ export interface PostEngager {
   interacted_at: string | null;
 }
 
-/** Who engaged with one post, for any identifier the product uses (post_identity.resolve). */
+/**
+ * Who engaged with one post, for any identifier the product uses
+ * (post_identity.resolve), and how many more are kept only as counts: the
+ * reactors the retention job folded, who have no names to list.
+ */
 export async function fetchPostEngagers(
   postId: string,
-): Promise<{ status: string; count: number; engagers: PostEngager[]; message?: string }> {
+): Promise<{ status: string; count: number; engagers: PostEngager[]; message?: string; folded_people: number }> {
   const data = await call<Record<string, any>>(`/api/v1/posts/${encodeURIComponent(postId)}/engagers`);
   return {
     status: data.status ?? "success",
     count: data.count ?? 0,
     engagers: data.engagers ?? [],
     message: data.message,
+    folded_people: data.folded?.people ?? 0,
   };
+}
+
+/** A post marked published here that the bridge has not seen on LinkedIn yet. */
+export interface PublishedNotSeen {
+  id: string;
+  excerpt: string;
+  published_at: string | null;
+}
+
+/**
+ * Posts marked published in the studio with no publication record: sent to
+ * LinkedIn and not yet read back by the bridge. Posts lists them as a short
+ * group of their own; Analytics' removed table was the one list that held
+ * them (review round 2, B2 b).
+ */
+export async function fetchPublishedNotSeen(): Promise<PublishedNotSeen[]> {
+  const data = await call<{ posts?: PublishedNotSeen[] }>("/api/v1/posts/published-not-seen");
+  return data.posts ?? [];
 }
 
 export interface OutboundAuthor {
@@ -2428,6 +2389,8 @@ export interface SettleCurve {
 }
 
 export interface PatternsInsights {
+  /** How many of the creator's posts the studio holds, whatever their age or figures. */
+  posts_held: number;
   posts_compared: number;
   metric: string;
   patterns: PatternFinding[];
@@ -2460,50 +2423,51 @@ export async function fetchCadenceInsights(): Promise<CadenceInsights> {
 export interface ContrastFinding {
   key: string;
   label: string;
-  status: "conclusive" | "insufficient_sample";
+  /**
+   * The engine's own words (contrast_engine.evaluate_contrast_for_posts):
+   * "not_enough_data" when a side is short of posts, "different_period" when
+   * the two sides come mostly from different years. This said
+   * "insufficient_sample", a word the engine uses only for a confidence
+   * field, and a cast on the Patterns screen hid the mismatch.
+   */
+  status: "conclusive" | "not_enough_data" | "different_period";
   n_with: number;
   n_without: number;
   median_with?: number | null;
   median_without?: number | null;
   ratio?: number | null;
   planted_or_significant?: boolean;
+  /** What the line is allowed to say, from results.difference. */
+  difference?: { verdict: string; notable: boolean; n_with: number; n_without: number; min_per_side: number };
+  /** The typical year of each side, when the two sides were dated (results.different_periods). */
+  typical_year_with?: number;
+  typical_year_without?: number;
   min_required: number;
   reason?: string;
 }
 
+/**
+ * The contrast engine's comparisons, which Patterns draws its lines from and
+ * the Composer's Evidence panel is built from.
+ */
 export interface ContrastInsights {
   status: string;
+  /** The settled posts, with reactions recorded, that every comparison rests on. */
   settled_posts_count: number;
+  /** How many posts each side needs before the engine says anything (results.MIN_PER_SIDE). */
   min_arm_size: number;
+  settled_after?: SettledAfter;
   contrasts: ContrastFinding[];
+  /**
+   * The creator's own topics, each compared as a form by the same engine:
+   * posts that mention the topic's word against those that do not. They
+   * replace the qualified-leads-per-topic table (cycle 4, decision 7).
+   */
+  topics?: ContrastFinding[];
 }
 
 export async function fetchContrastInsights(): Promise<ContrastInsights> {
   return call<ContrastInsights>("/api/v1/insights/contrasts");
-}
-
-export interface TopicAttributionItem {
-  topic: string;
-  post_count?: number;
-  posts_count?: number;
-  total_reactions: number;
-  median_reactions?: number;
-  qualified_leads: number;
-  lead_conversion_rate: number;
-  summary?: string;
-}
-
-export interface TopicAttributionInsights {
-  status: "success" | "cold_start";
-  message?: string;
-  settled_posts_analyzed?: number;
-  qualified_leads_attributed?: number;
-  topics: TopicAttributionItem[];
-  summary_sentence: string;
-}
-
-export async function fetchTopicAttribution(): Promise<TopicAttributionInsights> {
-  return call<TopicAttributionInsights>("/api/v1/insights/attribution");
 }
 
 export interface EvidenceExemplar {
@@ -2521,6 +2485,10 @@ export interface RetrievalEvidenceBrief {
   bottom_exemplars: EvidenceExemplar[];
   contrast_findings: ContrastFinding[];
   brief_section: string;
+  /** How many settled posts the brief needs before it says anything (results.MIN_FOR_MEDIAN). */
+  min_settled_posts: number;
+  /** How many posts each side of a contrast needs before it is a finding (results.MIN_PER_SIDE). */
+  min_per_side: number;
 }
 
 export async function fetchEvidenceBrief(): Promise<RetrievalEvidenceBrief> {
@@ -3267,18 +3235,29 @@ export async function setEngineeringPack(enabled: boolean): Promise<{ added?: nu
   });
 }
 
+/** How many drafts are waiting, and the newest of them. */
+export interface DraftsWaiting {
+  /** Null when the studio answered without a count, so no number is printed. */
+  total: number | null;
+  newest: DraftSummary | null;
+}
+
 /**
- * The newest few drafts, newest first.
+ * How many drafts are waiting, and the newest, for the Queue's one action.
  *
- * fetchDrafts answers with every draft, which the drafts panel wants and its
- * search needs; a screen that shows the few waiting to be queued does not,
- * and on a three year install every draft is 259 KB.
+ * One row and the count beside it. The Queue listed the newest eight here
+ * while the Composer's Drafts lists every one (decision 6: a count, with one
+ * action); fetchDrafts answers with every draft, 259 KB on a three year
+ * install, which only the drafts panel and its search need.
  */
-export async function fetchRecentDrafts(limit: number): Promise<DraftSummary[]> {
-  const data = await call<{ posts?: PostRow[] }>(`/api/posts?status=draft&limit=${limit}`);
-  return (data.posts ?? [])
-    .map((row) => ({ id: row.id, content: row.content ?? "", created_at: row.created_at ?? null }))
-    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+export async function fetchDraftsWaiting(): Promise<DraftsWaiting> {
+  const data = await call<{ posts?: PostRow[]; total?: number }>("/api/posts?status=draft&limit=1");
+  const rows = data.posts ?? [];
+  const newest = rows[rows.length - 1];
+  return {
+    total: typeof data.total === "number" ? data.total : null,
+    newest: newest ? { id: newest.id, content: newest.content ?? "", created_at: newest.created_at ?? null } : null,
+  };
 }
 
 // ---------------------------------------------------------------------------

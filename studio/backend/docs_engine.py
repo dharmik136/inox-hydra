@@ -713,6 +713,7 @@ HELP_SECTIONS = [
             "quality/CYCLE4_2026-10_PRD.md",
             "quality/cycle4/t5-derive.md",
             "quality/cycle4/t7-ideas.md",
+            "quality/cycle4/t3-honesty.md",
             "UI_CONVENTIONS.md",
             "ICON_SYSTEM.md",
             "UI_AGENT_WORKFLOW.md",

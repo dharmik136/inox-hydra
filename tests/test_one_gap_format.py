@@ -93,9 +93,16 @@ def test_no_screen_shows_an_unmeasured_gap_as_a_number():
     )
 
 
-def test_the_three_screens_that_print_a_gap_all_call_the_one_formatter():
-    expected = ("TodaySurface.tsx", "QueueSurface.tsx", "PatternsSurface.tsx")
-    for name in expected:
+def test_every_screen_that_prints_a_gap_calls_the_one_formatter():
+    """
+    Read from the tree rather than from a list: a list named Patterns after
+    cycle 4 moved its rhythm to the Queue, and would not have named a fourth
+    screen that started printing a gap.
+    """
+    printing = sorted(name for name, source in _surfaces()
+                      if any(field.split(".")[0] in source for field in FIELDS))
+    assert {"TodaySurface.tsx", "QueueSurface.tsx"} <= set(printing), printing
+    for name in printing:
         source = _read(os.path.join(COMPONENTS, name))
         assert '@/lib/cadence"' in source, f"{name} prints a gap without the one formatter"
         assert "formatDays(" in source or "gapOrNotMeasured(" in source, name

@@ -2012,10 +2012,13 @@ def list_mcp_servers():
     Also reports where grounding material would go, computed from the provider
     in force right now rather than stored, so the interface can say it before
     anything is gathered rather than after.
+
+    Each server is listed without its environment, which may hold a token
+    and which no screen shows (mcp_client.servers.for_screen).
     """
     return {
         "status": "success",
-        "servers": mcp_client.list_servers(),
+        "servers": mcp_client.list_servers_for_screen(),
         "egress": mcp_client.egress_report(*_active_provider()),
     }
 
@@ -2037,7 +2040,9 @@ def add_mcp_server(req: McpServerRequest):
     )
     if result.get("status") != "success":
         raise HTTPException(status_code=400, detail=result.get("message", "Could not add the server."))
-    return result
+    # Echoed back without the environment the request carried, for the same
+    # reason the listing leaves it out.
+    return {**result, "server": mcp_client.for_screen(result["server"])}
 
 
 @app.post("/api/v1/mcp/servers/{name}/enabled", tags=["Grounding"])

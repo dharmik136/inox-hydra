@@ -6,9 +6,9 @@ import {
   dispatchQueueNow,
   fetchCadenceHealth,
   fetchCadenceInsights,
+  fetchDraftsWaiting,
   fetchDuePosts,
   fetchNextSlot,
-  fetchRecentDrafts,
   fetchSmartSlots,
   publishNow,
   returnToDrafts,
@@ -17,6 +17,7 @@ import {
   type CadenceHealth,
   type CadenceInsights,
   type DraftSummary,
+  type DraftsWaiting,
   type QueueSlot,
   type ScheduledPost,
   type TodayDuePost,
@@ -28,15 +29,6 @@ import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-/**
- * How many of the waiting drafts the Queue lists.
- *
- * Enough that a creator can see what is there and put one in a slot, few
- * enough that this stays the Queue rather than a second drafts screen: an
- * install with 150 drafts should not render 150 rows here.
- */
-const DRAFTS_SHOWN = 8;
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 /** Today at midnight local time, which is where the next seven days start. */
@@ -96,7 +88,9 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
   const [dueNote, setDueNote] = useState<string | null>(null);
   const [health, setHealth] = useState<CadenceHealth | null>(null);
   const [rhythm, setRhythm] = useState<CadenceInsights | null>(null);
-  const [drafts, setDrafts] = useState<DraftSummary[]>([]);
+  // How many drafts are waiting, and the newest; null when that read did not
+  // come back, which is said rather than drawn as no drafts at all.
+  const [drafts, setDrafts] = useState<DraftsWaiting | null>(null);
   const [draftNote, setDraftNote] = useState<string | null>(null);
   const [queueing, setQueueing] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -109,10 +103,10 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
         fetchSmartSlots(),
         fetchCadenceHealth(),
         fetchDuePosts(),
-        // The drafts that could go in a slot. Bounded, because every draft
-        // is 259 KB on a three year install and this is a list of the few
-        // waiting, not the drafts screen.
-        fetchRecentDrafts(DRAFTS_SHOWN).catch(() => [] as DraftSummary[]),
+        // How many drafts could go in a slot, and the newest: one row and a
+        // count. A failed read is null, never an empty list, so it cannot
+        // read as "no drafts are waiting".
+        fetchDraftsWaiting().catch(() => null),
       ]);
       setSlots(queue.slots);
       setScheduled(queue.scheduled);
@@ -221,13 +215,18 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
         setDraftNote("There is no slot to put it in. Add one under Weekly slots, and it can be queued.");
         return;
       }
-      await schedulePost(draft.id, slot.slot_datetime);
+      // Moved only if it is still a draft when the server writes: this block
+      // can be up to 30 seconds old, and the post may have been queued or
+      // published since (review round 2, S5).
+      await schedulePost(draft.id, slot.slot_datetime, "draft");
       await load();
       setDraftNote(
         `Queued for ${formatLocal(slot.slot_datetime)}${slot.cooldown_satisfied ? "" : ", which is inside your 12 hour cooldown"}.`,
       );
     } catch (error) {
       setDraftNote(error instanceof Error ? error.message : "The studio refused to queue it.");
+      // What the server refused on is what the screen shows next.
+      await load();
     } finally {
       setQueueing(null);
     }
@@ -404,7 +403,7 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
           </p>
           {scheduled.length === 0 ? (
             <p className="text-[13px] leading-relaxed text-ink-muted">
-              Nothing is queued yet. The drafts waiting below can go into the next open slot.
+              Nothing is queued yet. The newest draft waiting below can go into the next open slot.
             </p>
           ) : (
             <ul className="flex flex-col divide-y divide-edge border-y border-edge">
@@ -431,58 +430,50 @@ export function QueueSurface({ onEditText }: { onEditText?: (postId: string) => 
           )}
         </section>
 
-        {/* What could go in a slot. The screen used to send a creator to the
-            Composer to queue something while holding 150 drafts of their
-            own and leaving half of itself blank. */}
+        {/* What could go in a slot: how many drafts are waiting, the newest
+            of them, and the one action this screen takes on them. It listed
+            the newest eight, each with Edit text and Queue it, while the
+            Composer's Drafts lists every one, so two screens listed the same
+            drafts (cycle 4, decision 6: a count, with one action). */}
         <section aria-labelledby="queue-drafts" className="mt-5">
-          <div className="mb-2 flex items-baseline justify-between gap-3">
-            <p id="queue-drafts" className="studio-label">
-              Drafts waiting
-            </p>
-            {drafts.length > 0 && (
-              <span className="studio-meta shrink-0 text-[10px] text-ink-muted">
-                {drafts.length >= DRAFTS_SHOWN ? `NEWEST ${DRAFTS_SHOWN}` : `${drafts.length}`}
-              </span>
-            )}
-          </div>
+          <p id="queue-drafts" className="studio-label mb-2">
+            Drafts waiting
+          </p>
           {draftNote && (
             <p role="status" className="mb-2 text-[12px] text-ink-secondary">
               {draftNote}
             </p>
           )}
-          {drafts.length === 0 ? (
+          {drafts === null ? (
             <p className="text-[13px] leading-relaxed text-ink-muted">
-              No drafts are waiting. What you write in the Composer appears here, ready for a slot.
+              How many drafts are waiting could not be read. It is read again with the rest of this screen.
+            </p>
+          ) : drafts.total === 0 || !drafts.newest ? (
+            <p className="text-[13px] leading-relaxed text-ink-muted">
+              No drafts are waiting. What you write and save in the Composer can be queued from here.
             </p>
           ) : (
-            <ul className="flex flex-col divide-y divide-edge border-y border-edge">
-              {drafts.map((draft) => (
-                <li key={draft.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-                  <span className="min-w-0 flex-1 truncate text-[12px] text-ink-primary">
-                    {draft.content.split("\n")[0] || "Untitled draft"}
-                  </span>
-                  <span className="flex shrink-0 items-center gap-2">
-                    {onEditText && (
-                      <button
-                        type="button"
-                        onClick={() => onEditText(draft.id)}
-                        className="rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
-                      >
-                        Edit text
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      disabled={queueing !== null}
-                      onClick={() => void onQueueDraft(draft)}
-                      className="rounded-md border border-edge px-2 py-0.5 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
-                    >
-                      Queue it
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-y border-edge py-2">
+              <div className="min-w-0 flex-1">
+                <p className="text-[12px] leading-snug text-ink-primary">
+                  {drafts.total === null
+                    ? "Drafts are waiting."
+                    : `${drafts.total.toLocaleString()} ${drafts.total === 1 ? "draft is" : "drafts are"} waiting.`}
+                </p>
+                <p className="mt-0.5 truncate text-[12px] text-ink-secondary">
+                  Newest: {drafts.newest.content.split("\n")[0] || "Untitled draft"}
+                </p>
+                <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">EVERY DRAFT IS UNDER DRAFTS IN THE COMPOSER.</p>
+              </div>
+              <button
+                type="button"
+                disabled={queueing !== null}
+                onClick={() => drafts.newest && void onQueueDraft(drafts.newest)}
+                className="shrink-0 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+              >
+                Queue the newest draft
+              </button>
+            </div>
           )}
         </section>
         </div>
@@ -637,7 +628,32 @@ function Cadence({
         <Stat label="Slots a week" value={String(weekly)} />
       </dl>
 
-      <div className="mt-3 border-b border-edge pb-3">
+      {/* When the next post can go out, before the rhythm it is judged
+          against: the rhythm grew when the cadence block moved here from
+          Patterns, and pushed this answer to the bottom edge of the first
+          view at 1440x900. */}
+      {health.next_smart_slot && (
+        <div className="mt-3 border-b border-edge pb-3">
+          <p className="studio-label mb-1">Next slot offered</p>
+          <p className="text-[13px] text-ink-primary">
+            {health.next_smart_slot.day_name} {formatSlotTime(health.next_smart_slot.time_slot)}
+            <span className="mx-2 text-ink-muted">·</span>
+            <span className="text-ink-secondary">{health.next_smart_slot.label}</span>
+          </p>
+          <p className="studio-meta mt-1">
+            {health.next_smart_slot.cooldown_satisfied ? (
+              <span className="text-signal-green-text">
+                {health.next_smart_slot.hours_clearance}H CLEAR OF THE LAST POST
+              </span>
+            ) : (
+              <span className="text-signal-orange-text">
+                ONLY {health.next_smart_slot.hours_clearance}H SINCE THE LAST POST
+              </span>
+            )}
+          </p>
+        </div>
+      )}
+      <div className="mt-3">
         <p className="studio-label mb-1.5">Against your own rhythm</p>
         {!rhythm ? (
           <p className="text-[13px] leading-relaxed text-ink-muted">
@@ -675,31 +691,49 @@ function Cadence({
                     : `Your slots are about the rhythm you have kept: one every ${formatDays(slotGap)} against your usual ${formatDays(usual)}.`}
               </p>
             )}
+            {/* The rest of the rhythm, which Patterns drew as a second copy of
+                this payload under "Cadence" (cycle 4, track 3, batch 1): the
+                week lives on this screen, so how steadily you post does too. */}
+            <dl className="mt-2 flex flex-col gap-1.5">
+              <Line
+                label="Longest gap"
+                value={
+                  rhythm.longest_gap
+                    ? `${gapOrNotMeasured(rhythm.longest_gap.days)}, ${rhythm.longest_gap.from} to ${rhythm.longest_gap.to}`
+                    : NOT_MEASURED
+                }
+              />
+              <Line
+                label="Next 14 days"
+                value={
+                  rhythm.queue
+                    ? `${rhythm.queue.scheduled_next_14_days} queued, ${rhythm.queue.weekly_slots * 2} slots`
+                    : NOT_MEASURED
+                }
+              />
+            </dl>
+            <MonthStrip months={rhythm.by_month ?? []} />
+            {(rhythm.by_weekday ?? []).length > 0 && (
+              <div className="mt-3">
+                <p className="studio-meta mb-1.5 text-[10px] text-ink-muted">POSTS BY WEEKDAY</p>
+                <div className="flex gap-3">
+                  {(rhythm.by_weekday ?? []).map((d) => (
+                    <div key={d.day} className="text-center">
+                      <p className="text-[13px] tabular-nums text-ink-primary">{d.posts}</p>
+                      <p className="studio-meta text-[10px] text-ink-muted">{d.day.toUpperCase()}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-[12px] leading-snug text-ink-muted">
+                  No best day is named. You chose the days you posted on, and a few posts per day cannot separate the
+                  day from everything else about those posts.
+                </p>
+              </div>
+            )}
           </>
         )}
       </div>
 
-      {health.next_smart_slot && (
-        <div className="mt-3">
-          <p className="studio-label mb-1">Next slot offered</p>
-          <p className="text-[13px] text-ink-primary">
-            {health.next_smart_slot.day_name} {formatSlotTime(health.next_smart_slot.time_slot)}
-            <span className="mx-2 text-ink-muted">·</span>
-            <span className="text-ink-secondary">{health.next_smart_slot.label}</span>
-          </p>
-          <p className="studio-meta mt-1">
-            {health.next_smart_slot.cooldown_satisfied ? (
-              <span className="text-signal-green-text">
-                {health.next_smart_slot.hours_clearance}H CLEAR OF THE LAST POST
-              </span>
-            ) : (
-              <span className="text-signal-orange-text">
-                ONLY {health.next_smart_slot.hours_clearance}H SINCE THE LAST POST
-              </span>
-            )}
-          </p>
-        </div>
-      )}
     </section>
   );
 }
@@ -866,6 +900,30 @@ function WeeklySlots({ slots, onChanged }: { slots: QueueSlot[]; onChanged: () =
         </div>
       )}
     </section>
+  );
+}
+
+/** Posts per month, as bars with their scale said in words. Moved here from Patterns with the rest of the rhythm. */
+function MonthStrip({ months }: { months: { month: string; posts: number }[] }) {
+  if (!months.length) return null;
+  const peak = Math.max(1, ...months.map((m) => m.posts));
+  return (
+    <div className="mt-3">
+      <p className="studio-meta mb-1.5 text-[10px] text-ink-muted">
+        POSTS BY MONTH, {months[0].month} TO {months[months.length - 1].month}. THE TALLEST BAR IS {peak}{" "}
+        {peak === 1 ? "POST" : "POSTS"}
+      </p>
+      <div className="flex h-16 items-end gap-px overflow-x-auto" role="img" aria-label="Posts per month" tabIndex={0}>
+        {months.map((m) => (
+          <div
+            key={m.month}
+            title={`${m.month}: ${m.posts} post${m.posts === 1 ? "" : "s"}`}
+            className={cn("w-2 shrink-0 rounded-t-sm", m.posts ? "bg-ink-secondary" : "bg-edge")}
+            style={{ height: m.posts ? `${Math.max(12, (m.posts / peak) * 100)}%` : "3px" }}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 

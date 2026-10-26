@@ -125,9 +125,8 @@ def test_maintainer_build_exposes_the_surface(dev_mode):
     body = res.json()
     assert body["dev_mode"] is True
     assert len(body["capabilities"]) >= 5
-    # Nine since cycle 4, track 7: "From your record" files annotations under
-    # its own key (navigation.ts screenKey "record").
-    assert len(body["screens"]) == 9
+    # The whole registry, one entry per section of the rail (tests/test_qc4_t3_screen_registry.py).
+    assert len(body["screens"]) == len(devtools.SCREEN_REGISTRY) >= 13
 
 
 def test_database_cannot_enable_dev_mode_on_a_consumer_install(consumer_mode):

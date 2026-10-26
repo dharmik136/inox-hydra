@@ -62,14 +62,32 @@ def evaluate_contrast_for_posts(posts: List[Dict[str, Any]], feature_key: str) -
 
     key, label, test_func = feature
 
+    def has(post: Dict[str, Any]) -> bool:
+        text = post.get("text") or post.get("content") or ""
+        return test_func(text, opening_line(text))
+
+    return evaluate_feature(posts, key, label, has)
+
+
+def evaluate_feature(posts: List[Dict[str, Any]], key: str, label: str,
+                     has: Callable[[Dict[str, Any]], bool]) -> Dict[str, Any]:
+    """
+    One form, compared: the posts that have it against those that do not, by
+    median reactions, under the engine's rules. Abstains below
+    MIN_ARM_SAMPLE_SIZE a side with both counts shown, answers "none" through
+    results.difference, and marks two sides that come from different periods.
+
+    `has` decides the form for one post. The seven binary features are one
+    kind of form; a creator's own topic is another
+    (evidence_briefing.topic_forms), compared by these same rules rather than
+    by a second copy of them.
+    """
     with_it: List[float] = []
     without: List[float] = []
     with_dates: List[float] = []
     without_dates: List[float] = []
 
     for p in posts:
-        text = p.get("text") or p.get("content") or ""
-        opening = opening_line(text)
         rxn = p.get("reactions")
         if rxn is None:
             continue
@@ -79,7 +97,7 @@ def evaluate_contrast_for_posts(posts: List[Dict[str, Any]], feature_key: str) -
             continue
 
         when = results.timestamp(p.get("published_at"))
-        if test_func(text, opening):
+        if has(p):
             with_it.append(rxn_float)
             if when is not None:
                 with_dates.append(when)

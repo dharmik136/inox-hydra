@@ -14,14 +14,14 @@ try:
     from .. import results
     from ..contrast_engine import compute_all_contrasts
     from ..database import get_db
-    from ..evidence_briefing import get_topic_attribution_map, get_retrieval_evidence_brief
+    from ..evidence_briefing import get_topic_attribution_map, get_retrieval_evidence_brief, patterns_comparisons
 except (ImportError, ValueError):
     import insights
     import onboarding
     import results
     from contrast_engine import compute_all_contrasts
     from database import get_db
-    from evidence_briefing import get_topic_attribution_map, get_retrieval_evidence_brief
+    from evidence_briefing import get_topic_attribution_map, get_retrieval_evidence_brief, patterns_comparisons
 
 router = APIRouter(tags=["Insights"])
 
@@ -109,13 +109,22 @@ def get_patterns_insights() -> Dict[str, Any]:
 
 @router.get("/api/v1/insights/contrasts")
 def get_contrast_insights() -> Dict[str, Any]:
-    """Pairwise binary feature contrasts across settled posts with n>=8 per arm guard."""
-    return compute_all_contrasts()
+    """
+    The contrast engine's comparisons across settled posts, n>=8 per arm: the
+    seven forms under `contrasts`, and the creator's own topics compared the
+    same way under `topics`, from one reading of the figures. Patterns draws
+    both; the Evidence panel reads the seven through the brief.
+    """
+    return patterns_comparisons()
 
 
 @router.get("/api/v1/insights/attribution")
 def get_attribution_insights() -> Dict[str, Any]:
-    """Topic to Qualified-Lead Attribution Map (CP4)."""
+    """
+    Topic to Qualified-Lead Attribution Map (CP4). No screen reads it since
+    cycle 4 retired the qualified framing on Patterns (decision 7); topics
+    are compared as forms under /api/v1/insights/contrasts instead.
+    """
     return get_topic_attribution_map()
 
 

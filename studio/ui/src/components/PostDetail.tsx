@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Loader2, X } from "lucide-react";
 import { fetchPostDetail, fetchPostEngagers, launchBridge, type PostDetail as PostDetailData, type PostEngager } from "@/lib/api";
 import { useModalFocus } from "@/lib/modalFocus";
+import { ratioTone } from "@/lib/results";
 import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,9 @@ export function PostDetail({
   const [post, setPost] = useState<PostDetailData | null>(null);
   const [engagers, setEngagers] = useState<PostEngager[] | null>(null);
   const [engagersMessage, setEngagersMessage] = useState<string | null>(null);
+  // People kept only as counts: the reactors the retention job folded. The
+  // row's people count includes them and this list cannot name them.
+  const [foldedPeople, setFoldedPeople] = useState(0);
   const [failed, setFailed] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   useModalFocus(panelRef, true, onClose);
@@ -32,6 +36,7 @@ export function PostDetail({
     let live = true;
     setPost(null);
     setEngagers(null);
+    setFoldedPeople(0);
     setFailed(false);
     fetchPostDetail(activityUrn)
       .then((data) => live && setPost(data))
@@ -41,6 +46,7 @@ export function PostDetail({
         if (!live) return;
         setEngagers(data.engagers);
         setEngagersMessage(data.message ?? null);
+        setFoldedPeople(data.folded_people);
       })
       .catch(() => live && setEngagers([]));
     return () => {
@@ -122,35 +128,49 @@ export function PostDetail({
                 <p className="studio-label mb-2">Who engaged</p>
                 {engagers === null ? (
                   <p className="studio-meta text-ink-muted">READING WHO ENGAGED</p>
-                ) : engagers.length === 0 ? (
+                ) : engagers.length === 0 && foldedPeople === 0 ? (
                   <p className="studio-meta text-[10px] leading-snug text-ink-muted">
                     {engagersMessage?.toUpperCase() ?? "NOBODY CAPTURED FROM THIS POST YET."}
                   </p>
                 ) : (
-                  <ul className="flex flex-col gap-2">
-                    {engagers.map((person) => (
-                      <li key={`${person.id}-${person.interaction_type ?? ""}`}>
-                        <button
-                          type="button"
-                          onClick={() => onOpenLead(person.id)}
-                          className="flex w-full flex-col items-start text-left text-[12px] text-ink-secondary hover:text-ink-primary"
-                        >
-                          <span>
-                            {person.full_name || person.name || "Unnamed"}
-                            {person.company && <span className="text-ink-muted"> at {person.company}</span>}
-                            <span className="studio-meta ml-2 text-[10px] text-ink-muted">
-                              {(person.interaction_type ?? "reacted").toUpperCase()}
-                            </span>
-                          </span>
-                          {person.comment_text && (
-                            <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-ink-muted">
-                              {person.comment_text}
-                            </span>
-                          )}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    {engagers.length > 0 && (
+                      <ul className="flex flex-col gap-2">
+                        {engagers.map((person) => (
+                          <li key={`${person.id}-${person.interaction_type ?? ""}`}>
+                            <button
+                              type="button"
+                              onClick={() => onOpenLead(person.id)}
+                              className="flex w-full flex-col items-start text-left text-[12px] text-ink-secondary hover:text-ink-primary"
+                            >
+                              <span>
+                                {person.full_name || person.name || "Unnamed"}
+                                {person.company && <span className="text-ink-muted"> at {person.company}</span>}
+                                <span className="studio-meta ml-2 text-[10px] text-ink-muted">
+                                  {(person.interaction_type ?? "reacted").toUpperCase()}
+                                </span>
+                              </span>
+                              {person.comment_text && (
+                                <span className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-ink-muted">
+                                  {person.comment_text}
+                                </span>
+                              )}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {/* Every person folded is still a person: a post whose every
+                        reactor was folded is not shown as having nobody. */}
+                    {foldedPeople > 0 && (
+                      <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
+                        {engagers.length > 0
+                          ? `${foldedPeople} MORE`
+                          : `${foldedPeople} ${foldedPeople === 1 ? "PERSON" : "PEOPLE"}`}{" "}
+                        FROM REACTIONS OVER 24 MONTHS OLD, KEPT AS A COUNT WITHOUT NAMES (STORAGE AND PRIVACY)
+                      </p>
+                    )}
+                  </>
                 )}
               </section>
             </>
@@ -170,7 +190,7 @@ function Figure({ label, value, ratio }: { label: string; value: number | null; 
         <span
           className={cn(
             "ml-1",
-            ratio >= 1.2 ? "text-signal-green-text" : ratio <= 0.8 ? "text-signal-orange-text" : "text-ink-muted",
+            ratioTone(ratio),
           )}
         >
           ({ratio.toFixed(1)}x)

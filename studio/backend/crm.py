@@ -788,7 +788,13 @@ class ReverseCRMManager:
         }
 
     def list_high_value_leads(self, min_icp_score: float = 60.0, limit: int = 50) -> List[Dict[str, Any]]:
-        """Query top ICP-matching leads."""
+        """
+        Leads at or above a score, most recently changed first.
+
+        No screen reads this. It ordered by the score, which the product does
+        not rank people by (tests/test_no_ranking_of_people_by_score.py), so
+        it now orders by when the lead last changed.
+        """
         limit = min(limit, MAX_HIGH_VALUE_QUERY_LIMIT)
         conn = get_db()
         try:
@@ -798,7 +804,7 @@ class ReverseCRMManager:
                 SELECT id, full_name, name, headline, company, seniority_level, icp_score, lead_status, created_at
                 FROM leads
                 WHERE icp_score >= ?
-                ORDER BY icp_score DESC, updated_at DESC
+                ORDER BY updated_at DESC, created_at DESC, rowid
                 LIMIT ?
                 """,
                 (min_icp_score, limit),
@@ -1084,8 +1090,14 @@ class ReverseCRMManager:
             # and every lead was scanned: 386 ms for one post at 49,142 leads.
             # CAST(... AS TEXT) lets the leads key serve the join despite the
             # INTEGER affinity of lead_interactions.lead_id (fixed by the
-            # phase 3 rebuild). The last two sort keys are the order the old
-            # scan met rows in, so ties come out as they always did.
+            # phase 3 rebuild).
+            #
+            # Newest engagement first, and a lead tied to the post with no
+            # interaction row last. This ordered by the ICP score under the
+            # alias sort_score, so Analytics listed a post's people by a
+            # keyword guess about their job titles, which the product says it
+            # does not do (today.py; tests/test_no_ranking_of_people_by_score.py).
+            # The last two keys break ties the way the old scan met rows.
             columns = """
                 l.id as lead_id,
                 COALESCE(l.full_name, l.name) as name,
@@ -1095,7 +1107,6 @@ class ReverseCRMManager:
                 COALESCE(l.icp_score, 0.0) as icp_score,
                 COALESCE(l.lead_status, 'NEW') as lead_status,
                 l.profile_url,
-                l.icp_score as sort_score,
                 l.rowid as lead_row,
             """
             query = f"""
@@ -1114,7 +1125,7 @@ class ReverseCRMManager:
             WHERE l.post_id IN ({{placeholders}})
               AND NOT EXISTS (SELECT 1 FROM lead_interactions li
                               WHERE li.lead_id = l.id AND li.post_urn IN ({{placeholders}}))
-            ORDER BY sort_score DESC, interacted_at DESC, lead_row, interaction_id
+            ORDER BY interacted_at DESC, lead_row, interaction_id
             """
             keys = sorted(match_keys)
             placeholders = ", ".join("?" for _ in keys)
