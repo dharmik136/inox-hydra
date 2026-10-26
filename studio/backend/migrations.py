@@ -1423,6 +1423,38 @@ def _migrate_current_scores(cursor: sqlite3.Cursor) -> None:
         cursor.execute("UPDATE post_engagement SET stale = stale | 2 WHERE (stale & 2) = 0")
 
 
+def _migrate_reader_timing_and_network_reading(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 28:
+    Each reader says how long it took, and the bridge says whether network
+    reading is on.
+
+    Nothing in the bridge was timed: the capture log carried what a reader
+    saw and kept and nothing about time, so no claim that the bridge is
+    "smoother" could be checked and no optimisation could be chosen by
+    measurement. Each run now carries its own duration, the reads since the
+    last report, how many of them took over 50 ms, and the long tasks the
+    page's own timeline showed during those reads. A run the studio refused
+    carries why, so a reader that runs and is refused no longer reads as a
+    reader that never ran.
+
+    Neither heartbeat said whether the creator's network-reading switch was
+    on, whether the browser had registered the reader, or whether the page
+    carried it, so "off" and "on but capturing nothing" were the same
+    silence. The heartbeat now carries that state, and the page's count of
+    LinkedIn's data calls by path and query name, never a query string.
+    """
+    captures = {row[1] for row in cursor.execute("PRAGMA table_info(captures)")}
+    for column, kind in (("duration_ms", "REAL"), ("reads", "INTEGER"), ("slow_reads", "INTEGER"),
+                         ("long_tasks", "INTEGER"), ("long_task_ms", "REAL"), ("refused", "TEXT")):
+        if column not in captures:
+            cursor.execute(f"ALTER TABLE captures ADD COLUMN {column} {kind}")
+    heartbeats = {row[1] for row in cursor.execute("PRAGMA table_info(bridge_heartbeats)")}
+    for column in ("network_reading", "voyager_calls"):
+        if column not in heartbeats:
+            cursor.execute(f"ALTER TABLE bridge_heartbeats ADD COLUMN {column} TEXT")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1451,6 +1483,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (26, "One identity for a post: every publication has its post, and the dead queue is gone",
      _migrate_one_post_identity),
     (27, "A lead's score is recomputed when what it is computed from changes", _migrate_current_scores),
+    (28, "Each reader says how long it took, and the bridge says whether network reading is on",
+     _migrate_reader_timing_and_network_reading),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

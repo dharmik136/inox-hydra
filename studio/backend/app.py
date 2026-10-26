@@ -1465,6 +1465,12 @@ class BridgeHeartbeat(BaseModel):
     contract_version: Optional[int] = None
     waiting_captures: Optional[int] = None
     oldest_waiting_at: Optional[str] = None
+    # Whether network reading is on, registered and present in the page, and
+    # what the page saw LinkedIn call (counts by path and query name, never a
+    # query string). Absent from an extension older than this field, which
+    # the studio reports as not measured rather than as off.
+    network_reading: Optional[Dict[str, Any]] = None
+    voyager_calls: Optional[Dict[str, Any]] = None
 
 
 class IdentityConfirm(BaseModel):
@@ -1544,7 +1550,8 @@ def post_bridge_heartbeat(payload: BridgeHeartbeat):
     than the studio's ingest contract is told to reload once instead of
     failing quietly on a field name that moved.
     """
-    seen = onboarding.record_heartbeat(payload.extension_version, payload.page_kind)
+    seen = onboarding.record_heartbeat(payload.extension_version, payload.page_kind,
+                                       payload.network_reading, payload.voyager_calls)
     ingest_contract.note_waiting(payload.waiting_captures, payload.oldest_waiting_at)
     seen["handshake"] = ingest_contract.handshake(payload.extension_version, payload.contract_version)
     return seen
