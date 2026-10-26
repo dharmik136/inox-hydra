@@ -110,7 +110,10 @@ EXPORTABLE_TABLES = ("drafts", "posts", "leads", "lead_interactions",
                      # From your record (cycle 4, track 7): the creator's asks, the
                      # daily batches built for them, their marks and notes, and what
                      # their archive says they saved and followed.
-                     "asks", "daily_view", "daily_run", "card_marks", "record_notes", "archive_records")
+                     "asks", "daily_view", "daily_run", "card_marks", "record_notes", "archive_records",
+                     # Phase 2: account and own content readings, graph points,
+                     # and the creator's own reposts.
+                     "insight_readings", "insight_daily_points", "own_reposts")
 
 EXPORT_FORMATS = ("json", "csv", "obsidian")
 

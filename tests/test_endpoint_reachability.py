@@ -328,9 +328,19 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Integration of tracks 5, 7, 3 and 6, measured on the merged tree: 201
 # paths, 148 reached by the interface, 53 unreachable.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 201
+# Cycle 4, track 5, phase 2: 173 -> 177 paths, unreachable 55 -> 59. Four new
+# paths: POST /api/analytics/page-figures, which only the extension calls
+# (own_insights.js), and GET /api/analytics/account-figures,
+# /api/analytics/content-figures and /api/v1/insights/reposts, which the
+# interface draws next. They sit in the unreachable column until it does.
+# ---------------------------------------------------------------------------
+# Integration with track 5's phase 2, measured on the merged tree: 205 paths,
+# 148 reached, 57 unreachable. The four new readings routes have no screen
+# yet; 2.9.0 draws them.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 205
 REACHED_BY_INTERFACE = 148
-UNREACHABLE = 53
+UNREACHABLE = 57
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

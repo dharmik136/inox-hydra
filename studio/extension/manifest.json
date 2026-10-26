@@ -41,7 +41,7 @@
     },
     {
       "matches": ["https://*.linkedin.com/*"],
-      "js": ["voyager_schema.js", "content.js", "own_pages.js"],
+      "js": ["voyager_schema.js", "content.js", "own_pages.js", "own_insights.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
     }

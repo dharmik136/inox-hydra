@@ -19,6 +19,7 @@ try:
     from ..database import get_db
     from .. import insights
     from .. import onboarding
+    from .. import own_insights
     from .. import post_summary
     from .. import results
     from ..crm import reverse_crm, VIP_THRESHOLD
@@ -27,6 +28,7 @@ except (ImportError, ValueError):
     from database import get_db
     import insights
     import onboarding
+    import own_insights
     import post_summary
     import results
     from crm import reverse_crm, VIP_THRESHOLD
@@ -360,7 +362,42 @@ def get_post_field_sightings():
     absent one of those figures is not drift (owner, 2026-10-26), so this is
     where a label that never appears shows.
     """
-    return onboarding.post_analytics_sightings()
+    # The pages phase 2 reads (own_insights.py), each with its own reads as
+    # the count, and the Activity tab's own reposts and edited flag.
+    return {**onboarding.post_analytics_sightings(), "pages": own_insights.page_sightings()}
+
+
+@router.post("/api/analytics/page-figures")
+def ingest_page_figures(payload: dict):
+    """
+    One read of the creator's own account or content page by the bridge
+    (studio/extension/own_insights.js): counts with the window the page
+    named, never a viewer's or a searcher's name.
+    """
+    try:
+        return own_insights.ingest_page(payload.get("author"), payload.get("page"), payload.get("content_urn"),
+                                        payload.get("readings"), payload.get("points"))
+    except own_insights.Refused as error:
+        raise HTTPException(status_code=409, detail=str(error))
+
+
+@router.get("/api/analytics/account-figures")
+def get_account_figures(range: str = "30d"):
+    """
+    Profile views and search appearances as their pages read them, each with
+    the window it covers, and new followers by day: what Analytics draws now
+    that a reader exists (sections decision 8).
+    """
+    out = own_insights.account_figures(get_range_days(range))
+    for figure in ("profile_views", "search_appearances"):
+        out[figure] = [{**reading, **window_words(reading["period_label"])} for reading in out[figure]]
+    return out
+
+
+@router.get("/api/analytics/content-figures")
+def get_content_figures():
+    """Each article and newsletter whose own analytics page was read, every reading and each figure's latest."""
+    return own_insights.content_figures()
 
 
 @router.get("/api/analytics/export")

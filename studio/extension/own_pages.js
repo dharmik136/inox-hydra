@@ -1077,7 +1077,9 @@
         } else if (!actor || actor === "me" || actor === me) {
           actor = me;
         }
-        items.push({ activity_urn: urn, actor, text: cardText(card), ...cardCounts(card) });
+        // The creator's own reposts and the edited mark (own_insights.js, track 5).
+        items.push({ activity_urn: urn, actor, text: cardText(card), ...cardCounts(card),
+          ...((globalThis.inoxOwnCardFacts && globalThis.inoxOwnCardFacts(card, { isRepost: isRepostCard, counts: cardCounts, textElement: cardTextElement(card) })) || {}) });
       } else if (kind === "activity_comments") {
         const commentEls = Array.from(card.querySelectorAll(
           "article, .comments-comment-item, [data-view-name='feed-full-update-comment'], .feed-shared-main-content--comment, div[data-id^='urn:li:comment:'], .comments-comments-list__comment-item, div[id^='replaceableComment_urn:li:comment:']"
@@ -1204,6 +1206,13 @@
     ["out of network", "out_of_network_pct"],
     ["beyond your network", "out_of_network_pct"],
   ];
+  // A video's watch time and average watch time, printed as durations
+  // ("12h 30m", "38s") and sent in seconds (phase 2). New labels: absent is
+  // not read, never drift.
+  const POST_DURATION_LABELS = [
+    ["average watch time", "average_watch_seconds"],
+    ["watch time", "watch_time_seconds"],
+  ];
   // Absent on a page that plainly is the post analytics page, these are
   // drift: the seven labels this reader has read since cycle 2, and only
   // those. No label added in cycle 4 belongs here (owner, 2026-10-26), and
@@ -1220,6 +1229,25 @@
     if (!match) return null;
     const value = parseFloat(match[1].replace(",", "."));
     return Number.isNaN(value) || value > 100 ? null : value;
+  }
+
+  // A duration as LinkedIn prints watch time, in seconds, or null: hours,
+  // minutes and seconds in any of their short or long spellings, or
+  // m:ss and h:mm:ss. A bare number says no unit, so it is not one.
+  const WATCH_TIME_ONLY = /^(?:\d+\s*(?:hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\s*)+$|^\d{1,2}(?::\d{2}){1,2}$/i;
+
+  function parseWatchTime(text) {
+    const said = clean(text || "").toLowerCase();
+    if (!WATCH_TIME_ONLY.test(said)) return null;
+    if (said.includes(":")) {
+      const parts = said.split(":").map(Number);
+      return parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
+    }
+    let seconds = 0;
+    for (const [, n, unit] of said.matchAll(/(\d+)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)/g)) {
+      seconds += Number(n) * (unit[0] === "h" ? 3600 : unit[0] === "m" ? 60 : 1);
+    }
+    return seconds;
   }
 
   // The viewer demographics block, read only where nothing has to be
@@ -1338,6 +1366,16 @@
     const rounded = [];
     for (const el of leaves) {
       const text = clean(el.textContent).toLowerCase();
+      const duration = POST_DURATION_LABELS.find(([label, key]) => metrics[key] === undefined && text.startsWith(label));
+      if (duration) {
+        let box = el.parentElement;
+        for (let depth = 0; depth < 3 && box && metrics[duration[1]] === undefined; depth += 1, box = box.parentElement) {
+          const figure = Array.from(box.querySelectorAll("*")).find(
+            (node) => node !== el && node.children.length === 0 && parseWatchTime(node.textContent) !== null);
+          if (figure) metrics[duration[1]] = parseWatchTime(figure.textContent);
+        }
+        continue;
+      }
       // The network split: the percentage may sit in the label's own leaf
       // ("62% in your network") or in a sibling leaf beside it.
       const share = POST_SHARE_LABELS.find(([label, key]) => metrics[key] === undefined && text.includes(label));
