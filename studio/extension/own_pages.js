@@ -1222,16 +1222,21 @@
     return Number.isNaN(value) || value > 100 ? null : value;
   }
 
-  // The viewer demographics block: a heading naming demographics, a control
-  // naming the dimension (job titles, locations, industries, company size,
-  // companies, seniority) and the top entries, each a label beside a
-  // percentage. The block's markup is unverified, so an entry is kept only
-  // when a label sits directly before its percentage, and a block with none
-  // stores nothing.
+  // The viewer demographics block, read only where nothing has to be
+  // guessed: its markup is unverified, and a wrong pairing would be stored
+  // as fact. An entry is the nearest element around a percentage that holds
+  // exactly one percentage and exactly one other piece of text, its label,
+  // in either order; page order binds nothing. Its category is the
+  // dimension word that last came before it, and a run of dimension words
+  // with no entry between them (a tab bar names every category) leaves it
+  // unknown. A label that names the network split is never an entry.
+  // Anything else stores nothing, which the studio counts as not read, and
+  // none of it is drift (owner, 2026-10-26).
   const DEMOGRAPHIC_DIMENSIONS = [
     [/^job titles?$/, "job_title"], [/^locations?$/, "location"], [/^industr(y|ies)$/, "industry"],
     [/^company sizes?$/, "company_size"], [/^compan(y|ies)$/, "company"], [/^seniority( levels?)?$/, "seniority"],
   ];
+  const EVERY_PERCENT = /\d{1,3}(?:[.,]\d+)?\s*%/g;
 
   function dimensionOf(text) {
     const lower = clean(text).toLowerCase();
@@ -1239,41 +1244,76 @@
     return hit ? hit[1] : null;
   }
 
+  function percentCount(text) {
+    return (text.match(EVERY_PERCENT) || []).length;
+  }
+
+  function textPieces(el) {
+    const pieces = [];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = clean(node.textContent);
+      if (text) pieces.push(text);
+    }
+    return pieces;
+  }
+
+  // The label bound to the one percentage in this leaf, or null when no
+  // element around it holds that percentage and exactly one other piece of
+  // text before an element holds a second percentage.
+  function boundLabel(leaf, box) {
+    for (let el = leaf; el && box.contains(el); el = el.parentElement) {
+      if (percentCount(clean(el.textContent)) !== 1) return null;
+      const labels = textPieces(el)
+        .map((piece) => clean(piece.replace(EVERY_PERCENT, "")).replace(/^[\s\u00b7\u2022|:,]+|[\s\u00b7\u2022|:,]+$/g, ""))
+        .filter((piece) => piece && !dimensionOf(piece));
+      if (labels.length === 1) return labels[0];
+      if (labels.length > 1) return null;
+    }
+    return null;
+  }
+
+  function namesTheSplit(text) {
+    const lower = text.toLowerCase();
+    return POST_SHARE_LABELS.some(([label]) => lower.includes(label));
+  }
+
   // The entries, in page order, or [] when the page has no demographics
-  // heading or none the reader can pair, which is not drift (owner,
-  // 2026-10-26): LinkedIn may hold them back on a post with few viewers.
-  // Only what follows the heading is read, so a block that shares an
-  // ancestor with the network split never takes its percentages.
+  // heading or nothing the reader can bind. A heading that names viewer
+  // demographics is preferred to a bare "Demographics", which may be a tab
+  // or a summary line above the discovery block.
   function readPostDemographics(leaves) {
-    const heading = leaves.find((el) => /demographics/i.test(clean(el.textContent)));
+    const heading = leaves.find((el) => /viewer demographics/i.test(clean(el.textContent))) ||
+      leaves.find((el) => /demographics/i.test(clean(el.textContent)));
     if (!heading) return [];
     const after = (el) => Boolean(heading.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const isFigure = (el) => after(el) && PERCENT_IN_TEXT.test(clean(el.textContent));
     // The block is the nearest ancestor holding at least two percentages after the heading.
     let box = heading.parentElement;
-    let percents = [];
+    let figures = 0;
     for (let depth = 0; depth < 4 && box; depth += 1, box = box.parentElement) {
-      percents = leaves.filter((el) => box.contains(el) && after(el) && PERCENT_ONLY.test(clean(el.textContent)));
-      if (percents.length >= 2) break;
+      figures = leaves.filter((el) => box.contains(el) && isFigure(el)).length;
+      if (figures >= 2) break;
     }
-    if (!box || percents.length < 2) return [];
+    if (!box || figures < 2) return [];
     let dimension = "unknown";
+    let wordsInARow = 0;
     const entries = [];
-    let label = null;
     for (const el of leaves) {
       if (!box.contains(el) || !after(el)) continue;
       const text = clean(el.textContent);
-      if (PERCENT_ONLY.test(text)) {
-        const percentage = parsePercent(text);
-        if (label && percentage !== null) entries.push({ dimension, label, percentage });
-        label = null;
-        continue;
-      }
-      const named = entries.length ? null : dimensionOf(text);
+      const named = dimensionOf(text);
       if (named) {
-        dimension = named;
+        wordsInARow += 1;
+        dimension = wordsInARow > 1 ? "unknown" : named;
         continue;
       }
-      label = text;
+      if (!PERCENT_IN_TEXT.test(text)) continue;
+      const label = boundLabel(el, box);
+      const percentage = parsePercent(text);
+      if (!label || percentage === null || namesTheSplit(label)) continue;
+      entries.push({ dimension, label, percentage });
+      wordsInARow = 0;
     }
     return entries;
   }

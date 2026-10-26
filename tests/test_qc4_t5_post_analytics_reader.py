@@ -203,9 +203,73 @@ def test_demographics_never_take_the_network_split_above_their_heading(pages):
     body = f"""<main><ul>{SEVEN}</ul>
       <section><div><span>In your network</span><span>62%</span></div>
                <div><span>Outside your network</span><span>38%</span></div>
-               <h3>Viewer demographics</h3><p>Founder</p><p>21%</p><p>Engineer</p><p>14%</p></section></main>"""
+               <h3>Viewer demographics</h3>
+               <ul><li><span>Founder</span><span>21%</span></li><li><span>Engineer</span><span>14%</span></li></ul>
+      </section></main>"""
     page = _read(pages, body)
     metrics = _sent(pages, page)[0]["metrics"]
     assert (metrics["in_network_pct"], metrics["out_of_network_pct"]) == (62, 38)
     labels = [entry["label"] for entry in metrics["demographics"]]
     assert labels == ["Founder", "Engineer"], labels
+
+
+# ---------------------------------------------------------------------------
+# Review S1: an entry is bound by its own element, never by page order
+# ---------------------------------------------------------------------------
+
+def _demographics(pages, body):
+    page = _read(pages, f"<main><ul>{SEVEN}</ul>{body}</main>")
+    capture = _capture(pages, page)[-1]
+    assert not capture["drift"], "demographics are never drift"
+    return _sent(pages, page)[0]["metrics"].get("demographics")
+
+
+def test_demographics_with_the_percentage_before_the_label_are_bound_by_their_row(pages):
+    """The reviewer's probe B: by page order every entry was shifted by one and the last was lost."""
+    entries = _demographics(pages, """<section><h3>Viewer demographics</h3><button>Job titles</button><ul>
+        <li><span>21%</span><span>Founder</span></li>
+        <li><span>14%</span><span>Software Engineer</span></li>
+        <li><span>9%</span><span>Marketing Manager</span></li></ul></section>""")
+    assert entries == [
+        {"dimension": "job_title", "label": "Founder", "percentage": 21},
+        {"dimension": "job_title", "label": "Software Engineer", "percentage": 14},
+        {"dimension": "job_title", "label": "Marketing Manager", "percentage": 9},
+    ]
+
+
+def test_demographics_listed_category_by_category_take_each_entrys_own_heading(pages):
+    """The reviewer's probe C: Berlin and London were filed as job titles."""
+    entries = _demographics(pages, """<section><h3>Viewer demographics</h3>
+        <h4>Job titles</h4><ul><li><span>Founder</span><span>21%</span></li></ul>
+        <h4>Locations</h4><ul><li><span>Berlin</span><span>30%</span></li><li><span>London</span><span>20%</span></li></ul>
+      </section>""")
+    assert [(e["dimension"], e["label"]) for e in entries] == [
+        ("job_title", "Founder"), ("location", "Berlin"), ("location", "London")]
+
+
+def test_a_tab_bar_of_categories_leaves_the_category_unknown(pages):
+    """Every category named before the entries says nothing about which one they are."""
+    entries = _demographics(pages, """<section><h3>Viewer demographics</h3>
+        <div><button>Job titles</button><button>Locations</button><button>Industries</button></div>
+        <ul><li><span>Berlin</span><span>30%</span></li><li><span>London</span><span>20%</span></li></ul></section>""")
+    assert {e["dimension"] for e in entries} == {"unknown"}
+
+
+def test_a_demographics_word_above_the_network_split_never_files_the_split_as_demographics(pages):
+    """The reviewer's probe D: a tab or summary line saying Demographics above the discovery block."""
+    page = _read(pages, f"""<main><nav><a>Demographics</a></nav><ul>{SEVEN}</ul>
+      <section><div><span>In your network</span><span>62%</span></div>
+               <div><span>Outside your network</span><span>38%</span></div></section>
+      <section><ul><li><span>Founder</span><span>21%</span></li><li><span>Engineer</span><span>14%</span></li></ul></section>
+    </main>""")
+    metrics = _sent(pages, page)[0]["metrics"]
+    assert (metrics["in_network_pct"], metrics["out_of_network_pct"]) == (62, 38)
+    labels = [e["label"] for e in metrics.get("demographics", [])]
+    assert labels == ["Founder", "Engineer"], labels
+
+
+def test_demographics_that_cannot_be_bound_store_nothing(pages):
+    """Labels and percentages as loose siblings: no element binds one to the other, so nothing is kept."""
+    entries = _demographics(pages, """<section><h3>Viewer demographics</h3>
+        <p>Founder</p><p>21%</p><p>Software Engineer</p><p>14%</p></section>""")
+    assert entries is None
