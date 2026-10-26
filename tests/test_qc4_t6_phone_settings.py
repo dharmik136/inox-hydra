@@ -365,3 +365,43 @@ def test_restarting_the_worker_leaves_one_thread_polling(monkeypatch):
     finally:
         daemon.stop_worker()
         second.join(2)
+
+
+# ---------------------------------------------------------------------------
+# Review round, note N-7
+# ---------------------------------------------------------------------------
+
+def test_a_bot_whose_profile_is_gone_is_no_longer_asked(monkeypatch):
+    """
+    A deleted profile's bot was polled until restart, and each message was
+    confirmed to Telegram and dropped. Now the worker stops asking before it
+    polls, so nothing more is confirmed unread.
+    """
+    daemon = ingress.TelegramIngressDaemon(bot_token=BOT_A, authorized_chat_id=CHAT)
+    daemon.configure(BOT_A, CHAT, origin="settings", profile_id="ghost-profile")
+    calls = []
+    _fake_telegram(monkeypatch, [], calls)
+    assert daemon.poll_once() == []
+    assert calls == [], "the gone profile's bot was still asked for messages"
+    assert daemon.bot_token == "" and "closed or gone" in daemon.last_error
+
+
+def test_a_groups_chat_id_is_refused(studio):
+    """Any member of a group could file drafts through it; the help asks for your own chat id."""
+    client, started, _stopped = studio
+    res = client.post("/api/v1/ingress/settings", json={"bot_token": TOKEN, "chat_id": "-100123456789"})
+    assert res.status_code == 400 and "group" in res.json()["detail"]
+    assert _stored() == {} and started == []
+
+
+def test_the_panel_does_not_claim_the_studio_stopped_asking_everyone():
+    """The removal sentence was written by the client, and was false while another profile's bot ran."""
+    panel = _read("studio/ui/src/components/TelegramIngressPanel.tsx")
+    assert "The studio no longer asks Telegram for anything" not in panel
+    assert "Removed from this profile" in panel
+
+
+def test_the_egress_ledger_describes_the_category_as_it_now_is():
+    source = _read("studio/backend/egress.py")
+    line = next(l for l in source.splitlines() if l.strip().startswith("ingress "))
+    assert "Local security" in line

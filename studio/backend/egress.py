@@ -52,7 +52,7 @@ So the policy is per category, and the defaults match how each call is reached:
   library   allowed. Reached only when you sync or import a bundle.
   updates    allowed here, and already off by default one level up in
              updates.py, which asks before it ever checks.
-  ingress    allowed here, and inert unless TELEGRAM_BOT_TOKEN is set.
+  ingress    allowed here, and inert unless a Telegram bot is set up under Local security (or, in dev mode, TELEGRAM_BOT_TOKEN is set).
 
 `INOX_NO_EGRESS=1` refuses every category including the ones allowed above,
 which is the switch that makes the constraint enforceable rather than

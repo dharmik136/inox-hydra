@@ -26,7 +26,7 @@ Your own bot token and your own numeric chat id. Creating a bot and finding your
 The token is sealed before it is stored, like your AI key, and is never shown again. A token or chat id of the wrong shape is refused with a sentence and nothing is stored.
 
 > [!IMPORTANT]
-> Both values are needed. Without a chat id the bot has no way to tell you from anybody else, so every message is refused, and a refused message is not delivered again later. Messages from any other chat are dropped.
+> Both values are needed. Without a chat id the bot has no way to tell you from anybody else, so every message is refused, and a refused message is not delivered again later. Messages from any other chat are dropped. A group's chat id, which starts with a minus sign, is refused, because anyone in the group could then file drafts in your studio.
 
 For maintainers, the older way still works: `INOX_DEV_MODE=1`, `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in the environment the studio starts from (`PRUDENT_TELEGRAM_BOT_TOKEN` and `PRUDENT_TELEGRAM_CHAT_ID` are also accepted), read once at startup. A token in the environment alone, without dev mode, starts nothing.
 

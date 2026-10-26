@@ -51,8 +51,9 @@ SETTINGS_TOKEN_KEY = "telegram_bot_token"
 SETTINGS_CHAT_KEY = "telegram_chat_id"
 # A bot token as BotFather issues one: the bot's number, a colon, a secret.
 TOKEN_SHAPE = re.compile(r"^\d{5,15}:[A-Za-z0-9_-]{20,}$")
-# A chat id is an integer; a group's is negative.
-CHAT_ID_SHAPE = re.compile(r"^-?\d{1,20}$")
+# Your own chat with the bot: a positive integer. A group's id is negative,
+# and any member of the group could then file drafts, so it is refused.
+CHAT_ID_SHAPE = re.compile(r"^\d{1,20}$")
 # Said by the panel and the help until the owner has run one end-to-end test
 # against the real service; the suite only ever simulates Telegram.
 NOT_YET_TESTED = ("This has not yet been tested against the real Telegram service, only against a "
@@ -496,6 +497,14 @@ class TelegramIngressDaemon:
         """Single polling request to Telegram getUpdates API."""
         if not self.bot_token:
             return []
+        if self.configured_from == "settings" and self.profile_id and self.profile_id not in paths.profile_ids():
+            # The profile this bot was set up in was deleted, or closed with
+            # its licence. Asking on would confirm each of its messages to
+            # Telegram and then drop it, so the worker stops asking.
+            self.configure("", "", origin=None)
+            self.last_error = ("The profile this bot was set up in is closed or gone, so the studio stopped asking "
+                               "Telegram for its messages. Set the bot up again in the profile you use.")
+            return []
 
         token = self.bot_token
         url = f"https://api.telegram.org/bot{token}/getUpdates"
@@ -732,6 +741,10 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
         return {"status": "error", "message": (
             "That is not the shape of a Telegram bot token: BotFather issues a number, a colon and a secret, "
             "for example 123456789:AAF... Paste it exactly as given. Nothing was stored.")}
+    if chat.startswith("-"):
+        return {"status": "error", "message": (
+            "That is a group's chat id: any member of the group could then file drafts in your studio. Use your "
+            "own chat id with the bot, a number with no minus sign. Nothing was stored.")}
     if not CHAT_ID_SHAPE.match(chat):
         return {"status": "error", "message": (
             "Your chat id is a number, digits only. Without it the bot cannot tell you from anybody else, "

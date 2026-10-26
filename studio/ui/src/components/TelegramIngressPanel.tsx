@@ -149,7 +149,7 @@ export function TelegramIngressPanel() {
           {state?.configured && (
             <button
               type="button"
-              onClick={() => void save("", "", "Removed. The studio no longer asks Telegram for anything.")}
+              onClick={() => void save("", "", "Removed from this profile.")}
               disabled={busy}
               className="rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
             >
