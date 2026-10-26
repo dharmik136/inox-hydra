@@ -33,22 +33,45 @@ def _inside_first_viewport(page, selector):
 
 
 def _measure(page):
-    """Scroll pages of the work area, and the share of its width that carries text."""
+    """
+    The Cycle 3 one-view figures (its research, ONEVIEW section 1.1): scroll
+    pages are scrollHeight / clientHeight of the scrolling region; ink is the
+    share of the viewport covered by visible text, on an 8 pixel grid over
+    every rendered text box inside <main>, with screen reader only and
+    aria-hidden text left out. "used" is how much of the work area's width
+    the text spans.
+    """
     return page.evaluate("""() => {
       const main = document.querySelector('main');
       const box = main.getBoundingClientRect();
-      let left = Infinity, right = 0, ink = 0;
-      for (const el of main.querySelectorAll('*')) {
-        if (!el.textContent || !el.textContent.trim() || el.children.length) continue;
-        const r = el.getBoundingClientRect();
-        if (r.width <= 0 || r.height <= 0 || r.top > window.innerHeight) continue;
-        left = Math.min(left, r.left); right = Math.max(right, r.right);
-        ink += Math.min(r.width, box.width) * Math.min(r.height, window.innerHeight - Math.max(r.top, 0));
+      const W = window.innerWidth, H = window.innerHeight, G = 8;
+      const cols = Math.ceil(W / G), rows = Math.ceil(H / G);
+      const covered = new Uint8Array(cols * rows);
+      let left = Infinity, right = 0;
+      const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
+      let node;
+      while ((node = walker.nextNode())) {
+        if (!node.textContent.trim()) continue;
+        const el = node.parentElement;
+        if (!el || el.closest('[aria-hidden="true"], .sr-only')) continue;
+        const style = getComputedStyle(el);
+        if (style.visibility === 'hidden' || style.display === 'none') continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        for (const r of range.getClientRects()) {
+          if (r.width <= 0 || r.height <= 0 || r.right <= 0 || r.bottom <= 0 || r.left >= W || r.top >= H) continue;
+          left = Math.min(left, r.left); right = Math.max(right, r.right);
+          const x0 = Math.max(0, Math.floor(r.left / G)), x1 = Math.min(cols - 1, Math.floor((r.right - 0.01) / G));
+          const y0 = Math.max(0, Math.floor(r.top / G)), y1 = Math.min(rows - 1, Math.floor((r.bottom - 0.01) / G));
+          for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) covered[y * cols + x] = 1;
+        }
       }
+      let inked = 0;
+      for (const cell of covered) inked += cell;
       return {
         pages: main.scrollHeight / main.clientHeight,
         used: (right - left) / box.width,
-        ink: ink / (box.width * Math.min(box.height, window.innerHeight)),
+        ink: inked / covered.length,
       };
     }""")
 
@@ -119,3 +142,83 @@ def test_health_offers_the_update_check_off_by_default(studio):
     expect(box).not_to_be_checked()
     expect(page.locator("main")).to_contain_text("no request leaves this machine")
     assert page.get_by_role("button", name="Check now").count() == 0, "Check now is offered before consent"
+
+
+# ---------------------------------------------------------------------------
+# Replies: who commented on my posts that I have not answered, oldest-seen
+# first?
+# ---------------------------------------------------------------------------
+
+COMMENTERS = (
+    ("Lena Fischer", "lena-fischer-x", 0, "We moved our rota into the repo last spring and never looked back."),
+    ("Omar Haddad", "omar-haddad-x", 1, "Which spreadsheet was it? Asking for a friend who owns three."),
+    ("Ines Duarte", "ines-duarte-x", 1, "The bit about handoffs is the part nobody budgets for."),
+    ("Kofi Mensah", "kofi-mensah-x", 2, "A third is a big number. What did you stop doing?"),
+)
+
+
+def _seed_comments(client, urns):
+    for name, vanity, post, text in COMMENTERS:
+        answer = client.post("/api/v1/crm/interactions/ingest", json={
+            "full_name": name, "profile_url": f"https://www.linkedin.com/in/{vanity}",
+            "headline": f"Engineering at {name.split()[1]} and Co", "company": "Co", "interaction_type": "COMMENT",
+            "comment_text": text, "post_urn": urns[post], "post_author": ME,
+        })
+        assert answer.status_code == 200, answer.text
+
+
+def test_replies_answers_who_is_waiting_in_the_first_viewport(studio):
+    client = studio["client"]
+    urns = seed_creator(client, commenter="Anika Shah", comment="This matches what we saw last year.")
+    _seed_comments(client, urns)
+
+    page = open_section(studio, "replies")
+    expect(page.locator("h1")).to_have_text("Who is waiting on a reply")
+    main = page.locator("main")
+    expect(main).to_contain_text("This matches what we saw last year.", timeout=10000)
+    expect(main).to_contain_text("SEEN BY THE STUDIO")
+    expect(main).to_contain_text("COMMENTS WAITING, LAST 14 DAYS")
+    for name, _vanity, _post, text in COMMENTERS:
+        expect(main).to_contain_text(name)
+    assert page.locator("main section").count() == 3, "the comments are not grouped by post"
+    assert page.locator("h1:visible").count() == 1
+
+    # The question is answered above the fold: the figures and the first
+    # post's waiting comments.
+    assert _inside_first_viewport(page, "main dl")
+    assert _inside_first_viewport(page, "main section")
+
+    measured = _measure(page)
+    print(f"\nReplies at 1440x900: {measured['pages']:.2f} scroll pages, {measured['used']:.0%} of the width used, "
+          f"{measured['ink']:.0%} ink in the first viewport")
+    assert measured["pages"] <= 2.0, f"Replies is {measured['pages']:.2f} screens tall"
+    assert measured["used"] > 0.9
+    assert studio["errors"] == [], studio["errors"]
+
+
+def test_marking_a_reply_answered_empties_the_list_and_says_how_many_were_answered(studio):
+    client = studio["client"]
+    seed_creator(client, commenter="Anika Shah", comment="This matches what we saw last year.")
+    page = open_section(studio, "replies")
+    main = page.locator("main")
+    expect(main).to_contain_text("This matches what we saw last year.", timeout=10000)
+    page.get_by_role("button", name="Answered, Anika Shah's comment").click()
+    expect(main).to_contain_text("Nobody from the last 14 days is waiting on a reply.", timeout=5000)
+    expect(main).to_contain_text("You marked 1 answered in the last 7 days.")
+    expect(page.get_by_role("button", name="Undo")).to_be_visible()
+
+    page.get_by_role("button", name="Undo").click()
+    expect(main).to_contain_text("This matches what we saw last year.", timeout=5000)
+    assert studio["errors"] == [], studio["errors"]
+
+
+def test_today_counts_the_comments_waiting_and_opens_replies(studio):
+    client = studio["client"]
+    urns = seed_creator(client, commenter="Anika Shah", comment="This matches what we saw last year.")
+    _seed_comments(client, urns)
+    page = open_section(studio, "today")
+    link = page.get_by_role("button", name="5 COMMENTS WAITING, OPEN REPLIES")
+    expect(link).to_be_visible(timeout=10000)
+    link.click()
+    expect(page.locator("h1")).to_have_text("Who is waiting on a reply", timeout=5000)
+    assert studio["errors"] == [], studio["errors"]

@@ -2033,6 +2033,15 @@ except (ImportError, ValueError):
 
 app.include_router(health_router_module.router)
 
+# Replies: every comment waiting on the creator's posts, and their own mark
+# (studio/backend/routers/replies.py, rules in studio/backend/replies.py).
+try:
+    from .routers import replies as replies_router_module
+except (ImportError, ValueError):
+    from routers import replies as replies_router_module
+
+app.include_router(replies_router_module.router)
+
 DOCS_DIR = search_router_module.DOCS_DIR
 MODULES_DIR = search_router_module.MODULES_DIR
 DOCS_MODULES = search_router_module.DOCS_MODULES

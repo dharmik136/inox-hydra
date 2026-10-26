@@ -259,8 +259,13 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # below would have credited the liveness route /api/v1/health, which nothing
 # in the interface calls.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 174
-REACHED_BY_INTERFACE = 125
+# Then 174 -> 177 and 125 -> 128, with Replies (cycle 4, track 4). Three new
+# paths, all called by the Replies screen: /api/v1/replies, the comments on
+# your posts waiting on a reply, and /api/v1/replies/mark and
+# /api/v1/replies/unmark, the creator's own Answered mark.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 177
+REACHED_BY_INTERFACE = 128
 UNREACHABLE = 49
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

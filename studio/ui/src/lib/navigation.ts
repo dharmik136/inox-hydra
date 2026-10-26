@@ -13,12 +13,14 @@ import {
   Send,
   Shapes,
   HeartPulse,
+  MessageSquareReply,
   type LucideIcon,
 } from "lucide-react";
 
 export type SectionId =
   | "setup"
   | "today"
+  | "replies"
   | "activity"
   | "health"
   | "posts"
@@ -67,6 +69,8 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   // Where a creator starts once the studio knows who they are: who to reply
   // to, how the latest post is doing, and the one page worth opening.
   { id: "today", label: "Today", blurb: "Who to reply to and how your latest post is doing", icon: Sunrise },
+  // Every comment on your posts waiting on a reply, where Today names five.
+  { id: "replies", label: "Replies", blurb: "Every comment on your posts that is waiting on a reply", icon: MessageSquareReply },
   { id: "activity", label: "Activity", blurb: "What the bridge has read from your LinkedIn, as it arrives", icon: Activity },
   // Where a creator looks when the rest looks wrong: whether each reader
   // is reading, what it read this week, and what it could not read. It

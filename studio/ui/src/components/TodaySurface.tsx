@@ -101,9 +101,12 @@ export function TodaySurface({
   onOpenActivity,
   onOpenQueue,
   onOpenComposer,
+  onOpenReplies,
 }: {
   onOpenLead: (leadId: string) => void;
   onOpenSetup: () => void;
+  /** Opens Replies, where every comment waiting is listed (track 4). */
+  onOpenReplies?: () => void;
   onOpenActivity?: () => void;
   onOpenQueue?: () => void;
   onOpenComposer?: () => void;
@@ -446,7 +449,21 @@ export function TodaySurface({
 
           <Panel
             title="Reply to"
-            note={brief.identity.known ? `${brief.reply_to.length}` : undefined}
+            note={
+              // Five people are listed here; the count is every comment
+              // waiting in the window, as Replies counts them, and opens it.
+              brief.identity.known && brief.replies && onOpenReplies ? (
+                <button
+                  type="button"
+                  onClick={onOpenReplies}
+                  className="underline decoration-edge-strong underline-offset-2 hover:text-ink-primary"
+                >
+                  {brief.replies.waiting.toLocaleString()} {brief.replies.waiting === 1 ? "COMMENT" : "COMMENTS"} WAITING, OPEN REPLIES
+                </button>
+              ) : brief.identity.known ? (
+                `${brief.reply_to.length}`
+              ) : undefined
+            }
             grow
           >
             {!brief.identity.known ? (

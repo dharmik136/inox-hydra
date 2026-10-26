@@ -27,6 +27,8 @@ Up to five people who commented on your own posts in the last two weeks and have
 
 They are ordered by what they did: people who engaged with more than one of your posts first, then the most recent comment. The time beside each person is when the studio first saw that comment, which does not change when you open the post again. The ICP score plays no part. Click a person to open their dossier in **Leads**.
 
+Beside the title, the count of every comment waiting in the same two weeks, for example **12 COMMENTS WAITING, OPEN REPLIES**, opens **Replies**, which lists them all, grouped by post. A comment you mark **Answered** there leaves this list too. See [Answer the people waiting on a reply](answer-the-people-waiting-on-a-reply.md).
+
 ## Your latest post
 
 The opening of your most recent post, its age, and the reactions and comments last read on it.

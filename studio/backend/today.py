@@ -32,12 +32,13 @@ except ImportError:
     from text_cut import clip
 
 try:
-    from . import onboarding, post_identity, post_summary, results
+    from . import onboarding, post_identity, post_summary, replies, results
     from .database import get_db
 except ImportError:
     import onboarding
     import post_identity
     import post_summary
+    import replies
     import results
     from database import get_db
 
@@ -189,12 +190,16 @@ def _reply_to(conn) -> List[Dict[str, Any]]:
     # CAST(... AS TEXT) compares as text, which the key can serve, until the
     # phase 3 rebuild gives the column its real type. The ORDER BY is the
     # order that scan produced, so ties come out as they always did.
+    #
+    # A comment the creator marked answered in Replies is not waiting, read
+    # through replies.MARKED_AT, the one statement of that mark.
     rows = conn.execute(
-        """
+        f"""
         SELECT i.lead_id, i.post_urn, i.comment_text, i.interaction_type,
                COALESCE(i.first_seen_at, i.interacted_at) AS engaged_at,
                COALESCE(i.last_seen_at, i.interacted_at) AS seen_at,
-               COALESCE(l.full_name, l.name) AS name, l.headline, l.lead_status
+               COALESCE(l.full_name, l.name) AS name, l.headline, l.lead_status,
+               {replies.MARKED_AT.format(i="i")} AS answered_at
         FROM lead_interactions i JOIN leads l ON l.id = CAST(i.lead_id AS TEXT)
         WHERE COALESCE(i.first_seen_at, i.interacted_at) >= ?
         ORDER BY l.rowid, i.interacted_at DESC, i.id
@@ -214,6 +219,8 @@ def _reply_to(conn) -> List[Dict[str, Any]]:
         person["posts_engaged"].add(onboarding._activity_id(row["post_urn"]))
         person["last_seen_at"] = max(person["last_seen_at"] or "", row["seen_at"] or "") or None
         if row["interaction_type"] != "COMMENT":
+            continue
+        if row["answered_at"]:
             continue
         person["commented"] = True
         if (row["engaged_at"] or "") >= (person["engaged_at"] or ""):
@@ -393,6 +400,8 @@ def today_brief() -> Dict[str, Any]:
         latest = _latest_post(conn) if state["steps"]["identity"] else None
         marked = _marked_published(conn, latest)
         reply_to = _reply_to(conn) if state["steps"]["identity"] else []
+        # All the comments waiting, which Replies lists; Today shows five people.
+        replies_waiting = replies.waiting_count(conn) if state["steps"]["identity"] else 0
         queue = _queue(conn)
         open_next = _open_next(state, latest, conn)
         demo_cleanup = _demo_cleanup(conn)
@@ -414,6 +423,7 @@ def today_brief() -> Dict[str, Any]:
             "posts_held": state["counts"]["posts"],
         },
         "reply_to": reply_to,
+        "replies": {"waiting": replies_waiting, "window_days": REPLY_WINDOW.days},
         "latest_post": latest,
         "marked_published": marked,
         "queue": queue,

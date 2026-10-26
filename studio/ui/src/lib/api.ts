@@ -2160,6 +2160,8 @@ export interface TodayBrief {
   identity: { known: boolean; name: string | null };
   freshness: { bridge: BridgeStatus; drifting: string[]; last_capture_at: string | null; posts_held?: number };
   reply_to: TodayPerson[];
+  /** Every comment waiting in the window, as Replies counts them; reply_to is five people of them. */
+  replies?: { waiting: number; window_days: number };
   latest_post: TodayLatestPost | null;
   /** The newest post marked published here that the bridge has not yet seen on LinkedIn. */
   marked_published?: { post_id: string; published_at: string; excerpt: string | null } | null;
@@ -3451,4 +3453,73 @@ export interface UpdateCheck {
 /** Performs the check only when the preference is on; nothing is downloaded or run. */
 export async function runUpdateCheck(): Promise<UpdateCheck> {
   return call<UpdateCheck>("/api/v1/updates/check", { method: "POST", body: JSON.stringify({}) });
+}
+
+// ---------------------------------------------------------------------------
+// Replies: every comment waiting on your posts, and your own Answered mark
+//
+// Whether you replied is not something the bridge reads, so "answered" is the
+// mark you set. A comment's time is when the studio first saw it, never when
+// it was written: LinkedIn's own time is not captured.
+// ---------------------------------------------------------------------------
+
+export interface ReplyComment {
+  lead_id: string;
+  post_urn: string;
+  comment_key: string;
+  comment_text: string | null;
+  /** When the studio first saw the comment. Not when it was written. */
+  seen_at: string;
+  name: string;
+  headline: string | null;
+  /** When you marked it answered, or null. */
+  marked_at: string | null;
+}
+
+export interface ReplyPostGroup {
+  post_id: string;
+  activity_urn: string;
+  excerpt: string | null;
+  published_at: string | null;
+  /** Null for a post LinkedIn has not given the studio a link for. */
+  url: string | null;
+  /** In this view, on this post, across every page. */
+  in_view: number;
+  waiting: number;
+  answered: number;
+  comments: ReplyComment[];
+}
+
+export type RepliesView = "waiting" | "answered";
+
+export interface RepliesPage {
+  identity_known: boolean;
+  view: RepliesView;
+  window: { days: number; label: string; since: string };
+  counts: { waiting: number; people: number; posts: number; answered_in_window: number; answered_last_7_days: number };
+  offset: number;
+  limit: number;
+  total: number;
+  next_offset: number | null;
+  posts: ReplyPostGroup[];
+}
+
+export async function fetchReplies(days: number, view: RepliesView, offset = 0): Promise<RepliesPage> {
+  return call<RepliesPage>(`/api/v1/replies?days=${days}&view=${view}&offset=${offset}`);
+}
+
+type CommentRef = Pick<ReplyComment, "lead_id" | "post_urn" | "comment_key">;
+
+export async function markReplyAnswered(comment: CommentRef): Promise<{ marked_at: string }> {
+  return call("/api/v1/replies/mark", {
+    method: "POST",
+    body: JSON.stringify({ lead_id: comment.lead_id, post_urn: comment.post_urn, comment_key: comment.comment_key }),
+  });
+}
+
+export async function unmarkReplyAnswered(comment: CommentRef): Promise<{ removed: number }> {
+  return call("/api/v1/replies/unmark", {
+    method: "POST",
+    body: JSON.stringify({ lead_id: comment.lead_id, post_urn: comment.post_urn, comment_key: comment.comment_key }),
+  });
 }

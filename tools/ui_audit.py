@@ -56,6 +56,7 @@ AXE_JS = os.path.join(REPO_ROOT, "studio", "ui", "node_modules", "axe-core", "ax
 SECTIONS = {
     "setup": "Setup",
     "today": "Today",
+    "replies": "Replies",
     "activity": "Activity",
     "health": "Health",
     "composer": "Composer",

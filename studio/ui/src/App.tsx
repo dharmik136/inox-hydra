@@ -12,6 +12,7 @@ import { OnboardingSurface } from "@/components/OnboardingSurface";
 import { TodaySurface } from "@/components/TodaySurface";
 import { ActivitySurface } from "@/components/ActivitySurface";
 import { HealthSurface } from "@/components/HealthSurface";
+import { RepliesSurface } from "@/components/RepliesSurface";
 import { PostsSurface } from "@/components/PostsSurface";
 import { OutboundSurface } from "@/components/OutboundSurface";
 import { PatternsSurface } from "@/components/PatternsSurface";
@@ -998,6 +999,7 @@ export default function App() {
               {active === "today" && (
                 <TodaySurface
                   onOpenSetup={() => navigate("setup")}
+                  onOpenReplies={() => navigate("replies")}
                   onOpenActivity={() => navigate("activity")}
                   onOpenQueue={() => navigate("queue")}
                   onOpenComposer={() => navigate("composer")}
@@ -1018,6 +1020,16 @@ export default function App() {
                 />
               )}
               {active === "health" && <HealthSurface onOpenSetup={() => navigate("setup")} />}
+              {active === "replies" && (
+                <RepliesSurface
+                  onOpenSetup={() => navigate("setup")}
+                  onOpenLead={(leadId) => {
+                    if (!navigate("leads")) return;
+                    focusNonce.current += 1;
+                    setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
+                  }}
+                />
+              )}
               {active === "leads" && <LeadsSurface focus={focusFor("leads")} />}
               {active === "posts" && (
                 <PostsSurface
