@@ -1128,6 +1128,11 @@
   }
 
   const sentKeys = new Set();
+  // What has been offered on this page, for an import's running total. An
+  // item the studio never answered is offered again, and must not be counted
+  // again: counting it every round inflated the total and kept the stall
+  // check from ever ending an import while the studio was down.
+  const offeredKeys = new Set();
 
   function itemKey(item) {
     return JSON.stringify([
@@ -1153,6 +1158,8 @@
 
     const fresh = items.filter((item) => !sentKeys.has(itemKey(item)));
     if (!fresh.length) return 0;
+    const firstTime = fresh.filter((item) => !offeredKeys.has(itemKey(item)));
+    firstTime.forEach((item) => offeredKeys.add(itemKey(item)));
     const path = kind === "activity_posts" ? "/api/v1/self/posts/ingest" : "/api/v1/self/outbound/ingest";
     const payload = kind === "activity_posts" ? { author: me, posts: fresh } : { actor: me, items: fresh };
     const answer = announce(await studioCall(path, payload), path);
@@ -1164,6 +1171,7 @@
     // call, so those items were silently lost for the rest of the page.
     const decided = answer && (answer.ok || answer.kept || answer.httpStatus);
     if (decided) fresh.forEach((item) => sentKeys.add(itemKey(item)));
+    const added = firstTime.length;
     // A read the studio understood and stored nothing of. The creator asked
     // for this import, so being told "0 of 14" beats being told nothing,
     // which is what `skipped` got until now.
@@ -1172,7 +1180,7 @@
       toast("Inox Hydra: the studio understood " + stored.skipped +
             " of these and stored none. They are already recorded, or not in a shape it reads.");
     }
-    return fresh.length;
+    return added;
   }
 
   // ---------------------------------------------------------------
@@ -1351,6 +1359,7 @@
     importRunning = true;
     stopRequested = false;
     sentKeys.clear();
+    offeredKeys.clear();
     await studio("/api/v1/self/imports/event", { id: request.id, event: "started" });
 
     const noun = { posts: "posts", comments: "comments", reactions: "reactions" }[IMPORT_KIND[kind]];
@@ -1522,6 +1531,12 @@
 
   heartbeat();
   setInterval(heartbeat, HEARTBEAT_MS);
+  // The first heartbeat leaves before content.js has read the network
+  // reading switch (both scripts run in one task; the storage read answers
+  // after), so it carries no state. content.js says when the switch is
+  // known, and when it changes, and the page reports at once rather than a
+  // minute later.
+  window.addEventListener("studio:networkreading", () => { heartbeat(); });
   document.addEventListener("visibilitychange", () => {
     heartbeat();
     if (document.visibilityState === "visible") onRoute();

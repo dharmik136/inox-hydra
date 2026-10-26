@@ -589,7 +589,7 @@ async function loadSideHealth() {
     const calls = reading && reading.voyager_calls ? Object.entries(reading.voyager_calls) : [];
     calls.sort((a, b) => b[1] - a[1]);
     const callsLine = calls.length
-      ? "LinkedIn's data calls on the last page read: " + calls.slice(0, 8).map(([key, count]) => {
+      ? "LinkedIn's data calls seen in the tab that last reported: " + calls.slice(0, 8).map(([key, count]) => {
           const parts = String(key).split(" ");
           return (parts[1] || parts[0]) + " (" + count + ")";
         }).join(", ") + (calls.length > 8 ? ", and " + (calls.length - 8) + " more." : ".")

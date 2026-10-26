@@ -205,6 +205,26 @@ _NETWORK_READING_FIELDS = {
 # meter exists to name what LinkedIn calls, never what it was asked.
 _VOYAGER_CALL_KEY = re.compile(r"^/[A-Za-z0-9_./-]{1,160}( [A-Za-z0-9_.-]{1,80})?$")
 _VOYAGER_CALLS_LIMIT = 100
+# LinkedIn's REST paths put what was asked about in the path: a member's
+# vanity after /profiles/, a post's URN after /socialActions/. The extension
+# replaces those segments with "_id_"; a key that still carries one, from an
+# extension that did not, is refused here, so no other member is ever kept.
+_ID_AFTER = {"profiles", "members", "people", "socialActions", "social", "conversations", "updates",
+             "comments", "organizations", "companies", "schools", "groups", "events", "jobs", "posts",
+             "activities", "shares", "ugcPosts", "reactions", "likes", "connections", "invitations",
+             "messages", "threads"}
+
+
+def _voyager_call_key_ok(key: str) -> bool:
+    if not _VOYAGER_CALL_KEY.match(key):
+        return False
+    segments = key.split(" ")[0].strip("/").split("/")
+    for previous, segment in zip([""] + segments, segments):
+        if segment == "_id_":
+            continue
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*", segment) or re.search(r"\d{4,}", segment) or previous in _ID_AFTER:
+            return False
+    return True
 
 
 def _clean_network_reading(raw: Any) -> Optional[Dict[str, Any]]:
@@ -230,7 +250,7 @@ def _clean_voyager_calls(raw: Any) -> Optional[Dict[str, int]]:
         return None
     clean = {}
     for key, value in raw.items():
-        if not isinstance(key, str) or not _VOYAGER_CALL_KEY.match(key):
+        if not isinstance(key, str) or not _voyager_call_key_ok(key):
             continue
         if not isinstance(value, int) or isinstance(value, bool) or value < 0:
             continue
@@ -280,13 +300,14 @@ def network_reading_sentence(reading: Dict[str, Any]) -> str:
     elif matched > 0:
         base = f"Network reading is on and seeing {seen} LinkedIn data calls, {matched} matched."
     else:
-        base = (f"Network reading is on and matching nothing: the last page read made {seen} LinkedIn "
-                "data calls and none matched the bridge's patterns.")
+        base = (f"Network reading is on and matching nothing: the LinkedIn tab that last reported saw {seen} "
+                "LinkedIn data calls, and none matched the bridge's patterns.")
     notes = []
     if reading.get("registered") is False:
         notes.append("The browser has not registered the reader: turn the switch off and on in the extension's popup.")
     if reading.get("injected") is False:
-        notes.append("The last LinkedIn page read was opened before the switch was turned on: reload that tab.")
+        notes.append("The LinkedIn tab that last reported does not carry the reader, which a tab opened "
+                     "before the switch was turned on does not: reload that tab.")
     return " ".join([base] + notes)
 
 

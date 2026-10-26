@@ -60,3 +60,24 @@ def test_items_the_studio_kept_or_refused_are_not_sent_again(pages):
     assert len(pages.sent(page, INGEST)) == 1
     _scroll(page)
     assert len(pages.sent(page, INGEST)) == 1, "a decided refusal was asked again"
+
+
+def test_an_import_while_the_studio_is_down_counts_each_item_once_and_ends(pages):
+    """
+    The import adds what each round sends to its running total, and ends when
+    a round adds nothing. Items the studio never answered are offered again
+    every round, which is right, and were counted again every round, which
+    kept the stall check from ending the import: it scrolled all 250 rounds
+    and reported a total many times the posts on the page.
+    """
+    hold = """() => {
+      window.__answers['/api/v1/self/imports/pending'] = { status: 'success', request: { id: 7, kind: 'posts' } };
+      window.__answers['%s'] = 'unreachable';
+    }""" % INGEST
+    page = pages.open("/in/test-creator/recent-activity/all/", POSTS, scripts=SCRIPTS, before=hold)
+    page.clock.run_for(60000)
+    events = pages.sent(page, "/api/v1/self/imports/event")
+    finished = [e for e in events if e.get("event") == "finished"]
+    assert finished, "the import never ended while the studio was down"
+    assert finished[0]["items_seen"] == 1, f"one post was counted {finished[0]['items_seen']} times"
+    assert len(pages.sent(page, INGEST)) >= 3, "an item the studio never answered was not offered again"

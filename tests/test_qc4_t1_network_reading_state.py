@@ -165,3 +165,15 @@ def test_the_side_panels_list_follows_the_same_rule_as_setup(client):
     _beat(client, page_kind="feed", network_reading=ON_SEEING)
     names = [h["extractor"] for h in client.get("/api/v1/extension/health").json()["extractors"]]
     assert len([n for n in names if n.startswith("voyager_")]) == 5
+
+
+def test_a_call_key_that_still_names_a_member_or_a_post_is_refused(client):
+    """An extension that did not strip an identifier from a path is not trusted to have."""
+    _beat(client, page_kind="feed", network_reading=ON_SEEING, voyager_calls={
+        "/voyager/api/identity/profiles/williamhgates/profileView": 1,
+        "/voyager/api/feed/updates/7385000000000000001": 1,
+        "/voyager/api/identity/profiles/_id_/profileView": 2,
+        "/voyager/api/graphql voyagerFeedDashMainFeed": 9})
+    calls = client.get("/api/v1/extension/health").json()["network_reading"]["voyager_calls"]
+    assert calls == {"/voyager/api/identity/profiles/_id_/profileView": 2,
+                     "/voyager/api/graphql voyagerFeedDashMainFeed": 9}

@@ -105,11 +105,14 @@ try {
     followNetworkReading();
     const held = earlyCaptures.splice(0, earlyCaptures.length);
     if (networkReadingOn) held.forEach(handleVoyagerCapture);
+    // own_pages.js reports the state on its heartbeat; it is known now.
+    window.dispatchEvent(new Event("studio:networkreading"));
   });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "local" && changes.networkReading) {
       networkReadingOn = changes.networkReading.newValue === true;
       followNetworkReading();
+      window.dispatchEvent(new Event("studio:networkreading"));
     }
     if (area === "local" && changes.signedInVanity) {
       signedInVanity = changes.signedInVanity.newValue || null;
@@ -238,6 +241,26 @@ let voyagerCallsSeen = 0;
 let voyagerCallsMatched = 0;
 let coverageObserver = null;
 
+// A path names the resource LinkedIn was asked for, and its REST paths put
+// the thing asked about in the path itself: /identity/profiles/<vanity>/,
+// /socialActions/<urn>/. That is another member, or a post, and is never
+// kept: a segment that is not a plain word, carries a run of digits, or
+// follows a collection that takes an identifier is replaced by "_id_".
+const ID_AFTER = new Set(["profiles", "members", "people", "socialActions", "social", "conversations",
+  "updates", "comments", "organizations", "companies", "schools", "groups", "events", "jobs", "posts",
+  "activities", "shares", "ugcPosts", "reactions", "likes", "connections", "invitations", "messages", "threads"]);
+
+function cleanVoyagerPath(pathname) {
+  const out = [];
+  let previous = "";
+  for (const segment of String(pathname).split("/").filter(Boolean).slice(0, 8)) {
+    const identifier = !/^[A-Za-z][A-Za-z0-9]*$/.test(segment) || /\d{4,}/.test(segment) || ID_AFTER.has(previous);
+    out.push(identifier ? "_id_" : segment);
+    previous = segment;
+  }
+  return "/" + out.join("/");
+}
+
 function voyagerCallKey(name) {
   let url;
   try {
@@ -248,7 +271,8 @@ function voyagerCallKey(name) {
   if (!url.pathname.includes("/voyager/api/")) return null;
   const queryId = url.searchParams.get("queryId");
   const queryName = queryId ? String(queryId).split(".")[0].replace(/[^A-Za-z0-9_.-]/g, "").slice(0, 80) : "";
-  return { key: url.pathname.slice(0, 160) + (queryName ? " " + queryName : ""), path: url.origin + url.pathname };
+  return { key: cleanVoyagerPath(url.pathname).slice(0, 160) + (queryName ? " " + queryName : ""),
+           path: url.origin + url.pathname };
 }
 
 function noteVoyagerCall(entry) {
@@ -262,6 +286,14 @@ function noteVoyagerCall(entry) {
 
 function followNetworkReading() {
   if (networkReadingOn && !coverageObserver && typeof PerformanceObserver !== "undefined") {
+    // A new observer is handed the page's buffered entries again, so the
+    // counts start again with it: switched off and on in one tab, the early
+    // calls would otherwise be counted twice. The page's buffer holds its
+    // first 250 entries, so on a heavy first load the count is of the calls
+    // the bridge saw, which is how the studio words it.
+    for (const key of Object.keys(voyagerCalls)) delete voyagerCalls[key];
+    voyagerCallsSeen = 0;
+    voyagerCallsMatched = 0;
     try {
       coverageObserver = new PerformanceObserver((list) => list.getEntries().forEach(noteVoyagerCall));
       coverageObserver.observe({ type: "resource", buffered: true });
@@ -354,6 +386,10 @@ function takeTiming(extractor) {
   return out;
 }
 
+// A long frame's entry is delivered after the frame ends, so the frame that
+// overlaps a read is counted against that reader's reads and rides with its
+// next report: the figures on a capture row are the long frames delivered
+// since the reader's previous report.
 function noteLongTask(entry) {
   if (!entry || typeof entry.startTime !== "number" || typeof entry.duration !== "number") return;
   const start = entry.startTime;

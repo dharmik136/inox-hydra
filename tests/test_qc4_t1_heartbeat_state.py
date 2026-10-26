@@ -97,3 +97,60 @@ def test_a_capture_the_page_forwarded_is_dated_on_the_heartbeat(pages):
     reading = _latest_beat(pages, page)["network_reading"]
     assert reading["captured"] == 1
     assert isinstance(reading["last_capture_at"], str) and reading["last_capture_at"]
+
+
+HOLD_STORAGE = """() => {
+  const real = chrome.storage.local.get;
+  window.__release = [];
+  chrome.storage.local.get = (keys, cb) => real(keys, (out) => { window.__release.push(() => cb(out)); });
+}"""
+
+
+def test_the_state_is_reported_as_soon_as_the_switch_is_known(pages):
+    """
+    content.js and own_pages.js run in one task, so the first heartbeat leaves
+    before the switch has been read and carries no state; the next one was a
+    minute later.
+    """
+    page = pages.open("/feed/", page_html("<main></main>"), scripts=SCRIPTS, storage={"networkReading": True},
+                      before=HOLD_STORAGE)
+    first = pages.sent(page, HEARTBEAT)
+    assert first and "network_reading" not in first[0]
+    page.evaluate("() => window.__release.splice(0).forEach((f) => f())")
+    page.wait_for_timeout(50)
+    beats = pages.sent(page, HEARTBEAT)
+    assert any((b.get("network_reading") or {}).get("switch") is True for b in beats), (
+        "the state waited for the next minute's heartbeat")
+
+
+def test_a_call_that_names_a_member_or_a_post_is_counted_without_naming_them(pages):
+    """LinkedIn's REST paths carry who or what was asked about; the meter keeps the shape only."""
+    page = pages.open("/feed/", page_html("<main></main>"), scripts=SCRIPTS, storage={"networkReading": True})
+    _serve_voyager(page)
+    page.clock.run_for(100)
+    _fetch(page, "https://www.linkedin.com/voyager/api/identity/profiles/williamhgates/profileView")
+    _fetch(page, "https://www.linkedin.com/voyager/api/socialActions/urn:li:activity:7385000000000000001/comments")
+    _fetch(page, "https://www.linkedin.com/voyager/api/feed/updates/7385000000000000001")
+    page.wait_for_timeout(200)
+    page.clock.run_for(61000)
+    calls = _latest_beat(pages, page)["voyager_calls"]
+    assert calls == {
+        "/voyager/api/identity/profiles/_id_/profileView": 1,
+        "/voyager/api/socialActions/_id_/comments": 1,
+        "/voyager/api/feed/updates/_id_": 1,
+    }
+    flat = " ".join(calls)
+    assert "williamhgates" not in flat and "7385" not in flat and "urn" not in flat
+
+
+def test_switching_off_and_on_again_does_not_count_a_call_twice(pages):
+    page = pages.open("/feed/", page_html("<main></main>"), scripts=SCRIPTS, storage={"networkReading": True})
+    _serve_voyager(page)
+    page.clock.run_for(100)
+    _fetch(page, "https://www.linkedin.com/voyager/api/graphql?queryId=voyagerFeedDashMainFeed.abc123&variables=(start:0)")
+    page.wait_for_timeout(200)
+    page.evaluate("() => chrome.storage.local.set({ networkReading: false })")
+    page.evaluate("() => chrome.storage.local.set({ networkReading: true })")
+    page.wait_for_timeout(200)
+    page.clock.run_for(61000)
+    assert _latest_beat(pages, page)["network_reading"]["voyager_calls_seen"] == 1

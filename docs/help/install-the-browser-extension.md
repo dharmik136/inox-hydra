@@ -10,7 +10,7 @@ The extension's popup has a switch, **Read LinkedIn's network responses**. Off, 
 
 Switching it on applies to LinkedIn pages you open or reload afterwards. Switching it off stops the copying at once; a LinkedIn tab that was already open keeps the wrapper in place, doing nothing, until you reload it.
 
-The studio says which of three states it is in, in **Setup** step 1 and in the side panel's **Health** tab: "Network reading is off.", "Network reading is on and seeing N LinkedIn data calls, K matched." or "Network reading is on and matching nothing", with the number of data calls the last page made. While it is on, each LinkedIn page also counts the data calls it makes, by address and query name only, and sends the counts with its heartbeat, so the studio can name what LinkedIn calls without you opening the browser's developer tools. The sentence adds "reload that tab" when the page was opened before the switch, and "turn the switch off and on" when the browser did not register the reader.
+The studio says which of three states it is in, in **Setup** step 1 and in the side panel's **Health** tab: "Network reading is off.", "Network reading is on and seeing N LinkedIn data calls, K matched." or "Network reading is on and matching nothing", with the number of data calls the LinkedIn tab that last reported saw. While it is on, each LinkedIn page also counts the data calls it makes, by address and query name only, with any part of an address that names a member or a post left out, and sends the counts with its heartbeat, so the studio can name what LinkedIn calls without you opening the browser's developer tools. The sentence adds "reload that tab" when the page was opened before the switch, and "turn the switch off and on" when the browser did not register the reader.
 
 ## Which browser to use
 
@@ -91,7 +91,7 @@ Two notices still appear on the LinkedIn page itself, because they are things yo
 
 When a part of the capture cannot read a page LinkedIn has rebuilt, the side panel's header says so once per kind of page per browser session, for example "LinkedIn's feed page: cannot read commenter name, noticed 2 min ago. See Capture health in Setup.", and the badge turns orange. The notice goes when that part next reads the same kind of page cleanly, and when you close the browser. Nothing about it is drawn into LinkedIn's page.
 
-The side panel's **Health** tab also lists the data calls the last LinkedIn page made while network reading was on, by query name and how many times, for example `voyagerFeedDashMainFeed (9)`, so you can see what LinkedIn calls without opening the browser's developer tools.
+The side panel's **Health** tab also lists the data calls seen in the LinkedIn tab that last reported while network reading was on, by query name and how many times, for example `voyagerFeedDashMainFeed (9)`, so you can see what LinkedIn calls without opening the browser's developer tools.
 
 ## If it does not work
 
