@@ -26,12 +26,18 @@ const RANGES: AnalyticsRange[] = ["7d", "30d", "90d"];
 // "show me all of them again".
 const ANALYTICS_PAGE_SIZE = 14;
 
-/** The measures worth plotting on their own axis, one at a time. */
+/**
+ * The measures worth plotting on their own axis, one at a time.
+ *
+ * Profile views are not offered: no reader on a real install writes one, so
+ * the measure was a permanent "not measured", a figure the screen could
+ * never answer (cycle 4, decision 8). The route still carries the column,
+ * so a reader can bring it back.
+ */
 const METRICS = [
   { key: "impressions", label: "Impressions" },
   { key: "reactions", label: "Reactions" },
   { key: "comments", label: "Comments" },
-  { key: "profile_views", label: "Profile views" },
   { key: "followers", label: "Followers" },
 ] as const;
 
@@ -316,7 +322,7 @@ export function AnalyticsSurface() {
   );
 }
 
-/** The five figures the range holds, each with its own change and its own honesty. */
+/** The four figures the range holds, each with its own change and its own honesty. */
 function KpiStrip({ kpis, range }: { kpis: Kpis | null; range: AnalyticsRange }) {
   if (!kpis) return null;
   const approx = new Set(kpis.approximate ?? []);
@@ -342,14 +348,10 @@ function KpiStrip({ kpis, range }: { kpis: Kpis | null; range: AnalyticsRange })
       label: "Followers", value: kpis.total_followers, key: "total_followers", changeKey: "follower_growth",
       change: kpis.follower_growth === null ? null : `${kpis.follower_growth > 0 ? "+" : ""}${kpis.follower_growth.toLocaleString()}`,
     },
-    {
-      label: "Profile views", value: kpis.profile_views, key: "profile_views", changeKey: "profile_views_delta_pct",
-      change: kpis.profile_views_delta_pct === null ? null : `${kpis.profile_views_delta_pct > 0 ? "+" : ""}${kpis.profile_views_delta_pct.toFixed(1)}%`,
-    },
   ];
   return (
     <>
-      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-y border-edge py-3 sm:grid-cols-3 lg:grid-cols-5">
+      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-y border-edge py-3 sm:grid-cols-4">
         {figures.map((figure) => (
           <div key={figure.label} className="min-w-0">
             <dt className="studio-meta text-[10px] text-ink-muted">{figure.label.toUpperCase()}</dt>
@@ -735,7 +737,6 @@ function describeRelationship(kpis: AnalyticsKpis): string {
 const WHAT_CHANGED = [
   { key: "impressions_delta_pct", label: "Impressions" },
   { key: "engagements_delta_pct", label: "Engagements" },
-  { key: "profile_views_delta_pct", label: "Profile views" },
   { key: "follower_growth", label: "Followers" },
 ] as const;
 

@@ -824,7 +824,9 @@ function ThirtyDays({ read }: { read: Read<AnalyticsKpis> }) {
           <ReadState read={read} empty="Nothing has been captured for the last 30 days." />
         </div>
       ) : (
-        <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
+        // No profile views: no reader on a real install writes one, so the
+        // figure was a permanent "not measured" (cycle 4, decision 8).
+        <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
           <Figure label="Impressions" value={count(kpis.impressions)} note={deltaOf(kpis.impressions_delta_pct)} />
           <Figure label="Engagements" value={count(kpis.total_engagements)} note={deltaOf(kpis.engagements_delta_pct)} />
           <Figure
@@ -836,7 +838,6 @@ function ThirtyDays({ read }: { read: Read<AnalyticsKpis> }) {
                 : NOT_MEASURED
             }
           />
-          <Figure label="Profile views" value={count(kpis.profile_views)} note={deltaOf(kpis.profile_views_delta_pct)} />
         </div>
       )}
     </section>
