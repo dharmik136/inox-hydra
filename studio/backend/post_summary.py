@@ -40,9 +40,10 @@ import threading
 from typing import Any, Dict, Iterable, List, Optional
 
 try:
-    from . import results
+    from . import results, changes
 except ImportError:
     import results
+    import changes
 
 # The Posts screen lists this many people per post, commenters first.
 TOP_PEOPLE = 12
@@ -486,6 +487,7 @@ def catch_up(conn, batch: int = CATCH_UP_BATCH, pause: float = 0.0) -> int:
             if marked:
                 _write(conn, _recompute(conn, marked))
             conn.commit()
+            changes.derived_written()
             done += len(marked)
             if len(marked) < batch:
                 break

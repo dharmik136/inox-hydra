@@ -124,6 +124,8 @@ BOOT = secrets.token_hex(4)
 
 _lock = threading.Lock()
 _sequence = 0
+# Writes that only brought derived figures up to date: see derived_written.
+_derived = 0
 _subscribers: Dict[int, "Subscription"] = {}
 
 
@@ -241,6 +243,26 @@ def published(result: Dict[str, Any], kind: str, statuses: Tuple[str, ...]) -> D
     return result
 
 
+def derived_written() -> None:
+    """
+    Says a write only brought derived figures up to date: a person's score,
+    a post's summary, recomputed from changes already announced, and done by
+    whoever reads them first, a screen included. Nobody is woken, because any
+    screen that shows those figures brings them up to date as it reads; the
+    backstop only learns not to report the write as "database", which made
+    every screen read everything after every read that caught up.
+    """
+    global _derived
+    with _lock:
+        _derived += 1
+
+
+def _writes_named() -> Tuple[int, int]:
+    """Every write so far that said what it was, announced or derived."""
+    with _lock:
+        return _sequence, _derived
+
+
 def subscriber_count() -> int:
     with _lock:
         return len(_subscribers)
@@ -294,7 +316,7 @@ class _Watch:
         self.version: Optional[int] = None
         self.down = False
         self.thread: Optional[threading.Thread] = None
-        self.seen_sequence = 0
+        self.seen_named: Tuple[int, int] = (0, 0)
         self.looks = 0
 
     def _close_locked(self) -> None:
@@ -357,10 +379,10 @@ class _Watch:
         with self.lock:
             self.looks += 1
             outcome = self._tick_locked()
-            unexplained = outcome in ("changed", "reopened") and sequence() == self.seen_sequence
+            unexplained = outcome in ("changed", "reopened") and _writes_named() == self.seen_named
             if unexplained:
                 publish("database")
-            self.seen_sequence = sequence()
+            self.seen_named = _writes_named()
 
     def ensure_ticking_locked(self) -> None:
         """Called under the bus lock, with at least one subscriber registered."""

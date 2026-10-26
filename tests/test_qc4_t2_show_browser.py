@@ -498,3 +498,39 @@ def test_activity_reads_nothing_for_the_readers_run_log(studio):
         page.wait_for_timeout(300)
     page.wait_for_timeout(1500)
     assert len(reads) == before, f"Activity read {len(reads) - before} times for the readers' run log"
+
+
+
+def test_todays_panels_and_the_header_read_nothing_for_reactions(studio):
+    """
+    A feed scroll: people react to a post of yours every few seconds. None of
+    Today's side panels shows who reacted, and neither does the header; the
+    evidence panel, which counts people per topic, reads once a window at most.
+    """
+    urns = seed_creator(studio["client"])
+    page = studio["page"]
+    page.clock.install()
+    watched = {path: _reads_of(page, path) for path in (
+        "/api/v1/onboarding/state", "/api/analytics/kpis", "/api/queue/smart-slots",
+        "/api/v1/extension/captures/waiting", "/api/v1/storage/backups", "/api/v1/insights/cadence",
+        "/api/v1/insights/evidence")}
+    open_section(studio, "today")
+    page.wait_for_selector("text=What to do in the next hour")
+    assert _wait_until(lambda: _listening() == 1)
+    page.clock.fast_forward("00:20")
+    before = {path: len(reads) for path, reads in watched.items()}
+    # Eight, a second and a bit apart: each post's summary is recomputed in a
+    # write of its own a moment after the engagement, and that write has to be
+    # announced for what it is, whenever the backstop happens to look.
+    for index in range(8):
+        engaged = studio["client"].post("/api/v1/crm/interactions/ingest", json={
+            "full_name": f"Reactor {index}", "profile_url": f"https://www.linkedin.com/in/reactor-{index}-t2",
+            "headline": "Engineer", "company": "Example", "interaction_type": "LIKE",
+            "post_urn": urns[0], "post_author": ME})
+        assert engaged.status_code == 200, engaged.text
+        page.wait_for_timeout(1200)
+    page.wait_for_timeout(2000)
+    grew = {path: len(reads) - before[path] for path, reads in watched.items()}
+    evidence = grew.pop("/api/v1/insights/evidence")
+    assert all(count == 0 for count in grew.values()), f"reactions made Today read: {grew}"
+    assert evidence <= 1, f"the evidence panel read {evidence} times inside one window"

@@ -577,6 +577,123 @@ def test_an_engagement_says_how_on_which_post_and_who_by_id_only(studio, creator
     assert "Second Person" not in json.dumps(notes) and "Designer" not in json.dumps(notes)
 
 
+def _get(port, path):
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+    conn.request("GET", path, headers={security.TOKEN_HEADER: security.get_or_create_token()})
+    response = conn.getresponse()
+    response.read()
+    conn.close()
+    return response.status
+
+
+def _changes_for(stream, seconds):
+    notes = []
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        try:
+            _kinds, more, _took = stream.change_notes(timeout=max(0.2, deadline - time.monotonic()))
+        except (EOFError, socket.timeout, TimeoutError, OSError):
+            break
+        notes.extend(more)
+    return notes
+
+
+def _stale_scores():
+    conn = database.get_db()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM leads WHERE icp_stale != 0").fetchone()[0]
+    finally:
+        conn.close()
+
+
+def _engaged_and_left_to_catch_up(port, creator, monkeypatch, name):
+    """
+    An engagement the reader names only REACTION, kept as a comment without
+    text: its person's score is left for a reader to bring up to date.
+    """
+    import post_summary
+
+    monkeypatch.setattr(post_summary, "_CATCH_UP_SETTLE_S", 60.0)
+    status, text = _post(port, "/api/v1/crm/interactions/ingest", {
+        "full_name": name, "profile_url": f"https://www.linkedin.com/in/{name.lower().replace(' ', '-')}-t2",
+        "headline": "Someone", "company": "Co", "interaction_type": "REACTION",
+        "post_urn": creator["urn"], "post_author": ME})
+    assert status == 200, text
+
+
+def test_a_read_that_brings_derived_figures_up_to_date_wakes_nobody(studio, creator, monkeypatch):
+    """
+    Today's brief recomputes the post summaries and the scores an engagement
+    left stale, and writes them. Nothing new happened: the engagement was
+    announced. It was announced again as "database", and every panel read.
+    """
+    stream = Stream(studio["port"])
+    try:
+        stream.event()
+        _engaged_and_left_to_catch_up(studio["port"], creator, monkeypatch, "Fourth Person")
+        assert "people" in stream.change(timeout=3.0)[0]
+        # Past the backstop's next look, so the engagement's own announcement
+        # cannot be what explains the read's write.
+        time.sleep(changes.WATCH_EVERY_S + 0.5)
+        assert _stale_scores() >= 1
+        assert _get(studio["port"], "/api/v1/today") == 200
+        assert _stale_scores() == 0, "the read did not bring the score up to date, so this tested nothing"
+        notes = _changes_for(stream, 2.5)
+        assert not any(note["kind"] == "database" for note in notes), notes
+    finally:
+        stream.close()
+
+
+def test_the_score_catch_up_wakes_nobody(studio, creator, monkeypatch):
+    """The same recompute when a catch-up, rather than a screen, gets there first."""
+    import crm
+
+    stream = Stream(studio["port"])
+    try:
+        stream.event()
+        _engaged_and_left_to_catch_up(studio["port"], creator, monkeypatch, "Fifth Person")
+        assert "people" in stream.change(timeout=3.0)[0]
+        time.sleep(changes.WATCH_EVERY_S + 0.5)
+        assert _stale_scores() >= 1
+        conn = database.get_db()
+        try:
+            crm.scores_current(conn)
+        finally:
+            conn.close()
+        assert _stale_scores() == 0
+        notes = _changes_for(stream, 2.5)
+        assert not any(note["kind"] == "database" for note in notes), notes
+    finally:
+        stream.close()
+
+
+def test_the_summary_catch_up_wakes_nobody(studio, creator):
+    """A post's summary recomputed by the catch-up is a derived write too."""
+    import post_summary
+
+    stream = Stream(studio["port"])
+    try:
+        stream.event()
+        conn = database.get_db()
+        try:
+            with conn:
+                conn.execute("UPDATE post_engagement SET stale = 1 WHERE post_urn = ?", (creator["urn"],))
+        finally:
+            conn.close()
+        # The mark itself is a write nothing named, and is reported as one.
+        assert stream.change(timeout=changes.WATCH_EVERY_S + 2.0)[0] == ["database"]
+        time.sleep(changes.WATCH_EVERY_S + 0.5)
+        conn = database.get_db()
+        try:
+            assert post_summary.catch_up(conn) >= 1
+        finally:
+            conn.close()
+        notes = _changes_for(stream, 2.5)
+        assert not any(note["kind"] == "database" for note in notes), notes
+    finally:
+        stream.close()
+
+
 def test_a_change_never_carries_a_name_or_text():
     note = changes.note_of("people", {"lead": "Jane Doe", "post": "a post's text", "interaction": "LIKE",
                                       "full_name": "Jane Doe", "extractor": "engagers"})

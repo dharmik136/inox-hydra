@@ -198,7 +198,11 @@ export function TodaySurface({
   const [slots, readSlots] = useRead(useCallback(() => fetchSmartSlots(), []));
   const [waiting, readWaiting] = useRead(useCallback(() => fetchWaitingCaptures(), []));
   const [backups, readBackups] = useRead(useCallback(() => fetchBackupSchedule(), []));
-  useRefresh(readEvidence, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "posts" || c.kind === "readings" });
+  // Evidence counts the people per topic, so an engagement matters to it.
+  useRefresh(readEvidence, undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: (c) => c.kind === "posts" || c.kind === "readings" || c.kind === "people",
+  });
   useRefresh(readCadence, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "posts" || c.kind === "queue" });
   useRefresh(readKpis, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "account" });
   useRefresh(readSlots, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "queue" });
