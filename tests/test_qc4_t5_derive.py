@@ -1237,3 +1237,23 @@ def test_forgetting_the_identity_forgets_the_dated_demographics(client):
         assert conn.execute("SELECT COUNT(*) FROM audience_demographic_readings").fetchone()[0] == 0
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Review S5: the data export carries both new tables
+# ---------------------------------------------------------------------------
+
+def test_the_data_export_carries_the_dated_demographics_and_the_windows(client, tmp_path):
+    import json
+    import support
+    from linkedin_client import linkedin_client
+    mine = urn_hours_ago(30)
+    _posts(client, mine)
+    client.post("/api/v1/self/posts/analytics", json={"author": ME, "activity_urn": mine, "metrics": {
+        "impressions": 4100, "demographics": [{"dimension": "job_title", "label": "Founder", "percentage": 21}]}})
+    linkedin_client.ingest_analytics_payload({"series": [{"date": DAY, "period_label": "7d", "impressions": 5400}]})
+    path = support.export_data(str(tmp_path / "export.json"), fmt="json")
+    with open(path, encoding="utf-8") as handle:
+        tables = json.load(handle)["tables"]
+    assert [r["label"] for r in tables["audience_demographic_readings"]] == ["Founder"]
+    assert [(r["date"], r["period_label"]) for r in tables["analytics_windows"]] == [(DAY, "7d")]
