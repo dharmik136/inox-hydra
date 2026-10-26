@@ -32,9 +32,10 @@ except ImportError:
     from text_cut import clip
 
 try:
-    from . import onboarding, post_identity, post_summary, results
+    from . import desk_requests, onboarding, post_identity, post_summary, results
     from .database import get_db
 except ImportError:
+    import desk_requests
     import onboarding
     import post_identity
     import post_summary
@@ -321,6 +322,9 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
             "Your posts have not been read to the end of the list yet, so your usual is not known. "
             "Run Posts you wrote in Setup's step 5."
         )}
+    asked = _phone_request_rule(conn)
+    if asked:
+        return asked
     if latest and latest["age_hours"] <= COMPARE_WINDOW[1]:
         recent = conn.execute(
             "SELECT 1 FROM post_metric_observations WHERE activity_urn = ? AND source = 'post_analytics' "
@@ -333,6 +337,36 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
         return {"action": "open", "url": latest["url"],
                 "reason": "Opening your latest post picks up anyone who has commented since."}
     return {"action": "setup", "reason": "No post of yours has been imported yet."}
+
+
+def _phone_request_rule(conn) -> Optional[Dict[str, Any]]:
+    """
+    The oldest post the phone asked the desk to read, as the one page to
+    open, or None when nothing is asked (cycle 4, track 6).
+
+    Sits after the rules that block everything (identity, the bridge, drift,
+    the history) and ahead of the latest-post rule, because the creator
+    asked for it: a post seen moving on the phone is read at the desk, where
+    the extension reads the real page. Settling first closes what has since
+    been read, and what waited a week unread, so a request can never stand
+    in front of the latest-post rule for good. A post the studio does not
+    hold is answered with the same refusal the reading would meet.
+    """
+    desk_requests.settle(conn)
+    request = desk_requests.oldest_open(conn)
+    if not request:
+        return None
+    asked = {"id": request["id"], "activity_urn": request["activity_urn"], "asked_at": request["asked_at"],
+             "source": request["source"]}
+    url = desk_requests.analytics_url(request["activity_urn"])
+    if desk_requests.known_post(conn, request["activity_urn"]) and url:
+        return {"action": "open", "url": url,
+                "reason": "You asked from your phone to read this post's analytics.",
+                "phone_request": asked}
+    return {"action": "setup",
+            "reason": (f"You asked from your phone to read a post's analytics, but {desk_requests.UNKNOWN_POST}. "
+                       "Run Posts you wrote in Setup's step 5; if the post is yours, it is offered here next."),
+            "phone_request": asked}
 
 
 # What the demo cleanup removed, written by database.clean_up_demo_data with

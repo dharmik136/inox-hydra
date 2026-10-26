@@ -5,9 +5,16 @@ Handles outbound long-polling to api.telegram.org (zero inbound ports),
 parses structured and unstructured creator thoughts, and persists into
 SQLite WAL.
 
+What the phone can send (cycle 4, programme item 24): text, which becomes a
+draft as it always did, and a LinkedIn post link, which becomes a desk
+request (desk_requests.py) that Today surfaces as the page to open at this
+computer. The phone sends a link, never a figure: nothing it says is written
+as a reading, and the extension reads the real page at the desk.
+
 Strict Invariants:
 - Zero open inbound ports (pure outbound HTTP long-polling).
 - Zero em-dashes in any generated or parsed text.
+- Nothing from the phone is a figure.
 """
 
 from datetime import datetime, timezone
@@ -27,8 +34,18 @@ import time
 
 try:
     from .database import get_db, create_draft, get_draft
+    from . import desk_requests, post_identity
 except ImportError:
     from database import get_db, create_draft, get_draft
+    import desk_requests
+    import post_identity
+
+# A LinkedIn address in a message. The app's share menu writes
+# /posts/<slug>-activity-<id>-<suffix> with tracking parameters; the feed
+# writes /feed/update/urn:li:activity:<id>/. post_identity.extract_activity_urn
+# reads both. An lnkd.in short link names nothing the studio can resolve
+# without fetching it, which it will not do, so it stays ordinary text.
+LINKEDIN_URL = re.compile(r"https?://(?:[a-z]{2,3}\.)?linkedin\.com/[^\s<>\"']+", re.IGNORECASE)
 
 MAX_UPDATE_ATTEMPTS = 3
 
@@ -107,7 +124,13 @@ class IngressMessageParser:
 
         # Check for command prefixes
         lower = cleaned.lower()
-        if lower.startswith("draft:"):
+        if lower.startswith("read:"):
+            # "read: <post link>": the desk is asked to read that post's
+            # analytics. Any text beside the link is kept as a draft.
+            archetype = "Draft"
+            tags.append("read")
+            content = cleaned[5:].strip()
+        elif lower.startswith("draft:"):
             archetype = "Draft"
             content = cleaned[6:].strip()
         elif lower.startswith("idea:"):
@@ -122,6 +145,18 @@ class IngressMessageParser:
                 archetype = "Scheduled Post"
                 tags.append("scheduled")
 
+        # A LinkedIn post link becomes a desk request; the first one that
+        # names a post is the request, and it leaves the text. A link that
+        # names no post (a short link, a profile) stays in the text, so the
+        # message is kept whole as a draft rather than lost.
+        read_request: Optional[Dict[str, Any]] = None
+        for url in LINKEDIN_URL.findall(content):
+            urn = post_identity.extract_activity_urn(url)
+            if urn:
+                read_request = {"url": url, "activity_urn": urn}
+                content = re.sub(r"[ \t]{2,}", " ", content.replace(url, " ")).strip()
+                break
+
         # Extract hashtags from text (capped to 30 unique tags, max 50 chars each)
         raw_hashtags = re.findall(r"#(\w+)", content)
         if raw_hashtags:
@@ -130,6 +165,8 @@ class IngressMessageParser:
         # Generate title from the first non-empty line (truncated to 60 chars)
         lines = [l.strip() for l in content.splitlines() if l.strip()]
         title = lines[0][:60] if lines else "Untitled Mobile Ingress"
+        if read_request and not lines:
+            title = "Read request from the phone"
 
         metrics = cls.calculate_fold_metrics(content)
 
@@ -144,6 +181,8 @@ class IngressMessageParser:
             "lines_above_fold": metrics["lines_above_fold"],
             "pre_fold_chars": metrics["pre_fold_chars"],
             "is_pre_fold_safe": metrics["is_pre_fold_safe"],
+            # {"url", "activity_urn"} when the message carried a post link.
+            "read_request": read_request,
         }
 
 
@@ -311,6 +350,14 @@ class TelegramIngressDaemon:
         # Parse message
         parsed = IngressMessageParser.parse_message(text)
 
+        # A post link is a request to read that post at the desk. Recorded
+        # first, so a message that is only a link is not a draft of nothing.
+        request = None
+        if parsed.get("read_request"):
+            request = self._record_desk_request(parsed["read_request"]["activity_urn"])
+        if not parsed["raw_content"].strip():
+            return {"kind": "desk_request", **request} if request else None
+
         # One record of what the creator wrote: create_draft writes the posts
         # row with the draft, so this used to write a second posts row of its
         # own for the same text.
@@ -329,9 +376,23 @@ class TelegramIngressDaemon:
         record = get_draft(draft_id)
         if not record:
             return None
-
-
+        if request:
+            record["desk_request"] = request
         return record
+
+    @staticmethod
+    def _record_desk_request(activity_urn: str) -> Dict[str, Any]:
+        """
+        Writes the request. A post the studio does not hold is recorded with
+        the refusal sentence as its note, so Today says what to do rather
+        than showing a post nobody imported. The phone's link names the post
+        and nothing else: no figure is written from it.
+        """
+        conn = get_db()
+        try:
+            return desk_requests.record(conn, activity_urn, source=desk_requests.SOURCE_TELEGRAM)
+        finally:
+            conn.close()
 
     def _redact(self, text: str) -> str:
         """
