@@ -111,6 +111,42 @@ def _habits(texts: List[str]) -> List[str]:
     ]
 
 
+def habits_in_words(texts: List[str]) -> List[str]:
+    """
+    The same habits _habits measures, said without a number, for the daily
+    section's model stage (record_model.py): it sends no figure, so the model
+    has none to repeat, and the studio drops any phrase that carries one.
+    Empty below MIN_POSTS_FOR_HABITS posts, as _habits is.
+    """
+    if len(texts) < MIN_POSTS_FOR_HABITS:
+        return []
+    total = len(texts)
+    length = statistics.median(len(t) for t in texts)
+    paragraphs = statistics.median(_paragraphs(t) for t in texts)
+
+    def how_often(count: int) -> str:
+        share = count / total
+        return "most of the time" if share >= 0.6 else "sometimes" if share >= 0.2 else "rarely"
+
+    return [
+        "writes " + ("short posts" if length < 600 else "medium-length posts" if length <= 1300 else "long posts")
+        + (" in short paragraphs" if paragraphs >= 3 else " in one or two blocks"),
+        "opens with a question " + how_often(sum(1 for t in texts if _first_line(t).endswith("?"))),
+        "uses emoji " + how_often(sum(1 for t in texts if _EMOJI.search(t))),
+        "uses hashtags " + how_often(sum(1 for t in texts if _HASHTAG.search(t))),
+    ]
+
+
+def who_lines() -> List[str]:
+    """Who the creator is, from the profile they confirmed, as the pack says it, or []."""
+    conn = get_db()
+    try:
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        return _who(conn) if "creator_identity" in tables else []
+    finally:
+        conn.close()
+
+
 def _openers(conn, limit: int) -> List[str]:
     """
     The first lines of the posts that did best against the creator's own

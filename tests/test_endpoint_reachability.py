@@ -264,8 +264,13 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # evaluation batch's "Did these help" calls. Total 171 -> 187, reached
 # 118 -> 133, unreachable 53 -> 54.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 187
-REACHED_BY_INTERFACE = 133
+# Cycle 4, track 7, batch 7 (the model stage): POST /api/v1/record/model,
+# today's one call to the creator's own model on their first open of the
+# section, and GET /api/v1/record/model/preview, exactly what it would send.
+# Both reached by the section. Total 187 -> 189, reached 133 -> 135.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 189
+REACHED_BY_INTERFACE = 135
 UNREACHABLE = 54
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

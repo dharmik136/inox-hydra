@@ -95,6 +95,10 @@ export function RecordCardView({ card, actions, compact = false }: { card: Recor
       {payload.excerpt ? (
         <p className="mt-2 text-[13px] leading-snug text-ink-secondary">&ldquo;{payload.excerpt}&rdquo;</p>
       ) : null}
+      {payload.angle ? <p className="mt-1 text-[12px] leading-snug text-ink-secondary">Angle: {payload.angle}</p> : null}
+      {payload.quote ? (
+        <p className="mt-1 text-[12px] leading-snug text-ink-muted">From your post: &ldquo;{payload.quote}&rdquo;</p>
+      ) : null}
       {measured && payload.figure_sentence ? (
         <p className="studio-meta mt-2 text-[11px] leading-snug text-ink-primary">{payload.figure_sentence}</p>
       ) : null}
@@ -113,6 +117,11 @@ export function RecordCardView({ card, actions, compact = false }: { card: Recor
         <details className="mt-2 text-[12px] text-ink-secondary">
           <summary className="cursor-pointer text-ink-muted hover:text-ink-primary">Why this?</summary>
           <p className="mt-1 leading-snug">{payload.method_sentence}</p>
+          {payload.model_why && (
+            <p className="mt-1 leading-snug">
+              The model&rsquo;s own reason, checked for numbers and names but not for truth: {payload.model_why}
+            </p>
+          )}
           {payload.source_sentence && <p className="mt-1 leading-snug">Source: {payload.source_sentence}.</p>}
           {figures.length > 0 && <FigureRows figures={figures} />}
           <p className="studio-meta mt-1 text-[10px] text-ink-muted">LABEL: {card.label.toUpperCase()}. EVERY ROW IT CITES WAS FOUND BEFORE IT WAS SHOWN.</p>

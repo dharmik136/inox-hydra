@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   addRecordAsk,
+  runRecordModel,
   fetchKept,
   fetchRecord,
   fetchRecordDay,
@@ -52,6 +53,24 @@ export function RecordSurface({ onOpenDraft }: { onOpenDraft?: (draft: { id: str
   useEffect(() => {
     void load();
   }, [load, back]);
+
+  // The model stage runs on the creator's first open of the day (decision
+  // 7): asked once from here, as its own request, never by the read above.
+  // The local cards are on screen already; the idea arrives into today's row.
+  const asked = useRef(false);
+  const modelStatus = today?.model?.status;
+  useEffect(() => {
+    if (!today?.model?.should_run || asked.current) return;
+    asked.current = true;
+    void runRecordModel()
+      .then(() => load())
+      .catch(() => undefined);
+  }, [today, load]);
+  useEffect(() => {
+    if (modelStatus !== "running") return;
+    const timer = window.setInterval(() => void load(), 3000);
+    return () => window.clearInterval(timer);
+  }, [modelStatus, load]);
   // Read again when the window comes back into view, never on a timer: the
   // batch changes once a day.
   useRefresh(load);
@@ -105,6 +124,16 @@ export function RecordSurface({ onOpenDraft }: { onOpenDraft?: (draft: { id: str
           </h1>
           <p className="studio-meta mt-2 text-[11px] text-ink-muted">{today.computed.toUpperCase()}</p>
           {today.nothing_new && <p className="mt-1 max-w-[70ch] text-[12px] text-ink-secondary">{today.nothing_new}</p>}
+          {today.model?.configured && (
+            <p className="mt-1 max-w-[70ch] text-[12px] text-ink-muted">
+              {today.model.status === "running"
+                ? `Your ${today.model.provider_label} key is answering now. The idea arrives in the fifth card.`
+                : today.run?.model_note ?? today.model.reason}
+              {today.run?.estimated_cost_usd
+                ? ` Estimated $${today.run.estimated_cost_usd.toFixed(4)} of your $${today.model.ceiling_usd.toFixed(2)} a day, from ${today.model.provider_label} prices of ${today.model.price_date}.`
+                : ""}
+            </p>
+          )}
           {today.run && today.run.dropped_cards > 0 && (
             <p className="mt-1 text-[12px] text-signal-orange-text">
               {today.run.dropped_cards} {today.run.dropped_cards === 1 ? "card was" : "cards were"} dropped: a row it cited

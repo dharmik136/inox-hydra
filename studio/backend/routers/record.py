@@ -19,9 +19,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 try:
-    from .. import record_daily, record_store
+    from .. import record_daily, record_model, record_store
 except (ImportError, ValueError):
     import record_daily
+    import record_model
     import record_store
 
 router = APIRouter(tags=["From your record"])
@@ -70,8 +71,28 @@ def _refused(call):
 
 @router.get("/api/v1/record")
 def get_record():
-    """Today's batch, or the newest before it with the sentence that says so. A read: nothing is computed."""
-    return record_daily.read_today()
+    """
+    Today's batch, or the newest before it with the sentence that says so,
+    and what the model stage can do today. A read: nothing is computed and
+    nothing is sent.
+    """
+    return {**record_daily.read_today(), "model": record_model.state()}
+
+
+@router.post("/api/v1/record/model")
+def post_record_model():
+    """
+    The creator opened the section: today's one call to their own model, if
+    it has not run and may. Answers at once; the idea arrives into today's
+    row when the model has answered.
+    """
+    return record_model.run_on_open()
+
+
+@router.get("/api/v1/record/model/preview")
+def get_record_model_preview():
+    """Exactly what the next call would send, to read. Sends nothing."""
+    return record_model.preview()
 
 
 @router.get("/api/v1/record/days/{day}")
@@ -129,7 +150,7 @@ def get_record_kept():
 @router.get("/api/v1/record/knows")
 def get_record_knows():
     """What the studio knows: asks, Setup fields, marks, archive records, settings and the job's state."""
-    return {**record_store.knows(), "job": record_daily.status()}
+    return {**record_store.knows(), "job": record_daily.status(), "model": record_model.state()}
 
 
 @router.post("/api/v1/record/asks")

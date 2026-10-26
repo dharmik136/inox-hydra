@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { formatLocal, formatLocalDay } from "@/lib/time";
 import { RecordSetupFields } from "./RecordSetupFields";
+import { RecordModelSettings } from "./RecordModelSettings";
 
 /**
  * What the studio knows: everything From your record has been told and has
@@ -181,6 +182,8 @@ export function RecordKnowsPanel() {
               : "Nothing is old enough to go yet."}
           </p>
         </section>
+
+        <RecordModelSettings state={knows.model} settings={knows.settings} onChanged={load} />
 
         <section aria-labelledby="record-job-title">
           <p id="record-job-title" className="studio-label mb-2">

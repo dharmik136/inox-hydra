@@ -3309,6 +3309,10 @@ export interface RecordCardPayload {
   topic?: string | null;
   /** The provider that wrote a suggested card, when one did. */
   provider?: string | null;
+  /** A suggested card's angle, the model's own reason, and the words it quoted from your post. */
+  angle?: string;
+  model_why?: string;
+  quote?: string;
 }
 
 export interface RecordCard {
@@ -3354,6 +3358,9 @@ export interface RecordModelState {
   ceiling_usd: number;
   spent_today_usd: number | null;
   price_date: string | null;
+  price_basis: string | null;
+  priced: boolean;
+  model: string | null;
   reason: string | null;
 }
 
@@ -3493,4 +3500,27 @@ export async function setRecordSettings(changes: Partial<Pick<RecordSettings, "k
 
 export async function saveRecordNote(month: string, text: string): Promise<void> {
   await call("/api/v1/record/notes", { method: "POST", body: JSON.stringify({ month, text }) });
+}
+
+/**
+ * The creator opened From your record: today's one call to their own model,
+ * if it has not run and may. Answers at once; the idea arrives into today's
+ * batch when the model has answered, so read the batch again after.
+ */
+export async function runRecordModel(): Promise<{ status: string; reason?: string }> {
+  return call("/api/v1/record/model", { method: "POST" });
+}
+
+/** Exactly what the next call to the creator's model would send. Sends nothing. */
+export interface RecordModelPreview {
+  provider: string;
+  model: string;
+  system: string;
+  prompt: string;
+  posts: number;
+  asks: number;
+}
+
+export async function fetchRecordModelPreview(): Promise<RecordModelPreview> {
+  return call<RecordModelPreview>("/api/v1/record/model/preview");
 }
