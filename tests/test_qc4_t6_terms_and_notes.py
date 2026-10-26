@@ -48,6 +48,11 @@ VERBATIM = (
     "of, or automate activity on LinkedIn's website.",
 )
 
+VERBATIM = VERBATIM + (
+    "Reverse engineer, decompile, disassemble, decipher or otherwise attempt to derive the source code for the "
+    "Services or any related technology that is not open source;",
+)
+
 DATES = ("effective on November 3, 2025", "26 October 2026", "Last updated: 2 years ago",
          "Last updated: 3 weeks ago", "a1341387", "90586")
 
@@ -77,7 +82,7 @@ def test_the_quotes_are_dated_and_sourced():
 def test_each_feature_has_its_standing():
     article = _flat(_read(ARTICLE))
     for standing in ("Tolerated in practice, not permitted in text", "Opt-in", "first creator profile only",
-                     "Nothing acts on LinkedIn except when you press Insert", "Permitted by the text"):
+                     "Nothing acts on LinkedIn except when you press Insert", "Outside the words quoted here"):
         assert standing in article, f"the article lost the standing {standing!r}"
     # The words beside the switch are the popup's own, quoted as it shows them.
     with io.open(os.path.join(REPO_ROOT, "studio", "extension", "popup.js"), encoding="utf-8") as handle:
@@ -111,7 +116,48 @@ def test_linkedins_item_numbers_survive_the_studios_renderer():
     carries its number as text.
     """
     article = _read(ARTICLE)
-    for number in (1, 2, 4, 13, 15):
+    for number in (1, 2, 4, 9, 13, 15):
         assert f"**Item {number}:**" in article, f"item {number} does not carry LinkedIn's own number"
     import re
     assert not re.search(r"^1[35]\. ", article, re.M), "an item number is a list marker again"
+
+
+# ---------------------------------------------------------------------------
+# Review round, SF-6: the one mark the extension makes in LinkedIn's page
+# ---------------------------------------------------------------------------
+
+ITEM_9 = ("Reverse engineer, decompile, disassemble, decipher or otherwise attempt to derive the source code for the "
+          "Services or any related technology that is not open source;")
+
+
+def test_the_article_names_the_data_urn_mark_with_its_standing():
+    """
+    card_urns.js runs in LinkedIn's own page context on every LinkedIn page,
+    from installation, and writes a data-urn attribute onto feed cards. The
+    article listed page changes only under network reading, so a reader
+    concluded nothing touched the page by default. Under decision D3 it is
+    the one mark the extension makes there, with the import banner while an
+    import runs.
+    """
+    article = _flat(_read(ARTICLE))
+    manifest = _read(os.path.join(REPO_ROOT, "studio", "extension", "manifest.json"))
+    assert '"card_urns.js"' in manifest and '"world": "MAIN"' in manifest, "the mark's script changed; revisit"
+    assert "`data-urn`" in article and "inside LinkedIn's own page code" in article
+    assert "the one mark the extension makes in LinkedIn's page" in article
+    assert "Yes, on every LinkedIn page" in article
+    assert ITEM_9 in article and "**Item 9:**" in _read(ARTICLE)
+    assert "The capture notice" not in article, "the capture notice moved to the badge and the side panel (D3)"
+
+
+def test_the_imports_are_not_called_permitted():
+    """Note N-16: the text leaves item 4 open for LinkedIn's computed figures and others' connections."""
+    article = _flat(_read(ARTICLE))
+    assert "Permitted by the text" not in article
+    assert "Touches none of the words quoted here" in article
+
+
+def test_the_background_claim_says_what_runs_there():
+    """Note N-17: the worker notices sign-in changes and retries held captures; it never acts on LinkedIn."""
+    article = _flat(_read(ARTICLE))
+    assert "never runs in the background" not in article
+    assert "never acts on LinkedIn in the background" in article
