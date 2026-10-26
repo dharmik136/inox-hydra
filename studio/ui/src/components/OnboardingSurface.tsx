@@ -34,12 +34,13 @@ import { ArchiveImport, archiveStatus } from "./ArchiveImport";
  * are known when you have said "that's me", and history counts are rows in
  * the database, not intentions.
  *
- * The state is polled while this screen is open, because the interesting
+ * The state is read again while this screen is open, because the interesting
  * moment happens in the other window. The creator opens their profile in the
  * bridge browser, and the question "is this you?" should be waiting here when
- * they look back.
+ * they look back: the studio's change stream says when anything was written,
+ * and this screen reads within about a second of it.
  */
-const POLL_MS = 3000;
+const BACKSTOP_MS = 30_000;
 
 /** What this screen reads from the onboarding state beyond the shared type. */
 type SetupState = OnboardingState & {
@@ -76,8 +77,12 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
     void refresh();
     fetchBrowserBridge().then(setBridge).catch(() => setBridge({ browsers: [], extension_path: "" }));
   }, [refresh]);
-  // Every POLL_MS while the window is in view; a hidden one is not polled.
-  useRefresh(refresh, POLL_MS, ANY_CHANGE);
+  // Within about a second of the studio saying something changed, and every
+  // BACKSTOP_MS while the window is in view, for what no write announces,
+  // such as the bridge going quiet. It was every 3 seconds: about 1,700
+  // statements a minute on a screen where nothing was happening. A hidden
+  // window is not polled.
+  useRefresh(refresh, BACKSTOP_MS, ANY_CHANGE);
 
   // The browser that carries the extension, if any. "auto" lets the backend
   // pick, which it does by the same measured rule the Leads screen uses.

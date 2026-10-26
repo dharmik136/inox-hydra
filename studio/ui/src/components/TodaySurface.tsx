@@ -72,6 +72,13 @@ interface Read<T> {
 const PENDING: Read<never> = { data: null, failed: false, loading: true };
 
 /**
+ * How often Today reads again when the stream has said nothing: the backstop
+ * for what no write announces, such as the bridge going quiet. A capture
+ * reaches Today through the stream within about a second.
+ */
+const BACKSTOP_MS = 120_000;
+
+/**
  * One panel's own read, kept apart from every other panel's.
  *
  * `load` is held in a ref so a caller may pass a fresh arrow each render
@@ -127,20 +134,31 @@ export function TodaySurface({
 
   useEffect(load, [load]);
   // Captures arrive while this screen is open, from the other window. Read
-  // again every 30 seconds while the window is in view (a hidden one is not
-  // polled), on coming back to it, and when the studio is back after an outage.
-  useRefresh(load, 30000, ANY_CHANGE);
+  // again when the studio says something changed, within about a second; on
+  // coming back to the window; when the studio is back after an outage; and
+  // every BACKSTOP_MS while the window is in view (a hidden one is not polled).
+  useRefresh(load, BACKSTOP_MS, ANY_CHANGE);
 
   // The panels beside Today's own read. Each is its own endpoint, and none of
   // them is polled: evidence, cadence, the thirty day totals, the week's
-  // slots and the two held signals all move on the scale of days, so
-  // re-reading them every half minute would be work nobody asked for.
-  const [evidence] = useRead(useCallback(() => fetchEvidenceBrief(), []));
-  const [cadence] = useRead(useCallback(() => fetchCadenceInsights(), []));
-  const [kpis] = useRead(useCallback(() => fetchAnalyticsKpis("30d"), []));
-  const [slots] = useRead(useCallback(() => fetchSmartSlots(), []));
-  const [waiting] = useRead(useCallback(() => fetchWaitingCaptures(), []));
-  const [backups] = useRead(useCallback(() => fetchBackupSchedule(), []));
+  // slots and the two held signals move on the scale of days. Each is read
+  // again when the stream says what it shows has changed, on coming back to
+  // the window, and when the studio is back, which is what a panel's "It is
+  // read again when this window comes back" promises; they were read once.
+  const [evidence, readEvidence] = useRead(useCallback(() => fetchEvidenceBrief(), []));
+  const [cadence, readCadence] = useRead(useCallback(() => fetchCadenceInsights(), []));
+  const [kpis, readKpis] = useRead(useCallback(() => fetchAnalyticsKpis("30d"), []));
+  const [slots, readSlots] = useRead(useCallback(() => fetchSmartSlots(), []));
+  const [waiting, readWaiting] = useRead(useCallback(() => fetchWaitingCaptures(), []));
+  const [backups, readBackups] = useRead(useCallback(() => fetchBackupSchedule(), []));
+  useRefresh(readEvidence, undefined, ["posts", "readings"]);
+  useRefresh(readCadence, undefined, ["posts", "queue"]);
+  useRefresh(readKpis, undefined, ["readings"]);
+  useRefresh(readSlots, undefined, ["queue"]);
+  // Only the extension knows how many captures it holds, and it says so on
+  // its heartbeat.
+  useRefresh(readWaiting, undefined, ["heartbeat"]);
+  useRefresh(readBackups);
 
   async function open(url: string, at: "top" | "latest" = "top") {
     setOpening(url);

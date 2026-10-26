@@ -110,6 +110,13 @@ const ASK_PER_KIND = 12;
 const LINES = 24;
 
 /**
+ * How often Activity reads again, while auto refresh is on, when the stream
+ * has said nothing: the backstop for what no write announces. A capture
+ * reaches the log through the stream within about a second.
+ */
+const BACKSTOP_MS = 30_000;
+
+/**
  * Activity: what the bridge read, as a log.
  *
  * One list, newest first, grouped by the day it happened on, one line each,
@@ -154,11 +161,12 @@ export function ActivitySurface({
     loadData();
   }, [loadData]);
 
-  // Every 2.5 seconds while auto refresh is on and the window is in view. It
-  // used to poll a hidden tab at the same rate for as long as it stayed open,
-  // the largest steady load the interface put on the database while the
-  // bridge was writing. Also read on coming back, and after an outage.
-  useRefresh(loadData, autoRefresh ? 2500 : undefined, autoRefresh ? ANY_CHANGE : undefined);
+  // While auto refresh is on: within about a second of the studio saying
+  // something changed, and every BACKSTOP_MS while the window is in view. It
+  // read every 2.5 seconds, and before that in a hidden tab too, the largest
+  // steady load the interface put on the database while the bridge was
+  // writing. Also read on coming back, and after an outage.
+  useRefresh(loadData, autoRefresh ? BACKSTOP_MS : undefined, autoRefresh ? ANY_CHANGE : undefined);
 
   // One list out of the five the studio answers with, newest first. Built
   // from the answer alone, so a kind the creator filters to is already here

@@ -2,7 +2,7 @@
 
 Open **Today** to see who is waiting on a reply, how your latest post is doing against your usual, and the one LinkedIn page most worth opening now.
 
-Once you have confirmed your profile in **Setup**, the studio opens on **Today**. It refreshes itself every 30 seconds while the window is in view, and again when you come back to it, so captures from the bridge browser appear without reloading. If the studio stopped while Today was open, it comes back by itself once the studio is running again.
+Once you have confirmed your profile in **Setup**, the studio opens on **Today**. While the window is in view, Today reads again within about a second of the studio saving a capture from the bridge browser, so captures appear without reloading. It also reads again when you come back to the window, and every two minutes while it is in view, which is how it notices the bridge going quiet. If the studio stopped while Today was open, it comes back by itself once the studio is running again.
 
 ## The line under the title
 

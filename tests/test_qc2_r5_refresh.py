@@ -106,18 +106,21 @@ def test_activity_does_not_poll_a_hidden_window(studio):
     open_section(studio, "activity")
     page.wait_for_selector("text=What the bridge has read")
 
+    # Cycle 4, track 2: a capture reaches Activity through the change stream,
+    # so its timer is a 30 second backstop rather than a 2.5 second poll
+    # (tests/test_qc4_t2_show_browser.py holds the stream's half).
     page.evaluate("window.__visibility = 'visible'")
     start = len(reads)
-    page.clock.run_for("00:10")
+    page.clock.run_for("01:05")
     page.wait_for_timeout(300)
     visible = len(reads) - start
-    assert visible >= 3, f"Activity read {visible} times in 10 visible seconds"
+    assert visible >= 2, f"Activity read {visible} times in 65 visible seconds"
 
     page.evaluate("window.__visibility = 'hidden'")
     start = len(reads)
-    page.clock.run_for("01:00")
+    page.clock.run_for("02:00")
     page.wait_for_timeout(300)
-    assert len(reads) - start == 0, f"Activity read {len(reads) - start} times in a hidden minute"
+    assert len(reads) - start == 0, f"Activity read {len(reads) - start} times in two hidden minutes"
 
 
 def test_the_help_recovers_by_itself_when_the_studio_returns(studio):
