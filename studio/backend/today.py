@@ -59,7 +59,9 @@ MIN_COMPARISONS = 3
 
 COMPARED_METRICS = ("impressions", "reactions", "comments")
 
-# Due posts listed on Today; the Queue lists every one.
+# Due posts listed on Today, which is a summary. The Queue, whose job is to
+# show what is due, asks due_posts for every one (limit=None): both callers
+# used this limit, so a creator with eleven due posts saw ten on the Queue.
 DUE_LIMIT = 10
 
 
@@ -242,13 +244,14 @@ def _missed(note: Optional[Dict[str, Any]], scheduled_for: Optional[str]) -> Opt
             "late_minutes": late if isinstance(late, (int, float)) else None}
 
 
-def due_posts(conn, limit: int = DUE_LIMIT) -> List[Dict[str, Any]]:
+def due_posts(conn, limit: Optional[int] = DUE_LIMIT) -> List[Dict[str, Any]]:
     """
     Queued posts whose time has come, oldest first, with the whole text for
     Copy text, and why one was missed when it was: the machine was asleep or
     the studio was closed at its time, noticed this late. This is the one
     place that reads the due status; Today and the Queue both call it, so a
-    creator sees the same list and the same reason on either screen.
+    creator sees the same list and the same reason on either screen. Today
+    asks for the first DUE_LIMIT; the Queue asks for every one (limit=None).
     """
     try:
         from .scheduler import native_scheduler
@@ -263,7 +266,7 @@ def due_posts(conn, limit: int = DUE_LIMIT) -> List[Dict[str, Any]]:
              "missed": _missed(missed.get(r["id"]), r["scheduled_for"])}
             for r in conn.execute(
                 "SELECT id, content, scheduled_for FROM posts WHERE status = 'due' "
-                "ORDER BY scheduled_for LIMIT ?", (limit,))]
+                "ORDER BY scheduled_for LIMIT ?", (-1 if limit is None else limit,))]
 
 
 def _queue(conn) -> Dict[str, Any]:
