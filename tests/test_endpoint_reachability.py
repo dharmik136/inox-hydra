@@ -338,6 +338,10 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # 148 reached, 57 unreachable. The four new readings routes have no screen
 # yet; 2.9.0 draws them.
 # ---------------------------------------------------------------------------
+# 2.8.0 merged into track 1 (the bridge), measured on the merged tree: 205
+# paths, 148 reached, 57 unreachable, unchanged. The bridge adds no path: its
+# heartbeat carries new fields on the route it already had.
+# ---------------------------------------------------------------------------
 TOTAL_API_PATHS = 205
 REACHED_BY_INTERFACE = 148
 UNREACHABLE = 57
