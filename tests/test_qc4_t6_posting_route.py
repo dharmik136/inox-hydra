@@ -52,3 +52,11 @@ def test_no_oauth_code_is_written_this_cycle():
                     if re.search(r"oauth/v2|oauth/native-pkce|code_verifier|w_member_social", handle.read()):
                         hits.append(name)
     assert hits == [], f"OAuth code appeared before LinkedIn enabled the flow for the app: {hits}"
+
+
+def test_each_page_is_quoted_in_its_own_words():
+    """Review note N-19: the 3-legged page writes "60-day", and the refresh skips consent on two conditions."""
+    text = _flat(ANSWER)
+    assert 'Both pages: "Currently' not in text
+    assert "60-day lifespan" in text and "60 day lifespan" in text
+    assert "current access token has not expired" in text

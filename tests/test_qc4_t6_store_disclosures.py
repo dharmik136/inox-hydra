@@ -61,3 +61,17 @@ def test_the_limited_use_disclosure_is_prominent_and_true():
                           "I do not use or transfer user data for purposes that are unrelated",
                           "I do not use or transfer user data to determine creditworthiness"):
         assert certification in text
+
+
+def test_the_cookies_and_tabs_rows_say_every_use():
+    """
+    Review note N-18: the cookies row said li_at is read only on Sync, while
+    the popup reads it each time it opens and the worker watches it to keep
+    its digest; it is sent only on Sync. tabs is used from the side panel too.
+    """
+    rows = {line.split("|")[1].strip(): line for line in _read(DISCLOSURES).splitlines() if line.startswith("| `")}
+    cookies = " ".join(rows["`cookies`"].split())
+    assert "Only when you press Sync LinkedIn Session, it reads your li_at and JSESSIONID" not in cookies
+    assert "watches it change" in cookies and "to show in the popup whether you are signed in" in cookies
+    assert "Only when you press Sync LinkedIn Session does it" in cookies
+    assert "side panel" in rows["`tabs`"]
