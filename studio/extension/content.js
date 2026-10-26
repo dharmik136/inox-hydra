@@ -118,7 +118,7 @@ function announceNetworkReading() {
 // Whether this page carries the interceptor. It runs in LinkedIn's own
 // world, out of this script's sight, so the page is asked over the window
 // channel the interceptor already uses, and only while the switch is on:
-// with network reading off the bridge posts nothing at all. null until it
+// with network reading off the page is never asked. null until it
 // has answered or the grace below has passed; a tab opened before the switch
 // was turned on carries no interceptor and does not answer. It used to mark
 // LinkedIn's root element with an attribute any script there could read.
