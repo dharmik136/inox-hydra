@@ -174,7 +174,10 @@ def test_a_read_too_short_to_measure_inside_a_long_frame_still_overlaps_it(pages
       noteLongTask({ startTime: start - 10, duration: 80 });
       return t.take('profile');
     }""")
-    assert took["long_tasks"] == 1 and took["long_task_ms"] == 0
+    # What is guarded is that it counts at all. The overlap is the read's own
+    # length, 0 ms on an idle machine and a millisecond or two under a loaded
+    # full-suite run, never the frame's 80 ms.
+    assert took["long_tasks"] == 1 and 0 <= took["long_task_ms"] <= 2
 
 
 def test_one_source_of_long_frames_is_observed(pages):
