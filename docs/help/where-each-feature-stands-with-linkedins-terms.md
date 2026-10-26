@@ -6,13 +6,13 @@ Your LinkedIn account is yours, and it is the account that answers for anything 
 
 ## What LinkedIn says
 
-**The User Agreement, section 8.2 ("You agree that you will not"), effective on November 3, 2025, as read on 26 October 2026**, at linkedin.com/legal/user-agreement. Five of its nineteen items concern tools like this one. Numbered by their position in the list:
+**The User Agreement, section 8.2 ("You agree that you will not"), effective on November 3, 2025, as read on 26 October 2026**, at linkedin.com/legal/user-agreement. Five of its nineteen items concern tools like this one, each named here by its position in LinkedIn's list:
 
-1. "Create a false identity on LinkedIn, misrepresent your identity, create a Member profile for anyone other than yourself (a real person), or use or attempt to use another's account (such as sharing log-in credentials or copying cookies);"
-2. "Develop, support or use software, devices, scripts, robots or any other means or processes (such as crawlers, browser plugins and add-ons or any other technology) to scrape or copy the Services, including profiles and other data from the Services;"
-4. "Copy, use, display or distribute any information (including content) obtained from the Services, whether directly or through third parties (such as search tools or data aggregators or brokers), without the consent of the content owner (such as LinkedIn for content it owns);"
-13. "Use bots or other unauthorized automated methods to access the Services, add or download contacts, send or redirect messages, create, comment on, like, share, or re-share posts, or otherwise drive inauthentic engagement;"
-15. "Overlay or otherwise modify the Services or their appearance (such as by inserting elements into the Services or removing, covering, or obscuring an advertisement included on the Services);"
+- **Item 1:** "Create a false identity on LinkedIn, misrepresent your identity, create a Member profile for anyone other than yourself (a real person), or use or attempt to use another's account (such as sharing log-in credentials or copying cookies);"
+- **Item 2:** "Develop, support or use software, devices, scripts, robots or any other means or processes (such as crawlers, browser plugins and add-ons or any other technology) to scrape or copy the Services, including profiles and other data from the Services;"
+- **Item 4:** "Copy, use, display or distribute any information (including content) obtained from the Services, whether directly or through third parties (such as search tools or data aggregators or brokers), without the consent of the content owner (such as LinkedIn for content it owns);"
+- **Item 13:** "Use bots or other unauthorized automated methods to access the Services, add or download contacts, send or redirect messages, create, comment on, like, share, or re-share posts, or otherwise drive inauthentic engagement;"
+- **Item 15:** "Overlay or otherwise modify the Services or their appearance (such as by inserting elements into the Services or removing, covering, or obscuring an advertisement included on the Services);"
 
 **The Help Center article "Prohibited software and extensions" (answer a1341387), marked "Last updated: 2 years ago" when read on 26 October 2026:**
 

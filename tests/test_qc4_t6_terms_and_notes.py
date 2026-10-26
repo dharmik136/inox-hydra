@@ -101,3 +101,17 @@ def test_the_landscape_says_what_happened_to_shield_and_kleo():
     assert "Wound down May 2026" in landscape
     assert "shut down 2025-06-20" in landscape
     assert "tolerated in practice, not permitted in text" in landscape
+
+
+def test_linkedins_item_numbers_survive_the_studios_renderer():
+    """
+    The items were first written as an ordered list numbered 1, 2, 4, 13 and
+    15, and the studio's markdown renderer numbers a list from its first
+    marker, so a reader saw items 13 and 15 labelled 4 and 5. Each item now
+    carries its number as text.
+    """
+    article = _read(ARTICLE)
+    for number in (1, 2, 4, 13, 15):
+        assert f"**Item {number}:**" in article, f"item {number} does not carry LinkedIn's own number"
+    import re
+    assert not re.search(r"^1[35]\. ", article, re.M), "an item number is a list marker again"
