@@ -802,10 +802,15 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
                     )
                     items_kept += 1
 
-            # The run itself, refused or not, for the health screen.
+            # The run itself, refused or not, for the health screen. Its drift
+            # is the page's, named as the DOM readers name theirs: a field the
+            # reader cannot do without, missing from a response that plainly
+            # matched its endpoint. It was never written, so Setup could not
+            # say a network reader had stopped reading.
             _write_capture(conn, extractor, {
                 "page_kind": "voyager_api", "items_seen": items_seen, "items_kept": items_kept,
                 "items_dropped": items_dropped if schema_name == "feed_updates" else None,
+                "drift": payload.get("drift") if isinstance(payload.get("drift"), list) else None,
                 "extension_version": payload.get("extension_version"),
             }, refused="identity" if refusal else None)
     finally:

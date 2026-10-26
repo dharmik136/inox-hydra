@@ -240,16 +240,35 @@ function handleVoyagerCapture(data) {
 
     const result = VSchema.extractWithSchema(schema, payload.body);
 
+    // The run's drift, named the way the DOM readers name theirs: a field
+    // this reader cannot do without, missing from every entry of a response
+    // that plainly matched its endpoint, or a response with no list of
+    // entries at all. A missing optional figure is not drift for the reader
+    // (most of a feed is other members' posts, which carry no view count);
+    // it still goes to the drift log below. Every network run used to be
+    // written with no drift, and one whose first entry lacked a required
+    // field was not sent at all, so Setup could never say a network reader
+    // had stopped reading.
+    const entries = Array.isArray(result.data) ? result.data : (result.data ? [result.data] : []);
+    const answered = payload.status >= 200 && payload.status < 300;
+    const body = payload.body;
+    const runDrift = !answered ? []
+      : (body && typeof body === "object" && !Array.isArray(body.elements)) ? ["elements"]
+      : schema.required.filter((field) => entries.length > 0 &&
+          !entries.some((entry) => entry && entry[field] !== undefined && entry[field] !== null));
+
     if (result.success) {
       voyagerCaptureStats.successful++;
       voyagerCaptureStats.lastCaptureTime = Date.now();
-
+    }
+    if (result.success || runDrift.length || entries.length) {
       // Forward structured data to the backend.
       studioApi("/api/v1/bridge/voyager-ingest", {
         schema_name: schemaName,
         schema_version: result.schema_version,
         confidence: result.confidence,
-        data: result.data,
+        data: entries,
+        drift: runDrift,
         // Whose figures these are; see signedInVanity.
         vanity: signedInVanity,
         source_url: payload.url,
