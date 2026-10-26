@@ -13,7 +13,7 @@ row. Line numbers are at the branch head this record was committed with.
 | Found by this track's own review | 13 defects after the first green runs, 1 of them a privacy defect; all fixed, listed below |
 | Migration | One, numbered 28 in this branch: "Each reader says how long it took, and the bridge says whether network reading is on" |
 | Interface audit | Setup and Today, dark and light: 8 screens, 0 blocking findings |
-| Suite, as CI runs it | See the last section |
+| Suite, as CI runs it | 3,199 passed, 17 skipped, 0 failed at 1a9c606; the runs before it are in the last section |
 
 | Item | State | Commits | Review |
 |---|---|---|---|
@@ -435,3 +435,11 @@ Five existing guards caught a draft of this work, and the code was changed to sa
 | Run | Passed | Skipped | Failed |
 |---|---|---|---|
 | Before this track's own review fixes | 3,192 | 17 | 1: the privacy tripwire on the popup, fixed in b8287f8 |
+| After them | 3,193 | 17 | 6: `tests/test_qc_f4b_history.py` runs `runImport` beside stand-ins for its closure, and the new `offeredKeys` was not among them; the stand-in now declares it, assertions unchanged (c1ebd5f) |
+| Final, at 1a9c606 | 3,199 | 17 | 0 |
+
+The 17 skips are the suite's own and none is in this track's modules: Windows and macOS
+primitives (the tray, autostart, the mutex, Job Objects, the Keychain, LaunchAgent), a desktop
+with browsers installed, one interface state the suite marks as current, and `pyyaml`, which this
+interpreter does not have. This record's own commit, which came after the final
+run, was checked again with `tests/test_docs_library.py` and `tests/test_phase4_algorithmic_safety.py`.
