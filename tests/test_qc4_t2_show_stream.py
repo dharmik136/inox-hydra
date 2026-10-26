@@ -157,11 +157,17 @@ class Stream:
 
     def change(self, timeout=5.0):
         """Waits for the next change event; returns its kinds and how long it took."""
+        kinds, _notes, took = self.change_notes(timeout)
+        return kinds, took
+
+    def change_notes(self, timeout=5.0):
+        """Waits for the next change event; returns its kinds, its changes and how long it took."""
         started = time.monotonic()
         while True:
             name, _id, data = self.event(timeout=max(0.1, timeout - (time.monotonic() - started)))
             if name == "change":
-                return json.loads(data)["kinds"], time.monotonic() - started
+                body = json.loads(data)
+                return body["kinds"], body.get("changes", []), time.monotonic() - started
 
     def close(self):
         # The file object holds the socket open until it is closed too, so
@@ -526,6 +532,55 @@ def test_an_import_event_says_imports(studio, creator):
     request_id = json.loads(text)["id"]
     kinds = _published_by(studio["port"], "/api/v1/self/imports/event", {"id": request_id, "event": "started"})
     assert kinds == ["imports"], kinds
+
+
+def _notes_from(port, path, body):
+    stream = Stream(port)
+    try:
+        stream.event()
+        status, text = _post(port, path, body)
+        assert status == 200, text
+        _kinds, notes, _took = stream.change_notes(timeout=3.0)
+        return notes
+    finally:
+        stream.close()
+
+
+def test_a_capture_names_its_reader_and_whether_it_drifted(studio):
+    notes = _notes_from(studio["port"], "/api/v1/bridge/capture", {
+        "extractor": "engagers", "page_kind": "post", "items_seen": 3, "items_kept": 0, "drift": ["name"]})
+    assert notes == [{"kind": "capture", "extractor": "engagers", "drift": True}], notes
+
+
+def test_a_heartbeat_says_whether_it_carried_a_waiting_count(studio):
+    beat = {"extension_version": "2.7.0", "page_kind": "feed"}
+    assert _notes_from(studio["port"], "/api/v1/bridge/heartbeat", beat) == [{"kind": "heartbeat", "waiting": False}]
+    assert _notes_from(studio["port"], "/api/v1/bridge/heartbeat", {**beat, "waiting_captures": 2}) == [
+        {"kind": "heartbeat", "waiting": True}]
+
+
+def test_a_posts_reading_names_the_post(studio, creator):
+    notes = _notes_from(studio["port"], "/api/v1/self/posts/analytics", {
+        "author": ME, "activity_urn": creator["urn"], "metrics": {"impressions": 130, "reactions": 6}})
+    assert notes == [{"kind": "readings", "post": creator["urn"]}], notes
+
+
+def test_an_engagement_says_how_on_which_post_and_who_by_id_only(studio, creator):
+    notes = _notes_from(studio["port"], "/api/v1/crm/interactions/ingest", {
+        "full_name": "Second Person", "profile_url": "https://www.linkedin.com/in/second-person-t2",
+        "headline": "Designer", "company": "Example", "interaction_type": "LIKE", "post_urn": creator["urn"],
+        "post_author": ME})
+    assert len(notes) == 1, notes
+    note = notes[0]
+    assert note["kind"] == "people" and note["interaction"] == "reaction" and note["post"] == creator["urn"]
+    assert note["lead"].startswith("lead-"), note
+    assert "Second Person" not in json.dumps(notes) and "Designer" not in json.dumps(notes)
+
+
+def test_a_change_never_carries_a_name_or_text():
+    note = changes.note_of("people", {"lead": "Jane Doe", "post": "a post's text", "interaction": "LIKE",
+                                      "full_name": "Jane Doe", "extractor": "engagers"})
+    assert note == {"kind": "people", "extractor": "engagers"}, note
 
 
 # What the extension writes through, and what each says. A path the extension

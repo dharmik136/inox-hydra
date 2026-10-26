@@ -51,11 +51,19 @@ import { confirmLeaving, registerUnsavedWork } from "@/lib/unsaved";
 const WORDS_PER_MINUTE = 200;
 
 /**
- * How long after a heartbeat the header waits for a screen to report the
- * bridge before reading it itself. Today, Setup and Activity read again on
- * the same news, and one answer on screen is better than two.
+ * How long after a write nothing named the header waits for a screen to
+ * report the bridge before reading it itself: Today, Setup and Activity read
+ * on the same news, and one answer on screen is better than two.
  */
 const BRIDGE_REPORT_GRACE_MS = 1_500;
+
+/**
+ * The least time between two reads of the bridge the stream causes the header
+ * to make, with the last one always made. The whole onboarding state is read
+ * for one mark, so fifteen seconds, the age at which a returning screen reads
+ * again, keeps it to four a minute however busy the studio is.
+ */
+const HEADER_GAP_MS = 15_000;
 
 /**
  * The screen an address names: "#/leads" is Leads.
@@ -328,24 +336,34 @@ export default function App() {
     if (showsHeader) void readBridge();
   }, [showsHeader, readBridge]);
   useRefresh(readBridge, 60_000);
-  // The mark follows the stream. A heartbeat is the moment the bridge can
-  // turn connected, and a write nothing named may be one too, so after
-  // either the header reads the state itself unless a screen reported it
-  // first. The minute above stays: nothing is written when the bridge goes
-  // quiet, so only time can say it has.
+  // The mark follows the stream. A heartbeat is the bridge heard from now,
+  // which is what connected means (the studio counts it connected for 150
+  // seconds after one), so the mark says so without a read. A write nothing
+  // named may be the bridge too, as a heartbeat a second studio recorded or
+  // a restore, so after one the header reads the state itself unless a
+  // screen reported it first, at most once per HEADER_GAP_MS and always once
+  // after the last. The minute above stays: nothing is written when the
+  // bridge goes quiet, so only time can say it has.
+  const headerReadAt = useRef(0);
   useEffect(() => {
     let waiting: number | undefined;
-    const stop = onStudioChange((kinds) => {
-      if (!(kinds.includes("heartbeat") || kinds.includes("database")) || waiting !== undefined) return;
+    const stop = onStudioChange((changes) => {
+      if (changes.some((change) => change.kind === "heartbeat")) {
+        bridgeReadAt.current = Date.now();
+        setBridgeConnected(true);
+      }
+      if (!changes.some((change) => change.kind === "database") || waiting !== undefined) return;
       const heardAt = Date.now();
+      const wait = Math.max(BRIDGE_REPORT_GRACE_MS, headerReadAt.current + HEADER_GAP_MS - heardAt);
       waiting = window.setTimeout(() => {
         waiting = undefined;
         if (!showsHeaderRef.current || bridgeReadAt.current >= heardAt) return;
+        headerReadAt.current = Date.now();
         bridgeReadAt.current = Date.now();
         fetchOnboardingState()
           .then((state) => reportBridge(state.bridge.connected))
           .catch(() => setBridgeConnected(null));
-      }, BRIDGE_REPORT_GRACE_MS);
+      }, wait);
     });
     return () => {
       stop();

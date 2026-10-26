@@ -184,10 +184,13 @@ def test_today_says_how_many_captures_wait_as_the_extension_reports_it(studio):
     ingest_contract.forget()
     seed_creator(studio["client"])
     page = studio["page"]
+    page.clock.install()
     open_section(studio, "today")
     page.wait_for_selector("text=What to do in the next hour")
     assert "WAITING FOR THE STUDIO" not in page.inner_text("main")
     assert _wait_until(lambda: _listening() == 1)
+    # Past Today's window since its first read, so the count is read at once.
+    page.clock.fast_forward("00:20")
     beat = studio["client"].post("/api/v1/bridge/heartbeat", json={
         "extension_version": "2.7.0", "page_kind": "service_worker", "contract_version": 1,
         "waiting_captures": 7, "oldest_waiting_at": "2026-10-26T09:00:00+00:00"})
@@ -372,3 +375,126 @@ def test_todays_totals_read_again_when_the_analytics_page_is_read(studio):
         "series": [{"date": datetime.now().strftime("%Y-%m-%d"), "impressions": 900, "reactions": 9, "followers": 400}]})
     assert read.status_code == 200, read.text
     assert _page_wait_until(page, lambda: len(totals) > before, timeout=6.0), "the totals were not read again"
+
+
+
+# ---------------------------------------------------------------------------
+# Review finding S1: a screen reads only for a change that can alter it, and
+# Today and the header at most once per fifteen seconds
+# ---------------------------------------------------------------------------
+
+def _beat(client, **extra):
+    beat = client.post("/api/v1/bridge/heartbeat", json={"extension_version": "2.7.0", "page_kind": "feed", **extra})
+    assert beat.status_code == 200, beat.text
+
+
+def test_today_reads_nothing_for_heartbeats_while_it_shows_the_bridge_connected(studio):
+    """Ten LinkedIn tabs beat once a minute each; BRIDGE CONNECTED reads the same after every one."""
+    seed_creator(studio["client"])
+    page = studio["page"]
+    page.clock.install()
+    briefs = _reads_of(page, "/api/v1/today")
+    waiting = _reads_of(page, "/api/v1/extension/captures/waiting")
+    open_section(studio, "today")
+    page.wait_for_selector("text=BRIDGE CONNECTED")
+    assert _wait_until(lambda: _listening() == 1)
+    page.clock.fast_forward("00:20")
+    before, waited = len(briefs), len(waiting)
+    for _ in range(5):
+        _beat(studio["client"])
+        page.wait_for_timeout(300)
+    page.wait_for_timeout(1500)
+    assert len(briefs) == before, f"Today read its brief {len(briefs) - before} times for heartbeats"
+    assert len(waiting) == waited, "the waiting count was read for heartbeats that carried none"
+
+
+def test_today_reads_its_brief_at_most_once_a_window_while_comments_come(studio):
+    """Six new commenters in a few seconds: one read now or at the window's end, not one a second."""
+    urns = seed_creator(studio["client"])
+    page = studio["page"]
+    page.clock.install()
+    briefs = _reads_of(page, "/api/v1/today")
+    open_section(studio, "today")
+    page.wait_for_selector("text=What to do in the next hour")
+    assert _wait_until(lambda: _listening() == 1)
+    before = len(briefs)
+    for index in range(6):
+        engaged = studio["client"].post("/api/v1/crm/interactions/ingest", json={
+            "full_name": f"Commenter {index}", "profile_url": f"https://www.linkedin.com/in/commenter-{index}-t2",
+            "headline": "Engineer", "company": "Example", "interaction_type": "COMMENT",
+            "comment_text": f"Comment number {index}.", "post_urn": urns[0], "post_author": ME})
+        assert engaged.status_code == 200, engaged.text
+        page.wait_for_timeout(400)
+    page.clock.run_for(16_000)
+    page.wait_for_timeout(500)
+    reads = len(briefs) - before
+    assert 1 <= reads <= 2, f"Today read its brief {reads} times for six comments inside one window"
+    page.wait_for_selector("text=Comment number 5.", timeout=5000)
+
+
+def test_the_header_reads_nothing_for_heartbeats(studio):
+    """A heartbeat is the bridge heard from now: the mark turns connected from the news itself."""
+    confirm_identity(studio["client"])
+    import database
+
+    conn = database.get_db()
+    try:
+        with conn:
+            conn.execute("UPDATE bridge_heartbeats SET seen_at = '2000-01-01T00:00:00+00:00'")
+    finally:
+        conn.close()
+    page = studio["page"]
+    page.clock.install()
+    reads = _reads_of(page, "/api/v1/onboarding/state")
+    open_section(studio, "queue")
+    page.wait_for_selector("h1:has-text('Queue')")
+
+    def mark():
+        return page.locator("header button", has_text="Activity").first.text_content() or ""
+
+    assert _wait_until(lambda: ", bridge not connected" in mark()), mark()
+    assert _wait_until(lambda: _listening() == 1)
+    page.clock.fast_forward("00:20")
+    before = len(reads)
+    for _ in range(5):
+        _beat(studio["client"])
+        page.wait_for_timeout(300)
+    assert _page_wait_until(page, lambda: ", bridge connected" in mark()), mark()
+    page.clock.run_for(5_000)
+    page.wait_for_timeout(500)
+    assert len(reads) == before, f"the header read the bridge {len(reads) - before} times for heartbeats"
+
+
+def test_setup_reads_once_for_a_reader_running_again_in_the_same_minute(studio):
+    """WORKING, LAST READ is to the minute: twenty runs of one working reader change it once."""
+    confirm_identity(studio["client"])
+    page = studio["page"]
+    reads = _reads_of(page, "/api/v1/onboarding/state")
+    open_section(studio, "setup")
+    page.wait_for_selector("text=CAPTURE HEALTH")
+    assert _wait_until(lambda: _listening() == 1)
+    page.wait_for_timeout(1200)
+    before = len(reads)
+    for _ in range(20):
+        _capture(studio["client"])
+        page.wait_for_timeout(200)
+    page.wait_for_timeout(2000)
+    page.wait_for_selector("text=WORKING, LAST READ")
+    assert len(reads) - before <= 2, f"Setup read {len(reads) - before} times for one reader running twenty times"
+
+
+def test_activity_reads_nothing_for_the_readers_run_log(studio):
+    """The log shows what the bridge kept; a reader's run is in Setup's health, not here."""
+    seed_creator(studio["client"])
+    page = studio["page"]
+    reads = _reads_of(page, "/api/v1/self/activity-stream")
+    open_section(studio, "activity")
+    page.wait_for_selector("text=What the bridge has read")
+    assert _wait_until(lambda: _listening() == 1)
+    page.wait_for_timeout(1200)
+    before = len(reads)
+    for _ in range(5):
+        _capture(studio["client"])
+        page.wait_for_timeout(300)
+    page.wait_for_timeout(1500)
+    assert len(reads) == before, f"Activity read {len(reads) - before} times for the readers' run log"

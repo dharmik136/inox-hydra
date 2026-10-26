@@ -17,7 +17,7 @@ import {
 } from "@/lib/api";
 import { importEnding } from "@/lib/importOutcome";
 import { reportBridge } from "@/lib/bridgeState";
-import { ANY_CHANGE, useRefresh } from "@/lib/refresh";
+import { useRefresh, type StudioChangeNote } from "@/lib/refresh";
 import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -117,6 +117,31 @@ const LINES = 24;
 const BACKSTOP_MS = 30_000;
 
 /**
+ * Whether a change can alter Activity's log, by what it shows: what the
+ * bridge kept, the counts, the imports and when the bridge was last heard
+ * from. Not the readers' run log, the daily totals or the queue.
+ */
+function activityMayChange(change: StudioChangeNote, stream: ActivityStreamData | null): boolean {
+  if (!stream) return true;
+  switch (change.kind) {
+    case "heartbeat": {
+      // "Bridge last heard from" counts in seconds once past "just now".
+      const { bridge_connected: connected, bridge_last_seen: seen } = stream.summary;
+      return !connected || !seen || ago(seen) !== "just now";
+    }
+    case "readings":
+      // A post's figures are on its line, and only the newest posts have one.
+      return !change.post || stream.recent_posts.some((post) => post.activity_urn === change.post);
+    case "capture":
+    case "account":
+    case "queue":
+      return false;
+    default:
+      return true;
+  }
+}
+
+/**
  * Activity: what the bridge read, as a log.
  *
  * One list, newest first, grouped by the day it happened on, one line each,
@@ -166,7 +191,11 @@ export function ActivitySurface({
   // read every 2.5 seconds, and before that in a hidden tab too, the largest
   // steady load the interface put on the database while the bridge was
   // writing. Also read on coming back, and after an outage.
-  useRefresh(loadData, autoRefresh ? BACKSTOP_MS : undefined, autoRefresh ? ANY_CHANGE : undefined);
+  useRefresh(
+    loadData,
+    autoRefresh ? BACKSTOP_MS : undefined,
+    autoRefresh ? { matters: (change) => activityMayChange(change, stream) } : undefined,
+  );
 
   // One list out of the five the studio answers with, newest first. Built
   // from the answer alone, so a kind the creator filters to is already here

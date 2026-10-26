@@ -210,7 +210,6 @@ def record_heartbeat(extension_version: Any = None, page_kind: Any = None) -> Di
             )
     finally:
         conn.close()
-    changes.publish("heartbeat")
     return {"status": "success", "seen_at": now.isoformat()}
 
 
@@ -326,7 +325,7 @@ def record_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
             conn.execute(PRUNE_CAPTURES, ((now - CAPTURE_RETENTION).isoformat(),))
     finally:
         conn.close()
-    changes.publish("capture")
+    changes.publish("capture", extractor=payload["extractor"], drift=bool(drift))
     return {"status": "success"}
 
 
@@ -1000,7 +999,7 @@ def ingest_post_analytics(author: Any, activity_urn: Any, metrics: Any) -> Dict[
                              (impressions, _now(), urn))
     finally:
         conn.close()
-    changes.publish("readings")
+    changes.publish("readings", post=urn)
     return {"status": "success", "recorded": recorded}
 
 

@@ -1548,6 +1548,7 @@ def post_bridge_heartbeat(payload: BridgeHeartbeat):
     """
     seen = onboarding.record_heartbeat(payload.extension_version, payload.page_kind)
     ingest_contract.note_waiting(payload.waiting_captures, payload.oldest_waiting_at)
+    changes.publish("heartbeat", waiting=payload.waiting_captures is not None)
     seen["handshake"] = ingest_contract.handshake(payload.extension_version, payload.contract_version)
     return seen
 

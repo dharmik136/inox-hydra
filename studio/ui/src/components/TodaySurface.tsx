@@ -28,7 +28,7 @@ import {
 } from "@/lib/api";
 import { NOT_MEASURED, formatDays, gapOrNotMeasured } from "@/lib/cadence";
 import { reportBridge } from "@/lib/bridgeState";
-import { ANY_CHANGE, useRefresh } from "@/lib/refresh";
+import { useRefresh, type StudioChangeNote } from "@/lib/refresh";
 import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -77,6 +77,53 @@ const PENDING: Read<never> = { data: null, failed: false, loading: true };
  * reaches Today through the stream within about a second.
  */
 const BACKSTOP_MS = 120_000;
+
+/**
+ * The least time between two reads of one of Today's parts that the stream
+ * causes, with the last change always read. Today is the screen left open
+ * while the creator is on LinkedIn, when changes keep coming, and its brief
+ * re-runs the whole onboarding state; at one read a second it cost several
+ * times its old 30 second poll. Fifteen seconds, the age at which a returning
+ * window reads again, keeps it to four reads a minute however busy the bridge
+ * is, still sooner than the poll it replaced, and a change after a quiet
+ * spell is read at once.
+ */
+const TODAY_GAP_MS = 15_000;
+
+/**
+ * Whether a change can alter Today's brief, by what the brief shows. Only
+ * kinds it shows something of; within one, only what would read differently.
+ */
+function briefMayChange(change: StudioChangeNote, brief: TodayBrief | null): boolean {
+  if (!brief) return true;
+  switch (change.kind) {
+    case "heartbeat":
+      // The line says BRIDGE CONNECTED with no time: a heartbeat changes it
+      // only when it shows the bridge as gone.
+      return !brief.freshness.bridge.connected;
+    case "capture": {
+      // LAST CAPTURE reads JUST NOW for ninety seconds, and a reader that
+      // drifts or recovers changes the parts not working.
+      const { last_capture_at: last, drifting } = brief.freshness;
+      return Boolean(change.drift) || drifting.length > 0 || !last || ago(last) !== "JUST NOW";
+    }
+    case "people":
+      // A comment is someone to reply to. A reaction or a repost leaves
+      // nothing to reply to and changes only how many posts someone already
+      // on the list engaged with.
+      if (change.interaction === "reaction" || change.interaction === "repost") {
+        return !change.lead || brief.reply_to.some((person) => person.lead_id === change.lead);
+      }
+      return true;
+    case "outbound":
+    case "account":
+      // The brief shows neither the creator's engagement elsewhere nor the
+      // daily totals; the totals have their own panel.
+      return false;
+    default:
+      return true;
+  }
+}
 
 /**
  * One panel's own read, kept apart from every other panel's.
@@ -137,7 +184,7 @@ export function TodaySurface({
   // again when the studio says something changed, within about a second; on
   // coming back to the window; when the studio is back after an outage; and
   // every BACKSTOP_MS while the window is in view (a hidden one is not polled).
-  useRefresh(load, BACKSTOP_MS, ANY_CHANGE);
+  useRefresh(load, BACKSTOP_MS, { gapMs: TODAY_GAP_MS, matters: (change) => briefMayChange(change, brief) });
 
   // The panels beside Today's own read. Each is its own endpoint, and none of
   // them is polled: evidence, cadence, the thirty day totals, the week's
@@ -151,14 +198,15 @@ export function TodaySurface({
   const [slots, readSlots] = useRead(useCallback(() => fetchSmartSlots(), []));
   const [waiting, readWaiting] = useRead(useCallback(() => fetchWaitingCaptures(), []));
   const [backups, readBackups] = useRead(useCallback(() => fetchBackupSchedule(), []));
-  useRefresh(readEvidence, undefined, ["posts", "readings"]);
-  useRefresh(readCadence, undefined, ["posts", "queue"]);
-  useRefresh(readKpis, undefined, ["account"]);
-  useRefresh(readSlots, undefined, ["queue"]);
+  useRefresh(readEvidence, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "posts" || c.kind === "readings" });
+  useRefresh(readCadence, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "posts" || c.kind === "queue" });
+  useRefresh(readKpis, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "account" });
+  useRefresh(readSlots, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "queue" });
   // Only the extension knows how many captures it holds, and it says so on
-  // its heartbeat.
-  useRefresh(readWaiting, undefined, ["heartbeat"]);
-  useRefresh(readBackups);
+  // the heartbeats that carry the count.
+  useRefresh(readWaiting, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "heartbeat" && c.waiting !== false });
+  // Written by the backup job, which names nothing: a "database" change.
+  useRefresh(readBackups, undefined, { gapMs: TODAY_GAP_MS, matters: () => false });
 
   async function open(url: string, at: "top" | "latest" = "top") {
     setOpening(url);

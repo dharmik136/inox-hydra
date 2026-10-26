@@ -47,6 +47,7 @@ Strict Invariants:
 import asyncio
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import sys
@@ -70,6 +71,23 @@ _log = logging.getLogger("studio.changes")
 # window takes it as "anything may have changed".
 KINDS = ("capture", "heartbeat", "posts", "readings", "account", "people", "outbound",
          "identity", "imports", "queue", "database")
+
+# What a change may carry beside its kind, so a window can tell whether it
+# alters what that window shows: which reader ran and whether it drifted, whether
+# a heartbeat said how many captures wait, which post, how someone engaged, and
+# who by the studio's own id. Never a name, never text, never a figure: an
+# identifier that does not match its shape is dropped, and a change without it
+# is read as "this kind, anywhere".
+IDENTIFIERS = {
+    "extractor": re.compile(r"^[a-z_]{1,40}$"),
+    "post": re.compile(r"^urn:li:activity:\d{1,25}$"),
+    "interaction": re.compile(r"^(comment|reaction|repost)$"),
+    "lead": re.compile(r"^[A-Za-z0-9_.:-]{1,80}$"),
+}
+FLAGS = ("drift", "waiting")
+
+# The most notes one message carries; past this each kind is sent bare.
+MAX_NOTES = 32
 
 # How often the watcher looks at data_version while anyone listens. One look
 # is one PRAGMA on an open connection, well under a millisecond; a second is
@@ -116,10 +134,10 @@ class Subscription:
         self.loop = loop
         self.woken = asyncio.Event()
         self.closing = False
-        self._kinds: List[str] = []
+        self._notes: List[Dict[str, Any]] = []
 
-    def _deliver(self, kind: str) -> None:
-        self._kinds.append(kind)
+    def _deliver(self, note: Dict[str, Any]) -> None:
+        self._notes.append(note)
         self.woken.set()
 
     def _close(self) -> None:
@@ -135,11 +153,24 @@ class Subscription:
         self.woken.clear()
         return True
 
-    def take(self) -> List[str]:
-        """The kinds delivered since the last take, each once, in a fixed order."""
-        kinds = sorted(set(self._kinds))
-        self._kinds.clear()
-        return kinds
+    def take(self) -> Tuple[List[str], List[Dict[str, Any]]]:
+        """
+        The kinds delivered since the last take, each once in a fixed order,
+        and the changes themselves, each once. A burst of the same change is
+        one note; past MAX_NOTES distinct ones, each kind is sent bare.
+        """
+        notes: List[Dict[str, Any]] = []
+        seen = set()
+        for note in self._notes:
+            key = tuple(sorted(note.items()))
+            if key not in seen:
+                seen.add(key)
+                notes.append(note)
+        self._notes.clear()
+        kinds = sorted({note["kind"] for note in notes})
+        if len(notes) > MAX_NOTES:
+            notes = [{"kind": kind} for kind in kinds]
+        return kinds, notes
 
 
 def sequence() -> int:
@@ -153,21 +184,37 @@ def current_id() -> str:
     return f"{BOOT}-{sequence()}"
 
 
-def publish(kind: str) -> None:
+def note_of(kind: str, identifiers: Dict[str, Any]) -> Dict[str, Any]:
+    """The change as it is sent: the kind, and only identifiers of the right shape."""
+    note: Dict[str, Any] = {"kind": kind}
+    for name, value in identifiers.items():
+        if name in FLAGS and isinstance(value, bool):
+            note[name] = value
+        elif name in IDENTIFIERS and isinstance(value, str) and IDENTIFIERS[name].match(value):
+            note[name] = value
+        elif value is not None:
+            _log.debug("A %s change dropped its %s: not an identifier of that shape.", kind, name)
+    return note
+
+
+def publish(kind: str, **identifiers: Any) -> None:
     """
-    Says that something of this kind changed. Safe from any thread: the
+    Says that something of this kind changed, with what a window needs to
+    decide whether it shows it (see IDENTIFIERS). Safe from any thread: the
     ingest paths run on worker threads and on the single writer, and each
-    listener is woken on its own loop.
+    listener is woken on its own loop. A writer's identifier of the wrong
+    shape is dropped rather than raised: the write has already happened.
     """
     global _sequence
     if kind not in KINDS:
         raise ValueError(f"not a kind of change: {kind!r}")
+    note = note_of(kind, identifiers)
     with _lock:
         _sequence += 1
         targets = list(_subscribers.values())
     for sub in targets:
         try:
-            sub.loop.call_soon_threadsafe(sub._deliver, kind)
+            sub.loop.call_soon_threadsafe(sub._deliver, dict(note))
         except RuntimeError:
             # The loop is closed; the stream it served is already gone.
             pass

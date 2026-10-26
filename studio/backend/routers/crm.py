@@ -217,7 +217,7 @@ def ingest_crm_interaction(req: IngestInteractionRequest):
         post_topic=req.post_topic,
         capture_context=req.capture_context,
     )
-    changes.publish("people")
+    changes.publish("people", interaction={"LIKE": "reaction", "REPOST": "repost"}.get(norm_type, "comment"), post=req.post_urn, lead=result.get("lead_id"))
     result["id"] = result.get("lead_id")
     result["qualification_tier"] = result.get("tier")
     return ingest_contract.accepted(interaction=result, lead=result,

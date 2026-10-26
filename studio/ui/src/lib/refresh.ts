@@ -58,13 +58,47 @@ export const ANY_CHANGE: readonly StudioChange[] = [
 ];
 
 /**
- * Called with the kinds the stream reported. `returnedAt` is set when the
+ * One change the stream reported, with the small identifiers a screen decides
+ * by. Never a name or text; a change missing one means "this kind, anywhere".
+ */
+export interface StudioChangeNote {
+  kind: StudioChange;
+  /** capture: which reader ran. */
+  extractor?: string;
+  /** capture: whether it could not read fields it should have. */
+  drift?: boolean;
+  /** heartbeat: whether the extension said how many captures it holds. */
+  waiting?: boolean;
+  /** readings, people: the post, when the write was about one. */
+  post?: string;
+  /** people: how they engaged: comment, reaction or repost. */
+  interaction?: string;
+  /** people: who, by the studio's own id. */
+  lead?: string;
+}
+
+/**
+ * What a screen listens for. `matters` says whether a change can alter what
+ * the screen shows; a "database" change is never asked, because nothing names
+ * it, so it always can. `gapMs` is the least time between two reads the
+ * stream causes, and the last change is always read once it has passed.
+ */
+export interface Listen {
+  matters: (change: StudioChangeNote) => boolean;
+  gapMs?: number;
+}
+
+/**
+ * Called with the changes the stream reported. `returnedAt` is set when the
  * stream caught the window up on what changed while it was hidden: the moment
  * the window came back, so a screen that read then already has the news. It
  * is null for a change as it happened, and for a reconnect the browser made
  * by itself.
  */
-type ChangeListener = (kinds: readonly StudioChange[], returnedAt: number | null) => void;
+type ChangeListener = (changes: readonly StudioChangeNote[], returnedAt: number | null) => void;
+
+/** What the stream says when it cannot say what changed. */
+const ANYTHING: readonly StudioChangeNote[] = [{ kind: "database" }];
 
 const changeListeners = new Set<ChangeListener>();
 
@@ -76,8 +110,8 @@ export function onStudioChange(listener: ChangeListener): () => void {
   };
 }
 
-function announce(kinds: readonly StudioChange[], returnedAt: number | null): void {
-  for (const listener of changeListeners) listener(kinds, returnedAt);
+function announce(changes: readonly StudioChangeNote[], returnedAt: number | null): void {
+  for (const listener of changeListeners) listener(changes, returnedAt);
 }
 
 function isChange(kind: unknown): kind is StudioChange {
@@ -120,15 +154,22 @@ function openStream(): void {
     const otherProfile = shown !== null && typeof hello?.profile === "string" && hello.profile !== shown;
     // The screens' own first reads are their news on opening. After that, a
     // hello that says something changed is news this window missed.
-    if (otherProfile || (!first && hello?.changed === true)) announce(ANY_CHANGE, returnedAt);
+    if (otherProfile || (!first && hello?.changed === true)) announce(ANYTHING, returnedAt);
     returnedAt = null;
   });
   stream.addEventListener("change", (event) => {
     const message = event as MessageEvent<string>;
     if (message.lastEventId) lastId = message.lastEventId;
-    const kinds = parsed(message.data)?.kinds;
-    const known = Array.isArray(kinds) ? kinds.filter(isChange) : [];
-    if (known.length) announce(known, null);
+    const body = parsed(message.data);
+    const listed = Array.isArray(body?.changes) ? body.changes : [];
+    const changes = listed.filter(
+      (change): change is StudioChangeNote =>
+        typeof change === "object" && change !== null && isChange((change as { kind?: unknown }).kind),
+    );
+    // An older studio sent the kinds alone.
+    const kinds = Array.isArray(body?.kinds) ? body.kinds.filter(isChange) : [];
+    if (changes.length) announce(changes, null);
+    else if (kinds.length) announce(kinds.map((kind) => ({ kind })), null);
   });
   stream.addEventListener("error", () => {
     // A dropped connection, as when the studio restarts, is reconnected by
@@ -184,9 +225,11 @@ export function useStudioStream(): void {
  * - when the studio answers again after an outage;
  * - when the window comes back into view and the data is older than
  *   STALE_ON_RETURN_MS, which is the cheap answer to "left open overnight";
- * - when the studio's change stream says something of a kind in `on`
- *   changed, within about a second of the write and at most once a second
- *   while a burst lasts, which is how a capture reaches the screen;
+ * - when the studio's change stream reports a change that can alter what the
+ *   screen shows: one of the kinds in `on`, or one its rule says yes to,
+ *   while a write nothing named always can. Within about a second of the
+ *   write, and at most once per gap (a second unless the rule says) while
+ *   changes keep coming, with the last one always read;
  * - every `everyMs` while the window is in view, for the few screens whose
  *   point is to show change as it happens. With `on`, this is only the
  *   backstop for what no write announces, such as the bridge going quiet.
@@ -195,11 +238,20 @@ export function useStudioStream(): void {
  * The screen's own first read stays the screen's; this only reads again.
  * `load` may change between renders; the latest one is used.
  */
-export function useRefresh(load: () => unknown, everyMs?: number, on?: readonly StudioChange[]): void {
+export function useRefresh(load: () => unknown, everyMs?: number, on?: readonly StudioChange[] | Listen): void {
   const latest = useRef(load);
   latest.current = load;
   const lastRead = useRef(Date.now());
-  const listensTo = on ? on.join(" ") : "";
+  // The rule is read when a change arrives, so a screen may pass a fresh one
+  // each render that looks at what the screen shows now.
+  const rule = useRef<Listen | null>(null);
+  rule.current = !on
+    ? null
+    : isKinds(on)
+      ? { matters: (change: StudioChangeNote) => on.includes(change.kind) }
+      : on;
+  const listening = Boolean(on);
+  const gapMs = (on && !isKinds(on) ? on.gapMs : undefined) ?? CHANGE_GAP_MS;
 
   useEffect(() => {
     // A read that fails leaves the screen as its own loader decides; it is
@@ -220,17 +272,20 @@ export function useRefresh(load: () => unknown, everyMs?: number, on?: readonly 
           if (document.visibilityState === "visible") read();
         }, everyMs)
       : undefined;
-    // A read the stream asked for: now, or once CHANGE_GAP_MS has passed
-    // since the last read. A read already waiting covers whatever comes next.
-    const kinds = listensTo ? (listensTo.split(" ") as StudioChange[]) : [];
+    // A read the stream asked for, when a change can alter what the screen
+    // shows: now, or once gapMs has passed since the last read. A read
+    // already waiting covers whatever comes next, so the last change is
+    // always read and a burst is never one read each.
     let waiting: number | undefined;
-    const stopChange = kinds.length
+    const stopChange = listening
       ? onStudioChange((changed, returnedAt) => {
+          const matters = rule.current?.matters;
+          if (!matters) return;
           // A write nothing named may be anything, so every listener reads it.
-          if (!changed.some((kind) => kind === "database" || kinds.includes(kind))) return;
+          if (!changed.some((change) => change.kind === "database" || matters(change))) return;
           if (returnedAt !== null && lastRead.current >= returnedAt - RETURN_SLACK_MS) return;
           if (waiting !== undefined) return;
-          const wait = lastRead.current + CHANGE_GAP_MS - Date.now();
+          const wait = lastRead.current + gapMs - Date.now();
           if (wait <= 0) {
             read();
             return;
@@ -249,7 +304,11 @@ export function useRefresh(load: () => unknown, everyMs?: number, on?: readonly 
       stopChange?.();
       if (waiting !== undefined) window.clearTimeout(waiting);
     };
-  }, [everyMs, listensTo]);
+  }, [everyMs, listening, gapMs]);
+}
+
+function isKinds(on: readonly StudioChange[] | Listen): on is readonly StudioChange[] {
+  return Array.isArray(on);
 }
 
 /**

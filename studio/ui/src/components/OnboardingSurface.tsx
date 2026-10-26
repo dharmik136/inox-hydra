@@ -22,7 +22,7 @@ import {
   type SelfImportKind,
 } from "@/lib/api";
 import { reportBridge } from "@/lib/bridgeState";
-import { ANY_CHANGE, useRefresh } from "@/lib/refresh";
+import { useRefresh, type StudioChangeNote } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { ArchiveImport, archiveStatus } from "./ArchiveImport";
 
@@ -41,6 +41,37 @@ import { ArchiveImport, archiveStatus } from "./ArchiveImport";
  * and this screen reads within about a second of it.
  */
 const BACKSTOP_MS = 30_000;
+
+/**
+ * Whether a change can alter what Setup shows, by what it shows: the bridge,
+ * who you are, each reader's line, your history and what deleting would
+ * remove. Not the people who engage, the daily totals or the queue.
+ */
+function setupMayChange(change: StudioChangeNote, state: SetupState | null): boolean {
+  if (!state) return true;
+  switch (change.kind) {
+    case "heartbeat":
+      // "Connected" carries no time: a heartbeat changes it only when the
+      // bridge is shown as gone.
+      return !state.bridge.connected;
+    case "capture": {
+      // A reader's line reads WORKING, LAST READ to the minute: another run
+      // of a working reader in the same minute reads the same. Near the turn
+      // of a minute this cannot tell the two clocks apart, so it reads.
+      const entry = state.health.find((line) => line.extractor === change.extractor);
+      if (!entry || change.drift || entry.state !== "working") return true;
+      const now = new Date();
+      const seconds = now.getUTCSeconds();
+      return seconds < 2 || seconds > 57 || (entry.last_run_at ?? "").slice(0, 16) !== now.toISOString().slice(0, 16);
+    }
+    case "people":
+    case "account":
+    case "queue":
+      return false;
+    default:
+      return true;
+  }
+}
 
 /** What this screen reads from the onboarding state beyond the shared type. */
 type SetupState = OnboardingState & {
@@ -82,7 +113,7 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
   // such as the bridge going quiet. It was every 3 seconds: about 1,700
   // statements a minute on a screen where nothing was happening. A hidden
   // window is not polled.
-  useRefresh(refresh, BACKSTOP_MS, ANY_CHANGE);
+  useRefresh(refresh, BACKSTOP_MS, { matters: (change) => setupMayChange(change, state) });
 
   // The browser that carries the extension, if any. "auto" lets the backend
   // pick, which it does by the same measured rule the Leads screen uses.

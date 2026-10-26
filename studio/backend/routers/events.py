@@ -18,7 +18,9 @@ cannot send X-Inox-Profile) and says whether anything changed since the id
 the window last saw, which the window sends as `?since=` when it reopens the
 stream on coming back into view, and the browser sends as Last-Event-ID on a
 reconnect of its own. A `change` event carries the kinds that changed since
-the last one; a burst of thirty captures is one message. A comment line every
+the last one, and each change with the small identifiers a window decides by
+(which reader, which post, how someone engaged; never a name or text, see
+changes.IDENTIFIERS); a burst of thirty captures is one message. A comment line every
 fifteen seconds keeps the connection from timing out. The stream ends when the
 window goes away, and when the server stops: uvicorn waits for every response
 in flight before it exits, so an endless stream would hold a reload for ever.
@@ -83,9 +85,9 @@ async def _stream(request: Request, since: Optional[str]) -> AsyncIterator[str]:
                 break
             if woken:
                 await asyncio.sleep(COALESCE_S)
-                kinds = sub.take()
+                kinds, notes = sub.take()
                 if kinds:
-                    yield _event("change", changes.current_id(), {"kinds": kinds})
+                    yield _event("change", changes.current_id(), {"kinds": kinds, "changes": notes})
                 quiet_for = 0.0
                 continue
             quiet_for += WAIT_S

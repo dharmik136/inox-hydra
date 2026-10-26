@@ -45,10 +45,10 @@ UI = os.path.join(REPO_ROOT, "studio", "ui", "src", "components")
 # The interval is read from the component rather than written here, because a
 # number that lives in two places is a number that will disagree.
 SCREENS = {
-    "setup": ("/api/v1/onboarding/state", "OnboardingSurface.tsx", r"useRefresh\(refresh, BACKSTOP_MS, ANY_CHANGE\)"),
+    "setup": ("/api/v1/onboarding/state", "OnboardingSurface.tsx", r"useRefresh\(refresh, BACKSTOP_MS, \{ matters"),
     "activity": ("/api/v1/self/activity-stream?limit=12", "ActivitySurface.tsx",
-                 r"useRefresh\(loadData, autoRefresh \? BACKSTOP_MS : undefined, autoRefresh \? ANY_CHANGE : undefined\)"),
-    "today": ("/api/v1/today", "TodaySurface.tsx", r"useRefresh\(load, BACKSTOP_MS, ANY_CHANGE\)"),
+                 r"useRefresh\(\s*loadData,\s*autoRefresh \? BACKSTOP_MS : undefined,"),
+    "today": ("/api/v1/today", "TodaySurface.tsx", r"useRefresh\(load, BACKSTOP_MS, \{ gapMs: TODAY_GAP_MS"),
 }
 
 # The most an idle Setup or Activity may cost the database in a minute, all
