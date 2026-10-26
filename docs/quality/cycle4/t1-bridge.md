@@ -8,27 +8,30 @@ row. Line numbers are at the branch head this record was committed with.
 | | |
 |---|---|
 | Items built | 9 of 9 (1, 2, 3, 4, 5, 7, 8, 9, 10), plus the sections report's WORKING-at-zero row |
-| New test modules | 9, 83 tests (`tests/test_qc4_t1_*.py`) |
+| New test modules | 14, 139 tests (`tests/test_qc4_t1_*.py`): 9 in phase 1, 1 for the defect track 3 found, 4 in the second round |
 | Guards falsified | 21 planted faults, each seen failing and then passing with the fault removed; one guard was vacuous at first and was rebuilt |
 | Found by this track's own review | 13 defects after the first green runs, 1 of them a privacy defect; all fixed, listed below |
 | Defect found by track 3 on main | A post first found after migration 26 had no post; fixed in 43aadff, with four more found on the way |
-| Migration | One, numbered 28 in this branch: "Each reader says how long it took, and the bridge says whether network reading is on" |
+| Migration | One, numbered 28 in this branch: "Each reader says how long it took, the bridge says whether network reading is on, network reading keeps only your own posts, and every publication has its post again" |
+| Second round | The privacy defect, review findings S1, S2, S3 and S7, and the sections report's row 5 (Voyager drift), each with a failing test first and its own commit; S4, S5, S6, S8, S9 and the eighteen notes deferred by the coordinator, listed below |
 | Interface audit | Setup and Today, dark and light: 8 screens, 0 blocking findings |
-| Suite, as CI runs it | 3,199 passed, 17 skipped, 0 failed at 1a9c606; the runs before it are in the last section |
+| Suite, as CI runs it | 3,255 passed, 17 skipped, 0 failed at 8a3175d; the runs before it are in the last section |
 
 | Item | State | Commits | Review |
 |---|---|---|---|
-| 1. Reader self-timing | fixed | e72949c, 19592ec, f92d705 | |
-| 2. Network-reading state on both heartbeats, three honest states | fixed | e72949c, b302b5c, 19592ec, 4152f7c, db0edc7, b907ffe | |
-| 3. Resource Timing coverage meter | fixed | 19592ec, 4b92926, b907ffe | |
+| 1. Reader self-timing | fixed | e72949c, 19592ec, f92d705 | S7 fixed in 6ec4a83 (the stamper's report is a message); S6 deferred |
+| 2. Network-reading state on both heartbeats, three honest states | fixed | e72949c, b302b5c, 19592ec, 4152f7c, db0edc7, b907ffe | S5 deferred |
+| 3. Resource Timing coverage meter | fixed | 19592ec, 4b92926, b907ffe | S1 fixed in 549b8fd |
 | 4. Own-page items marked sent only on an answer | fixed | 19592ec, b907ffe | |
-| 5. Gate race, DOM marker, refused row, EXTRACTORS aligned | fixed | e72949c, 19592ec | |
-| 7. Navigation API routes | fixed, spike first | 19592ec | |
-| 8. Worker lastCapture, per-tab badge, panel from storage (D3) | fixed | 4152f7c, 4b92926, b8287f8 | |
-| 9. Drift notice | fixed | 4152f7c, 4b92926 | |
+| 5. Gate race, DOM marker, refused row, EXTRACTORS aligned | fixed | e72949c, 19592ec | S2 fixed in 3773524; the marker is a question and answer since 6ec4a83 (S7) |
+| 7. Navigation API routes | fixed, spike first | 19592ec | N7 resolved in 6ec4a83 |
+| 8. Worker lastCapture, per-tab badge, panel from storage (D3) | fixed | 4152f7c, 4b92926, b8287f8 | notices moved to the panel in 6ec4a83 (S7); N1, N2, N5, N12 deferred |
+| 9. Drift notice | fixed | 4152f7c, 4b92926 | S4 deferred |
 | 10. Cadence rules in `_open_next` | fixed | 62dd65e, db0edc7 | |
-| Sections report: WORKING shown for a reader that read nothing | fixed | e72949c, b302b5c | |
-| Help and the extension document | updated | b302b5c, 2c35aa8, 77f6317, b907ffe | |
+| Sections report: WORKING shown for a reader that read nothing | fixed | e72949c, b302b5c | S3 fixed in 9b10afe; S8 deferred |
+| Help and the extension document | updated | b302b5c, 2c35aa8, 77f6317, b907ffe | S1 and S7 wording in 549b8fd, 6ec4a83 |
+| Sections report row 5: Voyager drift | fixed | 0b2b691 | second round |
+| Privacy: network reading kept other members' posts | fixed | 0afff61, 8a3175d | second round |
 
 ## Item 1. Every reader times itself
 
@@ -456,7 +459,8 @@ only), `studio/backend/universal_search.py` (one clause), `tests/test_today.py` 
 
 Not done, with the reason. Network reading's `feed_updates` schema writes a reading for every post in
 LinkedIn's feed response, the creator's or not (`onboarding.record_voyager_ingest`); it writes no
-publication or post, so it is outside this defect, and it is listed for the coordinator.
+publication or post, so it is outside this defect, and it is listed for the coordinator. (The
+coordinator raised it as the privacy defect of the second round; fixed in 0afff61, below.)
 
 ## Second round: the review of f18e610, and two defects before it
 
@@ -544,12 +548,162 @@ Checked and left. The worker's request observer forwards the address of three re
 the telemetry store, which already cuts a path before `/identity/profiles` and replaces URNs; it is
 outside this fix and unchanged.
 
+### S1. The coverage meter keeps an address only as the words of LinkedIn's API (549b8fd)
+
+The meter blanked a segment only when it looked like an identifier or followed one of 24 listed
+collections, compared with case, so a member's plain-word vanity after any other collection
+(`/identity/miniProfiles/johndoe`) or after a case variant (`/identity/Profiles/JohnDoe`) was kept
+by the page, accepted by the studio and listed in the side panel, and the query-name slot was not
+checked at all. Both sides now fail closed. A segment is kept only if it is a word from a fixed list
+of the words LinkedIn's data API puts in its paths (`VOYAGER_PATH_WORDS`), compared without case and
+written as listed; every other segment is `_id_`, and so is the segment after a collection that
+takes an identifier (`VOYAGER_ID_AFTER`), judged by what the previous segment was taken as, not the
+text it held. The query-name slot holds a name of LinkedIn's one shape (`^voyager[A-Z]...`) or
+"other". The studio accepts a key only if cleaning it would change nothing. The help sentence and
+the proposed policy sentence now promise exactly this.
+
+`tests/test_qc4_t1_voyager_paths.py` (3): 22 addresses through the shipped page code, including the
+review's shapes and the coordinator's four; 12 keys an uncleaned or denylist extension could send,
+all refused by the studio; the page's lists and the studio's held equal. Falsified with four
+plants (the page keeping a word it does not know, the page keeping any query name, the studio taking
+a key it did not clean, the two lists drifting apart): each caught.
+
+### S2. A refused reading is never a good run nor a capture (3773524)
+
+A good run is one rule, `GOOD_RUN` in `onboarding.py`: no drift, not refused, and it read something.
+`capture_health` asks it for LAST WORKED and the prune asks it twice for the row it must keep, so a
+reader refused every day since it last worked keeps that day. The side panel's 24-hour count of
+network captures and "Voyager Active" leave refused rows out, and each reader carries
+`last_capture_at`, the newest run the studio did not refuse, which Today's LAST CAPTURE now reads
+(`today.py`, one line). Tests in `tests/test_qc4_t1_capture_rows.py` (3): the review's prune
+scenario, a refused reading counted as a network capture, and Today's LAST CAPTURE moved by a
+refused run; all three failed before the fix. The static check in
+`tests/test_capture_health_outlives_the_log.py` now asks that both queries use the one rule.
+
+### S3. A run that filed people has read something (9b10afe)
+
+The engagers reader counted only comment cards as seen, so a reactions list read on its own was
+READ NOTHING beside the reactors it had just filed. The page now counts the reactors it read as
+seen, and the studio judges a run by what it read, seen or kept (`READ_SOMETHING`, asked for the
+state and inside `GOOD_RUN`), so a report from an extension not yet reloaded reads WORKING too.
+Found on the way: the reactors tab sits inside the dialog and both match, so each reactor was read
+twice and counted twice in what the run kept; an item is read once now. Tests in
+`tests/test_qc4_t1_capture_rows.py` (2): the review's scenario in a browser and then in the studio,
+and an older extension's report; both failed before the fix. Left, as the review names it: an
+activity reader that finds cards and reads none of the creator's items still reads WORKING.
+
+### S7. The bridge leaves no mark of its own in LinkedIn's page (6ec4a83)
+
+By the owner's decision under D3, the only marks in LinkedIn's document are `data-urn` on a feed
+card and the history import's banner with its Stop button.
+
+- The card stamper's run reaches the isolated world as a window message (`INOX_CARD_URNS_REPORT`),
+  on the channel the interceptor's captures use; the `data-inox-card-urns` root attribute is gone.
+- Whether a page carries the interceptor is asked the same way (`INOX_VOYAGER_PING`, answered
+  `INOX_VOYAGER_PRESENT`), only while network reading is on, with a grace of 1.5 s; until then the
+  heartbeat says `injected: null`, not measured. The `data-inox-voyager` root attribute is gone, and
+  with network reading off the page is never asked.
+- The two events phase 1 dispatched on LinkedIn's window are gone: `own_pages.js` is told of the
+  network-reading state by a function call in its own world, and the `navigate` listener, which
+  had no reader (note N7), is removed.
+- `content.css`, which styled the toast, its manifest entry and its line in
+  `tools/package_extension.py` are removed.
+
+The notices moved:
+
+| Notice | Was | Is |
+| --- | --- | --- |
+| Engagers: no profile link; could not reach the studio; a refusal the studio asked to show | a toast in LinkedIn's page | the side panel's top line, `!` on the badge until the panel opens |
+| Engagers: the studio was busy, captures kept | a toast | the side panel; the badge's orange waiting count carries it |
+| Creator analytics: could not reach; refused this browser; did not save; a multi-day range; saved nothing | a toast | the side panel |
+| A post linked to a draft: more than one draft matches; linking kept | a toast | the side panel |
+| Inserting a draft: no composer; inserted | a toast | the side panel's own answer, which asked |
+| Own pages: the studio found your profile | the banner element, alone, for 7 s | the side panel |
+| Own pages: understood and stored none; kept; a refusal; reload the extension | the banner element, alone, for 7 s | the side panel; while a history import runs, a sentence in the import's banner |
+
+The worker keeps the newest notice in session storage (`pageNotice`), shows `!` for a warning until
+the panel opens, and does not raise a notice already seen again in the session; the panel shows an
+unseen notice at its top, keeps it in view while that panel is open, and tells the worker it was
+seen. Only a LinkedIn tab can leave one.
+
+`tests/test_qc4_t1_no_marks.py` (8): a guard that reads every script that runs in LinkedIn's page
+(the manifest's and the one the worker registers) with comments, strings and regular expressions
+blanked, and fails on any attribute set on the root element or the body and on any element
+inserted or attribute set outside the import banner, `data-urn` in the stamper, and the composer
+it empties; a check that the reading is not fooled by strings or comments; and browser tests for the
+stamper's message, nothing posted with the switch off, the interceptor's answer, a notice sent and
+nothing drawn, and an import's warning in its banner. Five worker tests and three panel tests in
+`tests/test_qc4_t1_worker_badge.py` and `tests/test_qc4_t1_panel_from_storage.py` hold the notice's
+path. Falsified: the code before the commit fails 6 of the 8; seven planted marks (a root attribute,
+a body attribute inside the banner function, a toast drawn by the notice function, a second
+attribute on a card, the interceptor's marker through an alias, a ping with the switch off, the
+import's warning sent as its own notice) are each caught. The second attribute on a card was missed
+at first, because the allowlist judged the whole line holding `data-urn`; it judges the call itself
+now.
+
+Tests changed by this finding: `tests/qc_f3_pages.py` (`notice_text` replaces `toast_text`),
+`tests/test_qc_f3_notices.py` (rewritten: a notice leaves the page as text and draws nothing, and
+the panel says it in a status line as text), `tests/test_qc_f3_analytics_page.py`,
+`tests/test_qc_f3_composer.py`, `tests/test_network_reading_is_opt_in.py` (the stamper's one
+message), `tests/test_qc4_t1_routes_and_gate.py`, `tests/test_qc4_t1_heartbeat_state.py` and
+`tests/test_qc3_t3_capture_queue.py`. The privacy policy says nothing of in-page notices or marks,
+so no sentence of it changes for this finding.
+
+### Row 5 of the sections report: Voyager drift (0b2b691)
+
+The network-reading write recorded every run with drift NULL, and a response whose first entry
+lacked a required field was not sent at all, so Setup could never say a network reader had stopped
+reading. A network run now reports drift as the DOM readers do: a field the reader cannot do without,
+missing from every entry of a response that plainly matched its endpoint (judged on a 2xx answer), or
+a response with no list of entries, which is LinkedIn changing its shape (`elements`). A missing
+optional figure is not drift for the reader, since most of a feed is other members' posts, which
+carry no view count; it still goes to the schema drift log. The studio keeps the page's drift on
+the run's row, so the reader reads DRIFTING with the date it last worked.
+`tests/test_qc4_t1_voyager_drift.py` (8): three in the studio, five in a browser; six failed before
+the fix.
+
+### Migration 28 named for the readings it drops (8a3175d)
+
+The privacy fix put a clean-up inside migration 28, and its name now says so: "... network reading
+keeps only your own posts, and every publication has its post again". The test asserts the words.
+
+### Deferred by the coordinator
+
+The coordinator trimmed the round to capability. Each of these is left as the review found it:
+
+- S4: a transient drift uses up the once-per-session notice for that kind of page.
+- S5: Setup says nothing where it must say "not reported", and the call counts carry no time or window.
+- S6: the card stamper's long-frame figures are an invented 0, and the record's timing table shows them.
+- S8: `test_every_state_is_one_the_screens_know` compares the states with a copy of itself and cannot fail.
+- S9: the record's claim that Setup says "not reported" (S5), the stamper's 0 (S6), the states guard's falsification (S8) and "two dot-colour lines" (three) are still to correct.
+- S3's reverse case: an activity reader that finds cards and reads none of the creator's items reads WORKING.
+- N1: the per-tab badge count is read and written across awaits, so relays that finish together undercount.
+- N2: badge counts live in local storage and are put back on startup by tab ids from the previous session.
+- N3: the early-capture queue is bounded by count, not size.
+- N4: `last_capture_at` on the heartbeat is any string, not parsed as a time, and page and worker mean different moments.
+- N5: wording: "Your posts is waiting", page kinds as code names, "1 LinkedIn data calls", "no reading yet".
+- N6: the scroll handler can send an import round's items again while its request is in flight.
+- N7: resolved by S7: the `studio:navigating` event is gone.
+- N8: the card stamper's drift heuristic has not met LinkedIn's real pages.
+- N9: resolved by S7: the in-page "kept" notices are in the side panel.
+- N10: resolved by the privacy defect: the three schemas about other members are not copied or sent.
+- N11: Today's LAST CAPTURE moves with the card stamper's minute reports.
+- N12: the badge colours are the light theme's token values as arrays, a second definition.
+- N13: `b907ffe` carries a real public figure's vanity in two test files; squash if none is wanted in history.
+- N14: six commits carry the earlier attribution trailer.
+- N15: merge order: the Setup lines sit in track 4's moved block, and the first-hours wording in `_open_next`.
+- N16: "Connected" is still true on a worker heartbeat alone (phase 2).
+- N17: a post analytics reading with NULL `age_hours` never satisfies the day-7 rule.
+- N18: the early-render drift also flashes the badge orange on an ordinary page load.
+
 ## Guards that already existed and held
 
 Five existing guards caught a draft of this work, and the code was changed to satisfy each:
 
 - `tests/test_network_reading_is_opt_in.py::test_feed_cards_get_their_post_id_whether_or_not_network_reading_is_on`
-  forbids `postMessage` in `card_urns.js`; the stamper reports through a root attribute instead.
+  forbade `postMessage` in `card_urns.js`, and the stamper reported through a root attribute
+  instead; the review's S7 replaced the attribute with one message, and the test now allows that
+  message and nothing else.
 - `tests/test_network_reading_is_opt_in.py::test_the_page_cannot_feed_it_while_off` reads the
   off-check word for word; it stays word for word.
 - `tests/test_own_pages_extension.py::test_a_strangers_profile_does_not_leave_the_page` reads the
@@ -610,7 +764,15 @@ Five existing guards caught a draft of this work, and the code was changed to sa
   `what-leaves-this-machine.md` (the per-page counts and the extension's own capture record), and
   `docs/EXTENSION_AND_SYNC.md`.
 - Shared tests: `tests/qc_f3_pages.py` gains a `session` storage area and an optional `session=`
-  argument; `tests/test_qc_f3_analytics_page.py` as described under item 8.
+  argument, and `notice_text` in place of `toast_text` (S7); `tests/test_qc_f3_analytics_page.py`
+  as described under item 8 and S7; the tests S7 lists; `tests/test_capture_health_outlives_the_log.py`
+  (S2, S3).
+- Second round: `studio/backend/today.py` again (S2: LAST CAPTURE reads `last_capture_at`, one
+  line), `tools/package_extension.py` (S7: `content.css` leaves its list), and the help articles
+  that described notices on LinkedIn's page (`install-the-browser-extension.md`,
+  `set-up-the-studio-from-your-linkedin.md`, `read-your-analytics.md`,
+  `why-is-my-analytics-chart-empty.md`, `why-is-my-lead-list-empty.md`) and
+  `docs/EXTENSION_AND_SYNC.md`.
 
 ## The suite, as CI runs it
 
@@ -622,9 +784,13 @@ Five existing guards caught a draft of this work, and the code was changed to sa
 | Before this track's own review fixes | 3,192 | 17 | 1: the privacy tripwire on the popup, fixed in b8287f8 |
 | After them | 3,193 | 17 | 6: `tests/test_qc_f4b_history.py` runs `runImport` beside stand-ins for its closure, and the new `offeredKeys` was not among them; the stand-in now declares it, assertions unchanged (c1ebd5f) |
 | Final, at 1a9c606 | 3,199 | 17 | 0 |
+| After the defect track 3 found, at 55a6c37 | 3,214 | 17 | 0 |
+| Second round, at 8a3175d | 3,255 | 17 | 0 |
 
 The 17 skips are the suite's own and none is in this track's modules: Windows and macOS
 primitives (the tray, autostart, the mutex, Job Objects, the Keychain, LaunchAgent), a desktop
 with browsers installed, one interface state the suite marks as current, and `pyyaml`, which this
-interpreter does not have. This record's own commit, which came after the final
-run, was checked again with `tests/test_docs_library.py` and `tests/test_phase4_algorithmic_safety.py`.
+interpreter does not have. The second round's run was at 8a3175d; two commits came after it, a
+one-line comment correction in `content.js` (checked with the three modules that read that file's
+network-reading code) and this record's update (checked with `tests/test_docs_library.py` and
+`tests/test_phase4_algorithmic_safety.py`).
