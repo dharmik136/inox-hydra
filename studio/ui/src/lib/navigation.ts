@@ -33,15 +33,17 @@ export type SectionId =
 export interface StudioSection {
   id: SectionId;
   /**
-   * The key this section has in the backend's screen registry, when it has
-   * one. Devtools is not a product screen, so it declares none.
+   * The key this section has in the backend's screen registry
+   * (devtools.SCREEN_REGISTRY). Every section has one: an annotation filed
+   * from a screen resolves through it, and seven sections declared none, so
+   * everything filed from them landed under "unknown".
    *
-   * The two vocabularies differ: the registry calls the composer
-   * "studio", leads "crm" and command "ai_command". An annotation filed
-   * from a screen resolves through this, so a rename on either side with
-   * no change here files everything under "unknown".
+   * The two vocabularies differ: the registry calls the composer "studio"
+   * and leads "crm". tests/test_qc4_t3_screen_registry.py holds that every
+   * section declares a key and the registry lists no section that no
+   * longer exists; a rename on either side with no change here fails it.
    */
-  screenKey?: string;
+  screenKey: string;
   /** Shown in the floating rail label, the tray and the context breadcrumb. */
   label: string;
   /** One line of orientation, shown in the expanded tray only. */
@@ -59,19 +61,18 @@ export interface StudioSection {
  * the two sets are not mixed inside one surface.
  */
 export const STUDIO_SECTIONS: StudioSection[] = [
-  // First, because it is where a new install starts. It has no screen
-  // registry key: it is a first-run flow rather than a place work happens.
-  { id: "setup", label: "Setup", blurb: "Connect the browser and teach the studio who you are", icon: UserCheck },
+  // First, because it is where a new install starts.
+  { id: "setup", screenKey: "setup", label: "Setup", blurb: "Connect the browser and teach the studio who you are", icon: UserCheck },
   // Where a creator starts once the studio knows who they are: who to reply
   // to, how the latest post is doing, and the one page worth opening.
-  { id: "today", label: "Today", blurb: "Who to reply to and how your latest post is doing", icon: Sunrise },
-  { id: "activity", label: "Activity", blurb: "What the bridge has read from your LinkedIn, as it arrives", icon: Activity },
+  { id: "today", screenKey: "today", label: "Today", blurb: "Who to reply to and how your latest post is doing", icon: Sunrise },
+  { id: "activity", screenKey: "activity", label: "Activity", blurb: "What the bridge has read from your LinkedIn, as it arrives", icon: Activity },
   { id: "composer", screenKey: "studio", label: "Composer", blurb: "Write, re-hook and stage the next post", icon: PenLine },
   { id: "queue", screenKey: "queue", label: "Queue", blurb: "Scheduled posts and peak engagement slots", icon: CalendarClock },
   { id: "leads", screenKey: "crm", label: "Leads", blurb: "Lead stream and person dossiers", icon: Users },
-  { id: "posts", label: "Posts", blurb: "Which of your posts worked, and who each one brought", icon: Newspaper },
-  { id: "patterns", label: "Patterns", blurb: "What your own posts suggest, and how steadily you post", icon: Shapes },
-  { id: "outbound", label: "Outbound", blurb: "Whose content you engage with, and whether it comes back", icon: Send },
+  { id: "posts", screenKey: "posts", label: "Posts", blurb: "Which of your posts worked, and who each one brought", icon: Newspaper },
+  { id: "patterns", screenKey: "patterns", label: "Patterns", blurb: "What your own posts suggest, and how steadily you post", icon: Shapes },
+  { id: "outbound", screenKey: "outbound", label: "Outbound", blurb: "Whose content you engage with, and whether it comes back", icon: Send },
   { id: "analytics", screenKey: "analytics", label: "Analytics", blurb: "Time series, observations and comparisons", icon: BarChart3 },
   // No Swipe File and no Command. The Swipe File drew the same
   // viral_templates rows as the Composer’s hook rail through a second
@@ -84,7 +85,7 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   { id: "settings", screenKey: "settings", label: "Brand Studio", blurb: "Identity, watermark and local security", icon: Settings2 },
   // Last, and only present when the maintainer surface is on. A consumer
   // build answers 404 for everything behind it.
-  { id: "devtools", label: "Devtools", blurb: "Internal sheet and screen registry", icon: Wrench },
+  { id: "devtools", screenKey: "devtools", label: "Devtools", blurb: "Internal sheet and screen registry", icon: Wrench },
 ];
 
 export function sectionById(id: SectionId): StudioSection {
