@@ -1423,6 +1423,143 @@ def _migrate_current_scores(cursor: sqlite3.Cursor) -> None:
         cursor.execute("UPDATE post_engagement SET stale = stale | 2 WHERE (stale & 2) = 0")
 
 
+def _migrate_record_section(cursor: sqlite3.Cursor) -> None:
+    """
+    The tables of the daily section "From your record" (cycle 4, track 7),
+    and nothing a screen already showed is changed.
+
+    Every row here is the creator's own: what they typed and chose to keep
+    (asks), what the studio worked out for them once a day (daily_run and
+    daily_view), the marks they put on it (card_marks), a monthly note in
+    their own words (record_notes), what their own LinkedIn archive says they
+    saved, followed, voted on and searched for (archive_records, each row
+    with the file it came from and the import date), and the company's
+    signed library of forms and patterns (library_entries), which is the one
+    table that is not about the creator at all. Other people's posts have no
+    table: an engaged-with card keeps the link, the date and the creator's
+    own words, never the other person's text (migration 2's reason).
+
+    Nothing is written by this migration. The daily job fills the batch the
+    first time the studio runs each day; the policy says what is kept and
+    for how long before the first row lands.
+    """
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS asks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('setup', 'ask_box', 'composer', 'telegram', 'archive_search', 'more_of_this')),
+        field TEXT CHECK (field IS NULL OR field IN ('topics', 'audience', 'avoid')),
+        origin_ref TEXT,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'kept', 'retired')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_used_at TEXT,
+        hidden_at TEXT
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_asks_status ON asks(status, created_at DESC)")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS daily_run (
+        day TEXT PRIMARY KEY,
+        input_signature TEXT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        local_ok INTEGER NOT NULL DEFAULT 0,
+        local_note TEXT,
+        carried_from TEXT,
+        seed INTEGER,
+        rerolled_at TEXT,
+        model_status TEXT,
+        model_note TEXT,
+        model_calls INTEGER NOT NULL DEFAULT 0,
+        model_tokens_in INTEGER NOT NULL DEFAULT 0,
+        model_tokens_out INTEGER NOT NULL DEFAULT 0,
+        estimated_cost_usd REAL,
+        price_date TEXT,
+        searches INTEGER NOT NULL DEFAULT 0,
+        dropped_cards INTEGER NOT NULL DEFAULT 0,
+        note TEXT
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS daily_view (
+        day TEXT NOT NULL,
+        card_id TEXT NOT NULL,
+        slot INTEGER NOT NULL,
+        block TEXT NOT NULL CHECK (block IN ('working_for_you', 'you_asked', 'you_engaged_with', 'monday', 'model')),
+        kind TEXT NOT NULL,
+        label TEXT NOT NULL CHECK (label IN ('measured', 'derived', 'typed', 'suggested', 'retrieved', 'curated', 'abstained')),
+        method TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        provenance_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'shown',
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (day, card_id)
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_view_day ON daily_view(day, slot)")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS card_marks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        day TEXT NOT NULL,
+        card_id TEXT NOT NULL,
+        mark TEXT NOT NULL CHECK (mark IN ('keep', 'skip', 'used', 'posted', 'hide')),
+        at TEXT NOT NULL,
+        draft_id INTEGER,
+        UNIQUE (day, card_id, mark)
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_card_marks_card ON card_marks(card_id, mark)")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS record_notes (
+        month TEXT PRIMARY KEY,
+        text TEXT NOT NULL,
+        at TEXT NOT NULL
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS archive_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('saved_item', 'member_follow', 'company_follow', 'vote', 'article', 'search_query')),
+        url TEXT,
+        title TEXT,
+        name TEXT,
+        detail TEXT,
+        happened_at TEXT,
+        dedupe_key TEXT NOT NULL,
+        source_file TEXT NOT NULL,
+        imported_at TEXT NOT NULL,
+        import_id INTEGER,
+        UNIQUE (kind, dedupe_key)
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_archive_records_kind ON archive_records(kind, happened_at DESC)")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS library_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_id TEXT NOT NULL UNIQUE,
+        kind TEXT NOT NULL CHECK (kind IN ('form', 'pattern', 'example')),
+        title TEXT NOT NULL,
+        text TEXT NOT NULL,
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        author TEXT NOT NULL,
+        bundle_version TEXT NOT NULL,
+        signed_at TEXT NOT NULL,
+        key_id TEXT NOT NULL,
+        fetched_at TEXT NOT NULL
+    )
+    """)
+    # A draft made from a card records which card, so "used" and "posted"
+    # can be told apart from a draft the creator started on their own: a
+    # draft's origin was not recorded at all before this.
+    cursor.execute("PRAGMA table_info(drafts)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "origin_card_id" not in columns:
+        cursor.execute("ALTER TABLE drafts ADD COLUMN origin_card_id TEXT")
+    if "origin_day" not in columns:
+        cursor.execute("ALTER TABLE drafts ADD COLUMN origin_day TEXT")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1451,6 +1588,9 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (26, "One identity for a post: every publication has its post, and the dead queue is gone",
      _migrate_one_post_identity),
     (27, "A lead's score is recomputed when what it is computed from changes", _migrate_current_scores),
+    # Numbered 28 in this track's branch; the coordinator renumbers at integration.
+    (28, "From your record: asks, the dated daily batch and its run, card marks, a monthly note, "
+         "the archive's saved and followed items, and the signed library", _migrate_record_section),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

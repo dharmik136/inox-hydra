@@ -250,7 +250,7 @@ def recent_log(limit: int = 10) -> List[Dict[str, Any]]:
 
 CATEGORIES = (
     ("posts", "Your posts, drafts and queue",
-     ("drafts", "posts", "own_posts", "queue_slots", "media_assets", "viral_templates",
+     ("drafts", "posts", "own_posts", "queue_slots", "media_assets", "viral_templates", "library_entries",
       "creator_identity", "creator_positions", "creator_education", "creator_skills", "creator_accounts")),
     ("readings", "Post readings", ("post_metric_observations",)),
     ("audience", "Leads and their engagement",
@@ -258,6 +258,13 @@ CATEGORIES = (
       "lead_retention_keeps")),
     ("outbound", "Your comments and reactions on other posts", ("outbound_engagements",)),
     ("connections", "Connections from your LinkedIn archive", ("connections", "archive_imports")),
+    # Cycle 4, track 7: the daily section's own rows, and what the archive
+    # says the creator saved, followed, voted on and searched for. The
+    # company's signed library sits with the hook forms under posts.
+    ("record", "From your record: your asks, the daily cards, their marks and your notes",
+     ("asks", "daily_view", "daily_run", "card_marks", "record_notes")),
+    ("archive_records", "What your LinkedIn archive says you saved, followed, voted on and searched for",
+     ("archive_records",)),
     ("analytics", "Daily analytics", ("analytics_daily", "audience_demographics")),
     ("logs", "Capture, health and cleanup logs",
      ("bridge_heartbeats", "captures", "schema_drift_events", "retention_log", "generation_tasks",

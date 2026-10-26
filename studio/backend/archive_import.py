@@ -1500,7 +1500,7 @@ def archive_state(look: bool = False) -> Dict[str, Any]:
 
 def forget(conn) -> None:
     """Everything the archive brought, for when the creator deletes what the studio holds about them."""
-    for table in ("connections", "archive_imports"):
+    for table in ("connections", "archive_imports", "archive_records"):
         conn.execute(f"DELETE FROM {table}")
     conn.execute("DELETE FROM settings WHERE key IN (?, ?) OR key LIKE ?",
                  (REQUESTED_KEY, NO_POSTS_KEY, BROUGHT_KEY + "%"))

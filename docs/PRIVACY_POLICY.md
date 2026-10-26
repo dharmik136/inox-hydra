@@ -141,6 +141,25 @@ comments and reactions, any connections you imported from your own LinkedIn
 data archive, daily analytics, logs and settings; your media files; the network
 readings log, as a separate file; and the daily backups folder.
 
+**What you ask of it, and what it works out for you**, in that same database:
+the text of the asks you make of the studio and choose to keep (the topics,
+audience and things to avoid you type at Setup; an ask typed into the From
+your record section; an instruction you tick "remember this ask" on in the
+Composer, and only then; an idea sent from Telegram; and a card you ask for
+more of), nothing typed anywhere else; the marks you put on the daily cards
+(keep, skip and hide, and the studio's own used and posted marks when a draft
+comes from a card); the daily batch of cards itself, one dated row per card
+with the rows it was built from; a monthly note you may write about whether
+the cards helped; and, only for the files you ticked at import, what your own
+LinkedIn archive says you saved, followed, voted on and searched for, each row
+with the file it came from and the date it was imported. Asks and marks are
+kept until you retire or unhide them on the section's "What the studio knows"
+page; dated batches are kept for the number of days you set there, 365 by
+default, except a batch a mark or a draft still refers to. None of it is in
+the diagnostics bundle or the access log, and none of it leaves this computer
+unless you have entered an AI provider key and the section's model stage is
+on, in which case the AI row below says exactly what goes.
+
 If you keep more than one creator profile, each profile is a separate folder
 with its own database, under `profiles/` inside that same folder, and nothing
 of one profile's data is in another's. The vault key, the logs and the browser
@@ -166,12 +185,15 @@ to request or to delete.
 
 In its default configuration, the extension contacts nobody. Every outbound
 destination below is reached by Inox Hydra on your computer, not by the
-extension, and only at the moment you use the feature that needs it.
+extension, and only at the moment you use the feature that needs it. The
+daily section's model stage is such a moment: it runs when you open From your
+record for the first time each day, never on a timer and never while you are
+away, and only once you have entered a key.
 
 | Destination | When it is reached |
 | --- | --- |
 | `www.linkedin.com` | Checking your stored session is still valid, syncing your profile, and "Send to LinkedIn", which hands a post you wrote to LinkedIn's own scheduler. Off by default, the same as update checking below: nothing reaches LinkedIn until you set `INOX_ALLOW_LINKEDIN_EGRESS=1`, and the first time you use Send to LinkedIn for a given creator profile, it also asks you to acknowledge, separately from the per-send confirmation, that this writes to LinkedIn's private scheduling API, outside its published terms. It is asked once for each creator profile rather than once for the machine, because each profile is a different LinkedIn account and the account that carries the risk is the one that answers for it. |
-| `api.openai.com`, `api.anthropic.com`, `api.groq.com`, `generativelanguage.googleapis.com` | Drafting and rewriting help, if you entered your own API key for that provider. Your prompt and the text you are working on go to the provider you chose, under your own account with them, governed by their terms, not ours. |
+| `api.openai.com`, `api.anthropic.com`, `api.groq.com`, `generativelanguage.googleapis.com` | Drafting and rewriting help, if you entered your own API key for that provider. Your prompt and the text you are working on go to the provider you chose, under your own account with them, governed by their terms, not ours. The From your record section's model stage, once a day when you open the section and only with a key entered, sends a redacted set of your own rows to the same provider: the first 300 characters of your own posts and their ids, the studio's own word for how each did (above usual, usual, below usual, not measured), your topic labels, the asks you kept and your voice profile. It never sends figures, other people's names or comments, your connections or anybody's score, and a name, an address or a phone number inside your own text is replaced before it leaves. It spends at most the daily ceiling you set on the section, 10 cents by default, and the model may return only ids of rows it was sent, labels from a fixed list and short phrases; anything else, and any phrase carrying a number, is dropped before it is shown. |
 | `image.pollinations.ai` | Generating an image, if the image provider is left at its default. This is a free public service run by a third party, and it is the default, so the first time you press Generate without having chosen a provider, your image prompt goes there. Choose another provider, a local one, or Off in the Prompt tab if you would rather it did not. |
 | `api.stability.ai`, `api.replicate.com`, `fal.run`, `api.together.xyz` | Generating an image, if you chose that provider and entered your own key. |
 | A local image generator (AUTOMATIC1111, Forge or ComfyUI) or a local model through Ollama | If you chose it. These stay on your machine or your network. |
