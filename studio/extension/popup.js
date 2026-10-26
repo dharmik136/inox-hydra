@@ -163,12 +163,14 @@ function panelApi(path) {
 // -------------------------------------------------------------
 // What the worker last did, from the extension's own storage
 // -------------------------------------------------------------
-// The worker writes the last capture and the waiting count to
-// chrome.storage.local, and the drift notice to chrome.storage.session, the
-// moment each happens, so these lines are drawn from storage and follow
-// storage.onChanged: no studio call, and nothing drawn into LinkedIn's page
-// (decision D3). A capture names the kind of thing and when, never the
-// person, and "captured" is said only of what the studio stored.
+// The worker writes the last capture to chrome.storage.local and the drift
+// notice to chrome.storage.session the moment each happens, so these lines
+// are drawn from storage and follow storage.onChanged: no studio call, and
+// nothing drawn into LinkedIn's page (decision D3). A capture names the kind
+// of thing and when, never the person, and "captured" is said only of what
+// the studio stored. The popup closes when it loses focus, so it carries the
+// last capture and the drift notice only; counts belong to the side panel
+// and the badge, which stay in view.
 const CAPTURE_WORDS = {
   "/api/v1/crm/interactions/ingest": "an engager on your post",
   "/api/v1/self/posts/ingest": "your posts",
@@ -194,16 +196,13 @@ function agoWords(iso) {
   return "on " + when.toLocaleDateString();
 }
 
-function captureLine(last, waiting) {
+function captureLine(last) {
   if (!last || !last.path) return "No capture yet.";
   const what = CAPTURE_WORDS[last.path] || "a capture";
   const first = what.charAt(0).toUpperCase() + what.slice(1);
   const when = agoWords(last.at);
-  if (last.kept) {
-    const inAll = waiting && typeof waiting.waiting === "number" ? " (" + waiting.waiting + " waiting in all)" : "";
-    return first + " is waiting for the studio" + inAll + ", kept " + when + ".";
-  }
-  if (!last.ok) return "The studio refused " + what + " " + when + ". The Health tab says why.";
+  if (last.kept) return first + " was kept for the studio " + when + ", and is sent again on its own.";
+  if (!last.ok) return "The studio refused " + what + " " + when + ". The side panel's Health tab says why.";
   if (last.stored) return "Captured " + what + " " + when + ".";
   return "Read LinkedIn " + when + "; nothing new to keep.";
 }
@@ -230,7 +229,7 @@ function readArea(area, keys) {
 }
 
 // Either area, or null when this page has no storage API (a test page, or
-// an extension being reloaded). A header line must never stop the panel.
+// an extension being reloaded). A status line must never stop the popup.
 function storageArea(name) {
   try {
     return (chrome.storage && chrome.storage[name]) || null;
@@ -241,11 +240,11 @@ function storageArea(name) {
 
 function paintFromStorage(captureId, driftId) {
   Promise.all([
-    readArea(storageArea("local"), ["lastCapture", "waitingCaptures"]),
+    readArea(storageArea("local"), ["lastCapture"]),
     readArea(storageArea("session"), ["lastDrift"])
   ]).then(([found, noticed]) => {
     const capture = document.getElementById(captureId);
-    if (capture) capture.textContent = captureLine(found.lastCapture, found.waitingCaptures);
+    if (capture) capture.textContent = captureLine(found.lastCapture);
     const drift = document.getElementById(driftId);
     if (drift) {
       const line = driftLine(noticed.lastDrift);
@@ -259,8 +258,7 @@ function followStorage(captureId, driftId) {
   paintFromStorage(captureId, driftId);
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if ((area === "local" && (changes.lastCapture || changes.waitingCaptures)) ||
-          (area === "session" && changes.lastDrift)) {
+      if ((area === "local" && changes.lastCapture) || (area === "session" && changes.lastDrift)) {
         paintFromStorage(captureId, driftId);
       }
     });

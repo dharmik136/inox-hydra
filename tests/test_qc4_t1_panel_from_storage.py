@@ -148,3 +148,16 @@ def test_the_popup_names_the_last_capture_and_follows_storage(pages):
     page.evaluate("(drift) => chrome.storage.session.set({ lastDrift: drift })", DRIFT)
     page.clock.run_for(50)
     assert "commenter name" in (_text(page, "popup-drift-notice") or "").lower()
+
+
+def test_the_popup_says_a_kept_capture_without_a_count(pages):
+    """
+    The popup closes when it loses focus, and the privacy policy says Today is
+    where the waiting count is shown (tests/test_privacy_policy_matches_the_code.py
+    holds the popup to that); the side panel and the badge carry the count.
+    """
+    page = _open(pages, POPUP, "popup.js", {"lastCapture": {**LAST, "ok": False, "kept": True},
+                                            "waitingCaptures": {"waiting": 4}})
+    line = _text(page, "popup-last-capture") or ""
+    assert "kept for the studio" in line and "sent again" in line
+    assert "4" not in line, "the popup shows the waiting count"
