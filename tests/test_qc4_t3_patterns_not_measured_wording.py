@@ -44,5 +44,5 @@ def test_the_screen_words_each_verdict_in_its_own_words():
 def test_an_unmeasured_line_is_kept_out_of_the_findings():
     with open(SURFACE, encoding="utf-8") as handle:
         source = handle.read()
-    assert re.search(r'verdict\(p\) === "not_measured"', source), "no bucket holds the unmeasured lines"
+    assert re.search(r'verdict\(\w+\) === "not_measured"', source), "no bucket holds the unmeasured lines"
     assert "NO RATIO CAN BE MEASURED" in source, "the screen does not say which forms have no ratio"

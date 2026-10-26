@@ -4,7 +4,7 @@ import {
   fetchPatternsInsights,
   fetchContrastInsights,
   fetchTopicAttribution,
-  type PatternFinding,
+  type ContrastFinding,
   type PatternsInsights,
   type ContrastInsights,
   type SettleCurve,
@@ -86,32 +86,37 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
     settled_without_reactions?: number;
     settled_without_reactions_from_archive?: number;
   };
+  // Every line is the contrast engine's own record (contrast_engine), the
+  // records the Composer's Evidence panel is built from, so a line this
+  // screen calls a finding is one the panel calls a finding. The screen
+  // fetched them and read only each one's status and key, to build an
+  // EARLY tag that could not fire: both payloads ask the same number of
+  // posts a side of the same posts. The engine's medians, ratio, counts per
+  // side, abstention and "no difference" are drawn from the record itself.
+  const lines = contrasts?.contrasts ?? [];
+  const verdict = (c: ContrastFinding) => c.difference?.verdict;
+  const conclusive = lines.filter((c) => c.status === "conclusive");
   // A line whose own verdict is "none" is a difference too small for this
   // creator's posts to separate (results.difference), and it is said rather
   // than printed as a finding: a 1.1x line over 1,417 posts read as a rule to
   // follow when it is noise.
-  const verdict = (p: PatternFinding) => p.difference?.verdict;
+  const findings = conclusive.filter((c) => verdict(c) === "more" || verdict(c) === "fewer");
+  const clean = [...findings].sort((a, b) =>
+    patternOrder === "sample"
+      ? b.n_with + b.n_without - (a.n_with + a.n_without)
+      : Math.abs((b.ratio ?? 1) - 1) - Math.abs((a.ratio ?? 1) - 1),
+  );
+  const same = conclusive.filter((c) => verdict(c) === "none");
   // Enough posts on both sides, but no ratio: the posts without the form
   // have a median of 0 reactions, so there is nothing to divide by. Such a
   // line sat in the list of findings and, opened, was worded "not enough
   // posts to say", which is a different verdict. It is named for what it is.
-  const unmeasured = patterns.patterns.filter((p) => verdict(p) === "not_measured");
-  const cleanUnordered = patterns.patterns.filter(
-    (p) => !p.different_period && verdict(p) !== "none" && verdict(p) !== "not_measured",
-  );
-  const clean =
-    patternOrder === "sample"
-      ? [...cleanUnordered].sort((a, b) => b.with_posts + b.without_posts - (a.with_posts + a.without_posts))
-      : cleanUnordered;
-  const same = patterns.patterns.filter((p) => !p.different_period && verdict(p) === "none");
-  const confounded = patterns.patterns.filter((p) => p.different_period);
-  // The same seven forms were compared twice on this screen: here, with 3
-  // posts a side, and again below as "Binary feature comparisons", with 8 a
-  // side and the words ABSTAIN and PER ARM. One list now, and one number of
-  // posts a side (results.MIN_PER_SIDE), so a line this screen publishes is
-  // one the Evidence panel publishes too.
-  const settled = patterns.settled_after ?? null;
-  const early = new Set((contrasts?.contrasts ?? []).filter((c) => c.status === "not_enough_data").map((c) => c.key));
+  const unmeasured = conclusive.filter((c) => verdict(c) === "not_measured");
+  const confounded = lines.filter((c) => c.status === "different_period");
+  // The engine abstains below its minimum a side, and says with how many.
+  const tooFew = lines.filter((c) => c.status === "not_enough_data");
+  const settled = contrasts?.settled_after ?? patterns.settled_after ?? null;
+  const minPerSide = contrasts?.min_arm_size ?? patterns.min_per_side;
 
   return (
     // Focusable, because nothing else on this screen is: the page scrolls in
@@ -122,12 +127,13 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
       <h1 id="patterns-title" className="studio-title mt-2">What your own posts suggest</h1>
       <p className="mt-2 text-[13px] leading-relaxed text-ink-secondary">
         Each line compares your posts that have a form with those that do not, by median reactions, across your{" "}
-        {patterns.posts_compared} posts whose figures have settled, with reactions recorded. These are differences
-        between your posts, not causes: treat a large one as something to try, not a rule.
-        {/* Both lists now ask for the same number of posts a side, so nothing
-            is published that the panel beside it would suppress, and a line
-            below that number is listed as not enough rather than tagged. */}
-        {` Each side needs ${patterns.min_per_side} posts before a line is shown.`}
+        {contrasts?.settled_posts_count ?? patterns.posts_compared} posts whose figures have settled, with reactions
+        recorded. These are differences between your posts, not causes: treat a large one as something to try, not a
+        rule.
+        {/* The engine's own minimum a side, which the Evidence panel uses
+            too, so nothing is published here that the panel would suppress,
+            and a line below it is listed as not enough rather than tagged. */}
+        {` Each side needs ${minPerSide} posts before a line is shown.`}
         {settled &&
           (settled.measured
             ? ` Settled means ${Math.round(settled.hours / 24)} days or older, measured from your own ${settled.posts} posts' readings.`
@@ -175,15 +181,17 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
                 </div>
               )}
             </div>
-            {clean.length ? (
+            {!contrasts ? (
+              // A read that did not come back is not an empty comparison.
+              <Note>THE COMPARISONS COULD NOT BE READ. THEY ARE READ AGAIN WHEN THE STUDIO ANSWERS.</Note>
+            ) : clean.length ? (
               <ul className="flex flex-col divide-y divide-edge border-y border-edge">
-                {clean.map((p) => (
+                {clean.map((c) => (
                   <PatternRow
-                    key={p.key}
-                    pattern={p}
-                    early={early.has(p.key)}
-                    expanded={expandedPattern === p.key}
-                    onToggle={() => setExpandedPattern((current) => (current === p.key ? null : p.key))}
+                    key={c.key}
+                    line={c}
+                    expanded={expandedPattern === c.key}
+                    onToggle={() => setExpandedPattern((current) => (current === c.key ? null : c.key))}
                   />
                 ))}
               </ul>
@@ -203,8 +211,8 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
                 These forms were compared and came out close enough to be the same. Nothing here is a finding.
               </p>
               <ul className="flex flex-col divide-y divide-edge border-y border-edge">
-                {same.map((p) => (
-                  <PatternRow key={p.key} pattern={p} early={early.has(p.key)} muted expanded={expandedPattern === p.key} onToggle={() => setExpandedPattern((current) => (current === p.key ? null : p.key))} />
+                {same.map((c) => (
+                  <PatternRow key={c.key} line={c} muted expanded={expandedPattern === c.key} onToggle={() => setExpandedPattern((current) => (current === c.key ? null : c.key))} />
                 ))}
               </ul>
             </section>
@@ -218,8 +226,8 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
                 different, so the difference may be about the time rather than the form.
               </p>
               <ul className="flex flex-col divide-y divide-edge border-y border-edge">
-                {confounded.map((p) => (
-                  <PatternRow key={p.key} pattern={p} early={early.has(p.key)} muted expanded={expandedPattern === p.key} onToggle={() => setExpandedPattern((current) => (current === p.key ? null : p.key))} />
+                {confounded.map((c) => (
+                  <PatternRow key={c.key} line={c} muted expanded={expandedPattern === c.key} onToggle={() => setExpandedPattern((current) => (current === c.key ? null : c.key))} />
                 ))}
               </ul>
             </section>
@@ -229,19 +237,17 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
             <p className="studio-meta mt-3 text-[10px] leading-snug text-ink-muted">
               NO RATIO CAN BE MEASURED FOR:{" "}
               {unmeasured
-                .map((p) => `${p.label.toUpperCase()} (MEDIAN ${p.without_median} REACTIONS ON THE ${p.without_posts} POSTS WITHOUT IT)`)
+                .map((c) => `${c.label.toUpperCase()} (MEDIAN ${c.median_without} REACTIONS ON THE ${c.n_without} POSTS WITHOUT IT)`)
                 .join("; ")}
               . A MEDIAN OF 0 ON ONE SIDE LEAVES NOTHING TO COMPARE AGAINST.
             </p>
           )}
 
-          {patterns.not_enough_posts.length > 0 && (
+          {tooFew.length > 0 && (
             <p className="studio-meta mt-3 text-[10px] leading-snug text-ink-muted">
               NOT ENOUGH POSTS TO COMPARE:{" "}
-              {patterns.not_enough_posts
-                .map((p) => `${p.label.toUpperCase()} (${p.with_posts} WITH, ${p.without_posts} WITHOUT)`)
-                .join("; ")}
-              . EACH SIDE NEEDS {patterns.min_per_side}.
+              {tooFew.map((c) => `${c.label.toUpperCase()} (${c.n_with} WITH, ${c.n_without} WITHOUT)`).join("; ")}
+              . EACH SIDE NEEDS {minPerSide}.
             </p>
           )}
         </div>
@@ -335,8 +341,8 @@ function SettleCurveSection({ curve, settled }: { curve?: SettleCurve; settled: 
 }
 
 /** The plain word for a line's own verdict (results.difference), never a rank. */
-function verdictWord(pattern: PatternFinding): string {
-  switch (pattern.difference?.verdict) {
+function verdictWord(line: ContrastFinding): string {
+  switch (line.difference?.verdict) {
     case "more":
       return "went with more reactions";
     case "fewer":
@@ -352,25 +358,24 @@ function verdictWord(pattern: PatternFinding): string {
   }
 }
 
+/** One comparison, as the contrast engine answered it. */
 function PatternRow({
-  pattern,
-  early = false,
+  line,
   muted = false,
   expanded = false,
   onToggle,
 }: {
-  pattern: PatternFinding;
-  early?: boolean;
+  line: ContrastFinding;
   muted?: boolean;
   expanded?: boolean;
   onToggle: () => void;
 }) {
-  const ratio = pattern.ratio ?? null;
+  const ratio = line.ratio ?? null;
   return (
     <li className="py-2.5">
       <button type="button" onClick={onToggle} aria-expanded={expanded} className="w-full text-left">
         <div className="flex items-baseline justify-between gap-4">
-          <p className={cn("text-[13px]", muted ? "text-ink-secondary" : "text-ink-primary")}>{pattern.label}</p>
+          <p className={cn("text-[13px]", muted ? "text-ink-secondary" : "text-ink-primary")}>{line.label}</p>
           {ratio !== null && (
             <p
               className={cn(
@@ -383,17 +388,17 @@ function PatternRow({
           )}
         </div>
         <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
-          MEDIAN {pattern.with_median} REACTIONS ON {pattern.with_posts} POSTS WITH IT, {pattern.without_median} ON{" "}
-          {pattern.without_posts} WITHOUT
-          {pattern.different_period && ` · MOSTLY ${pattern.typical_year_with} AGAINST MOSTLY ${pattern.typical_year_without}`}
-          {early && " · EARLY"}
+          MEDIAN {line.median_with} REACTIONS ON {line.n_with} POSTS WITH IT, {line.median_without} ON {line.n_without}{" "}
+          WITHOUT
+          {line.status === "different_period" &&
+            ` · MOSTLY ${line.typical_year_with} AGAINST MOSTLY ${line.typical_year_without}`}
         </p>
       </button>
       {expanded && (
         <p className="mt-1.5 border-l border-edge pl-3 text-[12px] leading-snug text-ink-secondary">
-          This form {verdictWord(pattern)}, from {pattern.with_posts} posts with it against{" "}
-          {pattern.without_posts} without. Each side needs at least {pattern.difference?.min_per_side ?? "a few"}{" "}
-          posts before a line like this is shown at all.
+          This form {verdictWord(line)}, from {line.n_with} posts with it against {line.n_without} without. Each side
+          needs at least {line.difference?.min_per_side ?? line.min_required} posts before a line like this is shown at
+          all.
         </p>
       )}
     </li>

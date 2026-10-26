@@ -2476,14 +2476,24 @@ export interface ContrastFinding {
   planted_or_significant?: boolean;
   /** What the line is allowed to say, from results.difference. */
   difference?: { verdict: string; notable: boolean; n_with: number; n_without: number; min_per_side: number };
+  /** The typical year of each side, when the two sides were dated (results.different_periods). */
+  typical_year_with?: number;
+  typical_year_without?: number;
   min_required: number;
   reason?: string;
 }
 
+/**
+ * The contrast engine's comparisons, which Patterns draws its lines from and
+ * the Composer's Evidence panel is built from.
+ */
 export interface ContrastInsights {
   status: string;
+  /** The settled posts, with reactions recorded, that every comparison rests on. */
   settled_posts_count: number;
+  /** How many posts each side needs before the engine says anything (results.MIN_PER_SIDE). */
   min_arm_size: number;
+  settled_after?: SettledAfter;
   contrasts: ContrastFinding[];
 }
 

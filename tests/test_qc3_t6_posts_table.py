@@ -401,7 +401,11 @@ def test_patterns_says_no_difference_plainly_and_has_more_than_two_controls():
     source = _source("PatternsSurface.tsx")
     assert "No difference your own posts can separate" in source
     # The "none" verdict is its own section, not a ranked line in the findings.
-    assert 'verdict(p) === "none"' in source and 'verdict(p) !== "none"' in source
+    # Since cycle 4 the lines are the contrast engine's records, and the
+    # findings are the lines whose verdict is "more" or "fewer".
+    assert re.search(r'verdict\(\w+\) === "none"', source)
+    assert re.search(r'verdict\(\w+\) === "more" \|\| verdict\(\w+\) === "fewer"', source), (
+        "a line that made no difference can reach the findings")
     # Controls: the order of the findings, a disclosure per line, and the
     # attribution table's sortable columns. The screen had two.
     assert source.count('type="button"') >= 3

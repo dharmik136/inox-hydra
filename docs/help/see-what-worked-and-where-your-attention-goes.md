@@ -29,7 +29,7 @@ The forms compared are: a short opening line (60 characters or fewer), an openin
 
 When most posts on one side are from a different year than the other, the line is moved under **Mixed up with when you posted**. Your account and audience were different then, so the difference may be about the time rather than the form.
 
-Each form is compared once. A line the evidence check still counts as short of data ends in **EARLY**: the difference may not hold as more posts arrive. Only a comparison that passes that same check, from the same period, is passed to the copilot as evidence.
+Each form is compared once, by the studio's contrast engine. The lines are the same comparisons the Composer's Evidence panel is built from, so a line this screen shows as a difference is one the Evidence panel shows too, and a form the engine has too few posts for is listed as not enough posts rather than shown. A form whose posts without it have a median of 0 reactions has no ratio to compare, and is listed under NO RATIO CAN BE MEASURED instead.
 
 Under the comparisons, **How your posts settle** draws the share of a post's final figures it had reached by each age, measured from your own readings. Where an age has too few readings to measure, it says so instead of drawing a line.
 
