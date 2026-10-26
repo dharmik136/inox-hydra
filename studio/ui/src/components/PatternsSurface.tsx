@@ -107,9 +107,7 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
   // posts a side (results.MIN_PER_SIDE), so a line this screen publishes is
   // one the Evidence panel publishes too.
   const settled = patterns.settled_after ?? null;
-  const early = new Set(
-    (contrasts?.contrasts ?? []).filter((c) => (c.status as string) === "not_enough_data").map((c) => c.key),
-  );
+  const early = new Set((contrasts?.contrasts ?? []).filter((c) => c.status === "not_enough_data").map((c) => c.key));
 
   return (
     // Focusable, because nothing else on this screen is: the page scrolls in

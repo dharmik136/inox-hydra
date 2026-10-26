@@ -2443,13 +2443,22 @@ export async function fetchCadenceInsights(): Promise<CadenceInsights> {
 export interface ContrastFinding {
   key: string;
   label: string;
-  status: "conclusive" | "insufficient_sample";
+  /**
+   * The engine's own words (contrast_engine.evaluate_contrast_for_posts):
+   * "not_enough_data" when a side is short of posts, "different_period" when
+   * the two sides come mostly from different years. This said
+   * "insufficient_sample", a word the engine uses only for a confidence
+   * field, and a cast on the Patterns screen hid the mismatch.
+   */
+  status: "conclusive" | "not_enough_data" | "different_period";
   n_with: number;
   n_without: number;
   median_with?: number | null;
   median_without?: number | null;
   ratio?: number | null;
   planted_or_significant?: boolean;
+  /** What the line is allowed to say, from results.difference. */
+  difference?: { verdict: string; notable: boolean; n_with: number; n_without: number; min_per_side: number };
   min_required: number;
   reason?: string;
 }
