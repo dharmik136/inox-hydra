@@ -12,6 +12,7 @@ stored is lost and a reader can bring it back.
 """
 
 import os
+import re
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 COMPONENTS = os.path.join(REPO_ROOT, "studio", "ui", "src", "components")
@@ -23,13 +24,19 @@ def _read(*parts):
         return handle.read()
 
 
+def _code(source):
+    """The source without its comments, which are allowed to say why the figure is gone."""
+    without_blocks = re.sub(r"/\*.*?\*/", "", source, flags=re.S)
+    return "\n".join(line.split("//")[0] for line in without_blocks.splitlines())
+
+
 def test_analytics_offers_no_figure_no_reader_fills():
-    source = _read(COMPONENTS, "AnalyticsSurface.tsx")
+    source = _code(_read(COMPONENTS, "AnalyticsSurface.tsx"))
     assert "profile_views" not in source and "Profile views" not in source
 
 
 def test_todays_thirty_days_offers_no_figure_no_reader_fills():
-    source = _read(COMPONENTS, "TodaySurface.tsx")
+    source = _code(_read(COMPONENTS, "TodaySurface.tsx"))
     assert "profile_views" not in source and "Profile views" not in source
 
 
