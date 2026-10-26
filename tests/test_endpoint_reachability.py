@@ -247,9 +247,16 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # now, so the merge restored it. The pack has a way out and no way in until
 # its 36 first-person claims are rewritten, which is a decision, not a gap.
 # ---------------------------------------------------------------------------
+# Cycle 4, track 3, batch 1: decision 7 retired the "Topic to Qualified Lead
+# Attribution" table on Patterns, and with it the interface's only caller of
+# /api/v1/insights/attribution. The route stays for the API, where AUDIENCE-12
+# still holds its people counts; topics are compared as forms under
+# /api/v1/insights/contrasts now. Total stays at 172, reached 118 -> 117,
+# unreachable 54 -> 55.
+# ---------------------------------------------------------------------------
 TOTAL_API_PATHS = 172
-REACHED_BY_INTERFACE = 118
-UNREACHABLE = 54
+REACHED_BY_INTERFACE = 117
+UNREACHABLE = 55
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

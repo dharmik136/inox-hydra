@@ -65,10 +65,11 @@ def test_the_topic_sentence_names_other_posts_once():
 
 
 def test_the_topic_sentence_on_screen(studio):
+    """The topics are forms now (cycle 4, decision 7); none is named twice over."""
     client = studio["client"]
     confirm_identity(client)
     _posts(client, 6)
     page = studio["page"]
     page.goto(studio["url"] + "/#/patterns", wait_until="networkidle")
-    page.wait_for_selector("text=Topic to Qualified Lead Attribution")
+    page.wait_for_selector("text=Your topics, compared the same way")
     assert "posts posts" not in page.inner_text("main")

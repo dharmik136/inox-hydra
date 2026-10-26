@@ -406,10 +406,12 @@ def test_patterns_says_no_difference_plainly_and_has_more_than_two_controls():
     assert re.search(r'verdict\(\w+\) === "none"', source)
     assert re.search(r'verdict\(\w+\) === "more" \|\| verdict\(\w+\) === "fewer"', source), (
         "a line that made no difference can reach the findings")
-    # Controls: the order of the findings, a disclosure per line, and the
-    # attribution table's sortable columns. The screen had two.
-    assert source.count('type="button"') >= 3
-    assert "aria-pressed" in source and "aria-expanded" in source and "aria-sort" in source
+    # Controls: the order of the findings and a disclosure per line, drawn for
+    # the forms and again for the creator's topics. The screen had two. The
+    # attribution table's sortable columns went with the table, which cycle 4
+    # retired (decision 7), and the topics are compared as forms instead.
+    assert source.count('type="button"') >= 2 and source.count("<Comparisons") >= 2
+    assert "aria-pressed" in source and "aria-expanded" in source
 
 
 def test_the_three_screens_keep_the_repo_rules():

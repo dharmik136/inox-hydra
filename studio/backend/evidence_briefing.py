@@ -23,11 +23,11 @@ except ImportError:
 
 try:
     from .database import get_db, get_db_path
-    from .contrast_engine import compute_all_contrasts
+    from .contrast_engine import compute_all_contrasts, evaluate_feature
     from . import post_summary, results
 except ImportError:
     from database import get_db, get_db_path
-    from contrast_engine import compute_all_contrasts
+    from contrast_engine import compute_all_contrasts, evaluate_feature
     import post_summary
     import results
 
@@ -211,6 +211,91 @@ def _topics_of(posts: List[Dict[str, Any]]) -> List[str]:
 def _topic_posts(topic: str) -> str:
     """A topic's posts, named once: "Croissant posts", but "Other posts", not "Other posts posts"."""
     return topic if topic == OTHER_TOPIC else f"{topic} posts"
+
+
+# ---------------------------------------------------------------------------
+# Topics as forms, through the contrast engine
+# ---------------------------------------------------------------------------
+#
+# Patterns drew a "Topic to Qualified Lead Attribution" table: qualified
+# people per topic, the share qualified, ordered by qualified leads. A lead's
+# tier is a keyword guess about a job title, the reactions summed a snapshot
+# column, and measured on one creator the gap between topics was 0.26
+# percentage points against 27 within one topic, so the table ranked noise.
+# Cycle 4, decision 7 retires the qualified framing: a topic is compared the
+# way the seven forms are, posts that mention it against those that do not,
+# by median reactions, through the same engine and its abstention. The
+# people a post brought are counted on Posts and, as a funnel, in Audience.
+
+_words_cache: Dict[str, Any] = {}
+
+
+def _word_sets(posts: List[Dict[str, Any]]) -> Dict[str, set]:
+    """Each post's word keys, by URN, kept until the posts' texts change (the shape of _topics_of)."""
+    digest = hashlib.sha256()
+    for p in posts:
+        digest.update(f"{p.get('activity_urn')}\x1f{p.get('text')}\x1e".encode("utf-8", "replace"))
+    key = digest.hexdigest()
+    if _words_cache.get("key") != key:
+        sets = {p.get("activity_urn"): {word for word, _written, _tagged in _words(p.get("text"))} for p in posts}
+        _words_cache.clear()
+        _words_cache.update(key=key, sets=sets)
+    return _words_cache["sets"]
+
+
+def topic_label(label: str) -> str:
+    """How a topic reads as a form: the posts that mention its word."""
+    return f'Mentions "{label}"'
+
+
+def topic_forms(read: Optional[Dict[str, Dict[str, Any]]] = None) -> List[Dict[str, Any]]:
+    """
+    The creator's own topics, each compared as a form by the contrast engine:
+    the settled posts that mention the topic's word against those that do
+    not, by median reactions, with the engine's abstention below its minimum
+    a side, its "none" and its period guard.
+
+    The vocabulary is the one the Obsidian export and retention use. A post
+    goes on the "with" side of every topic it mentions, because a form is a
+    with-or-without question, not a filing of each post under one topic.
+    """
+    vocabulary = _creator_vocabulary()
+    if not vocabulary:
+        return []
+    conn = get_db()
+    try:
+        settle = results.settled_after_hours(conn)
+        read = results.figures(conn) if read is None else read
+        rows = [dict(r) for r in conn.execute(
+            "SELECT activity_urn, text, published_at FROM own_posts WHERE text IS NOT NULL")]
+    finally:
+        conn.close()
+    words = _word_sets(rows)
+    settled = []
+    for row in rows:
+        reactions = (read.get(row["activity_urn"]) or {}).get("reactions")
+        if reactions is None or not results.is_settled(row["published_at"], settle["hours"]):
+            continue
+        settled.append({"activity_urn": row["activity_urn"], "published_at": row["published_at"],
+                        "reactions": reactions, "words": words.get(row["activity_urn"], set())})
+    return [evaluate_feature(settled, f"topic:{key}", topic_label(label), lambda post, key=key: key in post["words"])
+            for key, label in vocabulary]
+
+
+def patterns_comparisons() -> Dict[str, Any]:
+    """
+    Everything Patterns compares, from one reading of the figures: the seven
+    forms (compute_all_contrasts, which the Evidence panel reads too) and the
+    creator's topics as forms beside them.
+    """
+    conn = get_db()
+    try:
+        read = results.figures(conn)
+    finally:
+        conn.close()
+    answer = compute_all_contrasts(read=read)
+    answer["topics"] = topic_forms(read=read)
+    return answer
 
 
 def get_topic_attribution_map() -> Dict[str, Any]:

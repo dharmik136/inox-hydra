@@ -2495,34 +2495,16 @@ export interface ContrastInsights {
   min_arm_size: number;
   settled_after?: SettledAfter;
   contrasts: ContrastFinding[];
+  /**
+   * The creator's own topics, each compared as a form by the same engine:
+   * posts that mention the topic's word against those that do not. They
+   * replace the qualified-leads-per-topic table (cycle 4, decision 7).
+   */
+  topics?: ContrastFinding[];
 }
 
 export async function fetchContrastInsights(): Promise<ContrastInsights> {
   return call<ContrastInsights>("/api/v1/insights/contrasts");
-}
-
-export interface TopicAttributionItem {
-  topic: string;
-  post_count?: number;
-  posts_count?: number;
-  total_reactions: number;
-  median_reactions?: number;
-  qualified_leads: number;
-  lead_conversion_rate: number;
-  summary?: string;
-}
-
-export interface TopicAttributionInsights {
-  status: "success" | "cold_start";
-  message?: string;
-  settled_posts_analyzed?: number;
-  qualified_leads_attributed?: number;
-  topics: TopicAttributionItem[];
-  summary_sentence: string;
-}
-
-export async function fetchTopicAttribution(): Promise<TopicAttributionInsights> {
-  return call<TopicAttributionInsights>("/api/v1/insights/attribution");
 }
 
 export interface EvidenceExemplar {

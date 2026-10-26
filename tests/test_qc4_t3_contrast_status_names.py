@@ -33,16 +33,24 @@ def _read(path):
         return handle.read()
 
 
+# The functions that answer a finding's record: the binary features'
+# evaluator, and the one it hands every form to since topics became forms
+# (cycle 4, decision 7).
+EVALUATORS = ("evaluate_contrast_for_posts", "evaluate_feature")
+
+
 def engine_statuses():
     tree = ast.parse(_read(ENGINE))
-    evaluator = next(node for node in ast.walk(tree)
-                     if isinstance(node, ast.FunctionDef) and node.name == "evaluate_contrast_for_posts")
+    evaluators = [node for node in ast.walk(tree)
+                  if isinstance(node, ast.FunctionDef) and node.name in EVALUATORS]
+    assert evaluators, "the engine's evaluators were renamed; this test reads nothing"
     found = set()
-    for node in ast.walk(evaluator):
-        if isinstance(node, ast.Dict):
-            for key, value in zip(node.keys, node.values):
-                if isinstance(key, ast.Constant) and key.value == "status" and isinstance(value, ast.Constant):
-                    found.add(value.value)
+    for evaluator in evaluators:
+        for node in ast.walk(evaluator):
+            if isinstance(node, ast.Dict):
+                for key, value in zip(node.keys, node.values):
+                    if isinstance(key, ast.Constant) and key.value == "status" and isinstance(value, ast.Constant):
+                        found.add(value.value)
     return found - NOT_A_FINDING
 
 

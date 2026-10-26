@@ -34,7 +34,9 @@ Each form is compared once, by the studio's contrast engine. The lines are the s
 Under the comparisons, **How your posts settle** draws the share of a post's final figures it had reached by each age, measured from your own readings. Where an age has too few readings to measure, it says so instead of drawing a line.
 
 
-**Which topics bring qualified pipeline** groups your posts by the words and hashtags that recur across your own posts, up to six of them; a post goes under the first it mentions, and one that mentions none goes under **Other posts**. It is a keyword grouping, not a reading of what a post means. For each topic it counts the people captured on its posts, each person once, how many of them are qualified, and **Share qualified**, the qualified share of those people, which reads "not measured" when nobody was captured. The Obsidian export's `Topics/` notes use the same grouping.
+**Your topics, compared the same way** takes the words and hashtags that recur across your own posts, up to six of them, and compares each one like a form: your settled posts that mention it against those that do not, by median reactions, with both counts, under the same rules and the same number of posts a side as the forms. A topic with too few posts on either side is listed as not enough posts, and one whose two sides come mostly from different years is moved under **Mixed up with when you posted**. A post that mentions two topics counts for both. It is a keyword match, not a reading of what a post means; the Obsidian export's `Topics/` notes use the same words.
+
+Patterns no longer counts qualified leads by topic. A lead's tier is a guess from their job title, and the gap between topics was smaller than the gap between two posts of one topic, so that table ranked noise. Who each post brought is on **Posts**.
 
 These are differences between your posts, not causes. Treat a large one as something to try.
 

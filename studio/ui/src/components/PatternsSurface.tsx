@@ -1,28 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronsUpDown } from "lucide-react";
+import { useEffect, useState } from "react";
 import {
   fetchPatternsInsights,
   fetchContrastInsights,
-  fetchTopicAttribution,
   type ContrastFinding,
   type PatternsInsights,
   type ContrastInsights,
   type SettleCurve,
   type SettledAfter,
-  type TopicAttributionInsights,
 } from "@/lib/api";
 import { useStudioBack } from "@/lib/refresh";
 import { ratioTone } from "@/lib/results";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
-
-/** A topic as the attribution route returns it: people counted once, and a rate only when someone was captured. */
-type TopicRow = Omit<TopicAttributionInsights["topics"][number], "lead_conversion_rate"> & {
-  people_engaged?: number;
-  lead_conversion_rate: number | null;
-};
-
-type TopicSortKey = "topic" | "posts" | "total_reactions" | "people_engaged" | "qualified_leads" | "lead_conversion_rate";
 
 /**
  * Patterns: what your own posts suggest.
@@ -33,39 +22,30 @@ type TopicSortKey = "topic" | "posts" | "total_reactions" | "people_engaged" | "
  * periods is marked, because then the difference may be about when you
  * posted rather than how.
  *
+ * Every line is the contrast engine's own record (contrast_engine), the
+ * records the Composer's Evidence panel is built from, so a line this screen
+ * calls a finding is one the panel calls a finding. Your topics are forms
+ * too: the posts that mention a topic's word against those that do not,
+ * through the same engine. They were a table of qualified leads per topic,
+ * which ranked a keyword guess about job titles (cycle 4, decision 7).
+ *
  * How steadily you post is the Queue's: this screen drew the same cadence
  * payload as the Queue's "Against your own rhythm" a second time, and the
  * week lives on the Queue (cycle 4, track 3, batch 1).
  */
 export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}) {
   const [patterns, setPatterns] = useState<PatternsInsights | null>(null);
-  // How the "went with more or fewer reactions" list orders itself: by how
-  // far from 1x the ratio sits (the server's own order), or by how many
-  // posts the line rests on, for a creator who trusts a bigger sample over a
-  // bigger number.
-  const [patternOrder, setPatternOrder] = useState<"difference" | "sample">("difference");
-  const [expandedPattern, setExpandedPattern] = useState<string | null>(null);
-  const [topicSort, setTopicSort] = useState<{ key: TopicSortKey; dir: "asc" | "desc" }>({
-    key: "qualified_leads",
-    dir: "desc",
-  });
   const [contrasts, setContrasts] = useState<ContrastInsights | null>(null);
-  const [attribution, setAttribution] = useState<TopicAttributionInsights | null>(null);
   const [failed, setFailed] = useState(false);
   // Read again when the studio answers after an outage, so a screen that
   // failed while it was down does not stay failed once it is back.
   const back = useStudioBack();
 
   useEffect(() => {
-    Promise.all([
-      fetchPatternsInsights(),
-      fetchContrastInsights().catch(() => null),
-      fetchTopicAttribution().catch(() => null),
-    ])
-      .then(([p, co, a]) => {
+    Promise.all([fetchPatternsInsights(), fetchContrastInsights().catch(() => null)])
+      .then(([p, co]) => {
         setPatterns(p);
-        if (co) setContrasts(co);
-        if (a) setAttribution(a);
+        setContrasts(co);
         setFailed(false);
       })
       .catch(() => setFailed(true));
@@ -86,35 +66,6 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
     settled_without_reactions?: number;
     settled_without_reactions_from_archive?: number;
   };
-  // Every line is the contrast engine's own record (contrast_engine), the
-  // records the Composer's Evidence panel is built from, so a line this
-  // screen calls a finding is one the panel calls a finding. The screen
-  // fetched them and read only each one's status and key, to build an
-  // EARLY tag that could not fire: both payloads ask the same number of
-  // posts a side of the same posts. The engine's medians, ratio, counts per
-  // side, abstention and "no difference" are drawn from the record itself.
-  const lines = contrasts?.contrasts ?? [];
-  const verdict = (c: ContrastFinding) => c.difference?.verdict;
-  const conclusive = lines.filter((c) => c.status === "conclusive");
-  // A line whose own verdict is "none" is a difference too small for this
-  // creator's posts to separate (results.difference), and it is said rather
-  // than printed as a finding: a 1.1x line over 1,417 posts read as a rule to
-  // follow when it is noise.
-  const findings = conclusive.filter((c) => verdict(c) === "more" || verdict(c) === "fewer");
-  const clean = [...findings].sort((a, b) =>
-    patternOrder === "sample"
-      ? b.n_with + b.n_without - (a.n_with + a.n_without)
-      : Math.abs((b.ratio ?? 1) - 1) - Math.abs((a.ratio ?? 1) - 1),
-  );
-  const same = conclusive.filter((c) => verdict(c) === "none");
-  // Enough posts on both sides, but no ratio: the posts without the form
-  // have a median of 0 reactions, so there is nothing to divide by. Such a
-  // line sat in the list of findings and, opened, was worded "not enough
-  // posts to say", which is a different verdict. It is named for what it is.
-  const unmeasured = conclusive.filter((c) => verdict(c) === "not_measured");
-  const confounded = lines.filter((c) => c.status === "different_period");
-  // The engine abstains below its minimum a side, and says with how many.
-  const tooFew = lines.filter((c) => c.status === "not_enough_data");
   const settled = contrasts?.settled_after ?? patterns.settled_after ?? null;
   const minPerSide = contrasts?.min_arm_size ?? patterns.min_per_side;
 
@@ -150,117 +101,180 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
         </p>
       )}
 
-      <div className="mt-5 grid gap-x-6 gap-y-5 lg:grid-cols-2">
+      <div className="mt-5 grid gap-x-6 gap-y-5 lg:grid-cols-2 xl:grid-cols-3">
         <div className="min-w-0">
-          <section>
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="studio-label mb-2">Went with more or fewer reactions</p>
-              {clean.length > 1 && (
-                <div className="flex items-center gap-1" role="group" aria-label="Order">
-                  {(
-                    [
-                      { key: "difference", label: "Biggest difference" },
-                      { key: "sample", label: "Most posts" },
-                    ] as const
-                  ).map((candidate) => (
-                    <button
-                      key={candidate.key}
-                      type="button"
-                      onClick={() => setPatternOrder(candidate.key)}
-                      aria-pressed={patternOrder === candidate.key}
-                      className={cn(
-                        "rounded-full border px-2.5 py-0.5 text-[11px]",
-                        patternOrder === candidate.key
-                          ? "border-edge-strong bg-soft text-ink-primary"
-                          : "border-edge text-ink-muted hover:text-ink-secondary",
-                      )}
-                    >
-                      {candidate.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            {!contrasts ? (
-              // A read that did not come back is not an empty comparison.
-              <Note>THE COMPARISONS COULD NOT BE READ. THEY ARE READ AGAIN WHEN THE STUDIO ANSWERS.</Note>
-            ) : clean.length ? (
-              <ul className="flex flex-col divide-y divide-edge border-y border-edge">
-                {clean.map((c) => (
-                  <PatternRow
-                    key={c.key}
-                    line={c}
-                    expanded={expandedPattern === c.key}
-                    onToggle={() => setExpandedPattern((current) => (current === c.key ? null : c.key))}
-                  />
-                ))}
-              </ul>
-            ) : same.length ? (
-              <Note>NO FORM WENT WITH A DIFFERENCE YOUR OWN POSTS CAN SEPARATE.</Note>
-            ) : confounded.length ? (
-              <Note>NO PATTERN YET HAS POSTS FROM THE SAME PERIOD ON BOTH SIDES. THE LINES BELOW MAY BE ABOUT WHEN YOU POSTED.</Note>
+          <Comparisons lines={contrasts?.contrasts} minPerSide={minPerSide} noun="FORM" />
+        </div>
+
+        <div className="min-w-0">
+          <section aria-labelledby="patterns-topics">
+            <p id="patterns-topics" className="studio-label mb-1">
+              Your topics, compared the same way
+            </p>
+            {/* The topics are words, not meanings, and the reader is told so.
+                They were four fixed software buckets, so a bakery's posts all
+                landed in one of them. */}
+            <p className="mb-3 text-[12px] leading-snug text-ink-muted">
+              The words and hashtags that recur across your own posts, each compared like a form: your settled posts
+              that mention it against those that do not. A keyword match, not a reading of what a post means.
+            </p>
+            {contrasts && !(contrasts.topics ?? []).length ? (
+              <Note>NO WORD RECURS ACROSS ENOUGH OF YOUR POSTS TO BE A TOPIC YET.</Note>
             ) : (
-              <Note>NO FORM HAS ENOUGH POSTS WITH REACTIONS RECORDED ON BOTH SIDES YET.</Note>
+              <Comparisons lines={contrasts?.topics} minPerSide={minPerSide} noun="TOPIC" />
             )}
           </section>
-
-          {same.length > 0 && (
-            <section className="mt-5">
-              <p className="studio-label mb-1">No difference your own posts can separate</p>
-              <p className="mb-2 text-[12px] leading-snug text-ink-muted">
-                These forms were compared and came out close enough to be the same. Nothing here is a finding.
-              </p>
-              <ul className="flex flex-col divide-y divide-edge border-y border-edge">
-                {same.map((c) => (
-                  <PatternRow key={c.key} line={c} muted expanded={expandedPattern === c.key} onToggle={() => setExpandedPattern((current) => (current === c.key ? null : c.key))} />
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {confounded.length > 0 && (
-            <section className="mt-5">
-              <p className="studio-label mb-1">Mixed up with when you posted</p>
-              <p className="mb-2 text-[12px] leading-snug text-ink-muted">
-                The posts on each side of these come mostly from different years, when your account and audience were
-                different, so the difference may be about the time rather than the form.
-              </p>
-              <ul className="flex flex-col divide-y divide-edge border-y border-edge">
-                {confounded.map((c) => (
-                  <PatternRow key={c.key} line={c} muted expanded={expandedPattern === c.key} onToggle={() => setExpandedPattern((current) => (current === c.key ? null : c.key))} />
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {unmeasured.length > 0 && (
-            <p className="studio-meta mt-3 text-[10px] leading-snug text-ink-muted">
-              NO RATIO CAN BE MEASURED FOR:{" "}
-              {unmeasured
-                .map((c) => `${c.label.toUpperCase()} (MEDIAN ${c.median_without} REACTIONS ON THE ${c.n_without} POSTS WITHOUT IT)`)
-                .join("; ")}
-              . A MEDIAN OF 0 ON ONE SIDE LEAVES NOTHING TO COMPARE AGAINST.
-            </p>
-          )}
-
-          {tooFew.length > 0 && (
-            <p className="studio-meta mt-3 text-[10px] leading-snug text-ink-muted">
-              NOT ENOUGH POSTS TO COMPARE:{" "}
-              {tooFew.map((c) => `${c.label.toUpperCase()} (${c.n_with} WITH, ${c.n_without} WITHOUT)`).join("; ")}
-              . EACH SIDE NEEDS {minPerSide}.
-            </p>
-          )}
         </div>
 
         <div className="min-w-0">
           <SettleCurveSection curve={patterns.settle_curve} settled={settled} />
         </div>
       </div>
-
-      {attribution && (
-        <TopicAttributionSection attribution={attribution} sort={topicSort} onSort={setTopicSort} />
-      )}
     </article>
+  );
+}
+
+/**
+ * One list of the engine's records, in its buckets: what went with more or
+ * fewer reactions, what made no difference, what is mixed up with when you
+ * posted, what has no ratio, and what the engine abstained on.
+ */
+function Comparisons({
+  lines,
+  minPerSide,
+  noun,
+}: {
+  /** Undefined when the engine's answer did not come back. */
+  lines: ContrastFinding[] | undefined;
+  minPerSide: number;
+  /** FORM or TOPIC, in the notes. */
+  noun: "FORM" | "TOPIC";
+}) {
+  // How the "went with more or fewer reactions" list orders itself: by how
+  // far from 1x the ratio sits, or by how many posts the line rests on, for
+  // a creator who trusts a bigger sample over a bigger number.
+  const [order, setOrder] = useState<"difference" | "sample">("difference");
+  const [expanded, setExpanded] = useState<string | null>(null);
+  if (!lines) {
+    // A read that did not come back is not an empty comparison.
+    return <Note>THE COMPARISONS COULD NOT BE READ. THEY ARE READ AGAIN WHEN THE STUDIO ANSWERS.</Note>;
+  }
+  const verdict = (c: ContrastFinding) => c.difference?.verdict;
+  const conclusive = lines.filter((c) => c.status === "conclusive");
+  // A line whose own verdict is "none" is a difference too small for this
+  // creator's posts to separate (results.difference), and it is said rather
+  // than printed as a finding: a 1.1x line over 1,417 posts read as a rule to
+  // follow when it is noise.
+  const findings = conclusive.filter((c) => verdict(c) === "more" || verdict(c) === "fewer");
+  const clean = [...findings].sort((a, b) =>
+    order === "sample"
+      ? b.n_with + b.n_without - (a.n_with + a.n_without)
+      : Math.abs((b.ratio ?? 1) - 1) - Math.abs((a.ratio ?? 1) - 1),
+  );
+  const same = conclusive.filter((c) => verdict(c) === "none");
+  // Enough posts on both sides, but no ratio: the posts without the form
+  // have a median of 0 reactions, so there is nothing to divide by. Such a
+  // line sat in the list of findings and, opened, was worded "not enough
+  // posts to say", which is a different verdict. It is named for what it is.
+  const unmeasured = conclusive.filter((c) => verdict(c) === "not_measured");
+  const confounded = lines.filter((c) => c.status === "different_period");
+  // The engine abstains below its minimum a side, and says with how many.
+  const tooFew = lines.filter((c) => c.status === "not_enough_data");
+  const toggle = (key: string) => setExpanded((current) => (current === key ? null : key));
+
+  return (
+    <>
+      <section>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="studio-label mb-2">Went with more or fewer reactions</p>
+          {clean.length > 1 && (
+            <div className="flex items-center gap-1" role="group" aria-label="Order">
+              {(
+                [
+                  { key: "difference", label: "Biggest difference" },
+                  { key: "sample", label: "Most posts" },
+                ] as const
+              ).map((candidate) => (
+                <button
+                  key={candidate.key}
+                  type="button"
+                  onClick={() => setOrder(candidate.key)}
+                  aria-pressed={order === candidate.key}
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 text-[11px]",
+                    order === candidate.key
+                      ? "border-edge-strong bg-soft text-ink-primary"
+                      : "border-edge text-ink-muted hover:text-ink-secondary",
+                  )}
+                >
+                  {candidate.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {clean.length ? (
+          <ul className="flex flex-col divide-y divide-edge border-y border-edge">
+            {clean.map((c) => (
+              <PatternRow key={c.key} line={c} expanded={expanded === c.key} onToggle={() => toggle(c.key)} />
+            ))}
+          </ul>
+        ) : same.length ? (
+          <Note>NO {noun} WENT WITH A DIFFERENCE YOUR OWN POSTS CAN SEPARATE.</Note>
+        ) : confounded.length ? (
+          <Note>NO {noun} YET HAS POSTS FROM THE SAME PERIOD ON BOTH SIDES. THE LINES BELOW MAY BE ABOUT WHEN YOU POSTED.</Note>
+        ) : (
+          <Note>NO {noun} HAS ENOUGH POSTS WITH REACTIONS RECORDED ON BOTH SIDES YET.</Note>
+        )}
+      </section>
+
+      {same.length > 0 && (
+        <section className="mt-5">
+          <p className="studio-label mb-1">No difference your own posts can separate</p>
+          <p className="mb-2 text-[12px] leading-snug text-ink-muted">
+            These were compared and came out close enough to be the same. Nothing here is a finding.
+          </p>
+          <ul className="flex flex-col divide-y divide-edge border-y border-edge">
+            {same.map((c) => (
+              <PatternRow key={c.key} line={c} muted expanded={expanded === c.key} onToggle={() => toggle(c.key)} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {confounded.length > 0 && (
+        <section className="mt-5">
+          <p className="studio-label mb-1">Mixed up with when you posted</p>
+          <p className="mb-2 text-[12px] leading-snug text-ink-muted">
+            The posts on each side of these come mostly from different years, when your account and audience were
+            different, so the difference may be about the time rather than the form.
+          </p>
+          <ul className="flex flex-col divide-y divide-edge border-y border-edge">
+            {confounded.map((c) => (
+              <PatternRow key={c.key} line={c} muted expanded={expanded === c.key} onToggle={() => toggle(c.key)} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {unmeasured.length > 0 && (
+        <p className="studio-meta mt-3 text-[10px] leading-snug text-ink-muted">
+          NO RATIO CAN BE MEASURED FOR:{" "}
+          {unmeasured
+            .map((c) => `${c.label.toUpperCase()} (MEDIAN ${c.median_without} REACTIONS ON THE ${c.n_without} POSTS WITHOUT IT)`)
+            .join("; ")}
+          . A MEDIAN OF 0 ON ONE SIDE LEAVES NOTHING TO COMPARE AGAINST.
+        </p>
+      )}
+
+      {tooFew.length > 0 && (
+        <p className="studio-meta mt-3 text-[10px] leading-snug text-ink-muted">
+          NOT ENOUGH POSTS TO COMPARE:{" "}
+          {tooFew.map((c) => `${c.label.toUpperCase()} (${c.n_with} WITH, ${c.n_without} WITHOUT)`).join("; ")}
+          . EACH SIDE NEEDS {minPerSide}.
+        </p>
+      )}
+    </>
   );
 }
 
@@ -402,140 +416,6 @@ function PatternRow({
         </p>
       )}
     </li>
-  );
-}
-
-const TOPIC_COLUMNS: { key: TopicSortKey; label: string; align: "left" | "right" }[] = [
-  { key: "topic", label: "Topic", align: "left" },
-  { key: "posts", label: "Posts", align: "right" },
-  { key: "total_reactions", label: "Reactions", align: "right" },
-  { key: "people_engaged", label: "People captured", align: "right" },
-  { key: "qualified_leads", label: "Qualified", align: "right" },
-  { key: "lead_conversion_rate", label: "Share qualified", align: "right" },
-];
-
-function topicValue(t: TopicRow, key: TopicSortKey): number | string {
-  switch (key) {
-    case "topic":
-      return t.topic;
-    case "posts":
-      return t.post_count ?? t.posts_count ?? 0;
-    case "people_engaged":
-      return t.people_engaged ?? 0;
-    case "lead_conversion_rate":
-      return t.lead_conversion_rate ?? -1;
-    default:
-      return (t[key] as number | undefined) ?? 0;
-  }
-}
-
-function TopicAttributionSection({
-  attribution,
-  sort,
-  onSort,
-}: {
-  attribution: TopicAttributionInsights;
-  sort: { key: TopicSortKey; dir: "asc" | "desc" };
-  onSort: (next: { key: TopicSortKey; dir: "asc" | "desc" }) => void;
-}) {
-  // Computed before the early return below, so this hook runs on every
-  // render of this component rather than being skipped on the renders that
-  // take the cold start branch (the rule React hooks enforce).
-  const topics = useMemo(() => {
-    const rows = [...(attribution.topics as TopicRow[])];
-    rows.sort((a, b) => {
-      const av = topicValue(a, sort.key);
-      const bv = topicValue(b, sort.key);
-      const cmp = typeof av === "string" || typeof bv === "string" ? String(av).localeCompare(String(bv)) : av - bv;
-      return sort.dir === "asc" ? cmp : -cmp;
-    });
-    return rows;
-  }, [attribution.topics, sort]);
-
-  if (attribution.status === "cold_start" || !attribution.topics.length) {
-    return (
-      <section className="mt-10">
-        <p className="studio-label">Topic to Qualified Lead Attribution</p>
-        <p className="mt-2 text-[13px] text-ink-secondary">{attribution.summary_sentence}</p>
-        <Note>PUBLISH OR INGEST POSTS TO VIEW QUALIFIED LEAD ATTRIBUTION BY TOPIC.</Note>
-      </section>
-    );
-  }
-
-  function toggle(key: TopicSortKey) {
-    onSort({ key, dir: sort.key === key && sort.dir === "desc" ? "asc" : "desc" });
-  }
-
-  return (
-    <section className="mt-8">
-      <p className="studio-label">Topic to Qualified Lead Attribution</p>
-      <h2 className="studio-title mt-2 text-[15px]">Which topics bring qualified pipeline</h2>
-      <p className="mt-1 text-[13px] leading-relaxed text-ink-secondary">
-        {attribution.summary_sentence}
-      </p>
-      {/* The topics are words, not meanings, and the reader is told so. They
-          were four fixed software buckets, so a bakery's posts all landed in
-          one of them. */}
-      <p className="mt-1 text-[12px] leading-snug text-ink-muted">
-        Topics are the {(attribution as { grouping?: string }).grouping ?? "words that recur across your own posts"}.
-        A post goes under the first of them it mentions, and one that mentions none goes under Other posts. This is a
-        keyword grouping, not a reading of what a post means.
-      </p>
-      {/* Scrolls sideways at phone width, so it takes focus to scroll by keyboard. */}
-      <div className="mt-4 overflow-x-auto border-y border-edge" tabIndex={0} role="region" aria-label="Topics">
-        <table className="w-full text-left text-[12px]">
-          <thead>
-            <tr className="border-b border-edge text-[10px] text-ink-muted uppercase">
-              {TOPIC_COLUMNS.map((column) => (
-                <th
-                  key={column.key}
-                  scope="col"
-                  aria-sort={sort.key === column.key ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
-                  className={cn("py-2 px-3 font-normal first:pl-0 first:pr-4 last:pr-0", column.align === "right" && "text-right")}
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggle(column.key)}
-                    className={cn(
-                      "inline-flex items-center gap-1 uppercase hover:text-ink-secondary",
-                      column.align === "right" && "flex-row-reverse",
-                    )}
-                  >
-                    {column.label}
-                    {sort.key === column.key ? (
-                      <ChevronDown className={cn("size-3", sort.dir === "asc" && "rotate-180")} aria-hidden="true" />
-                    ) : (
-                      <ChevronsUpDown className="size-3 opacity-50" aria-hidden="true" />
-                    )}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-edge">
-            {topics.map((t) => {
-              const count = t.post_count ?? t.posts_count ?? 0;
-              // Qualified people over the people captured on the topic's posts,
-              // so it cannot pass 100%. It was qualified leads over posts, which
-              // read 600% for three people who each commented and reacted.
-              const rate = t.lead_conversion_rate;
-              return (
-                <tr key={t.topic} className="py-2">
-                  <td className="py-2.5 pr-4 text-ink-primary font-medium">{t.topic}</td>
-                  <td className="py-2.5 px-3 text-right tabular-nums text-ink-secondary">{count}</td>
-                  <td className="py-2.5 px-3 text-right tabular-nums text-ink-secondary">{t.total_reactions}</td>
-                  <td className="py-2.5 px-3 text-right tabular-nums text-ink-secondary">{t.people_engaged ?? 0}</td>
-                  <td className="py-2.5 px-3 text-right tabular-nums text-ink-primary font-semibold">{t.qualified_leads}</td>
-                  <td className="py-2.5 pl-3 text-right tabular-nums text-ink-secondary">
-                    {rate == null ? <span className="text-ink-muted">not measured</span> : `${(rate * 100).toFixed(0)}%`}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </section>
   );
 }
 

@@ -263,18 +263,32 @@ def _engaged(lead_id, name, urn, *kinds, headline="Founder at Northwind Cloud"):
     conn.close()
 
 
-def test_topic_attribution_counts_people_and_no_share_passes_100(studio):
-    """AUDIENCE-12"""
-    urns = _own_posts(studio["client"], [{"text": "Why we moved our database to Postgres", "reactions": 50}])
+def test_topics_are_forms_and_no_qualified_count_is_drawn(studio):
+    """
+    AUDIENCE-12 made the topic table count people once and kept its share
+    under 100%; the route that answers it is still held to that by
+    test_qc_f5b_patterns.py. Cycle 4's decision 7 retired the table on
+    screen: a topic is compared as a form through the contrast engine
+    (tests/test_qc4_t3_topic_forms.py), and the people a post brought are
+    counted on Posts. What is held here is the screen: the topic is drawn as
+    a form with the engine's abstention, and no qualified count or share is.
+    """
+    urns = _own_posts(studio["client"], [
+        {"text": "Why we moved our database to Postgres", "reactions": 50},
+        {"text": "Postgres vacuum, explained", "reactions": 40},
+        {"text": "Hiring a platform engineer", "reactions": 30},
+        {"text": "Notes from a cold start", "reactions": 20},
+    ])
     for k in range(3):
         _engaged(f"lead-founder-{k}", f"Founder {k}", urns[0], "COMMENT", "LIKE")
     _engaged("lead-student", "A Student", urns[0], "LIKE", headline="Intern")
     page = _open(studio, "Patterns")
-    page.wait_for_selector("text=Which topics bring qualified pipeline")
-    row = page.locator("section", has_text="Which topics").locator("tbody tr").first
-    cells = [c.strip() for c in row.locator("td").all_inner_texts()]
-    assert cells[1:] == ["1", "50", "4", "3", "75%"], cells
-    assert "600" not in page.inner_text("body")
+    page.wait_for_selector("text=Your topics, compared the same way")
+    topics = page.locator("section[aria-labelledby=patterns-topics]").inner_text()
+    assert 'MENTIONS "POSTGRES" (2 WITH, 2 WITHOUT)' in topics, topics
+    body = page.inner_text("main")
+    assert "qualified" not in body.lower(), "the retired framing is still on the screen"
+    assert "600" not in body
     assert not studio["errors"], studio["errors"]
 
 
@@ -306,12 +320,17 @@ def test_topics_are_the_creators_own_words_and_say_so(studio):
              "What nobody tells you about early mornings", "Short one today.", "On saying no to wholesale"]
     _own_posts(studio["client"], [{"text": text, "reactions": 10 + i} for i, text in enumerate(texts)])
     page = _open(studio, "Patterns")
-    page.wait_for_selector("text=Which topics bring qualified pipeline")
-    section = page.locator("section", has_text="Which topics bring qualified pipeline")
-    topics = [t.strip() for t in section.locator("tbody tr td:first-child").all_inner_texts()]
-    assert set(topics) == {"Croissant", "Morning", "Other posts"}, topics
-    assert "keywords and hashtags that recur across your own posts" in section.inner_text()
-    assert "keyword grouping, not a reading of what a post means" in section.inner_text()
+    # Cycle 4, decision 7: a topic is a form compared through the contrast
+    # engine, so the creator's own words are the forms' names; six posts are
+    # too few a side, so the engine's abstention names them with their counts.
+    page.wait_for_selector("text=Your topics, compared the same way")
+    section = page.locator("section[aria-labelledby=patterns-topics]")
+    text = section.inner_text()
+    assert 'MENTIONS "CROISSANT" (2 WITH, 4 WITHOUT)' in text, text
+    assert 'MENTIONS "MORNING" (2 WITH, 4 WITHOUT)' in text, text
+    assert text.count("MENTIONS") == 2, "a topic that is not the creator's own word was compared"
+    assert "words and hashtags that recur across your own posts" in text
+    assert "A keyword match, not a reading of what a post means" in text
     assert not studio["errors"], studio["errors"]
 
 
@@ -412,7 +431,7 @@ def test_patterns_can_be_scrolled_from_the_keyboard(studio, width):
     page = studio["page"]
     page.set_viewport_size({"width": width, "height": 844})
     page = _open(studio, "Patterns")
-    page.wait_for_selector("text=Which topics bring qualified pipeline")
+    page.wait_for_selector("text=Your topics, compared the same way")
     page.add_script_tag(path=AXE_JS)
     flagged = page.evaluate("""async () => {
         const r = await axe.run(document, { runOnly: ['scrollable-region-focusable'] });
