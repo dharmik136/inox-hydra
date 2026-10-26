@@ -12,7 +12,7 @@ You need the studio running and a browser that can carry the extension. Edge and
 
 Click **Open LinkedIn with the bridge**. The studio starts Edge or Brave with the extension loaded, on your LinkedIn feed, with the studio in a second tab so the extension can reach it. It opens in its own browser profile, so it works even when that browser is already open, and your usual windows are left alone. The first time, sign in to LinkedIn there.
 
-If no browser on this computer can load the extension by itself, for example when Chrome is the only one, the step says so and shows the extension's folder with **Copy the folder path**, for loading it by hand with **Load unpacked**. If no Chromium browser is found at all, nothing opens and the step asks you to install Edge or Brave.
+If no browser on this computer can load the extension by itself, for example when Chrome is the only one, the step says so and shows the extension's folder with **Copy the folder path**, for loading it by hand with **Load unpacked**. If no Chromium browser is found at all, nothing opens and the step asks you to install Edge or Brave. If the studio could not be asked which browsers this computer has, the step says so rather than reporting none: check that the studio is running, then come back to the step.
 
 The step ticks when the extension reports in, which it does every minute while a LinkedIn tab is in view. The status line reads "Connected" with the extension's version. If it later reads "Last heard from ...", no LinkedIn tab is open in the bridge browser.
 
