@@ -83,7 +83,9 @@ export function EvidencePanel() {
           <div className="flex flex-col gap-2">
             {brief.contrast_findings.map((c) => {
               const ratio = c.ratio ?? 1.0;
-              const isPositive = ratio > 1.0;
+              // The arrow follows the engine's own verdict, never a cut of
+              // this file's: only "more" and "fewer" reach this list.
+              const isPositive = c.difference?.verdict === "more";
               const ratioDisplay = `${ratio.toFixed(2)}x`;
               return (
                 <div

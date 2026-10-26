@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { fetchPostsInsights, type PostInsight, type PostsInsights, type PostsQuery } from "@/lib/api";
 import { useRefresh } from "@/lib/refresh";
+import { ratioTone } from "@/lib/results";
 import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
@@ -357,7 +358,7 @@ function RatioCell({ value, ratio }: { value: number | null; ratio?: number }) {
             <span
               className={cn(
                 "ml-1",
-                ratio >= 1.2 ? "text-signal-green-text" : ratio <= 0.8 ? "text-signal-orange-text" : "text-ink-muted",
+                ratioTone(ratio),
               )}
             >
               ({ratio.toFixed(1)}x)

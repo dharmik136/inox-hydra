@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ExternalLink, Loader2, X } from "lucide-react";
 import { fetchPostDetail, fetchPostEngagers, launchBridge, type PostDetail as PostDetailData, type PostEngager } from "@/lib/api";
 import { useModalFocus } from "@/lib/modalFocus";
+import { ratioTone } from "@/lib/results";
 import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -168,7 +169,7 @@ function Figure({ label, value, ratio }: { label: string; value: number | null; 
         <span
           className={cn(
             "ml-1",
-            ratio >= 1.2 ? "text-signal-green-text" : ratio <= 0.8 ? "text-signal-orange-text" : "text-ink-muted",
+            ratioTone(ratio),
           )}
         >
           ({ratio.toFixed(1)}x)

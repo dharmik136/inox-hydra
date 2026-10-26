@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { gapOrNotMeasured } from "@/lib/cadence";
 import { useStudioBack } from "@/lib/refresh";
+import { ratioTone } from "@/lib/results";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 
@@ -395,7 +396,7 @@ function PatternRow({
             <p
               className={cn(
                 "studio-meta shrink-0 text-[11px] tabular-nums",
-                muted ? "text-ink-muted" : ratio >= 1.2 ? "text-signal-green-text" : ratio <= 0.8 ? "text-signal-orange-text" : "text-ink-secondary",
+                muted ? "text-ink-muted" : ratioTone(ratio, "text-ink-secondary"),
               )}
             >
               {ratio.toFixed(1)}x

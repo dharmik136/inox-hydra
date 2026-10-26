@@ -29,6 +29,7 @@ import {
 import { NOT_MEASURED, formatDays, gapOrNotMeasured } from "@/lib/cadence";
 import { reportBridge } from "@/lib/bridgeState";
 import { useRefresh } from "@/lib/refresh";
+import { ratioTone } from "@/lib/results";
 import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -992,13 +993,7 @@ function LatestPost({
               <div key={metric} className="flex items-baseline justify-between gap-3">
                 <dt className="text-[12px] text-ink-secondary">{METRIC_LABELS[metric] ?? metric}</dt>
                 <dd className="studio-meta text-right text-[11px] tabular-nums">
-                  <span
-                    className={cn(
-                      value.ratio !== null && value.ratio >= 1.2 && "text-signal-green-text",
-                      value.ratio !== null && value.ratio <= 0.8 && "text-signal-orange-text",
-                      (value.ratio === null || (value.ratio > 0.8 && value.ratio < 1.2)) && "text-ink-secondary",
-                    )}
-                  >
+                  <span className={ratioTone(value.ratio, "text-ink-secondary")}>
                     {value.this_post.toLocaleString()} vs {Math.round(value.your_usual).toLocaleString()}
                     {value.ratio !== null ? ` (${value.ratio.toFixed(1)}x)` : ""}
                   </span>
