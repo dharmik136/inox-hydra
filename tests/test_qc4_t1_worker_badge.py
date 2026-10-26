@@ -117,12 +117,27 @@ const busy = { status: 503, retryAfter: 0.01, body: { detail: { code: "studio_bu
   out.lastCapture = storage.lastCapture || null;
   out.badgeAfterOne = badge.text.filter((d) => d.tabId === 7).map((d) => d.text);
   await relay("/api/v1/crm/interactions/ingest", { full_name: "Second Person" }, 7);
+  answers["/api/v1/self/posts/ingest"] = [{ status: 200, body: { status: "success", written: 2, skipped: 0 } }];
   await relay("/api/v1/self/posts/ingest", { author: "me", posts: [] }, 9);
   await tick(40);
   out.badgeAfterThree = badge.text.filter((d) => d.tabId === 7).map((d) => d.text);
   out.badgeOtherTab = badge.text.filter((d) => d.tabId === 9).map((d) => d.text);
   out.countsInStorage = storage.badgeCounts || null;
   out.greenAfterCaptures = badge.background.length ? badge.background[badge.background.length - 1] : null;
+
+  // 1b. A 200 that stored nothing (an engager on someone else's post) is a
+  //     relay, and is not a capture: the badge does not count it.
+  answers["/api/v1/crm/interactions/ingest"] = [{ status: 200, body: { status: "skipped", outcome: "nothing_new", reason: "not_your_post" } }];
+  await relay("/api/v1/crm/interactions/ingest", { full_name: "Stranger Engager" }, 7);
+  await tick(40);
+  out.nothingNew = storage.lastCapture || null;
+  out.countAfterNothingNew = (storage.badgeCounts || {})[7];
+  answers["/api/v1/self/posts/ingest"] = [{ status: 200, body: { status: "success", written: 0, skipped: 3 } }];
+  await relay("/api/v1/self/posts/ingest", { author: "me", posts: [] }, 9);
+  await tick(40);
+  out.countOtherTabAfterNothing = (storage.badgeCounts || {})[9];
+  delete answers["/api/v1/self/posts/ingest"];
+  answers["/api/v1/crm/interactions/ingest"] = [{ status: 200, body: { status: "success", outcome: "accepted", interaction: { id: 6 } } }];
 
   // 2. Bookkeeping is not a capture: a heartbeat or a capture log row does
   //    not move the badge or the last capture.
@@ -133,6 +148,7 @@ const busy = { status: 503, retryAfter: 0.01, body: { detail: { code: "studio_bu
   out.countAfterBookkeeping = (storage.badgeCounts || {})[7];
   out.countBeforeBookkeeping = before;
   out.lastCaptureAfterBookkeeping = storage.lastCapture ? storage.lastCapture.path : null;
+  out.lastCaptureAfterBookkeepingStored = storage.lastCapture ? storage.lastCapture.stored : null;
 
   // 3. Waiting captures turn the badge orange, and it stays while any wait.
   answers["/api/v1/crm/interactions/ingest"] = [busy];
@@ -141,28 +157,39 @@ const busy = { status: 503, retryAfter: 0.01, body: { detail: { code: "studio_bu
   out.keptCapture = storage.lastCapture || null;
   out.orangeWhileWaiting = badge.background[badge.background.length - 1];
   out.titleWhileWaiting = badge.title.length ? badge.title[badge.title.length - 1].title : null;
+  const globalTexts = badge.text.filter((d) => d.tabId === undefined);
+  out.globalTextWhileWaiting = globalTexts.length ? globalTexts[globalTexts.length - 1].text : null;
 
   // 4. A drift the readers report is noted once per page kind per session.
-  delete storage.lastDrift;
+  delete session.lastDrift;
   answers["/api/v1/bridge/capture"] = [{ status: 200 }];
   await relay("/api/v1/bridge/capture", { extractor: "engagers", page_kind: "feed", items_seen: 3, items_kept: 0, drift: ["commenter_name"] }, 7);
   await tick(40);
-  out.driftNoted = storage.lastDrift || null;
-  const firstDriftAt = storage.lastDrift && storage.lastDrift.at;
+  out.driftNoted = session.lastDrift || null;
+  out.driftNotInLocal = storage.lastDrift === undefined;
+  const firstDriftAt = session.lastDrift && session.lastDrift.at;
   await tick(5);
   await relay("/api/v1/bridge/capture", { extractor: "engagers", page_kind: "feed", items_seen: 3, items_kept: 0, drift: ["commenter_name", "headline"] }, 7);
   await tick(40);
-  out.driftNotedTwice = storage.lastDrift && storage.lastDrift.fields;
-  out.driftSameMoment = storage.lastDrift && storage.lastDrift.at === firstDriftAt;
+  out.driftNotedTwice = session.lastDrift && session.lastDrift.fields;
+  out.driftSameMoment = session.lastDrift && session.lastDrift.at === firstDriftAt;
   await relay("/api/v1/bridge/capture", { extractor: "profile", page_kind: "profile", items_seen: 1, items_kept: 0, drift: ["name"] }, 7);
   await tick(40);
-  out.driftOtherKind = storage.lastDrift && storage.lastDrift.page_kind;
+  out.driftOtherKind = session.lastDrift && session.lastDrift.page_kind;
   out.driftSession = Object.keys(session).filter((k) => k.startsWith("driftNoticed"));
+  // A clean run of another reader leaves the notice; a clean run of the
+  // reader it is about, on the same kind of page, takes it down.
+  await relay("/api/v1/bridge/capture", { extractor: "engagers", page_kind: "feed", items_seen: 4, items_kept: 4, drift: null }, 7);
+  await tick(40);
+  out.driftAfterOtherClean = session.lastDrift ? session.lastDrift.page_kind : null;
+  await relay("/api/v1/bridge/capture", { extractor: "profile", page_kind: "profile", items_seen: 2, items_kept: 2, drift: null }, 7);
+  await tick(40);
+  out.driftAfterClean = session.lastDrift === undefined ? null : session.lastDrift;
 
   // 5. Opening the panel clears the badge count.
   await fromPanel({ action: "PANEL_OPENED" });
   await tick(40);
-  out.badgeAfterPanel = badge.text.slice(-3).map((d) => d.text);
+  out.badgeAfterPanel = badge.text.filter((d) => d.tabId !== undefined).slice(-2).map((d) => d.text);
   out.countsAfterPanel = storage.badgeCounts || null;
 
   // 6. The worker heartbeat carries the switch and the registration.
@@ -200,7 +227,7 @@ def test_the_last_capture_is_written_where_the_panel_can_read_it(run):
     last = run["lastCapture"]
     assert last, "no lastCapture in storage after a relayed capture"
     assert last["path"] == "/api/v1/crm/interactions/ingest"
-    assert last["ok"] is True and last["kept"] is False
+    assert last["ok"] is True and last["kept"] is False and last["stored"] is True
     assert last["tabId"] == 7
     assert isinstance(last["at"], str) and last["at"]
     assert last["outcome"] == "accepted"
@@ -213,9 +240,24 @@ def test_the_badge_counts_this_tabs_captures(run):
     assert run["countsInStorage"] == {"7": 2, "9": 1}
 
 
+def test_an_answer_that_stored_nothing_is_not_counted(run):
+    """
+    The engagers of someone else's post are answered 200 nothing_new: the
+    rule worked and nothing was stored. Counting them would put a number on
+    the badge that no row in the studio stands behind.
+    """
+    nothing = run["nothingNew"]
+    assert nothing["ok"] is True and nothing["stored"] is False
+    assert nothing["outcome"] == "nothing_new"
+    assert run["countAfterNothingNew"] == run["countsInStorage"]["7"], "a capture that stored nothing was counted"
+    assert run["countOtherTabAfterNothing"] == run["countsInStorage"]["9"], "written: 0 was counted as a capture"
+
+
 def test_bookkeeping_is_not_a_capture(run):
     assert run["countAfterBookkeeping"] == run["countBeforeBookkeeping"]
     assert run["lastCaptureAfterBookkeeping"] == "/api/v1/self/posts/ingest"
+    # Still the written: 0 relay before the bookkeeping, which did not overwrite it.
+    assert run["lastCaptureAfterBookkeepingStored"] is False
 
 
 def test_a_kept_capture_is_said_and_turns_the_badge_orange(run):
@@ -226,11 +268,14 @@ def test_a_kept_capture_is_said_and_turns_the_badge_orange(run):
     assert run["orangeWhileWaiting"]["color"] == [233, 85, 44, 255]
     assert run["greenAfterCaptures"]["color"] == [22, 138, 97, 255]
     assert "waiting" in (run["titleWhileWaiting"] or "")
+    # A tab with no count of its own shows how many wait, so the orange is seen.
+    assert run["globalTextWhileWaiting"] == "1"
 
 
 def test_drift_is_noted_once_per_page_kind_per_session(run):
     noted = run["driftNoted"]
     assert noted and noted["extractor"] == "engagers" and noted["page_kind"] == "feed"
+    assert run["driftNotInLocal"] is True, "the notice outlives the browser session in local storage"
     assert noted["fields"] == ["commenter_name"]
     assert run["driftSameMoment"] is True, "the second drift on the same page kind replaced the first"
     assert run["driftNotedTwice"] == ["commenter_name"]
@@ -238,9 +283,15 @@ def test_drift_is_noted_once_per_page_kind_per_session(run):
     assert sorted(run["driftSession"]) == ["driftNoticed:feed", "driftNoticed:profile"]
 
 
+def test_a_clean_run_of_the_same_reader_takes_the_notice_down(run):
+    assert run["driftAfterOtherClean"] == "profile", "a clean run of another reader took the notice down"
+    assert run["driftAfterClean"] is None, "the reader works again and the notice still says it cannot read"
+
+
 def test_opening_the_panel_clears_the_badge(run):
     assert run["countsAfterPanel"] == {}
-    assert "" in run["badgeAfterPanel"]
+    # null is Chrome's documented reset of one tab's text to the badge's own.
+    assert run["badgeAfterPanel"] == [None, None]
 
 
 def test_the_worker_heartbeat_carries_the_switch_and_the_registration(run):

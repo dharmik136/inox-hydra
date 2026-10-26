@@ -832,37 +832,49 @@ function actionCall(method, details) {
   });
 }
 
-// What the studio answered, in the fields the creator can be shown. Never
-// the capture itself: the panel names the kind of thing and when, not the
-// person.
-function captureOutcome(answer) {
-  const data = (answer && answer.data) || {};
-  const counts = {};
-  for (const field of ["written", "skipped", "recorded", "buckets_ingested", "followers_saved", "items_kept"]) {
-    if (typeof data[field] === "number") counts[field] = data[field];
-  }
-  return { outcome: data.outcome || data.status || null, counts };
+// Whether the studio stored anything, read from its own answer. The engagers
+// route answers the ingest contract's outcome (ingest_contract.py: accepted
+// or nothing_new); the creator's own pages answer the counts and words their
+// routes have always answered: written, recorded, buckets_ingested,
+// followers_saved, items_kept, or bound, updated, candidate. A 200 that stored
+// nothing is the usual answer on the feed, where most engagers are on other
+// people's posts, and it is never counted as a capture: counting it would put
+// a number on the badge that no row in the studio stands behind.
+const STORED_COUNTS = ["written", "buckets_ingested", "followers_saved", "items_kept"];
+const STORED_STATUSES = ["bound", "updated", "candidate"];
+
+function storedSomething(data) {
+  if (!data || typeof data !== "object") return false;
+  if (data.outcome === "accepted") return true;
+  if (data.outcome === "nothing_new" || data.status === "skipped") return false;
+  if (STORED_COUNTS.some((field) => typeof data[field] === "number" && data[field] > 0)) return true;
+  if (data.recorded === true) return true;
+  return STORED_STATUSES.includes(data.status);
 }
 
+// One record per relay of the creator's data: which path, when, what the
+// studio did with it, and from which tab. Never the capture itself: the panel
+// names the kind of thing and when, not the person.
 async function noteCapture(path, answer, tabId, kept) {
-  const said = captureOutcome(answer);
+  const data = (answer && answer.data) || {};
   const ok = !!(answer && answer.ok);
+  const stored = ok && storedSomething(data);
   await storeLocal({
     [LAST_CAPTURE_KEY]: {
       path,
       at: new Date().toISOString(),
       ok,
       kept: kept === true,
+      stored,
       httpStatus: answer ? answer.httpStatus : 0,
-      outcome: kept ? "kept" : said.outcome,
-      counts: said.counts,
+      outcome: kept ? "kept" : (data.outcome || data.reason || data.status || null),
       tabId
     }
   });
-  if (ok && path === "/api/v1/bridge/voyager-ingest") {
+  if (stored && path === "/api/v1/bridge/voyager-ingest") {
     await storeLocal({ [LAST_VOYAGER_CAPTURE_KEY]: new Date().toISOString() });
   }
-  if (ok && tabId !== null && tabId !== undefined) {
+  if (stored && tabId !== null && tabId !== undefined) {
     const counts = (await readLocal(BADGE_COUNTS_KEY)) || {};
     counts[tabId] = (counts[tabId] || 0) + 1;
     await storeLocal({ [BADGE_COUNTS_KEY]: counts });
@@ -871,10 +883,18 @@ async function noteCapture(path, answer, tabId, kept) {
   await paintBadge();
 }
 
+// null hands a tab back to the badge's own text, which is Chrome's documented
+// reset; a browser that refuses null is given the empty text instead.
+async function resetTabBadge(tabId) {
+  if (!(await actionCall("setBadgeText", { tabId, text: null }))) {
+    await actionCall("setBadgeText", { tabId, text: "" });
+  }
+}
+
 async function clearBadgeCounts() {
   const counts = (await readLocal(BADGE_COUNTS_KEY)) || {};
   for (const tabId of Object.keys(counts)) {
-    await actionCall("setBadgeText", { tabId: Number(tabId), text: "" });
+    await resetTabBadge(Number(tabId));
   }
   await storeLocal({ [BADGE_COUNTS_KEY]: {} });
   await paintBadge();
@@ -890,79 +910,107 @@ async function restoreBadge() {
   await paintBadge();
 }
 
-// Session storage holds what was noticed this browser session; a browser
-// without it (an old harness) keeps the set in memory for this worker's life.
-const driftNoticedHere = new Set();
+// The drift notice lives in session storage, which the browser empties when
+// it closes, so "once per page kind per session" holds by construction and a
+// notice never outlives the session it was measured in. The side panel and
+// the popup read it from there. A browser without session storage keeps no
+// notice; every browser with a side panel has it.
+function sessionArea() {
+  try {
+    return chrome.storage && chrome.storage.session ? chrome.storage.session : null;
+  } catch (err) {
+    return null;
+  }
+}
 
 function sessionGet(key) {
   return new Promise((resolve) => {
+    const area = sessionArea();
+    if (!area) {
+      resolve(null);
+      return;
+    }
     try {
-      if (!chrome.storage.session) {
-        resolve(driftNoticedHere.has(key) ? true : null);
-        return;
-      }
-      chrome.storage.session.get(key, (items) => resolve((items && items[key]) || null));
+      area.get(key, (items) => resolve((items && items[key]) || null));
     } catch (err) {
       resolve(null);
     }
   });
 }
 
-function sessionSet(key, value) {
+function sessionSet(values) {
   return new Promise((resolve) => {
+    const area = sessionArea();
+    if (!area) {
+      resolve();
+      return;
+    }
     try {
-      if (!chrome.storage.session) {
-        driftNoticedHere.add(key);
-        resolve();
-        return;
-      }
-      chrome.storage.session.set({ [key]: value }, () => resolve());
+      area.set(values, () => resolve());
     } catch (err) {
       resolve();
     }
   });
 }
 
-async function driftNoticedThisSession() {
-  if (!chrome.storage.session) return driftNoticedHere.size > 0;
-  const items = await new Promise((resolve) => {
+function sessionRemove(key) {
+  return new Promise((resolve) => {
+    const area = sessionArea();
+    if (!area) {
+      resolve();
+      return;
+    }
     try {
-      chrome.storage.session.get(null, (found) => resolve(found || {}));
+      area.remove(key, () => resolve());
     } catch (err) {
-      resolve({});
+      resolve();
     }
   });
-  return Object.keys(items).some((key) => key.startsWith(DRIFT_NOTICED_PREFIX));
 }
 
 // A reader reported fields it could not read on a page that plainly had
 // them. Said once per page kind per browser session, in the panel header
 // and the badge colour, never in the page: it is a measurement the reader
-// made, and the one failure a creator cannot see for themselves.
+// made, and the one failure a creator cannot see for themselves. A later
+// clean run of the same reader on the same kind of page is a newer
+// measurement, and takes the notice down.
 async function noteDrift(body) {
-  if (!body || !Array.isArray(body.drift) || body.drift.length === 0) return;
+  if (!body || typeof body !== "object") return;
   const pageKind = String(body.page_kind || "page").slice(0, 40);
+  const extractor = String(body.extractor || "").slice(0, 40);
+  const fields = Array.isArray(body.drift) ? body.drift.filter((d) => typeof d === "string").slice(0, 10) : [];
+  if (!fields.length) {
+    if (Number(body.items_seen) > 0) {
+      const shown = await sessionGet(LAST_DRIFT_KEY);
+      if (shown && shown.extractor === extractor && shown.page_kind === pageKind) {
+        await sessionRemove(LAST_DRIFT_KEY);
+        await paintBadge();
+      }
+    }
+    return;
+  }
   const key = DRIFT_NOTICED_PREFIX + pageKind;
   if (await sessionGet(key)) return;
-  await sessionSet(key, new Date().toISOString());
-  await storeLocal({
-    [LAST_DRIFT_KEY]: {
-      extractor: String(body.extractor || "").slice(0, 40),
-      page_kind: pageKind,
-      fields: body.drift.filter((d) => typeof d === "string").slice(0, 10),
-      at: new Date().toISOString()
-    }
-  });
+  const at = new Date().toISOString();
+  await sessionSet({ [key]: at, [LAST_DRIFT_KEY]: { extractor, page_kind: pageKind, fields, at } });
   await paintBadge();
 }
 
 async function paintBadge() {
   const waiting = (await readLocal(WAITING_KEY)) || {};
-  const drift = (await driftNoticedThisSession()) ? await readLocal(LAST_DRIFT_KEY) : null;
+  const drift = await sessionGet(LAST_DRIFT_KEY);
   const waitingCount = typeof waiting.waiting === "number" ? waiting.waiting : 0;
   const attention = waitingCount > 0 || !!drift;
   await actionCall("setBadgeBackgroundColor", { color: attention ? BADGE_ORANGE : BADGE_GREEN });
   await actionCall("setBadgeTextColor", { color: BADGE_TEXT });
+  // What a tab with no count of its own shows: how many captures are
+  // waiting, or a mark for a drift noticed this session. A badge with no
+  // text is not drawn, so without this the orange could not be seen in a
+  // tab where nothing had been captured yet. A tab's own count of captures
+  // takes its place in that tab, on the same colour.
+  await actionCall("setBadgeText", {
+    text: waitingCount > 0 ? String(Math.min(waitingCount, 999)) : (drift ? "!" : "")
+  });
   let title = "Inox Hydra Bridge";
   if (waitingCount > 0) {
     title = "Inox Hydra: " + waitingCount + " capture(s) waiting for the studio";
@@ -1093,6 +1141,7 @@ async function relayToStudio(message, path, sendResponse, tabId) {
   // to whoever asked, and are remembered for the side panel: every one of
   // them used to be collapsed to an error with nothing said.
   await rememberRefusal(path, answer);
+  if (KEEP_WHEN_BUSY.has(path)) await noteCapture(path, answer, tabId, false);
   const refusal = answer.data || {};
   sendResponse({
     status: "error",

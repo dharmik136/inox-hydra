@@ -24,14 +24,16 @@ with open(os.path.join(EXT, "popup.html"), encoding="utf-8") as handle:
     POPUP = handle.read().replace('<script src="popup.js"></script>', "")
 
 LAST = {"path": "/api/v1/crm/interactions/ingest", "at": "2026-10-26T10:00:00.000Z", "ok": True, "kept": False,
-        "httpStatus": 200, "outcome": "accepted", "tabId": 3}
+        "stored": True, "httpStatus": 200, "outcome": "accepted", "tabId": 3}
 DRIFT = {"extractor": "engagers", "page_kind": "feed", "fields": ["commenter_name"], "at": "2026-10-26T10:01:00.000Z"}
 
 HEALTH = {
     "bridge": {"connected": True}, "extractors": [], "recent_drift": [], "voyager_active": False,
     "voyager_24h_captures": 0, "schema_version": "x", "contract": {},
     "network_reading": {"state": "matching_nothing", "switch": True,
-                        "sentence": "Network reading is on and matching nothing: the last page read made 12 LinkedIn data calls and none matched the bridge's patterns."},
+                        "sentence": "Network reading is on and matching nothing: the last page read made 12 LinkedIn data calls and none matched the bridge's patterns.",
+                        "voyager_calls": {"/voyager/api/graphql voyagerFeedDashMainFeed": 9,
+                                          "/voyager/api/identity/dash/profiles": 3}},
 }
 
 
@@ -57,8 +59,9 @@ def pages():
     p.close()
 
 
-def _open(pages, html, script, storage):
-    page = pages.open("/" + script.replace(".js", ".html"), html, scripts=(script,), before=_fake(), storage=storage)
+def _open(pages, html, script, storage, session=None):
+    page = pages.open("/" + script.replace(".js", ".html"), html, scripts=(script,), before=_fake(), storage=storage,
+                      session=session)
     page.evaluate("() => document.dispatchEvent(new Event('DOMContentLoaded'))")
     page.clock.run_for(300)
     return page
@@ -74,9 +77,16 @@ def test_the_panel_names_the_last_capture_from_storage(pages):
     assert line and "engager" in line.lower() and "captured" in line.lower()
 
 
+def test_a_relay_that_stored_nothing_is_never_called_a_capture(pages):
+    page = _open(pages, PANEL, "sidepanel.js", {"lastCapture": {**LAST, "stored": False, "outcome": "nothing_new"}})
+    line = _text(page, "sp-last-capture")
+    assert "captured" not in line.lower() and "engager" not in line.lower()
+    assert "nothing new" in line.lower()
+
+
 def test_the_panel_follows_storage_without_a_studio_call(pages):
     page = _open(pages, PANEL, "sidepanel.js", {})
-    assert _text(page, "sp-last-capture") in (None, "", "No capture yet this session.")
+    assert _text(page, "sp-last-capture") in (None, "", "No capture yet.")
     page.evaluate("(last) => chrome.storage.local.set({ lastCapture: last })", {**LAST, "path": "/api/v1/self/posts/analytics"})
     page.clock.run_for(50)
     line = _text(page, "sp-last-capture")
@@ -94,9 +104,16 @@ def test_a_kept_capture_is_said_as_waiting_not_as_captured(pages):
 
 
 def test_the_drift_notice_is_in_the_panel_header(pages):
-    page = _open(pages, PANEL, "sidepanel.js", {"lastDrift": DRIFT})
+    page = _open(pages, PANEL, "sidepanel.js", {}, session={"lastDrift": DRIFT})
     notice = _text(page, "sp-drift-notice")
     assert notice and "commenter name" in notice.lower() and "setup" in notice.lower()
+    assert "noticed" in notice.lower(), "the notice does not say when it was measured"
+
+
+def test_a_drift_kept_in_local_storage_is_not_shown(pages):
+    """The notice is this session's; a record left in local storage is not one."""
+    page = _open(pages, PANEL, "sidepanel.js", {"lastDrift": DRIFT})
+    assert not _text(page, "sp-drift-notice")
 
 
 def test_opening_the_panel_tells_the_worker(pages):
@@ -111,6 +128,8 @@ def test_the_health_tab_prints_the_studios_network_reading_sentence(pages):
     health = _text(page, "health-mini-list")
     assert "Network reading is on and matching nothing" in health
     assert "Standby" not in health and "Exact JSON" not in health
+    # The coverage meter's names, most called first, readable without DevTools.
+    assert "voyagerFeedDashMainFeed (9), /voyager/api/identity/dash/profiles (3)" in health
 
 
 def test_the_health_tab_says_when_the_state_was_never_reported(pages):
@@ -126,6 +145,6 @@ def test_the_health_tab_says_when_the_state_was_never_reported(pages):
 def test_the_popup_names_the_last_capture_and_follows_storage(pages):
     page = _open(pages, POPUP, "popup.js", {"lastCapture": LAST})
     assert "captured" in (_text(page, "popup-last-capture") or "").lower()
-    page.evaluate("(drift) => chrome.storage.local.set({ lastDrift: drift })", DRIFT)
+    page.evaluate("(drift) => chrome.storage.session.set({ lastDrift: drift })", DRIFT)
     page.clock.run_for(50)
     assert "commenter name" in (_text(page, "popup-drift-notice") or "").lower()

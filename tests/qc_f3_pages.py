@@ -33,9 +33,34 @@ FAKE_CHROME = r"""
 (() => {
   const sent = [];
   const storage = Object.assign({}, window.__initialStorage || {});
+  const sessionStore = Object.assign({}, window.__initialSession || {});
   const changed = [];
   window.__sent = sent;
   window.__storage = storage;
+  window.__session = sessionStore;
+  // One storage area, as chrome.storage has them: local, and session (which
+  // the browser empties when it closes). Changes reach every listener with
+  // the area's name.
+  const area = (store, name) => ({
+    get: (key, callback) => {
+      const out = {};
+      const keys = key === null || key === undefined ? Object.keys(store) : [].concat(key);
+      for (const k of keys) if (k in store) out[k] = store[k];
+      setTimeout(() => callback(out), 0);
+    },
+    set: (items, callback) => {
+      const changes = {};
+      for (const k of Object.keys(items)) { changes[k] = { oldValue: store[k], newValue: items[k] }; store[k] = items[k]; }
+      for (const fn of changed) fn(changes, name);
+      if (callback) setTimeout(callback, 0);
+    },
+    remove: (keys, callback) => {
+      const changes = {};
+      for (const k of [].concat(keys)) { changes[k] = { oldValue: store[k], newValue: undefined }; delete store[k]; }
+      for (const fn of changed) fn(changes, name);
+      if (callback) setTimeout(callback, 0);
+    },
+  });
   window.__me = window.__me === undefined ? "test-creator" : window.__me;
   window.__answers = {};
   window.__answer = (message) => {
@@ -68,26 +93,8 @@ FAKE_CHROME = r"""
       onMessage: { addListener: (fn) => listeners.push(fn) },
     },
     storage: {
-      local: {
-        get: (key, callback) => {
-          const out = {};
-          const keys = key === null || key === undefined ? Object.keys(storage) : [].concat(key);
-          for (const k of keys) if (k in storage) out[k] = storage[k];
-          setTimeout(() => callback(out), 0);
-        },
-        set: (items, callback) => {
-          const changes = {};
-          for (const k of Object.keys(items)) { changes[k] = { oldValue: storage[k], newValue: items[k] }; storage[k] = items[k]; }
-          for (const fn of changed) fn(changes, "local");
-          if (callback) setTimeout(callback, 0);
-        },
-        remove: (keys, callback) => {
-          const changes = {};
-          for (const k of [].concat(keys)) { changes[k] = { oldValue: storage[k], newValue: undefined }; delete storage[k]; }
-          for (const fn of changed) fn(changes, "local");
-          if (callback) setTimeout(callback, 0);
-        },
-      },
+      local: area(storage, "local"),
+      session: area(sessionStore, "session"),
       onChanged: { addListener: (fn) => changed.push(fn) },
     },
   };
@@ -114,7 +121,7 @@ class Pages:
         self.blocked = []
 
     def open(self, path, html, scripts=("voyager_schema.js", "content.js"), me="test-creator",
-             storage=None, before=None):
+             storage=None, before=None, session=None):
         """
         Serves `html` at https://www.linkedin.com<path>, installs the fake
         chrome and the page clock, then loads the named extension scripts in
@@ -132,6 +139,7 @@ class Pages:
         context.route("**/*", route)
         context.add_init_script(
             f"window.__me = {json.dumps(me)}; window.__initialStorage = {json.dumps(storage or {})};"
+            f" window.__initialSession = {json.dumps(session or {})};"
         )
         context.add_init_script(FAKE_CHROME)
         page = context.new_page()
