@@ -84,7 +84,6 @@ def test_the_migration_is_named_for_what_it_changes():
     for word in ("asks", "daily batch", "card marks", "archive", "library"):
         assert word in description, f"the migration's name does not say it adds {word}"
     assert callable(payload)
-    assert _the_migration() is migrations.MIGRATIONS[-1], "a later migration follows it in this branch"
 
 
 def test_a_fresh_database_has_every_table_with_its_columns(home):
@@ -106,7 +105,8 @@ def test_an_older_database_gains_the_tables_by_the_migration(home):
     conn.execute(f"PRAGMA user_version = {version - 1}")
     conn.commit()
     report = migrations.ensure_schema(conn, take_backup=False)
-    assert [a["version"] for a in report["applied"]] == [version]
+    # Set back to just before this migration, every later one runs too.
+    assert [a["version"] for a in report["applied"]] == list(range(version, migrations.SCHEMA_VERSION + 1))
     tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
     assert set(NEW_TABLES) <= tables
     # Idempotent: the ALTER TABLE on drafts is guarded, so a second run adds nothing.

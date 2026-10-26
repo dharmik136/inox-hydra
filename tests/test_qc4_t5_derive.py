@@ -1258,7 +1258,8 @@ def test_a_daily_write_never_clears_a_column_another_writer_filled(client):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     conn = _db()
     with conn:
-        conn.execute("ALTER TABLE analytics_daily ADD COLUMN new_followers INTEGER")
+        if "new_followers" not in {r[1] for r in conn.execute("PRAGMA table_info(analytics_daily)")}:
+            conn.execute("ALTER TABLE analytics_daily ADD COLUMN new_followers INTEGER")
         conn.execute("INSERT INTO analytics_daily (date, new_followers, impressions, reactions, comments, shares, "
                      "engagement_rate) VALUES (?, 7, NULL, NULL, NULL, NULL, NULL)", (DAY,))
         conn.execute("INSERT INTO analytics_daily (date, new_followers, followers, impressions, reactions, comments, "

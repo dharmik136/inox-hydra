@@ -537,10 +537,10 @@ def matches_in_own_posts(conn, text: str, limit: int = 3) -> List[Dict[str, Any]
         return []
     found = []
     for row in _rows(conn, """
-            SELECT d.ref AS activity_urn, o.text, o.published_at, bm25(search_posts) AS score
+            SELECT d.ref AS activity_urn, o.text, o.published_at, bm25(search_posts) AS relevance
             FROM search_posts f JOIN search_docs d ON d.docid = f.rowid AND d.kind = 'own_post'
             JOIN own_posts o ON o.activity_urn = d.ref
-            WHERE search_posts MATCH ? ORDER BY score LIMIT ?""", (" OR ".join(match), limit)):
+            WHERE search_posts MATCH ? ORDER BY relevance LIMIT ?""", (" OR ".join(match), limit)):
         found.append({"activity_urn": row["activity_urn"], "excerpt": _excerpt(row["text"]),
                       "date": row["published_at"], "url": post_identity.linkedin_permalink(row["activity_urn"])})
     return found
