@@ -263,8 +263,13 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # path in a template literal this file's pattern does not read.
 # Total 172 -> 173, reached stays 117, unreachable 55 -> 56.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 173
-REACHED_BY_INTERFACE = 117
+# Review round 2 of track 3 (B2 b): GET /api/v1/posts/published-not-seen is
+# added, and Posts reads it, for the posts marked published in the studio that
+# no list held once Analytics' table moved. Total 173 -> 174, reached 117 ->
+# 118, unreachable stays 56.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 174
+REACHED_BY_INTERFACE = 118
 UNREACHABLE = 56
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

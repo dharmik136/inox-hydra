@@ -2258,6 +2258,24 @@ export async function fetchPostEngagers(
   };
 }
 
+/** A post marked published here that the bridge has not seen on LinkedIn yet. */
+export interface PublishedNotSeen {
+  id: string;
+  excerpt: string;
+  published_at: string | null;
+}
+
+/**
+ * Posts marked published in the studio with no publication record: sent to
+ * LinkedIn and not yet read back by the bridge. Posts lists them as a short
+ * group of their own; Analytics' removed table was the one list that held
+ * them (review round 2, B2 b).
+ */
+export async function fetchPublishedNotSeen(): Promise<PublishedNotSeen[]> {
+  const data = await call<{ posts?: PublishedNotSeen[] }>("/api/v1/posts/published-not-seen");
+  return data.posts ?? [];
+}
+
 export interface OutboundAuthor {
   name: string;
   reactions: number;

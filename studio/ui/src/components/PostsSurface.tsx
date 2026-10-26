@@ -7,6 +7,7 @@ import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 import { PostDetail } from "./PostDetail";
+import { PublishedNotYetSeen } from "./PublishedNotYetSeen";
 
 /** Settled posts with no figures at all, and how many of those came from LinkedIn's archive. */
 type Unmeasured = { settled_without_figures?: number; settled_without_figures_from_archive?: number };
@@ -100,10 +101,15 @@ export function PostsSurface({
   if (!data) return <Centered>LOADING YOUR POSTS</Centered>;
   if (data.total === 0 && !query && !settledFilter) {
     return (
-      <EmptySurface label="Posts" title="What worked, and who it brought" onOpenSetup={onOpenSetup}>
-        None of your posts have been imported yet. Import them in Setup, and each one appears here
-        against your usual, with the people it brought.
-      </EmptySurface>
+      <>
+        <EmptySurface label="Posts" title="What worked, and who it brought" onOpenSetup={onOpenSetup}>
+          None of your posts have been imported yet. Import them in Setup, and each one appears here
+          against your usual, with the people it brought.
+        </EmptySurface>
+        <div className="mx-auto max-w-[80ch] px-8 pb-8">
+          <PublishedNotYetSeen />
+        </div>
+      </>
     );
   }
 
@@ -265,6 +271,8 @@ export function PostsSurface({
           </button>
         </div>
       </div>
+
+      <PublishedNotYetSeen />
 
       {open && <PostDetail activityUrn={open} onClose={() => setOpen(null)} onOpenLead={onOpenLead} />}
     </article>

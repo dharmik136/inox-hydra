@@ -43,6 +43,7 @@ try:
     from ..linkedin_client import linkedin_client
     from .. import post_identity
     from .. import post_summary
+    from ..text_cut import clip
 except (ImportError, ValueError):
     from database import get_db
     from formatters import (
@@ -74,6 +75,7 @@ except (ImportError, ValueError):
     from linkedin_client import linkedin_client
     import post_identity
     import post_summary
+    from text_cut import clip
 
 router = APIRouter()
 
@@ -640,6 +642,43 @@ def bind_post_urn(req: BindUrnRequest):
         return result
     finally:
         conn.close()
+
+
+@router.get("/api/v1/posts/published-not-seen", tags=["Post Identity"])
+def list_published_not_seen():
+    """
+    Posts marked published here that the bridge has not seen on LinkedIn yet.
+
+    Posts lists publications (own_posts), and these have none: a post sent to
+    LinkedIn is marked published by the scheduler at its time, and is recorded
+    as a publication only once the bridge reads it on LinkedIn; a post marked
+    published before the studio kept publication records has none either.
+    Analytics' post table listed them beside the LinkedIn posts, and when the
+    table moved to Posts they went onto no list (review round 2, B2 b). A post
+    published with I posted it has its publication record from that moment,
+    so it is in Posts' table and not here.
+    """
+    conn = get_db()
+    try:
+        has_post_id = any(r[1] == "post_id" for r in conn.execute("PRAGMA table_info(own_posts)"))
+        held = conn.execute("SELECT activity_urn, " + ("post_id" if has_post_id else "NULL") + " FROM own_posts").fetchall()
+        rows = conn.execute(
+            "SELECT id, content, published_at, activity_urn FROM posts WHERE status = 'published' "
+            "ORDER BY COALESCE(published_at, created_at) DESC, id").fetchall()
+    finally:
+        conn.close()
+    publications = {row[0] for row in held}
+    by_post = {row[1] for row in held if row[1]}
+    # The same post in another of LinkedIn's namespaces is the same post.
+    held_ids = {post_identity.activity_id(row[0]) for row in held} - {""}
+    unseen = []
+    for row in rows:
+        urn = row["activity_urn"]
+        if row["id"] in by_post or (urn and (urn in publications or post_identity.activity_id(urn) in held_ids)):
+            continue
+        unseen.append({"id": row["id"], "excerpt": clip(" ".join((row["content"] or "").split()), 140),
+                       "published_at": row["published_at"]})
+    return {"status": "success", "count": len(unseen), "posts": unseen}
 
 
 def _publication_only(conn, identifier: str) -> Optional[Dict[str, Any]]:

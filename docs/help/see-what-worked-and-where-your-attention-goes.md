@@ -19,7 +19,9 @@ Each figure on a settled row is followed by how it compares with your usual, for
 
 The settled posts furthest above your usual reactions are marked **WORTH REPURPOSING**, and the ones furthest below **UNDERPERFORMED**.
 
-Click a post to see the people the studio captured engaging with it. Click a name to open their dossier in **Leads**. **CONVERSATIONS** counts the people from that post whose lead status you moved to **Connected** or **Meeting Booked**. If a post shows nobody, open it with **Open the post**; its commenters are read when it opens in the bridge browser.
+Click a post to see the people the studio captured engaging with it. Click a name to open their dossier in **Leads**. **CONVERSATIONS** counts the people from that post whose lead status you moved to **Connected** or **Meeting Booked**. If a post shows nobody, open it with **Open the post**; its commenters are read when it opens in the bridge browser. Reactions older than 24 months are kept as counts once the studio folds them (see [Choose what the studio keeps](choose-what-the-studio-keeps.md)), so the detail can name fewer people than the row counts; it says how many more are kept only as a count.
+
+Under the table, **Published here, not yet seen on LinkedIn** lists any post marked published in the studio that the bridge has not read on LinkedIn yet, such as one sent with **Send to LinkedIn**. It has no figures or people until the bridge reads it, from your posts page in the bridge browser, and then it moves into the table. The group is not shown when there are none.
 
 ## Patterns
 
