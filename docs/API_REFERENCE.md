@@ -270,13 +270,15 @@ Ingests passive commenter interactions from the Chrome extension or manual entry
 
 ---
 
-## 9. Asymmetric Intelligence Sync (ETag Cached)
+## 9. The Signed Inox Library
 
-### `GET /api/v1/intelligence/bundle/export`
-Exports viral hook blueprints and algorithmic rules as a deterministic JSON bundle. Supports HTTP conditional requests with `If-None-Match` and `304 Not Modified`.
+The unsigned intelligence sync, with its status, bundle export and bundle import routes, was removed in cycle 4 (track 7, ideas report decision 10): its import replaced the creator's whole hook library with whatever file it was handed. The hook rail's forms are still served by `GET /api/v1/intelligence/templates`. The company's library now arrives signed, into a table of its own, and fills the fifth card of From your record when an entry suits one of the creator's topics (`studio/backend/library_bundle.py`; the format is documented in `tools/library_bundle.py`). The section's other routes are under `/api/v1/record` (`studio/backend/routers/record.py`).
 
-### `POST /api/v1/intelligence/bundle/import`
-Imports a synchronized intelligence bundle directly for 100% air-gapped workstations.
+### `POST /api/v1/record/library/fetch`
+Fetches the library file from its one fixed address under the `library` egress category, with `If-None-Match` for the copy already held (`304` answers `up_to_date`). The request carries the address, a User-Agent naming the channel and that tag, and nothing of the creator's. The file is kept only if its Ed25519 signature verifies against a key the studio ships and its entries are the company's own forms, patterns and examples; otherwise it answers `400` and nothing changes. A host that cannot be reached, or holds no file yet, answers `502`.
+
+### `POST /api/v1/record/library/import`
+Body `{"text": "ILB1...."}`: the same file, chosen by hand on a machine that never connects, verified exactly as a fetched one is. A file that does not verify answers `400` and nothing changes.
 
 ---
 

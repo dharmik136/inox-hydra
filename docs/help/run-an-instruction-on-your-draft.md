@@ -19,7 +19,8 @@ If the studio cannot read its AI status, the tab says so and the instruction box
 
 1. Type in the **Instruction** box.
 2. Tick **Include my draft** to send the draft with it. Left unticked, only your instruction is sent. The box is disabled while the editor is empty, and says so.
-3. Press Enter, or the arrow button beside the box (read aloud as "Run the command"). Shift+Enter starts a new line. The button stays disabled while the box is empty.
+3. Tick **Remember this ask for From your record** to keep the instruction as an ask, which that section matches to your own posts from the next day's cards. It is kept whether or not a provider is set up, and listed on the section's **What the studio knows** page. Left unticked, it is not kept as an ask. See [Find what to write from your own record](find-what-to-write-from-your-own-record.md).
+4. Press Enter, or the arrow button beside the box (read aloud as "Run the command"). Shift+Enter starts a new line. The button stays disabled while the box is empty.
 
 The server keeps the first 5,000 characters of an instruction.
 

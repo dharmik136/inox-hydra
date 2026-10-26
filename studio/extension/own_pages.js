@@ -246,7 +246,13 @@
     "pl", "pt", "ro", "ru", "sv", "tr", "uk"];
   const MULTIPLIERS = { k: 1e3, tsd: 1e3, mil: 1e3, m: 1e6, mio: 1e6, mln: 1e6, mn: 1e6, b: 1e9, mrd: 1e9, md: 1e9 };
 
-  function parseCount(text) {
+  // The figure and whether LinkedIn abbreviated it. "1.2K" is anything from
+  // 1,150 to 1,249, so a reading built from it is rounded, and the studio
+  // keeps that beside the figure (migration 28 mirrors what migration 5 did
+  // for the analytics page) rather than let two rounded readings pass for a
+  // measured change. parseCount below is the figure alone, for every reader
+  // that only needs the number.
+  function parseFigure(text) {
     if (!text) return null;
     const normal = String(text).replace(/[   ]/g, " ");
     const match = /(\d(?:[\d.,']|\s(?=\d{3}(?!\d)))*)(?:\s*(k|tsd|mil|mio|mln|mn|mrd|md|m|b)\.?(?![a-z]))?/i.exec(normal);
@@ -271,7 +277,12 @@
     if (fraction && !suffix) return null;
     const value = parseFloat(whole.replace(/\D/g, "") + (fraction ? "." + fraction : ""));
     if (Number.isNaN(value)) return null;
-    return Math.round(value * (suffix ? MULTIPLIERS[suffix] : 1));
+    return { value: Math.round(value * (suffix ? MULTIPLIERS[suffix] : 1)), rounded: Boolean(suffix) };
+  }
+
+  function parseCount(text) {
+    const figure = parseFigure(text);
+    return figure ? figure.value : null;
   }
 
   // ---------------------------------------------------------------
@@ -1086,7 +1097,9 @@
         } else if (!actor || actor === "me" || actor === me) {
           actor = me;
         }
-        items.push({ activity_urn: urn, actor, text: cardText(card), ...cardCounts(card) });
+        // The creator's own reposts and the edited mark (own_insights.js, track 5).
+        items.push({ activity_urn: urn, actor, text: cardText(card), ...cardCounts(card),
+          ...((globalThis.inoxOwnCardFacts && globalThis.inoxOwnCardFacts(card, { isRepost: isRepostCard, counts: cardCounts, textElement: cardTextElement(card) })) || {}) });
       } else if (kind === "activity_comments") {
         const commentEls = Array.from(card.querySelectorAll(
           "article, .comments-comment-item, [data-view-name='feed-full-update-comment'], .feed-shared-main-content--comment, div[data-id^='urn:li:comment:'], .comments-comments-list__comment-item, div[id^='replaceableComment_urn:li:comment:']"
@@ -1191,6 +1204,16 @@
   // reached, saves and sends appear nowhere else. Read by label rather than
   // by class name: each figure sits near the words LinkedIn prints for it, and
   // those words change far less often than the markup around them.
+  //
+  // The first seven labels are measured. The rest are the figures LinkedIn's
+  // Help documents on this page (followers gained from this post, profile
+  // viewers from this post, link visits, article views, video views, the
+  // network split, the viewer demographics) in the Help's wording, which is
+  // unverified against a 2026 page. By the owner's decision of 2026-10-26 an
+  // absent one is not drift: LinkedIn may not show it to every member or on
+  // every post, so nothing is sent for it, and the studio derives from its
+  // readings how long each has gone unread (post_analytics_sightings). A
+  // label may be spelt two ways; the first spelling found wins.
 
   const POST_METRIC_LABELS = [
     ["members reached", "members_reached"],
@@ -1200,8 +1223,164 @@
     ["reposts", "reposts"],
     ["saves", "saves"],
     ["sends", "sends"],
+    ["followers gained", "followers_gained"],
+    ["profile viewers", "profile_viewers"],
+    ["profile views", "profile_viewers"],
+    ["link visits", "link_visits"],
+    ["link clicks", "link_visits"],
+    ["article views", "article_views"],
+    ["video views", "video_views"],
   ];
+  // The share of impressions from inside and outside the creator's network,
+  // printed as percentages. NUMBER_ONLY refuses a percentage on purpose: a
+  // share is never a count, so it has its own pattern and its own parser.
+  const POST_SHARE_LABELS = [
+    ["in your network", "in_network_pct"],
+    ["in network", "in_network_pct"],
+    ["from your network", "in_network_pct"],
+    ["outside your network", "out_of_network_pct"],
+    ["out of network", "out_of_network_pct"],
+    ["beyond your network", "out_of_network_pct"],
+  ];
+  // A video's watch time and average watch time, printed as durations
+  // ("12h 30m", "38s") and sent in seconds (phase 2). New labels: absent is
+  // not read, never drift.
+  const POST_DURATION_LABELS = [
+    ["average watch time", "average_watch_seconds"],
+    ["watch time", "watch_time_seconds"],
+  ];
+  // Absent on a page that plainly is the post analytics page, these are
+  // drift: the seven labels this reader has read since cycle 2, and only
+  // those. No label added in cycle 4 belongs here (owner, 2026-10-26), and
+  // tests/test_qc4_t5_derive.py fails if one is planted.
+  const POST_LABELS_ON_EVERY_POST = ["members_reached", "impressions", "reactions", "comments", "reposts",
+    "saves", "sends"];
   const NUMBER_ONLY = /^[\d.,]+\s*[KkMm]?$/;
+  const PERCENT_ONLY = /^\d{1,3}(?:[.,]\d+)?\s*%$/;
+  const PERCENT_IN_TEXT = /(\d{1,3}(?:[.,]\d+)?)\s*%/;
+
+  // A percentage as LinkedIn prints it, 0 to 100, or null.
+  function parsePercent(text) {
+    const match = PERCENT_IN_TEXT.exec(clean(text || ""));
+    if (!match) return null;
+    const value = parseFloat(match[1].replace(",", "."));
+    return Number.isNaN(value) || value > 100 ? null : value;
+  }
+
+  // A duration as LinkedIn prints watch time, in seconds, or null: hours,
+  // minutes and seconds in any of their short or long spellings, or
+  // m:ss and h:mm:ss. A bare number says no unit, so it is not one.
+  const WATCH_TIME_ONLY = /^(?:\d+\s*(?:hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\s*)+$|^\d{1,2}(?::\d{2}){1,2}$/i;
+
+  function parseWatchTime(text) {
+    const said = clean(text || "").toLowerCase();
+    if (!WATCH_TIME_ONLY.test(said)) return null;
+    if (said.includes(":")) {
+      const parts = said.split(":").map(Number);
+      return parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
+    }
+    let seconds = 0;
+    for (const [, n, unit] of said.matchAll(/(\d+)\s*(hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)/g)) {
+      seconds += Number(n) * (unit[0] === "h" ? 3600 : unit[0] === "m" ? 60 : 1);
+    }
+    return seconds;
+  }
+
+  // The viewer demographics block, read only where nothing has to be
+  // guessed: its markup is unverified, and a wrong pairing would be stored
+  // as fact. An entry is the nearest element around a percentage that holds
+  // exactly one percentage and exactly one other piece of text, its label,
+  // in either order; page order binds nothing. Its category is the
+  // dimension word that last came before it, and a run of dimension words
+  // with no entry between them (a tab bar names every category) leaves it
+  // unknown. A label that names the network split is never an entry.
+  // Anything else stores nothing, which the studio counts as not read, and
+  // none of it is drift (owner, 2026-10-26).
+  const DEMOGRAPHIC_DIMENSIONS = [
+    [/^job titles?$/, "job_title"], [/^locations?$/, "location"], [/^industr(y|ies)$/, "industry"],
+    [/^company sizes?$/, "company_size"], [/^compan(y|ies)$/, "company"], [/^seniority( levels?)?$/, "seniority"],
+  ];
+  const EVERY_PERCENT = /\d{1,3}(?:[.,]\d+)?\s*%/g;
+
+  function dimensionOf(text) {
+    const lower = clean(text).toLowerCase();
+    const hit = DEMOGRAPHIC_DIMENSIONS.find(([pattern]) => pattern.test(lower));
+    return hit ? hit[1] : null;
+  }
+
+  function percentCount(text) {
+    return (text.match(EVERY_PERCENT) || []).length;
+  }
+
+  function textPieces(el) {
+    const pieces = [];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const text = clean(node.textContent);
+      if (text) pieces.push(text);
+    }
+    return pieces;
+  }
+
+  // The label bound to the one percentage in this leaf, or null when no
+  // element around it holds that percentage and exactly one other piece of
+  // text before an element holds a second percentage.
+  function boundLabel(leaf, box) {
+    for (let el = leaf; el && box.contains(el); el = el.parentElement) {
+      if (percentCount(clean(el.textContent)) !== 1) return null;
+      const labels = textPieces(el)
+        .map((piece) => clean(piece.replace(EVERY_PERCENT, "")).replace(/^[\s\u00b7\u2022|:,]+|[\s\u00b7\u2022|:,]+$/g, ""))
+        .filter((piece) => piece && !dimensionOf(piece));
+      if (labels.length === 1) return labels[0];
+      if (labels.length > 1) return null;
+    }
+    return null;
+  }
+
+  function namesTheSplit(text) {
+    const lower = text.toLowerCase();
+    return POST_SHARE_LABELS.some(([label]) => lower.includes(label));
+  }
+
+  // The entries, in page order, or [] when the page has no demographics
+  // heading or nothing the reader can bind. A heading that names viewer
+  // demographics is preferred to a bare "Demographics", which may be a tab
+  // or a summary line above the discovery block.
+  function readPostDemographics(leaves) {
+    const heading = leaves.find((el) => /viewer demographics/i.test(clean(el.textContent))) ||
+      leaves.find((el) => /demographics/i.test(clean(el.textContent)));
+    if (!heading) return [];
+    const after = (el) => Boolean(heading.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+    const isFigure = (el) => after(el) && PERCENT_IN_TEXT.test(clean(el.textContent));
+    // The block is the nearest ancestor holding at least two percentages after the heading.
+    let box = heading.parentElement;
+    let figures = 0;
+    for (let depth = 0; depth < 4 && box; depth += 1, box = box.parentElement) {
+      figures = leaves.filter((el) => box.contains(el) && isFigure(el)).length;
+      if (figures >= 2) break;
+    }
+    if (!box || figures < 2) return [];
+    let dimension = "unknown";
+    let wordsInARow = 0;
+    const entries = [];
+    for (const el of leaves) {
+      if (!box.contains(el) || !after(el)) continue;
+      const text = clean(el.textContent);
+      const named = dimensionOf(text);
+      if (named) {
+        wordsInARow += 1;
+        dimension = wordsInARow > 1 ? "unknown" : named;
+        continue;
+      }
+      if (!PERCENT_IN_TEXT.test(text)) continue;
+      const label = boundLabel(el, box);
+      const percentage = parsePercent(text);
+      if (!label || percentage === null || namesTheSplit(label)) continue;
+      entries.push({ dimension, label, percentage });
+      wordsInARow = 0;
+    }
+    return entries;
+  }
 
   function postAnalyticsUrn() {
     let path = window.location.pathname;
@@ -1220,8 +1399,34 @@
       (el) => el.children.length === 0 && clean(el.textContent).length > 0 && clean(el.textContent).length < 40
     );
     const metrics = {};
+    const rounded = [];
     for (const el of leaves) {
       const text = clean(el.textContent).toLowerCase();
+      const duration = POST_DURATION_LABELS.find(([label, key]) => metrics[key] === undefined && text.startsWith(label));
+      if (duration) {
+        let box = el.parentElement;
+        for (let depth = 0; depth < 3 && box && metrics[duration[1]] === undefined; depth += 1, box = box.parentElement) {
+          const figure = Array.from(box.querySelectorAll("*")).find(
+            (node) => node !== el && node.children.length === 0 && parseWatchTime(node.textContent) !== null);
+          if (figure) metrics[duration[1]] = parseWatchTime(figure.textContent);
+        }
+        continue;
+      }
+      // The network split: the percentage may sit in the label's own leaf
+      // ("62% in your network") or in a sibling leaf beside it.
+      const share = POST_SHARE_LABELS.find(([label, key]) => metrics[key] === undefined && text.includes(label));
+      if (share) {
+        let percentage = parsePercent(text);
+        let box = el.parentElement;
+        for (let depth = 0; depth < 3 && box && percentage === null; depth += 1, box = box.parentElement) {
+          const figure = Array.from(box.querySelectorAll("*")).find(
+            (node) => node !== el && node.children.length === 0 && PERCENT_ONLY.test(clean(node.textContent))
+          );
+          if (figure) percentage = parsePercent(clean(figure.textContent));
+        }
+        if (percentage !== null) metrics[share[1]] = percentage;
+        continue;
+      }
       const hit = POST_METRIC_LABELS.find(([label, key]) => metrics[key] === undefined && text.startsWith(label));
       if (!hit) continue;
       // The figure is a sibling leaf within a few levels of the label.
@@ -1230,10 +1435,39 @@
         const figure = Array.from(box.querySelectorAll("*")).find(
           (node) => node !== el && node.children.length === 0 && NUMBER_ONLY.test(clean(node.textContent))
         );
-        if (figure) metrics[hit[1]] = parseCount(clean(figure.textContent));
+        if (figure) {
+          const parsed = parseFigure(clean(figure.textContent));
+          if (parsed) {
+            metrics[hit[1]] = parsed.value;
+            if (parsed.rounded) rounded.push(hit[1]);
+          }
+        }
       }
     }
+    // The two shares are complementary, so a pair that does not add up to
+    // about 100 is a misread (two labels that found one percentage), and is
+    // dropped rather than stored. A new field that fails its own check is
+    // not drift (owner, 2026-10-26).
+    if (metrics.in_network_pct !== undefined && metrics.out_of_network_pct !== undefined &&
+        Math.abs(metrics.in_network_pct + metrics.out_of_network_pct - 100) > 1) {
+      delete metrics.in_network_pct;
+      delete metrics.out_of_network_pct;
+    }
+    // One precision per reading, as the analytics page's reader sends it:
+    // 'rounded' when any figure stored was abbreviated, 'exact' otherwise.
+    // A figure that is not a multiple of its rounding step is exact
+    // whatever the row says, so the studio can still say which ones.
+    if (Object.keys(metrics).length) metrics.precision = rounded.length ? "rounded" : "exact";
+    const demographics = readPostDemographics(leaves);
+    if (demographics.length) metrics.demographics = demographics;
     return metrics;
+  }
+
+  // The verified labels a page that plainly is the post analytics page did
+  // not show, by name: the sign of LinkedIn changing this page that a
+  // creator cannot see for themselves.
+  function postAnalyticsDrift(metrics) {
+    return POST_LABELS_ON_EVERY_POST.filter((key) => metrics[key] === undefined);
   }
 
   async function capturePostAnalytics() {
@@ -1242,8 +1476,8 @@
     if (!urn || !me) return;
     beginRead("post_analytics");
     const metrics = readPostAnalytics();
-    const found = Object.keys(metrics).length;
-    reportCapture("post_analytics", found, found, found ? [] : ["metric_labels"]);
+    const found = Object.keys(metrics).filter((key) => key !== "precision" && key !== "demographics").length;
+    reportCapture("post_analytics", found, found, found ? postAnalyticsDrift(metrics) : ["metric_labels"]);
     if (!found) return;
     // The creator is standing on their own post's analytics page, having
     // opened it on purpose, so a refusal here is worth a sentence in the side

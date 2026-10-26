@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Copy, CornerDownLeft, Loader2 } from "lucide-react";
 import {
+  addRecordAsk,
   configureAi,
   fetchAiProviders,
   fetchAiStatus,
@@ -299,6 +300,10 @@ interface Ran {
 function CommandBlock({ draft }: { draft: string }) {
   const [command, setCommand] = useState("");
   const [includeDraft, setIncludeDraft] = useState(false);
+  // From your record (cycle 4, track 7): an instruction is kept as an ask
+  // only when this is ticked, never silently, and only the instruction.
+  const [rememberAsk, setRememberAsk] = useState(false);
+  const [remembered, setRemembered] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<Ran[]>([]);
   const [copied, setCopied] = useState<number | null>(null);
@@ -310,6 +315,12 @@ function CommandBlock({ draft }: { draft: string }) {
     if (!text || busy) return;
 
     setBusy(true);
+    setRemembered(null);
+    if (rememberAsk) {
+      addRecordAsk(text, "composer")
+        .then(() => setRemembered("Kept as an ask for From your record."))
+        .catch((failure) => setRemembered(failure instanceof Error ? failure.message : "The ask was not kept."));
+    }
     try {
       const result = await runAiCommand(text, includeDraft && hasDraft ? draft : undefined);
       // The engine answers in "output". That field was never read, so every
@@ -388,6 +399,17 @@ function CommandBlock({ draft }: { draft: string }) {
           Include my draft
           {!hasDraft && <span className="text-ink-muted">(the editor is empty)</span>}
         </label>
+        <label className="mt-1 flex items-center gap-2 text-[12px] text-ink-secondary">
+          <input
+            type="checkbox"
+            name="remember-ask"
+            checked={rememberAsk}
+            onChange={(event) => setRememberAsk(event.target.checked)}
+            className="size-4 accent-[var(--studio-orange)]"
+          />
+          Remember this ask for From your record
+        </label>
+        {remembered && <p className="mt-1 text-[11px] text-ink-muted">{remembered}</p>}
       </form>
 
       {log.length === 0 ? (

@@ -11,9 +11,10 @@ The rules (owner decisions, cycle 2):
 
   daily backup      on; rotation keeps about 14 (studio/backend/support.py)
   telemetry         kept 30 days (7, 30 or 90)
-  post readings     after 30 days, the last reading of each day is kept,
-                    and every reading from a post's comparison window, so
-                    Today's two-day comparison is exactly what it was
+  post readings     after 30 days, the first and the last reading of each
+                    day are kept, and every reading from a post's comparison
+                    window, so Today's two-day comparison is exactly what it
+                    was and the early point a half-life rests on survives
   reactions         older than 24 months, folded into per-post counts;
                     comments are always kept
   silent leads      never acted on and silent for 24 months: listed for
@@ -250,15 +251,24 @@ def recent_log(limit: int = 10) -> List[Dict[str, Any]]:
 
 CATEGORIES = (
     ("posts", "Your posts, drafts and queue",
-     ("drafts", "posts", "own_posts", "queue_slots", "media_assets", "viral_templates",
-      "creator_identity", "creator_positions", "creator_education", "creator_skills", "creator_accounts")),
+     ("drafts", "posts", "own_posts", "queue_slots", "media_assets", "viral_templates", "library_entries",
+      "creator_identity", "creator_positions", "creator_education", "creator_skills", "creator_accounts",
+      "own_reposts")),
     ("readings", "Post readings", ("post_metric_observations",)),
     ("audience", "Leads and their engagement",
      ("leads", "lead_interactions", "lead_stage_events", "lead_enrichments", "reaction_folds",
       "lead_retention_keeps")),
     ("outbound", "Your comments and reactions on other posts", ("outbound_engagements",)),
     ("connections", "Connections from your LinkedIn archive", ("connections", "archive_imports")),
-    ("analytics", "Daily analytics", ("analytics_daily", "audience_demographics")),
+    # Cycle 4, track 7: the daily section's own rows, and what the archive
+    # says the creator saved, followed, voted on, reposted and searched for. The
+    # company's signed library sits with the hook forms under posts.
+    ("record", "From your record: your asks, the daily cards, their marks and your notes",
+     ("asks", "daily_view", "daily_run", "card_marks", "record_notes")),
+    ("archive_records", "What your LinkedIn archive says you saved, followed, voted on, reposted and searched for",
+     ("archive_records",)),
+    ("analytics", "Daily analytics", ("analytics_daily", "audience_demographics", "analytics_windows",
+                                      "audience_demographic_readings", "insight_readings", "insight_daily_points")),
     ("logs", "Capture, health and cleanup logs",
      ("bridge_heartbeats", "captures", "schema_drift_events", "retention_log", "generation_tasks",
       "self_import_requests", "internal_sheet_issues", "gstack_backlog")),
@@ -425,10 +435,12 @@ _READINGS_TO_ROLL_UP = """
     SELECT id, activity_urn FROM (
         SELECT id, activity_urn, observed_hour, age_hours,
                ROW_NUMBER() OVER (PARTITION BY activity_urn, source, substr(observed_hour, 1, 10)
-                                  ORDER BY observed_hour DESC, observed_at DESC, id DESC) AS rank_in_day
+                                  ORDER BY observed_hour DESC, observed_at DESC, id DESC) AS rank_in_day,
+               ROW_NUMBER() OVER (PARTITION BY activity_urn, source, substr(observed_hour, 1, 10)
+                                  ORDER BY observed_hour ASC, observed_at ASC, id ASC) AS rank_from_first
         FROM post_metric_observations
     )
-    WHERE rank_in_day > 1 AND observed_hour < ?
+    WHERE rank_in_day > 1 AND rank_from_first > 1 AND observed_hour < ?
       AND NOT (age_hours IS NOT NULL AND age_hours BETWEEN ? AND ?)
 """
 
@@ -440,14 +452,19 @@ def _readings_cutoff(days: int) -> str:
 
 def _readings_to_roll_up(conn, rule: Dict[str, str]) -> List[tuple]:
     """
-    Every reading the roll-up removes: from before the cutoff, not the last of
-    its post's day for its source, and not inside Today's comparison window.
+    Every reading the roll-up removes: from before the cutoff, neither the
+    first nor the last of its post's day for its source, and not inside
+    Today's comparison window.
 
     Kept, so every screen reads what it read before: the last reading of each
-    day (so the latest reading of every post), every reading at 36 to 72 hours
-    old (Today compares posts at two days old, picking the reading closest to
-    48 hours from that window), and at least one reading of each post from
-    each source (Today asks whether a post's own analytics page was read).
+    day (so the latest reading of every post), the first reading of each day
+    (a 2 hour and a 20 hour reading on the same UTC day collapsed into the
+    later one, and the early point a reach half-life or a decay sentence
+    rests on was gone after 30 days unless it fell in the comparison window),
+    every reading at 36 to 72 hours old (Today compares posts at two days
+    old, picking the reading closest to 48 hours from that window), and at
+    least one reading of each post from each source (Today asks whether a
+    post's own analytics page was read).
     """
     cut = _readings_cutoff(int(rule["readings_days"]))
     return [(r[0], r[1]) for r in conn.execute(_READINGS_TO_ROLL_UP, (cut, *COMPARE_WINDOW))]

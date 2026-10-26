@@ -49,19 +49,6 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
         ),
         "input_schema": "LeadResearchInput",
         "output_schema": "LeadResearchDossier"
-    },
-    "swipe_harvester": {
-        "name": "SwipeFileHarvesterAgent",
-        "description": "Reverse-engineers viral posts into reusable formulas, tension points, and templates",
-        "version": "1.0.0",
-        "bounded_context": "Viral narrative dissection, hook categorization, and structural templating",
-        "system_prompt": (
-            "You are a virality analyst for B2B tech executives. "
-            "Break down viral posts into their core psychological triggers: Hook Archetype, Tension Point, "
-            "and Reusable Blueprint with placeholders like [OLD WAY] vs [SYSTEMS REALITY]."
-        ),
-        "input_schema": "SwipePostAnalysisInput",
-        "output_schema": "SwipePostPattern"
     }
 }
 

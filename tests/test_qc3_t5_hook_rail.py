@@ -3,7 +3,7 @@ The engineering pack adds to the hook rail; it never evicts the starter forms.
 =============================================================================
 
 MAKING.md M-1. `get_templates` orders by `velocity_score DESC`
-(intelligence_sync.py). The twelve neutral starter forms carry
+(hook_forms.py, intelligence_sync.py before cycle 4). The twelve neutral starter forms carry
 `velocity_score = NULL`, which SQLite sorts last in that order, and every one
 of the opt-in engineering pack's 36 forms carries a score of 9.8 down. So a
 rail asking the server for twelve came back twelve of twelve pack forms: one
@@ -30,7 +30,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "backend")))
 
 import app as app_module  # noqa: E402
-import intelligence_sync  # noqa: E402
+import hook_forms  # noqa: E402
 from database import get_db  # noqa: E402
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -102,7 +102,7 @@ def test_the_whole_library_is_readable_in_one_read(library):
     starters = len(_templates())
     client.post("/api/v1/intelligence/packs/engineering", json={"enabled": True})
     everything = _templates(limit=200)
-    assert len(everything) == starters + len(intelligence_sync.ENGINEERING_PACK)
+    assert len(everything) == starters + len(hook_forms.ENGINEERING_PACK)
     assert sum(1 for t in everything if t["velocity_score"] is None) == starters
 
 

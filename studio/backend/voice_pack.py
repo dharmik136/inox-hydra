@@ -26,13 +26,16 @@ Strict Invariants:
 - Nothing invented: a part with no data is omitted, never filled.
 """
 
+import json
 import re
 import statistics
 from typing import Any, Dict, List
 
 try:
+    from . import results
     from .database import get_db
 except ImportError:
+    import results
     from database import get_db
 
 MIN_POSTS_FOR_HABITS = 3
@@ -107,18 +110,29 @@ def _habits(texts: List[str]) -> List[str]:
 
 
 def _openers(conn, limit: int) -> List[str]:
-    rows = conn.execute(
-        """
-        SELECT text FROM own_posts
-        WHERE text IS NOT NULL AND TRIM(text) != '' AND reactions IS NOT NULL
-        ORDER BY reactions DESC, published_at DESC
-        LIMIT ?
-        """,
-        (limit,),
-    ).fetchall()
+    """
+    The first lines of the posts that did best, by the one ranking.
+
+    This ordered raw own_posts.reactions with no settled rule, so a post
+    three hours old with a burst of reactions could be the creator's best
+    opener while every screen left it out of the ranking. results.ranking is
+    the ranking every screen reads: settled posts only, against the creator's
+    own median, from one reading of each post's figures.
+    """
+    ranked = results.ranking(conn)["order"]
+    if not ranked:
+        return []
+    texts = {row["activity_urn"]: row["text"] for row in conn.execute(
+        "SELECT activity_urn, text FROM own_posts WHERE activity_urn IN (SELECT value FROM json_each(?)) "
+        "AND text IS NOT NULL AND TRIM(text) != ''", (json.dumps(ranked[:limit * 4]),))}
     openers = []
-    for row in rows:
-        line = _first_line(row["text"])
+    for urn in ranked:
+        if len(openers) >= limit:
+            break
+        text = texts.get(urn)
+        if text is None:
+            continue
+        line = _first_line(text)
         if len(line) > OPENER_CHARS:
             line = line[:OPENER_CHARS].rsplit(" ", 1)[0] + "..."
         if line:

@@ -608,25 +608,18 @@ export interface AnalyticsKpis {
   follower_growth: number | null;
   profile_views: number | null;
   profile_views_delta_pct: number | null;
+  /**
+   * Fields built from a figure LinkedIn rounded, such as 1.2K, which is
+   * anything from 1,150 to 1,249. Every screen that draws these figures
+   * marks them: Analytics did, and Today's thirty days drew them unmarked.
+   */
+  approximate?: string[];
+  /** Changes not shown because they are smaller than that rounding. */
+  within_rounding?: string[];
 }
 
 export async function fetchAnalyticsKpis(range: AnalyticsRange): Promise<AnalyticsKpis> {
   return call<AnalyticsKpis>(`/api/analytics/kpis?range=${range}`);
-}
-
-export interface AnalyticsPost {
-  id: string;
-  content: string;
-  impressions: number | null;
-  reactions: number | null;
-  comments: number | null;
-  shares: number | null;
-  engagement_rate: number | null;
-  /** Why there is no rate, when there is none: the screen says it. */
-  engagement_rate_unmeasured?: string | null;
-  engagement_rate_note?: string | null;
-  figures_source?: string | null;
-  published_at: string | null;
 }
 
 /**
@@ -660,32 +653,14 @@ export interface AnalyticsBest {
 }
 
 /**
- * One page of the post comparison table, most seen first (the route orders
- * by impressions, then reactions), server side: this answered with every
- * post the creator had ever written, 2,432 KB on three years, with a `limit`
- * in the URL that was accepted and ignored.
- *
- * "Best" is results.best's word for a different ranking, which travels
- * beside the rows in `best` and is read from the whole history.
+ * The posts that did best and worst against the creator's own median, from
+ * the whole history (results.best), for the Analytics aside. It came beside
+ * a fourteen-row post table that the Posts screen holds in full; the table
+ * moved there, and the aside reads the engine's answer on its own.
  */
-export async function fetchAnalyticsPosts(
-  options: { limit?: number; offset?: number } = {},
-): Promise<{ posts: AnalyticsPost[]; best: AnalyticsBest | null } & Paging> {
-  const params = new URLSearchParams();
-  if (options.limit !== undefined) params.set("limit", String(options.limit));
-  if (options.offset !== undefined) params.set("offset", String(options.offset));
-  const data = await call<{ posts?: AnalyticsPost[]; best?: AnalyticsBest } & Partial<Paging>>(
-    `/api/analytics/posts${params.toString() ? `?${params}` : ""}`,
-  );
-  return {
-    posts: data.posts ?? [],
-    best: data.best ?? null,
-    total: data.total ?? 0,
-    limit: data.limit ?? options.limit ?? 0,
-    offset: data.offset ?? options.offset ?? 0,
-    returned: data.returned ?? (data.posts ?? []).length,
-    has_more: data.has_more ?? false,
-  };
+export async function fetchAnalyticsBest(): Promise<AnalyticsBest | null> {
+  const data = await call<{ best?: AnalyticsBest }>("/api/analytics/best");
+  return data.best ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1194,10 +1169,17 @@ export async function validateCadence(scheduledFor: string, postId?: string): Pr
   };
 }
 
-export async function schedulePost(postId: string, scheduledFor: string): Promise<void> {
+/**
+ * Puts a post in a slot. `expectedStatus` is the state the caller read the
+ * post in: given, the server moves the post only if it is still in that
+ * state at the moment of the write, and refuses with a sentence otherwise,
+ * so a stale screen cannot move a post queued since or requeue one published
+ * since. A published post is never requeued, whoever asks.
+ */
+export async function schedulePost(postId: string, scheduledFor: string, expectedStatus?: string): Promise<void> {
   await call(`/api/posts/${encodeURIComponent(postId)}/reschedule`, {
     method: "POST",
-    body: JSON.stringify({ scheduled_for: scheduledFor }),
+    body: JSON.stringify({ scheduled_for: scheduledFor, ...(expectedStatus ? { expected_status: expectedStatus } : {}) }),
   });
 }
 
@@ -1260,10 +1242,20 @@ export interface AuthStatus {
   is_connected: boolean;
   /** Whether the client actually holds usable tokens, as opposed to a status string. */
   client_session: boolean;
+  /**
+   * Said once: the session an earlier version kept in this profile, which is
+   * not the first, was removed when this version started (decision D9).
+   */
+  session_removed?: { at: string; message: string } | null;
 }
 
 export async function fetchAuthStatus(): Promise<AuthStatus> {
   return call<AuthStatus>("/api/auth/status");
+}
+
+/** The creator has read the removed-session notice; it is not said again. */
+export async function dismissSessionRemovedNotice(): Promise<void> {
+  await call("/api/auth/session-removed/dismiss", { method: "POST" });
 }
 
 /**
@@ -1280,57 +1272,6 @@ export async function saveSessionCookies(liAt: string, jsessionId: string): Prom
     method: "POST",
     body: JSON.stringify({ li_at: liAt, JSESSIONID: jsessionId }),
   });
-}
-
-// ---------------------------------------------------------------------------
-// Post attribution
-// ---------------------------------------------------------------------------
-
-export interface AttributedLead {
-  lead_id: string;
-  name: string;
-  headline: string | null;
-  company: string | null;
-  icp_score: number;
-  lead_status: string | null;
-  qualification_tier: string | null;
-  latest_comment: string | null;
-}
-
-export interface PostAttribution {
-  post_identifier: string;
-  summary: {
-    total_leads_generated: number;
-    total_interactions: number;
-    vip_leads_count: number;
-    avg_icp_score: number;
-    comments_count: number;
-    likes_count: number;
-    /** Leads counted from reactions older than 24 months that were folded into counts: no names. */
-    folded_leads: number;
-  };
-  leads: AttributedLead[];
-}
-
-/** Which leads a given post actually produced. */
-export async function fetchPostAttribution(postId: string): Promise<PostAttribution> {
-  const data = await call<Record<string, any>>(
-    `/api/v1/analytics/posts/${encodeURIComponent(postId)}/leads`,
-  );
-  const summary = data.attribution_summary ?? {};
-  return {
-    post_identifier: typeof data.post_identifier === "string" ? data.post_identifier : postId,
-    summary: {
-      total_leads_generated: summary.total_leads_generated ?? 0,
-      total_interactions: summary.total_interactions ?? 0,
-      vip_leads_count: summary.vip_leads_count ?? 0,
-      avg_icp_score: summary.avg_icp_score ?? 0,
-      comments_count: summary.comments_count ?? 0,
-      likes_count: summary.likes_count ?? 0,
-      folded_leads: summary.folded_leads ?? 0,
-    },
-    leads: Array.isArray(data.leads) ? data.leads : [],
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1683,6 +1624,12 @@ export interface DetectedBrowser {
 export interface BrowserBridge {
   browsers: DetectedBrowser[];
   extension_path: string;
+  /**
+   * The studio could not be asked which browsers this computer has, so an
+   * empty list means nothing. Setup printed "No Chromium browser was found"
+   * over an outage, because the failure was swallowed into an empty list.
+   */
+  unreachable?: boolean;
 }
 
 export async function fetchBrowserBridge(): Promise<BrowserBridge> {
@@ -1853,6 +1800,8 @@ export interface ArchiveState {
   waiting: boolean;
   /** LinkedIn export files in Downloads. Only GET /api/v1/archive looks; elsewhere this is empty. */
   found: FoundArchive[];
+  /** One sentence when the last import is older than a month; null otherwise. */
+  age_nudge?: string | null;
   last_import: { archive_name: string; imported_at: string; summary: Record<string, ArchiveKindTally> } | null;
 }
 
@@ -2042,7 +1991,6 @@ export interface ActivityStreamData {
     leads_count: number;
     bridge_connected: boolean;
     bridge_last_seen: string | null;
-    bridge_carrier: string | null;
     active_sync_chain: {
       sequence: string[];
       current_index: number;
@@ -2071,7 +2019,7 @@ export const OWN_PROFILE_URL = "https://www.linkedin.com/in/me/";
 // ---------------------------------------------------------------------------
 
 /** Where a result opens. Chosen by the server from the row's own state. */
-export type SearchOpens = "composer" | "queue" | "analytics" | "leads" | "docs";
+export type SearchOpens = "composer" | "queue" | "posts" | "leads" | "docs";
 
 export interface SearchResult {
   kind: "post" | "lead" | "specimen" | "help";
@@ -2144,6 +2092,8 @@ export interface TodayPerson {
   posts_engaged: number;
   commented: boolean;
   latest_comment: string | null;
+  /** When the studio first saw their latest comment, not when it was last re-read. */
+  engaged_at: string | null;
   last_seen_at: string | null;
 }
 
@@ -2177,6 +2127,19 @@ export interface TodayLatestPost {
   /** Present only when the post and enough earlier ones were read at about two days old. */
   comparison: Partial<Record<"impressions" | "reactions" | "comments", MetricComparison>> | null;
   not_compared_because: string | null;
+  /**
+   * Whether the post is still moving, from results.movement: the change
+   * between its last two readings as a sentence with its reading count, which
+   * abstains with one reading and says "about" when a reading was rounded.
+   */
+  movement?: {
+    verdict: string;
+    sentence: string;
+    readings: number;
+    approximate?: boolean;
+    /** What is usual at this age, from the settle curve, or its "not enough posts" below 20 a bucket. */
+    usual?: { verdict: string; sentence: string } | null;
+  } | null;
   /** Null for a post published from the studio that LinkedIn has not shown yet. */
   url: string | null;
   analytics_url: string | null;
@@ -2195,13 +2158,27 @@ export interface TodayBrief {
     /** Queued posts whose time has come, oldest first. The creator posts them. */
     due?: { post_id: string; scheduled_for: string; content: string; excerpt: string }[];
   };
-  open_next: { action: "open" | "setup"; url?: string; reason: string };
+  open_next: {
+    action: "open" | "setup";
+    url?: string;
+    reason: string;
+    /** Present when the page to open is one the phone asked for through the Telegram bot. */
+    phone_request?: { id: number; activity_urn: string; asked_at: string; source: string };
+  };
   /** What the demo cleanup removed, until dismissed; null when there is nothing to say. */
   demo_cleanup?: { removed: { kind: string; count: number }[]; backup: string | null; removed_at: string | null } | null;
+  /** The archive age nudge, the same sentence Setup's archive step says; null when the archive is recent. */
+  archive_age?: string | null;
 }
 
 export async function fetchToday(): Promise<TodayBrief> {
   return call<TodayBrief>("/api/v1/today");
+}
+
+/** Today's Not now for a post the phone asked for. Says whether there was an open request to close. */
+export async function dismissDeskRequest(id: number): Promise<boolean> {
+  const data = await call<{ dismissed?: boolean }>(`/api/v1/desk-requests/${id}/dismiss`, { method: "POST" });
+  return !!data.dismissed;
 }
 
 // -------------------------------------------------------------
@@ -2309,6 +2286,10 @@ export interface PostDetail {
   impressions: number | null;
   figures_source: string | null;
   figures_read_at: string | null;
+  /** How precisely the reading was read: "exact", "rounded", or null when the reader did not say. */
+  figures_precision?: string | null;
+  /** The figures LinkedIn abbreviated (12K), by name, so the screen says "about" beside those alone. */
+  approximate?: string[];
   engagement_rate: number | null;
   engagement_rate_unmeasured?: string | null;
   engagement_rate_note?: string | null;
@@ -2335,17 +2316,40 @@ export interface PostEngager {
   interacted_at: string | null;
 }
 
-/** Who engaged with one post, for any identifier the product uses (post_identity.resolve). */
+/**
+ * Who engaged with one post, for any identifier the product uses
+ * (post_identity.resolve), and how many more are kept only as counts: the
+ * reactors the retention job folded, who have no names to list.
+ */
 export async function fetchPostEngagers(
   postId: string,
-): Promise<{ status: string; count: number; engagers: PostEngager[]; message?: string }> {
+): Promise<{ status: string; count: number; engagers: PostEngager[]; message?: string; folded_people: number }> {
   const data = await call<Record<string, any>>(`/api/v1/posts/${encodeURIComponent(postId)}/engagers`);
   return {
     status: data.status ?? "success",
     count: data.count ?? 0,
     engagers: data.engagers ?? [],
     message: data.message,
+    folded_people: data.folded?.people ?? 0,
   };
+}
+
+/** A post marked published here that the bridge has not seen on LinkedIn yet. */
+export interface PublishedNotSeen {
+  id: string;
+  excerpt: string;
+  published_at: string | null;
+}
+
+/**
+ * Posts marked published in the studio with no publication record: sent to
+ * LinkedIn and not yet read back by the bridge. Posts lists them as a short
+ * group of their own; Analytics' removed table was the one list that held
+ * them (review round 2, B2 b).
+ */
+export async function fetchPublishedNotSeen(): Promise<PublishedNotSeen[]> {
+  const data = await call<{ posts?: PublishedNotSeen[] }>("/api/v1/posts/published-not-seen");
+  return data.posts ?? [];
 }
 
 export interface OutboundAuthor {
@@ -2437,6 +2441,8 @@ export interface SettleCurve {
 }
 
 export interface PatternsInsights {
+  /** How many of the creator's posts the studio holds, whatever their age or figures. */
+  posts_held: number;
   posts_compared: number;
   metric: string;
   patterns: PatternFinding[];
@@ -2469,50 +2475,51 @@ export async function fetchCadenceInsights(): Promise<CadenceInsights> {
 export interface ContrastFinding {
   key: string;
   label: string;
-  status: "conclusive" | "insufficient_sample";
+  /**
+   * The engine's own words (contrast_engine.evaluate_contrast_for_posts):
+   * "not_enough_data" when a side is short of posts, "different_period" when
+   * the two sides come mostly from different years. This said
+   * "insufficient_sample", a word the engine uses only for a confidence
+   * field, and a cast on the Patterns screen hid the mismatch.
+   */
+  status: "conclusive" | "not_enough_data" | "different_period";
   n_with: number;
   n_without: number;
   median_with?: number | null;
   median_without?: number | null;
   ratio?: number | null;
   planted_or_significant?: boolean;
+  /** What the line is allowed to say, from results.difference. */
+  difference?: { verdict: string; notable: boolean; n_with: number; n_without: number; min_per_side: number };
+  /** The typical year of each side, when the two sides were dated (results.different_periods). */
+  typical_year_with?: number;
+  typical_year_without?: number;
   min_required: number;
   reason?: string;
 }
 
+/**
+ * The contrast engine's comparisons, which Patterns draws its lines from and
+ * the Composer's Evidence panel is built from.
+ */
 export interface ContrastInsights {
   status: string;
+  /** The settled posts, with reactions recorded, that every comparison rests on. */
   settled_posts_count: number;
+  /** How many posts each side needs before the engine says anything (results.MIN_PER_SIDE). */
   min_arm_size: number;
+  settled_after?: SettledAfter;
   contrasts: ContrastFinding[];
+  /**
+   * The creator's own topics, each compared as a form by the same engine:
+   * posts that mention the topic's word against those that do not. They
+   * replace the qualified-leads-per-topic table (cycle 4, decision 7).
+   */
+  topics?: ContrastFinding[];
 }
 
 export async function fetchContrastInsights(): Promise<ContrastInsights> {
   return call<ContrastInsights>("/api/v1/insights/contrasts");
-}
-
-export interface TopicAttributionItem {
-  topic: string;
-  post_count?: number;
-  posts_count?: number;
-  total_reactions: number;
-  median_reactions?: number;
-  qualified_leads: number;
-  lead_conversion_rate: number;
-  summary?: string;
-}
-
-export interface TopicAttributionInsights {
-  status: "success" | "cold_start";
-  message?: string;
-  settled_posts_analyzed?: number;
-  qualified_leads_attributed?: number;
-  topics: TopicAttributionItem[];
-  summary_sentence: string;
-}
-
-export async function fetchTopicAttribution(): Promise<TopicAttributionInsights> {
-  return call<TopicAttributionInsights>("/api/v1/insights/attribution");
 }
 
 export interface EvidenceExemplar {
@@ -2530,6 +2537,10 @@ export interface RetrievalEvidenceBrief {
   bottom_exemplars: EvidenceExemplar[];
   contrast_findings: ContrastFinding[];
   brief_section: string;
+  /** How many settled posts the brief needs before it says anything (results.MIN_FOR_MEDIAN). */
+  min_settled_posts: number;
+  /** How many posts each side of a contrast needs before it is a finding (results.MIN_PER_SIDE). */
+  min_per_side: number;
 }
 
 export async function fetchEvidenceBrief(): Promise<RetrievalEvidenceBrief> {
@@ -3095,10 +3106,13 @@ export interface LinkedInSendRecord {
 export interface LinkedInSendState {
   ready: boolean;
   /**
-   * Why not: no_session, no_identity, account_unknown, other_account,
-   * author_unknown, egress_off or risk_not_acknowledged. The last one is the
-   * one-time, per-installation acknowledgement of the account risk, and the
-   * only one the dialog can settle itself, with acknowledgeLinkedInRisk below.
+   * Why not: not_first_profile (decision D9: sending works in the first
+   * creator profile only, and the reason is the sentence that says why),
+   * no_session, no_identity, account_unknown, other_account, author_unknown,
+   * egress_off or risk_not_acknowledged. The last one is the one-time
+   * acknowledgement of the account risk, kept in the profile's own settings,
+   * and the only one the dialog can settle itself, with
+   * acknowledgeLinkedInRisk below.
    */
   code: string | null;
   reason: string | null;
@@ -3276,16 +3290,486 @@ export async function setEngineeringPack(enabled: boolean): Promise<{ added?: nu
   });
 }
 
+/** How many drafts are waiting, and the newest of them. */
+export interface DraftsWaiting {
+  /** Null when the studio answered without a count, so no number is printed. */
+  total: number | null;
+  newest: DraftSummary | null;
+}
+
 /**
- * The newest few drafts, newest first.
+ * How many drafts are waiting, and the newest, for the Queue's one action.
  *
- * fetchDrafts answers with every draft, which the drafts panel wants and its
- * search needs; a screen that shows the few waiting to be queued does not,
- * and on a three year install every draft is 259 KB.
+ * One row and the count beside it. The Queue listed the newest eight here
+ * while the Composer's Drafts lists every one (decision 6: a count, with one
+ * action); fetchDrafts answers with every draft, 259 KB on a three year
+ * install, which only the drafts panel and its search need.
  */
-export async function fetchRecentDrafts(limit: number): Promise<DraftSummary[]> {
-  const data = await call<{ posts?: PostRow[] }>(`/api/posts?status=draft&limit=${limit}`);
-  return (data.posts ?? [])
-    .map((row) => ({ id: row.id, content: row.content ?? "", created_at: row.created_at ?? null }))
-    .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+export async function fetchDraftsWaiting(): Promise<DraftsWaiting> {
+  const data = await call<{ posts?: PostRow[]; total?: number }>("/api/posts?status=draft&limit=1");
+  const rows = data.posts ?? [];
+  const newest = rows[rows.length - 1];
+  return {
+    total: typeof data.total === "number" ? data.total : null,
+    newest: newest ? { id: newest.id, content: newest.content ?? "", created_at: newest.created_at ?? null } : null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// From your record (cycle 4, track 7)
+// ---------------------------------------------------------------------------
+
+/** The six provenance labels, and the explicit abstention. Defined once, in record_cards.py. */
+export type RecordLabel = "measured" | "derived" | "typed" | "suggested" | "retrieved" | "curated" | "abstained";
+
+/** A figure on a card, with the row it was read from and when. */
+export interface RecordFigure {
+  name: string;
+  value: number;
+  table: string;
+  id: string | null;
+  observed_at: string | null;
+  source: string;
+}
+
+/** One of the creator's own posts that shares an ask's words. */
+export interface RecordMatch {
+  activity_urn: string;
+  excerpt: string;
+  date: string | null;
+  url: string | null;
+}
+
+export interface RecordCardPayload {
+  title?: string;
+  badge?: string;
+  excerpt?: string;
+  date?: string | null;
+  url?: string | null;
+  figures?: RecordFigure[];
+  figure_sentence?: string;
+  because?: string;
+  source_sentence?: string;
+  method_sentence?: string;
+  draft_text?: string;
+  /** An abstention's sentence: what is missing and what will fill it. */
+  sentence?: string;
+  block_label?: string;
+  matches?: RecordMatch[];
+  counts?: Record<string, number | null>;
+  topic?: string | null;
+  /** The provider that wrote a suggested card, when one did. */
+  provider?: string | null;
+  /** A suggested card's angle, the model's own reason, and the words it quoted from your post. */
+  angle?: string;
+  model_why?: string;
+  quote?: string;
+  /** The section of the studio's playbook that shares an ask's words: its heading and its document in Docs. */
+  playbook?: { document_id: string; section: string } | null;
+}
+
+export interface RecordCard {
+  day: string;
+  card_id: string;
+  slot: number;
+  block: string;
+  kind: string;
+  label: RecordLabel;
+  method: string;
+  status: "shown" | "abstained" | "dropped" | "replaced";
+  payload: RecordCardPayload;
+  provenance: Record<string, unknown>;
+  marks?: string[];
+  kept_day?: string;
+  kept_at?: string;
+}
+
+export interface RecordRun {
+  day: string;
+  finished_at: string | null;
+  seed: number | null;
+  rerolled_at: string | null;
+  model_status: string | null;
+  model_note: string | null;
+  dropped_cards: number;
+  note: string | null;
+  carried_from: string | null;
+  estimated_cost_usd: number | null;
+  price_date: string | null;
+}
+
+/** What the model stage can do today, said as the screen says it. */
+export interface RecordModelState {
+  configured: boolean;
+  allowed: boolean;
+  stage: "on" | "off";
+  status: string;
+  should_run: boolean;
+  provider: string | null;
+  provider_label: string | null;
+  statement: string | null;
+  ceiling_usd: number;
+  spent_today_usd: number | null;
+  price_date: string | null;
+  price_basis: string | null;
+  priced: boolean;
+  model: string | null;
+  reason: string | null;
+}
+
+export interface RecordToday {
+  day: string;
+  batch_day: string | null;
+  computed: string;
+  nothing_new: string | null;
+  run: RecordRun | null;
+  cards: RecordCard[];
+  days: string[];
+  model?: RecordModelState;
+}
+
+export async function fetchRecord(): Promise<RecordToday> {
+  return call<RecordToday>("/api/v1/record");
+}
+
+export async function fetchRecordDay(day: string): Promise<{ day: string; run: RecordRun | null; cards: RecordCard[] }> {
+  return call(`/api/v1/record/days/${encodeURIComponent(day)}`);
+}
+
+export async function rerollRecord(): Promise<void> {
+  await call("/api/v1/record/reroll", { method: "POST" });
+}
+
+export type RecordMark = "keep" | "skip" | "hide";
+
+export async function markRecordCard(day: string, cardId: string, mark: RecordMark): Promise<{ message: string }> {
+  return call("/api/v1/record/marks", { method: "POST", body: JSON.stringify({ day, card_id: cardId, mark }) });
+}
+
+export async function unmarkRecordCard(day: string, cardId: string, mark: RecordMark): Promise<{ message: string }> {
+  return call("/api/v1/record/marks/remove", { method: "POST", body: JSON.stringify({ day, card_id: cardId, mark }) });
+}
+
+export async function unhideAllRecord(): Promise<{ cards: number; message: string }> {
+  return call("/api/v1/record/unhide-all", { method: "POST" });
+}
+
+/** More of this: the card's topic becomes an ask. */
+export async function moreOfThis(day: string, cardId: string): Promise<{ text: string; message: string }> {
+  return call("/api/v1/record/more", { method: "POST", body: JSON.stringify({ day, card_id: cardId }) });
+}
+
+/** Draft from this: a Composer draft that records the card it came from. */
+export async function draftFromCard(day: string, cardId: string): Promise<{ id: string; content: string }> {
+  return call("/api/v1/record/draft", { method: "POST", body: JSON.stringify({ day, card_id: cardId }) });
+}
+
+export async function fetchKept(): Promise<RecordCard[]> {
+  const data = await call<{ kept?: RecordCard[] }>("/api/v1/record/kept");
+  return data.kept ?? [];
+}
+
+export interface RecordAsk {
+  id: number;
+  text: string;
+  source: string;
+  field: string | null;
+  status: "open" | "kept" | "retired";
+  created_at: string;
+  updated_at: string;
+  last_used_at: string | null;
+}
+
+export interface RecordSettings {
+  keep_days: string;
+  keep_days_options: string[];
+  model_stage: "on" | "off";
+  cost_ceiling_usd: number;
+  cost_ceiling_default_usd: number;
+}
+
+export interface RecordKnows {
+  asks: RecordAsk[];
+  setup: Record<string, string | null>;
+  marks: Record<string, number>;
+  hidden: { day: string; card_id: string; at: string; kind: string | null; title: string | null; excerpt: string | null }[];
+  archive: Record<string, number>;
+  batches: { days: number; first: string | null; last: string | null };
+  prune: { keep: string; days: number; cards: number; older_than?: string };
+  notes: { month: string; text: string; at: string }[];
+  settings: RecordSettings;
+  job: {
+    checked: string;
+    today: string;
+    today_built: boolean;
+    last_run: { day: string; finished_at: string | null; note: string | null; carried_from: string | null } | null;
+  };
+  library?: RecordLibraryState;
+  model?: RecordModelState;
+}
+
+export interface RecordLibraryState {
+  version: string | null;
+  signed_at: string | null;
+  key_id: string | null;
+  entries: number;
+  fetched_at: string | null;
+  source: string;
+  address: string;
+  contains: string;
+  sends: string;
+  keys: string[];
+}
+
+export async function fetchRecordKnows(): Promise<RecordKnows> {
+  return call<RecordKnows>("/api/v1/record/knows");
+}
+
+/** An ask typed into the section's box, or a Composer instruction the creator ticked to remember. */
+export async function addRecordAsk(text: string, source: "ask_box" | "composer"): Promise<{ message: string }> {
+  return call("/api/v1/record/asks", { method: "POST", body: JSON.stringify({ text, source }) });
+}
+
+export async function updateRecordAsk(id: number, changes: { text?: string; status?: string }): Promise<void> {
+  await call(`/api/v1/record/asks/${id}`, { method: "PUT", body: JSON.stringify(changes) });
+}
+
+export async function removeRecordAsk(id: number): Promise<void> {
+  await call(`/api/v1/record/asks/${id}`, { method: "DELETE" });
+}
+
+export type RecordSetupField = "topics" | "audience" | "avoid";
+
+export async function fetchRecordSetup(): Promise<Record<RecordSetupField, string | null>> {
+  const data = await call<{ fields: Record<RecordSetupField, string | null> }>("/api/v1/record/setup");
+  return data.fields;
+}
+
+export async function setRecordSetupField(field: RecordSetupField, text: string): Promise<void> {
+  await call(`/api/v1/record/setup/${field}`, { method: "PUT", body: JSON.stringify({ text }) });
+}
+
+export async function setRecordSettings(changes: Partial<Pick<RecordSettings, "keep_days" | "model_stage" | "cost_ceiling_usd">>): Promise<RecordSettings> {
+  return call("/api/v1/record/settings", { method: "PUT", body: JSON.stringify({ changes }) });
+}
+
+export async function saveRecordNote(month: string, text: string): Promise<void> {
+  await call("/api/v1/record/notes", { method: "POST", body: JSON.stringify({ month, text }) });
+}
+
+/**
+ * The creator opened From your record: today's one call to their own model,
+ * if it has not run and may. Answers at once; the idea arrives into today's
+ * batch when the model has answered, so read the batch again after.
+ */
+export async function runRecordModel(): Promise<{ status: string; reason?: string }> {
+  return call("/api/v1/record/model", { method: "POST" });
+}
+
+/** Exactly what the next call to the creator's model would send. Sends nothing. */
+export interface RecordModelPreview {
+  provider: string;
+  model: string;
+  system: string;
+  prompt: string;
+  posts: number;
+  asks: number;
+}
+
+export async function fetchRecordModelPreview(): Promise<RecordModelPreview> {
+  return call<RecordModelPreview>("/api/v1/record/model/preview");
+}
+
+/** A share under the studio's sample rules: the counts always, a rate only at 20 or more. */
+export interface RecordShare {
+  part: number;
+  whole: number;
+  said: string;
+  rate: number | null;
+}
+
+export interface RecordFunnelRow {
+  name: string;
+  shown: number;
+  kept: RecordShare;
+  drafted: RecordShare;
+  posted: RecordShare;
+}
+
+export interface RecordEvaluation {
+  funnel: { by_kind: RecordFunnelRow[]; by_label: RecordFunnelRow[]; total: RecordFunnelRow | null; note: string };
+  comparison: { sentence: string; verdict: string; n_with: number; n_without: number; window_days: number };
+  months: { month: string; template: "A" | "B" | "C"; sentence: string }[];
+  notes: Record<string, string>;
+  this_month: string;
+}
+
+export async function fetchRecordEvaluation(): Promise<RecordEvaluation> {
+  return call<RecordEvaluation>("/api/v1/record/evaluation");
+}
+
+/** The creator pressed Fetch: one request for the signed Inox library, carrying nothing of theirs. */
+export async function fetchLibraryBundle(): Promise<{ status: string; message: string }> {
+  return call("/api/v1/record/library/fetch", { method: "POST" });
+}
+
+/** A signed library file chosen by hand, verified exactly as a fetched one is. */
+export async function importLibraryBundle(text: string): Promise<{ status: string; message: string }> {
+  return call("/api/v1/record/library/import", { method: "POST", body: JSON.stringify({ text }) });
+}
+
+// -------------------------------------------------------------
+// Your phone, through Telegram: the settings behind Local security
+// -------------------------------------------------------------
+
+export interface IngressSettings {
+  profile: string;
+  /** Both the token and the chat id are set, so the studio asks Telegram for messages. */
+  configured: boolean;
+  /** Whether a token is held. The token itself is sealed and never answered. */
+  has_token: boolean;
+  chat_id: string;
+  /** The studio is asking Telegram for this profile's messages. */
+  running: boolean;
+  /** One bot is asked at a time, and the one being asked was set up in another profile. */
+  running_for_another_profile: boolean;
+  configured_from: "settings" | "environment" | null;
+  last_poll_at: string | null;
+  last_error: string | null;
+  total_messages_processed: number;
+  /** Posts the phone asked the desk to read that have not been read yet. */
+  open_requests: number;
+  /** The newest links from the phone, newest first, each with what became of it in a sentence. */
+  recent_links: {
+    id: number;
+    activity_urn: string;
+    asked_at: string;
+    done_at: string | null;
+    state: "open" | "read" | "expired" | "dismissed" | "refused";
+    said: string;
+  }[];
+  tested_against_real_service: boolean;
+  /** The server's own sentence, shown until the owner has tested against the real service. */
+  not_yet_tested: string;
+}
+
+export async function fetchIngressSettings(): Promise<IngressSettings> {
+  return call<IngressSettings>("/api/v1/ingress/settings");
+}
+
+/** Both empty removes the bot and stops asking Telegram. */
+export async function saveIngressSettings(bot_token: string, chat_id: string): Promise<IngressSettings> {
+  return call<IngressSettings>("/api/v1/ingress/settings", {
+    method: "POST",
+    body: JSON.stringify({ bot_token, chat_id }),
+  });
+}
+
+// -------------------------------------------------------------
+// LinkedIn's analytics export: request, find, preview, import
+// -------------------------------------------------------------
+
+export interface FoundExport {
+  name: string;
+  path: string;
+  bytes: number;
+  modified: string;
+  downloading: boolean;
+  imported?: boolean;
+}
+
+export interface ExportRange {
+  start: string | null;
+  end: string | null;
+  /** What the range was read from: the file's name, the days in it, or nothing. */
+  from: string | null;
+}
+
+/** One sheet of the export, as the studio recognised it or did not. */
+export interface ExportSheet {
+  name: string;
+  /** Null when the studio does not recognise the sheet: it is listed, and nothing in it is imported. */
+  kind: string | null;
+  label: string;
+  rows: number;
+  importable: boolean;
+  default: boolean;
+  writes: string | null;
+  recognised: string[];
+  not_recognised: string[];
+  left_out: string[];
+  note: string | null;
+  truncated: boolean;
+}
+
+export interface ExportPreview {
+  source: string;
+  file: { name: string; bytes: number };
+  range: ExportRange;
+  sheets: ExportSheet[];
+  recognised: boolean;
+  verified_against_real_file: boolean;
+  /** The server's own sentence on whether the layout has been checked against a real export. */
+  verification: string;
+}
+
+export interface ExportImport {
+  file: string;
+  imported_at: string;
+  range: ExportRange;
+  summary: Record<string, Record<string, unknown>>;
+}
+
+export interface ExportState {
+  analytics_page: string;
+  requested_at: string | null;
+  waiting: boolean;
+  /** Spreadsheets in Downloads named like LinkedIn's export; looked for only once you say you exported. */
+  found: FoundExport[];
+  watching: string[];
+  last_import: ExportImport | null;
+  verified_against_real_file: boolean;
+  verification: string;
+}
+
+export async function fetchAnalyticsExportState(): Promise<ExportState> {
+  return call<ExportState>("/api/v1/analytics-export");
+}
+
+export async function markAnalyticsExportRequested(): Promise<ExportState> {
+  return call<ExportState>("/api/v1/analytics-export/requested", { method: "POST" });
+}
+
+export async function previewAnalyticsExport(source: string): Promise<ExportPreview> {
+  return call<ExportPreview>("/api/v1/analytics-export/preview", { method: "POST", body: JSON.stringify({ source }) });
+}
+
+/**
+ * Sends a chosen export to the studio on this machine, which keeps it until
+ * it is imported. The browser's own record of when the file was written goes
+ * with it, because that is when a post's own export was read.
+ */
+export async function uploadAnalyticsExport(file: File): Promise<ExportPreview> {
+  const response = await studioFetch("/api/v1/analytics-export/upload", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-Export-Name": encodeURIComponent(file.name),
+      "X-File-Modified": String(file.lastModified),
+    },
+    body: file,
+  });
+  if (!response.ok) throw await refusalFrom(response);
+  return (await response.json()) as ExportPreview;
+}
+
+export async function importAnalyticsExport(
+  source: string,
+  include: string[],
+): Promise<{ file: { name: string; bytes: number }; range: ExportRange; summary: ExportImport["summary"] }> {
+  return call("/api/v1/analytics-export/import", { method: "POST", body: JSON.stringify({ source, include }) });
+}
+
+export async function discardAnalyticsExport(source: string): Promise<void> {
+  await call("/api/v1/analytics-export/discard", { method: "POST", body: JSON.stringify({ source }) });
 }

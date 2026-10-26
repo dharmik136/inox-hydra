@@ -163,11 +163,14 @@ def get_due_posts():
 
     today.due_posts is the one place that reads the due status; Today and the
     Queue both call it, so the Queue no longer builds its own list from the
-    generic posts endpoint, which carried no missed note at all.
+    generic posts endpoint, which carried no missed note at all. Today shows
+    the first ten; this screen's job is to show what is due, so it asks for
+    every one. Both callers took the same limit of ten, and a creator with
+    eleven due posts saw ten here with nothing saying one was held back.
     """
     conn = get_db()
     try:
-        return {"status": "success", "due": today_module.due_posts(conn)}
+        return {"status": "success", "due": today_module.due_posts(conn, limit=None)}
     finally:
         conn.close()
 

@@ -57,6 +57,7 @@ try:
     from .repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from .leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from .linkedin_client import linkedin_client
+    from . import linkedin_client as linkedin_client_module
     from . import egress as egress_policy
     from .scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                             parse_datetime_flexible, normalize_datetime_to_utc_iso,
@@ -65,9 +66,10 @@ try:
     from .agno_agentos import orchestrator
     from .image_studio import image_studio_manager, image_providers
     from .ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
+    from .ingress import apply_settings as ingress_apply_settings
     from .crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from .rate_limiter import rate_limiter, write_actor
-    from .intelligence_sync import intelligence_sync_engine
+    from . import hook_forms
     from . import universal_search
     from .gstack_governance import gstack_engine
     from .internal_sheet import internal_sheet_manager
@@ -76,6 +78,7 @@ try:
     from . import accounts
     from . import licensing
     from . import archive_import
+    from . import analytics_export
     from . import today as today_module
     from . import insights
     from . import devtools
@@ -129,6 +132,7 @@ except ImportError:
     from repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from linkedin_client import linkedin_client
+    import linkedin_client as linkedin_client_module
     import egress as egress_policy
     from scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                            parse_datetime_flexible, normalize_datetime_to_utc_iso,
@@ -137,9 +141,10 @@ except ImportError:
     from agno_agentos import orchestrator
     from image_studio import image_studio_manager, image_providers
     from ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
+    from ingress import apply_settings as ingress_apply_settings
     from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from rate_limiter import rate_limiter, write_actor
-    from intelligence_sync import intelligence_sync_engine
+    import hook_forms
     import universal_search
     from gstack_governance import gstack_engine
     from internal_sheet import internal_sheet_manager
@@ -148,6 +153,7 @@ except ImportError:
     import accounts
     import licensing
     import archive_import
+    import analytics_export
     import today as today_module
     import insights
     import devtools
@@ -200,7 +206,7 @@ OPENAPI_TAGS = [
     {"name": "LinkedIn Native Scheduler", "description": "Voyager cloud pre-staging and self-healing morning grace window recovery."},
     {"name": "Enterprise Reverse CRM", "description": "Deterministic ICP scoring engine and anti-slop 1-to-1 contextual DM generation."},
     {"name": "Anti-Bot & Rate Limiting", "description": "Gaussian jitter request governor, human pacing, and single-writer WAL actor."},
-    {"name": "Intelligence Sync & Radar", "description": "Asymmetric GitHub CDN intelligence sync, ETag caching, and viral hook templates."},
+    {"name": "Intelligence Sync & Radar", "description": "The hook rail's forms: the starter forms and the opt-in engineering pack, kept on this machine."},
     {"name": "G-Stack Multi-Agent Governance", "description": "Garry Tan 6-role virtual team governance, role backlogs, and multi-gate anti-slop audits."},
     {"name": "Internal Sheet & Concept Identifier", "description": "Visual screen element inspection, bug annotations, and zero-egress internal sheet tracking."},
     {"name": "Developer Tools", "description": "Maintainer only. Screen registry, state and migration inspectors, and annotation portability. Absent unless INOX_DEV_MODE is set."}
@@ -307,6 +313,20 @@ async def lifespan(app: FastAPI):
                 "Could not bring profile %s up to this build's schema.", _profile, exc_info=True)
     if not safe_mode.is_active():
         _seal_plaintext_secrets()
+        # Decision D9: no profile beyond the first keeps a LinkedIn session.
+        # One an earlier version kept is deleted now, in that profile's own
+        # database, and its Local security panel says so once.
+        try:
+            linkedin_client_module.remove_sessions_beyond_the_first_profile()
+        except Exception:
+            logging.getLogger("studio.linkedin").warning(
+                "Could not remove the sessions kept in profiles beyond the first.", exc_info=True)
+        # A copy of an analytics export chosen by hand is kept for a day at
+        # most, whether or not Setup is opened again, as the policy says.
+        try:
+            analytics_export.sweep_uploads()
+        except OSError:
+            logging.getLogger("studio.analytics_export").warning("Could not sweep old export copies.", exc_info=True)
     # The offline documentation index, built here rather than on whichever
     # search happened to run first. It was imported into this module and never
     # called, so the index was a snapshot of the corpus as it stood the first
@@ -332,6 +352,14 @@ async def lifespan(app: FastAPI):
     if (os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN")) \
             and devtools.is_dev_mode():
         ingress_daemon.start_worker()
+    else:
+        # A bot the creator set up in Brand Studio's Local security tab runs
+        # without dev mode (cycle 4, decision D6); nothing starts without
+        # both the token and the chat id in the active profile's settings.
+        try:
+            ingress_apply_settings(at_startup=True)
+        except Exception:
+            logging.getLogger("studio.ingress").warning("Could not read the Telegram settings at startup.", exc_info=True)
     yield
     shutdown_scheduler()
     ingress_daemon.stop_worker()
@@ -1539,6 +1567,9 @@ def dismiss_demo_cleanup_notice():
 
 @app.get("/api/v1/onboarding/state", tags=["Onboarding"])
 def get_onboarding_state():
+    # Setup and the popup read the session from here: one restored into a
+    # profile beyond the first goes before they can say it is saved (D9).
+    linkedin_client_module.remove_session_beyond_first_profile()
     return onboarding.onboarding_state()
 
 
@@ -1750,119 +1781,6 @@ toggle_queue_pause = queue_router_module.toggle_queue_pause
 
 
 # -------------------------------------------------------------
-# Viral Inspirations Hub (356 Vaulted High-Performing Blueprints)
-# -------------------------------------------------------------
-@app.get("/api/inspirations")
-def search_inspirations(query: Optional[str] = None, topic: Optional[str] = None, limit: Optional[int] = 100):
-    conn = get_db()
-    try:
-        cursor = conn.cursor()
-
-        # Whether the retired table has rows, not whether it exists.
-        #
-        # This used to switch on table existence alone, which made the swipe file
-        # work once and then go empty forever. init_db runs before ensure_schema on
-        # every boot and recreates `inspirations` through CREATE TABLE IF NOT
-        # EXISTS, but the ledger only runs migration 2 once, so nothing dropped it
-        # again. From the second launch onward an empty legacy table was present,
-        # this switch took the legacy path, and the creator saw nothing.
-        #
-        # Emptiness is the honest test: migration 2 moved every row into
-        # viral_templates, so a table with no rows has nothing left to serve
-        # whether or not some later boot recreated its shell.
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='inspirations'")
-        has_inspirations = cursor.fetchone() is not None
-        if has_inspirations:
-            cursor.execute("SELECT COUNT(*) FROM inspirations")
-            has_inspirations = cursor.fetchone()[0] > 0
-
-        if not has_inspirations:
-            conn.close()
-            templates = intelligence_sync_engine.get_templates(archetype=topic, query=query, limit=limit or 100)
-            total_vaulted = intelligence_sync_engine.get_total_count()
-            adapted_rows = [
-                {
-                    "id": f"tpl-{t.get('id', idx)}",
-                    "author_name": "Blueprint",
-                    "author_headline": t.get("archetype", "Engineering"),
-                    "topic": t.get("archetype", "Engineering"),
-                    "content": (t.get("hook_text") or "") + "\n\n" + (t.get("pacing_style") or ""),
-                    # No reactions, no comments.
-                    #
-                    # These used to be int(velocity_score * 1000) and a literal
-                    # 50, so every card on the swipe wall showed "9,800
-                    # REACTIONS . 50 COMMENTS" for a template nobody had ever
-                    # posted. Neither number is stored anywhere. Both were
-                    # manufactured here at render time and then displayed as
-                    # though they had been measured.
-                    #
-                    # velocity_score survives because it is a real stored
-                    # field: a rating of how strongly the form performs, which
-                    # is the whole point of a template library. A reaction
-                    # count is a claim about an event, and there was no event.
-                    "likes_count": None,
-                    "comments_count": None,
-                    # Passed through, never defaulted. viral_templates has
-                    # three insert paths (the offline seeder, the bundle feed,
-                    # and a local import), so filling a NULL in with 'shipped'
-                    # would assert where a row came from on no evidence. Rows
-                    # written before migration 9 stay unknown, which is what
-                    # migration 4 does for the same reason.
-                    "origin": t.get("origin"),
-                    "key_hook": t.get("hook_text", ""),
-                    "archetype": t.get("archetype", "Engineering"),
-                    "velocity_score": t.get("velocity_score", 8.0),
-                    "engagement_multiplier": t.get("engagement_multiplier", "2.0x"),
-                    "pacing_style": t.get("pacing_style", ""),
-                    # Which opt-in pack a form came from, so the wall can say
-                    # whether the engineering creator pack is in the library.
-                    "pack": "engineering" if str(t.get("example_post_id") or "").startswith("blueprint-") else None,
-                }
-                for idx, t in enumerate(templates)
-            ]
-            return {
-                "status": "success",
-                "total_vaulted": total_vaulted,
-                "count": len(adapted_rows),
-                "inspirations": adapted_rows
-            }
-
-        conditions = []
-        params = []
-
-        if topic:
-            conditions.append("topic LIKE ?")
-            params.append(f"%{topic}%")
-
-        if query:
-            conditions.append("(topic LIKE ? OR author_name LIKE ? OR content LIKE ? OR key_hook LIKE ?)")
-            pattern = f"%{query}%"
-            params.extend([pattern, pattern, pattern, pattern])
-
-        where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
-        sql = f"SELECT * FROM inspirations{where_clause} ORDER BY likes_count DESC"
-        if limit and limit > 0:
-            sql += f" LIMIT {int(limit)}"
-
-        cursor.execute(sql, tuple(params))
-        rows = [dict(r) for r in cursor.fetchall()]
-
-        cursor.execute("SELECT COUNT(*) FROM inspirations")
-        total_count = cursor.fetchone()[0]
-
-        conn.close()
-        return {
-            "status": "success",
-            "total_vaulted": total_count,
-            "count": len(rows),
-            "inspirations": rows
-        }
-    finally:
-        conn.close()
-
-
-
-# -------------------------------------------------------------
 # Module 4: Extension Ingestion & Session Bridge
 # -------------------------------------------------------------
 @app.post("/api/auth/cookies")
@@ -1872,10 +1790,14 @@ def receive_cookies(payload: CookiePayload):
     # load and every 15 minute alarm produced a request the creator never made.
     # The sync is still available on its own endpoint for anyone who opts into
     # egress deliberately.
-    linkedin_client.save_tokens(
+    saved = linkedin_client.save_tokens(
         payload.li_at, payload.JSESSIONID,
         account={"vanity": onboarding.normalise_vanity(payload.vanity or ""), "member_urn": payload.member_urn},
     )
+    if saved.get("status") == "refused":
+        # A creator profile beyond the first (decision D9). The detail is the
+        # sentence the popup and the Local security tab show, not a bare 409.
+        raise HTTPException(status_code=409, detail={"code": saved["code"], "message": saved["message"]})
     return {
         "status": "success",
         "message": "LinkedIn session tokens saved to local studio",
@@ -1915,10 +1837,19 @@ def get_auth_status():
         return {
             "status": status,
             "is_connected": status in ["connected", "ready"] and held,
-            "client_session": held
+            "client_session": held,
+            # Said once, where sessions are managed, when a session an earlier
+            # version kept in a profile beyond the first was removed (D9).
+            "session_removed": linkedin_client_module.session_removed_notice(),
         }
     finally:
         conn.close()
+
+
+@app.post("/api/auth/session-removed/dismiss")
+def dismiss_session_removed():
+    """The creator has read that this profile's session was removed; it is not said again."""
+    return {"status": "success", "dismissed": linkedin_client_module.dismiss_session_removed_notice()}
 
 
 ingest_live_analytics = analytics_router_module.ingest_live_analytics
@@ -2031,6 +1962,28 @@ except (ImportError, ValueError):
 
 app.include_router(storage_router_module.router)
 
+# From your record (cycle 4, track 7): the daily section's routes.
+try:
+    from .routers import record as record_router_module
+except (ImportError, ValueError):
+    from routers import record as record_router_module
+
+app.include_router(record_router_module.router)
+
+# Your phone, through Telegram: the settings behind the Local security panel.
+try:
+    from .routers import phone as phone_router_module
+except ImportError:
+    from routers import phone as phone_router_module
+app.include_router(phone_router_module.router)
+
+# LinkedIn's analytics export: Setup's block beside the archive (cycle 4, item 28).
+try:
+    from .routers import analytics_export_routes as analytics_export_router_module
+except ImportError:
+    from routers import analytics_export_routes as analytics_export_router_module
+app.include_router(analytics_export_router_module.router)
+
 DOCS_DIR = search_router_module.DOCS_DIR
 MODULES_DIR = search_router_module.MODULES_DIR
 DOCS_MODULES = search_router_module.DOCS_MODULES
@@ -2124,10 +2077,13 @@ def list_mcp_servers():
     Also reports where grounding material would go, computed from the provider
     in force right now rather than stored, so the interface can say it before
     anything is gathered rather than after.
+
+    Each server is listed without its environment, which may hold a token
+    and which no screen shows (mcp_client.servers.for_screen).
     """
     return {
         "status": "success",
-        "servers": mcp_client.list_servers(),
+        "servers": mcp_client.list_servers_for_screen(),
         "egress": mcp_client.egress_report(*_active_provider()),
     }
 
@@ -2149,7 +2105,9 @@ def add_mcp_server(req: McpServerRequest):
     )
     if result.get("status") != "success":
         raise HTTPException(status_code=400, detail=result.get("message", "Could not add the server."))
-    return result
+    # Echoed back without the environment the request carried, for the same
+    # reason the listing leaves it out.
+    return {**result, "server": mcp_client.for_screen(result["server"])}
 
 
 @app.post("/api/v1/mcp/servers/{name}/enabled", tags=["Grounding"])
@@ -2408,6 +2366,11 @@ def send_readiness() -> Dict[str, Any]:
             "egress_allowed": egress_policy.allowed("linkedin"),
         }
 
+    # Decision D9, before everything: a creator profile beyond the first
+    # cannot send, whatever session it holds, and the reason is a sentence.
+    refusal = accounts.profile_refusal("send_to_linkedin")
+    if refusal:
+        return verdict("not_first_profile", refusal)
     if not linkedin_client.is_authenticated():
         return verdict("no_session", (
             "Nothing can be sent: this studio has no saved LinkedIn session. In the browser where you "
@@ -2642,6 +2605,7 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
     # account after the dialog opened cannot send as them.
     readiness = send_readiness()
     if readiness["code"] in (
+        "not_first_profile",
         "no_session", "no_identity", "account_unknown", "other_account", "author_unknown",
         # The one-time, per-installation risk acknowledgement. Checked before
         # anything reaches LinkedIn, same as the identity checks above it, and
@@ -2859,9 +2823,9 @@ def get_ingress_status():
 
 @app.get("/api/v1/intelligence/templates", tags=["Intelligence Sync & Radar"])
 def get_viral_templates(archetype: Optional[str] = None, query: Optional[str] = None, limit: int = 100):
-    """Returns ranked viral hook archetypes ordered by algorithmic velocity score."""
-    templates = intelligence_sync_engine.get_templates(archetype=archetype, query=query, limit=limit)
-    total_vaulted = intelligence_sync_engine.get_total_count()
+    """The hook rail's forms: rated ones first by the rating typed into them, the starters last."""
+    templates = hook_forms.get_templates(archetype=archetype, query=query, limit=limit)
+    total_vaulted = hook_forms.get_total_count()
     return {
         "status": "success",
         "templates": templates,
@@ -2881,42 +2845,15 @@ def set_engineering_hook_pack(req: HookPackRequest):
     author's hook forms for a software engineering audience. A new library
     holds neutral fill-in forms only.
     """
-    return intelligence_sync_engine.set_engineering_pack(req.enabled)
+    return hook_forms.set_engineering_pack(req.enabled)
 
 
-@app.get("/api/v1/intelligence/status", tags=["Intelligence Sync & Radar"])
-def get_intelligence_sync_status():
-    """Returns current ETag caching state and last sync timestamp."""
-    return intelligence_sync_engine.get_status()
-
-
-@app.get("/api/v1/intelligence/bundle/export", tags=["Intelligence Sync & Radar"])
-def export_intelligence_bundle(request: Request):
-    """Exports compiled local viral templates as an asymmetric intelligence bundle with ETag support."""
-    bundle = intelligence_sync_engine.compile_local_bundle()
-    bundle_hash_content = json.dumps({"version": bundle.get("version"), "templates": bundle.get("templates")}, sort_keys=True)
-    import hashlib
-    etag = f'"{hashlib.sha256(bundle_hash_content.encode("utf-8")).hexdigest()[:16]}"'
-    if_none_match = request.headers.get("if-none-match")
-    if if_none_match and if_none_match.strip() == etag:
-        return Response(status_code=304, headers={"ETag": etag})
-    return JSONResponse(
-        content={"status": "success", "bundle": bundle, "etag": etag},
-        headers={"ETag": etag, "Cache-Control": "public, max-age=3600"}
-    )
-
-
-class ImportBundleRequest(BaseModel):
-    bundle: Dict[str, Any]
-
-
-@app.post("/api/v1/intelligence/bundle/import", tags=["Intelligence Sync & Radar"])
-def import_intelligence_bundle(req: ImportBundleRequest):
-    """Imports an asymmetric intelligence bundle directly for air-gapped workstations."""
-    res = intelligence_sync_engine.import_local_bundle(req.bundle)
-    if isinstance(res, dict) and res.get("status") == "error":
-        raise HTTPException(status_code=400, detail=res.get("message", "Bundle import failed"))
-    return res
+# No sync status, bundle export or bundle import here any more. They served
+# intelligence_sync.py, an unsigned CDN sync that nothing called and whose
+# import replaced the creator's whole hook library with whatever file it was
+# handed. Cycle 4, track 7 deleted it (ideas report decision 10): the
+# company's library now arrives signed, into a table of its own, through
+# /api/v1/record/library (library_bundle.py).
 
 
 class GStackBacklogTaskCreate(BaseModel):

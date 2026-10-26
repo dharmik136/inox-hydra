@@ -11,7 +11,7 @@ The panel acts on the open creator profile only. Each profile keeps its own data
 
 ## What this profile holds
 
-The first section lists each kind of data with its number of rows and its size inside the database: your posts, drafts and queue; post readings; leads and their engagement; your comments and reactions on other posts; connections from your LinkedIn archive; daily analytics; logs; the help search index; and settings. Below them are the database file, the network readings log (a separate file), your media and the backups folder.
+The first section lists each kind of data with its number of rows and its size inside the database: your posts, drafts and queue; post readings; leads and their engagement; your comments and reactions on other posts; connections from your LinkedIn archive; what your archive says you saved, followed, voted on, reposted and searched for; From your record (your asks, the daily cards, their marks and your notes); daily analytics; logs; the help search index; and settings. Below them are the database file, the network readings log (a separate file), your media and the backups folder.
 
 If this computer's copy of SQLite cannot measure the parts of the database, each part says "not measured" and only the file sizes are shown.
 
@@ -25,12 +25,14 @@ When you forget people or a cleanup removes rows, the space they took stays insi
 | --- | --- | --- | --- |
 | Daily backup | On | On, Off | The newest backup |
 | Network readings log (what the extension saw of LinkedIn's network requests) | 30 days | 7, 30 or 90 days | |
-| Post readings | Every reading for 30 days, then the last reading of each day | 30, 90 or 365 days; Off | The last reading of each day, every reading from 36 to 72 hours after a post went out, and everything recent |
+| Post readings | Every reading for 30 days, then the first and the last reading of each day | 30, 90 or 365 days; Off | The first and the last reading of each day, every reading from 36 to 72 hours after a post went out, and everything recent |
 | Reactions older than 24 months | Folded into counts | On, Off | Comments, all of them; how many people reacted to each post; how many old reactions each person made |
 | People silent for 24 months | Listed for you to review | List them, Do not list them | Everyone you have not chosen to forget |
 | Your posts, drafts, notes, daily analytics, comments, connections | Kept for good | | All of it |
+| Your asks and the marks on your daily cards (From your record) | Kept until you remove them | An ask on the section's **What the studio knows** page; a keep or a hide by taking it back | Nothing is removed on its own |
+| The daily batches of cards (From your record) | 365 days | 90, 365 days or for good, on the same page | A batch a mark or a draft still refers to |
 
-**Post readings.** The extension reads a post's figures many times while it is new. After 30 days, the studio keeps the last reading of each day. Today compares your latest post with your earlier ones at about two days old, so every reading from 36 to 72 hours after a post went out is kept, and Today's comparison and each post's latest figures stay exactly as they were.
+**Post readings.** The extension reads a post's figures many times while it is new. After 30 days, the studio keeps the first and the last reading of each day: the last is each post's latest figures, and the first is the early point a post's reach half-life rests on. The "still moving" line on Today reads a recent post's last two readings, which this never touches. Today compares your latest post with your earlier ones at about two days old, so every reading from 36 to 72 hours after a post went out is kept, and Today's comparison and each post's latest figures stay exactly as they were.
 
 **Reactions.** A reaction nobody has seen again for 24 months is folded into counts. Kept: how many people reacted to each post, and how many of these reactions each person made, whether on your posts, and the topics of those posts, so the numbers on every screen stay the same. Lost: which people reacted to which post, and when. Everyone stays in your leads, including people whose only engagement was such a reaction; a person's timeline shows how many old reactions they made. Comments are never folded; every comment is kept. LinkedIn's own reaction figures for your posts are not affected.
 

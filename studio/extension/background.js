@@ -33,6 +33,8 @@ const STUDIO_TOKEN_HEADER = "X-Inox-Token";
 // purpose proxy into the creator's local database.
 const RELAYABLE_PATHS = new Set([
   "/api/analytics/ingest",
+  // The creator's own account and content pages (own_insights.js, track 5).
+  "/api/analytics/page-figures",
   "/api/v1/posts/bind-urn",
   "/api/v1/crm/interactions/ingest",
   // Onboarding (own_pages.js). Every write is refused by the studio unless it
@@ -248,7 +250,20 @@ async function syncActiveSessionToStudio() {
     };
   }
   if (!response.ok) {
-    return { status: "error", message: "The studio refused the session (" + response.status + ")." };
+    // The studio's own sentence when it gives one: a creator profile beyond
+    // the first cannot keep a session (decision D9), and "409" says nothing.
+    let said = null;
+    try {
+      const body = await response.json();
+      const detail = body && body.detail;
+      said = detail && typeof detail === "object" ? detail.message : detail;
+    } catch (err) {
+      said = null;
+    }
+    return {
+      status: "error",
+      message: typeof said === "string" && said ? said : "The studio refused the session (" + response.status + ")."
+    };
   }
   if (!memberUrn) {
     return {

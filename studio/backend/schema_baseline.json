@@ -68,17 +68,6 @@
       "title",
       "updated_at"
     ],
-    "inspirations": [
-      "author_headline",
-      "author_name",
-      "comments_count",
-      "content",
-      "created_at",
-      "id",
-      "key_hook",
-      "likes_count",
-      "topic"
-    ],
     "lead_enrichments": [
       "company_intelligence",
       "enriched_at",

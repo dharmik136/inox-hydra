@@ -23,7 +23,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "backend")))
 
 import app as app_module  # noqa: E402
-import intelligence_sync  # noqa: E402
+import hook_forms  # noqa: E402
 from database import get_db  # noqa: E402
 
 client = TestClient(app_module.app)
@@ -54,7 +54,7 @@ def _templates():
 def test_a_new_library_holds_only_neutral_fill_in_forms(library):
     templates = _templates()
     assert templates, "a new install has no hook forms at all"
-    pack_hooks = {t["hook_text"] for t in intelligence_sync.ENGINEERING_PACK}
+    pack_hooks = {t["hook_text"] for t in hook_forms.ENGINEERING_PACK}
     for template in templates:
         assert template["hook_text"] not in pack_hooks, template["hook_text"]
         assert "[" in template["hook_text"], f"a starter that is not a fill-in form: {template['hook_text']}"
@@ -64,37 +64,31 @@ def test_a_new_library_holds_only_neutral_fill_in_forms(library):
     assert not archetypes & {"Architecture", "Benchmarks", "Reverse Engineering"}
 
 
-def test_the_swipe_file_starts_neutral_too(library):
-    rows = client.get("/api/inspirations").json()["inspirations"]
-    assert rows
-    assert not [r for r in rows if r["archetype"] in ("Architecture", "Benchmarks", "Reverse Engineering")]
-    assert all(r["velocity_score"] is None for r in rows)
-    assert all(r["pack"] is None for r in rows)
-
-
 def test_the_engineering_pack_is_added_and_removed_on_request(library):
     _templates()
     starters = len(_templates())
 
     added = client.post("/api/v1/intelligence/packs/engineering", json={"enabled": True})
     assert added.status_code == 200, added.text
-    assert added.json()["added"] == len(intelligence_sync.ENGINEERING_PACK)
+    assert added.json()["added"] == len(hook_forms.ENGINEERING_PACK)
     again = client.post("/api/v1/intelligence/packs/engineering", json={"enabled": True})
     assert again.json()["added"] == 0, "adding the pack twice doubled it"
-    assert len(_templates()) == starters + len(intelligence_sync.ENGINEERING_PACK)
-    swipe = client.get("/api/inspirations?limit=200").json()["inspirations"]
-    assert sum(1 for r in swipe if r["pack"] == "engineering") == len(intelligence_sync.ENGINEERING_PACK)
+    assert len(_templates()) == starters + len(hook_forms.ENGINEERING_PACK)
+    # The pack is recognised by its example id, which is how the retired swipe
+    # wall told a pack form from a starter.
+    assert sum(1 for t in _templates() if str(t["example_post_id"]).startswith("blueprint-")) == len(
+        hook_forms.ENGINEERING_PACK)
 
     removed = client.post("/api/v1/intelligence/packs/engineering", json={"enabled": False})
     assert removed.status_code == 200
-    assert removed.json()["removed"] == len(intelligence_sync.ENGINEERING_PACK)
+    assert removed.json()["removed"] == len(hook_forms.ENGINEERING_PACK)
     assert len(_templates()) == starters
 
 
 def test_an_existing_library_keeps_the_pack_it_has(library):
-    intelligence_sync.intelligence_sync_engine.seed_offline_templates(templates=intelligence_sync.ENGINEERING_PACK)
+    hook_forms.seed_offline_templates(templates=hook_forms.ENGINEERING_PACK)
     before = len(_templates())
-    intelligence_sync.intelligence_sync_engine._ensure_offline_seeded()
+    hook_forms.ensure_seeded()
     assert len(_templates()) == before, "an install that had the pack lost or gained forms on its own"
 
 

@@ -247,9 +247,100 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # now, so the merge restored it. The pack has a way out and no way in until
 # its 36 first-person claims are rewritten, which is a decision, not a gap.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 172
-REACHED_BY_INTERFACE = 118
-UNREACHABLE = 54
+# Cycle 4, track 5: 172 -> 173 paths, unreachable 54 -> 55. The one new path is
+# GET /api/analytics/post-field-sightings: how long each figure the post
+# analytics reader added this cycle has gone unread, which is where such a
+# label shows now that an absent one is not drift (the owner, 2026-10-26).
+# Track 4's Health section is its caller once that section is built; until
+# then it sits in the unreachable column, where it is visible.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Cycle 4, track 7, batch 0 (honesty prerequisites): GET /api/inspirations is
+# retired. It served viral_templates under the retired Swipe File's name with
+# counts set to None at render time, nothing in the interface called it, and
+# it was the one way a library of other people's posts could have come back
+# (ideas report, "Other people's posts stay out of the database"). It sat in
+# the unreachable column. Total 172 -> 171, reached stays 118, unreachable
+# 54 -> 53.
+# ---------------------------------------------------------------------------
+# Cycle 4, track 7, batches 4 and 6 (the section and its asks): sixteen paths
+# under /api/v1/record, the day's batch and earlier days, Suggest new, the
+# marks and Unhide all, More of this, Draft from this, Kept, What the studio
+# knows, the asks, the Setup fields, the settings and the monthly note. Every
+# one is called by the section's screen except the monthly note, which the
+# evaluation batch's "Did these help" calls. Total 171 -> 187, reached
+# 118 -> 133, unreachable 53 -> 54.
+# ---------------------------------------------------------------------------
+# Cycle 4, track 7, batch 7 (the model stage): POST /api/v1/record/model,
+# today's one call to the creator's own model on their first open of the
+# section, and GET /api/v1/record/model/preview, exactly what it would send.
+# Both reached by the section. Total 187 -> 189, reached 133 -> 135.
+# ---------------------------------------------------------------------------
+# Cycle 4, track 7, batch 8 (the evaluation): GET /api/v1/record/evaluation,
+# "Did these help?", added and reached; the monthly note, recorded above as
+# unreachable until this batch, is now saved from that screen. Total
+# 189 -> 190, reached 135 -> 137, unreachable 54 -> 53.
+# ---------------------------------------------------------------------------
+# Cycle 4, track 7, batch 9 (the signed library): the unsigned sync's three
+# routes are gone with intelligence_sync.py (/api/v1/intelligence/status,
+# /bundle/export and /bundle/import, none reached by the interface), and the
+# library's two are added and reached from What the studio knows
+# (/api/v1/record/library/fetch and /import). Total 190 -> 189, reached
+# 137 -> 139, unreachable 53 -> 50.
+# ---------------------------------------------------------------------------
+# Integration (t5 then t7): 172 + 1 + 17 = 190 paths, reached 118 + 21 = 139,
+# unreachable 54 + 1 - 4 = 51.
+# ---------------------------------------------------------------------------
+# Cycle 4, track 3, batch 1: decision 7 retired the "Topic to Qualified Lead
+# Attribution" table on Patterns, and with it the interface's only caller of
+# /api/v1/insights/attribution. The route stays for the API, where AUDIENCE-12
+# still holds its people counts; topics are compared as forms under
+# /api/v1/insights/contrasts now. Total stays at 172, reached 118 -> 117,
+# unreachable 54 -> 55.
+# ---------------------------------------------------------------------------
+# The same batch took the post table off Analytics (a second copy of the Posts
+# screen's). GET /api/analytics/best is added for the aside, which reads the
+# engine's best and weakest without a page of rows (+1 declared, reached).
+# The table's per-row attribution, /api/v1/analytics/posts/*/leads, has no
+# caller in the interface now; it stays for the API and its index tests.
+# /api/analytics/posts was already counted unreached: its client wrote the
+# path in a template literal this file's pattern does not read.
+# Total 172 -> 173, reached stays 117, unreachable 55 -> 56.
+# ---------------------------------------------------------------------------
+# Review round 2 of track 3 (B2 b): GET /api/v1/posts/published-not-seen is
+# added, and Posts reads it, for the posts marked published in the studio that
+# no list held once Analytics' table moved. Total 173 -> 174, reached 117 ->
+# 118, unreachable stays 56.
+# ---------------------------------------------------------------------------
+# Integration of tracks 5, 7 and 3, measured on the merged tree: 192 paths,
+# 139 reached by the interface, 53 unreachable.
+# ---------------------------------------------------------------------------
+# Cycle 4, track 6: seven paths added, every one with its surface. The phone's
+# Telegram bot under Local security (/api/v1/ingress/settings), and LinkedIn's
+# analytics export in Setup (/api/v1/analytics-export and its requested,
+# upload, preview, import and discard). Total 172 -> 179, reached 118 -> 125,
+# unreachable unchanged at 54. Then, in its review round, Today's Not now for
+# a post the phone asked for (/api/v1/desk-requests/{id}/dismiss): total 180,
+# reached 126, unreachable still 54; and the Local security panel's
+# Understood for a session removed from a profile beyond the first
+# (/api/auth/session-removed/dismiss): total 181, reached 127.
+# ---------------------------------------------------------------------------
+# Integration of tracks 5, 7, 3 and 6, measured on the merged tree: 201
+# paths, 148 reached by the interface, 53 unreachable.
+# ---------------------------------------------------------------------------
+# Cycle 4, track 5, phase 2: 173 -> 177 paths, unreachable 55 -> 59. Four new
+# paths: POST /api/analytics/page-figures, which only the extension calls
+# (own_insights.js), and GET /api/analytics/account-figures,
+# /api/analytics/content-figures and /api/v1/insights/reposts, which the
+# interface draws next. They sit in the unreachable column until it does.
+# ---------------------------------------------------------------------------
+# Integration with track 5's phase 2, measured on the merged tree: 205 paths,
+# 148 reached, 57 unreachable. The four new readings routes have no screen
+# yet; 2.9.0 draws them.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 205
+REACHED_BY_INTERFACE = 148
+UNREACHABLE = 57
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

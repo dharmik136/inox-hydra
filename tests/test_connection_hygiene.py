@@ -37,7 +37,8 @@ GUARDED_MODULES = (
     "studio/backend/linkedin_client.py",
     "studio/backend/crm.py",
     "studio/backend/scheduler.py",
-    "studio/backend/intelligence_sync.py",
+    "studio/backend/hook_forms.py",
+    "studio/backend/library_bundle.py",
 )
 
 
@@ -113,7 +114,7 @@ def test_every_function_that_opens_a_connection_guards_it(relative):
     """
     Structural, so a new route cannot quietly reintroduce the pattern.
 
-    crm.py, scheduler.py and intelligence_sync.py already did this. leads.py
+    crm.py, scheduler.py and the hook forms (hook_forms.py) already did this. leads.py
     and sixteen routes in app.py did not, which made them the exception to
     their own codebase's convention rather than a deliberate choice.
     """

@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { fetchPostsInsights, type PostInsight, type PostsInsights, type PostsQuery } from "@/lib/api";
 import { useRefresh } from "@/lib/refresh";
+import { ratioTone } from "@/lib/results";
 import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 import { PostDetail } from "./PostDetail";
+import { PublishedNotYetSeen } from "./PublishedNotYetSeen";
 
 /** Settled posts with no figures at all, and how many of those came from LinkedIn's archive. */
 type Unmeasured = { settled_without_figures?: number; settled_without_figures_from_archive?: number };
@@ -99,10 +101,15 @@ export function PostsSurface({
   if (!data) return <Centered>LOADING YOUR POSTS</Centered>;
   if (data.total === 0 && !query && !settledFilter) {
     return (
-      <EmptySurface label="Posts" title="What worked, and who it brought" onOpenSetup={onOpenSetup}>
-        None of your posts have been imported yet. Import them in Setup, and each one appears here
-        against your usual, with the people it brought.
-      </EmptySurface>
+      <>
+        <EmptySurface label="Posts" title="What worked, and who it brought" onOpenSetup={onOpenSetup}>
+          None of your posts have been imported yet. Import them in Setup, and each one appears here
+          against your usual, with the people it brought.
+        </EmptySurface>
+        <div className="mx-auto max-w-[80ch] px-8 pb-8">
+          <PublishedNotYetSeen />
+        </div>
+      </>
     );
   }
 
@@ -265,6 +272,8 @@ export function PostsSurface({
         </div>
       </div>
 
+      <PublishedNotYetSeen />
+
       {open && <PostDetail activityUrn={open} onClose={() => setOpen(null)} onOpenLead={onOpenLead} />}
     </article>
   );
@@ -357,7 +366,7 @@ function RatioCell({ value, ratio }: { value: number | null; ratio?: number }) {
             <span
               className={cn(
                 "ml-1",
-                ratio >= 1.2 ? "text-signal-green-text" : ratio <= 0.8 ? "text-signal-orange-text" : "text-ink-muted",
+                ratioTone(ratio),
               )}
             >
               ({ratio.toFixed(1)}x)

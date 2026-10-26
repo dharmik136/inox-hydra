@@ -150,12 +150,15 @@ def _enclosing(spans, position):
 
 
 # Every way a script can put an element into the page, and every way it can
-# set an attribute (the style attribute included).
+# set an attribute (the style attribute included). A copy made with cloneNode
+# is not in the page: own_insights.js reads a repost card's own figures from a
+# detached copy, and a copy could reach the page only through one of the
+# calls below.
 INSERTS = (
     r"\bcreateElement(?:NS)?\s*\(", r"\.appendChild\s*\(", r"\.insertBefore\s*\(",
     r"\.insertAdjacent(?:Element|HTML|Text)\s*\(", r"\.replaceChild\s*\(", r"\.replaceChildren\s*\(",
     r"\.replaceWith\s*\(", r"\.(?:append|prepend|after|before)\s*\(", r"\.(?:innerHTML|outerHTML)\s*\+?=(?!=)",
-    r"\bdocument\s*\.\s*write(?:ln)?\s*\(", r"\.attachShadow\s*\(", r"\.cloneNode\s*\(",
+    r"\bdocument\s*\.\s*write(?:ln)?\s*\(", r"\.attachShadow\s*\(",
 )
 ATTRIBUTES = (
     r"\.setAttribute(?:NS)?\s*\(", r"\.toggleAttribute\s*\(", r"\.dataset\b",

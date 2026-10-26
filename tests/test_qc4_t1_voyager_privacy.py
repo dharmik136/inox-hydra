@@ -201,11 +201,15 @@ def test_the_upgrade_removes_what_network_reading_kept_about_other_members(clien
     conn.close()
     assert _rows("SELECT 1 FROM post_engagement WHERE post_urn = ?", theirs), "the old state is not built"
 
+    # A database at 2.7.0's schema, as every install that met the defect is:
+    # the migrations after it run in order, this track's among them, which
+    # is found by its function, never by its number.
     raw = sqlite3.connect(get_db_path())
     raw.execute("PRAGMA user_version = 27")
     report = migrations.ensure_schema(raw, take_backup=False)
     raw.close()
-    assert [a["version"] for a in report["applied"]] == [28], report
+    ours = next(m[0] for m in migrations.MIGRATIONS if m[2] is migrations._migrate_reader_timing_and_network_reading)
+    assert ours in [a["version"] for a in report["applied"]], report
 
     assert _rows("SELECT 1 FROM post_metric_observations WHERE activity_urn = ?", theirs) == []
     assert sorted(_rows("SELECT source FROM post_metric_observations WHERE activity_urn = ?", mine)) == [

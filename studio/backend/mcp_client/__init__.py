@@ -14,7 +14,7 @@ a cloud writing tool structurally cannot do, having never seen their work.
 from .grounding import (MAX_GROUNDING_BYTES, as_brief_inputs, egress_report,
                         gather, grounding_provenance)
 from .protocol import McpServer
-from .servers import (add_server, enabled_servers, list_servers,
+from .servers import (add_server, enabled_servers, for_screen, list_servers, list_servers_for_screen,
                       remove_server, set_enabled)
 
 __all__ = [
@@ -26,6 +26,8 @@ __all__ = [
     "gather",
     "grounding_provenance",
     "list_servers",
+    "list_servers_for_screen",
+    "for_screen",
     "remove_server",
     "set_enabled",
     "MAX_GROUNDING_BYTES",

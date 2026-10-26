@@ -4,7 +4,7 @@ Learn what Copy and mark posted, Queue it and Send to LinkedIn each do, and whic
 ## Before you start
 
 - **Publish saves first.** Publishing acts on the saved post, so **Publish** saves what is in the editor before the dialog opens, whenever the strip reads UNSAVED or SAVE FAILED. If that save is refused, the dialog does not open: the strip reads SAVE FAILED, and hovering over it shows why.
-- **For Send to LinkedIn only:** you need a confirmed identity in Setup, a LinkedIn session synced from the extension after you opened your own LinkedIn profile in that browser (see [Connect your LinkedIn session](connect-your-linkedin-session.md)), and `INOX_ALLOW_LINKEDIN_EGRESS=1` must be set before the studio server starts. `launch_studio.bat` does not set it. First stop the server: when `launch_studio.bat` started it, it runs in a minimised window titled **Inox Hydra Backend**, so close that window. Then open Command Prompt, run `set INOX_ALLOW_LINKEDIN_EGRESS=1`, and start `launch_studio.bat` from that same window. If a server is still running on port 8000, the launcher reuses it and the setting does not reach it.
+- **For Send to LinkedIn only:** you must be in your first creator profile (a second or later profile cannot sync a session or send, because each profile's session must come from that creator's own browser on that creator's own machine), you need a confirmed identity in Setup, a LinkedIn session synced from the extension after you opened your own LinkedIn profile in that browser (see [Connect your LinkedIn session](connect-your-linkedin-session.md)), and `INOX_ALLOW_LINKEDIN_EGRESS=1` must be set before the studio server starts. `launch_studio.bat` does not set it. First stop the server: when `launch_studio.bat` started it, it runs in a minimised window titled **Inox Hydra Backend**, so close that window. Then open Command Prompt, run `set INOX_ALLOW_LINKEDIN_EGRESS=1`, and start `launch_studio.bat` from that same window. If a server is still running on port 8000, the launcher reuses it and the setting does not reach it.
 
 ## Open the dialog
 
@@ -33,7 +33,7 @@ The dialog itself says of the first two: NEITHER OF THOSE TWO SENDS ANYTHING. BO
 2. The strip shows COPIED AND MARKED AS POSTED, and the Composer clears for your next post.
 3. Open LinkedIn, start a post, paste, and post it. The studio does not post it for you.
 
-The post now counts toward the 12-hour spacing rule, and appears in **Analytics**. When the bridge later sees it on LinkedIn, it is linked to the LinkedIn post.
+The post now counts toward the 12-hour spacing rule, and appears on **Posts**. When the bridge later sees it on LinkedIn, it is linked to the LinkedIn post.
 
 If the browser refuses the copy, nothing is recorded, and the dialog says so. Copy the text from the editor yourself (press **Copy** in the top bar, or select it), then press **Mark posted without copying**.
 
@@ -78,7 +78,7 @@ Every send of a post is recorded on this machine: when, as which account, the ex
 
 **Send to LinkedIn** reads the text from the saved post, which **Publish** has just saved from the editor. It then sends one request to LinkedIn's `contentcreation/normShares` endpoint with the text, your member id as the author, the slot time, public visibility and a scheduled state, authenticated with your stored `li_at` and `JSESSIONID` cookies. No images are sent. The request asks LinkedIn to hold the post and publish it at that time, so publishing would not depend on your computer being awake. Only after LinkedIn accepts does the local post become scheduled, and the strip shows LINKEDIN IS HOLDING THIS POST AND WILL PUBLISH IT AT THE SCHEDULED TIME. Later edits in the studio, and pausing the Queue, do not reach LinkedIn.
 
-After any of the three, the Composer lets go of the post and clears, so the next post you type is saved as a new one. Your other drafts stay in **Drafts** (see [Start a new post, or find one you wrote earlier](start-a-new-post-or-find-an-earlier-one.md)). A queued post is listed on the **Queue**, and a published one in **Analytics**.
+After any of the three, the Composer lets go of the post and clears, so the next post you type is saved as a new one. Your other drafts stay in **Drafts** (see [Start a new post, or find one you wrote earlier](start-a-new-post-or-find-an-earlier-one.md)). A queued post is listed on the **Queue**, and a published one on **Posts**.
 
 ## If it does not work
 

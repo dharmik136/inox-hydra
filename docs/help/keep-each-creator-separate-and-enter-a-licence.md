@@ -10,6 +10,8 @@ Your first profile is the studio as it was before profiles existed, so its data 
 
 The licence, the logs and the bridge browser belong to the machine, so they are the same for every profile. Settings belong to the profile, including the AI provider and key: set them once in each profile, so each client can use their own. Scheduled posts in every profile still fall due when they should, whichever profile is open.
 
+Two things work in your first profile only: syncing a LinkedIn session, and **Send to LinkedIn**. Each profile's session must come from that creator's own browser on that creator's own machine, and the studio cannot tell whose browser a session came from, so a second or later profile's session is refused rather than stored, and nothing is sent from it. Everything else, reading that creator's own pages in the bridge browser, their archive, their leads and their drafts, works in every profile. See [Connect your LinkedIn session](connect-your-linkedin-session.md).
+
 ## Add a profile
 
 1. Click the avatar at the bottom of the rail.

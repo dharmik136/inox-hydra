@@ -14,6 +14,10 @@ The rows and their order must not move, so the answer is compared with the
 answer the old join gave, row for row, on a history built to have ties: many
 leads share a score, several share a name, and one person engages a post more
 than once.
+
+Cycle 4, track 3: both shapes now order by when the person engaged, newest
+first, instead of by the ICP score (tests/test_no_ranking_of_people_by_score.py).
+The comparison below is still the scan against the index, in that order.
 """
 
 import os
@@ -37,7 +41,7 @@ OLD_ENGAGERS_SQL = """
     FROM lead_interactions i
     JOIN leads l ON l.id = i.lead_id
     WHERE i.post_urn = ?
-    ORDER BY l.icp_score DESC
+    ORDER BY i.interacted_at DESC, l.rowid, i.id
 """
 
 

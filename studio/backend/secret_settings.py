@@ -27,7 +27,9 @@ try:
 except ImportError:
     from vault import DPAPI_PREFIX, LOCAL_ENC_PREFIX, LOCAL_ENC_V2_PREFIX, decrypt_token, encrypt_token
 
-SECRET_SETTING_KEYS = frozenset({"ai_api_key", "gemini_api_key", "ai_image_api_key"})
+# telegram_bot_token: the bot token the Local security tab keeps for the
+# phone bridge (ingress.py), sealed like the AI key since cycle 4, D6.
+SECRET_SETTING_KEYS = frozenset({"ai_api_key", "gemini_api_key", "ai_image_api_key", "telegram_bot_token"})
 
 _SEALED_PREFIXES = (DPAPI_PREFIX, LOCAL_ENC_V2_PREFIX, LOCAL_ENC_PREFIX)
 

@@ -239,7 +239,8 @@ def init_db() -> None:
     1. analytics_daily: Time-series creator metrics & impressions.
     2. posts: Content drafts, scheduled items, published activities.
     3. audience_demographics: Job title, company, geography, and seniority breakdowns.
-    4. inspirations: Reverse-engineered viral post templates & blueprints.
+    4. (inspirations is gone: migration 2 dropped it, and init_db no longer
+       recreates it at boot. Other people's posts do not belong here.)
     5. queue_slots: Peak engagement calendar schedule matrix.
     6. leads: Post commenter & reactor CRM pipeline.
     7. settings: Key-value configuration store for tokens & Gemini API keys.
@@ -327,20 +328,12 @@ def init_db() -> None:
     )
     """)
 
-    # 4. Viral Inspirations Library
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS inspirations (
-        id TEXT PRIMARY KEY,
-        author_name TEXT,
-        author_headline TEXT,
-        topic TEXT,
-        content TEXT,
-        likes_count INTEGER DEFAULT 0,
-        comments_count INTEGER DEFAULT 0,
-        key_hook TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """)
+    # 4. No inspirations table. Migration 2 dropped it "to eliminate
+    # third-party scraping liabilities", and this CREATE TABLE IF NOT EXISTS
+    # put an empty shell of it back on every boot, because init_db runs
+    # before the ledger and the ledger runs migration 2 once. The baseline
+    # fingerprint (schema_baseline.json) records its absence deliberately:
+    # a table a migration drops is not one an existing install needs.
 
     # 5. Smart Queue Slots
     cursor.execute("""

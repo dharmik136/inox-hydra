@@ -24,7 +24,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from app import app
 from database import get_db, init_db, seed_day03_draft
-from intelligence_sync import IntelligenceSyncEngine, intelligence_sync_engine, FALLBACK_TEMPLATES
+import hook_forms
+from hook_forms import FALLBACK_TEMPLATES
 
 client = TestClient(app)
 
@@ -115,7 +116,7 @@ def test_day03_strict_zero_em_dashes():
 
     backend_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "backend"))
     files_to_check = [
-        os.path.join(backend_dir, "intelligence_sync.py"),
+        os.path.join(backend_dir, "hook_forms.py"),
         os.path.join(backend_dir, "database.py"),
         os.path.join(backend_dir, "app.py"),
         os.path.abspath(os.path.join(backend_dir, "..", "extension", "background.js")),
@@ -129,142 +130,37 @@ def test_day03_strict_zero_em_dashes():
 
 
 # -------------------------------------------------------------
-# TASK 4: IntelligenceSyncEngine Tests
+# TASK 4: The hook forms seed themselves on an empty library
 # -------------------------------------------------------------
-def test_intelligence_sync_offline_fallback():
-    """Verifies that IntelligenceSyncEngine seeds offline fallback templates when table is empty."""
+# The network sync these tested (304, 200 with an ETag file, a failed fetch
+# falling back) was intelligence_sync.py's, deleted in cycle 4, track 7
+# (ideas report decision 10): nothing called it, the bundle was unsigned, and
+# its answer replaced the creator's whole hook library. The signed library
+# channel that replaces it is tested in tests/test_qc4_t7_library_bundle.py.
+def test_the_hook_forms_seed_an_empty_library():
     conn = get_db()
     c = conn.cursor()
     c.execute("DELETE FROM viral_templates")
     conn.commit()
     conn.close()
 
-    engine = IntelligenceSyncEngine()
-    templates = engine.get_templates()
+    templates = hook_forms.get_templates()
     assert len(templates) >= len(FALLBACK_TEMPLATES)
-
-    # Verify ordered by velocity descending; unrated starter forms come last
     velocities = [t["velocity_score"] for t in templates]
     rated = [v for v in velocities if v is not None]
     assert rated == sorted(rated, reverse=True)
     assert velocities[: len(rated)] == rated
-
-    status = engine.get_status()
-    assert status["status"] == "success"
-    assert status["total_templates"] >= len(FALLBACK_TEMPLATES)
-    assert "last_synced_at" in status
-
-
-def test_intelligence_sync_http_304_not_modified():
-    """Verifies HTTP 304 Not Modified handler: 0 bytes transferred, local cache remains fresh."""
-    import tempfile
-    with tempfile.TemporaryDirectory() as td:
-        etag_file = os.path.join(td, ".test_etag")
-        with open(etag_file, "w", encoding="utf-8") as f:
-            f.write('"etag-v1-test"')
-
-        engine = IntelligenceSyncEngine(etag_file=etag_file)
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 304
-
-        with patch("requests.get", return_value=mock_resp) as mock_get:
-            result = engine.sync(force=False)
-            assert result["status"] == "up_to_date"
-            assert result["http_code"] == 304
-            assert result["bytes_transferred"] == 0
-            assert result["etag"] == '"etag-v1-test"'
-
-            # Verify If-None-Match header was passed
-            mock_get.assert_called_once()
-            headers_sent = mock_get.call_args[1]["headers"]
-            assert headers_sent.get("If-None-Match") == '"etag-v1-test"'
-
-
-def test_intelligence_sync_http_200_ok_and_etag_persistence():
-    """Verifies HTTP 200 OK handler: parses categories, populates SQLite, updates ETag file."""
-    import tempfile
-    with tempfile.TemporaryDirectory() as td:
-        etag_file = os.path.join(td, ".test_etag_200")
-        engine = IntelligenceSyncEngine(etag_file=etag_file)
-
-        mock_payload = {
-            "version": "2026.09.2",
-            "generated_at": "2026-09-17T12:00:00Z",
-            "total_hooks": 2,
-            "categories": [
-                {
-                    "archetype": "The Micro-SaaS Reality Check",
-                    "hook_text": "Most bootstrapped SaaS founders quit right before the inflection point.",
-                    "velocity_score": 9.7,
-                    "engagement_multiplier": "3.5x",
-                    "pacing_style": "1-sentence hook + proof point",
-                    "example_post_id": "urn:li:activity:998877"
-                },
-                {
-                    "archetype": "The Clean Architecture Manifesto",
-                    "hook_text": "Why we removed 40% of our dependencies and speed doubled:",
-                    "velocity_score": 9.5,
-                    "engagement_multiplier": "3.0x",
-                    "pacing_style": "Direct claim + numerical delta",
-                    "example_post_id": "urn:li:activity:998878"
-                }
-            ]
-        }
-
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.json.return_value = mock_payload
-        mock_resp.headers = {"ETag": '"etag-new-999"'}
-
-        with patch("requests.get", return_value=mock_resp):
-            result = engine.sync(force=True)
-            assert result["status"] == "updated"
-            assert result["http_code"] == 200
-            assert result["hooks_count"] == 2
-            assert result["etag"] == '"etag-new-999"'
-            assert result["version"] == "2026.09.2"
-
-            # Verify ETag written to disk
-            assert os.path.exists(etag_file)
-            with open(etag_file, "r", encoding="utf-8") as f:
-                assert f.read() == '"etag-new-999"'
-
-            # Verify items in database
-            templates = engine.get_templates()
-            assert len(templates) == 2
-            assert templates[0]["archetype"] == "The Micro-SaaS Reality Check"
-            assert templates[0]["velocity_score"] == 9.7
-
-
-def test_intelligence_sync_network_failure_resilience():
-    """Verifies that network exceptions fall back safely to offline templates without crashing."""
-    engine = IntelligenceSyncEngine()
-    with patch("requests.get", side_effect=requests.RequestException("Connection refused")):
-        result = engine.sync()
-        assert result["status"] == "offline_fallback"
-        assert result["is_fallback"] is True
-        assert "Connection refused" in result["message"]
-
-        # Engine still serves templates safely
-        templates = engine.get_templates()
-        assert len(templates) > 0
+    assert hook_forms.get_total_count() >= len(FALLBACK_TEMPLATES)
 
 
 # -------------------------------------------------------------
 # TASK 5: Day 03 API Endpoints
 # -------------------------------------------------------------
 def test_intelligence_api_endpoints():
-    """Validates FastAPI routes: status, templates query, and sync trigger."""
-    # 1. GET /api/v1/intelligence/status
-    res_status = client.get("/api/v1/intelligence/status")
-    assert res_status.status_code == 200
-    data_status = res_status.json()
-    assert data_status["status"] == "success"
-    assert "total_templates" in data_status
-    assert "cdn_url" in data_status
+    """Validates the hook forms route; the sync status route went with the sync (cycle 4, track 7)."""
+    assert client.get("/api/v1/intelligence/status").status_code == 404
 
-    # 2. GET /api/v1/intelligence/templates
+    # GET /api/v1/intelligence/templates
     res_templates = client.get("/api/v1/intelligence/templates?limit=10")
     assert res_templates.status_code == 200
     data_templates = res_templates.json()

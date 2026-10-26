@@ -360,11 +360,15 @@ def test_the_upgrade_gives_every_publication_its_post_again(client):
     conn.close()
     before = len([r for r in _db().execute("SELECT id FROM posts")])
 
+    # A database at 2.7.0's schema, as every install that met the defect is:
+    # the migrations after it run in order, this track's among them, which
+    # is found by its function, never by its number.
     raw = sqlite3.connect(get_db_path())
     raw.execute("PRAGMA user_version = 27")
     report = migrations.ensure_schema(raw, take_backup=False)
     raw.close()
-    assert [a["version"] for a in report["applied"]] == [28], report
+    ours = next(m[0] for m in migrations.MIGRATIONS if m[2] is migrations._migrate_reader_timing_and_network_reading)
+    assert ours in [a["version"] for a in report["applied"]], report
 
     assert _publication(bind_me)["post_id"] == "post-studio-draft", "the orphan did not bind to its draft"
     for urn in (plain, captionless):
