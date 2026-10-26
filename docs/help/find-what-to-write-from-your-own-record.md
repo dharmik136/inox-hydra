@@ -4,7 +4,7 @@ Open **From your record** for five cards a day, drawn from your own posts, your 
 
 ## Where it is
 
-**From your record** is on the rail, after **Today**. The buttons at the top right switch between its four views: **Today**, **Kept**, **What the studio knows** and **Did these help?**
+**From your record** is on the rail, after **Today**. The buttons at the top right switch between its four views: **Today's cards**, **Kept**, **What the studio knows** and **Did these help?**
 
 It needs no AI provider and, without one, sends nothing anywhere. Import your LinkedIn archive in **Setup** and it has cards from the first day. See [Set up the studio from your LinkedIn](set-up-the-studio-from-your-linkedin.md).
 

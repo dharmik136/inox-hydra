@@ -147,7 +147,8 @@ export function RecordSurface({ onOpenDraft }: { onOpenDraft?: (draft: { id: str
         <nav aria-label="From your record levels" className="flex flex-wrap items-center gap-1">
           {(
             [
-              ["today", "Today"],
+              // Not "Today": the rail's Today button sits beside it with that name.
+              ["today", "Today's cards"],
               ["kept", "Kept"],
               ["knows", "What the studio knows"],
               ["helped", "Did these help?"],
