@@ -40,10 +40,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
-    from . import onboarding, post_identity
+    from . import changes, onboarding, post_identity
     from .database import get_db
     from .text_cut import clip
 except ImportError:
+    import changes
     import onboarding
     import post_identity
     from database import get_db
@@ -278,14 +279,19 @@ def mark(lead_id: str, post_urn: str, comment_key: str) -> Dict[str, Any]:
         with conn:
             if not _the_comment(conn, lead_id, post_urn or "", comment_key or ""):
                 raise UnknownComment("The studio holds no such comment.")
-            conn.execute(
+            added = conn.execute(
                 "INSERT OR IGNORE INTO reply_marks (lead_id, post_urn, comment_key, marked_at) VALUES (?, ?, ?, ?)",
-                (lead_id, post_urn or "", comment_key or "", datetime.now(timezone.utc).isoformat()))
+                (lead_id, post_urn or "", comment_key or "", datetime.now(timezone.utc).isoformat())).rowcount
             marked_at = conn.execute(
                 "SELECT marked_at FROM reply_marks WHERE lead_id = ? AND post_urn = ? AND comment_key = ?",
                 (lead_id, post_urn or "", comment_key or "")).fetchone()[0]
     finally:
         conn.close()
+    # Said once the write has committed (studio/backend/changes.py), so a
+    # window showing the comments waiting reads again: Today's list and its
+    # count, and Replies in another window. A second mark changed nothing.
+    if added:
+        changes.publish("replies", post=post_urn, lead=lead_id)
     return {"status": "success", "marked_at": marked_at}
 
 
@@ -299,4 +305,6 @@ def unmark(lead_id: str, post_urn: str, comment_key: str) -> Dict[str, Any]:
                 (lead_id, post_urn or "", comment_key or "")).rowcount
     finally:
         conn.close()
+    if removed:
+        changes.publish("replies", post=post_urn, lead=lead_id)
     return {"status": "success", "removed": removed}

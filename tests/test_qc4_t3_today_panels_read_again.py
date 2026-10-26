@@ -43,7 +43,10 @@ def _function(source, name):
 def test_every_side_panel_read_is_under_refresh():
     source = _read(SURFACE)
     hook = _function(source, "useRead")
-    assert re.search(r"useRefresh\(again\)", hook), "useRead does not put its read under useRefresh"
+    # With no interval; track 2 passes the panel's stream rule as the third
+    # argument (useRefresh(again, undefined, listen)).
+    assert re.search(r"useRefresh\(again(?:, undefined(?:, \w+)?)?\)", hook), \
+        "useRead does not put its read under useRefresh, with no interval"
     # The six panels all read through useRead, so one wiring covers them.
     for endpoint in ("fetchEvidenceBrief", "fetchCadenceInsights", "fetchAnalyticsKpis", "fetchSmartSlots",
                      "fetchWaitingCaptures", "fetchBackupSchedule"):

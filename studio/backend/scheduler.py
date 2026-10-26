@@ -28,11 +28,12 @@ import sqlite3
 from apscheduler.schedulers.background import BackgroundScheduler
 
 try:
-    from . import paths
+    from . import paths, changes
     from .database import get_db, init_db, SEEDED_DEMO_POST_IDS, DEFAULT_QUEUE_SLOTS, neutral_slot_label
     from .migrations import SCHEMA_VERSION
 except ImportError:
     import paths
+    import changes
     from database import get_db, init_db, SEEDED_DEMO_POST_IDS, DEFAULT_QUEUE_SLOTS, neutral_slot_label
     from migrations import SCHEMA_VERSION
 
@@ -569,6 +570,8 @@ class NativeScheduler:
 
         finally:
             conn.close()
+        if actions:
+            changes.publish("queue")
 
         return actions
 

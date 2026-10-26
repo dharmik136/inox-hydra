@@ -382,9 +382,26 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Track 1 (the bridge) merged into track 4 for 2.9.0, measured on the merged
 # tree: 214 paths, 166 reached, 48 unreachable, unchanged. The bridge adds no
 # path, and Health reads the network-reading state from its own readers route.
+#
+# Cycle 4, track 2 (the show path): /api/v1/events added, the change stream a
+# window listens to so a screen reads again when the studio says something
+# changed instead of on a fast timer. Declared here before the interface
+# opens it, so it sits in the unreachable column for one commit.
+# Total 172 -> 173, reached stays at 118, unreachable 54 -> 55.
+# Then the window opens it (studio/ui/src/lib/refresh.ts, one stream per
+# window, called by the shell), so it is reached.
+# Reached 118 -> 119, unreachable 55 -> 54, total stays at 173.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 214
-REACHED_BY_INTERFACE = 166
+# Merged with release 2.8.0 for 2.9.0 (tracks 5, 7, 3 and 6 with track 2),
+# measured on the merged tree: 206 paths, 149 reached by the interface, 57
+# unreachable. Track 2's one path, /api/v1/events, is reached (refresh.ts).
+#
+# Track 2 (the show path) merged into track 4 after track 1, for 2.9.0,
+# measured on the merged tree: 215 paths, 167 reached, 48 unreachable. Track
+# 4's 214 and 166 with /api/v1/events, which the window opens.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 215
+REACHED_BY_INTERFACE = 167
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

@@ -29,7 +29,7 @@ import {
 } from "@/lib/api";
 import { NOT_MEASURED, formatDays, gapOrNotMeasured } from "@/lib/cadence";
 import { reportBridge } from "@/lib/bridgeState";
-import { useRefresh } from "@/lib/refresh";
+import { useRefresh, type Listen, type StudioChangeNote } from "@/lib/refresh";
 import { ratioTone } from "@/lib/results";
 import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
@@ -74,17 +74,76 @@ interface Read<T> {
 const PENDING: Read<never> = { data: null, failed: false, loading: true };
 
 /**
+ * How often Today reads again when the stream has said nothing: the backstop
+ * for what no write announces, such as the bridge going quiet. A capture
+ * reaches Today through the stream within about a second.
+ */
+const BACKSTOP_MS = 120_000;
+
+/**
+ * The least time between two reads of one of Today's parts that the stream
+ * causes, with the last change always read. Today is the screen left open
+ * while the creator is on LinkedIn, when changes keep coming, and its brief
+ * re-runs the whole onboarding state; at one read a second it cost several
+ * times its old 30 second poll. Fifteen seconds, the age at which a returning
+ * window reads again, keeps it to four reads a minute however busy the bridge
+ * is, still sooner than the poll it replaced, and a change after a quiet
+ * spell is read at once.
+ */
+const TODAY_GAP_MS = 15_000;
+
+/**
+ * Whether a change can alter Today's brief, by what the brief shows. Only
+ * kinds it shows something of; within one, only what would read differently.
+ */
+function briefMayChange(change: StudioChangeNote, brief: TodayBrief | null): boolean {
+  if (!brief) return true;
+  switch (change.kind) {
+    case "heartbeat":
+      // The line says BRIDGE CONNECTED with no time: a heartbeat changes it
+      // only when it shows the bridge as gone.
+      return !brief.freshness.bridge.connected;
+    case "capture": {
+      // LAST CAPTURE reads JUST NOW for ninety seconds, and a reader that
+      // drifts or recovers changes the parts not working.
+      const { last_capture_at: last, drifting } = brief.freshness;
+      return Boolean(change.drift) || drifting.length > 0 || !last || ago(last) !== "JUST NOW";
+    }
+    case "people":
+      // A comment is someone to reply to. A reaction or a repost leaves
+      // nothing to reply to and changes only how many posts someone already
+      // on the list engaged with.
+      if (change.interaction === "reaction" || change.interaction === "repost") {
+        return !change.lead || brief.reply_to.some((person) => person.lead_id === change.lead);
+      }
+      return true;
+    case "outbound":
+    case "account":
+    case "ideas":
+      // The brief shows neither the creator's engagement elsewhere nor the
+      // daily totals, which have their own panel, nor the daily section.
+      return false;
+    case "replies":
+      // A comment marked answered in Replies leaves the list and its count.
+      return true;
+    default:
+      return true;
+  }
+}
+
+/**
  * One panel's own read, kept apart from every other panel's.
  *
  * `load` is held in a ref so a caller may pass a fresh arrow each render
  * without the read running again. The read runs once on mount and again
  * under useRefresh with no interval: when the studio answers after an
- * outage, and when the window comes back after being away. The panels'
+ * outage, and when the window comes back after being away, and, given
+ * `listen`, when the change stream says what the panel shows has changed. The panels'
  * failure sentence promises that, and it was true only of Today's own read:
  * the six side panels were read once per mount, so one that failed stayed
  * failed until the creator left the screen.
  */
-function useRead<T>(load: () => Promise<T>, onData?: (value: T) => void): [Read<T>, () => void] {
+function useRead<T>(load: () => Promise<T>, onData?: (value: T) => void, listen?: Listen): [Read<T>, () => void] {
   const [state, setState] = useState<Read<T>>(PENDING);
   const latest = useRef({ load, onData });
   latest.current = { load, onData };
@@ -98,7 +157,7 @@ function useRead<T>(load: () => Promise<T>, onData?: (value: T) => void): [Read<
       .catch(() => setState({ data: null, failed: true, loading: false }));
   }, []);
   useEffect(again, [again]);
-  useRefresh(again);
+  useRefresh(again, undefined, listen);
   return [state, again];
 }
 
@@ -137,22 +196,47 @@ export function TodaySurface({
 
   useEffect(load, [load]);
   // Captures arrive while this screen is open, from the other window. Read
-  // again every 30 seconds while the window is in view (a hidden one is not
-  // polled), on coming back to it, and when the studio is back after an outage.
-  useRefresh(load, 30000);
+  // again when the studio says something changed, within about a second; on
+  // coming back to the window; when the studio is back after an outage; and
+  // every BACKSTOP_MS while the window is in view (a hidden one is not polled).
+  useRefresh(load, BACKSTOP_MS, { gapMs: TODAY_GAP_MS, matters: (change) => briefMayChange(change, brief) });
 
   // The panels beside Today's own read. Each is its own endpoint, and none of
   // them is polled: evidence, cadence, the thirty day totals, the week's
   // slots and the two held signals all move on the scale of days, so
   // re-reading them every half minute would be work nobody asked for. Each
   // is read again when the studio is back after an outage and when the
-  // window comes back (useRead), which is what their failure sentence says.
-  const [evidence] = useRead(useCallback(() => fetchEvidenceBrief(), []));
-  const [cadence] = useRead(useCallback(() => fetchCadenceInsights(), []));
-  const [kpis] = useRead(useCallback(() => fetchAnalyticsKpis("30d"), []));
-  const [slots] = useRead(useCallback(() => fetchSmartSlots(), []));
-  const [waiting] = useRead(useCallback(() => fetchWaitingCaptures(), []));
-  const [backups] = useRead(useCallback(() => fetchBackupSchedule(), []));
+  // window comes back (useRead), which is what their failure sentence says,
+  // and when the change stream says what it shows has changed, at most once
+  // per TODAY_GAP_MS.
+  // Evidence counts the people per topic, so an engagement matters to it.
+  const [evidence] = useRead(useCallback(() => fetchEvidenceBrief(), []), undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: (c) => c.kind === "posts" || c.kind === "readings" || c.kind === "people",
+  });
+  const [cadence] = useRead(useCallback(() => fetchCadenceInsights(), []), undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: (c) => c.kind === "posts" || c.kind === "queue",
+  });
+  const [kpis] = useRead(useCallback(() => fetchAnalyticsKpis("30d"), []), undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: (c) => c.kind === "account",
+  });
+  const [slots] = useRead(useCallback(() => fetchSmartSlots(), []), undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: (c) => c.kind === "queue",
+  });
+  // Only the extension knows how many captures it holds, and it says so on
+  // the heartbeats that carry the count.
+  const [waiting] = useRead(useCallback(() => fetchWaitingCaptures(), []), undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: (c) => c.kind === "heartbeat" && c.waiting !== false,
+  });
+  // Written by the backup job, which names nothing: a "database" change.
+  const [backups] = useRead(useCallback(() => fetchBackupSchedule(), []), undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: () => false,
+  });
 
   async function open(url: string, at: "top" | "latest" = "top") {
     setOpening(url);

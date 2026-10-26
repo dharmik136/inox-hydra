@@ -75,6 +75,7 @@ try:
     from .internal_sheet import internal_sheet_manager
     from . import onboarding
     from . import ingest_contract
+    from . import changes
     from . import accounts
     from . import licensing
     from . import archive_import
@@ -150,6 +151,7 @@ except ImportError:
     from internal_sheet import internal_sheet_manager
     import onboarding
     import ingest_contract
+    import changes
     import accounts
     import licensing
     import archive_import
@@ -1584,6 +1586,7 @@ def post_bridge_heartbeat(payload: BridgeHeartbeat):
     seen = onboarding.record_heartbeat(payload.extension_version, payload.page_kind,
                                        payload.network_reading, payload.voyager_calls)
     ingest_contract.note_waiting(payload.waiting_captures, payload.oldest_waiting_at)
+    changes.publish("heartbeat", waiting=payload.waiting_captures is not None)
     seen["handshake"] = ingest_contract.handshake(payload.extension_version, payload.contract_version)
     return seen
 
@@ -1648,7 +1651,7 @@ def get_waiting_captures():
 @app.post("/api/v1/identity/observe", tags=["Onboarding"])
 def post_identity_observe(payload: Dict[str, Any]):
     try:
-        return onboarding.observe_profile(payload)
+        return changes.published(onboarding.observe_profile(payload), "identity", ("updated", "candidate"))
     except onboarding.RefusedCapture as error:
         _refusal(error)
 
@@ -1961,6 +1964,16 @@ except (ImportError, ValueError):
     from routers import storage as storage_router_module
 
 app.include_router(storage_router_module.router)
+
+# The change stream: one connection per window, told when something changed,
+# so a screen reads again only then (studio/backend/routers/events.py, fed by
+# studio/backend/changes.py).
+try:
+    from .routers import events as events_router_module
+except (ImportError, ValueError):
+    from routers import events as events_router_module
+
+app.include_router(events_router_module.router)
 
 # From your record (cycle 4, track 7): the daily section's routes.
 try:

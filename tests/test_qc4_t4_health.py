@@ -434,3 +434,17 @@ def test_network_reading_is_drawn_over_the_readers_in_its_three_states(client):
     for state, dot in dots.items():
         assert re.search(rf'reading\??\.state === "{state}"\)? && "{dot}"', over_the_table), f"the {state} state has no {dot} dot"
     assert "not reported by this extension version" in over_the_table
+
+
+def test_health_reads_again_as_runs_land_and_no_more_than_every_fifteen_seconds():
+    """
+    Track 2's stream made Setup's reader lines read within a second of a run;
+    the lines live here now. Health reads six routes, so a burst of runs is
+    held to one read per CHANGE_GAP_MS, the gap Today and the header use.
+    """
+    surface = _read(HEALTH_SURFACE)
+    rule = surface.split("function healthMayChange")[1].split("\n}\n")[0]
+    assert 'change.kind === "capture"' in rule and 'change.kind === "heartbeat"' in rule
+    assert "useRefresh(load, POLL_MS, { gapMs: CHANGE_GAP_MS, matters: healthMayChange });" in surface
+    gap = int(re.search(r"const CHANGE_GAP_MS = ([\d_]+);", surface).group(1).replace("_", ""))
+    assert gap >= 15_000, "a burst of runs would read six routes more than four times a minute"

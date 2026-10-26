@@ -22,9 +22,10 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 try:
-    from .. import analytics_export, licensing
+    from .. import analytics_export, changes, licensing
 except (ImportError, ValueError):
     import analytics_export
+    import changes
     import licensing
 
 router = APIRouter()
@@ -109,7 +110,7 @@ def post_export_import(payload: ExportImportPayload):
     """Imports the sheets the creator kept ticked, every figure exact and named as the export's."""
     if not licensing.allows("analytics"):
         raise HTTPException(status_code=402, detail="Importing LinkedIn's analytics export is part of the Creator licence.")
-    return _call(lambda: analytics_export.import_export(payload.source, payload.include))
+    return changes.published(_call(lambda: analytics_export.import_export(payload.source, payload.include)), ("account", "readings"), ("success",))
 
 
 @router.post("/api/v1/analytics-export/discard", tags=["Onboarding"])

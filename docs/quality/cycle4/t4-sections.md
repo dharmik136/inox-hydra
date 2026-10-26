@@ -169,3 +169,28 @@ The migration, measured on throwaway installs by running the studio's own startu
 Left for track 1, not changed here because the extension is track 1's: the drift notice in `popup.js:215`, `sidepanel.js:709` and `background.js:1094` (and its quotation in `install-the-browser-extension.md`) says "See Capture health in Setup."; Setup now holds a pointer to Health under that heading's old place, so the sentence still leads there, one click longer. "See Health in the studio." would be the direct words.
 
 The full suite on the merged tree, as CI runs it, after the interface was built: 3,843 passed, 18 skipped, 0 failed, in 660 s. The eighteenth skip is the retention test's own while the two hours before now cross midnight, as they did during the run.
+
+## The merge with track 2 (the show path), for 2.9.0
+
+`qc4/t2-show` at `e9ebfee` (which already held 2.8.0) merged into this branch after track 1's merge (`c36ffdb`). Three files conflicted, each keeping both sides: the maintainers' list in `docs_engine.py` (both records), Setup's imports (the setup rule and the stream's note type), and the endpoint ledger. No migration.
+
+Every bus line track 2 added (22: the publishes, the derived writes, the restore's put down and let go) is in the merged tree; a script compared them line for line. Two writers needed more than surviving:
+
+- **`record_capture`, a defect the merge made.** Track 1 moved the capture write into `_write_capture`; track 2's change after it named the run's drift and minute from two local variables that no longer existed there. Merged as git wrote it, every capture would have answered 500 after its row was written. `_write_capture` now hands back the run's drift and moment, and `record_capture` names them. `tests/test_qc4_t4_bus_writers.py::test_a_capture_still_names_its_reader_its_drift_and_its_minute`.
+- **`note_own_post` (track 1's)** writes the publication and the post of an engagement on a post of the creator's the studio did not hold, and said nothing; it says `posts` when it wrote, and nothing when the post was known, so track 2's "an engagement says people" still holds.
+- **This track's reply marks** say `replies`, a new kind in `changes.KINDS` and the window's `StudioChange` and `ANY_CHANGE`, once the mark or its removal committed, and not for a mark that changed nothing. Today's brief reads again on it (its list and count), Replies reads on it and on a comment (a reaction or repost leaves nothing to answer), and Setup, Activity and Today's panels do not, since none shows a mark. A guard holds the bus's kinds and the window's to one list, because the window drops a kind it does not know.
+- `capture_days` has no writer of its own: its trigger runs inside `record_capture`'s transaction, which says `capture`.
+
+Today, Setup and Activity run on track 2's intervals and rules: Today 120 s with its 15 s gap, Setup and Activity a 30 s backstop. Setup's capture rule was written for the reader lines that moved to Health; it is kept as track 2 wrote it, so Setup still reads its state on a run though it no longer draws one. Its own capture case could now answer no; that is track 2's call. Health, where the lines live, reads on a run or a heartbeat with a 15 s gap, as Today and the header do, since it reads six routes, and still every 30 s for the bridge going quiet.
+
+Five of track 2's browser tests waited for Setup's CAPTURE HEALTH block and its "WORKING, LAST READ" line, which this branch had moved: they wait for Setup's heading, Setup's capture tests count its reads of the state as their evidence, and a new one shows a capture reaching Health within about a second after a quiet spell.
+
+Help: Today's article says the studio opens on Today once Setup's required steps are done (it said once the profile was confirmed, which the landing rule stopped being in phase a); Replies' and Health's say when they read again.
+
+Tests: `tests/test_qc4_t4_bus_writers.py` (3), three in `tests/test_qc4_t4_replies.py`, one in `tests/test_qc4_t4_health.py`, and the browser tests above. Falsified, each caught: the capture writer handing nothing back, a new post saying nothing, a known post saying `posts`, a mark saying nothing, a second mark saying `replies`, the window not knowing `replies`, Setup reading on a mark, Replies deaf to the stream, Health deaf to the stream, Health with a one second gap, Health deaf to runs; and, built into the bundle, Health deaf to runs and Setup deaf to captures in the browser tests (the bundle rebuilt clean after).
+
+The census on the merged tree: 215 paths, 167 reached, 48 unreachable (this branch's 214 and 166 with `/api/v1/events`, which the window opens).
+
+Outside this track's files: `changes.py` and `refresh.ts` (track 2's: the one kind and its comment), `ActivitySurface.tsx` and `TodaySurface.tsx` (one case each in track 2's rules), `onboarding.py` (track 1's: `_write_capture` returns the run, `note_own_post` says `posts`), and track 2's `tests/test_qc4_t2_show_browser.py` (as above).
+
+The full suite on the merged tree, as CI runs it, after the interface was built: 3,921 passed, 18 skipped, 0 failed, in 770 s, the same eighteen skips as the run after track 1's merge.

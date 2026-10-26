@@ -49,11 +49,26 @@ import type { SearchFocus } from "@/lib/search";
 import { measurableLength, measurableWordCount, openingEnd, storedLength, swapOpening } from "@/lib/text";
 import { DOCKED_INSPECTOR_QUERY, useMediaQuery } from "@/lib/viewport";
 import { onBridgeReport, reportBridge } from "@/lib/bridgeState";
-import { useRefresh } from "@/lib/refresh";
+import { onStudioChange, useRefresh, useStudioStream } from "@/lib/refresh";
 import { confirmLeaving, registerUnsavedWork } from "@/lib/unsaved";
 
 /** Average adult reading speed. Used for an estimate that is labelled as one. */
 const WORDS_PER_MINUTE = 200;
+
+/**
+ * How long after a write nothing named the header waits for a screen to
+ * report the bridge before reading it itself: Today, Setup and Activity read
+ * on the same news, and one answer on screen is better than two.
+ */
+const BRIDGE_REPORT_GRACE_MS = 1_500;
+
+/**
+ * The least time between two reads of the bridge the stream causes the header
+ * to make, with the last one always made. The whole onboarding state is read
+ * for one mark, so fifteen seconds, the age at which a returning screen reads
+ * again, keeps it to four a minute however busy the studio is.
+ */
+const HEADER_GAP_MS = 15_000;
 
 /**
  * The screen an address names: "#/leads" is Leads.
@@ -275,6 +290,9 @@ export default function App() {
   // reported. Null until known, and then nothing is claimed.
   const [bridgeConnected, setBridgeConnected] = useState<boolean | null>(null);
   const bridgeReadAt = useRef(0);
+  // One change stream for this window, whichever screen is open: the
+  // screens listen to it through useRefresh rather than each polling.
+  useStudioStream();
   useEffect(
     () =>
       onBridgeReport((connected) => {
@@ -323,6 +341,40 @@ export default function App() {
     if (showsHeader) void readBridge();
   }, [showsHeader, readBridge]);
   useRefresh(readBridge, 60_000);
+  // The mark follows the stream. A heartbeat is the bridge heard from now,
+  // which is what connected means (the studio counts it connected for 150
+  // seconds after one), so the mark says so without a read. A write nothing
+  // named may be the bridge too, as a heartbeat a second studio recorded or
+  // a restore, so after one the header reads the state itself unless a
+  // screen reported it first, at most once per HEADER_GAP_MS and always once
+  // after the last. The minute above stays: nothing is written when the
+  // bridge goes quiet, so only time can say it has.
+  const headerReadAt = useRef(0);
+  useEffect(() => {
+    let waiting: number | undefined;
+    const stop = onStudioChange((changes) => {
+      if (changes.some((change) => change.kind === "heartbeat")) {
+        bridgeReadAt.current = Date.now();
+        setBridgeConnected(true);
+      }
+      if (!changes.some((change) => change.kind === "database") || waiting !== undefined) return;
+      const heardAt = Date.now();
+      const wait = Math.max(BRIDGE_REPORT_GRACE_MS, headerReadAt.current + HEADER_GAP_MS - heardAt);
+      waiting = window.setTimeout(() => {
+        waiting = undefined;
+        if (!showsHeaderRef.current || bridgeReadAt.current >= heardAt) return;
+        headerReadAt.current = Date.now();
+        bridgeReadAt.current = Date.now();
+        fetchOnboardingState()
+          .then((state) => reportBridge(state.bridge.connected))
+          .catch(() => setBridgeConnected(null));
+      }, wait);
+    });
+    return () => {
+      stop();
+      if (waiting !== undefined) window.clearTimeout(waiting);
+    };
+  }, []);
 
   const sections = useMemo(
     () => STUDIO_SECTIONS.filter((section) => section.id !== "devtools" || devMode),

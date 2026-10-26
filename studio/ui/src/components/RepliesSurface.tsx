@@ -10,7 +10,7 @@ import {
   type RepliesPage,
   type RepliesView,
 } from "@/lib/api";
-import { useRefresh } from "@/lib/refresh";
+import { useRefresh, type StudioChangeNote } from "@/lib/refresh";
 import { formatLocal, formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -33,8 +33,20 @@ import { cn } from "@/lib/utils";
  */
 const WINDOWS = [7, 14, 30] as const;
 
-/** Read again while open, so a comment the bridge reads in the other window arrives. */
+/**
+ * The backstop while the window is in view, for what no write announces. A
+ * comment the bridge keeps arrives within about a second, by the change stream.
+ */
 const POLL_MS = 60_000;
+
+/**
+ * Whether a change can alter the comments listed: a mark or its removal, or
+ * someone commenting. A reaction or a repost leaves nothing to answer.
+ */
+function repliesMayChange(change: StudioChangeNote): boolean {
+  if (change.kind === "replies") return true;
+  return change.kind === "people" && change.interaction !== "reaction" && change.interaction !== "repost";
+}
 
 export function RepliesSurface({
   onOpenLead,
@@ -78,7 +90,10 @@ export function RepliesSurface({
     setPage(null);
     void load();
   }, [load]);
-  useRefresh(load, POLL_MS);
+  // Within about a second of the bridge keeping a comment on one of your
+  // posts, or of a mark made in another window (studio/backend/changes.py),
+  // and every POLL_MS while the window is in view, for what nothing announces.
+  useRefresh(load, POLL_MS, { matters: repliesMayChange });
 
   async function more() {
     if (!page || page.next_offset === null) return;

@@ -19,8 +19,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 try:
-    from .. import library_bundle, record_daily, record_evaluation, record_model, record_store
+    from .. import changes, library_bundle, record_daily, record_evaluation, record_model, record_store
 except (ImportError, ValueError):
+    import changes
     import library_bundle
     import record_daily
     import record_evaluation
@@ -118,12 +119,12 @@ def post_record_reroll():
 
 @router.post("/api/v1/record/marks")
 def post_record_mark(payload: MarkRequest):
-    return _refused(lambda: record_store.mark(payload.day, payload.card_id, payload.mark))
+    return changes.published(_refused(lambda: record_store.mark(payload.day, payload.card_id, payload.mark)), "ideas", ("marked",))
 
 
 @router.post("/api/v1/record/marks/remove")
 def post_record_unmark(payload: MarkRequest):
-    return _refused(lambda: record_store.unmark(payload.day, payload.card_id, payload.mark))
+    return changes.published(_refused(lambda: record_store.unmark(payload.day, payload.card_id, payload.mark)), "ideas", ("unmarked",))
 
 
 @router.post("/api/v1/record/unhide-all")

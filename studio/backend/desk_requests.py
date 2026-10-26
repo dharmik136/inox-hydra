@@ -32,8 +32,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import post_identity
+    from . import changes, post_identity
 except ImportError:
+    import changes
     import post_identity
 
 # Why a link is refused, as the Telegram panel says it.
@@ -95,6 +96,7 @@ def record(conn, activity_urn: str, source: str = SOURCE_TELEGRAM) -> Dict[str, 
             "INSERT INTO desk_requests (activity_urn, asked_at, done_at, note, source, state) VALUES (?, ?, ?, ?, ?, ?)",
             (activity_urn, asked_at, done_at, note, source, state),
         )
+    changes.publish("desk")
     return {"id": cursor.lastrowid, "activity_urn": activity_urn, "asked_at": asked_at, "done_at": done_at,
             "note": note, "source": source, "state": state, "known_post": known}
 
@@ -170,6 +172,7 @@ def settle(conn, now: Optional[datetime] = None) -> Dict[str, int]:
                     "UPDATE desk_requests SET state = ?, done_at = ?, note = CASE WHEN note IS NULL OR note = '' "
                     "THEN ? ELSE note || ' ' || ? END WHERE id = ? AND state = ?",
                     (EXPIRED, stamp, EXPIRED_NOTE, EXPIRED_NOTE, request_id, OPEN))
+        changes.derived_written()
     return {"read": len(read), "expired": len(expired)}
 
 

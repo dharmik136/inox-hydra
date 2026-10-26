@@ -50,4 +50,4 @@ When nobody is waiting, the screen says so and names how many you marked answere
 - A person's name opens their dossier in **Leads**.
 - **Show more posts** reads the next eight posts, and on an opened post **Show more on this post** reads its next 50 comments; the line beside it says how many are shown of how many.
 
-Replies reads its list again every minute while the window is in view, and when you come back to it.
+Replies reads its list again within about a second of the bridge keeping a new comment on one of your posts, and of a comment being marked or unmarked in another studio window; every minute while the window is in view, for anything nothing announced; and when you come back to it. **Today**'s list and its count follow a mark the same way.

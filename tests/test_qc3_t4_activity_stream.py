@@ -6,11 +6,12 @@ Cycle 3, batch T4, and ONEVIEW section 1.3: Activity spent 118 KB over five
 seconds from navigation, of which /api/v1/self/activity-stream was 56 KB
 "fetched twice". Measured here with the page's clock held still, the screen
 reads the stream once when it opens: the second read in that five second
-window is the Activity screen's own auto refresh, which reads every 2.5
-seconds while the window is in view and which the creator can turn off on the
-screen (tests/test_qc2_r5_refresh.py holds that behaviour). So there is no
-duplicate read to remove, and this pins it that way, because a screen that
-starts reading twice is invisible until someone counts.
+window was the Activity screen's own auto refresh, which then read every 2.5
+seconds while the window was in view and which the creator can turn off on
+the screen (tests/test_qc2_r5_refresh.py holds that behaviour; since cycle 4
+it reads when the studio says something changed, with a 30 second backstop).
+So there is no duplicate read to remove, and this pins it that way, because a
+screen that starts reading twice is invisible until someone counts.
 
 The second test holds the size of one read, so the answer the poll re-sends
 cannot quietly grow past the section bar.

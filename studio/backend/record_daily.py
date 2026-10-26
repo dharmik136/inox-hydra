@@ -41,10 +41,11 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import paths, record_cards, support
+    from . import changes, paths, record_cards, support
     from .database import get_db
     from .migrations import SCHEMA_VERSION
 except ImportError:  # top-level import mode
+    import changes
     import paths
     import record_cards
     import support
@@ -334,6 +335,7 @@ def run_today(day: Optional[date] = None, conn=None, reroll: bool = False) -> Di
         except BaseException:
             conn.execute("ROLLBACK")
             raise
+        changes.publish("ideas")
         run = _today_run(conn, day)
         return {"status": "built" if not carried_from else "carried", "day": day.isoformat(), "run": run,
                 "cards": len(cards), "pruned_days": removed}

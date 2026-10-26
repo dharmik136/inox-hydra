@@ -77,7 +77,7 @@ Network reading is off unless you turn it on in the extension's popup. While it 
 - **Backup schedule**: whether the daily backup is on, the newest backup and when the next is due, and whether the schedule has stopped producing backups. See [Back up, restore and export](back-up-restore-and-export.md).
 - **Update check**: off unless you turn it on. While it is off, the studio makes no request to check for a newer version. Turn it on and **Check now** asks GitHub once for the newest version number; nothing is downloaded or installed. See [Check your version and update the studio](check-your-version-and-update-the-studio.md).
 
-Health reads its figures again every 30 seconds while the window is in view, and when you come back to it.
+Health reads its figures again within about a second of a reader running or the bridge being heard from, and at most every 15 seconds while runs keep landing; every 30 seconds while the window is in view, which is how it notices the bridge going quiet; and when you come back to it.
 
 ## What this changes elsewhere
 

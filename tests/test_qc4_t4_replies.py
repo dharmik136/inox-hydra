@@ -350,3 +350,50 @@ def test_replies_has_a_help_article_filed_for_a_creator():
     article = _read(os.path.join(REPO_ROOT, "docs", "help", "answer-the-people-waiting-on-a-reply.md"))
     assert "seen by the studio" in article.lower()
     assert "Answered" in article
+
+
+# ---------------------------------------------------------------------------
+# The change stream (track 2, merged for 2.9.0): a mark is a write, and every
+# writer says what it wrote once it has committed (studio/backend/changes.py)
+# ---------------------------------------------------------------------------
+
+def _said(monkeypatch):
+    import changes
+    said = []
+    monkeypatch.setattr(changes, "publish", lambda kind, **identifiers: said.append((kind, identifiers)))
+    return said
+
+
+def test_a_mark_and_its_removal_say_replies_once_each(client, monkeypatch):
+    said = _said(monkeypatch)
+    ben = client.get("/api/v1/replies").json()["posts"][0]["comments"][0]
+    assert _mark(client, ben).status_code == 200
+    assert said == [("replies", {"post": POST_ONE, "lead": "lead-b"})]
+    _mark(client, ben)
+    assert len(said) == 1, "a second mark changed nothing and said something"
+    _mark(client, ben, "/api/v1/replies/unmark")
+    _mark(client, ben, "/api/v1/replies/unmark")
+    assert [kind for kind, _ids in said] == ["replies", "replies"], "an unmark of nothing said something"
+
+
+def test_every_kind_the_studio_says_is_one_the_window_knows():
+    """A kind the window does not know is dropped by it, so a screen listening for it would never read."""
+    import changes
+    refresh = _read(os.path.join(REPO_ROOT, "studio", "ui", "src", "lib", "refresh.ts"))
+    union = re.search(r"export type StudioChange =(.*?);", refresh, re.S).group(1)
+    every = re.search(r"export const ANY_CHANGE: readonly StudioChange\[\] = \[(.*?)\];", refresh, re.S).group(1)
+    assert set(re.findall(r'"([a-z]+)"', union)) == set(changes.KINDS)
+    assert set(re.findall(r'"([a-z]+)"', every)) == set(changes.KINDS)
+
+
+def test_replies_and_today_read_again_on_a_mark_and_setup_and_activity_do_not():
+    components = os.path.join(REPO_ROOT, "studio", "ui", "src", "components")
+    replies = _read(os.path.join(components, "RepliesSurface.tsx"))
+    rule = replies.split("function repliesMayChange")[1].split("\n}\n")[0]
+    assert 'change.kind === "replies"' in rule and 'change.kind === "people"' in rule
+    assert "matters: repliesMayChange" in replies, "Replies does not listen to the change stream"
+    today = _read(os.path.join(components, "TodaySurface.tsx")).split("function briefMayChange")[1].split("\n}\n")[0]
+    assert re.search(r'case "replies":\s*(//[^\n]*\n\s*)*return true;', today), "Today's list does not read again on a mark"
+    for name, rule_name in (("OnboardingSurface.tsx", "setupMayChange"), ("ActivitySurface.tsx", "activityMayChange")):
+        body = _read(os.path.join(components, name)).split(f"function {rule_name}")[1].split("\n}\n")[0]
+        assert re.search(r'case "replies":\s*(case "[a-z]+":\s*)*return false;', body), f"{name} reads again on a mark it does not show"

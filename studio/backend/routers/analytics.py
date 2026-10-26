@@ -24,6 +24,7 @@ try:
     from .. import results
     from ..crm import reverse_crm, VIP_THRESHOLD
     from ..linkedin_client import linkedin_client
+    from .. import changes
 except (ImportError, ValueError):
     from database import get_db
     import insights
@@ -33,6 +34,7 @@ except (ImportError, ValueError):
     import results
     from crm import reverse_crm, VIP_THRESHOLD
     from linkedin_client import linkedin_client
+    import changes
 
 try:
     from studio.core.telemetry_shard import telemetry_engine, telemetry_buffer
@@ -375,8 +377,9 @@ def ingest_page_figures(payload: dict):
     named, never a viewer's or a searcher's name.
     """
     try:
-        return own_insights.ingest_page(payload.get("author"), payload.get("page"), payload.get("content_urn"),
-                                        payload.get("readings"), payload.get("points"))
+        return changes.published(own_insights.ingest_page(payload.get("author"), payload.get("page"), payload.get("content_urn"),
+                                                          payload.get("readings"), payload.get("points")),
+                                 "account", counts=("readings_recorded", "points_recorded"))
     except own_insights.Refused as error:
         raise HTTPException(status_code=409, detail=str(error))
 
@@ -655,5 +658,6 @@ def ingest_live_analytics(payload: dict):
             pass
 
     result = linkedin_client.ingest_analytics_payload(payload)
+    changes.publish_written(account=result.get("buckets_ingested") or result.get("followers_saved"), people=(result.get("leads_added") or 0) + (result.get("leads_updated") or 0), database=result.get("posts_updated"))
     return result
 

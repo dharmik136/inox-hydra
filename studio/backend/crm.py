@@ -17,12 +17,13 @@ import logging
 import sqlite3
 
 try:
-    from . import post_summary, results
+    from . import post_summary, results, changes
     from .database import get_db, write_with_retry
     from .migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 except ImportError:
     import post_summary
     import results
+    import changes
     from database import get_db, write_with_retry
     from migrations import INTERACTION_PLACEHOLDERS, interaction_comment_key
 
@@ -611,6 +612,7 @@ def catch_up_scores(conn, batch: int = SCORE_BATCH) -> int:
             if marked:
                 moved += recompute_scores(conn, marked)
             conn.commit()
+            changes.derived_written()
             if len(marked) < batch:
                 break
     except sqlite3.OperationalError:

@@ -36,7 +36,7 @@ import json
 import re
 import unicodedata
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote, unquote
 
 try:
@@ -55,10 +55,12 @@ except ImportError:
 try:
     from . import post_summary
     from . import ingest_contract
+    from . import changes
     from .database import get_db
 except ImportError:
     import post_summary
     import ingest_contract
+    import changes
     from database import get_db
 
 # How recently the extension must have been heard from to count as connected.
@@ -571,9 +573,13 @@ def record_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
     conn = get_db()
     try:
         with conn:
-            _write_capture(conn, payload["extractor"], payload)
+            # The row's own drift and moment, which the change below names: the
+            # write moved into _write_capture (track 1), and the change's line
+            # (track 2) still needs both.
+            drift, now = _write_capture(conn, payload["extractor"], payload)
     finally:
         conn.close()
+    changes.publish("capture", extractor=payload["extractor"], drift=bool(drift), minute=now.isoformat()[:16])
     return {"status": "success"}
 
 
@@ -586,7 +592,8 @@ def _millis(value: Any) -> Optional[float]:
     return round(float(value), 1)
 
 
-def _write_capture(conn, extractor: str, payload: Dict[str, Any], refused: Optional[str] = None) -> None:
+def _write_capture(conn, extractor: str, payload: Dict[str, Any],
+                   refused: Optional[str] = None) -> Tuple[List[str], datetime]:
     """
     One row of the capture log, inside the caller's transaction.
 
@@ -594,6 +601,9 @@ def _write_capture(conn, extractor: str, payload: Dict[str, Any], refused: Optio
     many reads it made since it last reported, how many of them took over
     50 ms, and the long tasks the page's timeline showed during them. A
     reader that sent none is not measured, which the row says with NULL.
+
+    Returns the fields the run could not read and the moment it was written,
+    which record_capture's change names once the write has committed.
     """
     drift = [d for d in (payload.get("drift") or []) if isinstance(d, str)][:10]
     now = datetime.now(timezone.utc)
@@ -610,6 +620,7 @@ def _write_capture(conn, extractor: str, payload: Dict[str, Any], refused: Optio
          _text(refused, 40), _count(payload.get("items_dropped"))),
     )
     conn.execute(PRUNE_CAPTURES, ((now - CAPTURE_RETENTION).isoformat(),))
+    return drift, now
 
 
 def listed_health(health: List[Dict[str, Any]], reading: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -834,6 +845,7 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
             }, refused="identity" if refusal else None)
     finally:
         conn.close()
+    changes.publish("account" if schema_name == "creator_analytics" else "readings")
 
     if refusal:
         raise refusal
@@ -1373,6 +1385,7 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
                     bound[how] += 1
     finally:
         conn.close()
+    changes.publish("posts")
     return {"status": "success", "written": written, "skipped": skipped, "reposts_recorded": reposts,
             "bound_to_posts": bound["post"], "bound_to_drafts": bound["draft"]}
 
@@ -1527,6 +1540,7 @@ def ingest_post_analytics(author: Any, activity_urn: Any, metrics: Any) -> Dict[
                              (impressions, _now(), urn))
     finally:
         conn.close()
+    changes.publish("readings", post=urn)
     return {"status": "success", "recorded": recorded, "demographics_recorded": demographics}
 
 
@@ -1657,6 +1671,7 @@ def note_own_post(post_urn: Any) -> Optional[str]:
     if not urn:
         return None
     conn = get_db()
+    wrote = False
     try:
         with conn:
             known = post_identity._publication_by_urn(conn, urn)
@@ -1679,9 +1694,16 @@ def note_own_post(post_urn: Any) -> Optional[str]:
                         "INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, "
                         "first_seen_at, last_seen_at) VALUES (?, NULL, ?, ?, ?, ?)",
                         (urn, published, "urn_decode" if published else None, now, now))
+                wrote = True
             result = post_identity.ensure_post(conn, urn)
+            wrote = wrote or bool(result and result.get("how") != "existing")
     finally:
         conn.close()
+    # A post the studio did not hold before, said once the write has
+    # committed (studio/backend/changes.py), as the creator's posts ingest
+    # says it; the engagement that brought it here says "people" after.
+    if wrote:
+        changes.publish("posts")
     return result["post_id"] if result else None
 
 
@@ -1732,6 +1754,7 @@ def ingest_outbound(actor: Any, items: Any) -> Dict[str, Any]:
                 written += 1
     finally:
         conn.close()
+    changes.publish("outbound")
     return {"status": "success", "written": written, "skipped": skipped}
 
 
@@ -2272,6 +2295,7 @@ def update_import(request_id: Any, event: Any, items_seen: Any = None, outcome: 
             res["all_completed"] = True
             res["is_chain"] = True
 
+    changes.publish("imports")
     return res
 
 

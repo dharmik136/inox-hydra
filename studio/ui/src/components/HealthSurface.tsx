@@ -20,7 +20,7 @@ import {
   type UpdateStatus,
 } from "@/lib/api";
 import { reportBridge } from "@/lib/bridgeState";
-import { useRefresh } from "@/lib/refresh";
+import { useRefresh, type StudioChangeNote } from "@/lib/refresh";
 import { formatLocal, formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +42,19 @@ import { cn } from "@/lib/utils";
  * a sentence, never as a zero.
  */
 const POLL_MS = 30_000;
+
+/**
+ * The least time between two reads the change stream causes. Health reads six
+ * routes, and a feed scroll lands a run every few seconds: fifteen seconds, as
+ * Today and the header use, keeps it to four reads a minute however busy the
+ * bridge is, and a run after a quiet spell is still read at once.
+ */
+const CHANGE_GAP_MS = 15_000;
+
+/** A reader's run, or the bridge heard from: the two things this screen counts as they land. */
+function healthMayChange(change: StudioChangeNote): boolean {
+  return change.kind === "capture" || change.kind === "heartbeat";
+}
 
 /** How many day rows a reader opens on; the rest are counted, not listed. */
 const DAYS_SHOWN = 14;
@@ -93,7 +106,10 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
   useEffect(() => {
     void load();
   }, [load]);
-  useRefresh(load, POLL_MS);
+  // When a reader runs or the bridge is heard from (studio/backend/changes.py),
+  // as Setup read the readers' lines before they moved here, and every
+  // POLL_MS while in view, for the bridge going quiet, which nothing announces.
+  useRefresh(load, POLL_MS, { gapMs: CHANGE_GAP_MS, matters: healthMayChange });
 
   async function chooseUpdates(enabled: boolean) {
     setUpdateBusy(true);
