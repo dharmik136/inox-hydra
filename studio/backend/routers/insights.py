@@ -53,12 +53,17 @@ def _derived(activity_urn: str) -> Dict[str, Any]:
     4, track 5): how precisely that reading was read and which of its figures
     LinkedIn rounded, so the screen says "about" beside those and nothing
     beside the rest; every reading, oldest first; the per-post figures the
-    post analytics page shows, from its newest reading; and the viewer
-    demographics as a dated series. Every rule is results.py's.
+    post analytics page shows, from its newest reading; the viewer
+    demographics as a dated series; whether the post is still moving; and
+    its reach half-life. Every rule is results.py's.
     """
     conn = get_db()
     try:
         figure = results.figures(conn, [activity_urn]).get(activity_urn) or {}
+        # Whether it is still moving, and its reach half-life: the engine's
+        # sentences, with their reading counts and their abstentions.
+        movement = results.movement(conn, activity_urn)
+        half_life = results.half_life(conn, activity_urn)
     finally:
         conn.close()
     readings = onboarding.post_readings(activity_urn)
@@ -75,6 +80,8 @@ def _derived(activity_urn: str) -> Dict[str, Any]:
         "readings": readings,
         "per_post": per_post,
         "demographics": onboarding.post_demographics(activity_urn),
+        "movement": movement,
+        "half_life": half_life,
     }
 
 

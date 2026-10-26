@@ -143,6 +143,21 @@ def _latest_post(conn) -> Optional[Dict[str, Any]]:
     }
 
 
+def _movement(conn, latest: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Whether the latest post is still moving, as readings with their count,
+    from the one engine: "+N since the reading K hours before the latest
+    one, over M readings". results.movement abstains with one reading, says
+    "about" when a reading was rounded, says when two rounded readings cannot
+    separate a change from their rounding, and names what is usual at this
+    age only where the settle curve rests on enough posts. Nothing here is
+    computed on this screen.
+    """
+    if not latest:
+        return None
+    return results.movement(conn, latest["activity_urn"])
+
+
 def _marked_published(conn, latest: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """
     The newest post marked published in the studio that the bridge has not yet
@@ -391,6 +406,8 @@ def today_brief() -> Dict[str, Any]:
     conn = get_db()
     try:
         latest = _latest_post(conn) if state["steps"]["identity"] else None
+        if latest:
+            latest["movement"] = _movement(conn, latest)
         marked = _marked_published(conn, latest)
         reply_to = _reply_to(conn) if state["steps"]["identity"] else []
         queue = _queue(conn)

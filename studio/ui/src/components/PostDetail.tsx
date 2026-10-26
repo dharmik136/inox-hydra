@@ -113,6 +113,8 @@ export function PostDetail({
                   {post.figures_read_at ? ` · ${formatLocalDay(post.figures_read_at, "").toUpperCase()}` : ""}
                 </p>
               )}
+              {/* A figure LinkedIn wrote as 12K is about 12,000, and the detail says so. */}
+              {post.approximate && post.approximate.length > 0 && <p className="studio-meta mt-1 text-[10px] text-ink-muted">ABOUT: {post.approximate.join(", ").toUpperCase()} {post.approximate.length === 1 ? "WAS" : "WERE"} READ FROM A FIGURE LINKEDIN ROUNDED, SUCH AS 12K</p>}
 
               {post.url && <OpenThePost url={post.url} />}
 

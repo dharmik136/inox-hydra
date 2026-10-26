@@ -429,3 +429,283 @@ def test_the_roll_up_keeps_the_first_reading_of_each_day_as_well_as_the_last(hom
     finally:
         conn.close()
     assert retention.run("readings")["removed"] == 0, "the roll-up is not idempotent"
+
+
+# ---------------------------------------------------------------------------
+# Item 21: the decay sentence and the reach half-life
+# ---------------------------------------------------------------------------
+
+def _movement(urn, metric="impressions"):
+    import results
+    conn = _db()
+    try:
+        return results.movement(conn, urn, metric)
+    finally:
+        conn.close()
+
+
+def _half_life(urn, metric="impressions"):
+    import results
+    conn = _db()
+    try:
+        return results.half_life(conn, urn, metric)
+    finally:
+        conn.close()
+
+
+def test_one_reading_cannot_move_and_the_engine_says_so(client):
+    import results
+    mine = urn_hours_ago(30)
+    _posts(client, mine)
+    _reading(mine, 26.0, impressions=1200)
+    moved = _movement(mine)
+    assert moved["verdict"] == "too_few_readings" and moved["readings"] == 1
+    assert moved["min_readings"] == results.MIN_READINGS_TO_MOVE == 2
+    assert "one reading" in moved["sentence"]
+    today = client.get("/api/v1/today").json()["latest_post"]
+    assert today["movement"]["verdict"] == "too_few_readings"
+    assert _movement(urn_hours_ago(99, 9))["verdict"] == "too_few_readings", "a post never read has no readings"
+
+
+def test_the_decay_sentence_names_the_change_the_interval_and_its_reading_count(client):
+    mine = urn_hours_ago(52)
+    _posts(client, mine)
+    _reading(mine, 26.0, precision="exact", impressions=1200, reactions=40)
+    _reading(mine, 50.0, precision="exact", impressions=1250, reactions=41)
+    moved = _movement(mine)
+    assert moved["verdict"] == "moving"
+    assert (moved["change"], moved["hours_between"], moved["readings"]) == (50, 24.0, 2)
+    assert moved["approximate"] is False
+    # The brief's form: "+N since the reading K hours ago, over M readings", with the latest named.
+    assert moved["sentence"] == ("still moving: +50 impressions since the reading 26 hours ago, "
+                                 "over 2 readings, the latest 2 hours ago")
+    # What is usual at this age rests on the settle curve, which holds one post here: this one.
+    assert moved["usual"]["verdict"] == "too_few_posts" and moved["usual"]["posts"] == 1
+    assert "not enough posts" in moved["usual"]["sentence"] and "(1 of 20)" in moved["usual"]["sentence"]
+    # Today carries the same sentence, computed by the same function.
+    today = client.get("/api/v1/today").json()["latest_post"]
+    assert today["movement"]["sentence"] == moved["sentence"]
+    # A figure that did not change says so; it never says "still moving".
+    _reading(mine, 51.0, precision="exact", impressions=1250, reactions=41)
+    assert _movement(mine)["verdict"] == "unchanged"
+    assert _movement(mine)["sentence"] == "unchanged since the reading 2 hours ago, over 3 readings, the latest 1 hour ago"
+
+
+def test_rounded_readings_make_the_sentence_say_about_or_abstain(client):
+    mine = urn_hours_ago(52)
+    _posts(client, mine)
+    _reading(mine, 26.0, precision="rounded", impressions=12000)
+    _reading(mine, 50.0, precision="rounded", impressions=14000)
+    moved = _movement(mine)
+    assert moved["verdict"] == "moving" and moved["approximate"] is True
+    assert moved["sentence"].startswith("still moving: about +2,000 impressions")
+    # 12K then 13K is a change the two readings cannot separate from their rounding.
+    other = urn_hours_ago(53, 3)
+    _posts(client, other)
+    _reading(other, 26.0, precision="rounded", impressions=12000)
+    _reading(other, 50.0, precision="rounded", impressions=13000)
+    held = _movement(other)
+    assert held["verdict"] == "within_rounding" and held["within_rounding"] is True
+    assert "cannot separate" in held["sentence"] and "still moving" not in held["sentence"]
+
+
+def _curve_posts(count, days_old_from=40, first=0):
+    """`count` posts whose readings put the settle curve at 60% by 24 h and 90% by 48 h."""
+    conn = _db()
+    with conn:
+        for n in range(first, first + count):
+            published = NOW - timedelta(days=days_old_from + n)
+            urn = f"urn:li:activity:{7200000000000000000 + n}"
+            conn.execute("INSERT INTO own_posts (activity_urn, text, published_at, first_seen_at, last_seen_at) "
+                         "VALUES (?, 'p', ?, ?, ?)", (urn, published.isoformat(), published.isoformat(),
+                                                       published.isoformat()))
+            for age, impressions, reactions in ((24.0, 600, 6), (48.0, 900, 9), (336.0, 1000, 10)):
+                moment = published + timedelta(hours=age)
+                conn.execute(
+                    "INSERT INTO post_metric_observations (activity_urn, observed_at, observed_hour, age_hours, "
+                    "source, impressions, reactions) VALUES (?, ?, ?, ?, 'post_analytics', ?, ?)",
+                    (urn, moment.isoformat(), moment.strftime("%Y-%m-%dT%H"), age, impressions, reactions))
+    conn.close()
+
+
+def test_the_usual_at_an_age_is_the_curve_and_abstains_below_twenty_posts(home):
+    import results
+    _curve_posts(10)
+    results.forget_cache()
+    conn = _db()
+    try:
+        few = results.usual_at_age(conn, 50.0)
+        assert few["verdict"] == "too_few_posts" and few["posts"] == 10 and few["bucket_hours"] == 48
+        assert few["sentence"] == "not enough posts read at about 48 hours old to say what is usual (10 of 20)"
+    finally:
+        conn.close()
+    _curve_posts(15, days_old_from=400, first=10)
+    results.forget_cache()
+    conn = _db()
+    try:
+        enough = results.usual_at_age(conn, 50.0)
+        assert enough["verdict"] == "measured" and enough["posts"] == 25 and enough["share"] == 0.9
+        assert enough["sentence"] == ("your posts usually have 90% of their two-week impressions by 48 hours, "
+                                      "measured on 25 posts")
+        assert results.usual_at_age(conn, 50.0, "reactions")["share"] == 0.9
+        # No bucket near 1,000 hours: the curve stops at two weeks.
+        assert results.usual_at_age(conn, 1000.0)["verdict"] == "no_bucket"
+    finally:
+        conn.close()
+
+
+def test_the_half_life_needs_three_readings_and_a_day_seven_point(client):
+    import results
+    mine = urn_hours_ago(400)
+    _posts(client, mine)
+    _reading(mine, 2.0, precision="exact", impressions=1000)
+    _reading(mine, 24.0, precision="exact", impressions=6000)
+    short = _half_life(mine)
+    assert short["verdict"] == "too_few_readings" and short["readings"] == 2
+    assert short["min_readings"] == results.MIN_READINGS_FOR_HALF_LIFE == 3
+    _reading(mine, 100.0, precision="exact", impressions=9000)
+    young = _half_life(mine)
+    assert young["verdict"] == "too_young" and young["latest_age_hours"] == 100.0
+    assert "at or after 7 days" in young["sentence"]
+    _reading(mine, 170.0, precision="exact", impressions=10000)
+    measured = _half_life(mine)
+    assert measured["verdict"] == "measured"
+    # Half of 10,000 is 5,000, reached between 1,000 at 2 h and 6,000 at 24 h: 2 + 4/5 of 22.
+    assert measured["hours"] == 19.6 and measured["between_hours"] == [2.0, 24.0]
+    assert measured["denominator"] == {"value": 10000, "age_hours": 170.0, "precision": "exact"}
+    assert measured["approximate"] is False and measured["readings"] == 4
+    assert measured["sentence"] == ("20 hours to half of the 10,000 impressions it had at 170 hours old, "
+                                    "interpolated between readings at 2 and 24 hours, over 4 readings")
+    detail = client.get(f"/api/v1/insights/posts/{mine}").json()
+    assert detail["half_life"]["hours"] == 19.6 and detail["movement"]["readings"] == 4
+
+
+def test_a_half_life_reached_before_the_first_reading_is_an_upper_bound(client):
+    mine = urn_hours_ago(400)
+    _posts(client, mine)
+    _reading(mine, 20.0, precision="rounded", impressions=8000)
+    _reading(mine, 48.0, precision="exact", impressions=9500)
+    _reading(mine, 180.0, precision="exact", impressions=10000)
+    bound = _half_life(mine)
+    assert bound["verdict"] == "before_first_reading" and bound["hours"] == 20.0
+    assert bound["approximate"] is True, "8K is a rounded figure"
+    assert bound["sentence"] == ("under 20 hours to half of the 10,000 impressions it had at 180 hours old: "
+                                 "its first reading already held about half, over 3 readings")
+
+
+def test_readings_from_different_pages_are_never_mixed(client):
+    """The feed card and the post's own analytics page count different things."""
+    mine = urn_hours_ago(52)
+    _posts(client, mine)
+    _reading(mine, 26.0, source="activity_page", reactions=10)
+    _reading(mine, 40.0, source="activity_page", reactions=20)
+    _reading(mine, 50.0, source="post_analytics", reactions=30)
+    moved = _movement(mine, "reactions")
+    assert moved["source"] == "post_analytics" and moved["readings"] == 1
+    assert moved["verdict"] == "too_few_readings"
+
+
+def test_half_lives_are_compared_through_spread_and_difference(home):
+    import results
+    conn = _db()
+    with conn:
+        for n in range(20):
+            urn = f"urn:li:activity:{7300000000000000000 + n}"
+            published = NOW - timedelta(days=40 + n)
+            conn.execute("INSERT INTO own_posts (activity_urn, text, published_at, first_seen_at, last_seen_at) "
+                         "VALUES (?, 'p', ?, ?, ?)", (urn, published.isoformat(), published.isoformat(),
+                                                       published.isoformat()))
+            # Even posts reach half by about 6 hours, odd ones by about 30.
+            points = ((2.0, 2000), (6.0, 5000), (170.0, 10000)) if n % 2 == 0 else ((2.0, 1000), (30.0, 5000),
+                                                                                     (170.0, 10000))
+            for age, impressions in points:
+                moment = published + timedelta(hours=age)
+                conn.execute(
+                    "INSERT INTO post_metric_observations (activity_urn, observed_at, observed_hour, age_hours, "
+                    "source, impressions) VALUES (?, ?, ?, ?, 'post_analytics', ?)",
+                    (urn, moment.isoformat(), moment.strftime("%Y-%m-%dT%H"), age, impressions))
+    conn.close()
+    results.forget_cache()
+    conn = _db()
+    try:
+        lives = results.half_lives(conn)
+        assert len(lives) == 20 and lives["urn:li:activity:7300000000000000000"]["hours"] == 6.0
+        quick = [u for u in lives if lives[u]["hours"] == 6.0]
+        slow = [u for u in lives if lives[u]["hours"] == 30.0]
+        assert len(quick) == 10 and len(slow) == 10
+        verdict = results.half_life_spread(conn, {"quick": quick, "slow": slow})
+        assert verdict["verdict"] == "differs" and verdict["groups"] == 2
+        assert verdict["medians"] == {"quick": 6.0, "slow": 30.0}
+        pair = results.half_life_difference(conn, quick, slow)
+        assert pair["verdict"] in ("more", "fewer") and pair["n_with"] == 10 and pair["n_without"] == 10
+        assert pair["ratio"] == 0.2
+        # Below the engine's minimum per side, it abstains like every other comparison.
+        assert results.half_life_difference(conn, quick[:3], slow)["verdict"] == "too_few_posts"
+        assert results.half_life_spread(conn, {"quick": quick[:2], "slow": slow})["verdict"] == "too_few_groups"
+    finally:
+        conn.close()
+
+
+DERIVATIONS = ("movement", "half_life", "half_lives", "usual_at_age", "growth", "rounding_half_width",
+               "approximate_fields", "readings_of", "half_life_spread", "half_life_difference")
+
+
+def _code_strings(tree):
+    """Every string literal in the code, docstrings left out: a docstring may describe a sentence it does not print."""
+    docstrings = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            body = node.body
+            if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+                    and isinstance(body[0].value.value, str):
+                docstrings.add(id(body[0].value))
+    return [node.value for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings]
+
+
+def _second_definitions(sources):
+    """Files that define one of the engine's derivations or print its sentence themselves."""
+    offenders = []
+    for relative, text in sources.items():
+        tree = ast.parse(text)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name in DERIVATIONS:
+                offenders.append(f"{relative}:{node.lineno}: def {node.name}()")
+        if any(re.search(r"still moving|hours to half of the", value) for value in _code_strings(tree)):
+            offenders.append(f"{relative}: prints the engine's sentence itself")
+    return offenders
+
+
+def _backend_sources():
+    out = {}
+    for root, _dirs, files in os.walk(BACKEND):
+        for name in sorted(files):
+            if name.endswith(".py"):
+                path = os.path.join(root, name)
+                relative = os.path.relpath(path, BACKEND)
+                if relative == "results.py":
+                    continue
+                with open(path, encoding="utf-8") as handle:
+                    out[relative] = handle.read()
+    return out
+
+
+def test_the_decay_sentence_and_the_half_life_have_one_definition():
+    """The guard: a second copy of a derivation is how screens come to disagree."""
+    offenders = _second_definitions(_backend_sources())
+    assert not offenders, "a module derives for itself what results.py owns:\n" + "\n".join(offenders)
+    with open(os.path.join(BACKEND, "today.py"), encoding="utf-8") as handle:
+        assert "results.movement(" in handle.read(), "Today prints a sentence it did not ask the engine for"
+    with open(os.path.join(BACKEND, "routers", "insights.py"), encoding="utf-8") as handle:
+        source = handle.read()
+    assert "results.movement(" in source and "results.half_life(" in source
+
+
+def test_the_one_definition_guard_is_not_vacuous():
+    """Planted defects are detected, so the guard above can fail; a docstring that only describes the sentence is not one."""
+    planted = {"today.py": "def half_life(conn, urn):\n    return None\n",
+               "routers/insights.py": 'SENTENCE = "still moving: +1"\n',
+               "fine.py": 'def tell():\n    """Says whether it is still moving."""\n    return None\n'}
+    found = _second_definitions(planted)
+    assert any("def half_life()" in f for f in found) and any("insights.py: prints" in f for f in found)
+    assert not any(f.startswith("fine.py") for f in found)
