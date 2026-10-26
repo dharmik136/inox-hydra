@@ -2016,7 +2016,6 @@ export interface ActivityStreamData {
     leads_count: number;
     bridge_connected: boolean;
     bridge_last_seen: string | null;
-    bridge_carrier: string | null;
     active_sync_chain: {
       sequence: string[];
       current_index: number;
