@@ -269,9 +269,14 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # section, and GET /api/v1/record/model/preview, exactly what it would send.
 # Both reached by the section. Total 187 -> 189, reached 133 -> 135.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 189
-REACHED_BY_INTERFACE = 135
-UNREACHABLE = 54
+# Cycle 4, track 7, batch 8 (the evaluation): GET /api/v1/record/evaluation,
+# "Did these help?", added and reached; the monthly note, recorded above as
+# unreachable until this batch, is now saved from that screen. Total
+# 189 -> 190, reached 135 -> 137, unreachable 54 -> 53.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 190
+REACHED_BY_INTERFACE = 137
+UNREACHABLE = 53
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

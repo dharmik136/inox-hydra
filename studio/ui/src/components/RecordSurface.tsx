@@ -14,6 +14,7 @@ import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { RecordCardView } from "./RecordCardView";
 import { RecordKnowsPanel } from "./RecordKnowsPanel";
+import { RecordEvaluationPanel } from "./RecordEvaluationPanel";
 
 /**
  * From your record: what from your own record, and from what you asked, is
@@ -29,7 +30,7 @@ import { RecordKnowsPanel } from "./RecordKnowsPanel";
  * want of a writer, read from the keep marks; and What the studio knows,
  * every ask, mark and setting the section holds, editable and reversible.
  */
-type Level = "today" | "kept" | "knows";
+type Level = "today" | "kept" | "knows" | "helped";
 
 export function RecordSurface({ onOpenDraft }: { onOpenDraft?: (draft: { id: string; content: string }) => void } = {}) {
   const [level, setLevel] = useState<Level>("today");
@@ -147,6 +148,7 @@ export function RecordSurface({ onOpenDraft }: { onOpenDraft?: (draft: { id: str
               ["today", "Today"],
               ["kept", "Kept"],
               ["knows", "What the studio knows"],
+              ["helped", "Did these help?"],
             ] as [Level, string][]
           ).map(([id, label]) => (
             <button
@@ -252,6 +254,12 @@ export function RecordSurface({ onOpenDraft }: { onOpenDraft?: (draft: { id: str
       {level === "knows" && (
         <div className="mt-4">
           <RecordKnowsPanel />
+        </div>
+      )}
+
+      {level === "helped" && (
+        <div className="mt-4">
+          <RecordEvaluationPanel />
         </div>
       )}
 

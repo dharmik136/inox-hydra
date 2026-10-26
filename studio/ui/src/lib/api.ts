@@ -3524,3 +3524,31 @@ export interface RecordModelPreview {
 export async function fetchRecordModelPreview(): Promise<RecordModelPreview> {
   return call<RecordModelPreview>("/api/v1/record/model/preview");
 }
+
+/** A share under the studio's sample rules: the counts always, a rate only at 20 or more. */
+export interface RecordShare {
+  part: number;
+  whole: number;
+  said: string;
+  rate: number | null;
+}
+
+export interface RecordFunnelRow {
+  name: string;
+  shown: number;
+  kept: RecordShare;
+  drafted: RecordShare;
+  posted: RecordShare;
+}
+
+export interface RecordEvaluation {
+  funnel: { by_kind: RecordFunnelRow[]; by_label: RecordFunnelRow[]; total: RecordFunnelRow | null; note: string };
+  comparison: { sentence: string; verdict: string; n_with: number; n_without: number; window_days: number };
+  months: { month: string; template: "A" | "B" | "C"; sentence: string }[];
+  notes: Record<string, string>;
+  this_month: string;
+}
+
+export async function fetchRecordEvaluation(): Promise<RecordEvaluation> {
+  return call<RecordEvaluation>("/api/v1/record/evaluation");
+}

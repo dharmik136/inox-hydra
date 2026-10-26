@@ -19,9 +19,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 try:
-    from .. import record_daily, record_model, record_store
+    from .. import record_daily, record_evaluation, record_model, record_store
 except (ImportError, ValueError):
     import record_daily
+    import record_evaluation
     import record_model
     import record_store
 
@@ -184,6 +185,12 @@ def put_record_setup(field: str, payload: SetupField):
 @router.put("/api/v1/record/settings")
 def put_record_settings(payload: SettingsChange):
     return _refused(lambda: record_store.set_settings(payload.changes))
+
+
+@router.get("/api/v1/record/evaluation")
+def get_record_evaluation():
+    """Did these help? The marks as counts, the comparison at 48 hours, and a sentence a month, each able to abstain."""
+    return record_evaluation.overview()
 
 
 @router.post("/api/v1/record/notes")
