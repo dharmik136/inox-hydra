@@ -322,9 +322,6 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
             "Your posts have not been read to the end of the list yet, so your usual is not known. "
             "Run Posts you wrote in Setup's step 5."
         )}
-    asked = _phone_request_rule(conn)
-    if asked:
-        return asked
     if latest and latest["age_hours"] <= COMPARE_WINDOW[1]:
         recent = conn.execute(
             "SELECT 1 FROM post_metric_observations WHERE activity_urn = ? AND source = 'post_analytics' "
@@ -333,6 +330,9 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
         if not recent:
             return {"action": "open", "url": latest["analytics_url"],
                     "reason": "Your latest post is in its first three days and its figures were not read in the last 12 hours."}
+    asked = _phone_request_rule(conn)
+    if asked:
+        return asked
     if latest:
         return {"action": "open", "url": latest["url"],
                 "reason": "Opening your latest post picks up anyone who has commented since."}
@@ -341,33 +341,34 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
 
 def _phone_request_rule(conn) -> Optional[Dict[str, Any]]:
     """
-    The oldest post the phone asked the desk to read, as the one page to
-    open, or None when nothing is asked (cycle 4, track 6).
+    The oldest of the creator's own posts the phone asked the desk to read,
+    as the one page to open, or None when nothing is asked (cycle 4, track 6).
 
     Sits after the rules that block everything (identity, the bridge, drift,
-    the history) and ahead of the latest-post rule, because the creator
-    asked for it: a post seen moving on the phone is read at the desk, where
-    the extension reads the real page. Settling first closes what has since
-    been read, and what waited a week unread, so a request can never stand
-    in front of the latest-post rule for good. A post the studio does not
-    hold is answered with the same refusal the reading would meet.
+    the history) and after the latest post's first-hours reading when that
+    is due, and ahead of the rest, because the creator asked for it: a post
+    seen moving on the phone is read at the desk, where the extension reads
+    the real page. Only the creator's own posts are ever open; a link to
+    anything else was refused when it arrived and is never offered here.
+    Settling first closes what has since been read, and what waited a week,
+    and Today's Not now dismisses one.
     """
     if not desk_requests.open_count(conn):
         return None
     desk_requests.settle(conn)
-    request = desk_requests.oldest_open(conn)
-    if not request:
-        return None
+    while True:
+        request = desk_requests.oldest_open(conn)
+        if not request:
+            return None
+        url = desk_requests.analytics_url(request["activity_urn"])
+        if desk_requests.known_post(conn, request["activity_urn"]) and url:
+            break
+        # The post was forgotten since it was asked for: not one the studio holds.
+        desk_requests.close_refused(conn, request["id"])
     asked = {"id": request["id"], "activity_urn": request["activity_urn"], "asked_at": request["asked_at"],
              "source": request["source"]}
-    url = desk_requests.analytics_url(request["activity_urn"])
-    if desk_requests.known_post(conn, request["activity_urn"]) and url:
-        return {"action": "open", "url": url,
-                "reason": "You asked from your phone to read this post's analytics.",
-                "phone_request": asked}
-    return {"action": "setup",
-            "reason": (f"You asked from your phone to read a post's analytics, but {desk_requests.UNKNOWN_POST}. "
-                       "Run Posts you wrote in Setup's step 5; if the post is yours, it is offered here next."),
+    return {"action": "open", "url": url,
+            "reason": "You asked from your phone to read this post's analytics.",
             "phone_request": asked}
 
 

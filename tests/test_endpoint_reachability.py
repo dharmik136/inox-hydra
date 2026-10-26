@@ -251,10 +251,12 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Telegram bot under Local security (/api/v1/ingress/settings), and LinkedIn's
 # analytics export in Setup (/api/v1/analytics-export and its requested,
 # upload, preview, import and discard). Total 172 -> 179, reached 118 -> 125,
-# unreachable unchanged at 54.
+# unreachable unchanged at 54. Then, in its review round, Today's Not now for
+# a post the phone asked for (/api/v1/desk-requests/{id}/dismiss): total 180,
+# reached 126, unreachable still 54.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 179
-REACHED_BY_INTERFACE = 125
+TOTAL_API_PATHS = 180
+REACHED_BY_INTERFACE = 126
 UNREACHABLE = 54
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

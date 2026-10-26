@@ -18,9 +18,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 try:
-    from .. import ingress
+    from .. import desk_requests, ingress
+    from ..database import get_db
 except (ImportError, ValueError):
+    import desk_requests
     import ingress
+    from database import get_db
 
 router = APIRouter()
 
@@ -48,3 +51,13 @@ def post_ingress_settings(payload: IngressSettingsPayload):
     if result.get("status") == "error":
         raise HTTPException(status_code=400, detail=result["message"])
     return result
+
+
+@router.post("/api/v1/desk-requests/{request_id}/dismiss", tags=["Phone"])
+def dismiss_desk_request(request_id: int):
+    """Today's Not now: closes an open request from the phone. Says whether there was one to close."""
+    conn = get_db()
+    try:
+        return {"status": "success", "dismissed": desk_requests.dismiss(conn, request_id)}
+    finally:
+        conn.close()

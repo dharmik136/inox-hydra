@@ -40,9 +40,10 @@ Send the bot a text message. You can start it with a prefix, in any letter case.
 | `Draft: your text` | The text without the prefix |
 | `Idea: your text` | The text without the prefix, also tagged `idea` |
 | `Schedule <when>: your text` | The text without the prefix, also tagged `scheduled` |
-| A LinkedIn post link, from the LinkedIn app's share menu or copied from the feed | A request to read that post's analytics at this computer. Nothing is saved as a draft |
-| `Read: <post link>` | The same request, tagged `read` |
+| A link to one of your own posts, from the LinkedIn app's share menu or copied from the feed | A request to read that post's analytics at this computer. Nothing is saved as a draft |
+| `Read: <post link>` | The same request; any text beside the link is saved as a draft tagged `read` |
 | Text and a post link together | The request, and the text without the link as a draft |
+| A link to someone else's post, or to a post the studio does not hold | Nothing is read. The link is listed in the panel as not one of your posts |
 | A link to a profile, a short `lnkd.in` link, or any other address | Kept in the text as an ordinary draft. A short link names no post the studio can read without fetching it, which it will not do |
 | A voice note | Only the placeholder "[Voice Memo Received: Local transcription pending]" |
 | A photo, file, sticker or other message with no text | Nothing. It is skipped, and so is any caption |
@@ -56,13 +57,12 @@ The `Schedule` prefix is recognised only in a one-line message whose `<when>` us
 
 ## What happens to a post link
 
-The link names the post by the number in it, which is the same for the app's share-menu form and the feed's. The studio records a request with that post and the time you asked.
+The link names the post by the number in it, which is the same for the app's share-menu form and the feed's. The studio reads only your own posts, so what happens depends on whose post it is.
 
-- If the post is one of your recorded posts, **Today** says "You asked from your phone to read this post's analytics" under **ONE THING TO OPEN**, oldest request first, ahead of its usual suggestion, with **Open it in the bridge browser**. The request is done once that post's analytics page has been read after you asked. See [What to do today](what-to-do-today.md).
-- If the post is not one of your recorded posts, the request is kept with the sentence "this post is not one of your recorded posts; import your posts first", and Today sends you to Setup with it. Once your posts are in, the request is offered as above.
-- A request not read within a week is closed with a note, so it cannot stand in front of Today's usual suggestion for good.
+- **One of your recorded posts:** **Today** says "You asked from your phone to read this post's analytics" under **ONE THING TO OPEN**, oldest request first, with **Open it in the bridge browser**. When your latest post is in its first three days and its figures are due to be read, that comes first, and your request right after it. **Not now** beside it closes the request. Otherwise it is done once that post's analytics page has been read after you asked, and closed with a note after a week unread. See [What to do today](what-to-do-today.md).
+- **Anything else**, such as someone else's post, or a post of yours the studio has not read yet: a post that is not yours is never read. The link is listed under **LINKS FROM YOUR PHONE** in the panel with "Not one of your posts", and never appears on Today. If it is yours and new, run **Posts you wrote** in Setup's step 5, then share the link again.
 
-The panel's **Posts asked for from the phone, waiting** line counts the open requests.
+The panel's **Posts asked for from the phone, waiting** line counts the open requests, and **LINKS FROM YOUR PHONE** lists the newest links with what became of each.
 
 ## What happens to text
 
@@ -94,7 +94,7 @@ Click **Remove the bot** in the panel. The token and chat id are removed from th
 | A sentence under the buttons says the token or chat id is not the right shape | Paste the token exactly as BotFather gave it, and the chat id as digits only |
 | **Asking Telegram for messages** reads NO after saving | Reload the page. If it stays NO, see [The studio will not open or shows an error](the-studio-will-not-open.md) |
 | Nothing arrives, no error | Check the chat id is yours, then search with Ctrl+K instead of waiting for the page |
-| A post link arrived but Today sends you to Setup | The post is not among your recorded posts yet. Run **Posts you wrote** in Setup's step 5 |
+| A post link arrived but Today does not offer it | The panel lists it as not one of your posts: the studio holds no post of yours with that link. If it is yours and new, run **Posts you wrote** in Setup's step 5, then share it again |
 | Arrivals are slow | Night-time polling, error backoff, or a Telegram rate limit, which the studio waits out |
 | A message sent while the studio was off is missing | It is fetched at next start only if Telegram still holds it; how long it does is Telegram's policy |
 | The same idea appears twice after a restart | It arrived just before the studio stopped, before the studio had confirmed it to Telegram. Delete the extra draft |

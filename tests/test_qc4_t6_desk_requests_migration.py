@@ -8,10 +8,11 @@ coordinator renumbers each track's migration at integration in merge order.
 
 What it has to leave behind:
 
-  desk_requests        one row per post the phone asked the desk to read:
-                       the post's activity URN, when it was asked, when it
-                       was done, a note (the refusal sentence for a post the
-                       studio does not hold), and where it came from
+  desk_requests        one row per post link the phone sent: the post's
+                       URN, when it was asked, when it was done, its state
+                       (open, read, expired, dismissed, or refused for a
+                       post that is not the creator's), a note, and where it
+                       came from
   analytics_daily      new_followers: the export gives new followers a day,
                        not a follower count. Its daily engagements go where
                        the page reader's engagements card always has, in
@@ -85,7 +86,9 @@ def test_the_migration_is_named_for_what_it_changes():
 def test_it_creates_the_desk_requests_table(before):
     _version, _description, payload = _ours()
     payload(before.cursor())
-    assert _columns(before, "desk_requests") >= {"id", "activity_urn", "asked_at", "done_at", "note", "source"}
+    assert _columns(before, "desk_requests") >= {"id", "activity_urn", "asked_at", "done_at", "note", "source", "state"}
+    before.execute("INSERT INTO desk_requests (activity_urn, asked_at) VALUES ('urn:li:activity:1', '2026-10-26')")
+    assert before.execute("SELECT state FROM desk_requests").fetchone()[0] == "open", "a new request is not open"
     indexes = {row[1] for row in before.execute("PRAGMA index_list(desk_requests)")}
     assert any("desk_requests" in name for name in indexes), "the open requests have no index to be found by"
 

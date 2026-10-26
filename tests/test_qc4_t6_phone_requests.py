@@ -169,11 +169,39 @@ def test_a_link_to_your_own_post_becomes_a_request_and_no_draft():
     assert _drafts_tagged_mobile() == before, "a link alone was saved as a draft"
 
 
-def test_a_link_to_a_post_the_studio_does_not_hold_carries_the_refusal_sentence():
+def test_a_link_to_a_post_that_is_not_yours_is_refused_and_never_asked():
+    """
+    Review finding SF-2. The studio reads only the creator's own pages, so a
+    link that does not name one of their posts is recorded as refused, with
+    its reason, and never becomes a request Today could show.
+    """
     urn = urn_days_ago(1, 7)
     record = _daemon().process_incoming_update(_message(share_link(urn)))
-    assert record["known_post"] is False
-    assert _requests()[0]["note"] == desk_requests.UNKNOWN_POST
+    assert record["state"] == "refused" and record["known_post"] is False
+    row = _requests()[0]
+    assert row["state"] == "refused" and row["done_at"] is not None
+    assert row["note"] == desk_requests.NOT_YOURS and row["note"].startswith("Not one of your posts")
+    conn = get_db()
+    assert desk_requests.open_count(conn) == 0
+    conn.close()
+
+
+def test_a_share_id_link_is_not_a_request_either():
+    """The studio opens a post's analytics by its activity id; a link naming a share id names none it can open."""
+    _confirm()
+    urn = urn_days_ago(1, 29)
+    _posts(urn)
+    share = "urn:li:share:" + urn.rsplit(":", 1)[1]
+    record = _daemon().process_incoming_update(_message(f"https://www.linkedin.com/feed/update/{share}/"))
+    assert record["state"] == "refused"
+
+
+def test_a_percent_encoded_feed_link_names_its_post():
+    """Note N-4: a link copied with its colons encoded names the same post."""
+    urn = urn_days_ago(2, 28)
+    parsed = IngressMessageParser.parse_message(
+        "https://www.linkedin.com/feed/update/" + urn.replace(":", "%3A") + "/")
+    assert parsed["read_request"]["activity_urn"] == urn
 
 
 def test_text_with_the_link_is_still_a_draft():
@@ -186,11 +214,6 @@ def test_text_with_the_link_is_still_a_draft():
     assert record["raw_content"] == "this did well"
     assert _drafts_tagged_mobile() == before + 1
     assert len(_requests()) == 1
-
-
-def test_the_refusal_sentence_is_the_one_the_reading_uses():
-    with io.open(os.path.join(REPO_ROOT, "studio", "backend", "onboarding.py"), encoding="utf-8") as handle:
-        assert desk_requests.UNKNOWN_POST in handle.read()
 
 
 def test_the_simulate_route_carries_a_link_too(monkeypatch):
@@ -213,13 +236,31 @@ def _today():
     return client.get("/api/v1/today").json()
 
 
-def test_today_offers_the_requested_post_ahead_of_the_latest_post_rule():
+def _read_now(urn):
+    """The post's own analytics page read just now, as the extension records it."""
+    conn = get_db()
+    with conn:
+        conn.execute(
+            "INSERT INTO post_metric_observations (activity_urn, observed_at, observed_hour, age_hours, source, "
+            "impressions) VALUES (?,?,?,?,?,?)",
+            (urn, datetime.now(timezone.utc).isoformat(), f"probe-now-{urn}", 24.0, "post_analytics", 500))
+    conn.close()
+
+
+def _ask(urn):
+    conn = get_db()
+    try:
+        return desk_requests.record(conn, urn)
+    finally:
+        conn.close()
+
+
+def test_an_own_posts_request_comes_first_when_the_latest_posts_reading_is_not_due():
     _ready_to_open()
     latest, older = urn_days_ago(1, 10), urn_days_ago(9, 11)
     _posts(latest, older)
-    conn = get_db()
-    desk_requests.record(conn, older)
-    conn.close()
+    _read_now(latest)
+    _ask(older)
     step = _today()["open_next"]
     assert step["action"] == "open"
     assert step["url"] == f"https://www.linkedin.com/analytics/post-summary/{older}/"
@@ -227,13 +268,26 @@ def test_today_offers_the_requested_post_ahead_of_the_latest_post_rule():
     assert step["phone_request"]["activity_urn"] == older
 
 
+def test_an_own_posts_request_waits_behind_the_latest_posts_first_hours_reading():
+    """When the latest post's first-hours reading is due, it goes first; the request follows it."""
+    _ready_to_open()
+    latest, older = urn_days_ago(1, 24), urn_days_ago(9, 25)
+    _posts(latest, older)
+    _ask(older)
+    step = _today()["open_next"]
+    assert step["url"].endswith(f"/analytics/post-summary/{latest}/") and "first three days" in step["reason"]
+    _read_now(latest)
+    step = _today()["open_next"]
+    assert step["url"] == f"https://www.linkedin.com/analytics/post-summary/{older}/"
+    assert "from your phone" in step["reason"]
+
+
 def test_the_request_is_done_once_that_post_is_read_at_the_desk():
     _ready_to_open()
     latest, older = urn_days_ago(1, 12), urn_days_ago(9, 13)
     _posts(latest, older)
-    conn = get_db()
-    desk_requests.record(conn, older)
-    conn.close()
+    _read_now(latest)
+    _ask(older)
     assert "from your phone" in _today()["open_next"]["reason"]
     # The extension reads the post's own analytics page, as it does at the desk.
     res = client.post("/api/v1/self/posts/analytics", json={"author": ME, "activity_urn": older,
@@ -242,13 +296,14 @@ def test_the_request_is_done_once_that_post_is_read_at_the_desk():
     step = _today()["open_next"]
     assert "from your phone" not in step["reason"]
     rows = _requests()
-    assert rows[0]["done_at"] is not None and rows[0]["note"] is None
+    assert rows[0]["state"] == "read" and rows[0]["done_at"] is not None and rows[0]["note"] is None
 
 
 def test_a_reading_from_before_the_request_does_not_settle_it():
     _ready_to_open()
     latest, older = urn_days_ago(1, 14), urn_days_ago(9, 15)
     _posts(latest, older)
+    _read_now(latest)
     conn = get_db()
     with conn:
         conn.execute(
@@ -261,23 +316,35 @@ def test_a_reading_from_before_the_request_does_not_settle_it():
     assert "from your phone" in _today()["open_next"]["reason"]
 
 
-def test_a_post_the_studio_does_not_hold_sends_you_to_setup_with_the_reason():
+def test_a_link_to_someone_elses_post_never_reaches_today():
+    """
+    The reviewer's probe. Identity, bridge and history ready, a day-old post
+    held, then one share link to a post the studio does not hold. Before the
+    fix, Today's one page to open became "Go to Setup" for a week, and
+    importing could never help, because the post was never the creator's.
+    """
     _ready_to_open()
     _posts(urn_days_ago(1, 16))
+    before = _today()["open_next"]
+    assert before["action"] == "open" and "first three days" in before["reason"]
+    _daemon().process_incoming_update(_message(share_link(urn_days_ago(3, 17))))
+    assert _today()["open_next"] == before
     conn = get_db()
-    desk_requests.record(conn, urn_days_ago(3, 17))
+    with conn:
+        conn.execute("UPDATE desk_requests SET asked_at = ?",
+                     ((datetime.now(timezone.utc) - timedelta(days=6, hours=23)).isoformat(),))
     conn.close()
-    step = _today()["open_next"]
-    assert step["action"] == "setup"
-    assert desk_requests.UNKNOWN_POST in step["reason"] and "from your phone" in step["reason"]
+    assert _today()["open_next"] == before
+    assert _requests()[0]["state"] == "refused"
 
 
 def test_a_request_unread_for_a_week_is_closed_with_a_note():
     _ready_to_open()
     latest, older = urn_days_ago(1, 18), urn_days_ago(20, 19)
     _posts(latest, older)
+    _read_now(latest)
+    _ask(older)
     conn = get_db()
-    desk_requests.record(conn, older)
     with conn:
         conn.execute("UPDATE desk_requests SET asked_at = ?",
                      ((datetime.now(timezone.utc) - timedelta(days=8)).isoformat(),))
@@ -285,7 +352,8 @@ def test_a_request_unread_for_a_week_is_closed_with_a_note():
     step = _today()["open_next"]
     assert "from your phone" not in step["reason"]
     rows = _requests()
-    assert rows[0]["done_at"] is not None and desk_requests.EXPIRED_NOTE in rows[0]["note"]
+    assert rows[0]["state"] == "expired" and rows[0]["done_at"] is not None
+    assert desk_requests.EXPIRED_NOTE in rows[0]["note"]
 
 
 def test_the_rule_is_what_surfaces_it(monkeypatch):
@@ -293,12 +361,39 @@ def test_the_rule_is_what_surfaces_it(monkeypatch):
     _ready_to_open()
     latest, older = urn_days_ago(1, 20), urn_days_ago(9, 21)
     _posts(latest, older)
-    conn = get_db()
-    desk_requests.record(conn, older)
-    conn.close()
+    _read_now(latest)
+    _ask(older)
     monkeypatch.setattr(today, "_phone_request_rule", lambda conn: None)
-    step = _today()["open_next"]
-    assert step["url"].endswith(f"/analytics/post-summary/{latest}/")
+    assert "Opening your latest post" in _today()["open_next"]["reason"]
+
+
+def test_a_request_can_be_dismissed_from_today():
+    _ready_to_open()
+    latest, older = urn_days_ago(1, 26), urn_days_ago(9, 27)
+    _posts(latest, older)
+    _read_now(latest)
+    asked = _ask(older)
+    assert _today()["open_next"]["phone_request"]["id"] == asked["id"]
+    res = client.post(f"/api/v1/desk-requests/{asked['id']}/dismiss")
+    assert res.status_code == 200 and res.json()["dismissed"] is True
+    assert "from your phone" not in _today()["open_next"]["reason"]
+    assert _requests()[0]["state"] == "dismissed" and _requests()[0]["done_at"] is not None
+    assert client.post(f"/api/v1/desk-requests/{asked['id']}/dismiss").json()["dismissed"] is False
+    assert client.post("/api/v1/desk-requests/999999/dismiss").json()["dismissed"] is False
+
+
+def test_the_telegram_panel_lists_each_link_with_what_became_of_it():
+    """Where the phone's links are listed, a refused one says so: not one of your posts."""
+    _ready_to_open()
+    mine = urn_days_ago(1, 30)
+    _posts(mine)
+    daemon = _daemon()
+    daemon.process_incoming_update(_message(share_link(mine)))
+    daemon.process_incoming_update(_message(share_link(urn_days_ago(3, 31))))
+    links = client.get("/api/v1/ingress/settings").json()["recent_links"]
+    assert [link["state"] for link in links] == ["refused", "open"], "newest first, with each one's state"
+    assert links[0]["said"].startswith("Not one of your posts")
+    assert "Today" in links[1]["said"]
 
 
 def test_setup_blocks_still_come_first():

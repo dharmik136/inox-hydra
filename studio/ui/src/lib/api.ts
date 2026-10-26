@@ -2188,6 +2188,12 @@ export async function fetchToday(): Promise<TodayBrief> {
   return call<TodayBrief>("/api/v1/today");
 }
 
+/** Today's Not now for a post the phone asked for. Says whether there was an open request to close. */
+export async function dismissDeskRequest(id: number): Promise<boolean> {
+  const data = await call<{ dismissed?: boolean }>(`/api/v1/desk-requests/${id}/dismiss`, { method: "POST" });
+  return !!data.dismissed;
+}
+
 // -------------------------------------------------------------
 // Insights: your posts, and your attention
 // -------------------------------------------------------------
@@ -3295,6 +3301,15 @@ export interface IngressSettings {
   total_messages_processed: number;
   /** Posts the phone asked the desk to read that have not been read yet. */
   open_requests: number;
+  /** The newest links from the phone, newest first, each with what became of it in a sentence. */
+  recent_links: {
+    id: number;
+    activity_urn: string;
+    asked_at: string;
+    done_at: string | null;
+    state: "open" | "read" | "expired" | "dismissed" | "refused";
+    said: string;
+  }[];
   tested_against_real_service: boolean;
   /** The server's own sentence, shown until the owner has tested against the real service. */
   not_yet_tested: string;

@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import requests
+from urllib.parse import unquote
 
 try:  # the shared egress chokepoint
     from . import egress as _egress
@@ -168,7 +169,8 @@ class IngressMessageParser:
         # message is kept whole as a draft rather than lost.
         read_request: Optional[Dict[str, Any]] = None
         for url in LINKEDIN_URL.findall(content):
-            urn = post_identity.extract_activity_urn(url)
+            # A link copied with its colons encoded (urn%3Ali%3Aactivity) names the same post.
+            urn = post_identity.extract_activity_urn(unquote(url))
             if urn:
                 read_request = {"url": url, "activity_urn": urn}
                 content = re.sub(r"[ \t]{2,}", " ", content.replace(url, " ")).strip()
@@ -449,10 +451,10 @@ class TelegramIngressDaemon:
     @staticmethod
     def _record_desk_request(activity_urn: str) -> Dict[str, Any]:
         """
-        Writes the request. A post the studio does not hold is recorded with
-        the refusal sentence as its note, so Today says what to do rather
-        than showing a post nobody imported. The phone's link names the post
-        and nothing else: no figure is written from it.
+        Writes the link: open for one of the creator's own posts, refused,
+        with its reason, for anything else, so a link to someone else's post
+        never reaches Today. The phone's link names the post and nothing
+        else: no figure is written from it.
         """
         conn = get_db()
         try:
@@ -757,7 +759,10 @@ def describe_settings() -> Dict[str, Any]:
     status = ingress_daemon.get_daemon_status()
     conn = get_db()
     try:
+        # Settled first, so a request read at the desk is not counted as waiting.
+        desk_requests.settle(conn)
         waiting = desk_requests.open_count(conn)
+        links = desk_requests.recent(conn)
     finally:
         conn.close()
     active = paths.get_active_profile_id()
@@ -780,6 +785,9 @@ def describe_settings() -> Dict[str, Any]:
         "last_error": status["last_error"],
         "total_messages_processed": status["total_messages_processed"],
         "open_requests": waiting,
+        # The newest links from the phone, each with what became of it; a
+        # refused one says why: not one of your posts.
+        "recent_links": links,
         "tested_against_real_service": False,
         "not_yet_tested": NOT_YET_TESTED,
     }

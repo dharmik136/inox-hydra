@@ -1429,12 +1429,14 @@ def _migrate_desk_requests_and_export_totals(cursor: sqlite3.Cursor) -> None:
     A post link shared from the phone is a desk request, and LinkedIn's
     analytics export has a home for the totals it carries.
 
-    desk_requests: one row per post the phone asked the desk to read. The
-    Telegram ingress writes it when a message carries a LinkedIn post link;
-    Today surfaces the oldest open one as the page to open; it is done when
-    that post's analytics page is next read after it was asked, and after a
-    week unread. `note` holds the refusal sentence for a post the studio does
-    not hold, rather than an invented post.
+    desk_requests: one row per LinkedIn post link the phone sent. The
+    Telegram ingress writes it; `state` is open, read, expired, dismissed or
+    refused. A link to one of the creator's own posts is open until that
+    post's analytics page is read after it was asked, a week passes, or the
+    creator dismisses it on Today, which offers the oldest open one. A link
+    that names no post of theirs is refused at once, with the reason in
+    `note`, and is never offered on Today: the studio reads only the
+    creator's own pages.
 
     analytics_daily.new_followers: LinkedIn's export gives new followers a
     day, which is not the follower count `followers` holds. The export's
@@ -1457,10 +1459,11 @@ def _migrate_desk_requests_and_export_totals(cursor: sqlite3.Cursor) -> None:
             asked_at TEXT NOT NULL,
             done_at TEXT,
             note TEXT,
-            source TEXT NOT NULL DEFAULT 'telegram'
+            source TEXT NOT NULL DEFAULT 'telegram',
+            state TEXT NOT NULL DEFAULT 'open'
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_desk_requests_open ON desk_requests(done_at, asked_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_desk_requests_open ON desk_requests(state, asked_at)")
     for table, column in (("analytics_daily", "new_followers"),
                           ("post_metric_observations", "engagements")):
         cursor.execute(f"PRAGMA table_info({table})")

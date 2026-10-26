@@ -75,26 +75,48 @@ export function TelegramIngressPanel() {
       {state === null ? (
         <p className="studio-meta mt-3 text-ink-muted">READING</p>
       ) : (
-        <dl className="mt-3 flex flex-col gap-1.5">
-          {rows.map((row) => (
-            <div key={row.label} className="flex items-baseline justify-between gap-4">
-              <dt className="text-[12px] text-ink-secondary">{row.label}</dt>
-              <dd className={cn("studio-meta", row.good ? "text-signal-green-text" : "text-ink-muted")}>{row.value}</dd>
-            </div>
-          ))}
+        <>
+          <dl className="mt-3 flex flex-col gap-1.5">
+            {rows.map((row) => (
+              <div key={row.label} className="flex items-baseline justify-between gap-4">
+                <dt className="text-[12px] text-ink-secondary">{row.label}</dt>
+                <dd className={cn("studio-meta", row.good ? "text-signal-green-text" : "text-ink-muted")}>{row.value}</dd>
+              </div>
+            ))}
+            {state.running && state.last_error && (
+              <div className="flex items-baseline justify-between gap-4">
+                <dt className="text-[12px] text-ink-secondary">Last problem reaching Telegram</dt>
+                <dd className="studio-meta text-signal-orange-text">{state.last_error}</dd>
+              </div>
+            )}
+          </dl>
+          {state.running && state.configured_from === "settings" && (
+            <p className="mt-2 text-[12px] leading-relaxed text-ink-secondary">
+              Messages to this bot are saved in this profile, whichever profile is open.
+            </p>
+          )}
           {state.running_for_another_profile && (
-            <p className="text-[12px] leading-relaxed text-ink-secondary">
+            <p className="mt-2 text-[12px] leading-relaxed text-ink-secondary">
               The studio is asking Telegram for the bot set up in another profile, and saves its messages
               there. One bot is asked at a time: saving one here switches to it.
             </p>
           )}
-          {state.running && state.last_error && (
-            <div className="flex items-baseline justify-between gap-4">
-              <dt className="text-[12px] text-ink-secondary">Last problem reaching Telegram</dt>
-              <dd className="studio-meta text-signal-orange-text">{state.last_error}</dd>
+          {state.recent_links.length > 0 && (
+            <div className="mt-3">
+              <p className="studio-meta text-ink-muted">LINKS FROM YOUR PHONE, NEWEST FIRST</p>
+              <ul className="mt-1 flex flex-col gap-1.5">
+                {state.recent_links.map((link) => (
+                  <li key={link.id} className="text-[12px] leading-snug">
+                    <span className="studio-meta block truncate text-ink-secondary">{link.activity_urn}</span>
+                    <span className={link.state === "refused" ? "text-signal-orange-text" : "text-ink-secondary"}>
+                      {link.said}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
-        </dl>
+        </>
       )}
 
       <div className="mt-3 flex flex-col gap-2">

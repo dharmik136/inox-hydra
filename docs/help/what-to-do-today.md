@@ -16,8 +16,8 @@ A single suggestion, with its reason. The studio picks it by a fixed order, beca
 | --- | --- |
 | **Go to Setup** | The studio does not know which account is yours, a part of the capture has stopped working, or your post history has not been imported |
 | Open LinkedIn | The bridge browser has not been heard from recently |
-| A post you asked for from your phone | You shared a LinkedIn post link to your Telegram bot (see [Send a post idea or a post link from your phone with Telegram](send-a-post-idea-from-telegram.md)). The reason reads "You asked from your phone to read this post's analytics", oldest request first. It is done once that post's analytics page has been read after you asked, and closed with a note after a week unread. If the post is not one of your recorded posts, the suggestion is **Go to Setup** with the reason, and the request is offered again once your posts are in |
 | Your latest post's analytics page | Your latest post is under three days old and its figures were not read in the last 12 hours |
+| A post you asked for from your phone | You shared a link to one of your own posts with your Telegram bot (see [Send a post idea or a post link from your phone with Telegram](send-a-post-idea-from-telegram.md)). The reason reads "You asked from your phone to read this post's analytics", oldest request first. It is done once that post's analytics page has been read after you asked, and closed with a note after a week unread; **Not now** closes it at once. A link to someone else's post never appears here |
 | Your latest post | Otherwise, because opening it picks up anyone who has commented since |
 
 **Open it in the bridge browser** opens the page in the bridge browser, where the extension reads it.

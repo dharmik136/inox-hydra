@@ -5,16 +5,22 @@ Desk requests: a post the phone asked the desk to read.
 The phone cannot read LinkedIn's analytics: no extension runs inside the
 LinkedIn app, and the studio answers on loopback only. What the phone can do
 is say which post to read next. A LinkedIn post link shared to the Telegram
-bot (ingress.py) becomes one row here; Today surfaces the oldest open one as
-the page to open (today._phone_request_rule); and it is done once that
-post's own analytics page has been read after it was asked, which is the
-observation the extension records under source 'post_analytics'.
+bot (ingress.py) becomes one row here, in one of five states:
 
-A link to a post the studio does not hold is still recorded, with the same
-refusal sentence the analytics ingest uses, so Today can say what to do
-rather than invent a post. A request nobody acted on for a week is closed
-with a note, so a post that was never the creator's cannot stand in front of
-the latest-post rule for good.
+  open       one of the creator's own posts, waiting: Today offers the
+             oldest one (today._phone_request_rule)
+  read       that post's own analytics page was read after it was asked,
+             which is the observation the extension records under source
+             'post_analytics'
+  expired    a week passed and nobody read it
+  dismissed  the creator said Not now on Today
+  refused    the link names no post of the creator's. The studio reads only
+             the creator's own pages, so it is recorded with its reason, for
+             the Telegram panel to show, and never offered on Today
+
+A request is for an activity URN the studio holds, because a post's
+analytics page is opened by its activity id. A share or ugcPost id, a post
+the studio has never seen, and someone else's post are all refused.
 
 Strict Invariants:
 - Zero em-dashes.
@@ -30,9 +36,9 @@ try:
 except ImportError:
     import post_identity
 
-# The sentence onboarding.ingest_post_analytics refuses with; the same words
-# here, so a request for an unknown post says what the reading would have.
-UNKNOWN_POST = "this post is not one of your recorded posts; import your posts first"
+# Why a link is refused, as the Telegram panel says it.
+NOT_YOURS = ("Not one of your posts: the studio reads only your own posts, and this link does not name one it "
+             "holds. If it is yours and new, run Posts you wrote in Setup's step 5, then share the link again.")
 
 # How long a request waits to be read at the desk before it is closed unread.
 REQUEST_TTL = timedelta(days=7)
@@ -40,7 +46,18 @@ EXPIRED_NOTE = "Not read at the desk within a week of being asked, so it was clo
 
 SOURCE_TELEGRAM = "telegram"
 
-FIELDS = ("id", "activity_urn", "asked_at", "done_at", "note", "source")
+OPEN, READ, EXPIRED, DISMISSED, REFUSED = "open", "read", "expired", "dismissed", "refused"
+
+# What became of a link, in the Telegram panel's words.
+SAID = {
+    OPEN: "Waiting: Today asks you to open its analytics page at this computer.",
+    READ: "Read at the desk.",
+    EXPIRED: "Closed after a week unread.",
+    DISMISSED: "You said Not now on Today.",
+    REFUSED: NOT_YOURS,
+}
+
+FIELDS = ("id", "activity_urn", "asked_at", "done_at", "note", "source", "state")
 
 
 def _now() -> datetime:
@@ -55,7 +72,9 @@ def analytics_url(activity_urn: str) -> Optional[str]:
 
 
 def known_post(conn, activity_urn: str) -> bool:
-    """Whether the post is one of the creator's recorded posts."""
+    """Whether the URN is an activity URN of one of the creator's recorded posts."""
+    if not (activity_urn or "").startswith("urn:li:activity:"):
+        return False
     return bool(conn.execute("SELECT 1 FROM own_posts WHERE activity_urn = ?", (activity_urn,)).fetchone())
 
 
@@ -63,34 +82,55 @@ def _row(row) -> Dict[str, Any]:
     return {field: row[field] for field in FIELDS}
 
 
-def record(conn, activity_urn: str, source: str = SOURCE_TELEGRAM, note: Optional[str] = None) -> Dict[str, Any]:
+def record(conn, activity_urn: str, source: str = SOURCE_TELEGRAM) -> Dict[str, Any]:
     """
-    Writes one request and returns it. A post the studio does not hold gets
-    the refusal sentence as its note; `known_post` says which it was.
+    Writes one link and returns it: open for one of the creator's own posts,
+    refused, with its reason and closed at once, for anything else.
     """
     known = known_post(conn, activity_urn)
-    if note is None and not known:
-        note = UNKNOWN_POST
     asked_at = _now().isoformat()
+    state, done_at, note = (OPEN, None, None) if known else (REFUSED, asked_at, NOT_YOURS)
     with conn:
         cursor = conn.execute(
-            "INSERT INTO desk_requests (activity_urn, asked_at, done_at, note, source) VALUES (?, ?, NULL, ?, ?)",
-            (activity_urn, asked_at, note, source),
+            "INSERT INTO desk_requests (activity_urn, asked_at, done_at, note, source, state) VALUES (?, ?, ?, ?, ?, ?)",
+            (activity_urn, asked_at, done_at, note, source, state),
         )
-    return {"id": cursor.lastrowid, "activity_urn": activity_urn, "asked_at": asked_at, "done_at": None,
-            "note": note, "source": source, "known_post": known}
+    return {"id": cursor.lastrowid, "activity_urn": activity_urn, "asked_at": asked_at, "done_at": done_at,
+            "note": note, "source": source, "state": state, "known_post": known}
 
 
 def open_requests(conn) -> List[Dict[str, Any]]:
-    """Every request not yet done, oldest first."""
+    """Every open request, oldest first."""
     rows = conn.execute(
-        "SELECT id, activity_urn, asked_at, done_at, note, source FROM desk_requests "
-        "WHERE done_at IS NULL ORDER BY asked_at, id").fetchall()
+        f"SELECT {', '.join(FIELDS)} FROM desk_requests WHERE state = ? ORDER BY asked_at, id", (OPEN,)).fetchall()
     return [_row(r) for r in rows]
 
 
 def open_count(conn) -> int:
-    return conn.execute("SELECT COUNT(*) FROM desk_requests WHERE done_at IS NULL").fetchone()[0]
+    return conn.execute("SELECT COUNT(*) FROM desk_requests WHERE state = ?", (OPEN,)).fetchone()[0]
+
+
+def recent(conn, limit: int = 5) -> List[Dict[str, Any]]:
+    """The newest links, newest first, each with what became of it in the panel's words."""
+    rows = conn.execute(
+        f"SELECT {', '.join(FIELDS)} FROM desk_requests ORDER BY asked_at DESC, id DESC LIMIT ?", (limit,)).fetchall()
+    return [{**_row(r), "said": SAID.get(r["state"], "")} for r in rows]
+
+
+def dismiss(conn, request_id: int) -> bool:
+    """The creator said Not now on Today. Returns whether an open request was closed."""
+    with conn:
+        changed = conn.execute(
+            "UPDATE desk_requests SET state = ?, done_at = ? WHERE id = ? AND state = ?",
+            (DISMISSED, _now().isoformat(), request_id, OPEN)).rowcount
+    return changed > 0
+
+
+def close_refused(conn, request_id: int) -> None:
+    """An open request whose post the studio no longer holds is refused, with the reason."""
+    with conn:
+        conn.execute("UPDATE desk_requests SET state = ?, done_at = ?, note = ? WHERE id = ? AND state = ?",
+                     (REFUSED, _now().isoformat(), NOT_YOURS, request_id, OPEN))
 
 
 def settle(conn, now: Optional[datetime] = None) -> Dict[str, int]:
@@ -113,23 +153,23 @@ def settle(conn, now: Optional[datetime] = None) -> Dict[str, int]:
         SELECT d.id AS id, MIN(o.observed_at) AS read_at
         FROM desk_requests d JOIN post_metric_observations o
           ON o.activity_urn = d.activity_urn AND o.source = 'post_analytics' AND o.observed_at > d.asked_at
-        WHERE d.done_at IS NULL
+        WHERE d.state = 'open'
         GROUP BY d.id
         """).fetchall()
     read_ids = {row["id"] for row in read}
     expired = [row["id"] for row in conn.execute(
-        "SELECT id FROM desk_requests WHERE done_at IS NULL AND asked_at < ?",
-        ((moment - REQUEST_TTL).isoformat(),)) if row["id"] not in read_ids]
+        "SELECT id FROM desk_requests WHERE state = ? AND asked_at < ?",
+        (OPEN, (moment - REQUEST_TTL).isoformat())) if row["id"] not in read_ids]
     if read or expired:
         with conn:
             for row in read:
-                conn.execute("UPDATE desk_requests SET done_at = ? WHERE id = ? AND done_at IS NULL",
-                             (row["read_at"], row["id"]))
+                conn.execute("UPDATE desk_requests SET state = ?, done_at = ? WHERE id = ? AND state = ?",
+                             (READ, row["read_at"], row["id"], OPEN))
             for request_id in expired:
                 conn.execute(
-                    "UPDATE desk_requests SET done_at = ?, note = CASE WHEN note IS NULL OR note = '' THEN ? "
-                    "ELSE note || ' ' || ? END WHERE id = ? AND done_at IS NULL",
-                    (stamp, EXPIRED_NOTE, EXPIRED_NOTE, request_id))
+                    "UPDATE desk_requests SET state = ?, done_at = ?, note = CASE WHEN note IS NULL OR note = '' "
+                    "THEN ? ELSE note || ' ' || ? END WHERE id = ? AND state = ?",
+                    (EXPIRED, stamp, EXPIRED_NOTE, EXPIRED_NOTE, request_id, OPEN))
     return {"read": len(read), "expired": len(expired)}
 
 
