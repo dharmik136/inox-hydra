@@ -60,6 +60,8 @@ LinkedIn sends the archive in two parts. The first, `Basic_LinkedInDataExport_..
 | Your name, headline and about | Fills only what is empty. What the bridge read is kept. |
 | Your roles, education and skills | Roles and education only if none were read yet; skills are added to the ones already there. |
 | Your connections | Name, company, position and the date you connected. Email addresses are never imported. |
+| Posts you saved, members and companies you follow, polls you voted in, articles you published (`Saved_Items.csv`, `Member_Follows.csv`, `Company Follows.csv`, `Votes.csv`, `Articles.csv`) | Your own record of what you chose to see and keep: a link, a name, a title or your choice, and the date where the file gives one, each row with the file it came from and the date it was imported. They feed **From your record**. The other person's post is never imported: a saved post is a link and a date, nothing more. |
+| What you searched for (`SearchQueries.csv`) | Unticked unless you tick it. It is the most personal file in the archive, and the studio keeps its own searches out of its log for the same reason. Ticked, each search lands as a row with its date, for From your record only. |
 
 Your messages stay in the archive and are never imported, and the list under **other files stay in the archive** says which other files were not read. If a file reads **NOT UNDERSTOOD**, LinkedIn has changed its columns; the note lists the ones it found, and nothing from that file is imported.
 
