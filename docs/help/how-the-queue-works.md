@@ -36,7 +36,7 @@ Under them, **POSTS BY MONTH** draws one bar per month and says how many posts t
 
 To add a post, use **Publish** then **Queue it** on the Composer, or press **Queue the newest draft** under **Drafts waiting**.
 
-**Drafts waiting** says how many drafts you have saved and gives the first line of the newest. **Queue the newest draft** puts that one in the next slot clear of the 12-hour rule, through the same check **Queue it** uses, and the sentence under the heading says which time it chose. The drafts themselves are listed once, under **Drafts** in the Composer. If the count could not be read, the block says so instead of reporting no drafts.
+**Drafts waiting** says how many drafts you have saved and gives the first line of the newest. **Queue the newest draft** puts that one in the next slot the Queue offers, through the same check **Queue it** uses: the next of your slots at least 12 hours from your other posts, or, when none is, a time 24 hours ahead. The sentence under the heading says which time it chose, and when that time is inside your 12-hour cooldown. The drafts themselves are listed once, under **Drafts** in the Composer. If the count could not be read, the block says so instead of reporting no drafts.
 
 ## The 12-hour rule
 
@@ -70,7 +70,7 @@ Times are this computer's local time. Posts already queued keep their times when
 
 While the studio server is running, it checks the queue every 30 seconds. For each queued post whose time has come:
 
-- **Up to 120 minutes late:** it becomes due and moves to **Due, waiting for you to post it**. It is not recorded as published, and it does not appear in **Analytics**. Nothing is posted.
+- **Up to 120 minutes late:** it becomes due and moves to **Due, waiting for you to post it**. It is not recorded as published, and it does not appear on **Posts**. Nothing is posted.
 - **More than 120 minutes late** (for example, the computer was asleep or the studio was closed): it becomes due at its own time and is marked as missed. Nothing moves it to another time. **Today** shows it first, in a box headed A POST WAS MISSED, with the time it was due and two choices:
   - **Post now** copies the post's exact text to your clipboard and records it as posted by you now. Paste it into LinkedIn and post it there; the studio does not post it.
   - **Move to next slot** puts it back in the queue at the next free slot, and Today says which time.
@@ -83,7 +83,7 @@ Posts you sent with **Send to LinkedIn** are listed here too. LinkedIn publishes
 
 1. Open **Queue**. The post is under **Due, waiting for you to post it**.
 2. Press **Copy text**, paste it into LinkedIn and post it.
-3. Press **I posted it**. The post is recorded as published now, and appears in **Analytics**.
+3. Press **I posted it**. The post is recorded as published now, and appears on **Posts**.
 
 **Today** shows the same post first, in a box headed A POST IS DUE, with **Copy text** and **I posted it**, so you see it when you open the studio.
 
