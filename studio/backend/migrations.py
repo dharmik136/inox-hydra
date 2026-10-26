@@ -1423,6 +1423,99 @@ def _migrate_current_scores(cursor: sqlite3.Cursor) -> None:
         cursor.execute("UPDATE post_engagement SET stale = stale | 2 WHERE (stale & 2) = 0")
 
 
+# How long a reader's daily summary row is kept. The capture log itself is
+# pruned to a week (onboarding.CAPTURE_RETENTION), which is why Health labels
+# its run rows "last 7 days"; this is the longer window the day rows carry.
+CAPTURE_DAYS_KEPT = 180
+
+
+def _migrate_reply_marks_and_capture_days(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 28:
+    Replies the creator marked answered, and a day of each reader's runs kept
+    past the week.
+
+    Whether a creator answered a comment is not something the bridge reads:
+    crm.py writes the interaction and nothing about any reply (reply_to on
+    Today infers "answered" only from a lead status the creator set). So the
+    one honest state is the creator's own mark, keyed the way
+    lead_interactions keys a comment, and removed with the lead when they are
+    forgotten, as migration 19 does for everything else about a person.
+
+    The capture log is pruned to seven days on every write
+    (onboarding.PRUNE_CAPTURES), so Health can only say "last 7 days" about a
+    reader's runs. A trigger rolls each capture into one row per reader per
+    day as it lands, and those rows are kept for CAPTURE_DAYS_KEPT days: the
+    log stays bounded and the longer history survives it. The roll-up is in
+    the schema rather than in record_capture so no writer can forget it, and
+    the week already in the log is rolled up here so an upgrade keeps it.
+    """
+    # grain: one row per comment the creator marked answered.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS reply_marks (
+            lead_id TEXT NOT NULL,
+            post_urn TEXT NOT NULL DEFAULT '',
+            comment_key TEXT NOT NULL DEFAULT '',
+            marked_at TEXT NOT NULL,
+            PRIMARY KEY (lead_id, post_urn, comment_key)
+        )
+    """)
+    # No foreign key: a rebuild of leads would cascade into it. The trigger
+    # removes a forgotten lead's marks instead, as lead_retention_keeps does.
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS reply_marks_lead_forgotten AFTER DELETE ON leads
+        BEGIN
+            DELETE FROM reply_marks WHERE lead_id = OLD.id;
+        END
+    """)
+    cursor.execute("DELETE FROM reply_marks WHERE lead_id NOT IN (SELECT id FROM leads)")
+
+    # grain: one row per reader per UTC day: how many runs, how much they saw
+    # and kept, how many drifted, and the first and last run of the day. The
+    # counts stay NULL while no run of the day measured them, so an unmeasured
+    # day is not a day of zero.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS capture_days (
+            day TEXT NOT NULL,
+            extractor TEXT NOT NULL,
+            runs INTEGER NOT NULL DEFAULT 0,
+            items_seen INTEGER,
+            items_kept INTEGER,
+            drift_runs INTEGER NOT NULL DEFAULT 0,
+            first_run_at TEXT,
+            last_run_at TEXT,
+            PRIMARY KEY (day, extractor)
+        )
+    """)
+    cursor.execute(f"""
+        CREATE TRIGGER IF NOT EXISTS capture_day_rolled_up AFTER INSERT ON captures
+        BEGIN
+            INSERT INTO capture_days (day, extractor, runs, items_seen, items_kept, drift_runs, first_run_at, last_run_at)
+            VALUES (substr(NEW.observed_at, 1, 10), NEW.extractor, 1, NEW.items_seen, NEW.items_kept,
+                    CASE WHEN NEW.drift IS NULL THEN 0 ELSE 1 END, NEW.observed_at, NEW.observed_at)
+            ON CONFLICT(day, extractor) DO UPDATE SET
+                runs = runs + 1,
+                items_seen = CASE WHEN excluded.items_seen IS NULL THEN items_seen
+                                  ELSE COALESCE(items_seen, 0) + excluded.items_seen END,
+                items_kept = CASE WHEN excluded.items_kept IS NULL THEN items_kept
+                                  ELSE COALESCE(items_kept, 0) + excluded.items_kept END,
+                drift_runs = drift_runs + excluded.drift_runs,
+                first_run_at = MIN(first_run_at, excluded.first_run_at),
+                last_run_at = MAX(last_run_at, excluded.last_run_at);
+            DELETE FROM capture_days WHERE day < date(substr(NEW.observed_at, 1, 10), '-{CAPTURE_DAYS_KEPT} days');
+        END
+    """)
+    # The week the log still holds, so an upgrade does not start from nothing.
+    cursor.execute("""
+        INSERT INTO capture_days (day, extractor, runs, items_seen, items_kept, drift_runs, first_run_at, last_run_at)
+        SELECT substr(observed_at, 1, 10), extractor, COUNT(*), SUM(items_seen), SUM(items_kept),
+               SUM(CASE WHEN drift IS NULL THEN 0 ELSE 1 END), MIN(observed_at), MAX(observed_at)
+        FROM captures
+        GROUP BY substr(observed_at, 1, 10), extractor
+        ON CONFLICT(day, extractor) DO NOTHING
+    """)
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1451,6 +1544,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (26, "One identity for a post: every publication has its post, and the dead queue is gone",
      _migrate_one_post_identity),
     (27, "A lead's score is recomputed when what it is computed from changes", _migrate_current_scores),
+    (28, "Replies the creator marked answered, and a day of each reader's runs kept past the week",
+     _migrate_reply_marks_and_capture_days),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)
