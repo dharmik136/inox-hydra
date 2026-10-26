@@ -54,9 +54,11 @@ KNOWN_HOSTS = {
 }
 
 # Hosts that are not egress: documentation, XML namespaces, the machine itself.
+# schemas.openxmlformats.org is the namespace an .xlsx's XML is written in,
+# which analytics_export.py matches element names against and never contacts.
 IGNORED = re.compile(
     r"^(127\.0\.0\.1|localhost|0\.0\.0\.0|example\.com|www\.w3\.org|schema\.org"
-    r"|nodejs\.org|json-schema\.org)$"
+    r"|nodejs\.org|json-schema\.org|schemas\.openxmlformats\.org)$"
 )
 
 URL = re.compile(r"https?://([A-Za-z0-9.-]+)")

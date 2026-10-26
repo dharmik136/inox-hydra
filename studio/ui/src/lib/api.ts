@@ -3311,3 +3311,112 @@ export async function saveIngressSettings(bot_token: string, chat_id: string): P
     body: JSON.stringify({ bot_token, chat_id }),
   });
 }
+
+// -------------------------------------------------------------
+// LinkedIn's analytics export: request, find, preview, import
+// -------------------------------------------------------------
+
+export interface FoundExport {
+  name: string;
+  path: string;
+  bytes: number;
+  modified: string;
+  downloading: boolean;
+  imported?: boolean;
+}
+
+export interface ExportRange {
+  start: string | null;
+  end: string | null;
+  /** What the range was read from: the file's name, the days in it, or nothing. */
+  from: string | null;
+}
+
+/** One sheet of the export, as the studio recognised it or did not. */
+export interface ExportSheet {
+  name: string;
+  /** Null when the studio does not recognise the sheet: it is listed, and nothing in it is imported. */
+  kind: string | null;
+  label: string;
+  rows: number;
+  importable: boolean;
+  default: boolean;
+  writes: string | null;
+  recognised: string[];
+  not_recognised: string[];
+  left_out: string[];
+  note: string | null;
+  truncated: boolean;
+}
+
+export interface ExportPreview {
+  source: string;
+  file: { name: string; bytes: number };
+  range: ExportRange;
+  sheets: ExportSheet[];
+  recognised: boolean;
+  verified_against_real_file: boolean;
+  /** The server's own sentence on whether the layout has been checked against a real export. */
+  verification: string;
+}
+
+export interface ExportImport {
+  file: string;
+  imported_at: string;
+  range: ExportRange;
+  summary: Record<string, Record<string, unknown>>;
+}
+
+export interface ExportState {
+  analytics_page: string;
+  requested_at: string | null;
+  waiting: boolean;
+  /** Spreadsheets in Downloads named like LinkedIn's export; looked for only once you say you exported. */
+  found: FoundExport[];
+  watching: string[];
+  last_import: ExportImport | null;
+  verified_against_real_file: boolean;
+  verification: string;
+}
+
+export async function fetchAnalyticsExportState(): Promise<ExportState> {
+  return call<ExportState>("/api/v1/analytics-export");
+}
+
+export async function markAnalyticsExportRequested(): Promise<ExportState> {
+  return call<ExportState>("/api/v1/analytics-export/requested", { method: "POST" });
+}
+
+export async function previewAnalyticsExport(source: string): Promise<ExportPreview> {
+  return call<ExportPreview>("/api/v1/analytics-export/preview", { method: "POST", body: JSON.stringify({ source }) });
+}
+
+/**
+ * Sends a chosen export to the studio on this machine, which keeps it until
+ * it is imported. The browser's own record of when the file was written goes
+ * with it, because that is when a post's own export was read.
+ */
+export async function uploadAnalyticsExport(file: File): Promise<ExportPreview> {
+  const response = await studioFetch("/api/v1/analytics-export/upload", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-Export-Name": encodeURIComponent(file.name),
+      "X-File-Modified": String(file.lastModified),
+    },
+    body: file,
+  });
+  if (!response.ok) throw await refusalFrom(response);
+  return (await response.json()) as ExportPreview;
+}
+
+export async function importAnalyticsExport(
+  source: string,
+  include: string[],
+): Promise<{ file: { name: string; bytes: number }; range: ExportRange; summary: ExportImport["summary"] }> {
+  return call("/api/v1/analytics-export/import", { method: "POST", body: JSON.stringify({ source, include }) });
+}
+
+export async function discardAnalyticsExport(source: string): Promise<void> {
+  await call("/api/v1/analytics-export/discard", { method: "POST", body: JSON.stringify({ source }) });
+}

@@ -2045,6 +2045,13 @@ except ImportError:
     from routers import phone as phone_router_module
 app.include_router(phone_router_module.router)
 
+# LinkedIn's analytics export: Setup's block beside the archive (cycle 4, item 28).
+try:
+    from .routers import analytics_export_routes as analytics_export_router_module
+except ImportError:
+    from routers import analytics_export_routes as analytics_export_router_module
+app.include_router(analytics_export_router_module.router)
+
 DOCS_DIR = search_router_module.DOCS_DIR
 MODULES_DIR = search_router_module.MODULES_DIR
 DOCS_MODULES = search_router_module.DOCS_MODULES

@@ -167,6 +167,17 @@ def forget_archive(conn) -> None:
     forget(conn)
 
 
+def forget_phone_and_export(conn) -> None:
+    """The phone's desk requests and the analytics export's record of its imports (cycle 4, track 6)."""
+    try:
+        from . import analytics_export, desk_requests
+    except ImportError:
+        import analytics_export
+        import desk_requests
+    desk_requests.forget(conn)
+    analytics_export.forget(conn)
+
+
 def published_at_from_urn(activity_urn: str) -> Optional[str]:
     """
     When a post was published, read from its activity id.
@@ -838,6 +849,8 @@ def forget_identity() -> Dict[str, Any]:
                 conn.execute(f"DELETE FROM {table}")
             # And what LinkedIn's archive brought: connections and the record of each import.
             forget_archive(conn)
+            # What the phone asked the desk to read, and the analytics export's record (cycle 4, track 6).
+            forget_phone_and_export(conn)
             _unfill_creator_settings(conn)
             # The import requests it waited on are gone, and their ids can be
             # issued again, so a chain left behind could take a new one for its own.

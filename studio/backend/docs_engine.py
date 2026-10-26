@@ -640,6 +640,8 @@ HELP_SECTIONS = [
             "help/review-leads-and-draft-a-message.md",
             "help/see-what-worked-and-where-your-attention-goes.md",
             "help/read-your-analytics.md",
+            # LinkedIn's own analytics export, the exact figures (cycle 4, item 28).
+            "help/import-linkedins-analytics-export.md",
         ],
     },
     {

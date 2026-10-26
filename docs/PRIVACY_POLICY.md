@@ -141,6 +141,12 @@ comments and reactions, any connections you imported from your own LinkedIn
 data archive, daily analytics, logs and settings; your media files; the network
 readings log, as a separate file; and the daily backups folder.
 
+If you import LinkedIn's analytics export, the .xlsx file LinkedIn writes when
+you press Export on your analytics page, Inox Hydra reads it on your computer
+and keeps the figures it recognises in that database, each marked as read from
+LinkedIn's export. A copy you chose by hand is kept only until it is imported
+or set aside, or for a day, and nothing in the file is sent anywhere.
+
 If you keep more than one creator profile, each profile is a separate folder
 with its own database, under `profiles/` inside that same folder, and nothing
 of one profile's data is in another's. The vault key, the logs and the browser
