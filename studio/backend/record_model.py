@@ -48,6 +48,7 @@ import hashlib
 import json
 import logging
 import re
+import statistics
 import threading
 import uuid
 from datetime import date, datetime, timezone
@@ -221,6 +222,40 @@ def _bucket(ratio: Optional[float]) -> str:
     return "about your usual"
 
 
+def habits_in_words(texts: List[str]) -> List[str]:
+    """
+    The habits voice_pack._habits measures, said without a number: the model
+    stage sends no figure, so the model has none to repeat, and the studio
+    drops any phrase that carries one. Empty below the voice pack's minimum
+    of posts, as its habits are. Built from the voice pack's own readers of
+    a post (first line, paragraphs, emoji, hashtags), so the two never
+    disagree about what a habit is.
+    """
+    if len(texts) < voice_pack.MIN_POSTS_FOR_HABITS:
+        return []
+    total = len(texts)
+    length = statistics.median(len(t) for t in texts)
+    paragraphs = statistics.median(voice_pack._paragraphs(t) for t in texts)
+
+    def how_often(count: int) -> str:
+        share = count / total
+        return "most of the time" if share >= 0.6 else "sometimes" if share >= 0.2 else "rarely"
+
+    return [
+        "writes " + ("short posts" if length < 600 else "medium-length posts" if length <= 1300 else "long posts")
+        + (" in short paragraphs" if paragraphs >= 3 else " in one or two blocks"),
+        "opens with a question " + how_often(sum(1 for t in texts if voice_pack._first_line(t).endswith("?"))),
+        "uses emoji " + how_often(sum(1 for t in texts if voice_pack._EMOJI.search(t))),
+        "uses hashtags " + how_often(sum(1 for t in texts if voice_pack._HASHTAG.search(t))),
+    ]
+
+
+def who_lines(conn) -> List[str]:
+    """Who the creator is, from the profile they confirmed, as the voice pack says it, or []."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    return voice_pack._who(conn) if "creator_identity" in tables else []
+
+
 def build_bundle(conn) -> Dict[str, Any]:
     """
     What would be sent, field by field from the allowlist, and the full text
@@ -269,8 +304,8 @@ def build_bundle(conn) -> Dict[str, Any]:
         "asks": asks,
         "audience": audience,
         "avoid": avoid,
-        "habits": voice_pack.habits_in_words(texts),
-        "who": [scrub(line, names) for line in voice_pack.who_lines()],
+        "habits": habits_in_words(texts),
+        "who": [scrub(line, names) for line in who_lines(conn)],
         "_full_text": {urn: posts[urn]["text"] for urn in chosen},
         "_names": names,
     }

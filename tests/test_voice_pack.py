@@ -66,7 +66,7 @@ def _confirm_creator(confirmed=True):
 
 
 def _post(n, text, reactions, published_at=NOW):
-    """A post old enough to have settled, unless `published_at` says otherwise."""
+    """One of the creator's posts. Published at NOW it is settled: older than a week."""
     conn = _db()
     conn.execute(
         "INSERT INTO own_posts (activity_urn, text, reactions, published_at, first_seen_at, last_seen_at) "
@@ -117,41 +117,35 @@ def test_openers_are_their_best_first_lines(home):
     _post(2, "The loud one.\n\nBody.", 90)
     _post(3, "The middle one.\n\nBody.", 40)
     text = get_voice_pack(max_openers=2)["brief_section"]
-    openers = text.split("did best against their own median reactions:\n")[1].splitlines()
+    openers = text.split("drew the most reactions:\n")[1].splitlines()
     assert openers == ['- "The loud one."', '- "The middle one."']
 
 
-def test_openers_come_through_the_one_ranking(home):
+def test_openers_come_from_the_one_ranking_so_a_young_post_is_not_an_exemplar(home):
     """
-    results.ranking, settled posts only (cycle 4, track 7, batch 0). The
-    openers ordered by raw reactions with no settled rule, so a post read
-    minutes after it went out, with the most reactions so far, led the list.
+    The openers ranked raw own_posts.reactions with no settled rule, so a post
+    three hours old with a burst of reactions could be the creator's best
+    opener while every other screen left it out of the ranking (cycle 4,
+    track 3: results.ranking is the one ranking, over settled posts, against
+    the creator's own median).
     """
-    from datetime import datetime, timedelta, timezone
-
-    _post(1, "A settled post.\n\nBody.", 20)
-    _post(2, "Another settled post.\n\nBody.", 30)
-    _post(3, "A third settled post.\n\nBody.", 10)
-    fresh = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
-    _post(4, "Three hours old and already loud.\n\nBody.", 900, published_at=fresh)
+    import datetime as dt
+    from results import ranking
+    from database import get_db
+    _post(1, "A quiet post.\n\nBody.", 2)
+    _post(2, "The loud one.\n\nBody.", 90)
+    _post(3, "The middle one.\n\nBody.", 40)
+    this_morning = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=3)).isoformat()
+    _post(4, "Too young to judge.\n\nBody.", 900, published_at=this_morning)
     text = get_voice_pack(max_openers=3)["brief_section"]
-    assert "already loud" not in text, "an unsettled post was ranked as an opener"
-    openers = text.split("did best against their own median reactions:\n")[1].splitlines()
-    assert openers[0] == '- "Another settled post."'
-
-
-def test_openers_abstain_below_the_engine_minimum(home):
-    """Two settled posts give no median (results.MIN_FOR_MEDIAN), so no opener is named."""
-    _post(1, "One.\n\nBody.", 50)
-    _post(2, "Two.\n\nBody.", 5)
-    assert "openers" not in get_voice_pack()["parts"]
-
-
-def test_no_second_ranking_of_openers_exists():
-    """The guard: the module orders nothing by reactions itself."""
-    source = open(os.path.join(BACKEND, "voice_pack.py"), encoding="utf-8").read()
-    assert "ORDER BY reactions" not in source
-    assert "results.ranking(" in source
+    openers = text.split("drew the most reactions:\n")[1].splitlines()
+    assert openers == ['- "The loud one."', '- "The middle one."', '- "A quiet post."'], openers
+    conn = get_db()
+    try:
+        order = ranking(conn)["order"]
+    finally:
+        conn.close()
+    assert "urn:li:activity:7380000000000000004" not in order, "the engine ranks the young post too"
 
 
 def test_the_copilot_carries_the_pack_and_says_so(home, monkeypatch):

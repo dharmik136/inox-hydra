@@ -13,9 +13,8 @@ The pack has three parts, each only when there is something real to put in it:
   habits      measured from their own posts: typical length, how many
               paragraphs, how often they open with a question, emoji and
               hashtag use; only with at least MIN_POSTS_FOR_HABITS posts
-  openers     the first lines of the posts that did best against their own
-              median reactions, by results.ranking (settled posts only), as
-              examples of their voice rather than templates to copy
+  openers     the first lines of their posts that drew the most reactions,
+              as examples of their voice rather than templates to copy
 
 It is the creator's own public profile and their own published posts. It goes
 to a hosted model only when one is configured, on the same path and under the
@@ -29,7 +28,6 @@ Strict Invariants:
 
 import json
 import re
-import sqlite3
 import statistics
 from typing import Any, Dict, List
 
@@ -111,75 +109,34 @@ def _habits(texts: List[str]) -> List[str]:
     ]
 
 
-def habits_in_words(texts: List[str]) -> List[str]:
-    """
-    The same habits _habits measures, said without a number, for the daily
-    section's model stage (record_model.py): it sends no figure, so the model
-    has none to repeat, and the studio drops any phrase that carries one.
-    Empty below MIN_POSTS_FOR_HABITS posts, as _habits is.
-    """
-    if len(texts) < MIN_POSTS_FOR_HABITS:
-        return []
-    total = len(texts)
-    length = statistics.median(len(t) for t in texts)
-    paragraphs = statistics.median(_paragraphs(t) for t in texts)
-
-    def how_often(count: int) -> str:
-        share = count / total
-        return "most of the time" if share >= 0.6 else "sometimes" if share >= 0.2 else "rarely"
-
-    return [
-        "writes " + ("short posts" if length < 600 else "medium-length posts" if length <= 1300 else "long posts")
-        + (" in short paragraphs" if paragraphs >= 3 else " in one or two blocks"),
-        "opens with a question " + how_often(sum(1 for t in texts if _first_line(t).endswith("?"))),
-        "uses emoji " + how_often(sum(1 for t in texts if _EMOJI.search(t))),
-        "uses hashtags " + how_often(sum(1 for t in texts if _HASHTAG.search(t))),
-    ]
-
-
-def who_lines() -> List[str]:
-    """Who the creator is, from the profile they confirmed, as the pack says it, or []."""
-    conn = get_db()
-    try:
-        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        return _who(conn) if "creator_identity" in tables else []
-    finally:
-        conn.close()
-
-
 def _openers(conn, limit: int) -> List[str]:
     """
-    The first lines of the posts that did best against the creator's own
-    median reactions, best first, through results.ranking and nothing else.
+    The first lines of the posts that did best, by the one ranking.
 
-    This ordered by raw own_posts.reactions with no settled rule, the one
-    ranking left outside results.py after six modules were brought into it:
-    a three hour old post could be a "most-reacted opener", and a creator
-    with two readings had openers ranked on them. The engine abstains below
-    its minimums (three settled posts for a median), and so does this: no
-    ranked post, no openers, never a guess from raw counts.
+    This ordered raw own_posts.reactions with no settled rule, so a post
+    three hours old with a burst of reactions could be the creator's best
+    opener while every screen left it out of the ranking. results.ranking is
+    the ranking every screen reads: settled posts only, against the creator's
+    own median, from one reading of each post's figures.
     """
-    try:
-        order = results.ranking(conn)["order"]
-    except sqlite3.OperationalError:
+    ranked = results.ranking(conn)["order"]
+    if not ranked:
         return []
-    if not order:
-        return []
-    # Only the ranked posts' text is read, and only as many as can be wanted:
-    # a post with no words (an image, a document) is passed over.
-    wanted = order[: limit * 4]
     texts = {row["activity_urn"]: row["text"] for row in conn.execute(
         "SELECT activity_urn, text FROM own_posts WHERE activity_urn IN (SELECT value FROM json_each(?)) "
-        "AND text IS NOT NULL AND TRIM(text) != ''", (json.dumps(wanted),))}
+        "AND text IS NOT NULL AND TRIM(text) != ''", (json.dumps(ranked[:limit * 4]),))}
     openers = []
-    for urn in wanted:
-        line = _first_line(texts.get(urn, ""))
+    for urn in ranked:
+        if len(openers) >= limit:
+            break
+        text = texts.get(urn)
+        if text is None:
+            continue
+        line = _first_line(text)
         if len(line) > OPENER_CHARS:
             line = line[:OPENER_CHARS].rsplit(" ", 1)[0] + "..."
         if line:
             openers.append(f'- "{line}"')
-        if len(openers) >= limit:
-            break
     return openers
 
 
@@ -246,7 +203,7 @@ def disclosure(max_openers: int = 3) -> List[str]:
             "length, paragraphs, opening questions, emoji and hashtags"
         )
     if openers:
-        said.append(f"the opening lines of the {len(openers)} posts that did best against your usual reactions")
+        said.append(f"the opening lines of your {len(openers)} most-reacted posts")
     return said
 
 
@@ -268,7 +225,7 @@ def get_voice_pack(max_openers: int = 3) -> Dict[str, Any]:
         sections.append("\n".join(habits))
         parts.append("habits")
     if openers:
-        sections.append("Openers of theirs that did best against their own median reactions:\n" + "\n".join(openers))
+        sections.append("Openers of theirs that drew the most reactions:\n" + "\n".join(openers))
         parts.append("openers")
 
     if not sections:
