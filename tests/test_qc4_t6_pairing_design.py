@@ -62,8 +62,9 @@ def test_the_citation_guard_can_fail():
 def test_the_design_keeps_the_decisions_it_was_asked_for():
     text = " ".join(_read(DESIGN).split())
     for decision in ("PAIRED_HOSTS", "never merged into `LOOPBACK_HOSTS`", "two minutes", "POST /api/v1/pair",
-                     "inox_phone_token", "The studio cookie is never set on a paired host",
-                     "`allowed_origins()`", "Refused: any Host-rewriting relay", "only with the code"):
+                     "inox_phone_token", "the studio cookie is never set there",
+                     "`allowed_origins()`", "Refused: any relay that forwards into the loopback listener",
+                     "only with the code"):
         assert decision in text, f"the design lost {decision!r}"
     assert text.index("Tailscale Serve, first") < text.index("WireGuard, the option with no third party")
     assert "design document only" in text.lower() or "A design document only" in text
@@ -74,3 +75,32 @@ def test_nothing_in_the_code_pairs_a_phone_yet():
     security = _read(os.path.join(REPO_ROOT, "studio", "backend", "security.py"))
     app = _read(os.path.join(REPO_ROOT, "studio", "backend", "app.py"))
     assert "PAIRED_HOSTS" not in security and "/api/v1/pair" not in app
+
+
+# ---------------------------------------------------------------------------
+# Review round, SF-8: trust never rests on the Host header alone
+# ---------------------------------------------------------------------------
+
+def test_trust_comes_from_the_connection_and_the_credential_not_the_host_header():
+    """
+    The review's case: with a second listener on the LAN or tunnel address,
+    a non-browser client there can write Host: 127.0.0.1:8000, and a Host
+    check alone would hand it the studio cookie. The design must admit a
+    paired client only by its pairing credential, set the studio cookie only
+    for a loopback connection known by its socket, and refuse a loopback
+    Host claimed on the paired listener.
+    """
+    text = " ".join(_read(DESIGN).split())
+    for rule in ('scope["server"]', 'scope["client"]',
+                 "admitted only by its pairing credential",
+                 "the studio cookie is set only when the Host, the peer and the listener are all loopback",
+                 "A request on the paired listener that claims a loopback Host gets nothing",
+                 "never forwards into the loopback listener"):
+        assert rule in text, f"the design lost the rule: {rule!r}"
+    assert "A relay that preserves the phone's Host is just one of the three options above with an extra hop" not in text
+
+
+def test_the_required_tests_include_the_forged_host():
+    text = " ".join(_read(DESIGN).split())
+    assert "Host: 127.0.0.1:8000 on the paired listener gets 403 and no cookie" in text
+    assert "a request on the loopback listener from a peer that is not loopback is refused" in text
