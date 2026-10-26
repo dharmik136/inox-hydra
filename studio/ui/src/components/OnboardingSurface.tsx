@@ -26,6 +26,7 @@ import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { ArchiveImport, archiveStatus } from "./ArchiveImport";
 import { RecordSetupFields } from "./RecordSetupFields";
+import { AnalyticsExportImport } from "./AnalyticsExportImport";
 
 /**
  * Setup: the studio learns who you are from your own LinkedIn.
@@ -252,6 +253,8 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
             onOpenPage={(url) => void open(url)}
             onChanged={() => void refresh()}
           />
+          {/* LinkedIn's analytics export, beside the archive: the exact figures the archive does not carry. */}
+          <AnalyticsExportImport busyUrl={busy} onOpenPage={(url) => void open(url)} />
         </Step>
 
         <Step

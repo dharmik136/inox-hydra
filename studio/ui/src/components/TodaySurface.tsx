@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, CheckCheck, Copy, Download, ExternalLink, Loader2, PenLine } from "lucide-react";
 import {
   dismissDemoCleanupNotice,
+  dismissDeskRequest,
   fetchAnalyticsKpis,
   fetchCadenceInsights,
   fetchEvidenceBrief,
@@ -162,6 +163,21 @@ export function TodaySurface({
     }
   }
 
+  // Not now, for a post the phone asked for: Today then offers what it
+  // would have offered without the request.
+  async function dismissPhoneRequest(id: number) {
+    setOpening("phone-request");
+    setNote(null);
+    try {
+      await dismissDeskRequest(id);
+      load();
+    } catch (caught) {
+      setNote({ text: caught instanceof Error ? caught.message : "That did not work.", at: "top", error: true });
+    } finally {
+      setOpening(null);
+    }
+  }
+
   async function syncAll() {
     setOpening("sync-all");
     setNote(null);
@@ -297,6 +313,13 @@ export function TodaySurface({
         </p>
       )}
 
+      {/* The archive age nudge: the server's own sentence, the same one Setup's archive step says. */}
+      {brief.archive_age && (
+        <p role="status" className="studio-meta shrink-0 rounded-md border border-edge px-3 py-1.5 leading-snug text-ink-secondary">
+          {brief.archive_age.toUpperCase()}
+        </p>
+      )}
+
       {/* First, because it has a time on it. A queued post is not posted by
           the studio: at its time it waits here and on the Queue. */}
       {due.length > 0 && (
@@ -419,6 +442,16 @@ export function TodaySurface({
                   className="rounded-md bg-signal-orange px-2.5 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110"
                 >
                   Go to Setup
+                </button>
+              )}
+              {brief.open_next.phone_request && (
+                <button
+                  type="button"
+                  disabled={opening !== null}
+                  onClick={() => void dismissPhoneRequest(brief.open_next.phone_request!.id)}
+                  className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                >
+                  Not now
                 </button>
               )}
               <button

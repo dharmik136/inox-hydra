@@ -248,7 +248,20 @@ async function syncActiveSessionToStudio() {
     };
   }
   if (!response.ok) {
-    return { status: "error", message: "The studio refused the session (" + response.status + ")." };
+    // The studio's own sentence when it gives one: a creator profile beyond
+    // the first cannot keep a session (decision D9), and "409" says nothing.
+    let said = null;
+    try {
+      const body = await response.json();
+      const detail = body && body.detail;
+      said = detail && typeof detail === "object" ? detail.message : detail;
+    } catch (err) {
+      said = null;
+    }
+    return {
+      status: "error",
+      message: typeof said === "string" && said ? said : "The studio refused the session (" + response.status + ")."
+    };
   }
   if (!memberUrn) {
     return {

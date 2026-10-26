@@ -1242,10 +1242,20 @@ export interface AuthStatus {
   is_connected: boolean;
   /** Whether the client actually holds usable tokens, as opposed to a status string. */
   client_session: boolean;
+  /**
+   * Said once: the session an earlier version kept in this profile, which is
+   * not the first, was removed when this version started (decision D9).
+   */
+  session_removed?: { at: string; message: string } | null;
 }
 
 export async function fetchAuthStatus(): Promise<AuthStatus> {
   return call<AuthStatus>("/api/auth/status");
+}
+
+/** The creator has read the removed-session notice; it is not said again. */
+export async function dismissSessionRemovedNotice(): Promise<void> {
+  await call("/api/auth/session-removed/dismiss", { method: "POST" });
 }
 
 /**
@@ -1764,6 +1774,8 @@ export interface ArchiveState {
   waiting: boolean;
   /** LinkedIn export files in Downloads. Only GET /api/v1/archive looks; elsewhere this is empty. */
   found: FoundArchive[];
+  /** One sentence when the last import is older than a month; null otherwise. */
+  age_nudge?: string | null;
   last_import: { archive_name: string; imported_at: string; summary: Record<string, ArchiveKindTally> } | null;
 }
 
@@ -2120,13 +2132,27 @@ export interface TodayBrief {
     /** Queued posts whose time has come, oldest first. The creator posts them. */
     due?: { post_id: string; scheduled_for: string; content: string; excerpt: string }[];
   };
-  open_next: { action: "open" | "setup"; url?: string; reason: string };
+  open_next: {
+    action: "open" | "setup";
+    url?: string;
+    reason: string;
+    /** Present when the page to open is one the phone asked for through the Telegram bot. */
+    phone_request?: { id: number; activity_urn: string; asked_at: string; source: string };
+  };
   /** What the demo cleanup removed, until dismissed; null when there is nothing to say. */
   demo_cleanup?: { removed: { kind: string; count: number }[]; backup: string | null; removed_at: string | null } | null;
+  /** The archive age nudge, the same sentence Setup's archive step says; null when the archive is recent. */
+  archive_age?: string | null;
 }
 
 export async function fetchToday(): Promise<TodayBrief> {
   return call<TodayBrief>("/api/v1/today");
+}
+
+/** Today's Not now for a post the phone asked for. Says whether there was an open request to close. */
+export async function dismissDeskRequest(id: number): Promise<boolean> {
+  const data = await call<{ dismissed?: boolean }>(`/api/v1/desk-requests/${id}/dismiss`, { method: "POST" });
+  return !!data.dismissed;
 }
 
 // -------------------------------------------------------------
@@ -3054,10 +3080,13 @@ export interface LinkedInSendRecord {
 export interface LinkedInSendState {
   ready: boolean;
   /**
-   * Why not: no_session, no_identity, account_unknown, other_account,
-   * author_unknown, egress_off or risk_not_acknowledged. The last one is the
-   * one-time, per-installation acknowledgement of the account risk, and the
-   * only one the dialog can settle itself, with acknowledgeLinkedInRisk below.
+   * Why not: not_first_profile (decision D9: sending works in the first
+   * creator profile only, and the reason is the sentence that says why),
+   * no_session, no_identity, account_unknown, other_account, author_unknown,
+   * egress_off or risk_not_acknowledged. The last one is the one-time
+   * acknowledgement of the account risk, kept in the profile's own settings,
+   * and the only one the dialog can settle itself, with
+   * acknowledgeLinkedInRisk below.
    */
   code: string | null;
   reason: string | null;
@@ -3561,4 +3590,160 @@ export async function fetchLibraryBundle(): Promise<{ status: string; message: s
 /** A signed library file chosen by hand, verified exactly as a fetched one is. */
 export async function importLibraryBundle(text: string): Promise<{ status: string; message: string }> {
   return call("/api/v1/record/library/import", { method: "POST", body: JSON.stringify({ text }) });
+}
+
+// -------------------------------------------------------------
+// Your phone, through Telegram: the settings behind Local security
+// -------------------------------------------------------------
+
+export interface IngressSettings {
+  profile: string;
+  /** Both the token and the chat id are set, so the studio asks Telegram for messages. */
+  configured: boolean;
+  /** Whether a token is held. The token itself is sealed and never answered. */
+  has_token: boolean;
+  chat_id: string;
+  /** The studio is asking Telegram for this profile's messages. */
+  running: boolean;
+  /** One bot is asked at a time, and the one being asked was set up in another profile. */
+  running_for_another_profile: boolean;
+  configured_from: "settings" | "environment" | null;
+  last_poll_at: string | null;
+  last_error: string | null;
+  total_messages_processed: number;
+  /** Posts the phone asked the desk to read that have not been read yet. */
+  open_requests: number;
+  /** The newest links from the phone, newest first, each with what became of it in a sentence. */
+  recent_links: {
+    id: number;
+    activity_urn: string;
+    asked_at: string;
+    done_at: string | null;
+    state: "open" | "read" | "expired" | "dismissed" | "refused";
+    said: string;
+  }[];
+  tested_against_real_service: boolean;
+  /** The server's own sentence, shown until the owner has tested against the real service. */
+  not_yet_tested: string;
+}
+
+export async function fetchIngressSettings(): Promise<IngressSettings> {
+  return call<IngressSettings>("/api/v1/ingress/settings");
+}
+
+/** Both empty removes the bot and stops asking Telegram. */
+export async function saveIngressSettings(bot_token: string, chat_id: string): Promise<IngressSettings> {
+  return call<IngressSettings>("/api/v1/ingress/settings", {
+    method: "POST",
+    body: JSON.stringify({ bot_token, chat_id }),
+  });
+}
+
+// -------------------------------------------------------------
+// LinkedIn's analytics export: request, find, preview, import
+// -------------------------------------------------------------
+
+export interface FoundExport {
+  name: string;
+  path: string;
+  bytes: number;
+  modified: string;
+  downloading: boolean;
+  imported?: boolean;
+}
+
+export interface ExportRange {
+  start: string | null;
+  end: string | null;
+  /** What the range was read from: the file's name, the days in it, or nothing. */
+  from: string | null;
+}
+
+/** One sheet of the export, as the studio recognised it or did not. */
+export interface ExportSheet {
+  name: string;
+  /** Null when the studio does not recognise the sheet: it is listed, and nothing in it is imported. */
+  kind: string | null;
+  label: string;
+  rows: number;
+  importable: boolean;
+  default: boolean;
+  writes: string | null;
+  recognised: string[];
+  not_recognised: string[];
+  left_out: string[];
+  note: string | null;
+  truncated: boolean;
+}
+
+export interface ExportPreview {
+  source: string;
+  file: { name: string; bytes: number };
+  range: ExportRange;
+  sheets: ExportSheet[];
+  recognised: boolean;
+  verified_against_real_file: boolean;
+  /** The server's own sentence on whether the layout has been checked against a real export. */
+  verification: string;
+}
+
+export interface ExportImport {
+  file: string;
+  imported_at: string;
+  range: ExportRange;
+  summary: Record<string, Record<string, unknown>>;
+}
+
+export interface ExportState {
+  analytics_page: string;
+  requested_at: string | null;
+  waiting: boolean;
+  /** Spreadsheets in Downloads named like LinkedIn's export; looked for only once you say you exported. */
+  found: FoundExport[];
+  watching: string[];
+  last_import: ExportImport | null;
+  verified_against_real_file: boolean;
+  verification: string;
+}
+
+export async function fetchAnalyticsExportState(): Promise<ExportState> {
+  return call<ExportState>("/api/v1/analytics-export");
+}
+
+export async function markAnalyticsExportRequested(): Promise<ExportState> {
+  return call<ExportState>("/api/v1/analytics-export/requested", { method: "POST" });
+}
+
+export async function previewAnalyticsExport(source: string): Promise<ExportPreview> {
+  return call<ExportPreview>("/api/v1/analytics-export/preview", { method: "POST", body: JSON.stringify({ source }) });
+}
+
+/**
+ * Sends a chosen export to the studio on this machine, which keeps it until
+ * it is imported. The browser's own record of when the file was written goes
+ * with it, because that is when a post's own export was read.
+ */
+export async function uploadAnalyticsExport(file: File): Promise<ExportPreview> {
+  const response = await studioFetch("/api/v1/analytics-export/upload", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-Export-Name": encodeURIComponent(file.name),
+      "X-File-Modified": String(file.lastModified),
+    },
+    body: file,
+  });
+  if (!response.ok) throw await refusalFrom(response);
+  return (await response.json()) as ExportPreview;
+}
+
+export async function importAnalyticsExport(
+  source: string,
+  include: string[],
+): Promise<{ file: { name: string; bytes: number }; range: ExportRange; summary: ExportImport["summary"] }> {
+  return call("/api/v1/analytics-export/import", { method: "POST", body: JSON.stringify({ source, include }) });
+}
+
+export async function discardAnalyticsExport(source: string): Promise<void> {
+  await call("/api/v1/analytics-export/discard", { method: "POST", body: JSON.stringify({ source }) });
 }

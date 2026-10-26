@@ -57,6 +57,7 @@ try:
     from .repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from .leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from .linkedin_client import linkedin_client
+    from . import linkedin_client as linkedin_client_module
     from . import egress as egress_policy
     from .scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                             parse_datetime_flexible, normalize_datetime_to_utc_iso,
@@ -65,6 +66,7 @@ try:
     from .agno_agentos import orchestrator
     from .image_studio import image_studio_manager, image_providers
     from .ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
+    from .ingress import apply_settings as ingress_apply_settings
     from .crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from .rate_limiter import rate_limiter, write_actor
     from . import hook_forms
@@ -76,6 +78,7 @@ try:
     from . import accounts
     from . import licensing
     from . import archive_import
+    from . import analytics_export
     from . import today as today_module
     from . import insights
     from . import devtools
@@ -129,6 +132,7 @@ except ImportError:
     from repurposer import generate_10x_hooks, audit_linkedin_algorithm_safety, repurpose_content, get_ai_status, command_ai_engine
     from leads import list_leads, add_lead, batch_add_leads, update_lead_status, delete_lead, generate_dm_script, export_leads_csv
     from linkedin_client import linkedin_client
+    import linkedin_client as linkedin_client_module
     import egress as egress_policy
     from scheduler import (start_scheduler, shutdown_scheduler, native_scheduler,
                            parse_datetime_flexible, normalize_datetime_to_utc_iso,
@@ -137,6 +141,7 @@ except ImportError:
     from agno_agentos import orchestrator
     from image_studio import image_studio_manager, image_providers
     from ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
+    from ingress import apply_settings as ingress_apply_settings
     from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from rate_limiter import rate_limiter, write_actor
     import hook_forms
@@ -148,6 +153,7 @@ except ImportError:
     import accounts
     import licensing
     import archive_import
+    import analytics_export
     import today as today_module
     import insights
     import devtools
@@ -307,6 +313,20 @@ async def lifespan(app: FastAPI):
                 "Could not bring profile %s up to this build's schema.", _profile, exc_info=True)
     if not safe_mode.is_active():
         _seal_plaintext_secrets()
+        # Decision D9: no profile beyond the first keeps a LinkedIn session.
+        # One an earlier version kept is deleted now, in that profile's own
+        # database, and its Local security panel says so once.
+        try:
+            linkedin_client_module.remove_sessions_beyond_the_first_profile()
+        except Exception:
+            logging.getLogger("studio.linkedin").warning(
+                "Could not remove the sessions kept in profiles beyond the first.", exc_info=True)
+        # A copy of an analytics export chosen by hand is kept for a day at
+        # most, whether or not Setup is opened again, as the policy says.
+        try:
+            analytics_export.sweep_uploads()
+        except OSError:
+            logging.getLogger("studio.analytics_export").warning("Could not sweep old export copies.", exc_info=True)
     # The offline documentation index, built here rather than on whichever
     # search happened to run first. It was imported into this module and never
     # called, so the index was a snapshot of the corpus as it stood the first
@@ -332,6 +352,14 @@ async def lifespan(app: FastAPI):
     if (os.environ.get("TELEGRAM_BOT_TOKEN") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN")) \
             and devtools.is_dev_mode():
         ingress_daemon.start_worker()
+    else:
+        # A bot the creator set up in Brand Studio's Local security tab runs
+        # without dev mode (cycle 4, decision D6); nothing starts without
+        # both the token and the chat id in the active profile's settings.
+        try:
+            ingress_apply_settings(at_startup=True)
+        except Exception:
+            logging.getLogger("studio.ingress").warning("Could not read the Telegram settings at startup.", exc_info=True)
     yield
     shutdown_scheduler()
     ingress_daemon.stop_worker()
@@ -1533,6 +1561,9 @@ def dismiss_demo_cleanup_notice():
 
 @app.get("/api/v1/onboarding/state", tags=["Onboarding"])
 def get_onboarding_state():
+    # Setup and the popup read the session from here: one restored into a
+    # profile beyond the first goes before they can say it is saved (D9).
+    linkedin_client_module.remove_session_beyond_first_profile()
     return onboarding.onboarding_state()
 
 
@@ -1752,10 +1783,14 @@ def receive_cookies(payload: CookiePayload):
     # load and every 15 minute alarm produced a request the creator never made.
     # The sync is still available on its own endpoint for anyone who opts into
     # egress deliberately.
-    linkedin_client.save_tokens(
+    saved = linkedin_client.save_tokens(
         payload.li_at, payload.JSESSIONID,
         account={"vanity": onboarding.normalise_vanity(payload.vanity or ""), "member_urn": payload.member_urn},
     )
+    if saved.get("status") == "refused":
+        # A creator profile beyond the first (decision D9). The detail is the
+        # sentence the popup and the Local security tab show, not a bare 409.
+        raise HTTPException(status_code=409, detail={"code": saved["code"], "message": saved["message"]})
     return {
         "status": "success",
         "message": "LinkedIn session tokens saved to local studio",
@@ -1795,10 +1830,19 @@ def get_auth_status():
         return {
             "status": status,
             "is_connected": status in ["connected", "ready"] and held,
-            "client_session": held
+            "client_session": held,
+            # Said once, where sessions are managed, when a session an earlier
+            # version kept in a profile beyond the first was removed (D9).
+            "session_removed": linkedin_client_module.session_removed_notice(),
         }
     finally:
         conn.close()
+
+
+@app.post("/api/auth/session-removed/dismiss")
+def dismiss_session_removed():
+    """The creator has read that this profile's session was removed; it is not said again."""
+    return {"status": "success", "dismissed": linkedin_client_module.dismiss_session_removed_notice()}
 
 
 ingest_live_analytics = analytics_router_module.ingest_live_analytics
@@ -1918,6 +1962,20 @@ except (ImportError, ValueError):
     from routers import record as record_router_module
 
 app.include_router(record_router_module.router)
+
+# Your phone, through Telegram: the settings behind the Local security panel.
+try:
+    from .routers import phone as phone_router_module
+except ImportError:
+    from routers import phone as phone_router_module
+app.include_router(phone_router_module.router)
+
+# LinkedIn's analytics export: Setup's block beside the archive (cycle 4, item 28).
+try:
+    from .routers import analytics_export_routes as analytics_export_router_module
+except ImportError:
+    from routers import analytics_export_routes as analytics_export_router_module
+app.include_router(analytics_export_router_module.router)
 
 DOCS_DIR = search_router_module.DOCS_DIR
 MODULES_DIR = search_router_module.MODULES_DIR
@@ -2301,6 +2359,11 @@ def send_readiness() -> Dict[str, Any]:
             "egress_allowed": egress_policy.allowed("linkedin"),
         }
 
+    # Decision D9, before everything: a creator profile beyond the first
+    # cannot send, whatever session it holds, and the reason is a sentence.
+    refusal = accounts.profile_refusal("send_to_linkedin")
+    if refusal:
+        return verdict("not_first_profile", refusal)
     if not linkedin_client.is_authenticated():
         return verdict("no_session", (
             "Nothing can be sent: this studio has no saved LinkedIn session. In the browser where you "
@@ -2535,6 +2598,7 @@ def stage_post_to_linkedin(post_id: str, req: StagePostRequest):
     # account after the dialog opened cannot send as them.
     readiness = send_readiness()
     if readiness["code"] in (
+        "not_first_profile",
         "no_session", "no_identity", "account_unknown", "other_account", "author_unknown",
         # The one-time, per-installation risk acknowledgement. Checked before
         # anything reaches LinkedIn, same as the identity checks above it, and

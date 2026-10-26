@@ -315,8 +315,21 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Integration of tracks 5, 7 and 3, measured on the merged tree: 192 paths,
 # 139 reached by the interface, 53 unreachable.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 192
-REACHED_BY_INTERFACE = 139
+# Cycle 4, track 6: seven paths added, every one with its surface. The phone's
+# Telegram bot under Local security (/api/v1/ingress/settings), and LinkedIn's
+# analytics export in Setup (/api/v1/analytics-export and its requested,
+# upload, preview, import and discard). Total 172 -> 179, reached 118 -> 125,
+# unreachable unchanged at 54. Then, in its review round, Today's Not now for
+# a post the phone asked for (/api/v1/desk-requests/{id}/dismiss): total 180,
+# reached 126, unreachable still 54; and the Local security panel's
+# Understood for a session removed from a profile beyond the first
+# (/api/auth/session-removed/dismiss): total 181, reached 127.
+# ---------------------------------------------------------------------------
+# Integration of tracks 5, 7, 3 and 6, measured on the merged tree: 201
+# paths, 148 reached by the interface, 53 unreachable.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 201
+REACHED_BY_INTERFACE = 148
 UNREACHABLE = 53
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

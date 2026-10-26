@@ -172,6 +172,13 @@ export function AnalyticsSurface() {
             <Download className="size-3" strokeWidth={2} aria-hidden="true" />
             CSV
           </a>
+          {/* Exact figures for up to a year come from LinkedIn's own export, imported in Setup beside the archive. */}
+          <a
+            href="#/setup"
+            className="studio-meta text-[10px] text-ink-muted underline underline-offset-2 transition-colors hover:text-ink-primary"
+          >
+            Import LinkedIn&apos;s analytics export in Setup
+          </a>
         <div className="flex items-center gap-1" role="group" aria-label="Date range" aria-busy={loadingRange}>
           {RANGES.map((candidate) => (
             <button

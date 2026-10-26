@@ -6,6 +6,8 @@ See how your daily figures reach the studio, and read the figures, the chart and
 
 The studio does not fetch your analytics. The browser extension reads them from LinkedIn's own analytics page while you have it open. You need the extension loaded and paired first; see [Install the browser extension that captures leads and analytics](install-the-browser-extension.md).
 
+For exact figures for up to a year at once, import the file LinkedIn's own Export button writes; see [Import LinkedIn's analytics export](import-linkedins-analytics-export.md).
+
 1. Confirm your profile in **Setup**, and open your own profile once in that browser at `https://www.linkedin.com/in/me/`, which works in every language. LinkedIn's analytics page does not say whose analytics it shows, so the extension remembers which account the browser is signed in to from your own profile, and the studio keeps analytics only from the account confirmed in **Setup**. Signing out of LinkedIn, or in as someone else, makes the extension forget, until you open `https://www.linkedin.com/in/me/` again. LinkedIn refreshing its sign-in does not.
 2. In that browser, open your LinkedIn creator analytics page, whose address starts `linkedin.com/analytics/creator`. A single post's analytics page is read separately, into that post's own readings; see [What to do today](what-to-do-today.md).
 3. Set LinkedIn's range selector to the past 24 hours.

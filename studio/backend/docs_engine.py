@@ -642,6 +642,8 @@ HELP_SECTIONS = [
             "help/review-leads-and-draft-a-message.md",
             "help/see-what-worked-and-where-your-attention-goes.md",
             "help/read-your-analytics.md",
+            # LinkedIn's own analytics export, the exact figures (cycle 4, item 28).
+            "help/import-linkedins-analytics-export.md",
         ],
     },
     {
@@ -666,6 +668,9 @@ HELP_SECTIONS = [
             # the public address the browser stores require, so a creator can
             # read it here rather than taking the store's word for it.
             "PRIVACY_POLICY.md",
+            # LinkedIn's own words on third-party tools, quoted verbatim and
+            # dated, with where each feature stands beside them (cycle 4).
+            "help/where-each-feature-stands-with-linkedins-terms.md",
             "help/keep-each-creator-separate-and-enter-a-licence.md",
             "help/connect-your-linkedin-session.md",
             "help/back-up-restore-and-export.md",
@@ -714,6 +719,11 @@ HELP_SECTIONS = [
             "quality/cycle4/t5-derive.md",
             "quality/cycle4/t7-ideas.md",
             "quality/cycle4/t3-honesty.md",
+            "quality/cycle4/t6-posture.md",
+            # Cycle 4, track 6: the phone pairing design (item 27) and the
+            # answer on LinkedIn's public-client OAuth flow (decision D2).
+            "PHONE_PAIRING_DESIGN.md",
+            "OFFICIAL_POSTING_ROUTE.md",
             "UI_CONVENTIONS.md",
             "ICON_SYSTEM.md",
             "UI_AGENT_WORKFLOW.md",

@@ -254,6 +254,26 @@ def get_active_account_id(conn=None) -> str:
     return paths.get_active_profile_id()
 
 
+def is_first_profile(profile_id: Optional[str] = None) -> bool:
+    """
+    Whether a profile is the first one: the default profile, which is the
+    studio as it was before profiles existed. The others are the Agency
+    tier's, and licensing.FIRST_PROFILE_ONLY names what they cannot do.
+    """
+    return (profile_id or paths.get_active_profile_id()) == paths.DEFAULT_PROFILE_ID
+
+
+def profile_refusal(feature: str) -> Optional[str]:
+    """
+    The sentence that refuses a first-profile-only feature in the active
+    profile, or None when the feature may go ahead here. The sentence is the
+    one the screen shows, so a refusal is never a bare error.
+    """
+    if licensing.first_profile_only(feature) and not is_first_profile():
+        return licensing.FIRST_PROFILE_ONLY_REASON
+    return None
+
+
 def list_accounts(conn=None) -> Dict[str, Any]:
     """Every profile with its own counts, the active one, and the licence's allowance."""
     active_id = paths.get_active_profile_id()

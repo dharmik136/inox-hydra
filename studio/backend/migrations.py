@@ -1669,6 +1669,54 @@ def _migrate_record_section(cursor: sqlite3.Cursor) -> None:
     """)
 
 
+def _migrate_desk_requests_and_export_totals(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 30 (cycle 4, track 6):
+    A post link shared from the phone is a desk request, and LinkedIn's
+    analytics export has a home for the totals it carries.
+
+    desk_requests: one row per LinkedIn post link the phone sent. The
+    Telegram ingress writes it; `state` is open, read, expired, dismissed or
+    refused. A link to one of the creator's own posts is open until that
+    post's analytics page is read after it was asked, a week passes, or the
+    creator dismisses it on Today, which offers the oldest open one. A link
+    that names no post of theirs is refused at once, with the reason in
+    `note`, and is never offered on Today: the studio reads only the
+    creator's own pages.
+
+    analytics_daily.new_followers: LinkedIn's export gives new followers a
+    day, which is not the follower count `followers` holds. The export's
+    daily engagements need no column: the page reader has always stored the
+    engagements card in `reactions` (studio/extension/content.js), and the
+    Analytics screen reads Engagements from there, so the export's go there
+    too, one definition for one figure whatever its source.
+
+    post_metric_observations.engagements: per post, the export gives one
+    engagements total, and a post's readings keep reactions, comments and
+    reposts apart, so a total has no column there and putting it under
+    reactions would be a figure the studio made up. Every new column is NULL
+    for every row that exists: nothing is measured by this migration.
+    """
+    # grain: one row per request, however many times the same post is shared.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS desk_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            activity_urn TEXT NOT NULL,
+            asked_at TEXT NOT NULL,
+            done_at TEXT,
+            note TEXT,
+            source TEXT NOT NULL DEFAULT 'telegram',
+            state TEXT NOT NULL DEFAULT 'open'
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_desk_requests_open ON desk_requests(state, asked_at)")
+    for table, column in (("analytics_daily", "new_followers"),
+                          ("post_metric_observations", "engagements")):
+        cursor.execute(f"PRAGMA table_info({table})")
+        if column not in {row[1] for row in cursor.fetchall()}:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1701,6 +1749,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
      _migrate_reading_precision_and_series),
     (29, "From your record: asks, the dated daily batch and its run, card marks, a monthly note, "
          "the archive's saved and followed items, and the signed library", _migrate_record_section),
+    (30, "A post link from the phone is a desk request, and the analytics export's totals have a home",
+     _migrate_desk_requests_and_export_totals),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

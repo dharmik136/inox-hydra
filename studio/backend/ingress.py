@@ -5,11 +5,19 @@ Handles outbound long-polling to api.telegram.org (zero inbound ports),
 parses structured and unstructured creator thoughts, and persists into
 SQLite WAL.
 
+What the phone can send (cycle 4, programme item 24): text, which becomes a
+draft as it always did, and a LinkedIn post link, which becomes a desk
+request (desk_requests.py) that Today surfaces as the page to open at this
+computer. The phone sends a link, never a figure: nothing it says is written
+as a reading, and the extension reads the real page at the desk.
+
 Strict Invariants:
 - Zero open inbound ports (pure outbound HTTP long-polling).
 - Zero em-dashes in any generated or parsed text.
+- Nothing from the phone is a figure.
 """
 
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 import json
@@ -17,6 +25,7 @@ import logging
 import os
 import re
 import requests
+from urllib.parse import unquote
 
 try:  # the shared egress chokepoint
     from . import egress as _egress
@@ -27,8 +36,35 @@ import time
 
 try:
     from .database import get_db, create_draft, get_draft
+    from . import desk_requests, paths, post_identity, secret_settings
 except ImportError:
     from database import get_db, create_draft, get_draft
+    import desk_requests
+    import paths
+    import post_identity
+    import secret_settings
+
+# The bot, set up per profile in Brand Studio's Local security tab (cycle 4,
+# decision D6). The token is a secret setting, sealed at rest like the AI key
+# and never answered back; the chat id is the creator's own and is not.
+SETTINGS_TOKEN_KEY = "telegram_bot_token"
+SETTINGS_CHAT_KEY = "telegram_chat_id"
+# A bot token as BotFather issues one: the bot's number, a colon, a secret.
+TOKEN_SHAPE = re.compile(r"^\d{5,15}:[A-Za-z0-9_-]{20,}$")
+# Your own chat with the bot: a positive integer. A group's id is negative,
+# and any member of the group could then file drafts, so it is refused.
+CHAT_ID_SHAPE = re.compile(r"^\d{1,20}$")
+# Said by the panel and the help until the owner has run one end-to-end test
+# against the real service; the suite only ever simulates Telegram.
+NOT_YET_TESTED = ("This has not yet been tested against the real Telegram service, only against a "
+                  "simulated one.")
+
+# A LinkedIn address in a message. The app's share menu writes
+# /posts/<slug>-activity-<id>-<suffix> with tracking parameters; the feed
+# writes /feed/update/urn:li:activity:<id>/. post_identity.extract_activity_urn
+# reads both. An lnkd.in short link names nothing the studio can resolve
+# without fetching it, which it will not do, so it stays ordinary text.
+LINKEDIN_URL = re.compile(r"https?://(?:[a-z]{1,3}\.)?linkedin\.com/[^\s<>\"']+", re.IGNORECASE)
 
 MAX_UPDATE_ATTEMPTS = 3
 
@@ -107,7 +143,13 @@ class IngressMessageParser:
 
         # Check for command prefixes
         lower = cleaned.lower()
-        if lower.startswith("draft:"):
+        if lower.startswith("read:"):
+            # "read: <post link>": the desk is asked to read that post's
+            # analytics. Any text beside the link is kept as a draft.
+            archetype = "Draft"
+            tags.append("read")
+            content = cleaned[5:].strip()
+        elif lower.startswith("draft:"):
             archetype = "Draft"
             content = cleaned[6:].strip()
         elif lower.startswith("idea:"):
@@ -122,6 +164,19 @@ class IngressMessageParser:
                 archetype = "Scheduled Post"
                 tags.append("scheduled")
 
+        # A LinkedIn post link becomes a desk request; the first one that
+        # names a post is the request, and it leaves the text. A link that
+        # names no post (a short link, a profile) stays in the text, so the
+        # message is kept whole as a draft rather than lost.
+        read_request: Optional[Dict[str, Any]] = None
+        for url in LINKEDIN_URL.findall(content):
+            # A link copied with its colons encoded (urn%3Ali%3Aactivity) names the same post.
+            urn = post_identity.extract_activity_urn(unquote(url))
+            if urn:
+                read_request = {"url": url, "activity_urn": urn}
+                content = re.sub(r"[ \t]{2,}", " ", content.replace(url, " ")).strip()
+                break
+
         # Extract hashtags from text (capped to 30 unique tags, max 50 chars each)
         raw_hashtags = re.findall(r"#(\w+)", content)
         if raw_hashtags:
@@ -130,6 +185,8 @@ class IngressMessageParser:
         # Generate title from the first non-empty line (truncated to 60 chars)
         lines = [l.strip() for l in content.splitlines() if l.strip()]
         title = lines[0][:60] if lines else "Untitled Mobile Ingress"
+        if read_request and not lines:
+            title = "Read request from the phone"
 
         metrics = cls.calculate_fold_metrics(content)
 
@@ -144,11 +201,18 @@ class IngressMessageParser:
             "lines_above_fold": metrics["lines_above_fold"],
             "pre_fold_chars": metrics["pre_fold_chars"],
             "is_pre_fold_safe": metrics["is_pre_fold_safe"],
+            # {"url", "activity_urn"} when the message carried a post link.
+            "read_request": read_request,
         }
 
 
 class TelegramIngressDaemon:
     """Outbound long-polling worker for Telegram Bot API with zero open ports."""
+
+    # How long stop_worker waits for the loop to finish. A poll can be waiting
+    # on Telegram for up to 30 seconds, so the loop is told to stop rather
+    # than waited for, and a loop that outlives this wait stops after its poll.
+    STOP_JOIN_SECONDS = 3.0
 
     def __init__(
         self,
@@ -157,6 +221,15 @@ class TelegramIngressDaemon:
     ):
         self.bot_token = bot_token or os.environ.get("TELEGRAM_BOT_TOKEN", "") or os.environ.get("PRUDENT_TELEGRAM_BOT_TOKEN", "")
         self.authorized_chat_id = authorized_chat_id or os.environ.get("TELEGRAM_CHAT_ID", "") or os.environ.get("PRUDENT_TELEGRAM_CHAT_ID", "")
+        # Where the token came from: "environment" (a maintainer, dev mode),
+        # "settings" (the Local security tab), or None. apply_settings only
+        # ever stops a worker it started itself.
+        self.configured_from: Optional[str] = "environment" if self.bot_token else None
+        # The creator profile a bot from the settings belongs to. Its messages
+        # are saved there whichever profile is open, so one creator's phone
+        # never files a draft in another creator's studio. None for a
+        # maintainer's bot from the environment, which saves to the open one.
+        self.profile_id: Optional[str] = None
         self.is_running = False
         self._stop_event = threading.Event()
         self.last_update_id = 0
@@ -184,6 +257,29 @@ class TelegramIngressDaemon:
         self.total_messages_processed = 0
         self.last_poll_at: Optional[str] = None
         self.last_error: Optional[str] = None
+
+    def configure(self, bot_token: str, authorized_chat_id: str, origin: Optional[str],
+                  profile_id: Optional[str] = None) -> None:
+        """
+        Points the worker at a bot, and at the profile its messages belong
+        to. The loop reads these on every poll, so a running worker follows a
+        change without a restart; the error ladder starts again, because the
+        old errors were the old bot's.
+        """
+        token = bot_token or ""
+        if token != self.bot_token:
+            # Update ids are each bot's own, and Telegram treats every update
+            # below the offset as confirmed. Carried from one bot to another,
+            # the old offset confirmed the new bot's waiting messages unread.
+            self.last_update_id = 0
+            self._failed_updates = {}
+        self.bot_token = token
+        self.authorized_chat_id = authorized_chat_id or ""
+        self.configured_from = origin if self.bot_token else None
+        self.profile_id = profile_id if self.bot_token else None
+        self.consecutive_errors = 0
+        self.rate_limited_until = 0.0
+        self.last_error = None
 
     def is_quiet_hours(self, current_time: Optional[datetime] = None) -> bool:
         """Determines if current time falls within low-power night window (23:00 to 06:00)."""
@@ -308,8 +404,28 @@ class TelegramIngressDaemon:
             else:
                 return None
 
-        # Parse message
+        # A message from Telegram is saved in the profile its bot was set up
+        # in. A message through the local simulate route is the open
+        # profile's, because that is where the person at the keyboard is.
+        pinned = self.profile_id if from_telegram else None
+        if pinned and pinned not in paths.profile_ids():
+            self.last_error = ("The profile this bot was set up in is closed or gone, so its messages are not "
+                               "saved. Set the bot up again in the profile you use.")
+            return None
+        with (paths.using_profile(pinned) if pinned else nullcontext()):
+            return self._store(text)
+
+    def _store(self, text: str) -> Optional[Dict[str, Any]]:
+        """Saves one accepted message: a desk request for a post link, a draft for any text."""
         parsed = IngressMessageParser.parse_message(text)
+
+        # A post link is a request to read that post at the desk. Recorded
+        # first, so a message that is only a link is not a draft of nothing.
+        request = None
+        if parsed.get("read_request"):
+            request = self._record_desk_request(parsed["read_request"]["activity_urn"])
+        if not parsed["raw_content"].strip():
+            return {"kind": "desk_request", **request} if request else None
 
         # One record of what the creator wrote: create_draft writes the posts
         # row with the draft, so this used to write a second posts row of its
@@ -329,9 +445,23 @@ class TelegramIngressDaemon:
         record = get_draft(draft_id)
         if not record:
             return None
-
-
+        if request:
+            record["desk_request"] = request
         return record
+
+    @staticmethod
+    def _record_desk_request(activity_urn: str) -> Dict[str, Any]:
+        """
+        Writes the link: open for one of the creator's own posts, refused,
+        with its reason, for anything else, so a link to someone else's post
+        never reaches Today. The phone's link names the post and nothing
+        else: no figure is written from it.
+        """
+        conn = get_db()
+        try:
+            return desk_requests.record(conn, activity_urn, source=desk_requests.SOURCE_TELEGRAM)
+        finally:
+            conn.close()
 
     def _redact(self, text: str) -> str:
         """
@@ -367,8 +497,17 @@ class TelegramIngressDaemon:
         """Single polling request to Telegram getUpdates API."""
         if not self.bot_token:
             return []
+        if self.configured_from == "settings" and self.profile_id and self.profile_id not in paths.profile_ids():
+            # The profile this bot was set up in was deleted, or closed with
+            # its licence. Asking on would confirm each of its messages to
+            # Telegram and then drop it, so the worker stops asking.
+            self.configure("", "", origin=None)
+            self.last_error = ("The profile this bot was set up in is closed or gone, so the studio stopped asking "
+                               "Telegram for its messages. Set the bot up again in the profile you use.")
+            return []
 
-        url = f"https://api.telegram.org/bot{self.bot_token}/getUpdates"
+        token = self.bot_token
+        url = f"https://api.telegram.org/bot{token}/getUpdates"
         params = {
             "offset": self.last_update_id + 1,
             "timeout": 30,
@@ -381,6 +520,12 @@ class TelegramIngressDaemon:
             # Refuses rather than connecting when this category is off. See egress.py.
             _egress.require(url, "ingress")
             res = requests.get(url, params=params, timeout=35)
+            if token != self.bot_token:
+                # The bot changed while this request waited on Telegram. The
+                # answer is the old bot's: nothing in it is handled under the
+                # new bot's settings, and nothing is confirmed, so the old
+                # bot's messages wait with Telegram for its next poll.
+                return []
             if res.status_code == 200:
                 data = res.json()
                 if data.get("ok"):
@@ -488,12 +633,16 @@ class TelegramIngressDaemon:
         if self.is_running:
             return
         self.is_running = True
-        self._stop_event.clear()
+        # Each loop has its own stop flag. A loop still waiting on Telegram
+        # when it was stopped used to find the shared flag cleared by the
+        # next start, and polled on beside the new loop.
+        stop = threading.Event()
+        self._stop_event = stop
 
         def _loop():
-            while self.is_running and not self._stop_event.is_set():
+            while not stop.is_set():
                 if not self.bot_token:
-                    if self._stop_event.wait(30.0):
+                    if stop.wait(30.0):
                         break
                     continue
 
@@ -505,7 +654,7 @@ class TelegramIngressDaemon:
                     logger.error("Worker loop error: %s", self._redact(str(e)))
 
                 delay = self.calculate_next_poll_interval(has_error=has_err)
-                if self._stop_event.wait(delay):
+                if stop.wait(delay):
                     break
 
         self._thread = threading.Thread(target=_loop, daemon=True, name="TelegramIngressWorker")
@@ -516,8 +665,142 @@ class TelegramIngressDaemon:
         self.is_running = False
         self._stop_event.set()
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=3)
+            self._thread.join(timeout=self.STOP_JOIN_SECONDS)
 
 
 # Global singleton daemon
 ingress_daemon = TelegramIngressDaemon()
+
+
+# ---------------------------------------------------------------------------
+# The settings behind the Local security panel (cycle 4, decision D6)
+# ---------------------------------------------------------------------------
+
+def read_settings(profile_id: Optional[str] = None) -> Dict[str, str]:
+    """The bot token (unsealed, for the worker) and chat id held in a profile, the open one by default."""
+    with (paths.using_profile(profile_id) if profile_id else nullcontext()):
+        conn = get_db()
+        try:
+            held = {r["key"]: r["value"] for r in conn.execute(
+                "SELECT key, value FROM settings WHERE key IN (?, ?)", (SETTINGS_TOKEN_KEY, SETTINGS_CHAT_KEY))}
+        finally:
+            conn.close()
+    return {
+        "token": secret_settings.unseal(SETTINGS_TOKEN_KEY, held.get(SETTINGS_TOKEN_KEY)),
+        "chat_id": str(held.get(SETTINGS_CHAT_KEY) or "").strip(),
+    }
+
+
+def apply_settings(at_startup: bool = False) -> bool:
+    """
+    Points the worker at a bot set up in the settings and starts it. Returns
+    whether one is running for a profile's settings.
+
+    One worker runs per studio, so one bot is asked at a time. On a save it
+    is the open profile's; at startup, the first profile the licence opens
+    that has one. When the open profile's bot is removed, a worker serving
+    that profile stops. A worker a maintainer started from the environment
+    is left alone.
+    """
+    active = paths.get_active_profile_id()
+    candidates = paths.profile_ids() if at_startup else [active]
+    for profile_id in candidates:
+        try:
+            held = read_settings(profile_id)
+        except Exception:
+            # A profile whose database cannot be read keeps no bot that can run.
+            continue
+        if held["token"] and held["chat_id"]:
+            ingress_daemon.configure(held["token"], held["chat_id"], origin="settings", profile_id=profile_id)
+            ingress_daemon.start_worker()
+            return True
+    if not at_startup and ingress_daemon.configured_from == "settings" and ingress_daemon.profile_id == active:
+        ingress_daemon.stop_worker()
+        ingress_daemon.configure("", "", origin=None)
+    return False
+
+
+def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
+    """
+    Keeps the token (sealed) and the chat id, then applies them. Both empty
+    removes them and stops the worker. A value of the wrong shape is refused
+    with a sentence and nothing is written.
+    """
+    token = (bot_token or "").strip()
+    chat = (chat_id or "").strip()
+    if not token and not chat:
+        conn = get_db()
+        try:
+            with conn:
+                conn.execute("DELETE FROM settings WHERE key IN (?, ?)", (SETTINGS_TOKEN_KEY, SETTINGS_CHAT_KEY))
+        finally:
+            conn.close()
+        apply_settings()
+        return describe_settings()
+    if not TOKEN_SHAPE.match(token):
+        return {"status": "error", "message": (
+            "That is not the shape of a Telegram bot token: BotFather issues a number, a colon and a secret, "
+            "for example 123456789:AAF... Paste it exactly as given. Nothing was stored.")}
+    if chat.startswith("-"):
+        return {"status": "error", "message": (
+            "That is a group's chat id: any member of the group could then file drafts in your studio. Use your "
+            "own chat id with the bot, a number with no minus sign. Nothing was stored.")}
+    if not CHAT_ID_SHAPE.match(chat):
+        return {"status": "error", "message": (
+            "Your chat id is a number, digits only. Without it the bot cannot tell you from anybody else, "
+            "so both are needed. Nothing was stored.")}
+    conn = get_db()
+    try:
+        with conn:
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+                (SETTINGS_TOKEN_KEY, secret_settings.seal(SETTINGS_TOKEN_KEY, token)))
+            conn.execute(
+                "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
+                (SETTINGS_CHAT_KEY, chat))
+    finally:
+        conn.close()
+    apply_settings()
+    return describe_settings()
+
+
+def describe_settings() -> Dict[str, Any]:
+    """What the Local security panel shows. Never the token."""
+    held = read_settings()
+    status = ingress_daemon.get_daemon_status()
+    conn = get_db()
+    try:
+        # Settled first, so a request read at the desk is not counted as waiting.
+        desk_requests.settle(conn)
+        waiting = desk_requests.open_count(conn)
+        links = desk_requests.recent(conn)
+    finally:
+        conn.close()
+    active = paths.get_active_profile_id()
+    from_settings = ingress_daemon.configured_from == "settings"
+    # Asking Telegram for this profile: its own bot, or a maintainer's bot
+    # from the environment, which saves to whichever profile is open.
+    running_here = bool(status["is_running"]) and (
+        (from_settings and ingress_daemon.profile_id == active) or ingress_daemon.configured_from == "environment")
+    return {
+        "status": "success",
+        "profile": active,
+        "configured": bool(held["token"] and held["chat_id"]),
+        "has_token": bool(held["token"]),
+        "chat_id": held["chat_id"],
+        "running": running_here,
+        "running_for_another_profile": bool(status["is_running"]) and from_settings
+                                       and ingress_daemon.profile_id != active,
+        "configured_from": ingress_daemon.configured_from,
+        "last_poll_at": status["last_poll_at"],
+        "last_error": status["last_error"],
+        "total_messages_processed": status["total_messages_processed"],
+        "open_requests": waiting,
+        # The newest links from the phone, each with what became of it; a
+        # refused one says why: not one of your posts.
+        "recent_links": links,
+        "tested_against_real_service": False,
+        "not_yet_tested": NOT_YET_TESTED,
+    }
