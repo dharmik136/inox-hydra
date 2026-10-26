@@ -4,7 +4,7 @@ See how much each kind of data takes, set how long readings and logs are kept, r
 
 ## Open Storage and privacy
 
-1. Open **Brand Studio** from the rail.
+1. Open **Settings** from the rail, which opens **Brand Studio**.
 2. Choose the **Storage and privacy** tab.
 
 The panel acts on the open creator profile only. Each profile keeps its own data and its own rules.

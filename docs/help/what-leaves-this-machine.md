@@ -26,7 +26,7 @@ Every other publish control, and the whole Queue, only writes a status on this m
 
 ## Read the ledger
 
-1. Open **Brand Studio** from the rail.
+1. Open **Settings** from the rail, which opens **Brand Studio**.
 2. Choose the **Local security** tab.
 3. Scroll to **What has left this machine**.
 

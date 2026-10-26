@@ -1909,7 +1909,8 @@ export interface OnboardingState {
   identity: CreatorIdentity | null;
   counts: { posts: number; comments: number; reactions: number };
   imports: SelfImport[];
-  steps: { bridge: boolean; identity: boolean; posts: boolean; activity: boolean; archive: boolean };
+  /** history: your posts read to the end of the list, the last of Setup's steps. */
+  steps: { bridge: boolean; identity: boolean; posts: boolean; activity: boolean; archive: boolean; history?: boolean };
 }
 
 export async function fetchOnboardingState(): Promise<OnboardingState> {

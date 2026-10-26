@@ -399,7 +399,9 @@ def test_every_tray_destination_can_be_reached_in_a_short_window(studio, width, 
     page.wait_for_timeout(250)
     box = tray.bounding_box()
     assert box["y"] + box["height"] <= height + 0.5, f"the tray runs below a {height} pixel window: {box}"
-    last = tray.get_by_role("button", name="Brand Studio")
+    # The tray's last destination: Settings, which opens Brand Studio until
+    # Brand and Settings are split (cycle 4, track 4).
+    last = tray.get_by_role("button", name="Settings")
     last.scroll_into_view_if_needed()
     assert _inside(last.bounding_box(), width, height), "the tray's last destination cannot be brought on screen"
     last.click()
@@ -409,7 +411,7 @@ def test_every_tray_destination_can_be_reached_in_a_short_window(studio, width, 
 
 @pytest.mark.parametrize("scheme", ["dark", "light"])
 def test_brand_studio_tabs_are_all_on_a_phone_screen(studio, scheme):
-    page = studio(375, 812, scheme).open("Brand Studio")
+    page = studio(375, 812, scheme).open("Settings")
     tabs = page.get_by_role("tablist", name="Brand workspaces").get_by_role("tab")
     assert tabs.count() == 6  # Storage and privacy joined in batch R4
     for index in range(tabs.count()):
@@ -591,7 +593,7 @@ def test_switching_profile_asks_before_discarding_brand_studio_edits(studio, mon
     assert page.evaluate(FETCH, ["POST", "/api/v1/licence", {"key": _agency_key(monkeypatch)}])["status"] == 200
     created = page.evaluate(FETCH, ["POST", "/api/v1/accounts", {"name": "Second Creator"}])["body"]["account"]
     try:
-        session.go("Brand Studio")
+        session.go("Settings")
         headline = page.get_by_label("Headline")
         headline.fill("An edit not saved yet")
         page.get_by_text("UNSAVED").wait_for(state="visible")

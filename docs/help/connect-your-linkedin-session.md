@@ -24,7 +24,7 @@ The session is copied only when you press the button. Nothing copies it on a tim
 
 ## Option B: paste it
 
-1. Open **Brand Studio** from the rail.
+1. Open **Settings** from the rail, which opens **Brand Studio**.
 2. Choose **Local security**.
 3. Scroll to **LinkedIn session**.
 4. Paste your `li_at` value into the field marked `li_at`.

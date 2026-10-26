@@ -26,6 +26,7 @@ import { DraftsPanel, draftTitle } from "@/components/DraftsPanel";
 import { DevtoolsSurface } from "@/components/DevtoolsSurface";
 import { StudioStatusBanner } from "@/components/StudioStatusBanner";
 import { STUDIO_SECTIONS, sectionById, type SectionId } from "@/lib/navigation";
+import { setupDone } from "@/lib/setup";
 import { cn } from "@/lib/utils";
 import {
   createDraft,
@@ -260,10 +261,9 @@ export default function App() {
     };
   }, []);
 
-  // A new install opens on Setup, because nothing else in the studio can be
-  // about the creator until it knows who they are. Asked once. Moving
-  // elsewhere before the answer arrives wins over it, so a creator who clicks
-  // straight to the composer is not pulled back.
+  // A new install opens on Setup, and so does a studio whose Setup is not
+  // done. Asked once. Moving elsewhere before the answer arrives wins over
+  // it, so a creator who clicks straight to the composer is not pulled back.
   // Whether the bridge has been heard from lately, for the mark beside
   // Activity. That mark used to pulse green on every screen whatever the
   // bridge was doing, including on Setup beside "Not seen yet". It shows what
@@ -290,12 +290,13 @@ export default function App() {
         // The same answer gives the header its first reading of the bridge,
         // which it used to ask for a second time a moment later.
         reportBridge(state.bridge.connected);
-        // Setup until the studio knows who you are, Today afterwards. Not
-        // when the studio was opened on a screen's address, and replacing
-        // the address rather than adding one, so Back does not return to a
-        // Composer the creator never chose.
+        // Setup until Setup is done, Today afterwards (sections report,
+        // decision 5), by the one rule Setup itself uses. Not when the
+        // studio was opened on a screen's address, and replacing the address
+        // rather than adding one, so Back does not return to a Composer the
+        // creator never chose.
         if (live && !linked.current && activeRef.current === "composer") {
-          const home = state.steps.identity ? "today" : "setup";
+          const home = setupDone(state) ? "today" : "setup";
           setActive(home);
           writeAddress(home, true);
         }
@@ -798,6 +799,7 @@ export default function App() {
         trayOpen={trayOpen}
         onToggleTray={() => setTrayOpen((open) => !open)}
         onSearch={() => setPaletteOpen(true)}
+        bridgeConnected={bridgeConnected}
       />
 
       <div className="relative flex min-w-0 flex-1 flex-col">
@@ -1065,7 +1067,10 @@ export default function App() {
               )}
               {active === "patterns" && <PatternsSurface onOpenSetup={() => navigate("setup")} />}
               {active === "analytics" && <AnalyticsSurface />}
-              {active === "settings" && <BrandStudioSurface />}
+              {/* Brand and Settings both open Brand Studio until the two are
+                  split; each registers its unsaved edits under its own entry,
+                  so leaving either asks first. */}
+              {(active === "brand" || active === "settings") && <BrandStudioSurface key={active} section={active} />}
               {active === "queue" && <QueueSurface onEditText={(postId) => void onEditText(postId)} />}
               {active === "docs" && <DocsSurface focus={focusFor("docs")} />}
               {active === "devtools" && <DevtoolsSurface />}

@@ -19,7 +19,7 @@ Only add a command you would be willing to run yourself.
 
 ## Add one
 
-1. Open **Brand Studio** in the rail and choose the **Grounding** tab.
+1. Open **Settings** in the rail, which opens **Brand Studio**, and choose the **Grounding** tab.
 2. Under **Connect a source**, type a **Name**.
 3. In the command box (placeholder `Command, for example: npx -y @some/mcp-server`), type the command that starts the server.
 4. Check the line that appears underneath, for example `RUNS AS 3 ARGUMENTS: [npx] [-y] [@some/mcp-server]`. That list is exactly what will be run. It never goes through a shell, with one exception: on Windows, `npx` and other launchers installed as `.cmd` files can only be run by `cmd.exe`, so they go through it, and a source whose arguments contain `&`, `|`, `<`, `>`, `^`, `%`, `!` or a quote is not started.

@@ -21,6 +21,7 @@ import {
   type SelfImportKind,
 } from "@/lib/api";
 import { reportBridge } from "@/lib/bridgeState";
+import { setupDone } from "@/lib/setup";
 import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { ArchiveImport, archiveStatus } from "./ArchiveImport";
@@ -110,7 +111,8 @@ export function OnboardingSurface({
   const { steps, identity, candidate } = state;
   // Every step ticked. The screen used to end on step 5 with nothing to say
   // that Setup was over or where to go next.
-  const finished = steps.bridge && steps.identity && !!identity?.profile_observed_at && steps.archive && !!steps.history;
+  // The one rule for Setup being done; the studio opens here until it is.
+  const finished = setupDone(state);
 
   return (
     <NoteContext.Provider value={note}>

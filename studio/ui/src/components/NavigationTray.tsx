@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AccountSwitcher } from "@/components/AccountSwitcher";
-import { type SectionId, type StudioSection } from "@/lib/navigation";
+import { STUDIO_GROUPS, type SectionId, type StudioSection } from "@/lib/navigation";
 import { useModalFocus } from "@/lib/modalFocus";
 import { cn } from "@/lib/utils";
 
@@ -65,40 +65,56 @@ export function NavigationTray({ sections, open, active, onSelect, onClose }: Na
               <AccountSwitcher condensed={false} placement="below" onAccountSwitched={() => onClose()} />
             </div>
 
-            <p className="studio-label px-2 pt-1 pb-1">Workspaces</p>
-            <ul className="flex flex-col">
-              {sections.map((section) => {
-                const Icon = section.icon;
-                const isActive = section.id === active;
-                return (
-                  <li key={section.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onSelect(section.id);
-                        onClose();
-                      }}
-                      aria-current={isActive ? "page" : undefined}
-                      className={cn(
-                        "flex w-full items-start gap-3 rounded-md px-2 py-2 text-left",
-                        "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
-                        isActive ? "bg-soft" : "hover:bg-soft",
-                      )}
-                    >
-                      <Icon
-                        className={cn("mt-0.5 size-[18px] shrink-0", isActive ? "text-signal-orange-text" : "text-ink-muted")}
-                        strokeWidth={1.75}
-                        aria-hidden="true"
-                      />
-                      <span className="min-w-0">
-                        <span className="block text-[13px] font-medium text-ink-primary">{section.label}</span>
-                        <span className="block truncate text-xs text-ink-muted">{section.blurb}</span>
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            {/* The rail's groups and sections, with the blurb each one opens
+                on. The group names are headers, as on the rail. */}
+            {[...STUDIO_GROUPS.map((group) => ({ id: group.id as string, label: group.label as string | null })),
+              { id: "loose", label: null }].map((group) => {
+              const members = sections.filter((section) => (section.group ?? "loose") === group.id);
+              if (members.length === 0) return null;
+              const headerId = `tray-group-${group.id}`;
+              return (
+                <div key={group.id} className="mt-1 first:mt-0">
+                  {group.label && (
+                    <p id={headerId} data-rail-group={group.id} className="studio-label px-2 pt-1 pb-1">
+                      {group.label}
+                    </p>
+                  )}
+                  <ul className="flex flex-col" aria-labelledby={group.label ? headerId : undefined}>
+                    {members.map((section) => {
+                      const Icon = section.icon;
+                      const isActive = section.id === active;
+                      return (
+                        <li key={section.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              onSelect(section.id);
+                              onClose();
+                            }}
+                            aria-current={isActive ? "page" : undefined}
+                            className={cn(
+                              "flex w-full items-start gap-3 rounded-md px-2 py-2 text-left",
+                              "transition-colors duration-(--studio-motion-fast) ease-(--ease-standard)",
+                              isActive ? "bg-soft" : "hover:bg-soft",
+                            )}
+                          >
+                            <Icon
+                              className={cn("mt-0.5 size-[18px] shrink-0", isActive ? "text-signal-orange-text" : "text-ink-muted")}
+                              strokeWidth={1.75}
+                              aria-hidden="true"
+                            />
+                            <span className="min-w-0">
+                              <span className="block text-[13px] font-medium text-ink-primary">{section.label}</span>
+                              <span className="block truncate text-xs text-ink-muted">{section.blurb}</span>
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              );
+            })}
           </motion.div>
         </>
       )}

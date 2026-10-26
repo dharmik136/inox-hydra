@@ -50,25 +50,28 @@ import urllib.request
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 AXE_JS = os.path.join(REPO_ROOT, "studio", "ui", "node_modules", "axe-core", "axe.min.js")
 
-# Rail labels, in rail order. These are the accessible names StudioRail gives
-# each icon button, so a rename there shows up here as "section not found"
-# rather than as a silently skipped screen.
+# Rail labels, in rail order (studio/ui/src/lib/navigation.ts, which
+# tests/test_qc4_t4_rail.py holds this to). These are the accessible names
+# StudioRail gives each button, so a rename there shows up here as "section
+# not found" rather than as a silently skipped screen. Brand and Settings both
+# open Brand Studio until the two are split.
 SECTIONS = {
-    "setup": "Setup",
     "today": "Today",
     "replies": "Replies",
-    "activity": "Activity",
-    "health": "Health",
     "composer": "Composer",
     "queue": "Queue",
+    "outbound": "Outbound",
+    "posts": "Posts",
     "leads": "Leads",
     "audience": "Audience",
-    "posts": "Posts",
     "patterns": "Patterns",
-    "outbound": "Outbound",
     "analytics": "Analytics",
+    "brand": "Brand",
+    "activity": "Activity",
+    "health": "Health",
+    "setup": "Setup",
     "docs": "Docs",
-    "settings": "Brand Studio",
+    "settings": "Settings",
 }
 
 VIEWPORTS = {

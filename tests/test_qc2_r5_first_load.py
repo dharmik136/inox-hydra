@@ -10,7 +10,7 @@ could say BRIDGE CONNECTED for up to a minute beside a header mark that said
 the bridge was not connected, because each read the bridge on its own clock.
 """
 
-from qc2_r5_live import confirm_identity, server, studio  # noqa: F401
+from qc2_r5_live import confirm_identity, seed_creator, server, studio  # noqa: F401
 
 # Records each distinct state of the page as it is drawn: whether the
 # Composer's editor is on screen, and the screen's heading.
@@ -47,8 +47,23 @@ def test_a_new_install_lands_on_setup_without_drawing_the_composer(studio):
     assert not any("templates" in path or "profile" in path for path in requests), requests
 
 
-def test_a_known_creator_lands_on_today_asking_once(studio):
-    confirm_identity(studio["client"])
+def test_a_creator_whose_setup_is_done_lands_on_today_asking_once(studio):
+    """
+    Cycle 4 (sections decision 5) moved the line from "the studio knows who
+    you are" to "Setup is done", by the rule Setup itself shows: a confirmed
+    creator with steps still to do lands on Setup
+    (tests/test_qc4_t4_rail.py). One whose Setup is done lands on Today, and
+    the shell still asks once.
+    """
+    from database import get_db
+    seed_creator(studio["client"])
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('archive_no_posts_at', '2026-10-01T00:00:00+00:00')")
+        conn.execute("INSERT INTO self_import_requests (kind, requested_at, started_at, finished_at, items_seen, outcome) "
+                     "VALUES ('posts', '2026-10-01T00:00:00+00:00', '2026-10-01T00:00:00+00:00', "
+                     "'2026-10-01T00:05:00+00:00', 5, 'end_of_list')")
+    conn.close()
     page, requests = _land(studio)
     page.wait_for_selector("text=What to do in the next hour")
     seen = page.evaluate("window.__seen")

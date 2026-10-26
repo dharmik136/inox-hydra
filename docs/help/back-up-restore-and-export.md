@@ -16,7 +16,7 @@ To see the exact paths, open a terminal in the checkout folder, the one that hol
 
 ## Back up now
 
-1. Open **Brand Studio** from the rail.
+1. Open **Settings** from the rail, which opens **Brand Studio**.
 2. Choose the **Storage and privacy** tab.
 3. **Your data** is at the top of it.
 4. Click **Back up now**.
@@ -78,7 +78,7 @@ A figure the studio never read says "not measured", not 0.
 
 ## Restore a backup
 
-1. Open **Brand Studio** from the rail.
+1. Open **Settings** from the rail, which opens **Brand Studio**.
 2. Choose the **Storage and privacy** tab, where **Your data** is at the top.
 3. In the list of backups, click **Restore** beside the one you want. Every ZIP backup and every automatic database copy has one.
 4. The studio asks first. The question names the backup and says what it replaces: everything in this creator profile, that is drafts and the queue, leads and analytics, your confirmed identity and Setup, settings and stored keys, media files (not for an automatic database copy, which leaves media as they are), and the record of people you forgot. Click **OK** to go ahead.

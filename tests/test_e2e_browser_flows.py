@@ -148,10 +148,11 @@ def test_e2e_app_shell_and_rail_navigation(page):
     page.wait_for_timeout(300)
     assert page.locator('button[aria-label="Analytics"]').get_attribute("aria-current") == "page"
 
-    # 6. Navigate to Brand Studio workspace
-    page.click('button[aria-label="Brand Studio"]')
+    # 6. Navigate to Settings, which opens Brand Studio until Brand and
+    # Settings are split (cycle 4, track 4)
+    page.click('button[aria-label="Settings"]')
     page.wait_for_timeout(300)
-    assert page.locator('button[aria-label="Brand Studio"]').get_attribute("aria-current") == "page"
+    assert page.locator('button[aria-label="Settings"]').get_attribute("aria-current") == "page"
 
     # 7. Return to Composer
     page.click('button[aria-label="Composer"]')
@@ -348,7 +349,10 @@ def test_e2e_every_surface_names_itself_once(page):
     # Command and the Swipe File are not in the rail any more: cycle 3 batch
     # T7 folded the first into the Composer's Prompt panel and the second into
     # its hook rail, which drew the same rows.
-    for label in ("Setup", "Today", "Queue", "Posts", "Patterns", "Outbound", "Analytics", "Brand Studio", "Activity"):
+    # Cycle 4 added Replies, Audience and Health, and split the Brand Studio
+    # entry into Brand and Settings, which both open it for now.
+    for label in ("Setup", "Today", "Replies", "Queue", "Posts", "Audience", "Patterns", "Outbound", "Analytics",
+                  "Brand", "Settings", "Activity", "Health"):
         page.click(f'nav[aria-label="Studio sections"] button[aria-label="{label}"]')
         page.wait_for_timeout(500)
         assert page.locator("h1:visible").count() == 1, f"{label} has {page.locator('h1:visible').count()} level-one headings"

@@ -20,6 +20,7 @@ import {
   type ProfileResponse,
 } from "@/lib/api";
 import { useStudioBack } from "@/lib/refresh";
+import type { SectionId } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
 import { hasUnsavedWork, registerUnsavedWork, reloadStudio, unsavedWorkLabels } from "@/lib/unsaved";
 import { GroundingWorkspace } from "./GroundingWorkspace";
@@ -51,7 +52,7 @@ type SaveState = "idle" | "dirty" | "saving" | "saved" | "failed";
  * of labelled inputs. The watermark is positioned against an image sized frame
  * so the choice is made where it will be seen.
  */
-export function BrandStudioSurface() {
+export function BrandStudioSurface({ section = "settings" }: { section?: SectionId } = {}) {
   const [profile, setProfile] = useState<CreatorProfile | null>(null);
   const [loaded, setLoaded] = useState<ProfileResponse | null>(null);
   const [ai, setAi] = useState<AiStatus | null>(null);
@@ -68,10 +69,12 @@ export function BrandStudioSurface() {
     () =>
       registerUnsavedWork("brand-studio", {
         label: "Your Brand Studio edits",
-        section: "settings",
+        // Whichever rail entry is showing it, Brand or Settings, so leaving
+        // that entry asks first.
+        section,
         check: () => unsaved.current,
       }),
-    [],
+    [section],
   );
 
   // Read again when the studio answers after an outage, but only while the

@@ -46,31 +46,38 @@ The server listens only on `127.0.0.1`, so only this PC can reach it. Your draft
 
 A new database starts almost empty, on purpose. Nothing about you or your account is invented.
 
-The studio opens on **Setup** until you have confirmed your profile there, and on **Today** afterwards (see [What to do today](what-to-do-today.md)). Each screen has its own address, such as `#/leads` after the studio's address, so reloading keeps you on the screen you were on, a bookmark or link opens that screen, and the browser's Back and Forward buttons move between the screens you visited. It connects the bridge browser and reads your own LinkedIn: see [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).
+The studio opens on **Setup** until Setup is done, all five of its steps, and on **Today** afterwards (see [What to do today](what-to-do-today.md)). Each screen has its own address, such as `#/leads` after the studio's address, so reloading keeps you on the screen you were on, a bookmark or link opens that screen, and the browser's Back and Forward buttons move between the screens you visited. It connects the bridge browser and reads your own LinkedIn: see [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).
 
 - **Composer**: an empty editor. Above it, the hook rail shows the 12 starter hook forms a new studio is seeded with.
 - **Queue**: 11 default weekly posting slots and no posts.
 - **Leads**: "No leads captured yet" and setup instructions for the browser extension.
 - **Analytics**: empty until the extension captures your numbers.
-- **Brand Studio**: no name. While the **Name** field is empty, the preview shows "Unnamed".
+- **Brand** and **Settings** (both open **Brand Studio** for now): no name. While the **Name** field is empty, the preview shows "Unnamed".
 
 ## Find your way around
 
-The rail on the left lists the surfaces. Hover an icon to see its name.
+The rail on the left lists the sixteen sections, in five groups: **Now**, **Make**, **Learn**, **Bridge** and **Studio**. In a window 1200 pixels wide or more it shows each section's name under its group; in a narrower window it shows icons, and hovering an icon, or moving to it with **Tab**, shows its name. The group names are headings, not buttons.
 
-| Rail label | What it is for |
-| --- | --- |
-| Setup | Connect the browser and teach the studio who you are |
-| Today | Who to reply to and how your latest post is doing |
-| Composer | Write, re-hook and stage the next post |
-| Queue | Scheduled posts and peak engagement slots |
-| Leads | Lead stream and person dossiers |
-| Posts | Which of your posts worked, and who each one brought |
-| Patterns | What your own posts suggest, and how steadily you post |
-| Outbound | Whose content you engage with, and whether it comes back |
-| Analytics | Time series, what changed, and comparisons |
-| Docs | Offline playbook and strategy search |
-| Brand Studio | Identity, watermark, grounding, local security, storage and your licence |
+| Rail label | Group | What it is for |
+| --- | --- | --- |
+| Today | Now | Who to reply to and how your latest post is doing |
+| Replies | Now | Every comment on your posts that is waiting on a reply |
+| Composer | Make | Write, re-hook and stage the next post |
+| Queue | Make | Scheduled posts and peak engagement slots |
+| Outbound | Make | Whose content you engage with, and whether it comes back |
+| Posts | Learn | Which of your posts worked, and who each one brought |
+| Leads | Learn | Lead stream and person dossiers |
+| Audience | Learn | Who keeps coming back, who has gone quiet, and who is a connection |
+| Patterns | Learn | What your own posts suggest, and how steadily you post |
+| Analytics | Learn | Time series, what changed, and comparisons |
+| Brand | Learn | Your identity and watermark. For now it opens **Brand Studio**, as **Settings** does |
+| Activity | Bridge | What the bridge has read from your LinkedIn, as it arrives |
+| Health | Bridge | Whether the bridge is reading, and what it could not read |
+| Setup | Studio | Connect the browser and teach the studio who you are |
+| Docs | Studio | Offline playbook and strategy search |
+| Settings | Studio | Grounding, local security, storage and privacy, and your licence. For now it opens **Brand Studio**, as **Brand** does |
+
+The **Studio** group sits at the foot of the rail, so **Setup** is always in the same place. Below it, the **Bridge** chip says whether the bridge browser has been heard from and opens **Health**.
 
 - The mark at the top of the rail opens a tray that lists the same surfaces with their labels.
 - Press **Ctrl+K** (**Cmd+K** on a Mac), or click the magnifier at the top of the rail, to search your posts, leads, hook forms and help from anywhere. Press **Escape** to close it. See [Search everything with Ctrl+K](use-the-command-palette.md).

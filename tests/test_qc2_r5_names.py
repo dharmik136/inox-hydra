@@ -72,4 +72,8 @@ def test_setup_says_when_it_is_done():
     code = _source("OnboardingSurface.tsx")
     assert "Setup is done." in code and "Go to Today" in code
     with open(os.path.join(REPO_ROOT, "studio", "ui", "src", "App.tsx"), encoding="utf-8") as handle:
-        assert '<OnboardingSurface onOpenToday={() => navigate("today")} />' in handle.read()
+        app = handle.read()
+    # The element Setup is drawn by, whatever else it is handed (cycle 4 added
+    # the way to Health): it must be given the way to Today.
+    element = app.split("<OnboardingSurface", 1)[1].split("/>", 1)[0]
+    assert 'onOpenToday={() => navigate("today")}' in element, element

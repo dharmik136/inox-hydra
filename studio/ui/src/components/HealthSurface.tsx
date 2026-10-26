@@ -366,6 +366,16 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
             )}
           </Block>
 
+          {/* POST ANALYTICS FIELDS (track 5, at integration). Track 5 adds a
+              route that answers, for each field the post analytics reader
+              looks for, when it was last read and how many post analytics
+              pages were read since ("not read on any of the last N post
+              analytics pages"). Its block belongs here, beside drift: a Block
+              titled "Post analytics fields", a row per field with its last
+              reading or that sentence. Nothing is drawn until that route
+              exists, because a field the studio cannot speak for must not
+              appear as read. Recorded in docs/quality/cycle4/t4-sections.md. */}
+
           <Block title="Database schema">
             {!schema ? (
               <Muted>Not answered on the last read.</Muted>

@@ -3,7 +3,7 @@ Save the name and headline your previews show, and find the watermark, grounding
 
 ## Open it
 
-Press **Brand Studio** in the rail. It has six tabs, in this order: **Identity**, **Watermark**, **Grounding**, **Local security**, **Storage and privacy** and **Licence**.
+Press **Brand** or **Settings** in the rail: until the two are separated, both open **Brand Studio**. It has six tabs, in this order: **Identity**, **Watermark**, **Grounding**, **Local security**, **Storage and privacy** and **Licence**.
 
 ## How saving works
 

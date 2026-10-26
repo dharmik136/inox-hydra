@@ -104,7 +104,9 @@ def page(studio_url):
         errors = []
         page.on("pageerror", lambda error: errors.append(str(error)))
         page.goto(studio_url, wait_until="networkidle")
-        page.click('button[aria-label="Brand Studio"]')
+        # Settings opens Brand Studio until Brand and Settings are split
+        # (cycle 4, track 4); Storage and privacy is one of its tabs.
+        page.click('button[aria-label="Settings"]')
         page.get_by_role("tab", name="Storage and privacy").click()
         yield page
         assert errors == [], errors
