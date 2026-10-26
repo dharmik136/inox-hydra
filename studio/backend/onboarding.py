@@ -511,7 +511,13 @@ CAPTURE_RETENTION = timedelta(days=7)
 # reads the table of whichever query it sits in. Without the refused clause a
 # reader refused for identity every day since it last worked lost that day to
 # the prune, because its newest refused row looked like the good run to keep.
-GOOD_RUN = "drift IS NULL AND refused IS NULL AND COALESCE(items_seen, 0) > 0"
+#
+# A run read something if it saw items or kept any: a run that sent people to
+# the studio has read them, whatever it counted as seen. The engagers reader
+# counted only comments as seen, so a reactions list read on its own was READ
+# NOTHING beside the reactors it had just filed.
+READ_SOMETHING = "(COALESCE(items_seen, 0) > 0 OR COALESCE(items_kept, 0) > 0)"
+GOOD_RUN = f"drift IS NULL AND refused IS NULL AND {READ_SOMETHING}"
 PRUNE_CAPTURES = f"""
 DELETE FROM captures
  WHERE observed_at < ?
@@ -611,7 +617,7 @@ def capture_health() -> List[Dict[str, Any]]:
         for extractor in EXTRACTORS:
             latest = conn.execute(
                 "SELECT observed_at, items_seen, items_kept, drift, refused, duration_ms, reads, slow_reads, "
-                "long_tasks, long_task_ms FROM captures "
+                f"long_tasks, long_task_ms, {READ_SOMETHING} AS read_something FROM captures "
                 "WHERE extractor = ? ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
             last_good = conn.execute(
                 f"SELECT observed_at FROM captures WHERE extractor = ? AND {GOOD_RUN} "
@@ -634,7 +640,7 @@ def capture_health() -> List[Dict[str, Any]]:
             state = "refused"
         elif drift:
             state = "drifting"
-        elif (latest["items_seen"] or 0) > 0:
+        elif latest["read_something"]:
             state = "working"
         else:
             state = "read_nothing"

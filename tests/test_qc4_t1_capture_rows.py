@@ -273,3 +273,51 @@ def test_todays_last_capture_is_never_a_refused_run(studio):
         })
     assert today.today_brief()["freshness"]["last_capture_at"] == captured.isoformat(), (
         "Today's LAST CAPTURE moved with a reading the studio refused")
+
+
+# ---------------------------------------------------------------------------
+# Review finding S3: a run that sent items has read something
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def pages():
+    pytest.importorskip("playwright.sync_api")
+    from qc_f3_pages import Pages
+    p = Pages()
+    yield p
+    p.close()
+
+
+def test_a_reactions_list_read_on_its_own_is_a_run_that_read_something(studio, pages):
+    """
+    The review's scenario: the creator opens the reactions list on their own
+    post with no comments open. The engagers reader relayed both reactors and
+    reported items_seen 0, because it counted only comment cards as seen, and
+    the reader read READ NOTHING for a run that had just filed two people.
+    """
+    import onboarding
+    from test_qc_f3_engagers import FEED, MODAL, OPEN_MODAL
+    page = pages.open("/feed/", FEED)
+    page.clock.run_for(5000)
+    page.evaluate("() => document.getElementById('mine-count').click()")
+    page.evaluate(OPEN_MODAL, MODAL)
+    page.clock.run_for(6000)
+    filed = [body["full_name"] for body in pages.sent(page, "/api/v1/crm/interactions/ingest")]
+    assert filed == ["Reactor One", "Reactor Two"], filed
+    reports = [body for body in pages.sent(page, "/api/v1/bridge/capture") if body.get("extractor") == "engagers"]
+    assert reports, "the engagers reader reported no run"
+    assert reports[-1]["items_seen"] == 2, "the reactors the reader read are not counted as seen"
+    assert reports[-1]["items_kept"] == 2, "a list inside a dialog was read twice and each reactor counted twice"
+    onboarding.record_capture(dict(reports[-1]))
+    entry = _health("engagers")
+    assert entry["state"] == "working", "a run that filed two people reads as having read nothing"
+    assert entry["last_good_at"] is not None
+
+
+def test_a_run_that_kept_items_is_working_whatever_it_counted_as_seen(studio):
+    """An extension not yet reloaded still counts reactors as unseen; the studio judges by what was read."""
+    import onboarding
+    onboarding.record_capture({"extractor": "engagers", "page_kind": "feed", "items_seen": 0, "items_kept": 2})
+    entry = _health("engagers")
+    assert entry["state"] == "working"
+    assert entry["last_good_at"] is not None, "a run that kept two people is not a good run"

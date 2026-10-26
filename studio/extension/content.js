@@ -1447,12 +1447,17 @@ function observeAndCaptureEngagers() {
   const reactorModals = Array.from(
     document.querySelectorAll('.artdeco-modal, div[role="dialog"], .social-details-reactors-tab')
   ).filter(looksLikeReactionsList);
+  // The reactors tab sits inside the dialog, and both match, so each list was
+  // read twice and every reactor counted twice. An item is read once.
+  const reactorsRead = new Set();
   reactorModals.forEach(modal => {
     try {
       const reactorItems = modal.querySelectorAll(
         'li.social-details-reactors-tab__item, .reactions-menu__item'
       );
       reactorItems.forEach(item => {
+        if (reactorsRead.has(item)) return;
+        reactorsRead.add(item);
         const linkEl = item.querySelector('a[href*="/in/"]');
         if (!linkEl) return;
 
@@ -1498,8 +1503,10 @@ function observeAndCaptureEngagers() {
   // markup changing, not an empty thread.
   const commentersRead = leads.length - leadsBeforeComments;
   const newLayoutList = !commentCards.length && document.querySelector('[data-testid*="commentList"]');
+  // What the reader saw is the comments and the reactors both: counting only
+  // comments made a reactions list read on its own a run that saw nothing.
   if (commentCards.length || reactorModals.length || newLayoutList) {
-    reportCapture("engagers", commentCards.length || newLayoutCommenters.length, leads.length,
+    reportCapture("engagers", (commentCards.length || newLayoutCommenters.length) + reactorsRead.size, leads.length,
       commentCards.length > 0 && commentersRead === 0 ? ["commenter_name"] : []);
   }
   // The read is the DOM work above; what follows is sending.

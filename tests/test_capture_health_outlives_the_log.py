@@ -145,7 +145,7 @@ def test_the_prune_keeps_what_capture_health_reads(studio):
 
     reads = inspect.getsource(onboarding.capture_health)
     keeps = onboarding.PRUNE_CAPTURES
-    for clause in ("drift IS NULL", "refused IS NULL", "COALESCE(items_seen, 0) > 0"):
+    for clause in ("drift IS NULL", "refused IS NULL", "COALESCE(items_seen, 0) > 0", "COALESCE(items_kept, 0) > 0"):
         assert clause in onboarding.GOOD_RUN, f"a good run no longer asks {clause!r}"
     assert "GOOD_RUN" in reads, "capture_health decides the last good run by a rule of its own"
     assert keeps.count(onboarding.GOOD_RUN) == 2, (
