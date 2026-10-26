@@ -1516,7 +1516,7 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
      _migrate_one_post_identity),
     (27, "A lead's score is recomputed when what it is computed from changes", _migrate_current_scores),
     (28, "Each reader says how long it took, the bridge says whether network reading is on, "
-         "and every publication has its post again",
+         "network reading keeps only your own posts, and every publication has its post again",
      _migrate_reader_timing_and_network_reading),
 ]
 

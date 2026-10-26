@@ -85,6 +85,9 @@ def test_the_migration_is_named_for_what_it_records(studio):
     description = entries[0][1]
     assert "reader" in description.lower() and "network reading" in description.lower(), description
     assert "every publication has its post" in description.lower(), description
+    # It also drops what network reading kept about other members (the
+    # privacy defect of the second round), and says so.
+    assert "only your own posts" in description.lower(), description
 
 
 def test_the_migration_adds_the_timing_and_heartbeat_columns(studio):
