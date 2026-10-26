@@ -12,8 +12,8 @@ adopts them (section 5.2). The track adds no migration.
 | Rows not closed | 7 with the reason, and 1 the report flags without judging (section "Not done, and why") |
 | Moves | 5, and decision 8's removal |
 | Guards added or widened, each falsified before it was kept | 6: no ranking by score, the ratio cut (which also reads the help), the contrast status names, the screen registry, the panel's minimums, and the gap format read from the tree |
-| Commits | 28 |
-| Suite, as CI runs it | 3,179 passed, 17 skipped (Windows, macOS, a workstation browser, pyyaml not installed, one deliberate), 0 failed, in 9 min 46 s, on the final tree |
+| Commits | 35: 29 in round 1, and 6 in review round 2 with this record's update |
+| Suite, as CI runs it | 3,198 passed, 17 skipped (Windows, macOS, a workstation browser, pyyaml not installed, one deliberate), 0 failed, in 9 min 41 s, on the tree after review round 2 (3,179 passed at the end of round 1) |
 | Interface audit | `tools/ui_audit.py`, both themes, desktop and phone: 48 screens over a seeded history and 48 on a fresh install, none with a blocking finding |
 
 Every commit on the branch type-checks (`npm --prefix studio/ui run typecheck`
@@ -60,7 +60,7 @@ falsified where one was added. The review column is the reviewer's.
 | 25 | Structural: Activity files a post under `last_seen_at` (`routers/browser.py:217`; `ActivitySurface.tsx:176`) | 08893e5 | Filed under `published_at`, with "read Nd ago" on the line (`studio/ui/src/components/ActivitySurface.tsx:185`) | `tests/test_qc4_t3_activity_lines.py` | | |
 | 26 | Structural: seven sections have no `screenKey`, and the registry lists the cut Swipe File and Command (`navigation.ts:35-43`; `devtools.py:165-173`) | d16b19c | Every section declares a key and `screenKey` is required (`studio/ui/src/lib/navigation.ts:46`); the registry has one entry per section and no other (`studio/backend/devtools.py:171-183`) | `tests/test_qc4_t3_screen_registry.py` | Holds the two lists in both directions; it failed on the shipped rail (seven sections without a key) and registry (`swipe`, `ai_command`) | |
 | 27 | Structural: an MCP server's `env` and `cwd` are returned to the browser (`mcp_client/servers.py:120-128`) | 522a6f9 | The listing and the add route answer without the environment, with a count of its variables (`studio/backend/mcp_client/servers.py:144`, `studio/backend/app.py:2126`); the launcher still reads it | `tests/test_qc4_t3_mcp_env_stays_home.py` plants a key-shaped value and reads both routes for it | | |
-| 28 | Structural: the lead stage migration promises "from which post" and writes no post column | not done | See "Not done, and why" | | | |
+| 28 | Structural: the lead stage migration promises "from which post" and writes no post column | track 4 | Assigned to track 4 by the coordinator after review round 2 (S7) | | | |
 | 29 | Structural: every Today and Setup poll runs the whole `onboarding_state` | track 2 | The event stream and its lighter backstops | | | |
 | + | (the audit's list, in batch 0) The `TodayPerson` type omits `engaged_at`, patched locally (`api.ts:2113-2122`; `TodaySurface.tsx:928`) | aff86b0 | Declared on the shared type (`studio/ui/src/lib/api.ts:2051`); the local patch is gone | `tests/test_qc4_t3_today_person_type.py` compares a live brief's keys with the declared fields | | |
 
@@ -122,7 +122,7 @@ bar, as they were.
 | Post readings carry no precision column | A migration, and the PRD's item 18 for track 5 | Track 5 |
 | Two identities, Brand Studio's profile and Setup's confirmed identity (S) | Batch 5, "reconcile the two identities", in the Brand and Settings split | Track 4 |
 | "Is a LinkedIn session stored" answered from two settings keys (S) | Batch 5, "move Setup's backups and session" | Track 4 |
-| The lead stage migration promises "from which post" and writes no post column | The report's fix is a column added "forward from the day it ships", which needs a migration, and this track carries none. It is the column a funnel by post would read | Track 4 (Audience's funnel), in its migration, or a later batch |
+| The lead stage migration promises "from which post" and writes no post column | The coordinator assigned it to track 4 after review round 2 (S7). It is the column a funnel by post would read | Track 4, in its migration |
 | Every Today and Setup poll runs the whole `onboarding_state` | The event stream and its lighter backstops | Track 2 |
 | The demo seeder's unclamped rate; crm's literal 60.0 and 80.0 | The report flags them and does not judge them | No change |
 
@@ -184,8 +184,9 @@ unreachable 54 to 56, each route named in its comment).
   that row, so `GET /api/v1/posts/{id}/engagers` answers 404 for such a post,
   and Posts' detail turns the failure into "NOBODY CAPTURED FROM THIS POST YET."
   however many people engaged (reproduced on cf0ba9d: one imported post, one
-  commenter, 404). The folded-count note added here reaches only the posts the
-  route resolves. The fix belongs in the ingest (track 1's `onboarding.py`) or
+  commenter, 404). Since review round 2 the route falls back to the post's URN
+  when no row resolves (874daea), so these posts' people are listed again; the
+  missing row is still the ingest's to make. The fix belongs in the ingest (track 1's `onboarding.py`) or
   in `post_identity.resolve`, and the detail's swallowed failure is in track 4's
   file; neither was in this track's brief.
 
@@ -206,3 +207,30 @@ unreachable 54 to 56, each route named in its comment).
   the reachability test does not read). `patterns_overview` still computes
   comparison lines of its own that no screen draws; the agreement tests hold
   them equal to the engine's records. Retiring them is a separate change.
+- Search (Ctrl+K) still opens a published post on Analytics
+  (`studio/ui/src/App.tsx:747, 767`; `studio/backend/universal_search.py:515,
+  626`), which no longer lists posts; it should open Posts. Both files are
+  outside this track.
+
+## Review round 2
+
+The review sent the branch back for B1 and B2. By the owner's direction this
+round fixes B1, B2 and S5 only; the rest is deferred below.
+
+| Finding | Commit | Change | Test |
+|---|---|---|---|
+| B1: the Evidence panel said nothing on it leaves the machine | 8f500ee | It says the opening lines of the top posts it lists go to a connected provider with every Re-Hook and Command, and that its contrasts and figures stay | `tests/test_qc4_t3_evidence_claim.py` |
+| B2 (a): a post with no studio row listed nobody | 874daea | The engagers route falls back to the post's URN (`routers/posts.py`, `_publication_only`) | `tests/test_qc4_t3_engagers_without_a_studio_row.py` |
+| B2 (b): a post marked published here and not yet seen on LinkedIn was on no list | 715d3a0 | Posts lists those posts as their own short group (`GET /api/v1/posts/published-not-seen`) | `tests/test_qc4_t3_published_not_seen.py`, `tests/test_qc4_t3_published_not_seen_screen.py` |
+| B2 (c): three help lines still sent posts to Analytics | d12037e | The help sends a creator to Posts | `tests/test_qc4_t3_help_posts_are_on_posts.py` |
+| S5: Queue the newest draft could requeue a published post | 75656ae | One conditional UPDATE: the post moves only while it is still a draft, a published post is never requeued, and a refusal is a 409 with a sentence | `tests/test_qc4_t3_queue_newest_draft_refuses.py` |
+
+Deferred:
+
+- The colour cut: `lib/results.ts` still mirrors the engine's 1.25 and 0.8; the engine should send each row's verdict.
+- S1: the score-ordering guard reads one line at a time and skips `studio/ui/src`.
+- S2: the Queue reads its rhythm once a visit, so "Next 14 days" lags "Queued" after a queue action.
+- S3: "Next 14 days" reads "Not measured" when no posts are imported, even with posts queued.
+- S4: Patterns' list-level fallback says "not enough posts" for a line with enough posts and no ratio.
+- S6: Patterns' blurb and the first-run help still say "and how steadily you post".
+- S7: the lead stage post column is track 4's (row 28).
