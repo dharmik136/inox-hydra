@@ -1046,6 +1046,13 @@ function LatestPost({
       {rows.length > 0 ? (
         <div className="mt-2 border-t border-edge pt-2">
           <p className="studio-meta mb-1 text-[10px] text-ink-muted">AT ABOUT TWO DAYS OLD, AGAINST YOUR USUAL</p>
+          {/* Two screens, two medians: this one is the median of the earlier
+              posts read at the same age, Posts' is the settled-post median,
+              and neither said so, though both are called "your usual". */}
+          <p className="studio-meta mb-1 text-[10px] leading-snug text-ink-muted">
+            YOUR USUAL HERE IS THE MEDIAN OF YOUR EARLIER POSTS READ AT THE SAME AGE. POSTS COMPARES SETTLED POSTS,
+            SO ITS USUAL IS A DIFFERENT FIGURE.
+          </p>
           <dl className="flex flex-col gap-1">
             {rows.map(([metric, value]) => (
               <div key={metric} className="flex items-baseline justify-between gap-3">
