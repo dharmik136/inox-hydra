@@ -872,3 +872,28 @@ def test_format_comparisons_flag_different_periods(home):
     conn.close()
     image = next(c for c in contrast_engine.compute_all_contrasts()["format_contrasts"] if c["format"] == "image")
     assert image["status"] == "different_period" and image["difference"]["notable"] is False
+
+
+def test_a_window_row_never_moves_the_daily_range(client):
+    """
+    Found by the full suite: the overview was anchored on the latest day of
+    either table, so a 28 day reading dated after the last daily row moved
+    the chart's range away from every daily figure, while get_kpis, anchored
+    on the daily rows, still covered them. The chart and the figures above it
+    must cover the same days.
+    """
+    from linkedin_client import linkedin_client
+    linkedin_client.ingest_analytics_payload({"series": [{
+        "date": "2031-03-01", "period_label": "1d", "precision": "exact", "impressions": 410}]})
+    linkedin_client.ingest_analytics_payload({"series": [{
+        "date": "2031-07-07", "period_label": "28d", "impressions": 90000}]})
+    overview = client.get("/api/analytics/overview?range=30d").json()
+    assert [row["date"] for row in overview["series"]] == ["2031-03-01"]
+    assert overview["windows"] == [], "a window outside the daily range is not listed in it"
+    # With no daily row at all, the windows are still shown, from their own latest day.
+    conn = _db()
+    with conn:
+        conn.execute("DELETE FROM analytics_daily")
+    conn.close()
+    alone = client.get("/api/analytics/overview?range=30d").json()
+    assert alone["series"] == [] and [w["date"] for w in alone["windows"]] == ["2031-07-07"]

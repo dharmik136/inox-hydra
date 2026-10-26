@@ -304,13 +304,17 @@ def get_analytics_overview(range: str = "30d"):
     try:
         cursor = conn.cursor()
 
-        # Anchored on the latest day either table holds, so a creator whose
-        # only readings are weekly cards still sees them.
+        # The range is counted back from the latest daily row, as get_kpis
+        # counts it, so the chart and the figures above it cover the same
+        # days. Windowed readings are listed inside that range; only with no
+        # daily row at all are they counted back from their own latest day.
         cursor.execute("SELECT MAX(date) FROM analytics_daily")
         max_d_row = cursor.fetchone()
-        cursor.execute("SELECT MAX(date) FROM analytics_windows")
-        max_w_row = cursor.fetchone()
-        latest = max(filter(None, ((max_d_row or [None])[0], (max_w_row or [None])[0])), default=None)
+        latest = max_d_row[0] if max_d_row else None
+        if not latest:
+            cursor.execute("SELECT MAX(date) FROM analytics_windows")
+            max_w_row = cursor.fetchone()
+            latest = max_w_row[0] if max_w_row else None
         if not latest:
             conn.close()
             return {"status": "success", "count": 0, "series": [], "windows": []}
