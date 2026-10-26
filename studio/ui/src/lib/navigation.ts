@@ -90,7 +90,7 @@ export interface StudioSection {
 export const STUDIO_SECTIONS: StudioSection[] = [
   // Now: what to do in the next hour, and who is waiting on a reply.
   { id: "today", group: "now", label: "Today", blurb: "Who to reply to and how your latest post is doing", icon: Sunrise },
-  { id: "replies", group: "now", label: "Replies", blurb: "Every comment on your posts that is waiting on a reply", icon: MessageSquareReply },
+  { id: "replies", group: "now", screenKey: "replies", label: "Replies", blurb: "Every comment on your posts that is waiting on a reply", icon: MessageSquareReply },
   // Make: writing, the queue, and where your own attention goes.
   { id: "composer", group: "make", screenKey: "studio", label: "Composer", blurb: "Write, re-hook and stage the next post", icon: PenLine },
   { id: "queue", group: "make", screenKey: "queue", label: "Queue", blurb: "Scheduled posts and peak engagement slots", icon: CalendarClock },
@@ -100,18 +100,18 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   { id: "leads", group: "learn", screenKey: "crm", label: "Leads", blurb: "Lead stream and person dossiers", icon: Users },
   // The set, where Leads is one person: who keeps coming back, who has gone
   // quiet, who is already a connection. Ordered by facts, never by score.
-  { id: "audience", group: "learn", label: "Audience", blurb: "Who keeps coming back, who has gone quiet, and who is a connection", icon: UsersRound },
+  { id: "audience", group: "learn", screenKey: "audience", label: "Audience", blurb: "Who keeps coming back, who has gone quiet, and who is a connection", icon: UsersRound },
   { id: "patterns", group: "learn", label: "Patterns", blurb: "What your own posts suggest, and how steadily you post", icon: Shapes },
   { id: "analytics", group: "learn", screenKey: "analytics", label: "Analytics", blurb: "Time series, observations and comparisons", icon: BarChart3 },
   // Brand and Settings both open Brand Studio until the two are split
   // (track 4, phase b): Brand for who you are, Settings for the rest.
-  { id: "brand", group: "learn", label: "Brand", blurb: "Your identity and watermark, in Brand Studio", icon: Palette },
+  { id: "brand", group: "learn", screenKey: "brand", label: "Brand", blurb: "Your identity and watermark, in Brand Studio", icon: Palette },
   // Bridge: what the bridge read, and whether it is reading.
   { id: "activity", group: "bridge", label: "Activity", blurb: "What the bridge has read from your LinkedIn, as it arrives", icon: Activity },
   // Where a creator looks when the rest looks wrong: whether each reader
   // is reading, what it read this week, and what it could not read. It
   // was a block at the foot of Setup, which is a first-run flow.
-  { id: "health", group: "bridge", label: "Health", blurb: "Is the bridge reading, and what could it not read", icon: HeartPulse },
+  { id: "health", group: "bridge", screenKey: "health", label: "Health", blurb: "Is the bridge reading, and what could it not read", icon: HeartPulse },
   // Studio, at the foot of the rail. Setup is first among them and stays
   // where it is: the studio opens on it until it is done (decision 5), and a
   // place that moves is a place nobody can find twice. No Swipe File and no

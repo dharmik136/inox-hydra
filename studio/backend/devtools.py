@@ -171,6 +171,12 @@ SCREEN_REGISTRY: Dict[str, Dict[str, Any]] = {
     "tab-ai-command": {"key": "ai_command", "label": "AI Command", "owner": "ENGINEERING_MANAGER"},
     "tab-docs": {"key": "docs", "label": "Playbook and Docs", "owner": "CEO"},
     "tab-settings": {"key": "settings", "label": "Settings", "owner": "RELEASE_MANAGER"},
+    # The sections cycle 4 adds (track 4), so an annotation filed from them
+    # resolves to them rather than to "unknown".
+    "tab-replies": {"key": "replies", "label": "Replies", "owner": "DESIGNER"},
+    "tab-audience": {"key": "audience", "label": "Audience", "owner": "QA_LEAD"},
+    "tab-health": {"key": "health", "label": "Health", "owner": "ENGINEERING_MANAGER"},
+    "tab-brand": {"key": "brand", "label": "Brand", "owner": "DESIGNER"},
 }
 
 UNMAPPED_PREFIX = "unmapped:"

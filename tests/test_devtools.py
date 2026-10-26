@@ -125,7 +125,10 @@ def test_maintainer_build_exposes_the_surface(dev_mode):
     body = res.json()
     assert body["dev_mode"] is True
     assert len(body["capabilities"]) >= 5
-    assert len(body["screens"]) == 8
+    # The whole registry, one entry per screen, with the four sections cycle 4
+    # adds (track 4). Track 3 holds the same at 13 for its own rows; merged,
+    # both hold.
+    assert len(body["screens"]) == len(devtools.SCREEN_REGISTRY) >= 12
 
 
 def test_database_cannot_enable_dev_mode_on_a_consumer_install(consumer_mode):
