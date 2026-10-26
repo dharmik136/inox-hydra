@@ -323,5 +323,6 @@ This track's scripts now live in a folder of their own. Tracks should not share 
 3,159 passed, 17 skipped, 0 failed, in 617 s. The skips are the suite's own platform and
 optional-dependency skips (Windows shell primitives, macOS only paths, a real desktop browser,
 `yaml` not installed). After that run, two of this track's tests were made sturdier on a slow
-machine and one was added (`test_a_write_from_another_process_is_noticed`); the run on the
-branch head is in the commit that follows.
+machine and one was added (`test_a_write_from_another_process_is_noticed`). At `d04a9ad`, the code this record describes:
+3,160 passed, 17 skipped, 0 failed, in 599 s, the same 17 skips. The commit after it changes
+this paragraph only.
