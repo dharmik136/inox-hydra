@@ -1683,6 +1683,12 @@ export interface DetectedBrowser {
 export interface BrowserBridge {
   browsers: DetectedBrowser[];
   extension_path: string;
+  /**
+   * The studio could not be asked which browsers this computer has, so an
+   * empty list means nothing. Setup printed "No Chromium browser was found"
+   * over an outage, because the failure was swallowed into an empty list.
+   */
+  unreachable?: boolean;
 }
 
 export async function fetchBrowserBridge(): Promise<BrowserBridge> {
