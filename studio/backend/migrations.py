@@ -1436,13 +1436,18 @@ def _migrate_desk_requests_and_export_totals(cursor: sqlite3.Cursor) -> None:
     week unread. `note` holds the refusal sentence for a post the studio does
     not hold, rather than an invented post.
 
-    analytics_daily.engagements and analytics_daily.new_followers: LinkedIn's
-    export gives one engagements figure a day, not reactions, comments and
-    reposts apart, and new followers a day, not a follower count. Neither
-    fits a column that exists, and writing a total into `reactions` would be
-    a figure the studio made up. post_metric_observations.engagements holds
-    the same total per post from the export's top posts. Every new column is
-    NULL for every row that exists: nothing is measured by this migration.
+    analytics_daily.new_followers: LinkedIn's export gives new followers a
+    day, which is not the follower count `followers` holds. The export's
+    daily engagements need no column: the page reader has always stored the
+    engagements card in `reactions` (studio/extension/content.js), and the
+    Analytics screen reads Engagements from there, so the export's go there
+    too, one definition for one figure whatever its source.
+
+    post_metric_observations.engagements: per post, the export gives one
+    engagements total, and a post's readings keep reactions, comments and
+    reposts apart, so a total has no column there and putting it under
+    reactions would be a figure the studio made up. Every new column is NULL
+    for every row that exists: nothing is measured by this migration.
     """
     # grain: one row per request, however many times the same post is shared.
     cursor.execute("""
@@ -1456,8 +1461,7 @@ def _migrate_desk_requests_and_export_totals(cursor: sqlite3.Cursor) -> None:
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_desk_requests_open ON desk_requests(done_at, asked_at)")
-    for table, column in (("analytics_daily", "engagements"),
-                          ("analytics_daily", "new_followers"),
+    for table, column in (("analytics_daily", "new_followers"),
                           ("post_metric_observations", "engagements")):
         cursor.execute(f"PRAGMA table_info({table})")
         if column not in {row[1] for row in cursor.fetchall()}:

@@ -12,13 +12,14 @@ What it has to leave behind:
                        the post's activity URN, when it was asked, when it
                        was done, a note (the refusal sentence for a post the
                        studio does not hold), and where it came from
-  analytics_daily      engagements and new_followers, the two daily totals
-                       LinkedIn's analytics export carries that no column
-                       held: the export gives one engagements figure a day,
-                       not reactions, comments and reposts apart, and new
-                       followers a day, not a follower count
+  analytics_daily      new_followers: the export gives new followers a day,
+                       not a follower count. Its daily engagements go where
+                       the page reader's engagements card always has, in
+                       reactions, so the table gains no engagements column
   post_metric_observations
-                       engagements, for the same reason per post
+                       engagements: per post the export gives one total,
+                       and a post's readings keep reactions, comments and
+                       reposts apart
 
 Strict Invariants:
 - Zero em-dashes.
@@ -92,17 +93,20 @@ def test_it_creates_the_desk_requests_table(before):
 def test_it_gives_the_export_totals_a_home_and_keeps_what_was_there(before):
     _version, _description, payload = _ours()
     payload(before.cursor())
-    assert {"engagements", "new_followers"} <= _columns(before, "analytics_daily")
+    assert "new_followers" in _columns(before, "analytics_daily")
+    assert "engagements" not in _columns(before, "analytics_daily"), (
+        "a second home for the daily engagements figure: the page reader keeps it in reactions")
     assert "engagements" in _columns(before, "post_metric_observations")
-    row = before.execute("SELECT impressions, engagements, new_followers, source FROM analytics_daily").fetchone()
-    assert row == (120, None, None, "observed"), "an existing day's figures changed, or the new columns are not NULL"
+    row = before.execute("SELECT impressions, new_followers, source FROM analytics_daily").fetchone()
+    assert row == (120, None, "observed"), "an existing day's figures changed, or the new column is not NULL"
 
 
 def test_running_it_twice_changes_nothing(before):
     _version, _description, payload = _ours()
     payload(before.cursor())
     payload(before.cursor())
-    assert _columns(before, "analytics_daily") & {"engagements", "new_followers"} == {"engagements", "new_followers"}
+    assert "new_followers" in _columns(before, "analytics_daily")
+    assert "engagements" in _columns(before, "post_metric_observations")
 
 
 def test_a_fresh_database_has_the_table(tmp_path, monkeypatch):
