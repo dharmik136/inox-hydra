@@ -6,7 +6,7 @@ Once you have confirmed your profile in **Setup**, the studio opens on **Today**
 
 ## The line under the title
 
-It says whether the bridge browser has been heard from, when anything was last captured (or, before the first capture, how many of your posts the studio holds, for example 12 POSTS OF YOURS HELD), and how many parts of the capture have stopped working. The mark beside **Activity** at the top of the screen says the same about the bridge. If a part has stopped, **Setup** shows which one under **CAPTURE HEALTH**.
+It says whether the bridge browser has been heard from, when anything was last captured (or, before the first capture, how many of your posts the studio holds, for example 12 POSTS OF YOURS HELD), and how many parts of the capture have stopped working. The mark beside **Activity** at the top of the screen says the same about the bridge. If a part has stopped, **Health** shows which one, with each reader's runs in the last 7 days; see [Check the bridge is reading](check-the-bridge-is-reading.md).
 
 ## One thing to open
 

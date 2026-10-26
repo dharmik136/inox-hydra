@@ -12,6 +12,7 @@ import {
   Newspaper,
   Send,
   Shapes,
+  HeartPulse,
   type LucideIcon,
 } from "lucide-react";
 
@@ -19,6 +20,7 @@ export type SectionId =
   | "setup"
   | "today"
   | "activity"
+  | "health"
   | "posts"
   | "outbound"
   | "patterns"
@@ -66,6 +68,10 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   // to, how the latest post is doing, and the one page worth opening.
   { id: "today", label: "Today", blurb: "Who to reply to and how your latest post is doing", icon: Sunrise },
   { id: "activity", label: "Activity", blurb: "What the bridge has read from your LinkedIn, as it arrives", icon: Activity },
+  // Where a creator looks when the rest looks wrong: whether each reader
+  // is reading, what it read this week, and what it could not read. It
+  // was a block at the foot of Setup, which is a first-run flow.
+  { id: "health", label: "Health", blurb: "Is the bridge reading, and what could it not read", icon: HeartPulse },
   { id: "composer", screenKey: "studio", label: "Composer", blurb: "Write, re-hook and stage the next post", icon: PenLine },
   { id: "queue", screenKey: "queue", label: "Queue", blurb: "Scheduled posts and peak engagement slots", icon: CalendarClock },
   { id: "leads", screenKey: "crm", label: "Leads", blurb: "Lead stream and person dossiers", icon: Users },

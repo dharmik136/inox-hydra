@@ -637,6 +637,7 @@ HELP_SECTIONS = [
         "paths": [
             "help/install-the-browser-extension.md",
             "help/after-an-update-reload-the-extension.md",
+            "help/check-the-bridge-is-reading.md",
             "help/review-leads-and-draft-a-message.md",
             "help/see-what-worked-and-where-your-attention-goes.md",
             "help/read-your-analytics.md",
@@ -708,6 +709,7 @@ HELP_SECTIONS = [
             "quality/CYCLE2_2026-10_PRD.md",
             "quality/CYCLE3_2026-10_PRD.md",
             "quality/CYCLE3_REGISTER.md",
+            "quality/cycle4/t4-sections.md",
             "UI_CONVENTIONS.md",
             "ICON_SYSTEM.md",
             "UI_AGENT_WORKFLOW.md",

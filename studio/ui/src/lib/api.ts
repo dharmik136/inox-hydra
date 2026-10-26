@@ -3263,3 +3263,192 @@ export async function fetchRecentDrafts(limit: number): Promise<DraftSummary[]> 
     .map((row) => ({ id: row.id, content: row.content ?? "", created_at: row.created_at ?? null }))
     .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
 }
+
+// ---------------------------------------------------------------------------
+// Health: is the bridge reading, and what could it not read
+//
+// The section stands on routes that already existed (extension health, schema
+// status, the backup schedule, the update preference) plus one new field, the
+// run rows per reader, which capture_health read with LIMIT 1 and dropped.
+// ---------------------------------------------------------------------------
+
+/** One run of one reader on one page, as the extension reported it. */
+export interface HealthReaderRun {
+  observed_at: string;
+  page_kind: string | null;
+  items_seen: number | null;
+  items_kept: number | null;
+  /** Required fields the run could not read on a page that had them. */
+  drift: string[];
+  extension_version: string | null;
+}
+
+/** One reader's day: rolled up as each run lands, kept past the log's week. */
+export interface HealthReaderDay {
+  day: string;
+  runs: number;
+  /** Null while no run of the day measured it: an unmeasured day, not a day of zero. */
+  items_seen: number | null;
+  items_kept: number | null;
+  drift_runs: number;
+  first_run_at: string | null;
+  last_run_at: string | null;
+}
+
+export interface HealthReader {
+  extractor: string;
+  label: string;
+  /** A network-reading part. Listed only once it has run, because it runs only after the creator switches it on. */
+  opt_in: boolean;
+  state: "never_run" | "working" | "drifting";
+  last_run_at: string | null;
+  last_good_at: string | null;
+  drift: string[];
+  /** Runs inside the window, and what they saw and kept: null when no run measured it. */
+  runs: number;
+  items_seen: number | null;
+  items_kept: number | null;
+  drift_runs: number;
+  /** How many day rows the studio holds for this reader; the rows are one level down. */
+  days_held: number;
+}
+
+/** One reader one level down: the newest runs in the window, and every day row kept. */
+export interface HealthReaderDetail {
+  extractor: string;
+  label: string;
+  window: { days: number; label: string; since: string };
+  days_window: { days: number; label: string };
+  runs: number;
+  rows: HealthReaderRun[];
+  days: HealthReaderDay[];
+}
+
+export interface HealthHeartbeats {
+  window_days: number;
+  label: string;
+  count: number;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  versions: { extension_version: string | null; first_seen_at: string; last_seen_at: string; count: number }[];
+  page_kinds: Record<string, number>;
+  /** Null when fewer than two heartbeats were heard: no gap can be measured. */
+  longest_gap_minutes: number | null;
+  longest_gap_ended_at: string | null;
+}
+
+export interface HealthReaders {
+  /** The capture log's window: "last 7 days", because the log is pruned to it. */
+  window: { days: number; label: string; since: string };
+  /** How long the day rows are kept. */
+  days_window: { days: number; label: string };
+  readers: HealthReader[];
+  heartbeats: HealthHeartbeats;
+}
+
+export async function fetchHealthReaders(): Promise<HealthReaders> {
+  return call<HealthReaders>("/api/v1/bridge/readers");
+}
+
+export async function fetchHealthReader(extractor: string): Promise<HealthReaderDetail> {
+  return call<HealthReaderDetail>(`/api/v1/bridge/readers/${encodeURIComponent(extractor)}`);
+}
+
+/**
+ * The network-reading switch as the bridge last reported it, when the
+ * extension is new enough to report it. An older extension sends nothing,
+ * and the screen says so rather than reading absence as "off".
+ */
+export interface NetworkReadingState {
+  switch: boolean;
+  state?: string;
+  sentence?: string;
+  reported_at?: string | null;
+}
+
+export interface SchemaDriftEvent {
+  schema_name: string;
+  schema_version: string;
+  drift_fields: string[];
+  confidence: number;
+  success: boolean;
+  observed_at: string;
+}
+
+export interface ExtensionHealth {
+  bridge: BridgeStatus & { network_reading?: NetworkReadingState | null };
+  extractors: CaptureHealth[];
+  voyager_active: boolean;
+  voyager_24h_captures: number;
+  /** The newest drift events the studio holds, from the network reader. */
+  recent_drift: SchemaDriftEvent[];
+  contract: {
+    contract_version: number;
+    extension_contract_version: number | null;
+    extension_version: string | null;
+    last_seen_at: string | null;
+    reload_required: boolean;
+    message: string | null;
+  };
+  waiting_captures: {
+    waiting: number | null;
+    measured: boolean;
+    oldest_at: string | null;
+    reported_at: string | null;
+    message: string | null;
+  };
+  refusals: { refusals: Record<string, number>; total: number; since: string };
+}
+
+export async function fetchExtensionHealth(): Promise<ExtensionHealth> {
+  return call<ExtensionHealth>("/api/v1/extension/health");
+}
+
+export interface SchemaStatus {
+  current_version: number;
+  target_version: number;
+  pending: { version: number; description: string }[];
+  up_to_date: boolean;
+  too_new: boolean;
+  app_version: string;
+  advice: string;
+}
+
+export async function fetchSchemaStatus(): Promise<SchemaStatus> {
+  return call<SchemaStatus>("/api/v1/schema/status");
+}
+
+/** The update preference, read without any network request being made. */
+export interface UpdateStatus {
+  current_version: string;
+  /** Off by default; the one outbound request the product makes is never made while this is false. */
+  enabled: boolean;
+  asked: boolean;
+  last_checked: string | null;
+  last_seen_version: string | null;
+  releases_url: string;
+}
+
+export async function fetchUpdateStatus(): Promise<UpdateStatus> {
+  return call<UpdateStatus>("/api/v1/updates/status");
+}
+
+export async function setUpdatePreference(enabled: boolean): Promise<{ enabled: boolean; asked: boolean }> {
+  return call("/api/v1/updates/preference", { method: "POST", body: JSON.stringify({ enabled }) });
+}
+
+export interface UpdateCheck {
+  checked: boolean;
+  enabled?: boolean;
+  reason?: string;
+  error?: string;
+  latest_version?: string;
+  update_available?: boolean;
+  notes?: string;
+  current_version?: string;
+}
+
+/** Performs the check only when the preference is on; nothing is downloaded or run. */
+export async function runUpdateCheck(): Promise<UpdateCheck> {
+  return call<UpdateCheck>("/api/v1/updates/check", { method: "POST", body: JSON.stringify({}) });
+}

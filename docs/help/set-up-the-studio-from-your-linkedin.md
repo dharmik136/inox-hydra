@@ -97,29 +97,9 @@ When every step is ticked, a line under step 5 says Setup is done, with a **Go t
 
 ## Check the capture is still working
 
-The extension reads LinkedIn's pages, and LinkedIn changes how they are built without notice. When a part of the capture stops matching, it finds nothing and says nothing, which looks exactly like nobody engaging. Setup shows whether each of these seven parts is still working, under **CAPTURE HEALTH**:
+The extension reads LinkedIn's pages, and LinkedIn changes how they are built without notice. When a part of the capture stops matching, it finds nothing and says nothing, which looks exactly like nobody engaging. Whether each of the seven parts is still working is shown on **Health**, with each reader's runs in the last 7 days, what it read and what it could not read; Setup points there under its five steps. See [Check the bridge is reading](check-the-bridge-is-reading.md).
 
-| Part | What it reads |
-| --- | --- |
-| Comments and reactions on your posts | The people who become leads |
-| Your profile | Your name and details, for step 3 |
-| Your posts | The **Posts you wrote** import |
-| Your comments | The **Comments you left** import |
-| Your reactions | The **Posts you reacted to** import |
-| Creator analytics | The figures in **Analytics** |
-| Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends. Only your recorded posts are read |
-
-Network reading is off unless you turn it on in the extension's popup. If you do, two more parts appear here once they have run: **Network reading: your posts' figures** and **Network reading: creator analytics**. They are not listed while network reading has not run, because opening a page cannot start them.
-
-Each part shows one of three states:
-
-- **NOT SEEN YET**, with a grey dot: the extension has not run that part in the last week. Open the matching LinkedIn page in the bridge browser.
-- **WORKING, LAST READ** and a date and time, with a green dot.
-- **CANNOT READ** and what it cannot read, for example `CANNOT READ NAME`, with an orange dot, and **LAST WORKED** and a date when it has worked before. The page was found, but the fields it needs could not be read.
-
-When a part is orange, Setup adds: "A part marked in orange found the page but could not read it, which usually means LinkedIn has changed how the page is built. Nothing from that part is being captured until the extension is updated." There is nothing to fix on your side. Keep the studio up to date; see [After an update, reload the browser extension](after-an-update-reload-the-extension.md).
-
-The extension reports at most once a minute per part per page, and the studio keeps these reports for a week. They say how much was found and kept, never what it was.
+The extension reports at most once a minute per part per page. The studio keeps a week of those reports, and a row per reader per day for longer. They say how much was found and kept, never what it was.
 
 ## What this changes elsewhere
 

@@ -193,14 +193,19 @@ def test_what_you_typed_in_brand_studio_survives_forgetting():
 
 HELP = os.path.join(REPO_ROOT, "docs", "help", "set-up-the-studio-from-your-linkedin.md")
 
+# Capture health moved from Setup to its own section, Health, in cycle 4
+# (track 4), and its description moved with it. The rule is unchanged: the
+# screen that lists the readers lists exactly the parts its help describes.
+HEALTH_HELP = os.path.join(REPO_ROOT, "docs", "help", "check-the-bridge-is-reading.md")
+
 
 def _health_labels():
-    return [entry["label"] for entry in client.get("/api/v1/onboarding/state").json()["health"]]
+    return [entry["label"] for entry in client.get("/api/v1/bridge/readers").json()["readers"]]
 
 
 def _help_parts():
-    with open(HELP, encoding="utf-8") as handle:
-        section = handle.read().split("## Check the capture is still working")[1].split("\n## ")[0]
+    with open(HEALTH_HELP, encoding="utf-8") as handle:
+        section = handle.read().split("## Which readers there are")[1].split("\n## ")[0]
     rows = [line for line in section.splitlines()
             if line.startswith("| ") and not line.startswith(("| Part", "| ---"))]
     return [row.split("|")[1].strip() for row in rows]
@@ -227,7 +232,7 @@ def test_a_network_reading_part_appears_once_it_has_run():
         added = [label for label in labels if label not in _help_parts()]
         assert len(added) == 1 and "network reading" in added[0].lower()
         assert "voyager" not in added[0].lower()
-        with open(HELP, encoding="utf-8") as handle:
+        with open(HEALTH_HELP, encoding="utf-8") as handle:
             assert added[0] in handle.read(), "the help does not name the part the screen shows"
     finally:
         conn = get_db()

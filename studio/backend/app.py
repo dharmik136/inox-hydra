@@ -2024,6 +2024,15 @@ except (ImportError, ValueError):
 
 app.include_router(storage_router_module.router)
 
+# Health: the run rows per reader and the heartbeat summary
+# (studio/backend/routers/health.py, reads in studio/backend/health.py).
+try:
+    from .routers import health as health_router_module
+except (ImportError, ValueError):
+    from routers import health as health_router_module
+
+app.include_router(health_router_module.router)
+
 DOCS_DIR = search_router_module.DOCS_DIR
 MODULES_DIR = search_router_module.MODULES_DIR
 DOCS_MODULES = search_router_module.DOCS_MODULES

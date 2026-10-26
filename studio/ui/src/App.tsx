@@ -11,6 +11,7 @@ import { LeadsSurface } from "@/components/LeadsSurface";
 import { OnboardingSurface } from "@/components/OnboardingSurface";
 import { TodaySurface } from "@/components/TodaySurface";
 import { ActivitySurface } from "@/components/ActivitySurface";
+import { HealthSurface } from "@/components/HealthSurface";
 import { PostsSurface } from "@/components/PostsSurface";
 import { OutboundSurface } from "@/components/OutboundSurface";
 import { PatternsSurface } from "@/components/PatternsSurface";
@@ -993,7 +994,7 @@ export default function App() {
                   onSave={() => (holdsPosted ? onCorrectPosted() : void onSave())}
                 />
               )}
-              {active === "setup" && <OnboardingSurface onOpenToday={() => navigate("today")} />}
+              {active === "setup" && <OnboardingSurface onOpenToday={() => navigate("today")} onOpenHealth={() => navigate("health")} />}
               {active === "today" && (
                 <TodaySurface
                   onOpenSetup={() => navigate("setup")}
@@ -1016,6 +1017,7 @@ export default function App() {
                   }}
                 />
               )}
+              {active === "health" && <HealthSurface onOpenSetup={() => navigate("setup")} />}
               {active === "leads" && <LeadsSurface focus={focusFor("leads")} />}
               {active === "posts" && (
                 <PostsSurface

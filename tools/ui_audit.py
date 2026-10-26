@@ -57,6 +57,7 @@ SECTIONS = {
     "setup": "Setup",
     "today": "Today",
     "activity": "Activity",
+    "health": "Health",
     "composer": "Composer",
     "queue": "Queue",
     "leads": "Leads",

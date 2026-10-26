@@ -305,7 +305,7 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
                 "reason": "The bridge has not been heard from recently, so nothing is being captured."}
     drifting = [h["label"] for h in state["health"] if h["state"] == "drifting"]
     if drifting:
-        return {"action": "setup", "reason": f"{drifting[0]} has stopped reading LinkedIn's pages. See Capture health in Setup."}
+        return {"action": "setup", "reason": f"{drifting[0]} has stopped reading LinkedIn's pages. Health shows since when; Setup links to it."}
     if not state["steps"]["history"] and state.get("extension_outdated"):
         # Importing again with the old extension still loaded repeats the same
         # result, so the instruction is to reload it first.

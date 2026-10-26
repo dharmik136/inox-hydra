@@ -247,9 +247,21 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # now, so the merge restored it. The pack has a way out and no way in until
 # its 36 first-person claims are rewritten, which is a decision, not a gap.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 172
-REACHED_BY_INTERFACE = 118
-UNREACHABLE = 54
+# Then 172 -> 174 and 118 -> 125, with Health (cycle 4, track 4). Two new
+# paths, both called by the Health screen: /api/v1/bridge/readers, each
+# reader's runs this week as counts, which capture_health read with LIMIT 1
+# and dropped, and /api/v1/bridge/readers/{extractor}, one reader's runs and
+# day rows one level down. Five existing paths gained their first caller in
+# the interface: /api/v1/extension/health (whose drift events only the
+# extension's side panel had shown), /api/v1/schema/status,
+# /api/v1/updates/status, /api/v1/updates/preference and /api/v1/updates/check.
+# The new paths are not under /api/v1/health on purpose: the containment rule
+# below would have credited the liveness route /api/v1/health, which nothing
+# in the interface calls.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 174
+REACHED_BY_INTERFACE = 125
+UNREACHABLE = 49
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

@@ -12,7 +12,7 @@ The interface does not show the version. Use any of these:
 
 ## Update checks are off until you turn them on
 
-The studio never checks for updates on its own. There is no update control in the interface: you run the studio's own check from the command line, and only after you enable it. (The server also has an `/api/v1/updates/check` route for the same check, but no control in the interface calls it. The desktop app's tray check is separate; see below.)
+The studio never checks for updates on its own. The check is off until you turn it on under **Update check** on **Health**, and the same switch is what the command line enables; while it is off, no request leaves this machine for a version check. Once it is on, **Check now** on Health asks GitHub once for the newest version number, and the command line can do the same. Nothing is downloaded or installed either way. (The desktop app's tray check is separate; see below.)
 
 | Command | Portable copy | What it does |
 | --- | --- | --- |

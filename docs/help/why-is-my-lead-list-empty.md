@@ -31,7 +31,7 @@ Every link in this chain has to hold:
 
 ## Check whether LinkedIn changed its pages
 
-If leads used to arrive and stopped, open **Setup** and look under **CAPTURE HEALTH**. When **Comments and reactions on your posts** is orange and reads **CANNOT READ**, the extension still finds the comments on the page but can no longer read the names in them, usually because LinkedIn changed how the page is built. Nothing is captured until the extension is updated. See [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md#check-the-capture-is-still-working).
+If leads used to arrive and stopped, open **Health** and look at the readers. When **Comments and reactions on your posts** is orange and reads **CANNOT READ**, the extension still finds the comments on the page but can no longer read the names in them, usually because LinkedIn changed how the page is built. Nothing is captured until the extension is updated. See [Check the bridge is reading](check-the-bridge-is-reading.md).
 
 ## Pages that never produce leads
 

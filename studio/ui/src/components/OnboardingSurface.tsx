@@ -15,7 +15,6 @@ import {
   requestSelfImport,
   syncAllActivity,
   type BrowserBridge,
-  type CaptureHealth,
   type CreatorIdentity,
   type OnboardingState,
   type SelfImport,
@@ -53,7 +52,10 @@ type SetupState = OnboardingState & {
   extension_outdated?: boolean;
 };
 
-export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } = {}) {
+export function OnboardingSurface({
+  onOpenToday,
+  onOpenHealth,
+}: { onOpenToday?: () => void; onOpenHealth?: () => void } = {}) {
   const [state, setState] = useState<SetupState | null>(null);
   const [bridge, setBridge] = useState<BrowserBridge | null>(null);
   const [failed, setFailed] = useState(false);
@@ -349,43 +351,17 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
         </div>
       )}
 
-      {/* Whether each part of the capture is still working.
-          LinkedIn changes its markup without notice, and a reader that stops
-          matching finds nothing and says nothing, which looks exactly like
-          nobody engaging. This is where that shows. */}
-      <section className="mb-6 border-t border-edge pt-4">
-        <p className="studio-meta text-[10px] text-ink-muted">CAPTURE HEALTH</p>
-        <ul className="mt-2 flex flex-col gap-1.5">
-          {state.health.map((entry) => (
-            <li key={entry.extractor} className="flex items-baseline justify-between gap-4">
-              <span className="flex items-center gap-2 text-[13px] text-ink-secondary">
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "size-1.5 rounded-full",
-                    entry.state === "working" && "bg-signal-green",
-                    entry.state === "drifting" && "bg-signal-orange",
-                    entry.state === "never_run" && "bg-edge-strong",
-                  )}
-                />
-                {entry.label}
-              </span>
-              <span
-                className={cn(
-                  "studio-meta text-right text-[10px]",
-                  entry.state === "drifting" ? "text-signal-orange-text" : "text-ink-muted",
-                )}
-              >
-                {healthLine(entry)}
-              </span>
-            </li>
-          ))}
-        </ul>
-        {state.health.some((entry) => entry.state === "drifting") && (
-          <p className="mt-2 text-[12px] leading-snug text-ink-muted">
-            A part marked in orange found the page but could not read it, which usually means LinkedIn has changed how
-            the page is built. Nothing from that part is being captured until the extension is updated.
-          </p>
+      {/* Capture health, which used to be listed here, is a section of its
+          own: Health, in the rail, with each reader's runs this week and what
+          it could not read. Setup is a first-run flow, and the question "is
+          the bridge still reading" is asked long after the first run. */}
+      <section className="mb-6 flex flex-wrap items-center justify-between gap-3 border-t border-edge pt-4">
+        <p className="text-[13px] leading-snug text-ink-secondary">
+          Whether each part of the capture is still working is on <strong className="font-medium text-ink-primary">Health</strong>: each
+          reader&apos;s runs this week, what it read, and what it could not read.
+        </p>
+        {onOpenHealth && (
+          <Secondary onPress={onOpenHealth}>Open Health</Secondary>
         )}
       </section>
 
@@ -488,15 +464,6 @@ function bridgeLine(state: OnboardingState): string {
   if (bridge.connected) return `Connected${bridge.extension_version ? `, extension ${bridge.extension_version}` : ""}`;
   if (bridge.seconds_ago !== null) return `Last heard from ${ago(bridge.seconds_ago)}. Open a LinkedIn tab in the bridge browser.`;
   return "Not seen yet";
-}
-
-function healthLine(entry: CaptureHealth): string {
-  if (entry.state === "never_run") return "NOT SEEN YET";
-  if (entry.state === "drifting") {
-    const since = entry.last_good_at ? `, LAST WORKED ${entry.last_good_at.slice(0, 10)}` : "";
-    return `CANNOT READ ${entry.drift.join(", ").toUpperCase().replace(/_/g, " ")}${since}`;
-  }
-  return `WORKING, LAST READ ${(entry.last_run_at ?? "").slice(0, 16).replace("T", " ")}`;
 }
 
 function profileLine(identity: CreatorIdentity): string {
