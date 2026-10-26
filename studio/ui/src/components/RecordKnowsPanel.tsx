@@ -196,7 +196,7 @@ export function RecordKnowsPanel() {
             Built the first time the studio runs each day: checked {knows.job.checked}.{" "}
             {knows.job.today_built ? "Today's is built." : "Today's has not been built yet."}{" "}
             {knows.job.last_run
-              ? `Last built for ${formatLocalDay(knows.job.last_run.day)}, at ${formatLocal(knows.job.last_run.finished_at, "a time not recorded")}${
+              ? `Last built ${formatLocal(knows.job.last_run.finished_at, "at a time not recorded")}${
                   knows.job.last_run.carried_from ? `, carried forward from ${formatLocalDay(knows.job.last_run.carried_from)}` : ""
                 }.`
               : "No batch has been built yet."}

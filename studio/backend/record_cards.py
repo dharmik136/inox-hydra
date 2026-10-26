@@ -94,7 +94,7 @@ LABELS = ("measured", "derived", "typed", "suggested", "retrieved", "curated", "
 DRAWN_KINDS = ("opener", "ask", "theme", "comment", "reaction", "saved", "library")
 CHOSEN_KINDS = ("what_worked", "on_this_day")
 BLOCKS = {"working_for_you": "Working for you", "you_asked": "You asked", "you_engaged_with": "You engaged with",
-          "monday": "This week", "model": "Suggested by the model", "library": "From the Inox library"}
+          "monday": "This week", "model": "Suggested by your model", "library": "From the Inox library"}
 
 _LINK_ONLY = re.compile(r"^\s*(?:https?://\S+\s*)+$", re.IGNORECASE)
 _DATED = re.compile(

@@ -45,7 +45,7 @@ export function RecordLibraryPanel({ state, onChanged }: { state?: RecordLibrary
           ? `${state.entries} entries, bundle ${state.version}, signed ${formatLocalDay(state.signed_at)} with ${state.key_id}; ${state.source}${
               state.fetched_at ? `, ${formatLocalDay(state.fetched_at)}` : ""
             }. An entry that suits one of your topics fills the fifth card when your own model does not.`
-          : "Not fetched yet. Until it is, the fifth card waits for your own model."}
+          : "Not fetched yet. Once it is, an entry that suits one of your topics fills the fifth card whenever your own model's idea does not."}
       </p>
       {state && (
         <p className="mt-1 text-[11px] leading-snug text-ink-muted">

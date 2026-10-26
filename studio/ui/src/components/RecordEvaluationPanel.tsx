@@ -36,24 +36,12 @@ export function RecordEvaluationPanel() {
         {data.funnel.by_kind.length === 0 ? (
           <p className="text-[12px] text-ink-muted">No cards have been shown yet.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-[12px]">
-              <thead>
-                <tr className="studio-meta text-[10px] text-ink-muted">
-                  <th className="py-1 font-normal">CARD</th>
-                  <th className="py-1 text-right font-normal">SHOWN</th>
-                  <th className="py-1 text-right font-normal">KEPT, OF KEPT OR SKIPPED</th>
-                  <th className="py-1 text-right font-normal">DRAFTED FROM, OF SHOWN</th>
-                  <th className="py-1 text-right font-normal">POSTED, OF DRAFTED</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-edge border-y border-edge">
-                {[...data.funnel.by_kind, ...(data.funnel.total ? [data.funnel.total] : [])].map((row) => (
-                  <FunnelRow key={row.name} row={row} />
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <FunnelTable heading="CARD" rows={[...data.funnel.by_kind, ...(data.funnel.total ? [data.funnel.total] : [])]} />
+            {/* The same counts by how each card was arrived at: a typed card kept
+                often is a preference for a rule, not evidence of a result. */}
+            <FunnelTable heading="LABEL" rows={data.funnel.by_label} />
+          </>
         )}
       </section>
 
@@ -108,6 +96,29 @@ export function RecordEvaluationPanel() {
           </div>
         </section>
       </div>
+    </div>
+  );
+}
+
+function FunnelTable({ heading, rows }: { heading: string; rows: RecordFunnelRow[] }) {
+  return (
+    <div className="mt-2 overflow-x-auto first:mt-0">
+      <table className="w-full text-left text-[12px]">
+        <thead>
+          <tr className="studio-meta text-[10px] text-ink-muted">
+            <th className="py-1 font-normal">{heading}</th>
+            <th className="py-1 text-right font-normal">SHOWN</th>
+            <th className="py-1 text-right font-normal">KEPT, OF KEPT OR SKIPPED</th>
+            <th className="py-1 text-right font-normal">DRAFTED FROM, OF SHOWN</th>
+            <th className="py-1 text-right font-normal">POSTED, OF DRAFTED</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-edge border-y border-edge">
+          {rows.map((row) => (
+            <FunnelRow key={row.name} row={row} />
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

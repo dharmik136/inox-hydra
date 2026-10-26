@@ -43,8 +43,8 @@ export function RecordModelSettings({
       </p>
       {!state?.configured ? (
         <p className="text-[12px] leading-snug text-ink-secondary">
-          No AI provider is connected, so nothing is sent and the fifth card waits for the Inox library. Connect your
-          own in the Composer&rsquo;s Prompt tab to add one idea a day, written from your own posts and asks.
+          No AI provider is connected, so nothing is sent. Connect your own in the Composer&rsquo;s Prompt tab to add
+          one idea a day to the fifth card, written from your own posts and asks.
         </p>
       ) : (
         <>

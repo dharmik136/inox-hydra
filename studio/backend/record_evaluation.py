@@ -56,6 +56,8 @@ FULL_TREATMENT_AT = 20
 FEWEST_FOR_A_MONTH = 5
 LARGEST_DETECTABLE = 2.0
 GONE_OUT = ("published", "sent")
+# Shown without a Keep, Skip or Draft button, so never in the funnel.
+UNMARKABLE = ("monday",)
 
 KIND_WORDS = {
     "what_worked": "What worked", "on_this_day": "On this day", "opener": "Openers to reuse",
@@ -81,15 +83,20 @@ def said_share(part: int, whole: int) -> Dict[str, Any]:
 
 def funnel(conn) -> Dict[str, Any]:
     """Shown, kept against skipped, drafted from and posted, by kind and by label."""
+    # The Monday line carries no buttons: it can be neither kept nor drafted
+    # from, so counting it as shown would only lower every rate beside it.
     shown: Dict[Tuple[str, str], int] = {}
     for kind, label, count in conn.execute(
             "SELECT kind, label, COUNT(*) FROM (SELECT DISTINCT day, card_id, kind, label FROM daily_view "
-            "WHERE status = 'shown') GROUP BY kind, label"):
+            "WHERE status = 'shown' AND kind NOT IN (" + ", ".join("?" for _ in UNMARKABLE) + ")) GROUP BY kind, label",
+            UNMARKABLE):
         shown[(kind, label)] = count
     marks: Dict[Tuple[str, str, str], int] = {}
     for kind, label, mark, count in conn.execute(
             "SELECT v.kind, v.label, m.mark, COUNT(DISTINCT m.day || ':' || m.card_id) FROM card_marks m "
-            "JOIN daily_view v ON v.day = m.day AND v.card_id = m.card_id GROUP BY v.kind, v.label, m.mark"):
+            "JOIN daily_view v ON v.day = m.day AND v.card_id = m.card_id "
+            "WHERE v.kind NOT IN (" + ", ".join("?" for _ in UNMARKABLE) + ") GROUP BY v.kind, v.label, m.mark",
+            UNMARKABLE):
         marks[(kind, label, mark)] = count
 
     def group(rows: List[Tuple[str, Dict[str, int]]]) -> List[Dict[str, Any]]:

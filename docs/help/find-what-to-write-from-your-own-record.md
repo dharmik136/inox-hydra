@@ -104,7 +104,7 @@ See [What leaves this machine, and when](what-leaves-this-machine.md) for the sw
 
 ## Did these help?
 
-- **What you kept, drafted from and posted**: for each kind of card, how many were shown, how many you kept of those you kept or skipped, drafted from, and posted. Under 5, the counts alone; from 5 to 19, a ~ before them; from 20, the rate beside the counts. These are your judgements of the cards, not what worked.
+- **What you kept, drafted from and posted**: for each kind of card, and again for each label, how many were shown, how many you kept of those you kept or skipped, drafted from, and posted. Under 5, the counts alone; from 5 to 19, a ~ before them; from 20, the rate beside the counts. These are your judgements of the cards, not what worked.
 - **Posts from cards, against your others**: your posts of the last 90 days that came from a card, against your other posts of the same 90 days, read at about two days old, as a ratio of the two medians with both counts. It says nothing until 8 posts a side have a reading, or while those posts are too few to show a difference smaller than a doubling, and says so.
 - **Month by month**: a sentence for each of the last three months.
 - **Did they help this month? In your own words**: a note you keep here, sent nowhere.

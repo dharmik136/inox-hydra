@@ -104,6 +104,24 @@ def test_the_funnel_is_counts_by_kind_and_label(home):
     assert funnel["by_label"][0]["name"] == "typed"
 
 
+def test_the_monday_line_is_not_a_card_in_the_funnel(home):
+    """It has no Keep, Skip or Draft button, so every rate it joined only fell."""
+    import record_evaluation
+
+    conn = db()
+    conn.execute("INSERT INTO daily_view (day, card_id, slot, block, kind, label, method, payload_json, provenance_json, "
+                 "status, created_at) VALUES ('2026-10-26', 'monday:2026-W44', 0, 'monday', 'monday', 'measured', 'r', "
+                 "'{}', '{}', 'shown', '2026-10-26')")
+    conn.execute("INSERT INTO daily_view (day, card_id, slot, block, kind, label, method, payload_json, provenance_json, "
+                 "status, created_at) VALUES ('2026-10-26', 'theme:a', 3, 'you_asked', 'theme', 'typed', 'r', '{}', '{}', "
+                 "'shown', '2026-10-26')")
+    conn.commit()
+    funnel = record_evaluation.funnel(conn)
+    conn.close()
+    assert [row["name"] for row in funnel["by_kind"]] == ["Your recurring words"]
+    assert funnel["total"]["shown"] == 1
+
+
 # ---------------------------------------------------------------------------
 # The comparison, contemporaneous, and its abstentions
 # ---------------------------------------------------------------------------
