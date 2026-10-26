@@ -1444,6 +1444,12 @@ def _migrate_reader_timing_and_network_reading(cursor: sqlite3.Cursor) -> None:
     silence. The heartbeat now carries that state, and the page's count of
     LinkedIn's data calls by path and query name, never a query string.
 
+    It drops what network reading kept about other members: readings of
+    posts that are not the creator's own, the summaries built from them, and
+    the drift events of the schemas that carry other members; the drift
+    events it keeps name nobody in their path. The feed ingest used to store
+    a reading for every post in LinkedIn's feed response.
+
     And every publication has its post again. Migration 26 gave every
     publication the studio held its posts row, once; one the bridge or the
     archive found after it got none, so its engagers route answered 404 and
@@ -1456,7 +1462,8 @@ def _migrate_reader_timing_and_network_reading(cursor: sqlite3.Cursor) -> None:
     """
     captures = {row[1] for row in cursor.execute("PRAGMA table_info(captures)")}
     for column, kind in (("duration_ms", "REAL"), ("reads", "INTEGER"), ("slow_reads", "INTEGER"),
-                         ("long_tasks", "INTEGER"), ("long_task_ms", "REAL"), ("refused", "TEXT")):
+                         ("long_tasks", "INTEGER"), ("long_task_ms", "REAL"), ("refused", "TEXT"),
+                         ("items_dropped", "INTEGER")):
         if column not in captures:
             cursor.execute(f"ALTER TABLE captures ADD COLUMN {column} {kind}")
     heartbeats = {row[1] for row in cursor.execute("PRAGMA table_info(bridge_heartbeats)")}
@@ -1469,6 +1476,15 @@ def _migrate_reader_timing_and_network_reading(cursor: sqlite3.Cursor) -> None:
     except (ImportError, ValueError):
         import post_identity
     post_identity.heal_publications(cursor.connection)
+
+    # And what network reading kept about other members goes: the feed ingest
+    # stored a reading for every post in LinkedIn's feed response, the
+    # creator's or not. After the ledger's backup, as every migration runs.
+    try:
+        from . import onboarding
+    except (ImportError, ValueError):
+        import onboarding
+    onboarding.forget_other_members_readings(cursor.connection)
 
 
 MIGRATIONS: List[Tuple[int, str, Payload]] = [

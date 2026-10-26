@@ -141,3 +141,32 @@ def test_a_capture_that_arrives_before_a_switch_that_is_off_is_dropped(pages):
 def test_the_interceptor_marks_the_document_for_the_isolated_world(pages):
     page = pages.open("/feed/", page_html("<main></main>"), scripts=("voyager_interceptor.js",))
     assert page.evaluate("() => document.documentElement.getAttribute('data-inox-voyager')") == "1"
+
+
+def test_a_response_about_other_members_never_leaves_the_page(pages):
+    """
+    Profiles, reactions on posts and comments are about other members. The
+    page counts the call and sends nothing of the response, neither its data
+    nor its drift.
+    """
+    page = pages.open("/feed/", page_html("<main></main>"), storage={"networkReading": True})
+    page.clock.run_for(100)
+    others = (
+        ("https://www.linkedin.com/voyager/api/socialActions/urn:li:activity:7385000000000000001/likes",
+         {"elements": [{"actor": {"urn": "urn:li:fsd_profile:ACoAAexample", "name": "Some One"},
+                        "reactionType": "LIKE"}]}),
+        ("https://www.linkedin.com/voyager/api/feed/comments",
+         {"elements": [{"commenter": {"name": "Some One", "publicIdentifier": "someone-else"}}]}),
+        ("https://www.linkedin.com/voyager/api/identity/profiles",
+         {"elements": [{"publicIdentifier": "someone-else", "firstName": "Some", "lastName": "One"}]}),
+    )
+    for url, body in others:
+        message = {**CAPTURE, "payload": {**CAPTURE["payload"], "url": url, "body": body}}
+        page.evaluate("(m) => window.postMessage(m, window.location.origin)", message)
+    page.wait_for_timeout(100)
+    assert not pages.sent(page, "/api/v1/bridge/voyager-ingest"), "a response about other members was sent"
+    assert not pages.sent(page, "/api/v1/bridge/schema-drift")
+    # The feed itself still goes, for the studio to keep the creator's own posts from.
+    page.evaluate("(m) => window.postMessage(m, window.location.origin)", CAPTURE)
+    page.wait_for_timeout(100)
+    assert len(pages.sent(page, "/api/v1/bridge/voyager-ingest")) == 1

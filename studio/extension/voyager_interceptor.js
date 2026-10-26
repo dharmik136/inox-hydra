@@ -59,12 +59,14 @@
     // feed's calls) is neither copied nor counted against the cap above. It
     // was counted first, so on a busy page the creator analytics response
     // was dropped without a trace.
+    //
+    // Own data only: the feed (whose entries the studio keeps only for the
+    // creator's own posts) and the creator's analytics. Profiles, reactions
+    // on posts and comments are about other members and are not copied at
+    // all; content.js and the studio would refuse them anyway.
     const READ_ENDPOINTS = [
         /\/voyager\/api\/feed\/updatesV2/i,
-        /\/(voyager\/api\/identity\/profiles|identity\/dash\/profiles)/i,
-        /\/voyager\/api\/identity\/dash\/creatorAnalytics/i,
-        /\/voyager\/api\/socialActions/i,
-        /\/voyager\/api\/feed\/comments/i
+        /\/voyager\/api\/identity\/dash\/creatorAnalytics/i
     ];
 
     function isRateLimited() {

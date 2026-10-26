@@ -92,6 +92,10 @@ function studioApi(path, body, method) {
 let networkReadingOn = null;
 const EARLY_CAPTURES_LIMIT = 20;
 const earlyCaptures = [];
+// The schemas whose responses carry the creator's own data and nobody else's:
+// their own posts' figures and their follower count. onboarding.VOYAGER_KEPT
+// is the studio's list of the same, and a test holds the two equal.
+const FORWARDED_SCHEMAS = new Set(["feed_updates", "creator_analytics"]);
 // The LinkedIn account this browser is signed in to, as LinkedIn itself has
 // shown it (own_pages.js notes it on the creator's own profile; the worker
 // forgets it when the sign-in changes). Analytics carry it, because neither
@@ -163,19 +167,23 @@ function handleVoyagerCapture(data) {
       // This is normal for Voyager endpoints we don't care about.
       return;
     }
+    voyagerCaptureStats.matched++;
+    // Own data only. The registry also knows profiles, reactions on posts
+    // and comments, and those responses are about other members: they are
+    // matched and counted here, and nothing of them, not their data and not
+    // their drift, leaves the page. The studio refuses them too.
+    const schemaName = Object.keys(VSchema.VOYAGER_SCHEMAS).find((k) => VSchema.VOYAGER_SCHEMAS[k] === schema);
+    if (!FORWARDED_SCHEMAS.has(schemaName)) return;
 
     const result = VSchema.extractWithSchema(schema, payload.body);
 
-    voyagerCaptureStats.matched++;
     if (result.success) {
       voyagerCaptureStats.successful++;
       voyagerCaptureStats.lastCaptureTime = Date.now();
 
       // Forward structured data to the backend.
       studioApi("/api/v1/bridge/voyager-ingest", {
-        schema_name: Object.keys(VSchema.VOYAGER_SCHEMAS).find(
-          k => VSchema.VOYAGER_SCHEMAS[k] === schema
-        ),
+        schema_name: schemaName,
         schema_version: result.schema_version,
         confidence: result.confidence,
         data: result.data,
@@ -196,9 +204,7 @@ function handleVoyagerCapture(data) {
       voyagerCaptureStats.drifted++;
 
       studioApi("/api/v1/bridge/schema-drift", {
-        schema_name: Object.keys(VSchema.VOYAGER_SCHEMAS).find(
-          k => VSchema.VOYAGER_SCHEMAS[k] === schema
-        ),
+        schema_name: schemaName,
         schema_version: result.schema_version,
         drift_fields: result.drift,
         confidence: result.confidence,

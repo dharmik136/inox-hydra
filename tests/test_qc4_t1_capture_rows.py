@@ -154,18 +154,21 @@ def test_a_creator_analytics_reading_refused_for_identity_leaves_a_refused_row(s
 
 def test_the_schema_names_the_extension_sends_are_the_names_the_health_lists(studio):
     """
-    voyager_schema.js names five schemas and content.js sends each as
-    voyager_<name>. Every one is listed, opt-in, or the health cannot show it.
+    content.js forwards only the schemas whose responses carry the creator's
+    own data (FORWARDED_SCHEMAS) and sends each as voyager_<name>. Every one
+    is listed, opt-in, and is one the studio keeps something from.
     """
     import onboarding
-    with open(os.path.join(EXT, "voyager_schema.js"), encoding="utf-8") as handle:
-        schema = handle.read()
-    registry = schema[schema.index("const VOYAGER_SCHEMAS = {"):schema.index("};", schema.index("const VOYAGER_SCHEMAS = {"))]
-    sent = {"voyager_" + name for name in re.findall(r"^  ([a-z_]+): \{", registry, flags=re.MULTILINE)}
-    assert len(sent) == 5, sent
+    with open(os.path.join(EXT, "content.js"), encoding="utf-8") as handle:
+        content = handle.read()
+    forwarded = re.search(r"const FORWARDED_SCHEMAS = new Set\(\[([^\]]*)\]\)", content)
+    assert forwarded, "content.js no longer names the schemas it forwards"
+    sent = {"voyager_" + name for name in re.findall(r'"([a-z_]+)"', forwarded.group(1))}
+    assert sent == {"voyager_feed_updates", "voyager_creator_analytics"}, sent
     listed = {name for name in onboarding.EXTRACTORS if name.startswith("voyager_")}
     assert sent == listed, f"sent {sorted(sent)} but listed {sorted(listed)}"
     assert sent <= set(onboarding.OPT_IN_EXTRACTORS), "a network reading part is listed as if it ran for everyone"
+    assert {name[len("voyager_"):] for name in sent} == set(onboarding.VOYAGER_KEPT)
 
 
 def test_a_schema_name_the_registry_does_not_know_is_refused(studio):

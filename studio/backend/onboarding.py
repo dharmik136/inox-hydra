@@ -408,14 +408,12 @@ EXTRACTORS = {
     "activity_reactions": "Your reactions",
     "analytics": "Creator analytics",
     "post_analytics": "Your posts' analytics pages",
-    # One per schema in voyager_schema.js, under the name content.js sends
-    # (voyager_<schema>). Three of the five were sent and recorded under names
-    # no screen listed, so a network reading that worked was invisible.
+    # One per schema content.js forwards (FORWARDED_SCHEMAS), under the name
+    # it sends (voyager_<schema>). The registry's other three schemas
+    # (profiles, reactions on posts, comments) carry other members and never
+    # leave the page; see VOYAGER_KEPT.
     "voyager_feed_updates": "Network reading: your posts' figures",
     "voyager_creator_analytics": "Network reading: creator analytics",
-    "voyager_identity_profiles": "Network reading: profiles",
-    "voyager_social_actions": "Network reading: reactions on posts",
-    "voyager_feed_comments": "Network reading: comments on posts",
 }
 
 # Network reading is off unless the creator switches it on in the extension's
@@ -424,8 +422,68 @@ EXTRACTORS = {
 # NOT SEEN YET for everyone, and the help's advice for that, open the matching
 # page, does nothing for them. With the switch on, a reader that has matched
 # nothing is exactly the one the creator is asking about.
-OPT_IN_EXTRACTORS = ("voyager_feed_updates", "voyager_creator_analytics", "voyager_identity_profiles",
-                     "voyager_social_actions", "voyager_feed_comments")
+OPT_IN_EXTRACTORS = ("voyager_feed_updates", "voyager_creator_analytics")
+
+# What network reading keeps, per schema, and nothing else. Own data only:
+#   feed_updates        readings of the creator's own posts; every other post
+#                       in LinkedIn's feed response is dropped before anything
+#                       is written, and the run counts how many, as a number
+#   creator_analytics   the creator's follower count, for the confirmed account
+# The registry's identity_profiles, social_actions and feed_comments carry
+# other members' names, headlines, reactions and comments. They are read in
+# the page and never sent, and the studio refuses them: the one thing the
+# product keeps about another member, an engager on the creator's own post,
+# comes from the DOM engagers reader, by design.
+VOYAGER_KEPT = {
+    "feed_updates": "readings of your own posts",
+    "creator_analytics": "your follower count",
+}
+
+# The words LinkedIn's data API puts in its paths. A path is kept only as
+# these words, compared without regard to case and written as listed; every
+# other segment, whoever or whatever it names, becomes "_id_", and so does the
+# segment after a collection that takes one. An unknown word costs a less
+# specific path, never a person. content.js holds the same list
+# (VOYAGER_PATH_WORDS); tests/test_qc4_t1_voyager_paths.py holds the two equal.
+VOYAGER_PATH_WORDS = (
+    "voyager", "api", "graphql", "me", "identity", "dash", "profiles", "miniProfiles", "profileView",
+    "profileContactInfo", "publicContactInfo", "networkinfo", "memberBadges", "memberIdentity",
+    "profileActions", "feed", "updates", "updatesV2", "social", "socialActions", "socialDetails", "comments",
+    "reactions", "likes", "followerInfo", "hashtags", "contentcreation", "normShares", "shares", "posts",
+    "activities", "creatorAnalytics", "analytics", "messaging", "conversations", "events", "messages",
+    "threads", "notifications", "badges", "relationships", "memberRelationships", "connections",
+    "invitations", "invitationViews", "search", "clusters", "blended", "typeahead", "hitsV2", "hits",
+    "organization", "organizations", "companies", "entities", "jobs", "jobPostings", "premium", "growth",
+    "legoWidgets", "pageContent", "settings", "highlights", "recommendations", "skills", "positions",
+    "educations", "featured", "followers", "following", "people", "members", "groups", "schools",
+)
+VOYAGER_ID_AFTER = (
+    "profiles", "miniProfiles", "profileContactInfo", "publicContactInfo", "networkinfo", "memberBadges",
+    "profileActions", "updates", "updatesV2", "social", "socialActions", "socialDetails", "comments",
+    "reactions", "likes", "followerInfo", "hashtags", "shares", "posts", "activities", "conversations",
+    "events", "messages", "threads", "connections", "invitations", "organizations", "companies", "jobs",
+    "jobPostings", "people", "members", "groups", "schools",
+)
+_PATH_WORD = {word.lower(): word for word in VOYAGER_PATH_WORDS}
+_ID_AFTER_WORD = {word.lower() for word in VOYAGER_ID_AFTER}
+# A GraphQL query name has one shape: "voyager" and a capitalised name.
+VOYAGER_QUERY_NAME = re.compile(r"^voyager[A-Z][A-Za-z0-9]{1,78}$")
+
+
+def clean_voyager_path(path: Any) -> str:
+    """A Voyager path as the words of its address, every other segment "_id_"; no query, no host."""
+    text = str(path or "")
+    text = re.sub(r"^[a-z]+://[^/]*", "", text).split("?", 1)[0].split("#", 1)[0]
+    out, previous = [], ""
+    for index, segment in enumerate([s for s in text.split("/") if s][:8]):
+        word = _PATH_WORD.get(segment.lower())
+        if previous in _ID_AFTER_WORD:
+            word = None
+        if word is None and previous == "api" and VOYAGER_QUERY_NAME.match(segment):
+            word = segment
+        out.append(word or "_id_")
+        previous = segment.lower()
+    return "/" + "/".join(out)
 
 # The states a reader's latest run can put it in. One list, so a screen
 # cannot meet a state it does not draw.
@@ -518,15 +576,15 @@ def _write_capture(conn, extractor: str, payload: Dict[str, Any], refused: Optio
     now = datetime.now(timezone.utc)
     conn.execute(
         "INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept, drift, extension_version, "
-        "duration_ms, reads, slow_reads, long_tasks, long_task_ms, refused) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "duration_ms, reads, slow_reads, long_tasks, long_task_ms, refused, items_dropped) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
         (now.isoformat(), extractor, _text(payload.get("page_kind"), 40),
          _count(payload.get("items_seen")), _count(payload.get("items_kept")),
          json.dumps([_text(d, 60) for d in drift]) if drift else None,
          _text(payload.get("extension_version"), 40),
          _millis(payload.get("duration_ms")), _count(payload.get("reads")), _count(payload.get("slow_reads")),
          _count(payload.get("long_tasks")), _millis(payload.get("long_task_ms")),
-         _text(refused, 40)),
+         _text(refused, 40), _count(payload.get("items_dropped"))),
     )
     conn.execute(PRUNE_CAPTURES, ((now - CAPTURE_RETENTION).isoformat(),))
 
@@ -604,6 +662,9 @@ def record_schema_drift(payload: Dict[str, Any]) -> Dict[str, Any]:
     schema_version = _text(payload.get("schema_version"), 40)
     if not schema_name or not schema_version:
         raise RefusedCapture("schema_name and schema_version required")
+    if schema_name not in VOYAGER_KEPT:
+        # A schema whose responses carry other members is not read here at all.
+        raise RefusedCapture("unknown extractor")
     drift_fields = payload.get("drift_fields") or []
     top_keys = payload.get("response_top_keys") or []
     now = datetime.now(timezone.utc)
@@ -624,7 +685,9 @@ def record_schema_drift(payload: Dict[str, Any]) -> Dict[str, Any]:
                     json.dumps(drift_fields) if drift_fields else None,
                     float(payload.get("confidence", 0.0)),
                     1 if payload.get("success") else 0,
-                    _text(payload.get("source_url"), 500),
+                    # The address as the words of LinkedIn's API, nothing that
+                    # names a member or a post (clean_voyager_path).
+                    clean_voyager_path(payload.get("source_url")) if payload.get("source_url") else None,
                     json.dumps(top_keys) if top_keys else None,
                     _text(payload.get("extension_version"), 40),
                 )
@@ -650,13 +713,16 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
     if not schema_name or data is None:
         raise RefusedCapture("schema_name and data are required")
     extractor = f"voyager_{schema_name}"
-    if extractor not in EXTRACTORS:
-        # The extension sends the names in voyager_schema.js, and the health
-        # lists every one of them. A name outside that set is not a reader.
+    if extractor not in EXTRACTORS or schema_name not in VOYAGER_KEPT:
+        # Only the schemas that keep the creator's own data are read here.
+        # The ones that carry other members never leave the page.
         raise RefusedCapture("unknown extractor")
 
     items_seen = len(data) if isinstance(data, list) else (1 if isinstance(data, dict) else 0)
     items_kept = 0
+    # Entries that are not the creator's own, dropped before anything is
+    # written and counted, never named.
+    items_dropped = 0
     now = datetime.now(timezone.utc)
     refusal: Optional[RefusedCapture] = None
 
@@ -665,8 +731,17 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
         with conn:
             if schema_name == "feed_updates" and isinstance(data, list):
                 for item in data:
-                    urn = item.get("urn")
-                    if not urn or not _ACTIVITY_URN.match(urn):
+                    urn = item.get("urn") if isinstance(item, dict) else None
+                    # LinkedIn's feed response holds everyone's posts. Only a
+                    # post that is the creator's own is read at all: one of
+                    # their publications, or a post the studio carries, in any
+                    # of LinkedIn's three spellings. Every other entry is
+                    # dropped here, before any write, and only counted. It
+                    # used to be kept as a reading, which put other members'
+                    # posts and their figures in the creator's database.
+                    if (not isinstance(urn, str) or not _ACTIVITY_URN.match(urn)
+                            or not _creators_post(conn, urn)):
+                        items_dropped += 1
                         continue
                     metrics = {
                         "impressions": item.get("impressions"),
@@ -721,6 +796,7 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
             # The run itself, refused or not, for the health screen.
             _write_capture(conn, extractor, {
                 "page_kind": "voyager_api", "items_seen": items_seen, "items_kept": items_kept,
+                "items_dropped": items_dropped if schema_name == "feed_updates" else None,
                 "extension_version": payload.get("extension_version"),
             }, refused="identity" if refusal else None)
     finally:
@@ -728,7 +804,50 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     if refusal:
         raise refusal
-    return {"status": "success", "items_seen": items_seen, "items_kept": items_kept}
+    return {"status": "success", "items_seen": items_seen, "items_kept": items_kept, "items_dropped": items_dropped}
+
+
+def _creators_post(conn, urn: str) -> bool:
+    """
+    Whether a post is one of the creator's own: a publication of theirs or a
+    post the studio carries, in any of LinkedIn's three spellings of its id,
+    each looked up by its index.
+    """
+    spellings = _post_identity()._spellings(urn)
+    if not spellings:
+        return False
+    if conn.execute("SELECT 1 FROM own_posts WHERE activity_urn IN (?, ?, ?) LIMIT 1", spellings).fetchone():
+        return True
+    return conn.execute("SELECT 1 FROM posts WHERE activity_urn IN (?, ?, ?) LIMIT 1", spellings).fetchone() is not None
+
+
+def forget_other_members_readings(conn) -> Dict[str, int]:
+    """
+    What network reading kept about other members before it kept the
+    creator's own posts only: readings of posts that are not the creator's,
+    the summaries built from them, and drift events whose schema carries
+    other members. Kept drift events keep a path that names nobody. Run by
+    migration 28, after the ledger's backup, inside its transaction.
+    """
+    gone = {"readings": 0, "drift_events": 0}
+    others = [row[0] for row in conn.execute("SELECT DISTINCT activity_urn FROM post_metric_observations")
+              if not _creators_post(conn, row[0] or "")]
+    for urn in others:
+        gone["readings"] += conn.execute("DELETE FROM post_metric_observations WHERE activity_urn = ?",
+                                         (urn,)).rowcount
+    if others:
+        # The deletes marked their summaries; recomputed, an empty one goes.
+        post_summary.refresh(conn, others)
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_drift_events'").fetchone():
+        gone["drift_events"] = conn.execute(
+            f"DELETE FROM schema_drift_events WHERE schema_name NOT IN ({', '.join('?' for _ in VOYAGER_KEPT)})",
+            tuple(VOYAGER_KEPT)).rowcount
+        for rowid, url in conn.execute("SELECT rowid, source_url FROM schema_drift_events "
+                                       "WHERE source_url IS NOT NULL").fetchall():
+            cleaned = clean_voyager_path(url)
+            if cleaned != url:
+                conn.execute("UPDATE schema_drift_events SET source_url = ? WHERE rowid = ?", (cleaned, rowid))
+    return gone
 
 
 def extension_health() -> Dict[str, Any]:

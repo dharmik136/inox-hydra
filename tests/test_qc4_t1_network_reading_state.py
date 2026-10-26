@@ -164,7 +164,7 @@ def test_the_side_panels_list_follows_the_same_rule_as_setup(client):
     assert not [n for n in names if n.startswith("voyager_")]
     _beat(client, page_kind="feed", network_reading=ON_SEEING)
     names = [h["extractor"] for h in client.get("/api/v1/extension/health").json()["extractors"]]
-    assert len([n for n in names if n.startswith("voyager_")]) == 5
+    assert len([n for n in names if n.startswith("voyager_")]) == 2
 
 
 def test_a_call_key_that_still_names_a_member_or_a_post_is_refused(client):
