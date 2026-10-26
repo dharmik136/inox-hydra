@@ -42,12 +42,13 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 try:
-    from . import paths, sqlite_open
+    from . import paths, sqlite_open, changes
     from .migrations import describe as describe_schema, backup_database, SCHEMA_VERSION, MIN_SUPPORTED_SCHEMA
     from ..__version__ import __version__
 except ImportError:  # top-level import mode
     import paths
     import sqlite_open
+    import changes
     from migrations import describe as describe_schema, backup_database, SCHEMA_VERSION, MIN_SUPPORTED_SCHEMA
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     from __version__ import __version__
@@ -1167,6 +1168,7 @@ def _put_the_database_down() -> None:
         import post_summary
     if not post_summary.stop_catch_up(30.0):
         _restore_log.warning("The background summary catch-up did not stop before the restore.")
+    changes.put_down()
 
 
 def _let_the_database_go() -> None:
@@ -1176,6 +1178,7 @@ def _let_the_database_go() -> None:
     except ImportError:
         import post_summary
     post_summary.resume_catch_up()
+    changes.let_go()
 
 
 @_waits_for_maintenance

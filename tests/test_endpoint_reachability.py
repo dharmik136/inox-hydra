@@ -247,9 +247,16 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # now, so the merge restored it. The pack has a way out and no way in until
 # its 36 first-person claims are rewritten, which is a decision, not a gap.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 172
+# ---------------------------------------------------------------------------
+# Cycle 4, track 2 (the show path): /api/v1/events added, the change stream a
+# window listens to so a screen reads again when the studio says something
+# changed instead of on a fast timer. Declared here before the interface
+# opens it, so it sits in the unreachable column for one commit.
+# Total 172 -> 173, reached stays at 118, unreachable 54 -> 55.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 173
 REACHED_BY_INTERFACE = 118
-UNREACHABLE = 54
+UNREACHABLE = 55
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

@@ -47,10 +47,12 @@ except ImportError:
 try:
     from . import post_summary
     from . import ingest_contract
+    from . import changes
     from .database import get_db
 except ImportError:
     import post_summary
     import ingest_contract
+    import changes
     from database import get_db
 
 # How recently the extension must have been heard from to count as connected.
@@ -208,6 +210,7 @@ def record_heartbeat(extension_version: Any = None, page_kind: Any = None) -> Di
             )
     finally:
         conn.close()
+    changes.publish("heartbeat")
     return {"status": "success", "seen_at": now.isoformat()}
 
 
@@ -323,6 +326,7 @@ def record_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
             conn.execute(PRUNE_CAPTURES, ((now - CAPTURE_RETENTION).isoformat(),))
     finally:
         conn.close()
+    changes.publish("capture")
     return {"status": "success"}
 
 
@@ -489,6 +493,7 @@ def record_voyager_ingest(payload: Dict[str, Any]) -> Dict[str, Any]:
             )
     finally:
         conn.close()
+    changes.publish("readings")
 
     return {"status": "success", "items_seen": items_seen, "items_kept": items_kept}
 
@@ -926,6 +931,7 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
                     bound[how] += 1
     finally:
         conn.close()
+    changes.publish("posts")
     return {"status": "success", "written": written, "skipped": skipped,
             "bound_to_posts": bound["post"], "bound_to_drafts": bound["draft"]}
 
@@ -994,6 +1000,7 @@ def ingest_post_analytics(author: Any, activity_urn: Any, metrics: Any) -> Dict[
                              (impressions, _now(), urn))
     finally:
         conn.close()
+    changes.publish("readings")
     return {"status": "success", "recorded": recorded}
 
 
@@ -1077,6 +1084,7 @@ def ingest_outbound(actor: Any, items: Any) -> Dict[str, Any]:
                 written += 1
     finally:
         conn.close()
+    changes.publish("outbound")
     return {"status": "success", "written": written, "skipped": skipped}
 
 

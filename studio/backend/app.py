@@ -2024,6 +2024,16 @@ except (ImportError, ValueError):
 
 app.include_router(storage_router_module.router)
 
+# The change stream: one connection per window, told when something changed,
+# so a screen reads again only then (studio/backend/routers/events.py, fed by
+# studio/backend/changes.py).
+try:
+    from .routers import events as events_router_module
+except (ImportError, ValueError):
+    from routers import events as events_router_module
+
+app.include_router(events_router_module.router)
+
 DOCS_DIR = search_router_module.DOCS_DIR
 MODULES_DIR = search_router_module.MODULES_DIR
 DOCS_MODULES = search_router_module.DOCS_MODULES
