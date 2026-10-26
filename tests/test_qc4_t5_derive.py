@@ -1175,3 +1175,42 @@ def test_the_upgraded_database_case_never_reports_a_change_rounding_could_hide(c
     _posts(client, mine)
     _reading(mine, 48.0, impressions=12000, reactions=41)
     assert client.get(f"/api/v1/insights/posts/{mine}").json()["approximate"] == ["impressions"]
+
+
+# ---------------------------------------------------------------------------
+# Track 6's finding: the page reader's daily write replaced the whole row
+# ---------------------------------------------------------------------------
+
+def test_a_daily_write_never_clears_a_column_another_writer_filled(client):
+    """
+    Track 6 adds new_followers from the export. INSERT OR REPLACE rewrote the
+    whole row, so a column another writer filled the same day was lost.
+    """
+    from linkedin_client import linkedin_client
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    conn = _db()
+    with conn:
+        conn.execute("ALTER TABLE analytics_daily ADD COLUMN new_followers INTEGER")
+        conn.execute("INSERT INTO analytics_daily (date, new_followers, impressions, reactions, comments, shares, "
+                     "engagement_rate) VALUES (?, 7, NULL, NULL, NULL, NULL, NULL)", (DAY,))
+        conn.execute("INSERT INTO analytics_daily (date, new_followers, followers, impressions, reactions, comments, "
+                     "shares, engagement_rate) VALUES (?, 9, 2000, 400, NULL, NULL, NULL, NULL)", (today,))
+    conn.close()
+    # The creator analytics page reader's daily write.
+    linkedin_client.ingest_analytics_payload({"series": [{
+        "date": DAY, "period_label": "1d", "precision": "exact", "impressions": 410, "reactions": 9}]})
+    # The profile-views write, on a day that already has a row.
+    linkedin_client.ingest_analytics_payload({"profile_views": 42})
+    first, second = _daily_row(DAY), _daily_row(today)
+    assert first["new_followers"] == 7 and (first["impressions"], first["reactions"]) == (410, 9)
+    assert second["new_followers"] == 9 and second["profile_views"] == 42
+    assert (second["followers"], second["impressions"]) == (2000, 400), "a column it did not read is left as it was"
+    assert second["reactions"] is None, "a figure nobody read is never turned into a 0"
+
+
+def test_a_windowed_reading_does_not_claim_a_screen_shows_it(client):
+    """Review N10: the answer said weekly readings are "shown beside the daily figures"; nothing shows them yet."""
+    from linkedin_client import linkedin_client
+    answer = linkedin_client.ingest_analytics_payload({"series": [{
+        "date": DAY, "period_label": "7d", "impressions": 5400}]})
+    assert answer["windows_saved"] == 1 and "shown" not in answer["message"]
