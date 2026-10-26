@@ -520,3 +520,41 @@ def test_no_docs_index_means_no_playbook_line_and_no_rebuild(conn):
     conn.execute("DROP TABLE IF EXISTS docs_index")
     assert record_cards.playbook_section(conn, "hooks that get comments") is None
     assert conn.execute("SELECT name FROM sqlite_master WHERE name = 'docs_index'").fetchone() is None
+
+
+# ---------------------------------------------------------------------------
+# Each figure names its own reading
+# ---------------------------------------------------------------------------
+#
+# A figure is the newest reading that has it (results.figures, by figure), so
+# a post read last on its activity page, which shows no impressions, has its
+# impressions from an older post analytics page. The cards stamped every
+# figure with the newest reading's page and day, which said the impressions
+# were read on a day nobody read them.
+
+def test_each_figure_on_a_card_names_the_reading_it_came_from(conn):
+    import record_cards
+
+    add_posts(conn)
+    for n, reactions in enumerate((30, 12, 18, 9)):
+        add_reading(conn, n, reactions, days_ago=40 + n)
+    older = datetime.now(timezone.utc) - timedelta(days=5)
+    newer = datetime.now(timezone.utc) - timedelta(days=1, hours=2)
+    conn.execute("DELETE FROM post_metric_observations WHERE activity_urn = ?", (urn(0),))
+    conn.execute("INSERT INTO post_metric_observations (activity_urn, observed_at, observed_hour, age_hours, source, "
+                 "impressions, reactions, comments, reposts) VALUES (?, ?, ?, 900.0, 'post_analytics', 4000, 80, NULL, NULL)",
+                 (urn(0), older.isoformat(), older.strftime("%Y-%m-%dT%H")))
+    conn.execute("INSERT INTO post_metric_observations (activity_urn, observed_at, observed_hour, age_hours, source, "
+                 "impressions, reactions, comments, reposts) VALUES (?, ?, ?, 990.0, 'activity_page', NULL, 95, 3, 0)",
+                 (urn(0), newer.isoformat(), newer.strftime("%Y-%m-%dT%H")))
+    conn.commit()
+    card = record_cards.what_worked(conn, record_cards._posts(conn))
+    by_name = {f["name"]: f for f in card["provenance"]["figures"]}
+    assert by_name["impressions"]["value"] == 4000
+    assert by_name["impressions"]["source"] == "post_analytics" and by_name["impressions"]["observed_at"] == older.isoformat()
+    assert by_name["reactions"]["value"] == 95
+    assert by_name["reactions"]["source"] == "activity_page" and by_name["reactions"]["observed_at"] == newer.isoformat()
+    # The ranked figure is the reactions, so the sentence names the activity page and its day.
+    assert "read from the activity page on" in card["payload"]["because"]
+    said = record_cards._said_figures(card["provenance"]["figures"])
+    assert said.count("(read ") == len(card["provenance"]["figures"]), said

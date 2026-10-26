@@ -213,3 +213,66 @@ could be, and listed for the merge.
 - **Merge order.** routers/insights.py meets Track 4, TodaySurface.tsx Track 3, linkedin_client.py Track 6,
   archive_import.py Track 7, the policy and its page Tracks 6 and 7, and the endpoint ledger every track
   that adds a route.
+
+## Phase 2: the creator's own surfaces (the owner's direction, 2026-10-26)
+
+New capability on the owner's direction to capture more and show it, without an independent review this
+phase: each test failed first, each new page has a fixture, one full suite at the end.
+
+| | |
+|---|---|
+| Commits | 48640ea (the studio: migration, storage, routes, sightings), 9be9975 (the readers, the manifest and relay lines, the policy), e429437 (two findings of the first full run), and this record with the help |
+| Migration | `_migrate_account_and_content_readings`, "Account figures, own article and newsletter readings, own reposts, edited posts and watch time", numbered 29 here, renumbered at merge; tests find it by name |
+| Tests | tests/test_qc4_t5_insights.py (19), tests/test_qc4_t5_insights_reader.py (10) |
+| Full suite | 3207 passed, 17 skipped, 0 failed, as CI runs it, on e429437 with this record in place; the skips are the environment's. The first run found two rules doing their jobs: the relay allowlist ratchet (`tests/test_mcp_routes.py`), which now names the new path with its review, and the distribution check, which reads `/in/me/` as the alias only when the address ends its string, as it now does (e429437) |
+
+What each page keeps, counts and windows only, never another member:
+
+| Page | Keeps |
+|---|---|
+| The analytics dashboard (`/dashboard/`, `/analytics/creator/...`) | Profile views and search appearances, each with the window its own card or the range control names; new followers by day from the graph's accessible labels |
+| Who viewed your profile (`/me/profile-views/`) | The viewer count and its window; no viewer's name, headline, company or link is read |
+| Search appearances (`/me/search-appearances/`) | The count and its window; no searcher or company |
+| An article's or a newsletter's analytics page (`/analytics/article/<urn>/`, `/analytics/newsletter/<urn>/`) | Article views, impressions, members reached, reactions, comments, reposts; subscribers, email sends, email open rate |
+| A video post's analytics page | Watch time and average watch time, in seconds, on the post's readings |
+| The creator's own Activity tab | That a card is their repost, its date and its own figures (the embedded original taken out first), never the original's author, words or figures; when a post was first seen marked edited |
+
+Routes for the interface to draw next:
+
+- `GET /api/analytics/account-figures?range=30d`: `profile_views` and `search_appearances`, each a list of
+  `{date, value, period_label, covers, label, precision, source, read_at}`; `new_followers`, a list of
+  `{date, value, precision, source}`; `from`, `to`. What Analytics needs to show profile views again
+  (sections decision 8).
+- `GET /api/analytics/content-figures`: `content`, a list of `{content_urn, kind, readings, latest}`, where
+  `latest` holds each figure's newest value with its time, window and precision.
+- `GET /api/v1/insights/reposts`: `reposts`, a list of `{activity_urn, reposted_at, reactions, comments,
+  reposts, impressions, first_seen_at, last_seen_at}`.
+- `GET /api/v1/insights/posts/{urn}`: `edited_first_seen_at`, and `per_post` gains `watch_time_seconds` and
+  `average_watch_seconds`.
+- `GET /api/analytics/post-field-sightings`: the post analytics fields, now with watch time, and `pages`, a
+  list of `{page, readings, fields}` for the account and content pages and the Activity tab, each field
+  `{field, label, last_read_at, readings_since, sentence}`.
+- `POST /api/analytics/page-figures`: the extension's; the owner check is the analytics ingest's.
+
+Lines in Track 1's files:
+
+| File | Branch lines | What |
+|---|---|---|
+| studio/extension/own_pages.js | 1080-1082 | The Activity reader's one call to `inoxOwnCardFacts` (own_insights.js); in this track's post analytics region, 1209-1215, 1234-1252 and 1369-1378 (watch time) |
+| studio/backend/onboarding.py | 47-54, 880-881, 918, 930-934, 971, 979 | The import of own_insights and results; `own_reposts` in the forget list; the repost and edited call sites and the count in `ingest_own_posts`. In this track's region: 990-992, 1171-1172, 1203-1204 |
+| studio/extension/manifest.json | 44 | Loads own_insights.js after own_pages.js |
+| studio/extension/background.js | 36-37 | Relays `POST /api/analytics/page-figures` |
+
+Unverified and not done:
+
+- Every page path and label above is the Help's wording or a plausible form, unverified against 2026
+  pages. Unknown layouts send nothing, and the sightings say how long each figure has gone unread.
+- A repost card's URN may be the original's rather than the repost's, in which case `reposted_at` is the
+  original's date; the record keeps no author either way. A repost's own figures are read only when an
+  embedded original can be taken out of the card.
+- The new readers report no capture runs: Setup's capture health is keyed by Track 1's extractor registry,
+  and under the owner's rule their absent labels are not drift. Their visibility is the sightings route.
+- Video analytics on a page of their own are not read: LinkedIn shows a video post's figures on its post
+  analytics page, where watch time is now read.
+- No screen draws the new figures yet. Whether profile viewers become lead candidates like engagers is the
+  owner's separate decision; nothing about them is stored.

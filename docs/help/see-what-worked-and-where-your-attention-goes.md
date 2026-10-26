@@ -23,6 +23,10 @@ Click a post to see the people the studio captured engaging with it. Click a nam
 
 Under the table, **Published here, not yet seen on LinkedIn** lists any post marked published in the studio that the bridge has not read on LinkedIn yet, such as one sent with **Send to LinkedIn**. It has no figures or people until the bridge reads it, from your posts page in the bridge browser, and then it moves into the table. The group is not shown when there are none.
 
+Under a post's figures, its detail also says when the post was first seen marked edited on your Activity tab, and a video's watch time and average watch time from its analytics page, with the day each was read; a video whose watch time was never read says **WATCH TIME NOT READ**.
+
+Under the table, once the bridge has read them, **Your reposts** lists your newest reposts with the day you reposted and the repost's own figures (the original post's author, words and figures are never kept), and **Your articles and newsletters** lists each one with every figure as its own analytics page last showed it, with the window that page named or as its total, and the day it was read. A figure the page did not show reads "not read", never 0.
+
 ## Patterns
 
 **Patterns** compares your posts that have a form with those that do not, by median reactions, across your posts whose figures have settled and have reactions recorded. The introduction says how many days settled means for you, and whether that was measured from your own readings or assumed until they can say. Posts with none recorded, such as those from LinkedIn's archive, are left out, and a note under the introduction says how many. Each line gives both medians and both counts, for example "MEDIAN 38 REACTIONS ON 7 POSTS WITH IT, 25 ON 11 WITHOUT".

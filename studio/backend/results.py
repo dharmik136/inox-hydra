@@ -1250,6 +1250,39 @@ def half_life_difference(conn, with_urns: Sequence[str], without_urns: Sequence[
 
 
 # ---------------------------------------------------------------------------
+# How long a figure has gone unread
+# ---------------------------------------------------------------------------
+#
+# The owner's decision of 2026-10-26: a figure whose label LinkedIn may not
+# show is not drift when it is absent; it stays visible as a count instead.
+# One sentence for every page that reads such figures, so the post analytics
+# page and the account and content pages cannot word it two ways.
+
+def sighting(label: str, pages_read: int, last_read_at: Optional[str], read_since: int,
+             page_words: Tuple[str, str]) -> Dict[str, Any]:
+    """
+    When a figure was last read and how many reads of its page have gone
+    without it since, as {"last_read_at", "readings_since", "sentence"}:
+    "followers gained from this post: not read on any of the last 12 post
+    analytics pages, last read 2026-10-20". page_words is the page's name,
+    singular and plural.
+    """
+    one, many = page_words
+    if not pages_read:
+        sentence = f"{label}: no {one} read yet"
+    elif last_read_at is None:
+        sentence = (f"{label}: not read on the one {one} read so far" if pages_read == 1 else
+                    f"{label}: not read on any of the {pages_read} {many} read so far")
+    elif not read_since:
+        sentence = f"{label}: read on the latest {one}"
+    else:
+        where = f"the latest {one}" if read_since == 1 else f"any of the last {read_since} {many}"
+        sentence = f"{label}: not read on {where}, last read {last_read_at[:10]}"
+    return {"last_read_at": last_read_at, "readings_since": pages_read if last_read_at is None else read_since,
+            "sentence": sentence}
+
+
+# ---------------------------------------------------------------------------
 # The seven binary features
 # ---------------------------------------------------------------------------
 #

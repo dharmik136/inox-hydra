@@ -5,6 +5,89 @@ asks for an entry per release (`docs/PACKAGING_AND_MAINTENANCE_MASTER_PLAN.md`
 section 5.5); this file starts with the work since v2.5.2, which was never
 released. Version numbers follow `studio/__version__.py`.
 
+## 2.8.0
+
+The studio now works from your own record every day, reads more of what
+LinkedIn shows you about your own posts, and draws a firmer line around whose
+data it keeps and what leaves your computer.
+
+### Before you use 2.8.0
+
+- **Your database is upgraded** the first time you start it, from schema 27 to
+  31, after the usual automatic backup. It gains a precision mark on post
+  readings, dated audience demographics, a format per post, the tables of the
+  new From your record section, a place for links you send from your
+  phone, and the new readings below. Nothing you wrote is changed.
+- **Reload the extension** once in the browser you capture with: it reads
+  more of your own pages.
+- **One creator profile keeps a LinkedIn session.** Session sync and Send to
+  LinkedIn now work for the first creator profile only, because each
+  profile's session must come from that creator's own browser. A session an
+  earlier version kept in a later profile is deleted the first time 2.8.0
+  starts, and that profile tells you so once.
+
+### New
+
+- **From your record**, a section that builds a few cards a day from your own
+  history: what worked for you (only once enough settled posts support it,
+  and it says so until then), a post from this day in an earlier year, posts
+  you engaged with in your own words, and what you asked the studio to keep in
+  mind. Keep, skip and hide what you see; Kept holds what you keep. With your
+  own AI key, a once-a-day pass on your first visit suggests angles from your
+  own best posts under a daily spending ceiling (10 cents by default). It is
+  sent your own text and the studio's own words for how each post did, never a
+  figure, another person's name or a comment, and nothing it returns with a
+  number in it is shown.
+- **More of the post analytics page:** followers gained and profile viewers
+  from a post, link visits, article and video views, the share of impressions
+  inside and outside your network, and viewer demographics kept by day. A
+  figure LinkedIn does not show you is recorded as not read, never as 0.
+- **More of your own pages are read**, each figure kept as a count over the
+  window the page names: profile views, search appearances and new
+  followers per day from your analytics dashboard, your articles' and
+  newsletters' figures, watch time on your video posts, and your own reposts
+  and edited posts. Nothing about who viewed or searched is read. The
+  studio keeps these from now on; the screens that draw them come in 2.9.0.
+- **A rounded figure is marked as rounded.** "12K" read twice is no longer
+  growth, and figures LinkedIn rounded read "about".
+- **Today says whether your latest post is still moving**, from the readings
+  the studio has, with how many there are and how old the latest is.
+- **Followers are kept as a series**, and a weekly analytics card is kept as
+  weekly rather than as one day.
+- **LinkedIn's analytics export** (the .xlsx from the Export button on your
+  analytics page) imports in Setup with a preview; anything the studio does
+  not recognise is shown and left out.
+- **Your phone can tell the desk what to read.** Share one of your post links
+  to your own Telegram bot, set up in Local security, and Today asks you to
+  open that post's analytics next. A link to someone else's post is refused.
+- **The help quotes LinkedIn's own terms** beside each feature, so you decide
+  with the words in front of you.
+
+### Changed
+
+- People are ordered by when they engaged, never by a score.
+- Posts lists every published post, including ones published here that
+  LinkedIn has not shown the bridge yet; Analytics no longer repeats the list,
+  and search opens a published post on Posts.
+- Patterns shows each comparison with both sides' counts and the engine's own
+  abstentions; your posting rhythm moved to the Queue, and the "qualified
+  pipeline" table is gone.
+- The Queue shows waiting drafts as a count with one action, and queueing the
+  newest draft refuses a post that is no longer a draft.
+- The Evidence panel says what reaches your AI provider when you use Re-Hook
+  or Command.
+- The studio no longer sends MCP server settings to the browser.
+- People who engaged with a post first captured after the 2.7.0 upgrade are
+  listed on that post again.
+
+### Known, and fixed in 2.9.0
+
+- With network reading switched on (it is off by default), the feed reader
+  keeps figures for posts in your feed that are not yours. 2.9.0 keeps only
+  your own and removes the rest on upgrade.
+- A post the bridge first sees after the 2.7.0 upgrade may lack its studio
+  record until 2.9.0 restores it; its people are already listed (above).
+
 ## 2.7.0
 
 The studio used to disagree with itself. Ask which post did best and four

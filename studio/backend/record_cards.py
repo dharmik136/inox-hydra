@@ -318,14 +318,38 @@ def _topics(posts: List[Dict[str, Any]]) -> Tuple[List[Tuple[str, str]], Dict[st
     return vocabulary, of_post, counts
 
 
+def _reading_of(figure: Dict[str, Any], name: str) -> Dict[str, Any]:
+    """
+    The reading one figure was taken from. Each figure is the newest reading
+    that has it (results.figures, "by_figure"), which need not be the post's
+    newest reading: an activity page read last has reactions and no
+    impressions, so the impressions are an older page's.
+    """
+    own = (figure.get("by_figure") or {}).get(name) or {}
+    return {"source": own.get("source") or figure.get("source"), "read_at": own.get("read_at") or figure.get("read_at")}
+
+
 def _figure_rows(urn: str, figure: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Each figure of a post as a record naming the row it was read from and when."""
+    """Each figure of a post as a record naming the reading it was read from and when, its own."""
     if not figure or not figure.get("source"):
         return []
-    table = "own_posts" if figure["source"] == results.SNAPSHOT else "post_metric_observations"
-    return [{"name": name, "value": figure[name], "table": table, "id": urn, "observed_at": figure.get("read_at"),
-             "source": figure["source"]}
-            for name in results.FIGURE_FIELDS if figure.get(name) is not None]
+    rows = []
+    for name in results.FIGURE_FIELDS:
+        if figure.get(name) is None:
+            continue
+        reading = _reading_of(figure, name)
+        rows.append({"name": name, "value": figure[name],
+                     "table": "own_posts" if reading["source"] == results.SNAPSHOT else "post_metric_observations",
+                     "id": urn, "observed_at": reading["read_at"], "source": reading["source"]})
+    return rows
+
+
+def _said_figures(figures: List[Dict[str, Any]]) -> str:
+    """The figures in words, each with the day it was read, said once when they share it."""
+    days = {_said_date(f["observed_at"]) for f in figures}
+    if len(days) == 1:
+        return " and ".join(f"{f['value']} {f['name']}" for f in figures) + f" (read {days.pop()})"
+    return " and ".join(f"{f['value']} {f['name']} (read {_said_date(f['observed_at'])})" for f in figures)
 
 
 # ---------------------------------------------------------------------------
@@ -379,12 +403,14 @@ def what_worked(conn, posts: List[Dict[str, Any]], history: Optional[Dict[str, A
     published = next((p.get("published_at") for p in posts if p["activity_urn"] == urn), None)
     read = every.get(urn) or {}
     figures = _figure_rows(urn, read)
+    # The ranked figure's own reading, which may be older than the post's newest.
+    ranked = _reading_of(read, results.RANKED_METRIC)
     ratio = named["against_usual"].get(results.RANKED_METRIC)
     reactions = named.get(results.RANKED_METRIC)
     because = (f"Because this post drew {ratio} times your usual reactions: {reactions} against your median "
                f"{usual['median']:g} across {usual['posts']} settled posts, read from the "
-               f"{'post analytics' if read.get('source') == 'post_analytics' else 'activity' if read.get('source') == 'activity_page' else 'archive snapshot'} page on "
-               f"{_said_date(read.get('read_at'))}")
+               f"{'post analytics' if ranked['source'] == 'post_analytics' else 'activity' if ranked['source'] == 'activity_page' else 'archive snapshot'} page on "
+               f"{_said_date(ranked['read_at'])}")
     if passed_over:
         because += (f"; the best of your posts you have not hidden or skipped, with {passed_over} "
                     f"{'post' if passed_over == 1 else 'posts'} above it set aside")
@@ -398,8 +424,8 @@ def what_worked(conn, posts: List[Dict[str, Any]], history: Optional[Dict[str, A
         "figure_sentence": (f"{ratio} times your usual reactions: {reactions} against your median {usual['median']:g} "
                             f"across {usual['posts']} settled posts"),
         "because": f"{because} · rule: Working for you",
-        "source_sentence": f"from your post of {_said_date(published)} (reading of {_said_date(read.get('read_at'))}, "
-                           f"{read.get('source') or 'no source'})",
+        "source_sentence": f"from your post of {_said_date(published)} (its reactions as read on "
+                           f"{_said_date(ranked['read_at'])}, {ranked['source'] or 'no source'})",
         "method_sentence": (f"{rule}; a post is judged once it is {settle['hours'] / 24:g} days old"
                             f"{', measured from your own readings' if settle['measured'] else ', assumed until your readings can say'}; "
                             f"{answer['ranked_posts']} posts ranked"),
@@ -438,8 +464,7 @@ def on_this_day(conn, posts: List[Dict[str, Any]], day: date,
         "date": post.get("published_at"),
         "url": post_identity.linkedin_permalink(urn),
         "figures": figures,
-        "figure_sentence": (" and ".join(f"{f['value']} {f['name']}" for f in figures) + f" (read {_said_date(read.get('read_at'))})"
-                            if figures else "figures not measured"),
+        "figure_sentence": _said_figures(figures) if figures else "figures not measured",
         "because": f"Because you posted this on {_said_date(post.get('published_at'))}, {years} "
                    f"{'year' if years == 1 else 'years'} ago today · rule: On this day",
         "source_sentence": f"from your post of {_said_date(post.get('published_at'))}",
@@ -537,10 +562,10 @@ def matches_in_own_posts(conn, text: str, limit: int = 3) -> List[Dict[str, Any]
         return []
     found = []
     for row in _rows(conn, """
-            SELECT d.ref AS activity_urn, o.text, o.published_at, bm25(search_posts) AS score
+            SELECT d.ref AS activity_urn, o.text, o.published_at, bm25(search_posts) AS relevance
             FROM search_posts f JOIN search_docs d ON d.docid = f.rowid AND d.kind = 'own_post'
             JOIN own_posts o ON o.activity_urn = d.ref
-            WHERE search_posts MATCH ? ORDER BY score LIMIT ?""", (" OR ".join(match), limit)):
+            WHERE search_posts MATCH ? ORDER BY relevance LIMIT ?""", (" OR ".join(match), limit)):
         found.append({"activity_urn": row["activity_urn"], "excerpt": _excerpt(row["text"]),
                       "date": row["published_at"], "url": post_identity.linkedin_permalink(row["activity_urn"])})
     return found

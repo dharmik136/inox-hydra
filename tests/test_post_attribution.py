@@ -260,8 +260,11 @@ def test_the_whole_chain_answers_who_engaged_with_which_post(client, cleanup, co
 
     names = [e["full_name"] for e in answer["engagers"]]
     assert "Priya Raman" in names and "Tom Alvarez" in names
-    # Ordered by fit, so the person worth replying to first is first.
-    assert answer["engagers"][0]["icp_score"] >= answer["engagers"][1]["icp_score"]
+    # Newest engagement first, never by a score (cycle 4: a score is a guess
+    # about a job title). Two engagements in the same instant, which a coarse
+    # clock produces on Windows, keep the route's own tie order.
+    times = [e["interacted_at"] for e in answer["engagers"]]
+    assert times == sorted(times, reverse=True)
 
 
 # --------------------------------------------------------------------------

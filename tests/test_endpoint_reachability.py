@@ -357,9 +357,27 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # draws track 5's /api/analytics/post-field-sightings: reached 163, 47
 # unreachable.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 210
-REACHED_BY_INTERFACE = 163
-UNREACHABLE = 47
+# Cycle 4, track 5, phase 2: 173 -> 177 paths, unreachable 55 -> 59. Four new
+# paths: POST /api/analytics/page-figures, which only the extension calls
+# (own_insights.js), and GET /api/analytics/account-figures,
+# /api/analytics/content-figures and /api/v1/insights/reposts, which the
+# interface draws next. They sit in the unreachable column until it does.
+# ---------------------------------------------------------------------------
+# Integration with track 5's phase 2, measured on the merged tree: 205 paths,
+# 148 reached, 57 unreachable. The four new readings routes have no screen
+# yet; 2.9.0 draws them.
+# ---------------------------------------------------------------------------
+# Track 4 merged with release 2.8.0 (track 5's phase 2 and the integration
+# fixes), measured on the merged tree: 214 paths, 163 reached, 51 unreachable
+# (release's 205 and 148 with track 4's nine paths and its six newly reached).
+# Then 2.9.0 draws track 5's three readings routes: Analytics calls
+# /api/analytics/account-figures, and Posts calls
+# /api/analytics/content-figures and /api/v1/insights/reposts. Reached 166,
+# unreachable 48; POST /api/analytics/page-figures stays the extension's.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 214
+REACHED_BY_INTERFACE = 166
+UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

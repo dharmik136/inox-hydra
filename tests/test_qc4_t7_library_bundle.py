@@ -356,7 +356,10 @@ def test_the_tool_signs_a_file_the_studio_verifies_and_never_writes_a_key_into_t
                           capture_output=True, text=True, timeout=60)
     assert made.returncode == 0, made.stderr
     public = made.stdout.strip().splitlines()[-1].split('"')[3]
-    assert oct(os.stat(keys / "ed25519.secret").st_mode)[-3:] == "600"
+    # Owner-only where the platform has POSIX modes. Windows reports 666 for any
+    # file it can write; there the secret is guarded by the user profile's ACL.
+    if os.name != "nt":
+        assert oct(os.stat(keys / "ed25519.secret").st_mode)[-3:] == "600"
     source = tmp_path / "entries.json"
     source.write_text(json.dumps({"entries": [{k: v for k, v in e.items() if k != "author"} for e in entries()]}))
     bundle = tmp_path / "library.ilb"

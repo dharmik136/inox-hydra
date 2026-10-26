@@ -67,7 +67,7 @@ import sqlite3
 import statistics
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 REPO = os.path.realpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
 sys.path.insert(0, os.path.join(REPO, "studio", "backend"))
@@ -81,10 +81,16 @@ QUARTER = 0.25
 POOL_FROM_RANKING_AT = 8
 MIN_OPENER_WORDS = 6
 
+# The columns the snapshot always has. Every other column the source holds is
+# copied too, so the engine reads the snapshot exactly as it reads the studio:
+# a fixed list here left out `precision` when migration 28 added it, the
+# engine's newest-reading query failed on the snapshot, and every month ranked
+# nothing. A column an older database lacks is NULL in the snapshot, which is
+# how the engine reads a reading that does not say how it was read.
 POST_COLUMNS = ("activity_urn", "text", "published_at", "published_at_source", "reactions", "comments", "reposts",
                 "impressions", "first_seen_at", "last_seen_at")
 READING_COLUMNS = ("activity_urn", "observed_at", "observed_hour", "age_hours", "source", "impressions",
-                   "members_reached", "reactions", "comments", "reposts", "saves", "sends")
+                   "members_reached", "reactions", "comments", "reposts", "saves", "sends", "precision")
 
 
 @contextlib.contextmanager
@@ -119,23 +125,37 @@ def snapshot(source: sqlite3.Connection, before: Optional[str]) -> sqlite3.Conne
     """
     memory = sqlite3.connect(":memory:")
     memory.row_factory = sqlite3.Row
-    memory.execute(f"CREATE TABLE own_posts ({', '.join(POST_COLUMNS)}, PRIMARY KEY (activity_urn))")
-    memory.execute(f"CREATE TABLE post_metric_observations ({', '.join(READING_COLUMNS)})")
+    posts = _columns(source, "own_posts", POST_COLUMNS)
+    readings = _columns(source, "post_metric_observations", READING_COLUMNS)
+    memory.execute(f"CREATE TABLE own_posts ({', '.join(posts['all'])}, PRIMARY KEY (activity_urn))")
+    memory.execute(f"CREATE TABLE post_metric_observations ({', '.join(readings['all'])})")
     where_posts = "WHERE published_at IS NOT NULL" + (" AND published_at < ?" if before else "")
     where_readings = "WHERE observed_at < ?" if before else ""
     params = (before,) if before else ()
-    for row in source.execute(f"SELECT {', '.join(POST_COLUMNS)} FROM own_posts {where_posts}", params):
+    for row in (source.execute(f"SELECT {', '.join(posts['held'])} FROM own_posts {where_posts}", params)
+                if posts["held"] else ()):
         values = dict(row)
         if before:
             for column in ("reactions", "comments", "reposts", "impressions"):
                 values[column] = None
-        memory.execute(f"INSERT INTO own_posts VALUES ({', '.join('?' for _ in POST_COLUMNS)})",
-                       tuple(values[c] for c in POST_COLUMNS))
-    for row in source.execute(f"SELECT {', '.join(READING_COLUMNS)} FROM post_metric_observations {where_readings}",
-                              params):
-        memory.execute(f"INSERT INTO post_metric_observations VALUES ({', '.join('?' for _ in READING_COLUMNS)})",
-                       tuple(row))
+        memory.execute(f"INSERT INTO own_posts ({', '.join(posts['held'])}) VALUES "
+                       f"({', '.join('?' for _ in posts['held'])})", tuple(values[c] for c in posts['held']))
+    for row in (source.execute(f"SELECT {', '.join(readings['held'])} FROM post_metric_observations "
+                               f"{where_readings}", params) if readings["held"] else ()):
+        memory.execute(f"INSERT INTO post_metric_observations ({', '.join(readings['held'])}) VALUES "
+                       f"({', '.join('?' for _ in readings['held'])})", tuple(row))
     return memory
+
+
+def _columns(source: sqlite3.Connection, table: str, always: Tuple[str, ...]) -> Dict[str, List[str]]:
+    """
+    The columns a snapshot table has ("all": the ones it always has, then
+    every other column the source's table holds) and the ones copied from the
+    source ("held": those the source has), so a column the engine reads is
+    never missing from the snapshot and a column the source lacks is NULL.
+    """
+    held = [row[1] for row in source.execute(f"PRAGMA table_info({table})")]
+    return {"all": list(always) + [c for c in held if c not in always], "held": held}
 
 
 def _ranking(conn: sqlite3.Connection, moment: Optional[datetime]) -> Dict[str, Any]:

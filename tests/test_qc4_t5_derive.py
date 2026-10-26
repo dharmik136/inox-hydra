@@ -1049,7 +1049,9 @@ def test_sightings_say_how_long_each_new_field_has_gone_unread(client):
     out, fields = seen()
     assert out["post_analytics_readings"] == 4
     assert set(fields) == {"followers_gained", "profile_viewers", "link_visits", "article_views", "video_views",
-                           "in_network_pct", "out_of_network_pct", "demographics"}
+                           "in_network_pct", "out_of_network_pct", "demographics",
+                           # Phase 2: a video's watch time joins the same rule.
+                           "watch_time_seconds", "average_watch_seconds"}
     followers = fields["followers_gained"]
     assert followers["readings_since"] == 3 and followers["last_read_at"]
     assert followers["sentence"] == ("followers gained from this post: not read on any of the last 3 post analytics "
@@ -1258,7 +1260,8 @@ def test_a_daily_write_never_clears_a_column_another_writer_filled(client):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     conn = _db()
     with conn:
-        conn.execute("ALTER TABLE analytics_daily ADD COLUMN new_followers INTEGER")
+        if "new_followers" not in {r[1] for r in conn.execute("PRAGMA table_info(analytics_daily)")}:
+            conn.execute("ALTER TABLE analytics_daily ADD COLUMN new_followers INTEGER")
         conn.execute("INSERT INTO analytics_daily (date, new_followers, impressions, reactions, comments, shares, "
                      "engagement_rate) VALUES (?, 7, NULL, NULL, NULL, NULL, NULL)", (DAY,))
         conn.execute("INSERT INTO analytics_daily (date, new_followers, followers, impressions, reactions, comments, "
@@ -1341,12 +1344,13 @@ POLICY_WORDS = {
     "followers_gained": "followers gained", "profile_viewers": "profile viewers", "link_visits": "link visits",
     "article_views": "article views", "video_views": "video views",
     "in_network_pct": "inside", "out_of_network_pct": "outside your network", "demographics": "demographics",
+    "watch_time_seconds": "watch time", "average_watch_seconds": "average watch time",
 }
 
 
 def _reader_keys(source):
     keys = set()
-    for name in ("POST_METRIC_LABELS", "POST_SHARE_LABELS"):
+    for name in ("POST_METRIC_LABELS", "POST_SHARE_LABELS", "POST_DURATION_LABELS"):
         match = re.search(rf"const {name} = \[(.*?)\n  \];", source, re.DOTALL)
         assert match, f"{name} is gone from own_pages.js"
         keys |= set(re.findall(r'\["[^"]+", "([a-z_]+)"\]', match.group(1)))

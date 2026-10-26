@@ -122,6 +122,18 @@ export function PostDetail({
               {/* A figure LinkedIn wrote as 12K is about 12,000, and the detail says so. */}
               {post.approximate && post.approximate.length > 0 && <p className="studio-meta mt-1 text-[10px] text-ink-muted">ABOUT: {post.approximate.join(", ").toUpperCase()}, WHICH LINKEDIN MAY HAVE ROUNDED (SUCH AS 12K)</p>}
 
+              {/* Two facts the bridge reads beside the figures (track 5): when
+                  the post was first seen marked edited on your Activity tab,
+                  and a video's watch time from its analytics page, each with
+                  when it was read. A video whose watch time was never read
+                  says so; any other post has none to read. */}
+              {post.edited_first_seen_at && (
+                <p className="studio-meta mt-1 text-[10px] text-ink-muted">
+                  MARKED EDITED ON LINKEDIN, FIRST SEEN {formatLocalDay(post.edited_first_seen_at, "").toUpperCase()}
+                </p>
+              )}
+              <WatchTime post={post} />
+
               {post.url && <OpenThePost url={post.url} />}
 
               <section className="mt-5">
@@ -178,6 +190,33 @@ export function PostDetail({
         </div>
       </div>
     </div>
+  );
+}
+
+/** Seconds as a duration a person reads: "45 s", "12 min 5 s", "1 h 2 min". */
+function duration(seconds: number): string {
+  const whole = Math.round(seconds);
+  if (whole < 60) return `${whole} s`;
+  if (whole < 3600) return `${Math.floor(whole / 60)} min${whole % 60 ? ` ${whole % 60} s` : ""}`;
+  const minutes = Math.round((whole % 3600) / 60);
+  return `${Math.floor(whole / 3600)} h${minutes ? ` ${minutes} min` : ""}`;
+}
+
+function WatchTime({ post }: { post: PostDetailData }) {
+  const total = post.per_post?.watch_time_seconds ?? null;
+  const average = post.per_post?.average_watch_seconds ?? null;
+  if (!total && !average) {
+    return post.format === "video" ? (
+      <p className="studio-meta mt-1 text-[10px] text-ink-muted">WATCH TIME NOT READ</p>
+    ) : null;
+  }
+  const read = (total ?? average)?.read_at;
+  return (
+    <p className="studio-meta mt-1 text-[10px] text-ink-muted">
+      WATCH TIME {total ? duration(total.value).toUpperCase() : "NOT READ"} · AVERAGE{" "}
+      {average ? duration(average.value).toUpperCase() : "NOT READ"}
+      {read ? ` · READ ${formatLocalDay(read, "").toUpperCase()}` : ""}
+    </p>
   );
 }
 

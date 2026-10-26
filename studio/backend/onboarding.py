@@ -44,6 +44,14 @@ try:
 except ImportError:
     from text_cut import clip
 
+# Track 5: the one sightings sentence (results.py) and the phase 2 readers'
+# storage of the creator's own reposts and edited posts (own_insights.py).
+try:
+    from . import own_insights, results
+except ImportError:
+    import own_insights
+    import results
+
 try:
     from . import post_summary
     from . import ingest_contract
@@ -883,7 +891,8 @@ def forget_identity() -> Dict[str, Any]:
                           "audience_demographic_readings",
                           # From your record (cycle 4, track 7): what they asked, the
                           # batches built for them, their marks and their notes.
-                          "asks", "daily_view", "daily_run", "card_marks", "record_notes"):
+                          "asks", "daily_view", "daily_run", "card_marks", "record_notes",
+                          "own_reposts"):
                 conn.execute(f"DELETE FROM {table}")
             # And what LinkedIn's archive brought: connections and the record of each import.
             forget_archive(conn)
@@ -922,7 +931,7 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
     if not isinstance(posts, list):
         raise RefusedCapture("posts must be a list")
     now = _now()
-    written = skipped = 0
+    written = skipped = reposts = 0
     bound = {"post": 0, "draft": 0}
     conn = get_db()
     try:
@@ -934,6 +943,11 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
                     continue
                 urn = _text(item.get("activity_urn"), 80) or ""
                 actor = normalise_vanity(item.get("actor"))
+                # The creator's own repost (track 5, phase 2): that it is one, its
+                # date and its own figures only; never the original's (own_insights.py).
+                if item.get("own_repost") is True and _ACTIVITY_URN.match(urn):
+                    reposts += own_insights.record_own_repost(conn, urn, item)
+                    continue
                 if not _ACTIVITY_URN.match(urn) or (actor != me and actor != "me"):
                     skipped += 1
                     continue
@@ -970,6 +984,7 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
                      now, now),
                 )
                 written += 1
+                own_insights.record_edited(conn, urn, item)
                 # The counts shown on the activity page are a reading too.
                 _record_observation(conn, urn, "activity_page", counts)
                 how = _bind_to_studio(conn, urn, _text(item.get("text"), 10000), published_at_from_urn(urn))
@@ -977,7 +992,7 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
                     bound[how] += 1
     finally:
         conn.close()
-    return {"status": "success", "written": written, "skipped": skipped,
+    return {"status": "success", "written": written, "skipped": skipped, "reposts_recorded": reposts,
             "bound_to_posts": bound["post"], "bound_to_drafts": bound["draft"]}
 
 
@@ -988,7 +1003,9 @@ def ingest_own_posts(author: Any, posts: Any) -> Dict[str, Any]:
 # kind carries. Never derived from analytics_daily.followers: two posts in
 # one week share that window.
 METRIC_FIELDS = ("impressions", "members_reached", "reactions", "comments", "reposts", "saves", "sends",
-                 "followers_gained", "profile_viewers", "link_visits", "article_views", "video_views")
+                 "followers_gained", "profile_viewers", "link_visits", "article_views", "video_views",
+                 # A video's watch time and average watch time, in seconds (phase 2).
+                 "watch_time_seconds", "average_watch_seconds")
 # The share of impressions from inside and outside the creator's network, as
 # the percentage LinkedIn printed (0 to 100). A share is not a count: it is
 # stored as read and never summed.
@@ -1167,13 +1184,11 @@ UNVERIFIED_FIELDS = (
     ("in_network_pct", "the share of impressions from your network"),
     ("out_of_network_pct", "the share of impressions from outside your network"),
     ("demographics", "viewer demographics"),
+    ("watch_time_seconds", "a video's watch time"),
+    ("average_watch_seconds", "a video's average watch time"),
 )
 SIGHTINGS_MEANING = ("LinkedIn may not show this figure to every member or on every post. "
                      "If it never appears, the label may have changed.")
-
-
-def _pages(count: int) -> str:
-    return "the latest post analytics page" if count == 1 else f"any of the last {count} post analytics pages"
 
 
 def post_analytics_sightings() -> Dict[str, Any]:
@@ -1201,17 +1216,8 @@ def post_analytics_sightings() -> Dict[str, Any]:
             since = total if last is None else conn.execute(
                 "SELECT COUNT(*) FROM post_metric_observations WHERE source = 'post_analytics' AND observed_at > ?",
                 (last,)).fetchone()[0]
-            if not total:
-                sentence = f"{label}: no post analytics page read yet"
-            elif last is None:
-                sentence = (f"{label}: not read on the one post analytics page read so far" if total == 1 else
-                            f"{label}: not read on any of the {total} post analytics pages read so far")
-            elif not since:
-                sentence = f"{label}: read on the latest post analytics page"
-            else:
-                sentence = f"{label}: not read on {_pages(since)}, last read {last[:10]}"
-            fields.append({"field": field, "label": label, "last_read_at": last, "readings_since": since,
-                           "sentence": sentence})
+            fields.append({"field": field, "label": label,
+                           **results.sighting(label, total, last, since, ("post analytics page", "post analytics pages"))})
     finally:
         conn.close()
     return {"status": "success", "post_analytics_readings": total, "fields": fields, "meaning": SIGHTINGS_MEANING}

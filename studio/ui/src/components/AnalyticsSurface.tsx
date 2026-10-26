@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowUpRight, Download } from "lucide-react";
 import {
+  fetchAccountFigures,
   fetchAnalyticsBest,
   fetchAnalyticsKpis,
   fetchAnalyticsOverview,
+  type AccountFigures,
+  type AccountReading,
   type AnalyticsKpis,
   type AnalyticsPoint,
   type AnalyticsBest,
@@ -20,10 +23,11 @@ const RANGES: AnalyticsRange[] = ["7d", "30d", "90d"];
 /**
  * The measures worth plotting on their own axis, one at a time.
  *
- * Profile views are not offered: no reader on a real install writes one, so
- * the measure was a permanent "not measured", a figure the screen could
- * never answer (cycle 4, decision 8). The route still carries the column,
- * so a reader can bring it back.
+ * Profile views are not a measure: no reader on a real install writes the
+ * daily column, so the measure was a permanent "not measured" (cycle 4,
+ * decision 8). Their reader, own_insights.js, reads each as a count over the
+ * window its page names, which is not a daily figure, so AccountPanel draws
+ * them beside the chart and nothing plots them.
  */
 const METRICS = [
   { key: "impressions", label: "Impressions" },
@@ -70,6 +74,10 @@ export function AnalyticsSurface() {
   // never among the rows this page holds: the answer carries their figures
   // but not their text, and a URN names nothing a creator recognises.
   const [named, setNamed] = useState<Record<string, string>>({});
+  // Profile views and search appearances, as their pages read them, each a
+  // count over the window its page named (track 5). Read on its own, so a
+  // failure here is this panel's to say and not the page's.
+  const [account, setAccount] = useState<AccountFigures | null | "failed">(null);
   const [loadingRange, setLoadingRange] = useState(false);
   const [failed, setFailed] = useState(false);
   // Read again when the studio answers after an outage, so a screen that
@@ -110,6 +118,16 @@ export function AnalyticsSurface() {
       live = false;
     };
   }, [best, named]);
+
+  useEffect(() => {
+    let live = true;
+    fetchAccountFigures(range)
+      .then((answer) => live && setAccount(answer))
+      .catch(() => live && setAccount("failed"));
+    return () => {
+      live = false;
+    };
+  }, [range, back]);
 
   // A range change keeps the current chart on screen until the new one
   // arrives, rather than blanking the page.
@@ -263,7 +281,7 @@ export function AnalyticsSurface() {
 
         </div>
 
-        <Observations kpis={kpis} bestRead={bestRead} best={best} named={named} />
+        <Observations kpis={kpis} bestRead={bestRead} best={best} named={named} account={account} />
       </div>
     </div>
   );
@@ -364,7 +382,10 @@ function Observations({
   bestRead,
   best,
   named,
+  account,
 }: {
+  /** Profile views and search appearances in the range, or "failed" when they could not be read. */
+  account: AccountFigures | null | "failed";
   kpis: Kpis | null;
   /** Whether the engine's best and weakest came back: the last two panels say so either way. */
   bestRead: "reading" | "done" | "failed";
@@ -388,6 +409,7 @@ function Observations({
 
   return (
     <aside className="flex flex-col gap-5 lg:border-l lg:border-edge lg:pl-5">
+      <AccountPanel account={account} />
       {/* Only when there is something to read: an empty heading over nothing
           is what the rest of this screen is being cleared of. */}
       {(WHAT_CHANGED.some((line) => approx.has(line.key)) || hidden.length > 0
@@ -559,6 +581,64 @@ const WHAT_CHANGED = [
   { key: "engagements_delta_pct", label: "Engagements" },
   { key: "follower_growth", label: "Followers" },
 ] as const;
+
+/** Where an account reading was read from, in the words its page uses. */
+const ACCOUNT_PAGES: Record<string, string> = {
+  account_analytics: "your analytics dashboard",
+  profile_views: "Who viewed your profile",
+  search_appearances: "your search appearances page",
+};
+
+/**
+ * Profile views and search appearances, each as its page last showed it in
+ * the range: a count over the window that page named, never added up over
+ * the range, because two readings of "the past 90 days" overlap.
+ */
+function AccountPanel({ account }: { account: AccountFigures | null | "failed" }) {
+  const line = (label: string, readings: AccountReading[] | undefined) => {
+    const latest = readings && readings.length ? readings[readings.length - 1] : null;
+    if (!latest) return <Row label={label} value="not read in this range" muted />;
+    const value = `${latest.precision === "rounded" ? "about " : ""}${latest.value.toLocaleString()}`;
+    return (
+      <Row
+        label={label}
+        value={`${value} over ${latest.covers === "an unknown window" ? "a window the page did not name" : `the past ${latest.covers}`}`}
+        note={`read ${latest.date} from ${ACCOUNT_PAGES[latest.source] ?? latest.source}${readings && readings.length > 1 ? `, the latest of ${readings.length} readings in this range` : ""}`}
+      />
+    );
+  };
+  return (
+    <section>
+      <p className="studio-label mb-1.5">Profile views and search appearances</p>
+      {account === "failed" ? (
+        <p className="text-[12px] text-ink-muted">These could not be read.</p>
+      ) : account === null ? (
+        <p className="text-[12px] text-ink-muted">Reading.</p>
+      ) : (
+        <dl className="flex flex-col gap-1.5">
+          {line("Profile views", account.profile_views)}
+          {line("Search appearances", account.search_appearances)}
+        </dl>
+      )}
+      <p className="mt-1.5 text-[11px] leading-snug text-ink-muted">
+        Each is a count over the window its page names, read when you open that page in the bridge browser. They are
+        not daily figures, so they are not added up over the range.
+      </p>
+    </section>
+  );
+}
+
+function Row({ label, value, note, muted }: { label: string; value: string; note?: string; muted?: boolean }) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-3">
+        <dt className="text-[12px] text-ink-secondary">{label}</dt>
+        <dd className={cn("text-right text-[12px] tabular-nums", muted ? "text-ink-muted" : "text-ink-primary")}>{value}</dd>
+      </div>
+      {note && <p className="studio-meta text-[10px] text-ink-muted">{note.toUpperCase()}</p>}
+    </div>
+  );
+}
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (

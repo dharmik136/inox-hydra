@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { EmptySurface } from "./EmptySurface";
 import { PostDetail } from "./PostDetail";
 import { PublishedNotYetSeen } from "./PublishedNotYetSeen";
+import { YourOtherContent } from "./YourOtherContent";
 
 /** Settled posts with no figures at all, and how many of those came from LinkedIn's archive. */
 type Unmeasured = { settled_without_figures?: number; settled_without_figures_from_archive?: number };
@@ -273,6 +274,8 @@ export function PostsSurface({
       </div>
 
       <PublishedNotYetSeen />
+
+      <YourOtherContent />
 
       {open && <PostDetail activityUrn={open} onClose={() => setOpen(null)} onOpenLead={onOpenLead} />}
     </article>

@@ -10,7 +10,7 @@ The studio never fetches your analytics. The browser extension reads the impress
 | What you see | Why | What to do |
 | --- | --- | --- |
 | NOTHING MEASURED IN THIS RANGE on every measure | The studio holds no days at all. The range counts back from the latest stored day, so once one day exists, every range has something | Work through the checklist below |
-| **Comments** shows NOTHING MEASURED IN THIS RANGE | It is never captured, and a captured day now stores no figure for it. Profile views are not offered at all, for the same reason | Nothing to fix. This is expected |
+| **Comments** shows NOTHING MEASURED IN THIS RANGE | It is never captured, and a captured day now stores no figure for it. Profile views are not a measure on the chart either: they are counts over the window their page names, shown beside the chart under **Profile views and search appearances** | Nothing to fix. This is expected |
 | **Comments** is a flat line at 0 | Those days were captured by an earlier version, which stored 0 for comments. Days captured now store no figure | Nothing to fix. This is expected |
 | You just visited LinkedIn, but the page has not changed | Analytics reads once when you open it and again only when you change the range. It does not refresh on its own | Switch to another surface in the rail and back to **Analytics** |
 | LinkedIn showed a notice ending "Set the range to 24 hours to sync a daily figure." | The page showed a multi-day total, which the studio refuses | Set LinkedIn's range selector to the past 24 hours. The extension reads again |

@@ -27,12 +27,27 @@ The extension reads the range selector in English and in the other languages Lin
 
 Figures are read in the page's language: on a German or Italian page 8.210 is 8210, and 1,2K is 1200. Abbreviated figures such as 1.2K or 1,2 Mio. are stored as the rounded number and marked as rounded, on this page and on each post's own analytics page alike, and a post's detail on **Posts** names which of its figures were read that way. A figure the extension cannot read with certainty, such as 8.210 on a page that does not say its language, is not saved at all, rather than saved as 8. LinkedIn writes one decimal below 10K and whole thousands above, so 1.2K is anything from 1,150 to 1,249 and 23K from 22,500 to 23,499. On **Analytics** a figure or change built from one is shown with a ~, a note under the chart says how many plotted days are rounded, and a change smaller than the rounding is not shown.
 
+## What else the extension reads
+
+Besides the three cards above, the extension reads these pages when you open them, and only your own:
+
+| Page | What it keeps |
+| --- | --- |
+| Your analytics dashboard (`linkedin.com/dashboard`, or a page under `linkedin.com/analytics/creator`) | Profile views and search appearances, each with the window its card names, and new followers by day from the followers graph |
+| Who viewed your profile (`linkedin.com/me/profile-views`) | The number of profile viewers and its window. Never who they are |
+| Your search appearances (`linkedin.com/me/search-appearances`) | The number of search appearances and its window. Never who searched or where they work |
+| An article's or a newsletter's own analytics page | An article's views, impressions, members reached, reactions, comments and reposts; a newsletter's subscribers, article views, impressions, email sends and email open rate |
+| A video post's analytics page | Its watch time and average watch time, beside its other figures |
+| Your own Activity tab | That you reposted a post, when, and the repost's own figures where the page tells them apart from the original's, which are never kept; and when one of your posts was first seen marked edited |
+
+A count over a range is kept only with the range its page names, and one whose range cannot be read is not kept. A figure a page does not show is not read, never 0, and never marks the extension as having stopped reading. Profile views and search appearances are drawn on this page, beside the chart; your reposts and your articles and newsletters are on **Posts**, under the table; and a post's edited mark and a video's watch time are in its detail on **Posts**. The wording of these pages has not been checked against LinkedIn's live pages; the studio counts how many of each page's reads a figure has been missing from, and if one never appears, the label may have changed.
+
 ## Read the page
 
 - **Range**: **7d**, **30d** (the default) or **90d**, counted back from the latest day the studio holds, not from today.
 - **Measure**: **Impressions**, **Reactions**, **Comments** or **Followers**. The chart plots one per day; hover to read a day, or open **TABLE VIEW** under the chart.
 
-Profile views are not offered as a measure or a figure: nothing reads them yet, so they could only ever say "not measured".
+Profile views and search appearances are not measures on the chart: each is a count over the window its page names, such as the past 90 days, not a daily figure, so two readings overlap and are never added up over the range. Beside the chart, **Profile views and search appearances** shows the latest reading of each in the range, with its window, the day it was read and the page it was read from (your analytics dashboard, "Who viewed your profile" or your search appearances page), "about" before a figure LinkedIn rounded, and "not read in this range" when no page carried it.
 
 | Measure | Where it comes from |
 | --- | --- |

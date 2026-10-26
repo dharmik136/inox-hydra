@@ -110,7 +110,7 @@ URN = "urn:li:activity:7380000000000000001"
 # any of them changes (crm.catch_up_scores). Earliest engagement first.
 PEOPLE = [
     ("lead-founder", "Fatima Founder", "Founder at Northwind Cloud", "2026-10-01T09:00:00+00:00"),
-    ("lead-manager", "Manish Manager", "Engineering Manager at Northwind Cloud", "2026-10-02T09:00:00+00:00"),
+    ("lead-manager", "Morgan Manager", "Engineering Manager at Northwind Cloud", "2026-10-02T09:00:00+00:00"),
     ("lead-intern", "Ira Intern", "Intern", "2026-10-03T09:00:00+00:00"),
 ]
 

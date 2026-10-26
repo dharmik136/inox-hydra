@@ -2273,6 +2273,16 @@ export interface PostDetail {
   against_usual: Partial<Record<"reactions" | "comments" | "impressions", number>> | null;
   reach_and_response: ReachAndResponse | null;
   url: string | null;
+  /**
+   * LinkedIn's own per-post figures from the post's analytics page, each from
+   * the newest reading that showed it (track 5), such as watch_time_seconds
+   * and average_watch_seconds. Null when that page was never read.
+   */
+  per_post?: Record<string, { value: number; read_at: string; read_at_age_hours: number | null; precision: string | null }> | null;
+  /** When the bridge first saw the post marked edited on your Activity tab, or null. */
+  edited_first_seen_at?: string | null;
+  /** The kind of post when a source said (post_format.py): "video", "text" and so on, or "unknown". */
+  format?: string | null;
 }
 
 export async function fetchPostDetail(activityUrn: string): Promise<PostDetail> {
@@ -4152,4 +4162,74 @@ export interface PostFieldSightings {
 
 export async function fetchPostFieldSightings(): Promise<PostFieldSightings> {
   return call<PostFieldSightings>("/api/analytics/post-field-sightings");
+}
+
+
+// ---------------------------------------------------------------------------
+// The creator's own surfaces read in cycle 4 (track 5, phase 2): profile views
+// and search appearances, articles and newsletters, and their own reposts.
+// Every count keeps the window its page named; a figure a page did not show
+// is null, which the screens say as "not read", never 0.
+// ---------------------------------------------------------------------------
+
+export interface AccountReading {
+  date: string;
+  value: number;
+  /** The window the page named, such as "90d". */
+  period_label: string;
+  precision: string | null;
+  /** The page it was read from: account_analytics, profile_views or search_appearances. */
+  source: string;
+  read_at: string;
+  /** The window in words, from the route: "90 days", or "an unknown window". */
+  covers: string;
+  label: string;
+}
+
+export interface AccountFigures {
+  range_days: number;
+  from?: string;
+  to?: string;
+  profile_views: AccountReading[];
+  search_appearances: AccountReading[];
+}
+
+export async function fetchAccountFigures(range: AnalyticsRange): Promise<AccountFigures> {
+  return call<AccountFigures>(`/api/analytics/account-figures?range=${range}`);
+}
+
+export interface ContentFigure {
+  value: number;
+  read_at: string;
+  /** The window the page named, or "" for the total the page showed. */
+  period_label: string;
+  precision: string | null;
+}
+
+export interface ContentItem {
+  content_urn: string;
+  kind: "article" | "newsletter";
+  readings: Record<string, unknown>[];
+  latest: Record<string, ContentFigure>;
+}
+
+export async function fetchContentFigures(): Promise<ContentItem[]> {
+  const data = await call<{ content?: ContentItem[] }>("/api/analytics/content-figures");
+  return data.content ?? [];
+}
+
+export interface OwnRepost {
+  activity_urn: string;
+  reposted_at: string | null;
+  reactions: number | null;
+  comments: number | null;
+  reposts: number | null;
+  impressions: number | null;
+  first_seen_at: string;
+  last_seen_at: string;
+}
+
+export async function fetchOwnReposts(): Promise<OwnRepost[]> {
+  const data = await call<{ reposts?: OwnRepost[] }>("/api/v1/insights/reposts");
+  return data.reposts ?? [];
 }
