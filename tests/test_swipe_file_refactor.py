@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from app import app
 from database import get_db, init_db, seed_initial_data
-from intelligence_sync import IntelligenceSyncEngine, intelligence_sync_engine, ENGINEERING_PACK
+import hook_forms
+from hook_forms import ENGINEERING_PACK
 from migrations import _migrate_inspirations, MIGRATIONS, SCHEMA_VERSION, BASELINE_VERSION
 
 client = TestClient(app)
@@ -62,7 +63,7 @@ def test_fallback_templates_count_and_taxonomies():
 def test_intelligence_templates_endpoint_and_filtering():
     """Verifies /api/v1/intelligence/templates listing, search, and archetype filtering."""
     init_db()
-    intelligence_sync_engine.seed_offline_templates(templates=ENGINEERING_PACK)
+    hook_forms.seed_offline_templates(templates=ENGINEERING_PACK)
     res = client.get("/api/v1/intelligence/templates?limit=100")
     assert res.status_code == 200
     data = res.json()
@@ -120,10 +121,10 @@ def test_zero_em_dash_compliance_in_swipe_files():
     """Verifies strictly zero em-dashes (\\u2014) across modified swipe files and templates."""
     disallowed = "\u2014"
 
-    # Check intelligence_sync.py
-    with open(os.path.join(os.path.dirname(__file__), "..", "studio", "backend", "intelligence_sync.py"), "r", encoding="utf-8") as f:
+    # Check hook_forms.py, where the forms moved when the sync module was deleted
+    with open(os.path.join(os.path.dirname(__file__), "..", "studio", "backend", "hook_forms.py"), "r", encoding="utf-8") as f:
         content = f.read()
-        assert disallowed not in content, "Em-dash found in intelligence_sync.py"
+        assert disallowed not in content, "Em-dash found in hook_forms.py"
 
     # Check migrations.py
     with open(os.path.join(os.path.dirname(__file__), "..", "studio", "backend", "migrations.py"), "r", encoding="utf-8") as f:

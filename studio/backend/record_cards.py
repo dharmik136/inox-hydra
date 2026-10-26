@@ -87,7 +87,7 @@ ENGAGED_RECENT_DAYS = 90
 
 LABELS = ("measured", "derived", "typed", "suggested", "retrieved", "curated", "abstained")
 BLOCKS = {"working_for_you": "Working for you", "you_asked": "You asked", "you_engaged_with": "You engaged with",
-          "monday": "This week", "model": "Suggested by the model"}
+          "monday": "This week", "model": "Suggested by the model", "library": "From the Inox library"}
 
 _LINK_ONLY = re.compile(r"^\s*(?:https?://\S+\s*)+$", re.IGNORECASE)
 _DATED = re.compile(

@@ -274,9 +274,16 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # unreachable until this batch, is now saved from that screen. Total
 # 189 -> 190, reached 135 -> 137, unreachable 54 -> 53.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 190
-REACHED_BY_INTERFACE = 137
-UNREACHABLE = 53
+# Cycle 4, track 7, batch 9 (the signed library): the unsigned sync's three
+# routes are gone with intelligence_sync.py (/api/v1/intelligence/status,
+# /bundle/export and /bundle/import, none reached by the interface), and the
+# library's two are added and reached from What the studio knows
+# (/api/v1/record/library/fetch and /import). Total 190 -> 189, reached
+# 137 -> 139, unreachable 53 -> 50.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 189
+REACHED_BY_INTERFACE = 139
+UNREACHABLE = 50
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

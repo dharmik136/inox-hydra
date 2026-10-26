@@ -164,16 +164,12 @@ def open_slot_card(conn, day: date, seed: int) -> Dict[str, Any]:
     model's idea, when it arrives on the creator's first open, replaces it.
     """
     try:
-        from . import record_library
+        from . import library_bundle
     except ImportError:
-        try:
-            import record_library
-        except ImportError:
-            record_library = None
-    if record_library is not None:
-        card = record_library.match_card(conn, day, seed)
-        if card is not None:
-            return card
+        import library_bundle
+    card = library_bundle.match_card(conn, day, seed)
+    if card is not None:
+        return card
     if _model_configured(conn):
         sentence = ("An idea from your own AI provider arrives here the first time you open this section today. "
                     "Nothing is sent before you do.")

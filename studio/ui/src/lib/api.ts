@@ -3462,8 +3462,10 @@ export interface RecordLibraryState {
   entries: number;
   fetched_at: string | null;
   source: string;
+  address: string;
   contains: string;
   sends: string;
+  keys: string[];
 }
 
 export async function fetchRecordKnows(): Promise<RecordKnows> {
@@ -3551,4 +3553,14 @@ export interface RecordEvaluation {
 
 export async function fetchRecordEvaluation(): Promise<RecordEvaluation> {
   return call<RecordEvaluation>("/api/v1/record/evaluation");
+}
+
+/** The creator pressed Fetch: one request for the signed Inox library, carrying nothing of theirs. */
+export async function fetchLibraryBundle(): Promise<{ status: string; message: string }> {
+  return call("/api/v1/record/library/fetch", { method: "POST" });
+}
+
+/** A signed library file chosen by hand, verified exactly as a fetched one is. */
+export async function importLibraryBundle(text: string): Promise<{ status: string; message: string }> {
+  return call("/api/v1/record/library/import", { method: "POST", body: JSON.stringify({ text }) });
 }

@@ -67,7 +67,7 @@ try:
     from .ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
     from .crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from .rate_limiter import rate_limiter, write_actor
-    from .intelligence_sync import intelligence_sync_engine
+    from . import hook_forms
     from . import universal_search
     from .gstack_governance import gstack_engine
     from .internal_sheet import internal_sheet_manager
@@ -139,7 +139,7 @@ except ImportError:
     from ingress import IngressMessageParser, TelegramIngressDaemon, ingress_daemon
     from crm import ICPScoringEngine, ReverseCRMManager, reverse_crm
     from rate_limiter import rate_limiter, write_actor
-    from intelligence_sync import intelligence_sync_engine
+    import hook_forms
     import universal_search
     from gstack_governance import gstack_engine
     from internal_sheet import internal_sheet_manager
@@ -200,7 +200,7 @@ OPENAPI_TAGS = [
     {"name": "LinkedIn Native Scheduler", "description": "Voyager cloud pre-staging and self-healing morning grace window recovery."},
     {"name": "Enterprise Reverse CRM", "description": "Deterministic ICP scoring engine and anti-slop 1-to-1 contextual DM generation."},
     {"name": "Anti-Bot & Rate Limiting", "description": "Gaussian jitter request governor, human pacing, and single-writer WAL actor."},
-    {"name": "Intelligence Sync & Radar", "description": "Asymmetric GitHub CDN intelligence sync, ETag caching, and viral hook templates."},
+    {"name": "Intelligence Sync & Radar", "description": "The hook rail's forms: the starter forms and the opt-in engineering pack, kept on this machine."},
     {"name": "G-Stack Multi-Agent Governance", "description": "Garry Tan 6-role virtual team governance, role backlogs, and multi-gate anti-slop audits."},
     {"name": "Internal Sheet & Concept Identifier", "description": "Visual screen element inspection, bug annotations, and zero-egress internal sheet tracking."},
     {"name": "Developer Tools", "description": "Maintainer only. Screen registry, state and migration inspectors, and annotation portability. Absent unless INOX_DEV_MODE is set."}
@@ -2747,9 +2747,9 @@ def get_ingress_status():
 
 @app.get("/api/v1/intelligence/templates", tags=["Intelligence Sync & Radar"])
 def get_viral_templates(archetype: Optional[str] = None, query: Optional[str] = None, limit: int = 100):
-    """Returns ranked viral hook archetypes ordered by algorithmic velocity score."""
-    templates = intelligence_sync_engine.get_templates(archetype=archetype, query=query, limit=limit)
-    total_vaulted = intelligence_sync_engine.get_total_count()
+    """The hook rail's forms: rated ones first by the rating typed into them, the starters last."""
+    templates = hook_forms.get_templates(archetype=archetype, query=query, limit=limit)
+    total_vaulted = hook_forms.get_total_count()
     return {
         "status": "success",
         "templates": templates,
@@ -2769,42 +2769,15 @@ def set_engineering_hook_pack(req: HookPackRequest):
     author's hook forms for a software engineering audience. A new library
     holds neutral fill-in forms only.
     """
-    return intelligence_sync_engine.set_engineering_pack(req.enabled)
+    return hook_forms.set_engineering_pack(req.enabled)
 
 
-@app.get("/api/v1/intelligence/status", tags=["Intelligence Sync & Radar"])
-def get_intelligence_sync_status():
-    """Returns current ETag caching state and last sync timestamp."""
-    return intelligence_sync_engine.get_status()
-
-
-@app.get("/api/v1/intelligence/bundle/export", tags=["Intelligence Sync & Radar"])
-def export_intelligence_bundle(request: Request):
-    """Exports compiled local viral templates as an asymmetric intelligence bundle with ETag support."""
-    bundle = intelligence_sync_engine.compile_local_bundle()
-    bundle_hash_content = json.dumps({"version": bundle.get("version"), "templates": bundle.get("templates")}, sort_keys=True)
-    import hashlib
-    etag = f'"{hashlib.sha256(bundle_hash_content.encode("utf-8")).hexdigest()[:16]}"'
-    if_none_match = request.headers.get("if-none-match")
-    if if_none_match and if_none_match.strip() == etag:
-        return Response(status_code=304, headers={"ETag": etag})
-    return JSONResponse(
-        content={"status": "success", "bundle": bundle, "etag": etag},
-        headers={"ETag": etag, "Cache-Control": "public, max-age=3600"}
-    )
-
-
-class ImportBundleRequest(BaseModel):
-    bundle: Dict[str, Any]
-
-
-@app.post("/api/v1/intelligence/bundle/import", tags=["Intelligence Sync & Radar"])
-def import_intelligence_bundle(req: ImportBundleRequest):
-    """Imports an asymmetric intelligence bundle directly for air-gapped workstations."""
-    res = intelligence_sync_engine.import_local_bundle(req.bundle)
-    if isinstance(res, dict) and res.get("status") == "error":
-        raise HTTPException(status_code=400, detail=res.get("message", "Bundle import failed"))
-    return res
+# No sync status, bundle export or bundle import here any more. They served
+# intelligence_sync.py, an unsigned CDN sync that nothing called and whose
+# import replaced the creator's whole hook library with whatever file it was
+# handed. Cycle 4, track 7 deleted it (ideas report decision 10): the
+# company's library now arrives signed, into a table of its own, through
+# /api/v1/record/library (library_bundle.py).
 
 
 class GStackBacklogTaskCreate(BaseModel):

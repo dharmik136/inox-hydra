@@ -11,6 +11,7 @@ import {
 import { formatLocal, formatLocalDay } from "@/lib/time";
 import { RecordSetupFields } from "./RecordSetupFields";
 import { RecordModelSettings } from "./RecordModelSettings";
+import { RecordLibraryPanel } from "./RecordLibraryPanel";
 
 /**
  * What the studio knows: everything From your record has been told and has
@@ -184,6 +185,8 @@ export function RecordKnowsPanel() {
         </section>
 
         <RecordModelSettings state={knows.model} settings={knows.settings} onChanged={load} />
+
+        <RecordLibraryPanel state={knows.library} onChanged={load} />
 
         <section aria-labelledby="record-job-title">
           <p id="record-job-title" className="studio-label mb-2">

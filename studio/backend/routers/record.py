@@ -19,8 +19,9 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 try:
-    from .. import record_daily, record_evaluation, record_model, record_store
+    from .. import library_bundle, record_daily, record_evaluation, record_model, record_store
 except (ImportError, ValueError):
+    import library_bundle
     import record_daily
     import record_evaluation
     import record_model
@@ -151,7 +152,8 @@ def get_record_kept():
 @router.get("/api/v1/record/knows")
 def get_record_knows():
     """What the studio knows: asks, Setup fields, marks, archive records, settings and the job's state."""
-    return {**record_store.knows(), "job": record_daily.status(), "model": record_model.state()}
+    return {**record_store.knows(), "job": record_daily.status(), "model": record_model.state(),
+            "library": library_bundle.status()}
 
 
 @router.post("/api/v1/record/asks")
@@ -185,6 +187,31 @@ def put_record_setup(field: str, payload: SetupField):
 @router.put("/api/v1/record/settings")
 def put_record_settings(payload: SettingsChange):
     return _refused(lambda: record_store.set_settings(payload.changes))
+
+
+class LibraryFile(BaseModel):
+    text: str = Field(..., min_length=1, max_length=library_bundle.MAX_BYTES)
+
+
+@router.post("/api/v1/record/library/fetch")
+def post_record_library_fetch():
+    """
+    The creator pressed Fetch: one request for the signed Inox library file,
+    under the library egress category, carrying nothing of theirs.
+    """
+    answer = library_bundle.fetch()
+    if answer["status"] in ("refused", "error"):
+        raise HTTPException(status_code=400 if answer["status"] == "refused" else 502, detail=answer["message"])
+    return answer
+
+
+@router.post("/api/v1/record/library/import")
+def post_record_library_import(payload: LibraryFile):
+    """A signed library file chosen by hand, verified exactly as a fetched one is."""
+    answer = library_bundle.import_text(payload.text)
+    if answer["status"] != "updated":
+        raise HTTPException(status_code=400, detail=answer["message"])
+    return answer
 
 
 @router.get("/api/v1/record/evaluation")

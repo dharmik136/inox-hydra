@@ -1486,7 +1486,7 @@ def _migrate_record_section(cursor: sqlite3.Cursor) -> None:
         day TEXT NOT NULL,
         card_id TEXT NOT NULL,
         slot INTEGER NOT NULL,
-        block TEXT NOT NULL CHECK (block IN ('working_for_you', 'you_asked', 'you_engaged_with', 'monday', 'model')),
+        block TEXT NOT NULL CHECK (block IN ('working_for_you', 'you_asked', 'you_engaged_with', 'monday', 'model', 'library')),
         kind TEXT NOT NULL,
         label TEXT NOT NULL CHECK (label IN ('measured', 'derived', 'typed', 'suggested', 'retrieved', 'curated', 'abstained')),
         method TEXT NOT NULL,

@@ -99,7 +99,7 @@ def test_the_update_version_is_recorded_before_the_etag():
     """
     The ETag is a promise that we already know what is at that URL. Writing it
     first means a failed version write leaves the checker permanently
-    satisfied. intelligence_sync documents this ordering; updates.py had it
+    satisfied. library_bundle.py keeps this ordering; updates.py had it
     backwards.
     """
     source = open(os.path.join(REPO_ROOT, "studio", "backend", "updates.py"), encoding="utf-8").read()
