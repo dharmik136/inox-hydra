@@ -21,7 +21,7 @@ The studio never fetches your analytics. The browser extension reads the impress
 | Post rows all read 0 | The extension does not capture per-post figures | Nothing to fix. This is expected |
 
 > [!NOTE]
-> The notice "Inox Hydra: creator analytics synced to your local studio." also appears when the studio could not be reached or refused the figures. Always confirm on **Analytics**.
+> A saved day is confirmed on the extension's badge and in the side panel's header ("Captured creator analytics just now."), from the extension's own record of what the studio answered; nothing is drawn into LinkedIn's page for it. A notice on the page means something was not saved. Confirm on **Analytics** either way.
 
 ## Analytics checklist
 

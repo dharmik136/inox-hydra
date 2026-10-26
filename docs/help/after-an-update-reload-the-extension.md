@@ -49,7 +49,7 @@ You need to pair again only if the token changed or the browser lost the cookie:
 
 ## Check it
 
-1. In the bridge browser, open a LinkedIn tab and keep it in view. The extension reports its version when the page loads and then about once a minute while the tab is visible.
+1. In the bridge browser, open a LinkedIn tab. The extension reports its version when the page loads and then about once a minute while the tab is open, in view or not.
 2. In **Setup**, step 1 reads "Connected, extension 2.6.0", with your version.
 3. Open `http://127.0.0.1:8000/api/v1/health` and compare the `version` it shows. The two should match. Nothing compares them for you.
 

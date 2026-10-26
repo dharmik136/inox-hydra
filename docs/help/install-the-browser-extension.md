@@ -10,6 +10,8 @@ The extension's popup has a switch, **Read LinkedIn's network responses**. Off, 
 
 Switching it on applies to LinkedIn pages you open or reload afterwards. Switching it off stops the copying at once; a LinkedIn tab that was already open keeps the wrapper in place, doing nothing, until you reload it.
 
+The studio says which of three states it is in, in **Setup** step 1 and in the side panel's **Health** tab: "Network reading is off.", "Network reading is on and seeing N LinkedIn data calls, K matched." or "Network reading is on and matching nothing", with the number of data calls the last page made. While it is on, each LinkedIn page also counts the data calls it makes, by address and query name only, and sends the counts with its heartbeat, so the studio can name what LinkedIn calls without you opening the browser's developer tools. The sentence adds "reload that tab" when the page was opened before the switch, and "turn the switch off and on" when the browser did not register the reader.
+
 ## Which browser to use
 
 | Browser | Result |
@@ -75,11 +77,18 @@ The part of the extension that runs inside LinkedIn pages can reach only a fixed
 
 ## Check it works
 
-Open one of your posts with comments. A small notice appears on the LinkedIn page for people it has not already seen on that post since the page loaded:
+Open one of your posts with comments. A capture that worked is confirmed outside LinkedIn's page, from the extension's own record of it, with no call to the studio:
 
-- "Inox Hydra: N engager(s) on your post captured." The people are now in **Leads**. Reopen **Leads** to see them.
+- The extension's toolbar icon shows a count, the captures taken in this tab this session, on a green badge. The count clears when you open the side panel. The badge turns orange while captures are waiting for a studio that was busy or closed, or after a part of the capture reported that it could not read a page; the icon's tooltip says which.
+- The side panel's header reads, for example, "Captured an engager on your post just now." It names the kind of thing and when, never the person, and it updates the moment the next capture lands. The popup shows the same line.
+- The people are now in **Leads**. Reopen **Leads** to see them.
+
+Two notices still appear on the LinkedIn page itself, because they are things you can act on:
+
 - "Inox Hydra: N engager(s) had no profile link and were not saved."
 - "Inox Hydra: could not reach your studio, so nothing was saved." The studio is not running, or this browser was never paired.
+
+When a part of the capture cannot read a page LinkedIn has rebuilt, the side panel's header says so once per kind of page per browser session, for example "LinkedIn's feed page: cannot read commenter name. See Capture health in Setup.", and the badge turns orange. Nothing about it is drawn into LinkedIn's page.
 
 ## If it does not work
 

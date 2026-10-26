@@ -12,7 +12,7 @@ Every link in this chain has to hold:
 2. **You opened the studio once in that same browser.** Go to `http://127.0.0.1:8000` in that browser. When the studio page loads, it gives that browser a local access token, and the extension reads the token from there. Each browser keeps its own copy of the token, so opening the studio in a different browser does not help this one.
 3. **You confirmed your profile in Setup.** A lead is someone who engaged with your post, and the studio can only tell your posts from other people's once it knows who you are. Until then nothing is kept. See [Set up the studio from your own LinkedIn](set-up-the-studio-from-your-linkedin.md).
 4. **You open a LinkedIn page that shows engagement on your post.** That means a page under `/feed/` (your feed, or a single post opened from it) or a post page under `/posts/`. Commenters are read from the comments that are open on the page. People who reacted are read only when the reactions list itself is open.
-5. **A small "Inox Hydra" notice appears on the LinkedIn page.** It says how many engagers on your post were captured.
+5. **The extension's toolbar icon shows a count, and the side panel's header says what was captured.** The badge counts the captures taken in this tab this session, and the side panel reads, for example, "Captured an engager on your post just now." Nothing is drawn into LinkedIn's page for a capture that worked; see [Install the browser extension](install-the-browser-extension.md).
 6. **You reopen Leads.** The list is read when you open the surface and after you change a lead's status. It does not refresh while you are looking at it.
 
 ## What you see, and what to do
