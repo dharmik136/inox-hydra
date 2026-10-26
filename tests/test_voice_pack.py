@@ -65,11 +65,13 @@ def _confirm_creator(confirmed=True):
     conn.close()
 
 
-def _post(n, text, reactions):
+def _post(n, text, reactions, published_at=NOW):
+    """One of the creator's posts. Published at NOW it is settled: older than a week."""
     conn = _db()
     conn.execute(
-        "INSERT INTO own_posts (activity_urn, text, reactions, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?)",
-        (f"urn:li:activity:73800000000000000{n:02d}", text, reactions, NOW, NOW),
+        "INSERT INTO own_posts (activity_urn, text, reactions, published_at, first_seen_at, last_seen_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (f"urn:li:activity:73800000000000000{n:02d}", text, reactions, published_at, NOW, NOW),
     )
     conn.commit()
     conn.close()
@@ -117,6 +119,33 @@ def test_openers_are_their_best_first_lines(home):
     text = get_voice_pack(max_openers=2)["brief_section"]
     openers = text.split("drew the most reactions:\n")[1].splitlines()
     assert openers == ['- "The loud one."', '- "The middle one."']
+
+
+def test_openers_come_from_the_one_ranking_so_a_young_post_is_not_an_exemplar(home):
+    """
+    The openers ranked raw own_posts.reactions with no settled rule, so a post
+    three hours old with a burst of reactions could be the creator's best
+    opener while every other screen left it out of the ranking (cycle 4,
+    track 3: results.ranking is the one ranking, over settled posts, against
+    the creator's own median).
+    """
+    import datetime as dt
+    from results import ranking
+    from database import get_db
+    _post(1, "A quiet post.\n\nBody.", 2)
+    _post(2, "The loud one.\n\nBody.", 90)
+    _post(3, "The middle one.\n\nBody.", 40)
+    this_morning = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=3)).isoformat()
+    _post(4, "Too young to judge.\n\nBody.", 900, published_at=this_morning)
+    text = get_voice_pack(max_openers=3)["brief_section"]
+    openers = text.split("drew the most reactions:\n")[1].splitlines()
+    assert openers == ['- "The loud one."', '- "The middle one."', '- "A quiet post."'], openers
+    conn = get_db()
+    try:
+        order = ranking(conn)["order"]
+    finally:
+        conn.close()
+    assert "urn:li:activity:7380000000000000004" not in order, "the engine ranks the young post too"
 
 
 def test_the_copilot_carries_the_pack_and_says_so(home, monkeypatch):

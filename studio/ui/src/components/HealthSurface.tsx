@@ -5,6 +5,7 @@ import {
   fetchExtensionHealth,
   fetchHealthReader,
   fetchHealthReaders,
+  fetchPostFieldSightings,
   fetchSchemaStatus,
   fetchUpdateStatus,
   runUpdateCheck,
@@ -14,6 +15,7 @@ import {
   type HealthReader,
   type HealthReaderDetail,
   type HealthReaders,
+  type PostFieldSightings,
   type SchemaStatus,
   type UpdateStatus,
 } from "@/lib/api";
@@ -50,6 +52,7 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
   const [schema, setSchema] = useState<SchemaStatus | null>(null);
   const [backups, setBackups] = useState<BackupSchedule | null>(null);
   const [updates, setUpdates] = useState<UpdateStatus | null>(null);
+  const [sightings, setSightings] = useState<PostFieldSightings | null>(null);
   /** The parts of the screen whose route did not answer on the last read. */
   const [unanswered, setUnanswered] = useState<string[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -60,12 +63,13 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
   // Five routes, read together. One failing leaves the others on screen and
   // its own block saying so, rather than blanking the whole section.
   const load = useCallback(async () => {
-    const [r, e, s, b, u] = await Promise.allSettled([
+    const [r, e, s, b, u, f] = await Promise.allSettled([
       fetchHealthReaders(),
       fetchExtensionHealth(),
       fetchSchemaStatus(),
       fetchBackupSchedule(),
       fetchUpdateStatus(),
+      fetchPostFieldSightings(),
     ]);
     const missing: string[] = [];
     if (r.status === "fulfilled") setReaders(r.value);
@@ -80,6 +84,8 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
     else missing.push("backups");
     if (u.status === "fulfilled") setUpdates(u.value);
     else missing.push("updates");
+    if (f.status === "fulfilled") setSightings(f.value);
+    else missing.push("post analytics fields");
     setUnanswered(missing);
     setLoaded(true);
   }, []);
@@ -305,9 +311,9 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
                 <Row
                   label="Longest silence"
                   value={
-                    readers.heartbeats.longest_gap_minutes === null
+                    readers.heartbeats.longest_silence_minutes === null
                       ? "not measurable from one heartbeat"
-                      : `${minutes(readers.heartbeats.longest_gap_minutes)}, ending ${formatLocal(readers.heartbeats.longest_gap_ended_at)}`
+                      : `${minutes(readers.heartbeats.longest_silence_minutes)}, ending ${formatLocal(readers.heartbeats.longest_silence_ended_at)}`
                   }
                 />
                 {readers.heartbeats.versions.map((version) => (
@@ -366,15 +372,26 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
             )}
           </Block>
 
-          {/* POST ANALYTICS FIELDS (track 5, at integration). Track 5 adds a
-              route that answers, for each field the post analytics reader
-              looks for, when it was last read and how many post analytics
-              pages were read since ("not read on any of the last N post
-              analytics pages"). Its block belongs here, beside drift: a Block
-              titled "Post analytics fields", a row per field with its last
-              reading or that sentence. Nothing is drawn until that route
-              exists, because a field the studio cannot speak for must not
-              appear as read. Recorded in docs/quality/cycle4/t4-sections.md. */}
+          {/* Post analytics fields (track 5): for each figure the post
+              analytics reader added in cycle 4, when a post analytics page
+              last carried it, or on how many pages it was not read. A figure
+              LinkedIn does not show on every post is not drift, so this is
+              where one that never appears shows. The sentences are the
+              studio's own (onboarding.post_analytics_sightings). */}
+          <Block title="Post analytics fields">
+            {!sightings ? (
+              <Muted>Not answered on the last read.</Muted>
+            ) : (
+              <>
+                <ul className="flex flex-col gap-0.5 text-[12px] leading-snug text-ink-secondary">
+                  {sightings.fields.map((field) => (
+                    <li key={field.field}>{field.sentence}</li>
+                  ))}
+                </ul>
+                <p className="mt-1.5 text-[11px] leading-snug text-ink-muted">{sightings.meaning}</p>
+              </>
+            )}
+          </Block>
 
           <Block title="Database schema">
             {!schema ? (

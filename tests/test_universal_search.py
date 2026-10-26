@@ -110,7 +110,7 @@ def test_only_a_draft_is_offered_for_editing(seeded):
     """
     opens = {post["id"]: post["opens"] for post in _search("xylophonic")["groups"]["posts"]}
     assert opens[seeded["draft"]] == "composer"
-    assert opens[seeded["published"]] == "analytics", opens
+    assert opens[seeded["published"]] == "posts", opens
     assert opens[seeded["scheduled"]] == "queue", opens
 
 
@@ -161,24 +161,27 @@ def test_a_lead_is_found_by_what_they_said(seeded):
     assert by_profile and not by_profile[0]["snippet"].startswith("Commented:")
 
 
-def test_a_specimen_carries_the_id_the_swipe_file_renders():
+def test_a_specimen_carries_the_id_the_hook_rail_renders():
     """
-    Opening a result means finding it on the surface. The Swipe File keys its
-    cards by the id /api/inspirations returns, so search must return the same.
+    Opening a result means finding it on the surface. The hook rail keys its
+    forms by the id /api/v1/intelligence/templates returns (the Swipe File,
+    and the /api/inspirations route it drew from, are gone), so a specimen
+    result's id must be one of those, under the tpl- prefix the palette uses.
     """
-    items = client.get("/api/inspirations").json().get("inspirations", [])
-    rendered = {str(item["id"]) for item in items}
+    items = client.get("/api/v1/intelligence/templates?limit=200").json().get("templates", [])
+    rendered = {f"tpl-{item['id']}" for item in items}
     if not rendered:
         pytest.skip("no specimens in this sandbox")
-    # A word from a specimen the Swipe File shows. A new library holds the
-    # neutral starters only (R6, D-8), so a word from the engineering pack
-    # ("egress") matched only after another test had added that pack.
-    specimen = next(item for item in items if str(item["id"]).startswith("tpl-"))
-    word = max((w for w in specimen["content"].split() if w.isalpha()), key=len)
+    # A word from a form the rail shows. A new library holds the neutral
+    # starters only (R6, D-8), so a word from the engineering pack ("egress")
+    # matched only after another test had added that pack.
+    specimen = items[0]
+    word = max((w for w in f"{specimen['hook_text']} {specimen['pacing_style'] or ''}".split()
+                if w.isalpha()), key=len)
     found = _search(word)["groups"]["specimens"]
-    assert found, f"no specimen matched {word!r}, a word of one the Swipe File shows"
+    assert found, f"no specimen matched {word!r}, a word of one the rail shows"
     for item in found:
-        assert item["id"] in rendered, f"{item['id']} is not an id the Swipe File renders"
+        assert item["id"] in rendered, f"{item['id']} is not an id the hook rail renders"
 
 
 def test_help_is_ranked_the_way_docs_ranks_it():

@@ -15,13 +15,15 @@ Strict Invariants:
 - Every comparison carries the sample sizes and a verdict that may be "none".
 """
 
+import sqlite3
 import statistics
 from typing import Dict, Any, List, Optional, Callable, Tuple
 
 try:
-    from . import results
+    from . import post_format, results
     from .database import get_db
 except ImportError:
+    import post_format
     import results
     from database import get_db
 
@@ -34,6 +36,15 @@ DIFFERENT_PERIOD_DAYS = results.DIFFERENT_PERIOD_DAYS
 BINARY_FEATURES: List[Tuple[str, str, Callable[[str, str], bool]]] = results.BINARY_FEATURES
 different_periods = results.different_periods
 opening_line = results.opening_line
+
+# The format comparisons (cycle 4, track 5): one per format, the posts of
+# that format against the posts of every other known format. A post whose
+# format is unknown is on neither side, because counting it as "without"
+# would be a guess that it is not that format, and the coverage beside the
+# comparisons says how many posts that set aside. The sample rule, the
+# notable cut and the period guard are the seven features' own.
+FORMAT_FEATURES: List[Tuple[str, str, str]] = [
+    (f"format_{name}", post_format.LABELS[name], name) for name in post_format.FORMATS]
 
 
 def evaluate_contrast_for_posts(posts: List[Dict[str, Any]], feature_key: str) -> Dict[str, Any]:
@@ -51,14 +62,32 @@ def evaluate_contrast_for_posts(posts: List[Dict[str, Any]], feature_key: str) -
 
     key, label, test_func = feature
 
+    def has(post: Dict[str, Any]) -> bool:
+        text = post.get("text") or post.get("content") or ""
+        return test_func(text, opening_line(text))
+
+    return evaluate_feature(posts, key, label, has)
+
+
+def evaluate_feature(posts: List[Dict[str, Any]], key: str, label: str,
+                     has: Callable[[Dict[str, Any]], bool]) -> Dict[str, Any]:
+    """
+    One form, compared: the posts that have it against those that do not, by
+    median reactions, under the engine's rules. Abstains below
+    MIN_ARM_SAMPLE_SIZE a side with both counts shown, answers "none" through
+    results.difference, and marks two sides that come from different periods.
+
+    `has` decides the form for one post. The seven binary features are one
+    kind of form; a creator's own topic is another
+    (evidence_briefing.topic_forms), compared by these same rules rather than
+    by a second copy of them.
+    """
     with_it: List[float] = []
     without: List[float] = []
     with_dates: List[float] = []
     without_dates: List[float] = []
 
     for p in posts:
-        text = p.get("text") or p.get("content") or ""
-        opening = opening_line(text)
         rxn = p.get("reactions")
         if rxn is None:
             continue
@@ -68,7 +97,7 @@ def evaluate_contrast_for_posts(posts: List[Dict[str, Any]], feature_key: str) -
             continue
 
         when = results.timestamp(p.get("published_at"))
-        if test_func(text, opening):
+        if has(p):
             with_it.append(rxn_float)
             if when is not None:
                 with_dates.append(when)
@@ -77,6 +106,16 @@ def evaluate_contrast_for_posts(posts: List[Dict[str, Any]], feature_key: str) -
             if when is not None:
                 without_dates.append(when)
 
+    return _verdict(key, label, with_it, without, with_dates, without_dates)
+
+
+def _verdict(key: str, label: str, with_it: List[float], without: List[float],
+             with_dates: List[float], without_dates: List[float]) -> Dict[str, Any]:
+    """
+    What a split of posts into two arms may say: abstain below
+    MIN_ARM_SAMPLE_SIZE per arm, flag two arms from different periods, and
+    otherwise results.difference's verdict, which may be "none".
+    """
     n_with = len(with_it)
     n_without = len(without)
 
@@ -135,6 +174,42 @@ def evaluate_contrast_for_posts(posts: List[Dict[str, Any]], feature_key: str) -
     }
 
 
+def evaluate_format_contrast(posts: List[Dict[str, Any]], name: str) -> Dict[str, Any]:
+    """
+    One format against every other known format, over posts that carry a
+    "format" and "reactions". Posts of unknown format are set aside and
+    counted (n_unknown); the verdict is _verdict's, the seven features' own.
+    """
+    feature = next((f for f in FORMAT_FEATURES if f[2] == name), None)
+    if not feature:
+        return {"status": "unknown_feature", "key": f"format_{name}", "min_required": MIN_ARM_SAMPLE_SIZE}
+    key, label, _name = feature
+    with_it: List[float] = []
+    without: List[float] = []
+    with_dates: List[float] = []
+    without_dates: List[float] = []
+    unknown = 0
+    for p in posts:
+        try:
+            rxn = float(p.get("reactions"))
+        except (TypeError, ValueError):
+            continue
+        if p.get("format") not in post_format.FORMATS:
+            unknown += 1
+            continue
+        when = results.timestamp(p.get("published_at"))
+        if p["format"] == name:
+            with_it.append(rxn)
+            if when is not None:
+                with_dates.append(when)
+        else:
+            without.append(rxn)
+            if when is not None:
+                without_dates.append(when)
+    return {**_verdict(key, label, with_it, without, with_dates, without_dates), "format": name,
+            "n_unknown": unknown}
+
+
 def compute_all_contrasts(read: Optional[Dict[str, Dict[str, Any]]] = None) -> Dict[str, Any]:
     """
     Computes all contrasts against settled posts in SQLite.
@@ -156,6 +231,14 @@ def compute_all_contrasts(read: Optional[Dict[str, Dict[str, Any]]] = None) -> D
         # screen rest on the same reading of each post.
         posts = [dict(r, **{metric: (read.get(r["activity_urn"]) or {}).get(metric)
                             for metric in ("reactions", "comments", "impressions")}) for r in rows]
+        # Every post for the format comparisons, captionless ones too: an
+        # image or a document posted with no words is still that format,
+        # where the seven features read the text and so skip it.
+        try:
+            format_rows = conn.execute("SELECT activity_urn, published_at, format FROM own_posts").fetchall()
+        except sqlite3.OperationalError:
+            format_rows = []
+        format_posts = [dict(r, reactions=(read.get(r["activity_urn"]) or {}).get("reactions")) for r in format_rows]
     finally:
         conn.close()
 
@@ -164,10 +247,23 @@ def compute_all_contrasts(read: Optional[Dict[str, Dict[str, Any]]] = None) -> D
 
     contrasts = [evaluate_contrast_for_posts(settled, key) for key, _label, _test in BINARY_FEATURES]
 
+    settled_formats = [p for p in format_posts if results.is_settled(p.get("published_at"), settle["hours"])
+                       and p.get("reactions") is not None]
+    known = [p for p in settled_formats if p.get("format") in post_format.FORMATS]
+    by_format: Dict[str, int] = {}
+    for p in known:
+        by_format[p["format"]] = by_format.get(p["format"], 0) + 1
+
     return {
         "status": "success",
         "settled_posts_count": len(settled),
         "settled_after": settle,
         "min_arm_size": MIN_ARM_SAMPLE_SIZE,
-        "contrasts": contrasts
+        "contrasts": contrasts,
+        "format_contrasts": [evaluate_format_contrast(settled_formats, name) for name in post_format.FORMATS],
+        # How many settled posts the format comparisons could use: a post
+        # of unknown format is on neither side of any of them.
+        "format_coverage": {"settled_posts": len(settled_formats), "format_known": len(known),
+                            "format_unknown": len(settled_formats) - len(known),
+                            "by_format": {name: by_format[name] for name in post_format.FORMATS if name in by_format}},
     }

@@ -15,11 +15,13 @@ The posts are a table, one row each, with columns for the post, its date (for ex
 - **Sort** offers newest, oldest, most reactions, most impressions and most comments.
 - The count reads, for example, `1-20 of 1,417`, with **Previous** and **Next** and PAGE 1 OF 71. Twenty rows are shown at a time.
 
-Each figure on a settled row is followed by how it compares with your usual, for example "55 REACTIONS (1.8x)". Green is at least 1.2 times your usual, orange is 0.8 times or less. A post that has not settled yet is marked **STILL GROWING** and not compared, because its numbers are still arriving. Reach and response are given as percentiles against your other posts, for example `p72/p48`, or say the post was not read at a comparable age.
+Each figure on a settled row is followed by how it compares with your usual, for example "55 REACTIONS (1.8x)". Green is at least 1.25 times your usual, orange is 0.8 times or less, and anything between is no difference your posts can separate, so it is not coloured. A post that has not settled yet is marked **STILL GROWING** and not compared, because its numbers are still arriving. Reach and response are given as percentiles against your other posts, for example `p72/p48`, or say the post was not read at a comparable age.
 
 The settled posts furthest above your usual reactions are marked **WORTH REPURPOSING**, and the ones furthest below **UNDERPERFORMED**.
 
-Click a post to see the people the studio captured engaging with it. Click a name to open their dossier in **Leads**. **CONVERSATIONS** counts the people from that post whose lead status you moved to **Connected** or **Meeting Booked**. If a post shows nobody, open it with **Open the post**; its commenters are read when it opens in the bridge browser.
+Click a post to see the people the studio captured engaging with it. Click a name to open their dossier in **Leads**. **CONVERSATIONS** counts the people from that post whose lead status you moved to **Connected** or **Meeting Booked**. If a post shows nobody, open it with **Open the post**; its commenters are read when it opens in the bridge browser. Reactions older than 24 months are kept as counts once the studio folds them (see [Choose what the studio keeps](choose-what-the-studio-keeps.md)), so the detail can name fewer people than the row counts; it says how many more are kept only as a count.
+
+Under the table, **Published here, not yet seen on LinkedIn** lists any post marked published in the studio that the bridge has not read on LinkedIn yet, such as one sent with **Send to LinkedIn**. It has no figures or people until the bridge reads it, from your posts page in the bridge browser, and then it moves into the table. The group is not shown when there are none.
 
 ## Patterns
 
@@ -29,17 +31,18 @@ The forms compared are: a short opening line (60 characters or fewer), an openin
 
 When most posts on one side are from a different year than the other, the line is moved under **Mixed up with when you posted**. Your account and audience were different then, so the difference may be about the time rather than the form.
 
-Each form is compared once. A line the evidence check still counts as short of data ends in **EARLY**: the difference may not hold as more posts arrive. Only a comparison that passes that same check, from the same period, is passed to the copilot as evidence.
+Each form is compared once, by the studio's contrast engine. The lines are the same comparisons the Composer's Evidence panel is built from, so a line this screen shows as a difference is one the Evidence panel shows too, and a form the engine has too few posts for is listed as not enough posts rather than shown. A form whose posts without it have a median of 0 reactions has no ratio to compare, and is listed under NO RATIO CAN BE MEASURED instead.
 
 Under the comparisons, **How your posts settle** draws the share of a post's final figures it had reached by each age, measured from your own readings. Where an age has too few readings to measure, it says so instead of drawing a line.
 
-Under **Cadence**, **POSTS BY MONTH** draws one bar per month and says how many posts the tallest bar stands for.
 
-**Which topics bring qualified pipeline** groups your posts by the words and hashtags that recur across your own posts, up to six of them; a post goes under the first it mentions, and one that mentions none goes under **Other posts**. It is a keyword grouping, not a reading of what a post means. For each topic it counts the people captured on its posts, each person once, how many of them are qualified, and **Share qualified**, the qualified share of those people, which reads "not measured" when nobody was captured. The Obsidian export's `Topics/` notes use the same grouping.
+**Your topics, compared the same way** takes the words and hashtags that recur across your own posts, up to six of them, and compares each one like a form: your settled posts that mention it against those that do not, by median reactions, with both counts, under the same rules and the same number of posts a side as the forms. A topic with too few posts on either side is listed as not enough posts, and one whose two sides come mostly from different years is moved under **Mixed up with when you posted**. A post that mentions two topics counts for both. It is a keyword match, not a reading of what a post means; the Obsidian export's `Topics/` notes use the same words.
+
+Patterns no longer counts qualified leads by topic. A lead's tier is a guess from their job title, and the gap between topics was smaller than the gap between two posts of one topic, so that table ranked noise. Who each post brought is on **Posts**.
 
 These are differences between your posts, not causes. Treat a large one as something to try.
 
-**Cadence**, on the same screen, gives how many posts you have made, days since your last one, your usual gap between posts, how much of the next 14 days of queue slots is filled, your longest gap, posts per month and posts per weekday. It does not name a best day or time: you chose the days you posted on, and a few posts per day cannot separate the day from everything else about those posts.
+How steadily you post is on the **Queue**, under **Against your own rhythm**, beside the week it is about; see [Use the Queue to plan your posting times](how-the-queue-works.md).
 
 ## Outbound
 

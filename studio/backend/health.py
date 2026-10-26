@@ -101,8 +101,8 @@ def _heartbeats(conn, since: str, window_days: int) -> Dict[str, Any]:
         "last_seen_at": last,
         "versions": versions,
         "page_kinds": page_kinds,
-        "longest_gap_minutes": round(gap["gap"]) if gap else None,
-        "longest_gap_ended_at": gap["seen_at"] if gap else None,
+        "longest_silence_minutes": round(gap["gap"]) if gap else None,
+        "longest_silence_ended_at": gap["seen_at"] if gap else None,
     }
 
 

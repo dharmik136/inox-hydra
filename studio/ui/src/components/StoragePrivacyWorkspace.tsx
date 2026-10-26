@@ -403,7 +403,7 @@ function Rules({
                       </option>
                     ))}
                   </select>
-                  <span className="text-[13px] text-ink-secondary">then the last of each day.</span>
+                  <span className="text-[13px] text-ink-secondary">then the first and the last of each day.</span>
                   <span className="studio-meta text-ink-muted">DEFAULT {defaults.readings_days} DAYS</span>
                 </div>
               )}

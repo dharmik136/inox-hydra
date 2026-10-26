@@ -261,14 +261,14 @@ def test_heartbeats_say_how_many_which_versions_and_the_longest_silence(client):
     versions = {v["extension_version"]: v for v in beats["versions"]}
     assert set(versions) == {"2.6.0", "2.7.0"}
     assert versions["2.6.0"]["count"] == 2
-    assert beats["longest_gap_minutes"] == 180
-    assert beats["longest_gap_ended_at"] == (base + timedelta(hours=3, minutes=1)).isoformat()
+    assert beats["longest_silence_minutes"] == 180
+    assert beats["longest_silence_ended_at"] == (base + timedelta(hours=3, minutes=1)).isoformat()
 
 
 def test_no_heartbeat_is_said_rather_than_counted_as_a_gap_of_zero(client):
     beats = client.get("/api/v1/bridge/readers").json()["heartbeats"]
     assert beats["count"] == 0
-    assert beats["longest_gap_minutes"] is None
+    assert beats["longest_silence_minutes"] is None
     assert beats["versions"] == []
 
 

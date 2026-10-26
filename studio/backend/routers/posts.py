@@ -43,6 +43,7 @@ try:
     from ..linkedin_client import linkedin_client
     from .. import post_identity
     from .. import post_summary
+    from ..text_cut import clip
 except (ImportError, ValueError):
     from database import get_db
     from formatters import (
@@ -74,6 +75,7 @@ except (ImportError, ValueError):
     from linkedin_client import linkedin_client
     import post_identity
     import post_summary
+    from text_cut import clip
 
 router = APIRouter()
 
@@ -142,6 +144,12 @@ DRAFT_CHANGED_ELSEWHERE = "This draft was changed in another window"
 
 class ReschedulePayload(BaseModel):
     scheduled_for: str
+    # The state the caller read the post in. When given, the post is moved
+    # only if it is still in that state at the moment of the write: the
+    # Queue's Queue the newest draft sends "draft", so a screen that is up to
+    # 30 seconds stale cannot move a post queued since or requeue one
+    # published since (review round 2, S5).
+    expected_status: Optional[str] = Field(None, max_length=20)
 
 
 class FormatRequest(BaseModel):
@@ -216,7 +224,14 @@ def list_posts(status: Optional[str] = None, limit: Optional[int] = None):
             rows.append(d)
         if status and capped is not None:
             rows.reverse()
-        return {"status": "success", "posts": rows}
+        # How many posts the status holds, beside the rows asked for, so a
+        # screen that says how many drafts are waiting reads one row rather
+        # than every draft (259 KB on a three year install).
+        if status:
+            total = cursor.execute("SELECT COUNT(*) FROM posts WHERE status = ?", (status,)).fetchone()[0]
+        else:
+            total = cursor.execute("SELECT COUNT(*) FROM posts").fetchone()[0]
+        return {"status": "success", "posts": rows, "total": total}
     finally:
         conn.close()
 
@@ -384,7 +399,35 @@ def reschedule_post(post_id: str, payload: ReschedulePayload):
             raise HTTPException(status_code=400, detail=cadence_val["error"])
 
         normalized_sched = normalize_datetime_to_utc_iso(payload.scheduled_for) or payload.scheduled_for
-        cursor.execute("UPDATE posts SET scheduled_for = ?, status = 'scheduled' WHERE id = ?", (normalized_sched, post_id))
+        # One conditional UPDATE, not the read above and then a write: the
+        # post moves only if, at this moment, it is in the state the caller
+        # expects, and a published or sent post is never put back in the
+        # queue, whoever asks. It used to set any post to scheduled, so a
+        # stale screen could requeue a post already published, which then
+        # came due and asked to be posted a second time.
+        if payload.expected_status:
+            cursor.execute(
+                "UPDATE posts SET scheduled_for = ?, status = 'scheduled' WHERE id = ? AND status = ?",
+                (normalized_sched, post_id, payload.expected_status))
+        else:
+            cursor.execute(
+                "UPDATE posts SET scheduled_for = ?, status = 'scheduled' "
+                "WHERE id = ? AND status NOT IN ('published', 'sent')",
+                (normalized_sched, post_id))
+        if cursor.rowcount == 0:
+            conn.rollback()
+            now = conn.execute("SELECT status FROM posts WHERE id = ?", (post_id,)).fetchone()
+            status_now = now["status"] if now else None
+            if status_now is None:
+                detail = "This post was removed since this screen read it, so nothing was moved."
+            elif payload.expected_status == "draft":
+                became = "published" if status_now in ("published", "sent") else "queued"
+                detail = f"It is no longer a draft: it was {became} since this screen read it, so it was left as it is."
+            elif status_now in ("published", "sent"):
+                detail = "This post is already published, so it was not put back in the queue."
+            else:
+                detail = f"This post is no longer {payload.expected_status}, so it was left as it is."
+            raise HTTPException(status_code=409, detail=detail)
         conn.commit()
     finally:
         conn.close()
@@ -635,6 +678,72 @@ def bind_post_urn(req: BindUrnRequest):
         conn.close()
 
 
+@router.get("/api/v1/posts/published-not-seen", tags=["Post Identity"])
+def list_published_not_seen():
+    """
+    Posts marked published here that the bridge has not seen on LinkedIn yet.
+
+    Posts lists publications (own_posts), and these have none: a post sent to
+    LinkedIn is marked published by the scheduler at its time, and is recorded
+    as a publication only once the bridge reads it on LinkedIn; a post marked
+    published before the studio kept publication records has none either.
+    Analytics' post table listed them beside the LinkedIn posts, and when the
+    table moved to Posts they went onto no list (review round 2, B2 b). A post
+    published with I posted it has its publication record from that moment,
+    so it is in Posts' table and not here.
+    """
+    conn = get_db()
+    try:
+        has_post_id = any(r[1] == "post_id" for r in conn.execute("PRAGMA table_info(own_posts)"))
+        held = conn.execute("SELECT activity_urn, " + ("post_id" if has_post_id else "NULL") + " FROM own_posts").fetchall()
+        rows = conn.execute(
+            "SELECT id, content, published_at, activity_urn FROM posts WHERE status = 'published' "
+            "ORDER BY COALESCE(published_at, created_at) DESC, id").fetchall()
+    finally:
+        conn.close()
+    publications = {row[0] for row in held}
+    by_post = {row[1] for row in held if row[1]}
+    # The same post in another of LinkedIn's namespaces is the same post.
+    held_ids = {post_identity.activity_id(row[0]) for row in held} - {""}
+    unseen = []
+    for row in rows:
+        urn = row["activity_urn"]
+        if row["id"] in by_post or (urn and (urn in publications or post_identity.activity_id(urn) in held_ids)):
+            continue
+        unseen.append({"id": row["id"], "excerpt": clip(" ".join((row["content"] or "").split()), 140),
+                       "published_at": row["published_at"]})
+    return {"status": "success", "count": len(unseen), "posts": unseen}
+
+
+def _publication_only(conn, identifier: str) -> Optional[Dict[str, Any]]:
+    """
+    A post the studio holds only as a publication, by its URN, or None.
+
+    A post first captured after migration 26 has no posts row: the migration
+    gave one to every publication it found, and the own-posts ingest binds a
+    capture only to a studio record that already matches it. resolve() needs
+    that row, so this route answered 404 for every such post, and Posts' detail
+    said nobody was captured beside a row that counted the post's people. The
+    people are filed under the URN, which is all this route reads, as the
+    attribution route always read them. Track 1 heals the missing rows; this
+    is the defence in depth. A URN no publication carries is still not found.
+    """
+    urn = post_identity.canonical_urn(identifier)
+    if not urn or post_identity.is_local_urn(urn):
+        return None
+    held = [row[0] for row in conn.execute("SELECT activity_urn FROM own_posts WHERE activity_urn = ?", (urn,))]
+    wanted = post_identity.activity_id(urn)
+    if not held and wanted:
+        # The same post written in another of LinkedIn's namespaces
+        # (urn:li:share:N in the archive, urn:li:activity:N on its page).
+        held = [row[0] for row in conn.execute(
+            "SELECT activity_urn FROM own_posts WHERE activity_urn LIKE ?", (f"%:{wanted}",))
+            if post_identity.activity_id(row[0]) == wanted]
+    if not held:
+        return None
+    return {"post_id": None, "publication_urn": held[0], "engagement_urns": list(dict.fromkeys([urn, *held]))}
+
+
 @router.get("/api/v1/posts/{post_id}/engagers", tags=["Post Identity"])
 def get_post_engagers(post_id: str):
     """
@@ -650,7 +759,7 @@ def get_post_engagers(post_id: str):
     """
     conn = get_db()
     try:
-        ref = post_identity.resolve(conn, post_id)
+        ref = post_identity.resolve(conn, post_id) or _publication_only(conn, post_id)
         if not ref:
             raise HTTPException(status_code=404, detail="No such post")
 
@@ -659,6 +768,7 @@ def get_post_engagers(post_id: str):
                 "status": "unbound",
                 "post_id": ref["post_id"],
                 "engagers": [],
+                "folded": {"people": 0, "reactions": 0},
                 "message": "This post has no LinkedIn URN yet. Open it on LinkedIn once to bind it.",
             }
 
@@ -668,9 +778,14 @@ def get_post_engagers(post_id: str):
         # and leads.id is TEXT, so a join written l.id = i.lead_id applies
         # numeric affinity and the leads primary key cannot serve it. Written
         # that way this read scanned all 49,142 leads (7.66 ms for one post of
-        # three years); by the index it is 0.12 ms, for the same rows in the
-        # same order. The last two sort keys are the order the old scan met
-        # rows in.
+        # three years); by the index it is 0.12 ms.
+        #
+        # Newest engagement first. This answered ORDER BY l.icp_score DESC,
+        # so the Posts detail listed a post's people by a keyword guess about
+        # their job titles, which the product says it does not do
+        # (today.py; tests/test_no_ranking_of_people_by_score.py). When
+        # someone engaged is a fact. The last two keys break ties the way the
+        # old scan met rows.
         cursor.execute(
             f"""
             SELECT l.id, l.full_name, l.name, l.headline, l.company,
@@ -678,11 +793,20 @@ def get_post_engagers(post_id: str):
                    i.interaction_type, i.comment_text, i.interacted_at
             FROM lead_interactions i {post_summary.LEAD_JOIN}
             WHERE i.post_urn IN ({', '.join('?' for _ in ref['engagement_urns'])})
-            ORDER BY l.icp_score DESC, l.rowid, i.id
+            ORDER BY i.interacted_at DESC, l.rowid, i.id
             """,
             ref["engagement_urns"],
         )
         engagers = [dict(r) for r in cursor.fetchall()]
+        # The people the retention job folded into counts: reactions older
+        # than 24 months, from people who did nothing else on the post
+        # (retention.py). The Posts row counts them among the post's people
+        # and they have no names here, so the detail says how many. The
+        # Analytics drawer said it until its table moved to Posts (cycle 4).
+        folded = {"people": 0, "reactions": 0}
+        for entry in post_summary.folded(conn, ref["engagement_urns"]).values():
+            folded["people"] += int(entry.get("people") or 0)
+            folded["reactions"] += int(entry.get("reactions") or 0)
     finally:
         conn.close()
 
@@ -692,4 +816,5 @@ def get_post_engagers(post_id: str):
         "activity_urn": ref["publication_urn"],
         "count": len(engagers),
         "engagers": engagers,
+        "folded": folded,
     }

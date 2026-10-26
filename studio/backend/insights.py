@@ -581,7 +581,7 @@ def patterns_overview() -> Dict[str, Any]:
             "SELECT activity_urn, text, published_at FROM own_posts WHERE text IS NOT NULL")]
         # Left out because no reactions were ever read for them, as for every
         # post imported from LinkedIn's archive. Not because of their age.
-        unread = [dict(r) for r in conn.execute(
+        held = [dict(r) for r in conn.execute(
             "SELECT activity_urn, published_at, published_at_source FROM own_posts")]
     finally:
         conn.close()
@@ -591,7 +591,7 @@ def patterns_overview() -> Dict[str, Any]:
 
     settled = [p for p in posts if results.is_settled(p["published_at"], settle["hours"])
                and reactions_of(p) is not None]
-    unread = [p for p in unread if results.is_settled(p["published_at"], settle["hours"])
+    unread = [p for p in held if results.is_settled(p["published_at"], settle["hours"])
               and reactions_of(p) is None]
 
     found, too_few = [], []
@@ -625,6 +625,10 @@ def patterns_overview() -> Dict[str, Any]:
     found.sort(key=lambda e: abs((e["ratio"] or 1) - 1), reverse=True)
     return {
         "status": "success",
+        # How many of the creator's posts the studio holds at all, so Patterns
+        # can say none are imported without reading the cadence payload, which
+        # it fetched for this one count once its Cadence block moved to Queue.
+        "posts_held": len(held),
         "posts_compared": len(settled),
         "settled_without_reactions": len(unread),
         "settled_without_reactions_from_archive": sum(1 for p in unread if p["published_at_source"] == "archive"),

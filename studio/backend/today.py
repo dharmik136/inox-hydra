@@ -32,9 +32,10 @@ except ImportError:
     from text_cut import clip
 
 try:
-    from . import onboarding, post_identity, post_summary, replies, results
+    from . import desk_requests, onboarding, post_identity, post_summary, replies, results
     from .database import get_db
 except ImportError:
+    import desk_requests
     import onboarding
     import post_identity
     import post_summary
@@ -60,7 +61,9 @@ MIN_COMPARISONS = 3
 
 COMPARED_METRICS = ("impressions", "reactions", "comments")
 
-# Due posts listed on Today; the Queue lists every one.
+# Due posts listed on Today, which is a summary. The Queue, whose job is to
+# show what is due, asks due_posts for every one (limit=None): both callers
+# used this limit, so a creator with eleven due posts saw ten on the Queue.
 DUE_LIMIT = 10
 
 
@@ -142,6 +145,21 @@ def _latest_post(conn) -> Optional[Dict[str, Any]]:
         "analytics_url": (f"https://www.linkedin.com/analytics/post-summary/{latest['activity_urn']}/"
                           if post_identity.linkedin_permalink(latest["activity_urn"]) else None),
     }
+
+
+def _movement(conn, latest: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Whether the latest post is still moving, as readings with their count,
+    from the one engine: "+N since the reading K hours ago, over M readings
+    on its analytics page". results.movement abstains with one reading, says
+    "about" when a reading was rounded, says when two rounded readings cannot
+    separate a change from their rounding, and names what is usual at this
+    age only where the settle curve rests on enough posts. Nothing here is
+    computed on this screen.
+    """
+    if not latest:
+        return None
+    return results.movement(conn, latest["activity_urn"])
 
 
 def _marked_published(conn, latest: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
@@ -249,13 +267,14 @@ def _missed(note: Optional[Dict[str, Any]], scheduled_for: Optional[str]) -> Opt
             "late_minutes": late if isinstance(late, (int, float)) else None}
 
 
-def due_posts(conn, limit: int = DUE_LIMIT) -> List[Dict[str, Any]]:
+def due_posts(conn, limit: Optional[int] = DUE_LIMIT) -> List[Dict[str, Any]]:
     """
     Queued posts whose time has come, oldest first, with the whole text for
     Copy text, and why one was missed when it was: the machine was asleep or
     the studio was closed at its time, noticed this late. This is the one
     place that reads the due status; Today and the Queue both call it, so a
-    creator sees the same list and the same reason on either screen.
+    creator sees the same list and the same reason on either screen. Today
+    asks for the first DUE_LIMIT; the Queue asks for every one (limit=None).
     """
     try:
         from .scheduler import native_scheduler
@@ -270,7 +289,7 @@ def due_posts(conn, limit: int = DUE_LIMIT) -> List[Dict[str, Any]]:
              "missed": _missed(missed.get(r["id"]), r["scheduled_for"])}
             for r in conn.execute(
                 "SELECT id, content, scheduled_for FROM posts WHERE status = 'due' "
-                "ORDER BY scheduled_for LIMIT ?", (limit,))]
+                "ORDER BY scheduled_for LIMIT ?", (-1 if limit is None else limit,))]
 
 
 def _queue(conn) -> Dict[str, Any]:
@@ -336,10 +355,46 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
         if not recent:
             return {"action": "open", "url": latest["analytics_url"],
                     "reason": "Your latest post is in its first three days and its figures were not read in the last 12 hours."}
+    asked = _phone_request_rule(conn)
+    if asked:
+        return asked
     if latest:
         return {"action": "open", "url": latest["url"],
                 "reason": "Opening your latest post picks up anyone who has commented since."}
     return {"action": "setup", "reason": "No post of yours has been imported yet."}
+
+
+def _phone_request_rule(conn) -> Optional[Dict[str, Any]]:
+    """
+    The oldest of the creator's own posts the phone asked the desk to read,
+    as the one page to open, or None when nothing is asked (cycle 4, track 6).
+
+    Sits after the rules that block everything (identity, the bridge, drift,
+    the history) and after the latest post's first-hours reading when that
+    is due, and ahead of the rest, because the creator asked for it: a post
+    seen moving on the phone is read at the desk, where the extension reads
+    the real page. Only the creator's own posts are ever open; a link to
+    anything else was refused when it arrived and is never offered here.
+    Settling first closes what has since been read, and what waited a week,
+    and Today's Not now dismisses one.
+    """
+    if not desk_requests.open_count(conn):
+        return None
+    desk_requests.settle(conn)
+    while True:
+        request = desk_requests.oldest_open(conn)
+        if not request:
+            return None
+        url = desk_requests.analytics_url(request["activity_urn"])
+        if desk_requests.known_post(conn, request["activity_urn"]) and url:
+            break
+        # The post was forgotten since it was asked for: not one the studio holds.
+        desk_requests.close_refused(conn, request["id"])
+    asked = {"id": request["id"], "activity_urn": request["activity_urn"], "asked_at": request["asked_at"],
+             "source": request["source"]}
+    return {"action": "open", "url": url,
+            "reason": "You asked from your phone to read this post's analytics.",
+            "phone_request": asked}
 
 
 # What the demo cleanup removed, written by database.clean_up_demo_data with
@@ -398,6 +453,8 @@ def today_brief() -> Dict[str, Any]:
     conn = get_db()
     try:
         latest = _latest_post(conn) if state["steps"]["identity"] else None
+        if latest:
+            latest["movement"] = _movement(conn, latest)
         marked = _marked_published(conn, latest)
         reply_to = _reply_to(conn) if state["steps"]["identity"] else []
         # All the comments waiting, which Replies lists; Today shows five people.
@@ -429,4 +486,6 @@ def today_brief() -> Dict[str, Any]:
         "queue": queue,
         "open_next": open_next,
         "demo_cleanup": demo_cleanup,
+        # The archive age nudge, from archive_state, the same sentence Setup says.
+        "archive_age": state["archive"].get("age_nudge"),
     }

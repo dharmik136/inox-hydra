@@ -56,12 +56,13 @@ The studio opens on **Setup** until its required steps are done (the bridge hear
 
 ## Find your way around
 
-The rail on the left lists the sixteen sections, in five groups: **Now**, **Make**, **Learn**, **Bridge** and **Studio**. In a window 1200 pixels wide or more it shows each section's name under its group; in a narrower window it shows icons, and hovering an icon, or moving to it with **Tab**, shows its name. The group names are headings, not buttons.
+The rail on the left lists the seventeen sections, in five groups: **Now**, **Make**, **Learn**, **Bridge** and **Studio**. In a window 1200 pixels wide or more it shows each section's name under its group; in a narrower window it shows icons, and hovering an icon, or moving to it with **Tab**, shows its name. The group names are headings, not buttons.
 
 | Rail label | Group | What it is for |
 | --- | --- | --- |
 | Today | Now | Who to reply to and how your latest post is doing |
 | Replies | Now | Every comment on your posts that is waiting on a reply |
+| From your record | Now | What from your own record, and what you asked, is worth writing from today |
 | Composer | Make | Write, re-hook and stage the next post |
 | Queue | Make | Scheduled posts and peak engagement slots |
 | Outbound | Make | Whose content you engage with, and whether it comes back |

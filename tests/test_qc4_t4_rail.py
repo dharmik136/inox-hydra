@@ -1,12 +1,12 @@
 """
-The rail: sixteen sections in five groups, with labels at desktop width.
-=======================================================================
+The rail: seventeen sections in five groups, with labels at desktop width.
+=========================================================================
 
 Cycle 4, track 4, and sections decisions 1, 5, 15 and 16. The rail was twelve
 icons in a 56 pixel column, the pattern measured as ignored, with Setup first
 because a new install starts there. It is now:
 
-  Now      Today, Replies
+  Now      Today, Replies, From your record
   Make     Composer, Queue, Outbound
   Learn    Posts, Leads, Audience, Patterns, Analytics, Brand
   Bridge   Activity, Health
@@ -35,7 +35,7 @@ UI = os.path.join(REPO_ROOT, "studio", "ui", "src")
 HELP = os.path.join(REPO_ROOT, "docs", "help")
 
 GROUPS = [
-    ("now", "Now", [("today", "Today"), ("replies", "Replies")]),
+    ("now", "Now", [("today", "Today"), ("replies", "Replies"), ("record", "From your record")]),
     ("make", "Make", [("composer", "Composer"), ("queue", "Queue"), ("outbound", "Outbound")]),
     ("learn", "Learn", [("posts", "Posts"), ("leads", "Leads"), ("audience", "Audience"), ("patterns", "Patterns"),
                         ("analytics", "Analytics"), ("brand", "Brand")]),
@@ -76,15 +76,16 @@ def _groups():
 # The one definition
 # ---------------------------------------------------------------------------
 
-def test_the_rail_is_sixteen_sections_in_five_groups_in_the_reports_order():
+def test_the_rail_is_seventeen_sections_in_five_groups_in_the_reports_order():
+    """The report's sixteen, and From your record (track 7) third in Now."""
     sections = [s for s in _sections() if s[0] != "devtools"]
     expected = [(section, group, label) for group, _name, entries in GROUPS for section, label in entries]
     assert sections == expected, f"the rail reads {sections}"
-    assert len(sections) == 16
+    assert len(sections) == 17
     assert _groups() == [(group, name) for group, name, _entries in GROUPS]
 
 
-def test_devtools_stays_behind_dev_mode_and_outside_the_sixteen():
+def test_devtools_stays_behind_dev_mode_and_outside_the_rail_groups():
     devtools = [s for s in _sections() if s[0] == "devtools"]
     assert devtools == [("devtools", None, "Devtools")], "devtools joined a group"
     app = _code(os.path.join(UI, "App.tsx"))

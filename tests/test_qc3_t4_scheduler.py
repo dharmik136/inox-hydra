@@ -71,7 +71,9 @@ def test_both_background_jobs_are_registered_to_survive_a_sleep():
     native.start()
     try:
         jobs = {job.id: job for job in native.scheduler.get_jobs()}
-        assert set(jobs) == {"queue_checker", "daily_backup_and_retention"}, sorted(jobs)
+        # The third since cycle 4, track 7: From your record's daily batch,
+        # an hourly check like the backup's, held to the same two rules below.
+        assert set(jobs) == {"queue_checker", "daily_backup_and_retention", "record_daily_batch"}, sorted(jobs)
         for job_id, job in jobs.items():
             assert job.misfire_grace_time is scheduler.MISFIRE_GRACE, job_id
             assert job.coalesce is True, job_id

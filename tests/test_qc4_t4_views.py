@@ -135,6 +135,16 @@ def test_health_opens_a_readers_runs_one_level_down(studio):
     assert studio["errors"] == [], studio["errors"]
 
 
+def test_health_says_how_long_each_new_post_analytics_figure_has_gone_unread(studio):
+    """Track 5's sightings, drawn where Health kept a place for them: the studio's own sentence per figure."""
+    seed_creator(studio["client"])
+    page = open_section(studio, "health")
+    block = page.locator("main section", has_text="Post analytics fields")
+    expect(block).to_be_visible(timeout=10000)
+    expect(block).to_contain_text("no post analytics page read yet")
+    assert studio["errors"] == [], studio["errors"]
+
+
 def test_health_offers_the_update_check_off_by_default(studio):
     seed_creator(studio["client"])
     page = open_section(studio, "health")

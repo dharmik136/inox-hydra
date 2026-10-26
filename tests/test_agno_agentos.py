@@ -25,8 +25,6 @@ from studio.backend.agno_agentos.contracts import (
     LeadResearchInput,
     LeadResearchDossier,
     IcebreakerAngles,
-    SwipePostAnalysisInput,
-    SwipePostPattern,
 )
 from studio.backend.agno_agentos.scar_tissue import (
     scrub_em_dashes,
@@ -41,12 +39,11 @@ from studio.backend.agno_agentos.orchestrator import AgnoAgentOSOrchestrator
 def test_p1_registry_single_home():
     """Verify P1: Centralized registry is the single source of truth for all Agno agents."""
     agents = list_agents()
-    assert len(agents) >= 4
+    assert len(agents) >= 3
     expected_agents = [
         "image_prompt_synthesizer",
         "content_copilot",
         "crm_lead_enricher",
-        "swipe_harvester",
     ]
     for name in expected_agents:
         assert name in AGENT_REGISTRY

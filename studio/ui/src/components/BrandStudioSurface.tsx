@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { TelegramIngressPanel } from "./TelegramIngressPanel";
 import { useState as useLocalState } from "react";
 import { Archive, Check, Loader2, Network, RotateCcw, ShieldCheck } from "lucide-react";
 import {
   createBackup,
   exportData,
   fetchAiStatus,
+  dismissSessionRemovedNotice,
   fetchAuthStatus,
   fetchBackups,
   fetchEgressStatus,
@@ -453,6 +455,8 @@ function SecurityWorkspace({ loaded, ai }: { loaded: ProfileResponse | null; ai:
       <EgressLedger />
 
       <SessionConnection />
+
+      <TelegramIngressPanel />
     </div>
   );
 }
@@ -874,6 +878,26 @@ function SessionConnection() {
   return (
     <section className="mt-8 border-t border-edge pt-5">
       <p className="studio-label mb-2">LinkedIn session</p>
+
+      {/* Said once: a session an earlier version kept in a profile beyond the
+          first was removed when this version started (decision D9). */}
+      {auth?.session_removed && (
+        <div role="status" className="mb-3 rounded-md border border-signal-orange px-3 py-2">
+          <p className="text-[12px] leading-relaxed text-ink-primary">{auth.session_removed.message}</p>
+          <button
+            type="button"
+            onClick={() =>
+              void dismissSessionRemovedNotice()
+                .then(fetchAuthStatus)
+                .then(setAuth)
+                .catch(() => undefined)
+            }
+            className="mt-2 rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+          >
+            Understood
+          </button>
+        </div>
+      )}
 
       <dl className="mb-3 flex flex-col gap-1.5">
         <div className="flex items-baseline justify-between gap-4">

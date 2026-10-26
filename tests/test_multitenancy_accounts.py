@@ -240,15 +240,31 @@ def test_telemetry_is_written_to_the_profile_it_came_from(agency, home):
     assert events(str(home)) == [('{"n": 2}',)]
 
 
-def test_each_profile_has_its_own_template_cache_tag(agency, home):
-    from intelligence_sync import IntelligenceSyncEngine
+def test_each_profile_has_its_own_library(agency, home, monkeypatch):
+    """
+    The template cache's tag file was per profile; the unsigned sync it
+    belonged to is deleted (cycle 4, track 7). Its replacement, the signed
+    Inox library, keeps its entries and its tag in each profile's own
+    database, so one profile fetching it says nothing about another.
+    """
+    import base64
 
+    import ed25519
+    import library_bundle
+
+    secret = bytes(range(32))
+    monkeypatch.setattr(library_bundle, "PUBLIC_KEYS",
+                        {"profile-test": base64.b64encode(ed25519.public_key(secret)).decode("ascii")})
+    content = {"format": "inox-library", "format_version": 1, "version": "1", "signed_at": "2026-10-20",
+               "key_id": "profile-test", "publisher": "Inox Hydra", "content_policy": "company-authored",
+               "entries": [{"id": "form-one", "kind": "form", "title": "A form", "text": "Fill in [this].",
+                            "tags": ["x"], "author": "Inox Hydra"}]}
+    text = library_bundle.encode(content, lambda message: ed25519.sign(secret, message))
     agency.post("/api/v1/accounts", json={"name": "Client A", "id": "client-a"})
-    engine = IntelligenceSyncEngine()
-    default_tag = engine.etag_file
     with paths.using_profile("client-a"):
-        assert engine.etag_file != default_tag
-        assert engine.etag_file.startswith(os.path.join(str(home), "profiles", "client-a"))
+        assert library_bundle.import_text(text)["status"] == "updated"
+        assert library_bundle.status()["entries"] == 1
+    assert library_bundle.status()["entries"] == 0
 
 
 def test_the_scheduler_leaves_a_profile_from_a_newer_build_alone(agency, home):

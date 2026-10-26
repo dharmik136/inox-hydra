@@ -1,7 +1,7 @@
 """
 Opt-In Update Check: The Only Outbound Request This Product Makes.
 ==================================================================
-Reuses the asymmetric CDN pattern already proven in intelligence_sync.py: a
+Uses the same asymmetric CDN pattern as the signed Inox library (library_bundle.py): a
 conditional HTTP GET against a static file on GitHub Releases, with ETag
 caching so an unchanged file transfers zero bytes and costs zero dollars.
 
@@ -245,8 +245,8 @@ def check_for_update(force: bool = False, url: Optional[str] = None) -> Dict[str
     # The ETag is a promise that we already know what is at that URL. Writing
     # it before recording the version meant that if the version write failed,
     # every later check sent the new ETag, got a 304, and reported the user as
-    # up to date permanently, with no way to notice. intelligence_sync
-    # documents and fixes this exact ordering; this file had it backwards.
+    # up to date permanently, with no way to notice. library_bundle.py
+    # keeps this exact ordering; this file had it backwards.
     _set_setting(LAST_SEEN_KEY, latest)
 
     etag = response.headers.get("ETag")

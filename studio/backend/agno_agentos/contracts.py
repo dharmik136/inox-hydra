@@ -111,23 +111,3 @@ class IcebreakerAngles(BaseModel):
     angle_conversational: str = Field(..., description="Low-friction quick conversation starter")
 
 
-# ==========================================
-# 4. VIRAL SWIPE FILE HARVESTER CONTRACTS
-# ==========================================
-
-class SwipePostAnalysisInput(BaseModel):
-    """Input payload of a viral post to be reverse-engineered."""
-    post_id: str = Field(..., description="Swipe post ID")
-    author_name: str = Field(..., description="Original creator name")
-    content: str = Field(..., min_length=20, description="Full text of viral post")
-    topic: Optional[str] = Field(default="Engineering Leadership", description="Subject area")
-
-
-class SwipePostPattern(BaseModel):
-    """Extracted architectural blueprint and reusable template from a viral post."""
-    post_id: str = Field(..., description="Post ID")
-    hook_archetype: str = Field(..., description="e.g. Curiosity Gap, Contrarian Axiom, Metric Drop")
-    tension_point: str = Field(..., description="The core conflict or counter-intuitive insight")
-    structural_blueprint: str = Field(..., description="Narrative rhythm breakdown")
-    reusable_template: str = Field(..., description="Fill-in-the-blanks template for creator posts")
-    key_takeaways: List[str] = Field(default_factory=list, description="Key strategic lessons")

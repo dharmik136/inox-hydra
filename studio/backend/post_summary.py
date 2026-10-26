@@ -255,7 +255,11 @@ def _engagement(people: List[sqlite3.Row]) -> Dict[str, Any]:
     }
 
 
-READING_FIELDS = ("age_hours", "impressions", "reactions", "comments", "reposts", "source")
+# precision is how the reading was read (migration 28): 'exact', 'rounded',
+# or None for one that did not say, so a screen can say "about" beside a
+# figure LinkedIn abbreviated rather than print 12K as 12,000 exactly.
+READING_FIELDS = ("age_hours", "impressions", "reactions", "comments", "reposts", "source", "precision")
+FIGURE_FIELDS = results.FIGURE_FIELDS
 
 
 def _readings(conn, keys: Optional[List[str]]) -> Dict[str, Dict[str, Optional[str]]]:
@@ -276,17 +280,30 @@ def _readings(conn, keys: Optional[List[str]]) -> Dict[str, Dict[str, Optional[s
             entry["best"] = {k: r[k] for k in READING_FIELDS}
     # The latest reading, which is the post's figures: results.figures draws
     # it the same way, preferring the post's own analytics page where two
-    # pages were read in the same hour.
+    # pages were read in the same hour. Each figure is the newest reading that
+    # has it (review S2), kept per figure in "by_figure", so a newer reading
+    # that lacks a figure, or comes from another page, never erases it.
     urns = keys if keys is not None else [
         r[0] for r in conn.execute("SELECT DISTINCT activity_urn FROM post_metric_observations")]
+    newest_first = ("ORDER BY observed_at DESC, CASE source WHEN 'post_analytics' THEN 2 ELSE 1 END DESC, "
+                    "id DESC LIMIT 1")
     for urn in urns:
         r = _rows(
             conn, f"SELECT {', '.join(READING_FIELDS)}, observed_at FROM post_metric_observations "
-            "WHERE activity_urn = ? ORDER BY observed_at DESC, "
-            "CASE source WHEN 'post_analytics' THEN 2 ELSE 1 END DESC, id DESC LIMIT 1", (urn,)).fetchone()
+            f"WHERE activity_urn = ? {newest_first}", (urn,)).fetchone()
         if r is not None:
             entry = out.setdefault(urn, {"best": None, "latest": None})
             entry["latest"] = {k: r[k] for k in READING_FIELDS + ("observed_at",)}
+            by_figure = {}
+            for field in FIGURE_FIELDS:
+                held = r if r[field] is not None else _rows(
+                    conn, f"SELECT {field}, source, observed_at, age_hours, precision FROM post_metric_observations "
+                    f"WHERE activity_urn = ? AND {field} IS NOT NULL {newest_first}", (urn,)).fetchone()
+                if held is not None:
+                    by_figure[field] = {"value": held[field], "source": held["source"],
+                                        "observed_at": held["observed_at"], "age_hours": held["age_hours"],
+                                        "precision": held["precision"]}
+            entry["latest"]["by_figure"] = by_figure
     return {urn: {"reading_48h": json.dumps(e["best"]) if e["best"] else None,
                   "latest_reading": json.dumps(e["latest"]) if e["latest"] else None}
             for urn, e in out.items()}

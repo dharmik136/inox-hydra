@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 from app import app
 from database import get_db, seed_day05_draft, seed_day06_draft, seed_day07_draft, seed_day08_draft
 from formatters import analyze_hook
-from intelligence_sync import intelligence_sync_engine, FALLBACK_TEMPLATES
+import hook_forms
+from hook_forms import FALLBACK_TEMPLATES
 
 client = TestClient(app)
 
@@ -86,70 +87,19 @@ def test_day05_mobile_fold_physics_and_archetypes():
     assert analysis_long["is_pre_fold_safe"] is False
 
 
-def test_day06_asymmetric_bundle_export_import_and_etags():
+def test_day06_the_unsigned_bundle_routes_are_gone():
     """
-    Day 06: Verify asymmetric intelligence bundle export (<50KB),
-    ETag generation, HTTP 304 conditional request, and air-gapped bundle import.
+    Day 06's air-gapped bundle export and import served the unsigned sync
+    module, and the import replaced the creator's whole hook library with any
+    file it was handed. Cycle 4, track 7 deleted both with the module (ideas
+    report decision 10); a library file is now imported only when its
+    Ed25519 signature verifies, into a table of its own
+    (tests/test_qc4_t7_library_bundle.py).
     """
-    # Ensure default templates are seeded
-    intelligence_sync_engine.seed_offline_templates()
-
-    # 1. Export bundle via API
-    resp = client.get("/api/v1/intelligence/bundle/export")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["status"] == "success"
-    bundle = data["bundle"]
-    assert bundle["format"] == "asymmetric_intelligence_bundle"
-    assert "version" in bundle
-    assert "templates" in bundle
-    assert len(bundle["templates"]) >= len(FALLBACK_TEMPLATES)
-
-    # Verify bundle payload size is strictly < 50KB
-    bundle_bytes = json.dumps(bundle).encode("utf-8")
-    assert len(bundle_bytes) < 50 * 1024, f"Bundle size {len(bundle_bytes)} bytes exceeds 50KB limit"
-
-    # Verify ETag header is present in response
-    etag = resp.headers.get("ETag") or data.get("etag")
-    assert etag is not None and len(etag) > 0
-
-    # 2. Test HTTP Conditional Request (If-None-Match -> 304 Not Modified)
-    cond_resp = client.get(
-        "/api/v1/intelligence/bundle/export",
-        headers={"If-None-Match": etag}
-    )
-    assert cond_resp.status_code == 304
-    assert cond_resp.text == ""
-
-    # 3. Test Air-gapped Import endpoint
-    test_bundle = {
-        "version": "2026.09.2",
-        "format": "asymmetric_intelligence_bundle",
-        "generated_at": "2026-09-18T00:00:00Z",
-        "templates": [
-            {
-                "archetype": "The Architectural Breakdown",
-                "hook_text": "How we achieved sub-millisecond local ICP calculation with zero external APIs:",
-                "velocity_score": 9.7,
-                "engagement_multiplier": "3.5x",
-                "pacing_style": "1-line hook + blank line + 3 bullet points",
-                "example_post_id": "test-airgap-1"
-            }
-        ]
-    }
-    import_resp = client.post("/api/v1/intelligence/bundle/import", json={"bundle": test_bundle})
-    assert import_resp.status_code == 200
-    import_data = import_resp.json()
-    assert import_data["status"] == "success"
-    assert import_data["imported_count"] == 1
-    assert import_data["version"] == "2026.09.2"
-
-    # Verify template was inserted into SQLite
-    templates = intelligence_sync_engine.get_templates()
-    assert any(t["example_post_id"] == "test-airgap-1" for t in templates)
-
-    # Re-seed default offline templates to keep environment clean
-    intelligence_sync_engine.seed_offline_templates()
+    hook_forms.seed_offline_templates()
+    assert client.get("/api/v1/intelligence/bundle/export").status_code == 404
+    assert client.post("/api/v1/intelligence/bundle/import", json={"bundle": {"templates": []}}).status_code in (404, 405)
+    assert hook_forms.get_templates(), "the hook forms are gone with the sync"
 
 
 def test_day07_day08_draft_and_post_integrity():
@@ -209,7 +159,7 @@ def test_milestone2_zero_em_dashes():
     """
     files_to_check = [
         "studio/backend/formatters.py",
-        "studio/backend/intelligence_sync.py",
+        "studio/backend/hook_forms.py",
         "studio/backend/database.py",
         "studio/backend/app.py",
         "tests/test_milestone2_days05_08.py"

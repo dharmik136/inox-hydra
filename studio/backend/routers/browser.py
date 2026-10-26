@@ -367,7 +367,6 @@ def get_activity_stream(limit: int = Query(25, ge=1)):
             "leads_count": leads_count,
             "bridge_connected": bridge.get("connected", False),
             "bridge_last_seen": bridge.get("last_seen_at"),
-            "bridge_carrier": bridge.get("carrier"),
             "active_sync_chain": sync_chain,
         },
         "recent_posts": recent_posts,

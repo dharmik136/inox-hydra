@@ -21,7 +21,7 @@ interface StudioRailProps {
 const EASE = [0.32, 0.72, 0.24, 1] as const;
 
 /**
- * The studio rail: sixteen sections in five groups (sections report,
+ * The studio rail: seventeen sections in five groups (sections report,
  * decisions 15 and 16).
  *
  * From 1200 pixels wide it shows each section's name and the group names;

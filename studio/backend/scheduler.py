@@ -733,6 +733,26 @@ class NativeScheduler:
                 # retention.py still decides what is actually due.
                 misfire_grace_time=MISFIRE_GRACE,
             )
+            # From your record (cycle 4, track 7): the day's batch of cards,
+            # built the first time the studio runs each day and only read by
+            # the screen. Hourly like the backup, the first check a minute
+            # after start; record_daily decides whether today has a batch yet.
+            # It never calls a model: that runs on the creator's first open.
+            try:
+                from . import record_daily
+            except ImportError:
+                import record_daily
+            self.scheduler.add_job(
+                record_daily.run_for_every_profile,
+                "interval",
+                hours=1,
+                next_run_time=datetime.now() + timedelta(minutes=1),
+                id="record_daily_batch",
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+                misfire_grace_time=MISFIRE_GRACE,
+            )
             self.scheduler.start()
             logger.info("Local background cadence scheduler started.")
 

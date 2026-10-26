@@ -135,7 +135,7 @@ def test_a_post_imported_from_linkedin_is_found(studio):
     posts = _search(studio, "sourdough")["groups"]["posts"]
     assert [p["id"] for p in posts] == [urns[0]], posts
     assert posts[0]["title"] == "Why sourdough needs patience"
-    assert posts[0]["opens"] == "analytics", "a published post was offered somewhere it can be edited"
+    assert posts[0]["opens"] == "posts", "a published post was offered somewhere it can be edited"
     assert posts[0]["meta"].startswith("PUBLISHED ON LINKEDIN")
     assert [p["id"] for p in _search(studio, "zurich cafe")["groups"]["posts"]] == [urns[1]]
 

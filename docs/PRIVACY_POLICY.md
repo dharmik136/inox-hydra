@@ -45,8 +45,15 @@ profile addresses, headlines and comment or reaction details of people who
 commented on or reacted to a post, as those appear on the page, together with
 which post they engaged on. This is how the leads list in Inox Hydra is built.
 
-From **your post analytics pages** (`content.js`): the impression, reaction,
-comment and repost figures LinkedIn shows you for your own posts.
+From **your post analytics pages** (`own_pages.js`), for your own recorded
+posts only: the figures LinkedIn shows you there, which are impressions,
+members reached, reactions, comments, reposts, saves and sends, and, where the
+page shows them, followers gained from the post, profile viewers from the
+post, link visits, article views, video views, the share of impressions from
+inside and from outside your network, and the viewer demographics for the
+post, which are LinkedIn's aggregate percentages (such as the share of viewers
+with a job title or in a location), never names. Each reading is kept with the
+post's age and the day it was read.
 
 From **your own profile and activity pages** (`own_pages.js`), and only yours:
 your profile fields, experience, education and skills; the contact details on
@@ -141,6 +148,35 @@ comments and reactions, any connections you imported from your own LinkedIn
 data archive, daily analytics, logs and settings; your media files; the network
 readings log, as a separate file; and the daily backups folder.
 
+**What you ask of it, and what it works out for you**, in that same database:
+the text of the asks you make of the studio and choose to keep (the topics,
+audience and things to avoid you type at Setup; an ask typed into the From
+your record section; an instruction you tick "remember this ask" on in the
+Composer, and only then; an idea sent from Telegram; a card you ask for more
+of; and a search from your archive, only when you ticked that file at import
+and it shares one of your recurring topics), nothing typed anywhere else;
+the marks you put on the daily cards (keep, skip and hide, and the studio's
+own used and posted marks when a draft comes from a card);
+the daily batch of cards itself, one dated row per card with the rows it was
+built from; a monthly note you may write about whether the cards helped; and,
+only for the files you ticked at import, what your own LinkedIn archive says
+you saved, followed, voted on, reposted and searched for, each row
+with the file it came from and the date it was imported. Nothing removes an
+ask or a mark on its own: an ask goes when you remove it on the section's
+"What the studio knows" page, a keep or a hide when you take it back, and
+all of them when you delete what the studio holds about you. Dated batches
+are kept for the number of days you set on that page, 365 by
+default, except a batch a mark or a draft still refers to. None of it is in
+the diagnostics bundle or the access log, and none of it leaves this computer
+unless you have entered an AI provider key and the section's model stage is
+on, in which case the AI row below says exactly what goes.
+
+If you import LinkedIn's analytics export, the .xlsx file LinkedIn writes when
+you press Export on your analytics page, Inox Hydra reads it on your computer
+and keeps the figures it recognises in that database, each marked as read from
+LinkedIn's export. A copy you chose by hand is kept only until it is imported
+or set aside, or for a day, and nothing in the file is sent anywhere.
+
 If you keep more than one creator profile, each profile is a separate folder
 with its own database, under `profiles/` inside that same folder, and nothing
 of one profile's data is in another's. The vault key, the logs and the browser
@@ -166,18 +202,21 @@ to request or to delete.
 
 In its default configuration, the extension contacts nobody. Every outbound
 destination below is reached by Inox Hydra on your computer, not by the
-extension, and only at the moment you use the feature that needs it.
+extension, and only at the moment you use the feature that needs it. The
+daily section's model stage is such a moment: it runs when you open From your
+record for the first time each day, never on a timer and never while you are
+away, and only once you have entered a key.
 
 | Destination | When it is reached |
 | --- | --- |
-| `www.linkedin.com` | Checking your stored session is still valid, syncing your profile, and "Send to LinkedIn", which hands a post you wrote to LinkedIn's own scheduler. Off by default, the same as update checking below: nothing reaches LinkedIn until you set `INOX_ALLOW_LINKEDIN_EGRESS=1`, and the first time you use Send to LinkedIn for a given creator profile, it also asks you to acknowledge, separately from the per-send confirmation, that this writes to LinkedIn's private scheduling API, outside its published terms. It is asked once for each creator profile rather than once for the machine, because each profile is a different LinkedIn account and the account that carries the risk is the one that answers for it. |
-| `api.openai.com`, `api.anthropic.com`, `api.groq.com`, `generativelanguage.googleapis.com` | Drafting and rewriting help, if you entered your own API key for that provider. Your prompt and the text you are working on go to the provider you chose, under your own account with them, governed by their terms, not ours. |
+| `www.linkedin.com` | Checking your stored session is still valid, syncing your profile, and "Send to LinkedIn", which hands a post you wrote to LinkedIn's own scheduler. Off by default, the same as update checking below: nothing reaches LinkedIn until you set `INOX_ALLOW_LINKEDIN_EGRESS=1`, and the first time you use Send to LinkedIn for a given creator profile, it also asks you to acknowledge, separately from the per-send confirmation, that this writes to LinkedIn's private scheduling API, outside its published terms. The acknowledgement is kept in that profile's own settings. Send to LinkedIn, and the session sync it needs, are available for the first creator profile only, so it is the first profile's account that answers for it: a second or later profile's session is refused and never stored, and a session an earlier version kept in one is deleted the first time this version starts, because each profile's session must come from that creator's own browser on that creator's own machine, and Inox Hydra cannot tell whose browser a session came from. |
+| `api.openai.com`, `api.anthropic.com`, `api.groq.com`, `generativelanguage.googleapis.com` | Drafting and rewriting help, if you entered your own API key for that provider. Your prompt and the text you are working on go to the provider you chose, under your own account with them, governed by their terms, not ours. The From your record section's model stage, once a day when you open the section and only with a key entered, sends a redacted set of your own rows to the same provider: the first 300 characters of your own posts and their ids, the studio's own word for how each did (above usual, usual, below usual, not measured), your topic labels, the asks you kept (never a search from your archive) and your voice profile. It never sends figures, other people's names or comments, your connections or anybody's score, and a name, an address or a phone number inside your own text is replaced before it leaves. It spends at most the daily ceiling you set on the section, 10 cents by default, and the model may return only ids of rows it was sent, labels from a fixed list and short phrases; anything else, and any phrase carrying a number, is dropped before it is shown. |
 | `image.pollinations.ai` | Generating an image, if the image provider is left at its default. This is a free public service run by a third party, and it is the default, so the first time you press Generate without having chosen a provider, your image prompt goes there. Choose another provider, a local one, or Off in the Prompt tab if you would rather it did not. |
 | `api.stability.ai`, `api.replicate.com`, `fal.run`, `api.together.xyz` | Generating an image, if you chose that provider and entered your own key. |
 | A local image generator (AUTOMATIC1111, Forge or ComfyUI) or a local model through Ollama | If you chose it. These stay on your machine or your network. |
 | A program you connected as a grounding source (MCP) | Only if you add one yourself in Brand Studio. The studio starts that program and reads what it hands back, which you can preview; no writing control in the studio draws on it yet. What that program itself does on the network is its own, outside the studio's view, and `INOX_NO_EGRESS` cannot stop it. |
-| `github.com`, `raw.githubusercontent.com` | Checking whether a newer version has been released, and fetching the template bundle. Update checking is off by default, and nothing in the interface turns it on: you enable it yourself from the command line (`python -m studio.cli update enable`). |
-| `api.telegram.org` | An optional inbound bridge, inactive unless you set a `TELEGRAM_BOT_TOKEN` yourself. |
+| `github.com`, `raw.githubusercontent.com` | Checking whether a newer version has been released, and fetching the Inox library when you press Fetch on From your record's What the studio knows page. Update checking is off by default, and nothing in the interface turns it on: you enable it yourself from the command line (`python -m studio.cli update enable`). The library is one file of forms, patterns and examples the Inox Hydra team wrote; the request for it carries nothing of yours, only its address, a name for the channel and the tag of the copy you already hold, and the file is kept only if its signature matches the key the studio ships. |
+| `api.telegram.org` | An optional inbound bridge, inactive unless you set up a bot of your own under Your phone, through Telegram in Brand Studio's Local security tab, or set a `TELEGRAM_BOT_TOKEN` yourself. While it is set up, Inox Hydra asks Telegram for the messages you sent your own bot and sends Telegram nothing but that request. Text you send becomes a draft; a LinkedIn post link becomes a reminder on Today to open that post's analytics at this computer, and the phone's message is never stored as a figure. Your messages pass through Telegram's servers. The bot token is sealed on your disk like an AI key. |
 
 If you configure an AI or image provider, that provider's own privacy policy
 governs what it does with what you send it. We do not see it, do not proxy it,
