@@ -549,7 +549,10 @@ def _notes_from(port, path, body):
 def test_a_capture_names_its_reader_and_whether_it_drifted(studio):
     notes = _notes_from(studio["port"], "/api/v1/bridge/capture", {
         "extractor": "engagers", "page_kind": "post", "items_seen": 3, "items_kept": 0, "drift": ["name"]})
+    assert len(notes) == 1, notes
+    minute = notes[0].pop("minute")
     assert notes == [{"kind": "capture", "extractor": "engagers", "drift": True}], notes
+    assert len(minute) == 16 and minute[10] == "T", minute
 
 
 def test_a_heartbeat_says_whether_it_carried_a_waiting_count(studio):
@@ -700,10 +703,55 @@ def test_a_change_never_carries_a_name_or_text():
     assert note == {"kind": "people", "extractor": "engagers"}, note
 
 
+def test_the_account_and_content_pages_say_account(studio, creator):
+    """Release 2.8.0's reader of the creator's own account pages (track 5, phase 2)."""
+    kinds = _published_by(studio["port"], "/api/analytics/page-figures", {
+        "author": ME, "page": "profile_views", "readings": [{"period_label": "90d", "figures": {"profile_views": 4}}]})
+    assert kinds == ["account"], kinds
+
+
+def test_a_post_the_phone_asked_about_says_desk(studio, creator):
+    """Track 6: a post shared from the phone becomes a request Today shows."""
+    import desk_requests
+
+    stream = Stream(studio["port"])
+    try:
+        stream.event()
+        conn = database.get_db()
+        try:
+            desk_requests.record(conn, creator["urn"])
+        finally:
+            conn.close()
+        assert stream.change(timeout=3.0)[0] == ["desk"]
+    finally:
+        stream.close()
+
+
+def test_the_daily_section_and_its_marks_say_ideas(studio, creator):
+    """Track 7: the day's cards, and a keep or skip on one of them."""
+    import record_daily
+
+    stream = Stream(studio["port"])
+    try:
+        stream.event()
+        built = record_daily.run_today()
+        assert built["status"] in ("built", "carried"), built
+        assert "ideas" in stream.change(timeout=3.0)[0]
+        # Only a card that is shown can be kept or skipped.
+        card = next(c for c in record_daily.read_today()["cards"] if c["status"] == "shown")
+        status, text = _post(studio["port"], "/api/v1/record/marks",
+                             {"day": card["day"], "card_id": card["card_id"], "mark": "keep"})
+        assert status == 200, text
+        assert stream.change(timeout=3.0)[0] == ["ideas"]
+    finally:
+        stream.close()
+
+
 # What the extension writes through, and what each says. A path the extension
 # starts relaying has to be added here, announced or with the reason it is not.
 EXTENSION_WRITES = {
     "/api/analytics/ingest": "account",
+    "/api/analytics/page-figures": "account",
     "/api/v1/crm/interactions/ingest": "people",
     "/api/v1/bridge/heartbeat": "heartbeat",
     "/api/v1/bridge/capture": "capture",

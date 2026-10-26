@@ -41,13 +41,11 @@ from studio.backend.agno_agentos.agents import (
     ImagePromptSynthesizerAgent,
     LeadResearchAgent,
     IcebreakerAgent,
-    SwipeFileHarvesterAgent
 )
 from studio.backend.agno_agentos.contracts import (
     ImagePromptInput,
     CopilotDraftInput,
     LeadResearchInput,
-    SwipePostAnalysisInput
 )
 
 client = TestClient(app)

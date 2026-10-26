@@ -132,13 +132,32 @@ def _normalise(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
 
 def list_servers() -> List[Dict[str, Any]]:
-    """Every configured server, enabled or not."""
+    """Every configured server, enabled or not, as the launcher needs it: environment included."""
     normalised = []
     for entry in _load_raw():
         clean = _normalise(entry)
         if clean:
             normalised.append(clean)
     return normalised
+
+
+def for_screen(server: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    A server as the browser may see it: without its environment.
+
+    The environment is where a creator puts the token a notes server needs,
+    and the listing route sent it to the browser, which never showed it. A
+    page that holds a credential it does not need is a place for it to leak
+    from. The screen is told how many variables are set, and nothing else.
+    """
+    shown = {key: value for key, value in server.items() if key != "env"}
+    shown["env_vars"] = len(server.get("env") or {})
+    return shown
+
+
+def list_servers_for_screen() -> List[Dict[str, Any]]:
+    """Every configured server, as the browser may see it."""
+    return [for_screen(server) for server in list_servers()]
 
 
 def enabled_servers() -> List[Dict[str, Any]]:

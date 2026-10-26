@@ -22,13 +22,11 @@ from .contracts import (
     ImagePromptInput, SynthesizedImagePrompt,
     CopilotDraftInput, CopilotDraftResponse,
     LeadResearchInput, LeadResearchDossier, IcebreakerAngles,
-    SwipePostAnalysisInput, SwipePostPattern
 )
 from .agents import (
     ImagePromptSynthesizerAgent,
     LinkedInContentCopilotAgent,
     LeadResearchAgent, IcebreakerAgent,
-    SwipeFileHarvesterAgent
 )
 from .model_gateway import get_current_ai_config, AIProviderConfig, execute_llm_completion
 
@@ -103,18 +101,6 @@ class AgnoAgentOSOrchestrator:
             ],
             "enriched_by": provider_label
         }
-
-    def analyze_swipe(self, swipe_dict: Dict[str, Any]) -> SwipePostPattern:
-        """Reverse-engineers viral post into structural blueprint."""
-        ai_config = self.get_ai_config()
-        swipe_input = SwipePostAnalysisInput(
-            post_id=str(swipe_dict.get("id") or "swipe-unknown"),
-            author_name=swipe_dict.get("author_name", "Author"),
-            content=swipe_dict.get("content", ""),
-            topic=swipe_dict.get("topic", "General")
-        )
-        agent = SwipeFileHarvesterAgent(ai_config=ai_config)
-        return agent.harvest_pattern(swipe_input)
 
 
 # Singleton orchestrator instance

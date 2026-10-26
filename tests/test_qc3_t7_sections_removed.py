@@ -24,12 +24,14 @@ What this holds: the component files are deleted rather than unlinked, no
 section id survives in the rail or the router, no surface still imports them,
 and the two things that did point at the Swipe File (the command palette's
 specimen results and the backend that tells them where to open) now point at
-the Composer, so neither is a dead click. No route was removed: `/api/ai/command` still answers the Prompt panel, and
-`/api/inspirations` still serves the same `viral_templates` rows (Ctrl+K reads
-that table in process through routers/search.py, not over HTTP, so the route
-itself now has no caller in the interface). The two client functions the wall
-used are gone with it, which is why tests/test_endpoint_reachability.py's
-recorded counts move by two in the same commit range.
+the Composer, so neither is a dead click. `/api/ai/command` still answers the
+Prompt panel. `/api/inspirations` outlived the wall for one cycle (Ctrl+K reads
+the table in process through routers/search.py, not over HTTP, so the route had
+no caller) and was retired in cycle 4, track 7, batch 0: it manufactured
+counts at render time and was the one way a library of strangers' posts could
+have come back. The two client functions the wall used are gone with it, which
+is why tests/test_endpoint_reachability.py's recorded counts move by two in
+the same commit range.
 """
 
 import io
@@ -258,17 +260,19 @@ def test_the_instruction_box_is_in_the_prompt_panel_with_the_draft():
     assert "<PromptPanel draft={draft} />" in inspector, "the panel is not given the draft"
 
 
-def test_the_endpoints_behind_both_sections_still_answer():
+def test_the_capabilities_behind_both_sections_still_answer():
     """
-    Neither route was removed: one still serves Ctrl+K's hook form search, the
-    other the Prompt panel. A removal that took them would have broken both.
+    The Prompt panel's route answers, and Ctrl+K still finds a hook form in
+    process; /api/inspirations, which the wall drew from, is retired (cycle 4,
+    track 7) rather than kept as a second way at the same rows.
     """
     import app as app_module
     from fastapi.testclient import TestClient
 
     client = TestClient(app_module.app)
-    assert client.get("/api/inspirations?limit=5").status_code == 200
+    assert client.get("/api/inspirations?limit=5").status_code == 404
     assert client.get("/api/ai/status").status_code == 200
+    assert client.get("/api/v1/search?q=the&limit=6").status_code == 200
 
 
 def test_the_built_interface_carries_neither_section():

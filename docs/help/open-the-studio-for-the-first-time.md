@@ -62,6 +62,7 @@ The rail on the left lists the surfaces. Hover an icon to see its name.
 | --- | --- |
 | Setup | Connect the browser and teach the studio who you are |
 | Today | Who to reply to and how your latest post is doing |
+| From your record | What from your own record, and what you asked, is worth writing from today |
 | Composer | Write, re-hook and stage the next post |
 | Queue | Scheduled posts and peak engagement slots |
 | Leads | Lead stream and person dossiers |

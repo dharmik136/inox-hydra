@@ -512,7 +512,8 @@ def destination_for_post(status: Optional[str], scheduled_for: Optional[str]) ->
         return "composer"
     if state in ("scheduled", "queued") or (scheduled_for and state != "published"):
         return "queue"
-    return "analytics"
+    # Posts lists every published post (cycle 4: Analytics no longer does).
+    return "posts"
 
 
 def _post_result(content, terms, **fields) -> Dict[str, Any]:
@@ -623,7 +624,7 @@ def search_posts(terms: List[str], limit: int = 6, conn=None) -> List[Dict[str, 
                 id=row["activity_urn"],
                 meta="PUBLISHED ON LINKEDIN" + (f"  {str(when)[:10]}" if when else ""),
                 status="published",
-                opens="analytics",
+                opens="posts",
             )))
 
         found.sort(key=lambda pair: pair[0], reverse=True)

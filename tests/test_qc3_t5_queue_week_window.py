@@ -114,16 +114,30 @@ def test_the_drafts_waiting_to_be_queued_are_on_the_queue(studio):
     """
     The screen said 'Queue a draft from the Composer' to a creator holding
     150 of them, with half the screen blank.
+
+    Cycle 4, decision 6: the Queue says how many drafts are waiting and names
+    the newest, with one action; the drafts themselves are listed once, in the
+    Composer's Drafts (tests/test_qc4_t3_queue_drafts_count.py).
     """
     client = studio["client"]
     confirm_identity(client)
     for index in range(3):
         _draft(client, f"A draft waiting to be queued, number {index}.")
 
+    # The newest is the studio's newest, the one the Composer reopens: three
+    # drafts saved within a second share a created_at, and the route breaks
+    # the tie by id (tests/test_qc3_t5_newest_draft.py).
+    newest = client.get("/api/posts?status=draft&limit=1").json()["posts"][0]["content"].split("\n")[0]
     page = open_section(studio, "queue")
     drafts = page.locator("section[aria-labelledby=queue-drafts]")
     expect(drafts).to_be_visible(timeout=10000)
-    expect(drafts).to_contain_text("A draft waiting to be queued, number 2.")
+    expect(drafts).to_contain_text("3 drafts are waiting.")
+    expect(drafts).to_contain_text(f"Newest: {newest}")
+    others = [f"number {index}." for index in range(3) if f"number {index}." not in newest]
+    assert len(others) == 2 and not any(other in drafts.inner_text() for other in others), (
+        "the Queue still lists the drafts the Composer lists"
+    )
+    assert drafts.get_by_role("button").count() == 1, "the drafts block offers more than its one action"
     assert studio["errors"] == [], studio["errors"]
 
 
@@ -139,8 +153,8 @@ def test_a_draft_can_be_put_in_the_next_slot_from_the_queue(studio):
     page = open_section(studio, "queue")
     drafts = page.locator("section[aria-labelledby=queue-drafts]")
     expect(drafts).to_be_visible(timeout=10000)
-    row = drafts.locator("li", has_text="The one draft to queue from here.")
-    row.get_by_role("button", name="Queue it").click()
+    expect(drafts).to_contain_text("The one draft to queue from here.")
+    drafts.get_by_role("button", name="Queue the newest draft").click()
 
     queued = page.locator("section[aria-labelledby=queue-scheduled]")
     expect(queued).to_contain_text("The one draft to queue from here.", timeout=10000)

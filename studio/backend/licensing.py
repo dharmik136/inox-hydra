@@ -97,6 +97,31 @@ FEATURES: Dict[str, str] = {
     "multiple_profiles": "agency",
 }
 
+# Features that work in the first creator profile only (decision D9, cycle 4).
+#
+# LinkedIn's User Agreement, 8.2 item 1, bars using "another's account (such
+# as sharing log-in credentials or copying cookies)", and the studio cannot
+# tell whose browser a session came from. The Agency tier is five profiles on
+# one machine, which is the shape that clause names. So a LinkedIn session is
+# kept, and a post handed to LinkedIn's scheduler, in the first profile only,
+# until an official posting route exists (docs/OFFICIAL_POSTING_ROUTE.md).
+# Every profile's session must come from that creator's own browser on that
+# creator's own machine; a second profile's is refused rather than stored.
+FIRST_PROFILE_ONLY = ("session_sync", "send_to_linkedin")
+
+FIRST_PROFILE_ONLY_REASON = (
+    "Syncing a LinkedIn session and Send to LinkedIn work in your first creator profile only. "
+    "Each profile's session must come from that creator's own browser on that creator's own machine, "
+    "and the studio cannot tell whose browser a session came from, so a second profile's session is "
+    "not kept and nothing is sent from it. A creator who wants to send from the studio runs it on "
+    "their own machine, as their first profile."
+)
+
+
+def first_profile_only(feature: str) -> bool:
+    """Whether a feature is one that works in the first creator profile only."""
+    return feature in FIRST_PROFILE_ONLY
+
 
 def _b64url(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).decode("ascii").rstrip("=")

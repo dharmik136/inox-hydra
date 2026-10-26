@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Activity, CheckCheck, Copy, Download, ExternalLink, Loader2, PenLine } from "lucide-react";
 import {
   dismissDemoCleanupNotice,
+  dismissDeskRequest,
   fetchAnalyticsKpis,
   fetchCadenceInsights,
   fetchEvidenceBrief,
@@ -28,7 +29,8 @@ import {
 } from "@/lib/api";
 import { NOT_MEASURED, formatDays, gapOrNotMeasured } from "@/lib/cadence";
 import { reportBridge } from "@/lib/bridgeState";
-import { useRefresh, type StudioChangeNote } from "@/lib/refresh";
+import { useRefresh, type Listen, type StudioChangeNote } from "@/lib/refresh";
+import { ratioTone } from "@/lib/results";
 import { formatLocal, formatSlotTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 
@@ -117,8 +119,9 @@ function briefMayChange(change: StudioChangeNote, brief: TodayBrief | null): boo
       return true;
     case "outbound":
     case "account":
+    case "ideas":
       // The brief shows neither the creator's engagement elsewhere nor the
-      // daily totals; the totals have their own panel.
+      // daily totals, which have their own panel, nor the daily section.
       return false;
     default:
       return true;
@@ -129,10 +132,15 @@ function briefMayChange(change: StudioChangeNote, brief: TodayBrief | null): boo
  * One panel's own read, kept apart from every other panel's.
  *
  * `load` is held in a ref so a caller may pass a fresh arrow each render
- * without the read running again; `again` is what the thirty second refresh
- * calls for the two reads that change minute to minute.
+ * without the read running again. The read runs once on mount and again
+ * under useRefresh with no interval: when the studio answers after an
+ * outage, and when the window comes back after being away, and, given
+ * `listen`, when the change stream says what the panel shows has changed. The panels'
+ * failure sentence promises that, and it was true only of Today's own read:
+ * the six side panels were read once per mount, so one that failed stayed
+ * failed until the creator left the screen.
  */
-function useRead<T>(load: () => Promise<T>, onData?: (value: T) => void): [Read<T>, () => void] {
+function useRead<T>(load: () => Promise<T>, onData?: (value: T) => void, listen?: Listen): [Read<T>, () => void] {
   const [state, setState] = useState<Read<T>>(PENDING);
   const latest = useRef({ load, onData });
   latest.current = { load, onData };
@@ -146,6 +154,7 @@ function useRead<T>(load: () => Promise<T>, onData?: (value: T) => void): [Read<
       .catch(() => setState({ data: null, failed: true, loading: false }));
   }, []);
   useEffect(again, [again]);
+  useRefresh(again, undefined, listen);
   return [state, again];
 }
 
@@ -188,29 +197,40 @@ export function TodaySurface({
 
   // The panels beside Today's own read. Each is its own endpoint, and none of
   // them is polled: evidence, cadence, the thirty day totals, the week's
-  // slots and the two held signals move on the scale of days. Each is read
-  // again when the stream says what it shows has changed, on coming back to
-  // the window, and when the studio is back, which is what a panel's "It is
-  // read again when this window comes back" promises; they were read once.
-  const [evidence, readEvidence] = useRead(useCallback(() => fetchEvidenceBrief(), []));
-  const [cadence, readCadence] = useRead(useCallback(() => fetchCadenceInsights(), []));
-  const [kpis, readKpis] = useRead(useCallback(() => fetchAnalyticsKpis("30d"), []));
-  const [slots, readSlots] = useRead(useCallback(() => fetchSmartSlots(), []));
-  const [waiting, readWaiting] = useRead(useCallback(() => fetchWaitingCaptures(), []));
-  const [backups, readBackups] = useRead(useCallback(() => fetchBackupSchedule(), []));
+  // slots and the two held signals all move on the scale of days, so
+  // re-reading them every half minute would be work nobody asked for. Each
+  // is read again when the studio is back after an outage and when the
+  // window comes back (useRead), which is what their failure sentence says,
+  // and when the change stream says what it shows has changed, at most once
+  // per TODAY_GAP_MS.
   // Evidence counts the people per topic, so an engagement matters to it.
-  useRefresh(readEvidence, undefined, {
+  const [evidence] = useRead(useCallback(() => fetchEvidenceBrief(), []), undefined, {
     gapMs: TODAY_GAP_MS,
     matters: (c) => c.kind === "posts" || c.kind === "readings" || c.kind === "people",
   });
-  useRefresh(readCadence, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "posts" || c.kind === "queue" });
-  useRefresh(readKpis, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "account" });
-  useRefresh(readSlots, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "queue" });
+  const [cadence] = useRead(useCallback(() => fetchCadenceInsights(), []), undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: (c) => c.kind === "posts" || c.kind === "queue",
+  });
+  const [kpis] = useRead(useCallback(() => fetchAnalyticsKpis("30d"), []), undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: (c) => c.kind === "account",
+  });
+  const [slots] = useRead(useCallback(() => fetchSmartSlots(), []), undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: (c) => c.kind === "queue",
+  });
   // Only the extension knows how many captures it holds, and it says so on
   // the heartbeats that carry the count.
-  useRefresh(readWaiting, undefined, { gapMs: TODAY_GAP_MS, matters: (c) => c.kind === "heartbeat" && c.waiting !== false });
+  const [waiting] = useRead(useCallback(() => fetchWaitingCaptures(), []), undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: (c) => c.kind === "heartbeat" && c.waiting !== false,
+  });
   // Written by the backup job, which names nothing: a "database" change.
-  useRefresh(readBackups, undefined, { gapMs: TODAY_GAP_MS, matters: () => false });
+  const [backups] = useRead(useCallback(() => fetchBackupSchedule(), []), undefined, {
+    gapMs: TODAY_GAP_MS,
+    matters: () => false,
+  });
 
   async function open(url: string, at: "top" | "latest" = "top") {
     setOpening(url);
@@ -219,6 +239,21 @@ export function TodaySurface({
       setNote({ text: (await launchBridge("auto", url)).message, at, error: false });
     } catch (caught) {
       setNote({ text: caught instanceof Error ? caught.message : "The browser could not be opened.", at, error: true });
+    } finally {
+      setOpening(null);
+    }
+  }
+
+  // Not now, for a post the phone asked for: Today then offers what it
+  // would have offered without the request.
+  async function dismissPhoneRequest(id: number) {
+    setOpening("phone-request");
+    setNote(null);
+    try {
+      await dismissDeskRequest(id);
+      load();
+    } catch (caught) {
+      setNote({ text: caught instanceof Error ? caught.message : "That did not work.", at: "top", error: true });
     } finally {
       setOpening(null);
     }
@@ -359,6 +394,13 @@ export function TodaySurface({
         </p>
       )}
 
+      {/* The archive age nudge: the server's own sentence, the same one Setup's archive step says. */}
+      {brief.archive_age && (
+        <p role="status" className="studio-meta shrink-0 rounded-md border border-edge px-3 py-1.5 leading-snug text-ink-secondary">
+          {brief.archive_age.toUpperCase()}
+        </p>
+      )}
+
       {/* First, because it has a time on it. A queued post is not posted by
           the studio: at its time it waits here and on the Queue. */}
       {due.length > 0 && (
@@ -481,6 +523,16 @@ export function TodaySurface({
                   className="rounded-md bg-signal-orange px-2.5 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110"
                 >
                   Go to Setup
+                </button>
+              )}
+              {brief.open_next.phone_request && (
+                <button
+                  type="button"
+                  disabled={opening !== null}
+                  onClick={() => void dismissPhoneRequest(brief.open_next.phone_request!.id)}
+                  className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                >
+                  Not now
                 </button>
               )}
               <button
@@ -638,7 +690,31 @@ function Panel({
  * at the size of a label rather than the size of a number, so it cannot be
  * read as a zero at a glance.
  */
-function Figure({ label, value, note }: { label: string; value: string; note?: string | null }) {
+/** The ~ that marks a rounded figure, with the word a screen reader hears instead. */
+function About() {
+  return (
+    <>
+      <span aria-hidden="true">~</span>
+      <span className="sr-only">about </span>
+    </>
+  );
+}
+
+function Figure({
+  label,
+  value,
+  note,
+  approximate = false,
+  noteApproximate = false,
+}: {
+  label: string;
+  value: string;
+  note?: string | null;
+  /** The figure was built from one LinkedIn rounded, such as 1.2K. */
+  approximate?: boolean;
+  /** The change under it was. */
+  noteApproximate?: boolean;
+}) {
   const unknown = value === NOT_MEASURED;
   return (
     <div className="min-w-0">
@@ -649,9 +725,15 @@ function Figure({ label, value, note }: { label: string; value: string; note?: s
           unknown ? "studio-meta mt-1 text-ink-muted" : "mt-0.5 text-[19px] leading-tight font-semibold text-ink-primary",
         )}
       >
+        {approximate && !unknown && <About />}
         {value}
       </p>
-      {note ? <p className="studio-meta mt-0.5 truncate text-[10px] text-ink-muted">{note}</p> : null}
+      {note ? (
+        <p className="studio-meta mt-0.5 truncate text-[10px] text-ink-muted">
+          {noteApproximate && note !== NOT_MEASURED && <About />}
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -871,6 +953,10 @@ function NextOut({
 /** The last thirty days, as one strip of four figures with their deltas. */
 function ThirtyDays({ read }: { read: Read<AnalyticsKpis> }) {
   const kpis = read.data;
+  // Which figures and changes LinkedIn had rounded (1.2K is anything from
+  // 1,150 to 1,249). Analytics marks them with a ~ and this strip drew the
+  // same figures unmarked.
+  const approx = new Set(kpis?.approximate ?? []);
   return (
     <section className="shrink-0 rounded-md border border-edge px-3 py-2">
       <div className="flex items-baseline justify-between gap-3">
@@ -886,9 +972,23 @@ function ThirtyDays({ read }: { read: Read<AnalyticsKpis> }) {
           <ReadState read={read} empty="Nothing has been captured for the last 30 days." />
         </div>
       ) : (
-        <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-4">
-          <Figure label="Impressions" value={count(kpis.impressions)} note={deltaOf(kpis.impressions_delta_pct)} />
-          <Figure label="Engagements" value={count(kpis.total_engagements)} note={deltaOf(kpis.engagements_delta_pct)} />
+        // No profile views: no reader on a real install writes one, so the
+        // figure was a permanent "not measured" (cycle 4, decision 8).
+        <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
+          <Figure
+            label="Impressions"
+            value={count(kpis.impressions)}
+            note={deltaOf(kpis.impressions_delta_pct)}
+            approximate={approx.has("impressions")}
+            noteApproximate={approx.has("impressions_delta_pct")}
+          />
+          <Figure
+            label="Engagements"
+            value={count(kpis.total_engagements)}
+            note={deltaOf(kpis.engagements_delta_pct)}
+            approximate={approx.has("total_engagements")}
+            noteApproximate={approx.has("engagements_delta_pct")}
+          />
           <Figure
             label="Followers"
             value={count(kpis.total_followers)}
@@ -897,9 +997,15 @@ function ThirtyDays({ read }: { read: Read<AnalyticsKpis> }) {
                 ? `${kpis.follower_growth! > 0 ? "+" : ""}${kpis.follower_growth}`
                 : NOT_MEASURED
             }
+            approximate={approx.has("total_followers")}
+            noteApproximate={approx.has("follower_growth")}
           />
-          <Figure label="Profile views" value={count(kpis.profile_views)} note={deltaOf(kpis.profile_views_delta_pct)} />
         </div>
+      )}
+      {approx.size > 0 && (
+        <p className="studio-meta mt-1 text-[10px] leading-snug text-ink-muted">
+          ~ MARKS A FIGURE OR CHANGE BUILT FROM ONE LINKEDIN ROUNDED, SUCH AS 1.2K, SO IT IS APPROXIMATE.
+        </p>
       )}
     </section>
   );
@@ -994,10 +1100,7 @@ function DemoCleanupNotice({
   );
 }
 
-/** engaged_at: when the studio first saw their latest comment, not when it was last re-read. */
-type ReplyPerson = TodayPerson & { engaged_at?: string | null };
-
-function Person({ person, onOpen }: { person: ReplyPerson; onOpen: () => void }) {
+function Person({ person, onOpen }: { person: TodayPerson; onOpen: () => void }) {
   return (
     <li>
       <button type="button" onClick={onOpen} className="w-full py-2 text-left transition-colors hover:bg-soft/60">
@@ -1053,22 +1156,25 @@ function LatestPost({
           {post.current.read_at ? ` · ${ago(post.current.read_at)}` : ""}
         </p>
       )}
+      {/* Whether it is still moving, in readings and with their count, and what is usual at this age, from results.movement. */}
+      {post.movement?.sentence && <p className="mt-1 text-[12px] leading-snug text-ink-secondary first-letter:uppercase">{post.movement.sentence}.{post.movement.usual?.sentence ? ` Beside it: ${post.movement.usual.sentence}.` : ""}</p>}
 
       {rows.length > 0 ? (
         <div className="mt-2 border-t border-edge pt-2">
           <p className="studio-meta mb-1 text-[10px] text-ink-muted">AT ABOUT TWO DAYS OLD, AGAINST YOUR USUAL</p>
+          {/* Two screens, two medians: this one is the median of the earlier
+              posts read at the same age, Posts' is the settled-post median,
+              and neither said so, though both are called "your usual". */}
+          <p className="studio-meta mb-1 text-[10px] leading-snug text-ink-muted">
+            YOUR USUAL HERE IS THE MEDIAN OF YOUR EARLIER POSTS READ AT THE SAME AGE. POSTS COMPARES SETTLED POSTS,
+            SO ITS USUAL IS A DIFFERENT FIGURE.
+          </p>
           <dl className="flex flex-col gap-1">
             {rows.map(([metric, value]) => (
               <div key={metric} className="flex items-baseline justify-between gap-3">
                 <dt className="text-[12px] text-ink-secondary">{METRIC_LABELS[metric] ?? metric}</dt>
                 <dd className="studio-meta text-right text-[11px] tabular-nums">
-                  <span
-                    className={cn(
-                      value.ratio !== null && value.ratio >= 1.2 && "text-signal-green-text",
-                      value.ratio !== null && value.ratio <= 0.8 && "text-signal-orange-text",
-                      (value.ratio === null || (value.ratio > 0.8 && value.ratio < 1.2)) && "text-ink-secondary",
-                    )}
-                  >
+                  <span className={ratioTone(value.ratio, "text-ink-secondary")}>
                     {value.this_post.toLocaleString()} vs {Math.round(value.your_usual).toLocaleString()}
                     {value.ratio !== null ? ` (${value.ratio.toFixed(1)}x)` : ""}
                   </span>

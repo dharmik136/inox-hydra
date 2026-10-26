@@ -63,7 +63,7 @@ interface PaletteAction {
 const OPENS: Record<SearchOpens, string> = {
   composer: "Opens in Composer",
   queue: "Opens Queue",
-  analytics: "Opens Analytics",
+  posts: "Opens Posts",
   leads: "Opens the lead",
   docs: "Opens the article",
 };

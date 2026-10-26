@@ -25,6 +25,8 @@ import { reportBridge } from "@/lib/bridgeState";
 import { useRefresh, type StudioChangeNote } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { ArchiveImport, archiveStatus } from "./ArchiveImport";
+import { RecordSetupFields } from "./RecordSetupFields";
+import { AnalyticsExportImport } from "./AnalyticsExportImport";
 
 /**
  * Setup: the studio learns who you are from your own LinkedIn.
@@ -56,17 +58,17 @@ function setupMayChange(change: StudioChangeNote, state: SetupState | null): boo
       return !state.bridge.connected;
     case "capture": {
       // A reader's line reads WORKING, LAST READ to the minute: another run
-      // of a working reader in the same minute reads the same. Near the turn
-      // of a minute this cannot tell the two clocks apart, so it reads.
+      // of a working reader in the minute its line already shows reads the
+      // same. The studio says which minute the run was, so no clock is asked.
       const entry = state.health.find((line) => line.extractor === change.extractor);
-      if (!entry || change.drift || entry.state !== "working") return true;
-      const now = new Date();
-      const seconds = now.getUTCSeconds();
-      return seconds < 2 || seconds > 57 || (entry.last_run_at ?? "").slice(0, 16) !== now.toISOString().slice(0, 16);
+      if (!entry || change.drift || entry.state !== "working" || !change.minute) return true;
+      return (entry.last_run_at ?? "").slice(0, 16) !== change.minute;
     }
     case "people":
     case "account":
     case "queue":
+    case "desk":
+    case "ideas":
       return false;
     default:
       return true;
@@ -106,7 +108,10 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
 
   useEffect(() => {
     void refresh();
-    fetchBrowserBridge().then(setBridge).catch(() => setBridge({ browsers: [], extension_path: "" }));
+    // A read that fails is said to have failed: an empty list of browsers
+    // read as a computer with none, and sent a creator to install Edge over
+    // an outage.
+    fetchBrowserBridge().then(setBridge).catch(() => setBridge({ browsers: [], extension_path: "", unreachable: true }));
   }, [refresh]);
   // Within about a second of the studio saying something changed, and every
   // BACKSTOP_MS while the window is in view, for what no write announces,
@@ -284,6 +289,8 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
             onOpenPage={(url) => void open(url)}
             onChanged={() => void refresh()}
           />
+          {/* LinkedIn's analytics export, beside the archive: the exact figures the archive does not carry. */}
+          <AnalyticsExportImport busyUrl={busy} onOpenPage={(url) => void open(url)} />
         </Step>
 
         <Step
@@ -370,6 +377,12 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
           )}
         </Step>
       </ol>
+
+      {/* From your record (cycle 4, track 7): three optional questions, each
+          with its reason and a Skip, kept as asks the section's cards match. */}
+      <div className="mb-8 rounded-md border border-edge p-4">
+        <RecordSetupFields />
+      </div>
 
       {finished && onOpenToday && (
         <div
@@ -801,6 +814,11 @@ function ForgetPanel({
           {counts.connections !== undefined ? `${plural(counts.connections, "connection")} and ` : ""}the record of your
           archive and history imports
         </li>
+        {/* From your record (cycle 4, track 7): forgetting clears these too. */}
+        <li>
+          What you asked From your record for, its daily cards, your marks on them and your notes, and the saved posts,
+          follows, votes, articles, reposts and searches your archive brought
+        </li>
         <li>The name, headline and company Setup filled in Brand Studio, unless you changed them</li>
       </ul>
       <p className="mt-2 text-[12px] text-ink-muted">Your leads, drafts and the posts you wrote in the studio are kept.</p>
@@ -855,7 +873,10 @@ function LoadByHand({ bridge }: { bridge: BrowserBridge }) {
   return (
     <div className="mt-4 rounded-md border border-edge p-3">
       <p className="text-[13px] leading-relaxed text-ink-secondary">
-        {none
+        {/* Not asked is not the same as none found. */}
+        {bridge.unreachable
+          ? "The studio could not be asked which browsers this computer has, so none is listed. Check that it is running, then come back to this step."
+          : none
           ? "No Chromium browser was found on this computer. Install Microsoft Edge or Brave, which load the bridge by themselves, then click the button above."
           : `${[
               names(bridge.browsers.filter((b) => b.carries_extension === false), "cannot load the bridge by itself"),

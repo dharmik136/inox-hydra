@@ -659,18 +659,49 @@ def _within_deadline(call, budget: float, slots=None):
     return outcome["value"]
 
 
+# Keys a JSON Schema may carry that Gemini's responseJsonSchema is not
+# documented to accept. The schema is validated on this machine either way,
+# so leaving these out loses no check: it only stops a request being refused.
+_GEMINI_UNSUPPORTED_SCHEMA_KEYS = ("additionalProperties", "$schema")
+
+
+def _gemini_schema(schema: Any) -> Any:
+    if isinstance(schema, dict):
+        return {key: _gemini_schema(value) for key, value in schema.items()
+                if key not in _GEMINI_UNSUPPORTED_SCHEMA_KEYS}
+    if isinstance(schema, list):
+        return [_gemini_schema(item) for item in schema]
+    return schema
+
+
 def _request_for(provider: str, base_url: str, api_key: str, model: str, prompt: str,
-                 system_prompt: Optional[str], max_tokens: int, temperature: float):
-    """The endpoint, body and headers for one completion, per provider family."""
+                 system_prompt: Optional[str], max_tokens: int, temperature: float,
+                 structured: Optional[Dict[str, Any]] = None):
+    """
+    The endpoint, body and headers for one completion, per provider family.
+
+    `structured` asks for an answer shaped by a JSON Schema, as {"name": ...,
+    "schema": {...}}, through each family's own constrained decoding: Gemini's
+    generationConfig.responseMimeType and responseJsonSchema; the OpenAI
+    family's response_format json_schema with strict on (OpenAI, Groq, Ollama
+    and any OpenAI-compatible endpoint such as LM Studio or vLLM, each of which
+    documents the same field); Anthropic's output_config.format. It sent a
+    plain prompt only, so every caller that wanted JSON had to ask for it in
+    words and hope (Re-Hook raises "unreadable" when the hope fails). Without
+    `structured` the request is exactly what it always was.
+    """
     if provider == "gemini":
         parts = []
         if system_prompt:
             parts.append({"text": f"SYSTEM INSTRUCTIONS:\n{system_prompt}\n\n"})
         parts.append({"text": prompt})
+        generation = {"maxOutputTokens": max_tokens, "temperature": temperature}
+        if structured:
+            generation["responseMimeType"] = "application/json"
+            generation["responseJsonSchema"] = _gemini_schema(structured["schema"])
         return (
             f"{base_url}/models/{quote(model, safe='')}:generateContent",
-            {"contents": [{"parts": parts}],
-             "generationConfig": {"maxOutputTokens": max_tokens, "temperature": temperature}},
+            {"contents": [{"parts": parts}], "generationConfig": generation},
             _gemini_headers(api_key),
         )
     if provider in ("openai", "groq", "ollama", "custom_openai"):
@@ -681,20 +712,56 @@ def _request_for(provider: str, base_url: str, api_key: str, model: str, prompt:
         headers = {"Content-Type": "application/json"}
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        return (
-            f"{base_url}/chat/completions",
-            {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature},
-            headers,
-        )
+        payload = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": temperature}
+        if structured:
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": structured["name"], "schema": structured["schema"], "strict": True},
+            }
+        return (f"{base_url}/chat/completions", payload, headers)
     if provider == "anthropic":
         payload = {"model": model, "max_tokens": max_tokens, "messages": [{"role": "user", "content": prompt}]}
         if system_prompt:
             payload["system"] = system_prompt
+        if structured:
+            payload["output_config"] = {"format": {"type": "json_schema", "schema": structured["schema"]}}
         return (
             f"{base_url}/messages",
             payload,
             {"Content-Type": "application/json", "x-api-key": api_key, "anthropic-version": "2023-06-01"},
         )
+    return None
+
+
+def _usage_of(provider: str, data: Any) -> Dict[str, Optional[int]]:
+    """The tokens the provider says it read and wrote, or None for a count it did not give."""
+    def count(container: Any, key: str) -> Optional[int]:
+        try:
+            value = container.get(key)
+        except AttributeError:
+            return None
+        return int(value) if isinstance(value, (int, float)) else None
+
+    if provider == "gemini":
+        meta = data.get("usageMetadata") if isinstance(data, dict) else None
+        return {"input": count(meta, "promptTokenCount"), "output": count(meta, "candidatesTokenCount")}
+    usage = data.get("usage") if isinstance(data, dict) else None
+    if provider == "anthropic":
+        return {"input": count(usage, "input_tokens"), "output": count(usage, "output_tokens")}
+    return {"input": count(usage, "prompt_tokens"), "output": count(usage, "completion_tokens")}
+
+
+def _refused_by_model(provider: str, data: Any) -> Optional[str]:
+    """The model's own refusal, which a schema does not bind, as a sentence, or None."""
+    try:
+        if provider == "anthropic" and data.get("stop_reason") == "refusal":
+            return "the model declined to answer"
+        if provider in ("openai", "groq", "ollama", "custom_openai"):
+            refusal = data["choices"][0]["message"].get("refusal")
+            if refusal:
+                return "the model declined to answer"
+    except (KeyError, IndexError, TypeError, AttributeError):
+        return None
     return None
 
 
@@ -815,6 +882,63 @@ def execute_llm_completion(
 
     _record_outcome(None)
     return text.strip()
+
+
+def execute_structured_completion(
+    config: AIProviderConfig,
+    prompt: str,
+    system_prompt: Optional[str],
+    schema: Dict[str, Any],
+    name: str,
+    max_tokens: int = 1200,
+    temperature: float = 0.2,
+) -> Optional[Dict[str, Any]]:
+    """
+    One completion whose answer is constrained by a JSON Schema, parsed.
+
+    Returns {"data", "text", "usage": {"input", "output"}, "provider",
+    "model"}, or None when no provider is configured. Like
+    execute_llm_completion, a configured provider that fails raises
+    ProviderError and a refused category raises EgressRefused; an answer that
+    is not JSON, or that the model declined, is a ProviderError too, never an
+    empty success. The schema is a request to the provider, not a guarantee:
+    the caller validates every value it is handed.
+    """
+    if config.provider == "local_deterministic" or not config.api_key and config.provider != "ollama":
+        return None
+    built = _request_for(config.provider, config.base_url, config.api_key, config.model, prompt,
+                         system_prompt, max_tokens, temperature, structured={"name": name, "schema": schema})
+    if built is None:
+        return None
+    endpoint, payload, headers = built
+    who = _provider_label(config.provider)
+    budget = PROVIDER_DEADLINE_SECONDS
+    try:
+        data = _within_deadline(
+            lambda stop: _post_json(endpoint, payload, headers, stop, who, config.model, budget), budget
+        )
+        declined = _refused_by_model(config.provider, data)
+        if declined:
+            raise ProviderError(f"{who} answered, but {declined}.")
+        text = _text_of(config.provider, data)
+        if text is None:
+            raise ProviderError(f"{who} answered, but with no text in it.")
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            raise ProviderError(f"{who} answered with something that is not the JSON asked for.") from None
+    except _egress.EgressRefused:
+        raise
+    except ProviderError as failure:
+        _record_outcome(failure)
+        raise
+    except Exception as error:
+        failure = ProviderError(f"{who} request failed: {error}")
+        _record_outcome(failure)
+        raise failure from None
+    _record_outcome(None)
+    return {"data": parsed, "text": text, "usage": _usage_of(config.provider, data),
+            "provider": config.provider, "model": config.model}
 
 
 async def execute_llm_completion_async(

@@ -135,6 +135,8 @@ function activityMayChange(change: StudioChangeNote, stream: ActivityStreamData 
     case "capture":
     case "account":
     case "queue":
+    case "desk":
+    case "ideas":
       return false;
     default:
       return true;
@@ -204,15 +206,24 @@ export function ActivitySurface({
     if (!stream) return [];
     const all: Entry[] = [];
     for (const post of stream.recent_posts) {
-      const figures = [`Reactions: ${measured(post.reactions)}`, `Comments: ${measured(post.comments)}`];
-      if (post.reposts) figures.push(`Reposts: ${measured(post.reposts)}`);
-      if (post.impressions !== null) figures.push(`Impressions: ${measured(post.impressions)}`);
+      // Every figure the same way: a count the bridge read, 0 included, or
+      // "not measured". Reposts were left out at 0, so a captured zero and a
+      // missing value drew the same, against the rule measured() states.
+      const figures = [
+        `Reactions: ${measured(post.reactions)}`,
+        `Comments: ${measured(post.comments)}`,
+        `Reposts: ${measured(post.reposts)}`,
+        `Impressions: ${measured(post.impressions)}`,
+      ];
       all.push({
         key: `post-${post.activity_urn}`,
         kind: "post",
-        at: post.last_seen_at,
+        // Filed under the day it was published, which is the day a creator
+        // looks for it under, not the day the bridge last read it; when it
+        // was read is said on the line instead.
+        at: post.published_at ?? post.last_seen_at,
         subject: post.excerpt || "Authored post without excerpt",
-        detail: figures.join(" · "),
+        detail: `${figures.join(" · ")} · read ${ago(post.last_seen_at)}`,
         urn: post.activity_urn,
       });
     }
@@ -445,13 +456,12 @@ export function ActivitySurface({
           </span>
           <span className="text-ink-muted" aria-hidden="true">|</span>
           <span className="text-ink-secondary">
-            {/* No browser is named until one has reported in. This used
-                to say Brave whenever nothing was known. */}
-            {summary.bridge_carrier
-              ? `Bridge: ${summary.bridge_carrier} (${summary.bridge_last_seen ? ago(summary.bridge_last_seen) : "not heard from yet"})`
-              : summary.bridge_last_seen
-                ? `Bridge last heard from ${ago(summary.bridge_last_seen)}`
-                : "The bridge has not reported in yet"}
+            {/* When the bridge was last heard from. A "Bridge: {carrier}"
+                sentence stood here that could never render: the route read
+                a key the heartbeat never returns, so no browser is named. */}
+            {summary.bridge_last_seen
+              ? `Bridge last heard from ${ago(summary.bridge_last_seen)}`
+              : "The bridge has not reported in yet"}
           </span>
           {summary.active_sync_chain && (
             <span className="text-[11px] text-signal-orange-text">

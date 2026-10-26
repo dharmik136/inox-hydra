@@ -159,18 +159,29 @@ def set_runtime_dev_mode(enabled: bool) -> bool:
 # Screen registry
 # ---------------------------------------------------------------------------
 
-# Each entry is the id of a real tab pane in index.html. If a screen is renamed
-# there and not here, `verify_screen_registry` fails, which is how this stays
-# true rather than becoming documentation.
+# One entry per section of the rail, keyed by the tab id the old markup gave
+# it and carrying the screen key the interface files annotations under
+# (studio/ui/src/lib/navigation.ts, screenKey). The two vocabularies differ
+# where the old markup did: the composer is "studio" and leads are "crm".
+# tests/test_qc4_t3_screen_registry.py holds the two lists to each other:
+# every section declares a key here, and nothing here outlives its section.
+# The Swipe File and Command, cut in cycle 3, were listed for a cycle after
+# they were gone.
 SCREEN_REGISTRY: Dict[str, Dict[str, Any]] = {
+    "tab-setup": {"key": "setup", "label": "Setup", "owner": "ENGINEERING_MANAGER"},
+    "tab-today": {"key": "today", "label": "Today", "owner": "DESIGNER"},
+    "tab-activity": {"key": "activity", "label": "Activity", "owner": "ENGINEERING_MANAGER"},
     "tab-studio": {"key": "studio", "label": "Post Studio", "owner": "DESIGNER"},
     "tab-queue": {"key": "queue", "label": "Schedule and Queue", "owner": "ENGINEERING_MANAGER"},
     "tab-crm": {"key": "crm", "label": "Inbound CRM", "owner": "ENGINEERING_MANAGER"},
-    "tab-inspirations": {"key": "swipe", "label": "Viral Swipe File", "owner": "CEO"},
+    "tab-posts": {"key": "posts", "label": "Posts", "owner": "QA_LEAD"},
+    "tab-patterns": {"key": "patterns", "label": "Patterns", "owner": "QA_LEAD"},
+    "tab-outbound": {"key": "outbound", "label": "Outbound", "owner": "QA_LEAD"},
     "tab-analytics": {"key": "analytics", "label": "Analytics", "owner": "QA_LEAD"},
-    "tab-ai-command": {"key": "ai_command", "label": "AI Command", "owner": "ENGINEERING_MANAGER"},
     "tab-docs": {"key": "docs", "label": "Playbook and Docs", "owner": "CEO"},
     "tab-settings": {"key": "settings", "label": "Settings", "owner": "RELEASE_MANAGER"},
+    "tab-record": {"key": "record", "label": "From your record", "owner": "DESIGNER"},
+    "tab-devtools": {"key": "devtools", "label": "Devtools", "owner": "ENGINEERING_MANAGER"},
 }
 
 UNMAPPED_PREFIX = "unmapped:"

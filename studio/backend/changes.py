@@ -64,13 +64,15 @@ except ImportError:
 _log = logging.getLogger("studio.changes")
 
 # The words a change can carry. "readings" are one post's figures and
-# "account" the creator's daily figures; "people" is someone engaging with one
-# of the creator's posts and "outbound" the creator engaging elsewhere.
+# "account" the creator's own figures beyond a post (the daily totals, the
+# account and content pages); "people" is someone engaging with one of the
+# creator's posts and "outbound" the creator engaging elsewhere; "desk" is a
+# post the phone asked the desk to read, "ideas" the daily section's cards.
 # "database" is the watcher's, something was committed that no publisher
 # named, and a writer of several unrelated things says it too: either way a
 # window takes it as "anything may have changed".
 KINDS = ("capture", "heartbeat", "posts", "readings", "account", "people", "outbound",
-         "identity", "imports", "queue", "database")
+         "identity", "imports", "queue", "desk", "ideas", "database")
 
 # What a change may carry beside its kind, so a window can tell whether it
 # alters what that window shows: which reader ran and whether it drifted, whether
@@ -80,6 +82,8 @@ KINDS = ("capture", "heartbeat", "posts", "readings", "account", "people", "outb
 # is read as "this kind, anywhere".
 IDENTIFIERS = {
     "extractor": re.compile(r"^[a-z_]{1,40}$"),
+    # The minute a reader ran, as Setup prints it, in UTC.
+    "minute": re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$"),
     "post": re.compile(r"^urn:li:activity:\d{1,25}$"),
     "interaction": re.compile(r"^(comment|reaction|repost)$"),
     "lead": re.compile(r"^[A-Za-z0-9_.:-]{1,80}$"),
@@ -233,13 +237,16 @@ def publish_written(**written: Any) -> None:
             publish(kind)
 
 
-def published(result: Dict[str, Any], kind: str, statuses: Tuple[str, ...]) -> Dict[str, Any]:
+def published(result: Dict[str, Any], kind: Any, statuses: Tuple[str, ...] = (),
+              counts: Tuple[str, ...] = ()) -> Dict[str, Any]:
     """
-    Publishes `kind` when a writer's answer has one of `statuses`, and hands
-    the answer back, for a route that returns its writer's answer as it is.
+    Publishes `kind` (or each of several) when a writer's answer has one of
+    `statuses` or a count above zero under one of `counts`, and hands the
+    answer back, for a route that returns its writer's answer as it is.
     """
-    if isinstance(result, dict) and result.get("status") in statuses:
-        publish(kind)
+    if isinstance(result, dict) and (result.get("status") in statuses or any(result.get(c) for c in counts)):
+        for each in (kind if isinstance(kind, tuple) else (kind,)):
+            publish(each)
     return result
 
 

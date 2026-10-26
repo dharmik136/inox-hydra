@@ -234,43 +234,19 @@ def test_analytics_prints_no_percentage_over_a_hundred(screen):
     assert "116.25" not in text
 
 
-def test_the_comparison_table_is_paged_and_says_the_order_it_is_in(screen):
+def test_analytics_sends_the_creator_to_posts_for_the_table(screen):
+    """
+    Analytics drew a fourteen-row "Post comparison" over the posts the Posts
+    screen tables in full; cycle 4 moved it there (track 3, batch 1). The
+    aside's Open Posts goes to the one table, which pages the whole history.
+    """
     _open(screen, "Analytics")
     screen.wait_for_timeout(900)
-    body = screen.locator("body").inner_text()
-    assert re.search(r"\d+–\d+ of [\d,]+, most seen first", body), (
-        "the table says how much of the history it shows, and in what order")
-    # The words and the rows agree: the rows are in descending impressions,
-    # which is what "most seen" means, and not in the engine's order, which
-    # is reactions against the creator's median and is named separately in
-    # the panel beside the table.
-    impressions = []
-    for row in screen.locator("tbody tr").all():
-        cells = row.locator("td").all_inner_texts()
-        if len(cells) >= 2 and cells[1].replace(",", "").strip().isdigit():
-            impressions.append(int(cells[1].replace(",", "").strip()))
-    assert impressions, "the table's rows carry impressions"
-    assert impressions == sorted(impressions, reverse=True), f"not most seen first: {impressions}"
-    assert "best first" not in body.lower()
-
-    rows_before = screen.locator("tbody tr").all_inner_texts()
-    nxt = screen.locator('button[aria-label="Next posts"]')
-    assert nxt.is_enabled()
-    nxt.click()
-    screen.wait_for_timeout(700)
-    assert screen.locator("tbody tr").all_inner_texts() != rows_before
-
-
-# ---------------------------------------------------------------------------
-# Patterns
-# ---------------------------------------------------------------------------
-
-def test_patterns_has_more_than_the_two_controls_it_had(screen):
-    _open(screen, "Patterns")
+    assert screen.locator("main tbody tr").count() == 0, "Analytics still draws a post table"
+    screen.get_by_role("link", name="Open Posts").click()
     screen.wait_for_timeout(900)
-    controls = screen.locator(
-        "main button:visible, main input:visible, main select:visible, main a[href]:visible").count()
-    assert controls > 2, f"Patterns still has {controls} controls"
+    assert screen.locator("h1").inner_text().strip() == "What worked, and who it brought"
+    assert _count_text(screen), "Posts does not print where its page sits in the history"
 
 
 def test_patterns_says_no_difference_rather_than_ranking_noise(screen):

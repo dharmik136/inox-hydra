@@ -1423,6 +1423,383 @@ def _migrate_current_scores(cursor: sqlite3.Cursor) -> None:
         cursor.execute("UPDATE post_engagement SET stale = stale | 2 WHERE (stale & 2) = 0")
 
 
+
+def _migrate_reading_precision_and_series(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 28:
+    A post reading says how precisely it was read, the figures the post
+    analytics page shows beside the seven already read get columns, viewer
+    demographics carry the day they were read, a post carries its format, and
+    a windowed analytics card is kept as the window it covers.
+
+    Precision mirrors migration 5. The post analytics reader turned "12K"
+    into 12000 with no flag, so growth between two rounded readings could be
+    the rounding step and nothing else: 12K read twice is anything from no
+    change to a thousand either way. A reading now says 'exact', 'rounded',
+    or NULL for one written before this migration or by a reader that does
+    not say.
+
+    The new figure columns are LinkedIn's own per-post figures from the same
+    page (followers gained from this post, profile viewers from this post,
+    link visits, article views, video views) and the in-network and
+    out-of-network share of impressions, stored as the percentage LinkedIn
+    printed. NULL means the page did not show it, never 0.
+
+    audience_demographics has no date, so demographics could never become a
+    series. audience_demographic_readings keeps one row per day per
+    dimension and label, for a post or for the account.
+
+    own_posts.format is one of post_format.FORMATS, or 'unknown' when neither
+    the archive's media field nor a card marker said. Nothing guesses.
+
+    analytics_windows keeps a creator analytics card that covers a window
+    (7 days by default on the 2026 page) as that window, keyed by day and
+    label, so a weekly figure is shown as weekly and never summed as a day.
+    analytics_daily keeps only daily figures, which is what get_kpis sums.
+    """
+    cursor.execute("PRAGMA table_info(post_metric_observations)")
+    columns = {row[1] for row in cursor.fetchall()}
+    for name, kind in (("precision", "TEXT"), ("followers_gained", "INTEGER"), ("profile_viewers", "INTEGER"),
+                       ("link_visits", "INTEGER"), ("article_views", "INTEGER"), ("video_views", "INTEGER"),
+                       ("in_network_pct", "REAL"), ("out_of_network_pct", "REAL")):
+        if name not in columns:
+            cursor.execute(f"ALTER TABLE post_metric_observations ADD COLUMN {name} {kind}")
+
+    cursor.execute("PRAGMA table_info(own_posts)")
+    if "format" not in {row[1] for row in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE own_posts ADD COLUMN format TEXT NOT NULL DEFAULT 'unknown'")
+
+    # grain: one row per day per dimension and label, for one post
+    # (activity_urn) or for the account (activity_urn ''). Re-reading the
+    # same page the same day refreshes the row rather than adding one.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audience_demographic_readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            observed_at TEXT NOT NULL,
+            observed_on TEXT NOT NULL,
+            activity_urn TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL,
+            dimension TEXT NOT NULL,
+            label TEXT NOT NULL,
+            percentage REAL NOT NULL,
+            UNIQUE (observed_on, activity_urn, source, dimension, label)
+        )
+    """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_demographic_readings_post "
+        "ON audience_demographic_readings(activity_urn, observed_on)"
+    )
+
+    # Each figure of a post is now the newest reading that has it (review
+    # S2), and the per-post summary keeps that per figure. Rows written
+    # before carry one reading for all four, so they are marked for the
+    # catch-up to rewrite, as a new reading would mark them; until it has,
+    # results.figures reads those posts from the readings themselves.
+    if cursor.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'post_engagement'").fetchone():
+        cursor.execute("UPDATE post_engagement SET stale = stale | 2 WHERE latest_reading IS NOT NULL")
+
+    # grain: one row per day per window the creator analytics page was read
+    # at. A figure the card did not show is NULL, never 0.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS analytics_windows (
+            date TEXT NOT NULL,
+            period_label TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            impressions INTEGER,
+            reactions INTEGER,
+            comments INTEGER,
+            shares INTEGER,
+            followers INTEGER,
+            precision TEXT,
+            source TEXT NOT NULL DEFAULT 'observed',
+            PRIMARY KEY (date, period_label)
+        )
+    """)
+
+
+def _migrate_record_section(cursor: sqlite3.Cursor) -> None:
+    """
+    The tables of the daily section "From your record" (cycle 4, track 7),
+    and nothing a screen already showed is changed.
+
+    Every row here is the creator's own: what they typed and chose to keep
+    (asks), what the studio worked out for them once a day (daily_run and
+    daily_view), the marks they put on it (card_marks), a monthly note in
+    their own words (record_notes), what their own LinkedIn archive says they
+    saved, followed, voted on, reposted and searched for (archive_records, each row
+    with the file it came from and the import date), and the company's
+    signed library of forms and patterns (library_entries), which is the one
+    table that is not about the creator at all. Other people's posts have no
+    table: an engaged-with card keeps the link, the date and the creator's
+    own words, never the other person's text (migration 2's reason).
+
+    Nothing is written by this migration. The daily job fills the batch the
+    first time the studio runs each day; the policy says what is kept and
+    for how long before the first row lands.
+    """
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS asks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        text TEXT NOT NULL,
+        source TEXT NOT NULL CHECK (source IN ('setup', 'ask_box', 'composer', 'telegram', 'archive_search', 'more_of_this')),
+        field TEXT CHECK (field IS NULL OR field IN ('topics', 'audience', 'avoid')),
+        origin_ref TEXT,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'kept', 'retired')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_used_at TEXT,
+        hidden_at TEXT
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_asks_status ON asks(status, created_at DESC)")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS daily_run (
+        day TEXT PRIMARY KEY,
+        input_signature TEXT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        local_ok INTEGER NOT NULL DEFAULT 0,
+        local_note TEXT,
+        carried_from TEXT,
+        seed INTEGER,
+        rerolled_at TEXT,
+        model_status TEXT,
+        model_note TEXT,
+        model_calls INTEGER NOT NULL DEFAULT 0,
+        model_tokens_in INTEGER NOT NULL DEFAULT 0,
+        model_tokens_out INTEGER NOT NULL DEFAULT 0,
+        estimated_cost_usd REAL,
+        price_date TEXT,
+        searches INTEGER NOT NULL DEFAULT 0,
+        dropped_cards INTEGER NOT NULL DEFAULT 0,
+        note TEXT
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS daily_view (
+        day TEXT NOT NULL,
+        card_id TEXT NOT NULL,
+        slot INTEGER NOT NULL,
+        block TEXT NOT NULL CHECK (block IN ('working_for_you', 'you_asked', 'you_engaged_with', 'monday', 'model', 'library')),
+        kind TEXT NOT NULL,
+        label TEXT NOT NULL CHECK (label IN ('measured', 'derived', 'typed', 'suggested', 'retrieved', 'curated', 'abstained')),
+        method TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        provenance_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'shown',
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (day, card_id)
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_daily_view_day ON daily_view(day, slot)")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS card_marks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        day TEXT NOT NULL,
+        card_id TEXT NOT NULL,
+        mark TEXT NOT NULL CHECK (mark IN ('keep', 'skip', 'used', 'posted', 'hide')),
+        at TEXT NOT NULL,
+        post_id TEXT,
+        UNIQUE (day, card_id, mark)
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_card_marks_card ON card_marks(card_id, mark)")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS record_notes (
+        month TEXT PRIMARY KEY,
+        text TEXT NOT NULL,
+        at TEXT NOT NULL
+    )
+    """)
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS archive_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('saved_item', 'member_follow', 'company_follow', 'vote', 'article',
+                                           'instant_repost', 'search_query')),
+        url TEXT,
+        title TEXT,
+        name TEXT,
+        detail TEXT,
+        happened_at TEXT,
+        dedupe_key TEXT NOT NULL,
+        source_file TEXT NOT NULL,
+        imported_at TEXT NOT NULL,
+        import_id INTEGER,
+        UNIQUE (kind, dedupe_key)
+    )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_archive_records_kind ON archive_records(kind, happened_at DESC)")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS library_entries (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entry_id TEXT NOT NULL UNIQUE,
+        kind TEXT NOT NULL CHECK (kind IN ('form', 'pattern', 'example')),
+        title TEXT NOT NULL,
+        text TEXT NOT NULL,
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        author TEXT NOT NULL,
+        bundle_version TEXT NOT NULL,
+        signed_at TEXT NOT NULL,
+        key_id TEXT NOT NULL,
+        fetched_at TEXT NOT NULL
+    )
+    """)
+    # A draft made from a card records which card, so "used" and "posted"
+    # can be told apart from a draft the creator started on their own: a
+    # draft's origin was not recorded at all before this. The Composer's
+    # drafts are posts rows (status draft), so the origin is kept there.
+    cursor.execute("PRAGMA table_info(posts)")
+    columns = {row[1] for row in cursor.fetchall()}
+    if "origin_card_id" not in columns:
+        cursor.execute("ALTER TABLE posts ADD COLUMN origin_card_id TEXT")
+    if "origin_day" not in columns:
+        cursor.execute("ALTER TABLE posts ADD COLUMN origin_day TEXT")
+    # "Posted" is the studio's mark, not the creator's: written when a post
+    # that came from a card goes out, by whichever path takes it there
+    # (Publish, the queue, Send to LinkedIn, or the bridge binding it), so no
+    # path can forget it.
+    cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS record_card_posted AFTER UPDATE OF status ON posts
+        WHEN NEW.origin_card_id IS NOT NULL AND NEW.origin_day IS NOT NULL
+             AND NEW.status IN ('published', 'sent') AND OLD.status IS NOT NEW.status
+        BEGIN
+            INSERT OR IGNORE INTO card_marks (day, card_id, mark, at, post_id)
+            VALUES (NEW.origin_day, NEW.origin_card_id, 'posted', strftime('%Y-%m-%dT%H:%M:%S+00:00', 'now'), NEW.id);
+        END
+    """)
+
+
+def _migrate_desk_requests_and_export_totals(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 30 (cycle 4, track 6):
+    A post link shared from the phone is a desk request, and LinkedIn's
+    analytics export has a home for the totals it carries.
+
+    desk_requests: one row per LinkedIn post link the phone sent. The
+    Telegram ingress writes it; `state` is open, read, expired, dismissed or
+    refused. A link to one of the creator's own posts is open until that
+    post's analytics page is read after it was asked, a week passes, or the
+    creator dismisses it on Today, which offers the oldest open one. A link
+    that names no post of theirs is refused at once, with the reason in
+    `note`, and is never offered on Today: the studio reads only the
+    creator's own pages.
+
+    analytics_daily.new_followers: LinkedIn's export gives new followers a
+    day, which is not the follower count `followers` holds. The export's
+    daily engagements need no column: the page reader has always stored the
+    engagements card in `reactions` (studio/extension/content.js), and the
+    Analytics screen reads Engagements from there, so the export's go there
+    too, one definition for one figure whatever its source.
+
+    post_metric_observations.engagements: per post, the export gives one
+    engagements total, and a post's readings keep reactions, comments and
+    reposts apart, so a total has no column there and putting it under
+    reactions would be a figure the studio made up. Every new column is NULL
+    for every row that exists: nothing is measured by this migration.
+    """
+    # grain: one row per request, however many times the same post is shared.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS desk_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            activity_urn TEXT NOT NULL,
+            asked_at TEXT NOT NULL,
+            done_at TEXT,
+            note TEXT,
+            source TEXT NOT NULL DEFAULT 'telegram',
+            state TEXT NOT NULL DEFAULT 'open'
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_desk_requests_open ON desk_requests(state, asked_at)")
+    for table, column in (("analytics_daily", "new_followers"),
+                          ("post_metric_observations", "engagements")):
+        cursor.execute(f"PRAGMA table_info({table})")
+        if column not in {row[1] for row in cursor.fetchall()}:
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} INTEGER")
+
+
+def _migrate_account_and_content_readings(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 31:
+    Readings of the creator's account figures, their own articles and
+    newsletters, their own reposts, the edited flag, and a video's watch time.
+
+    The creator opens these pages and nothing read them (the capture report's
+    coverage table): profile views and search appearances, the new followers
+    graph, "Who viewed your profile", an article's and a newsletter's own
+    analytics pages, and on their Activity tab their reposts and the "edited"
+    mark on their posts.
+
+      insight_readings      one row per read of a page per hour and window:
+                            the figures it showed, NULL for any it did not,
+                            never 0; the window it named ('' on a content page
+                            that names none); content_urn for a content page,
+                            '' for an account page. Counts and windows only:
+                            no viewer, searcher or company is ever a column.
+      insight_daily_points  per day points from a graph (new followers).
+      own_reposts           that the creator reposted, when, and the repost's
+                            own figures where the card tells them apart. The
+                            original's author, words and figures are never kept.
+      own_posts.edited_first_seen_at  when a post was first seen marked edited.
+      post_metric_observations.watch_time_seconds and average_watch_seconds,
+                            a video post's figures on its post analytics page.
+    """
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS insight_readings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            page TEXT NOT NULL,
+            content_urn TEXT NOT NULL DEFAULT '',
+            observed_at TEXT NOT NULL,
+            observed_hour TEXT NOT NULL,
+            period_label TEXT NOT NULL DEFAULT '',
+            precision TEXT,
+            profile_views INTEGER,
+            search_appearances INTEGER,
+            views INTEGER,
+            impressions INTEGER,
+            members_reached INTEGER,
+            reactions INTEGER,
+            comments INTEGER,
+            reposts INTEGER,
+            subscribers INTEGER,
+            email_sends INTEGER,
+            email_open_rate_pct REAL,
+            UNIQUE (page, content_urn, period_label, observed_hour)
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_insight_readings_page ON insight_readings(page, observed_at)")
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS insight_daily_points (
+            date TEXT NOT NULL,
+            figure TEXT NOT NULL,
+            value INTEGER NOT NULL,
+            precision TEXT,
+            source TEXT NOT NULL,
+            observed_at TEXT NOT NULL,
+            PRIMARY KEY (date, figure, source)
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS own_reposts (
+            activity_urn TEXT PRIMARY KEY,
+            reposted_at TEXT,
+            reactions INTEGER,
+            comments INTEGER,
+            reposts INTEGER,
+            impressions INTEGER,
+            first_seen_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL
+        )
+    """)
+    cursor.execute("PRAGMA table_info(own_posts)")
+    if "edited_first_seen_at" not in {row[1] for row in cursor.fetchall()}:
+        cursor.execute("ALTER TABLE own_posts ADD COLUMN edited_first_seen_at TEXT")
+    cursor.execute("PRAGMA table_info(post_metric_observations)")
+    columns = {row[1] for row in cursor.fetchall()}
+    for name in ("watch_time_seconds", "average_watch_seconds"):
+        if name not in columns:
+            cursor.execute(f"ALTER TABLE post_metric_observations ADD COLUMN {name} INTEGER")
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -1451,6 +1828,14 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (26, "One identity for a post: every publication has its post, and the dead queue is gone",
      _migrate_one_post_identity),
     (27, "A lead's score is recomputed when what it is computed from changes", _migrate_current_scores),
+    (28, "Precision on post readings, dated demographics, a format per post and windowed analytics as windows",
+     _migrate_reading_precision_and_series),
+    (29, "From your record: asks, the dated daily batch and its run, card marks, a monthly note, "
+         "the archive's saved and followed items, and the signed library", _migrate_record_section),
+    (30, "A post link from the phone is a desk request, and the analytics export's totals have a home",
+     _migrate_desk_requests_and_export_totals),
+    (31, "Account figures, own article and newsletter readings, own reposts, edited posts and watch time",
+     _migrate_account_and_content_readings),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
-import { ExternalLink, Sparkles, TrendingUp, TrendingDown, HelpCircle } from "lucide-react";
+import { ExternalLink, Send, TrendingUp, TrendingDown, HelpCircle } from "lucide-react";
 import { fetchEvidenceBrief, type RetrievalEvidenceBrief, type EvidenceExemplar } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /**
  * CP2 Evidence-Backed Composer Panel.
  *
- * Sourced solely from real settled post contrasts (n >= 8 per arm guard)
- * and historical top/bottom post exemplars. Zero cloud egress.
+ * Sourced solely from the creator's own settled posts: the contrasts the
+ * engine calls conclusive, with its own minimum a side, and the top
+ * exemplars of the one ranking. Every minimum printed here is the brief's
+ * (results.MIN_FOR_MEDIAN, results.MIN_PER_SIDE), never this file's: it
+ * used to write both numbers out in its own words. Zero cloud egress.
  */
 export function EvidencePanel() {
   const [brief, setBrief] = useState<RetrievalEvidenceBrief | null>(null);
@@ -44,8 +47,8 @@ export function EvidencePanel() {
           <p className="studio-meta text-ink-muted mt-1">COLD START</p>
         </div>
         <p className="text-[12px] leading-relaxed text-ink-muted">
-          Fewer than 3 settled posts found in local database. Ingest your LinkedIn activity
-          to unlock contrast findings and grounded exemplars.
+          Fewer than {brief.min_settled_posts} settled posts found in local database. Ingest your LinkedIn
+          activity to unlock contrast findings and grounded exemplars.
         </p>
       </div>
     );
@@ -67,20 +70,22 @@ export function EvidencePanel() {
           <p className="studio-label">Observed Contrast Effects</p>
           <span className="text-[11px] text-ink-muted flex items-center gap-1">
             <HelpCircle className="size-3" aria-hidden="true" />
-            n &ge; 8 guard
+            {brief.min_per_side} posts a side
           </span>
         </div>
 
         {brief.contrast_findings.length === 0 ? (
           <div className="rounded-md border border-edge bg-soft/40 p-3 text-[12px] text-ink-muted leading-relaxed">
-            No format arm has reached n &ge; 8 settled posts with a statistically conclusive gap yet.
-            Continuing to publish builds this sample size.
+            No form has {brief.min_per_side} settled posts on both sides with a difference your own posts can
+            separate yet. Continuing to publish builds this sample.
           </div>
         ) : (
           <div className="flex flex-col gap-2">
             {brief.contrast_findings.map((c) => {
               const ratio = c.ratio ?? 1.0;
-              const isPositive = ratio > 1.0;
+              // The arrow follows the engine's own verdict, never a cut of
+              // this file's: only "more" and "fewer" reach this list.
+              const isPositive = c.difference?.verdict === "more";
               const ratioDisplay = `${ratio.toFixed(2)}x`;
               return (
                 <div
@@ -132,16 +137,25 @@ export function EvidencePanel() {
         </section>
       )}
 
-      {/* Grounded Copilot Brief summary */}
+      {/* Where this evidence goes. It first said the contrasts and exemplars
+          were put straight into the copilot's prompt, which they are not: the
+          brief reaches a prompt only through the copilot agent, which no
+          screen calls. Then it said nothing here was sent, which was false the
+          other way: Re-Hook and Command append the voice pack to every prompt,
+          and its openers are the opening lines of the top exemplars listed
+          above, chosen by the same ranking (voice_pack._openers).
+          tests/test_qc4_t3_evidence_claim.py reads what is sent on a seeded
+          history and holds this sentence to it. */}
       {brief.brief_section && (
         <section className="border-t border-edge pt-4">
           <p className="studio-label mb-2 flex items-center gap-1.5">
-            <Sparkles className="size-3.5 text-signal-blue" aria-hidden="true" />
-            Active Copilot Grounding
+            <Send className="size-3.5 text-ink-muted" aria-hidden="true" />
+            Where this goes
           </p>
           <p className="text-[11px] leading-relaxed text-ink-muted">
-            These exact contrast ratios and exemplar posts are injected directly into your BYO-AI
-            Copilot prompt context, ensuring recommendations quote real creator history.
+            When an AI provider is connected, the opening lines of your strongest posts, the top ones listed here, go
+            to it as part of your voice with every Re-Hook and Command. The contrasts and figures on this tab stay on
+            this machine. The Prompt tab lists everything that is sent.
           </p>
         </section>
       )}

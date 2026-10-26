@@ -438,6 +438,49 @@ Deferred on the owner's direction, one line each:
   visible window holds a stream.
 - N16: nothing on screen says live updates stopped when the stream is refused.
 
+## Merged with release 2.8.0
+
+`qc4/release-2.8.0` at `bc98deb` (tracks 5, 7, 3 and 6 and the integration fixes, released as
+2.8.0) is merged into this branch for 2.9.0. Five conflicts, each keeping both sides: the router
+includes in `app.py` (the change stream beside the record, phone and analytics export routes);
+the maintainers' list in `docs_engine.py`; two returns in `onboarding.py`, where the publish lines
+stay before the release's richer answers; the endpoint ledger; and `TodaySurface.tsx`, where track
+3 had already put each side panel's read under `useRefresh` inside `useRead`. The panels' stream
+rule now rides on that one hook as `useRead`'s third argument, rather than a second hook per panel
+that would have read twice on every return. Track 3's guard
+(`tests/test_qc4_t3_today_panels_read_again.py`) looked for the literal `useRefresh(again)` and
+now accepts the extended call; it still fails with an interval added and with the hook removed.
+
+The release's new writers each say what they wrote, after the commit:
+
+| Writer | Line | Kind | Test |
+|---|---|---|---|
+| The account and content pages reader (`POST /api/analytics/page-figures`, relayed by the extension) | `studio/backend/routers/analytics.py:380` | account, when it recorded a reading or a point | `test_the_account_and_content_pages_say_account` |
+| The analytics export import (track 6) | `studio/backend/routers/analytics_export_routes.py:113` | account and readings | none of its own: it needs a real export file, which track 6's tests build |
+| A post the phone asked the desk to read (track 6) | `studio/backend/desk_requests.py:99` | desk | `test_a_post_the_phone_asked_about_says_desk` |
+| Today settling the requests whose analytics were read (track 6) | `desk_requests.py:175` | none: a derived write, it wakes nobody | through `test_today` and the suite |
+| The daily section's run (track 7) | `studio/backend/record_daily.py:338` | ideas | `test_the_daily_section_and_its_marks_say_ideas` |
+| A keep, skip or hide on a card, and its removal (track 7) | `studio/backend/routers/record.py:122, 127` | ideas | the same test |
+
+Setup and Activity show neither new kind; Today's brief shows desk requests and not the daily
+section. The coverage test's table names the new relayed path.
+
+A capture now also carries the minute it ran (`minute`), and Setup's same-minute rule compares
+the studio's own minute. The rule it replaces asked the browser's clock and, within two seconds
+of the turn of a minute, read on every capture to be safe, so a burst across the turn read once a
+second: `test_setup_reads_once_for_a_reader_running_again_in_the_same_minute` failed on the merged
+tree on that.
+
+Endpoint census on the merged tree, by the ledger's own counting (`tests/test_endpoint_reachability.py`):
+206 paths, 149 reached by the interface, 57 unreachable. The release's 205, 148 and 57 plus this
+track's `/api/v1/events`, which the interface reaches.
+
+Suite on the merged tree, as CI runs it: 3,674 passed, 18 skipped, 0 failed, in 715 s. The
+eighteenth skip is `tests/test_qc2_r4_retention.py`'s own when the two hours before now cross
+midnight, as they did during the run. Two failures on the way, both fixed before this: track 3's
+guard on the literal hook call (above), and this track's daily section test marking the first
+card, which is not always one that is shown; it now picks a shown card, as track 7's tests do.
+
 ## Suite, as CI runs it
 
 `pytest tests studio/tests -q -rs` from the worktree with the project interpreter, at `e13acf0`:

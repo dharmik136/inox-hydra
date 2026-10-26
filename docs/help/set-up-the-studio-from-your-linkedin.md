@@ -12,7 +12,7 @@ You need the studio running and a browser that can carry the extension. Edge and
 
 Click **Open LinkedIn with the bridge**. The studio starts Edge or Brave with the extension loaded, on your LinkedIn feed, with the studio in a second tab so the extension can reach it. It opens in its own browser profile, so it works even when that browser is already open, and your usual windows are left alone. The first time, sign in to LinkedIn there.
 
-If no browser on this computer can load the extension by itself, for example when Chrome is the only one, the step says so and shows the extension's folder with **Copy the folder path**, for loading it by hand with **Load unpacked**. If no Chromium browser is found at all, nothing opens and the step asks you to install Edge or Brave.
+If no browser on this computer can load the extension by itself, for example when Chrome is the only one, the step says so and shows the extension's folder with **Copy the folder path**, for loading it by hand with **Load unpacked**. If no Chromium browser is found at all, nothing opens and the step asks you to install Edge or Brave. If the studio could not be asked which browsers this computer has, the step says so rather than reporting none: check that the studio is running, then come back to the step.
 
 The step ticks when the extension reports in, which it does every minute while a LinkedIn tab is in view. The status line reads "Connected" with the extension's version. If it later reads "Last heard from ...", no LinkedIn tab is open in the bridge browser.
 
@@ -60,6 +60,8 @@ LinkedIn sends the archive in two parts. The first, `Basic_LinkedInDataExport_..
 | Your name, headline and about | Fills only what is empty. What the bridge read is kept. |
 | Your roles, education and skills | Roles and education only if none were read yet; skills are added to the ones already there. |
 | Your connections | Name, company, position and the date you connected. Email addresses are never imported. |
+| Posts you saved, members and companies you follow, polls you voted in, articles you published, posts you reposted without adding words (`Saved_Items.csv`, `Member_Follows.csv`, `Company Follows.csv`, `Votes.csv`, `Articles.csv`, `InstantReposts.csv`) | Your own record of what you chose to see and keep: a link, a name, a title or your choice, and the date where the file gives one, each row with the file it came from and the date it was imported. They feed **From your record**. The other person's post is never imported: a saved post is a link and a date, nothing more. |
+| What you searched for (`SearchQueries.csv`) | Unticked unless you tick it. It is the most personal file in the archive, and the studio keeps its own searches out of its log for the same reason. Ticked, each search lands as a row with its date, for From your record only. |
 
 Your messages stay in the archive and are never imported, and the list under **other files stay in the archive** says which other files were not read. If a file reads **NOT UNDERSTOOD**, LinkedIn has changed its columns; the note lists the ones it found, and nothing from that file is imported.
 
@@ -107,7 +109,7 @@ The extension reads LinkedIn's pages, and LinkedIn changes how they are built wi
 | Your comments | The **Comments you left** import |
 | Your reactions | The **Posts you reacted to** import |
 | Creator analytics | The figures in **Analytics** |
-| Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends. Only your recorded posts are read |
+| Your posts' analytics pages | The figures on one of your own posts' analytics pages, such as members reached, saves and sends, and where the page shows them followers gained, profile viewers, link visits, the share of impressions from inside and outside your network, and the viewer demographics. Only your recorded posts are read. Only a missing impressions, members reached, reactions, comments, reposts, saves or sends figure marks this reader as not reading the page. LinkedIn may not show the others to every member or on every post, so a missing one stores nothing and is not counted against the reader; if one never appears, the label may have changed |
 
 Network reading is off unless you turn it on in the extension's popup. If you do, two more parts appear here once they have run: **Network reading: your posts' figures** and **Network reading: creator analytics**. They are not listed while network reading has not run, because opening a page cannot start them.
 
@@ -128,7 +130,7 @@ The extension reports at most once a minute per part per page, and the studio ke
 
 ## Delete it
 
-Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU**. Nothing is deleted yet. Setup lists what would go, with counts: your identity and profile, your imported posts and every reading of their figures, your comments and reactions, your connections, the record of your archive and history imports, and the Brand Studio fields Setup filled. Your leads and drafts are kept.
+Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU**. Nothing is deleted yet. Setup lists what would go, with counts: your identity and profile, your imported posts and every reading of their figures, your comments and reactions, your connections, the record of your archive and history imports, what you asked **From your record** for with its daily cards, your marks and your notes, the saved posts, follows, votes, articles, reposts and searches your archive brought, and the Brand Studio fields Setup filled. Your leads and drafts are kept.
 
 It also says whether a backup of the studio exists, and **Back up first** takes one. Type `delete` and click **Delete everything** to go ahead, or **Keep it** to leave everything as it is. It cannot be undone except from a backup. The next time you open your profile, Setup asks again.
 

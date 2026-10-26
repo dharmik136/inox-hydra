@@ -35,6 +35,22 @@ What is read, by file:
   Connections.csv  first-degree connections     -> connections (names,
                                                     company, position, date;
                                                     never email addresses)
+  Saved_Items.csv, what they saved, followed,   -> archive_records, one row
+  Member_Follows,  voted on, published and         per item with the file it
+  Company Follows, reposted without words          came from and the import
+  Votes.csv,                                       date (cycle 4, track 7)
+  Articles.csv,
+  InstantReposts
+  SearchQueries    what they searched for       -> archive_records, only
+                                                    behind a tick at import,
+                                                    off by default: the most
+                                                    personal file in the
+                                                    archive, and the studio
+                                                    already keeps its own
+                                                    searches out of its log
+
+A file that is absent is not guessed at: nothing is written for a category
+whose file the archive does not hold, and the preview does not list it.
 
 Column names are matched loosely and every file's outcome is reported,
 including files the importer does not understand, with the columns it found,
@@ -72,11 +88,19 @@ except ImportError:
     from text_cut import clip
 
 try:
-    from . import paths
+    from . import archive_age, paths
     from .database import get_db
 except ImportError:
+    import archive_age
     import paths
     from database import get_db
+
+# What kind of post each Shares row was, from its media and shared-link
+# fields (cycle 4, track 5): unknown unless one of them says.
+try:
+    from . import post_format
+except ImportError:
+    import post_format
 
 DOWNLOAD_PAGE = "https://www.linkedin.com/mypreferences/d/download-my-data"
 ARCHIVE_NAME = re.compile(r"linkedin.*data.*export.*\.zip$|linkedindataexport.*\.zip$", re.IGNORECASE)
@@ -174,7 +198,82 @@ FILES: Dict[str, Dict[str, Any]] = {
         "columns": {"first": ["first name"], "last": ["last name"], "url": ["url", "profile url"]},
         "optional": {"company": ["company"], "position": ["position"], "connected": ["connected on"]},
     },
+    # What the creator saved, followed, voted on, published and reposted (cycle 4,
+    # track 7, batch 2). The column names come from third-party descriptions
+    # of the export and the files themselves, not from a LinkedIn page, which
+    # is why each has aliases and why a file whose columns match none of them
+    # is reported "not understood" with the columns it found, never guessed.
+    # `aliases` are other base names LinkedIn has used for the same file.
+    "saved_items": {
+        "file": "saved_items.csv", "aliases": ["saved items.csv", "saveditems.csv"],
+        "label": "Posts and articles you saved on LinkedIn (links and dates only)", "default": True,
+        "record": "saved_item",
+        "columns": {"link": ["url", "link", "saved url", "saved link"]},
+        "optional": {"date": ["date", "saved date", "saved on", "time"]},
+    },
+    "member_follows": {
+        "file": "member_follows.csv", "aliases": ["member follows.csv", "memberfollows.csv"],
+        "label": "Members you follow (names and dates)", "default": True,
+        "record": "member_follow",
+        "columns": {"name": ["full name", "fullname", "name", "member", "member name"]},
+        "optional": {"date": ["date", "followed on", "follow date", "time"], "status": ["status"]},
+    },
+    "company_follows": {
+        "file": "company follows.csv", "aliases": ["company_follows.csv", "companyfollows.csv"],
+        "label": "Companies and pages you follow (names and dates)", "default": True,
+        "record": "company_follow",
+        "columns": {"name": ["organization", "organisation", "company", "company name", "name"]},
+        "optional": {"date": ["followed on", "date", "follow date", "time"]},
+    },
+    "votes": {
+        "file": "votes.csv", "label": "Polls you voted in (the post and your choice)", "default": True,
+        "record": "vote",
+        "columns": {"link": ["link", "url"]},
+        "optional": {"date": ["date", "time"], "choice": ["optiontext", "option text", "option", "vote", "choice"]},
+    },
+    "articles": {
+        "file": "articles.csv", "label": "Articles you published (titles and links)", "default": True,
+        "record": "article",
+        "columns": {"link": ["link", "url", "article url"]},
+        "optional": {"title": ["title", "headline"], "date": ["date", "published", "published on", "created", "time"]},
+    },
+    # A repost with no words of the creator's added: their act on somebody
+    # else's post, kept as a link and a date like a saved post, never the
+    # post itself.
+    "instant_reposts": {
+        "file": "instantreposts.csv", "aliases": ["instant_reposts.csv", "instant reposts.csv"],
+        "label": "Posts you reposted without adding words (links and dates only)", "default": True,
+        "record": "instant_repost",
+        "columns": {"link": ["link", "url", "shared url", "share link", "sharelink", "original url"]},
+        "optional": {"date": ["date", "created date", "reposted on", "time"]},
+    },
+    "search_queries": {
+        "file": "searchqueries.csv", "aliases": ["search_queries.csv", "search queries.csv"],
+        "label": "What you searched for on LinkedIn. Off unless you tick it: the most personal file in the archive, "
+                 "and the studio keeps its own searches out of its log for the same reason",
+        "default": False,
+        "record": "search_query",
+        "columns": {"query": ["search query", "searchquery", "query"]},
+        "optional": {"date": ["time", "date"]},
+    },
 }
+
+
+def _file_names(spec: Dict[str, Any]) -> List[str]:
+    """Every lower-case base name a category's file has been known by."""
+    return [spec["file"], *spec.get("aliases", [])]
+
+
+def _known_files() -> set:
+    return {name for spec in FILES.values() for name in _file_names(spec)}
+
+
+def _member_for(members: Dict[str, Any], spec: Dict[str, Any]) -> Optional[Any]:
+    """The archive's file for a category, under whichever of its names it carries, or None."""
+    for name in _file_names(spec):
+        if name in members:
+            return members[name]
+    return None
 NEVER_IMPORTED = {
     "messages.csv": "Messages stay in the archive. They are other people's words, and nothing in the studio needs them.",
 }
@@ -264,7 +363,7 @@ def _unpacked_size(folder: str) -> Optional[int]:
     """
     if os.path.islink(folder) or not os.path.isdir(folder):
         return None
-    wanted = {spec["file"] for spec in FILES.values()}
+    wanted = _known_files()
     try:
         entries = [e for e in os.scandir(folder) if e.is_file(follow_symlinks=False)]
     except OSError:
@@ -620,15 +719,13 @@ def _parse(path: str) -> Dict[str, Any]:
     members = _members(path)
     parsed: Dict[str, Any] = {}
     for kind, spec in FILES.items():
-        info = members.get(spec["file"])
+        info = _member_for(members, spec)
         if info is None:
+            # Absent from this archive: nothing is read, written or listed for it.
             continue
         rows, header, problem = _table(_read_text(path, info), spec)
         parsed[kind] = {"file": info.filename, "rows": rows, "header": header, "problem": problem}
-    others = sorted(
-        info.filename for base, info in members.items()
-        if base not in {s["file"] for s in FILES.values()}
-    )
+    others = sorted(info.filename for base, info in members.items() if base not in _known_files())
     size = os.path.getsize(path) if os.path.isfile(path) else sum(i.file_size for i in members.values())
     return {"parsed": parsed, "others": others, "bytes": size}
 
@@ -970,6 +1067,11 @@ class _Batches:
         # batch it describes, so even a process killed part way leaves its
         # rows recorded.
         self.ledger_key: Optional[str] = None
+        # The archive_imports row this import is, once it has one, so a row
+        # written for the record can name the import that brought it.
+        self.import_id: Optional[int] = None
+        # Which file each category was read from, as named in the archive.
+        self.source_files: Dict[str, str] = {}
         self._begin()
 
     def _begin(self) -> None:
@@ -1024,6 +1126,7 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Di
             tally["skipped"] += 1
             continue
         when = _when(row.get("date", "")) or (_moment(urn).isoformat() if _moment(urn) else None)
+        found = post_format.from_archive(row.get("media"), row.get("shared"))
         existing = conn.execute("SELECT published_at FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone()
         same = urn if existing else twins.find(urn, text, when)
         if same:
@@ -1037,6 +1140,7 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Di
                 "WHERE activity_urn = ?",
                 (when, clip(text, 10000) or None, clip(text, 10000) or None, same),
             )
+            post_format.record(conn, same, found)
             tally["already_there"] += 1
             continue
         conn.execute(
@@ -1044,6 +1148,7 @@ def _import_posts(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Di
             "reposts, impressions, first_seen_at, last_seen_at) VALUES (?, ?, ?, 'archive', NULL, NULL, NULL, NULL, ?, ?)",
             (urn, clip(text, 10000) or None, when, now, now),
         )
+        post_format.record(conn, urn, found)
         batches.add("posts", urn)
         tally["added"] += 1
     return tally
@@ -1215,6 +1320,51 @@ def _import_connections(conn, rows: List[Dict[str, str]], batches: _Batches) -> 
     return tally
 
 
+def _record_importer(kind: str):
+    """
+    An importer for one of the record categories: saved items, follows,
+    votes, articles, instant reposts and search queries, into archive_records.
+
+    Each row keeps what the file says and no more: a link, a title, a name,
+    a choice or a query, the date where one can be read (an unreadable date
+    stays empty rather than becoming today's), the file it came from and the
+    import that brought it. The same row twice, from the same archive
+    imported again, is one row.
+    """
+    spec = FILES[kind]
+    record_kind = spec["record"]
+
+    def importer(conn, rows: Iterable[Dict[str, str]], batches: _Batches) -> Dict[str, int]:
+        tally = _counter()
+        now = _now()
+        source_file = batches.source_files.get(kind) or spec["file"]
+        for row in rows:
+            batches.row()
+            url = clip((row.get("link") or "").strip(), 2000) or None
+            title = clip((row.get("title") or "").strip(), 500) or None
+            name = clip((row.get("name") or "").strip(), 300) or None
+            detail = clip((row.get("choice") or row.get("query") or row.get("status") or "").strip(), 1000) or None
+            when = _when(row.get("date", "")) if row.get("date") else None
+            # The one thing each category needs, or the row is nothing.
+            needed = {"saved_item": url, "member_follow": name, "company_follow": name, "vote": url,
+                      "article": url, "instant_repost": url, "search_query": detail}[record_kind]
+            if not needed:
+                tally["skipped"] += 1
+                continue
+            key = hashlib.sha256("\x1f".join(str(part or "") for part in (url, title, name, detail, when)).encode("utf-8")).hexdigest()[:32]
+            cursor = conn.execute(
+                "INSERT OR IGNORE INTO archive_records (kind, url, title, name, detail, happened_at, dedupe_key, "
+                "source_file, imported_at, import_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (record_kind, url, title, name, detail, when, key, source_file, now, batches.import_id),
+            )
+            if cursor.rowcount:
+                batches.add("records", [cursor.lastrowid, now])
+            tally["added" if cursor.rowcount else "already_there"] += 1
+        return tally
+
+    return importer
+
+
 _IMPORTERS = {
     "posts": _import_posts,
     "comments": _import_comments,
@@ -1224,6 +1374,13 @@ _IMPORTERS = {
     "education": _import_education,
     "skills": _import_skills,
     "connections": _import_connections,
+    "saved_items": _record_importer("saved_items"),
+    "member_follows": _record_importer("member_follows"),
+    "company_follows": _record_importer("company_follows"),
+    "votes": _record_importer("votes"),
+    "articles": _record_importer("articles"),
+    "instant_reposts": _record_importer("instant_reposts"),
+    "search_queries": _record_importer("search_queries"),
 }
 
 
@@ -1275,6 +1432,8 @@ def _write_import(name: str, result: Dict[str, Any], wanted: set, ownership: Dic
             )
             import_id = cursor.lastrowid
             batches.ledger_key = f"{BROUGHT_KEY}{import_id}"
+            batches.import_id = import_id
+            batches.source_files = {kind: entry["file"] for kind, entry in result["parsed"].items()}
             if ownership["owner"]:
                 batches.brought["owner"] = ownership["owner"]["name"]
             for kind, entry in result["parsed"].items():
@@ -1338,6 +1497,8 @@ def _remove(conn, brought: Dict[str, Any], batches: Optional[_Batches] = None) -
                    "DELETE FROM creator_skills WHERE skill = ? AND observed_at = ?"),
         "connections": ("DELETE FROM connections WHERE profile_url = ?",
                         "DELETE FROM connections WHERE profile_url = ? AND imported_at = ?"),
+        "records": ("DELETE FROM archive_records WHERE id = ?",
+                    "DELETE FROM archive_records WHERE id = ? AND imported_at = ?"),
     }
     for kind, (plain, stamped) in deletes.items():
         removed[kind] = 0
@@ -1486,6 +1647,8 @@ def archive_state(look: bool = False) -> Dict[str, Any]:
         "watching": downloads_dirs() if look and waiting else [],
         "complete": bool(covered),
         "no_posts_at": no_posts_at,
+        # One sentence when the last import is a month old (archive_age.py).
+        "age_nudge": archive_age.sentence(last[1] if last else None),
         "last_import": {
             "archive_name": last[0],
             "imported_at": last[1],
@@ -1500,7 +1663,7 @@ def archive_state(look: bool = False) -> Dict[str, Any]:
 
 def forget(conn) -> None:
     """Everything the archive brought, for when the creator deletes what the studio holds about them."""
-    for table in ("connections", "archive_imports"):
+    for table in ("connections", "archive_imports", "archive_records"):
         conn.execute(f"DELETE FROM {table}")
     conn.execute("DELETE FROM settings WHERE key IN (?, ?) OR key LIKE ?",
                  (REQUESTED_KEY, NO_POSTS_KEY, BROUGHT_KEY + "%"))

@@ -25,7 +25,8 @@ const EVENTS_PATH = "/api/v1/events";
  * What the studio says changed, in its own words (studio/backend/changes.py).
  * "readings" are one post's figures and "account" the creator's daily
  * figures; "people" is someone engaging with a post of the creator's and
- * "outbound" the creator engaging elsewhere. "database" is a write nothing
+ * "outbound" the creator engaging elsewhere; "desk" is a post the phone asked
+ * the desk to read, "ideas" the daily section's cards. "database" is a write nothing
  * announced (the command line, a second studio, a path that does not say what
  * it wrote): every listener takes it as "anything may have changed".
  */
@@ -40,6 +41,8 @@ export type StudioChange =
   | "identity"
   | "imports"
   | "queue"
+  | "desk"
+  | "ideas"
   | "database";
 
 /** Every kind, for a screen whose one read shows whatever the bridge writes. */
@@ -54,6 +57,8 @@ export const ANY_CHANGE: readonly StudioChange[] = [
   "identity",
   "imports",
   "queue",
+  "desk",
+  "ideas",
   "database",
 ];
 
@@ -67,6 +72,8 @@ export interface StudioChangeNote {
   extractor?: string;
   /** capture: whether it could not read fields it should have. */
   drift?: boolean;
+  /** capture: the minute it ran, in UTC, as Setup prints it. */
+  minute?: string;
   /** heartbeat: whether the extension said how many captures it holds. */
   waiting?: boolean;
   /** readings, people: the post, when the write was about one. */

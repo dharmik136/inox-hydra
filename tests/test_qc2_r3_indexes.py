@@ -177,7 +177,7 @@ OLD_ATTRIBUTION_SQL = """
     FROM leads l
     LEFT JOIN lead_interactions li ON l.id = li.lead_id AND li.post_urn IN ({p})
     WHERE li.post_urn IN ({p}) OR l.post_id IN ({p})
-    ORDER BY l.icp_score DESC, li.interacted_at DESC
+    ORDER BY li.interacted_at DESC, l.rowid, li.id
 """
 
 

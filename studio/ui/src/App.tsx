@@ -10,6 +10,7 @@ import { Inspector } from "@/components/Inspector";
 import { LeadsSurface } from "@/components/LeadsSurface";
 import { OnboardingSurface } from "@/components/OnboardingSurface";
 import { TodaySurface } from "@/components/TodaySurface";
+import { RecordSurface } from "@/components/RecordSurface";
 import { ActivitySurface } from "@/components/ActivitySurface";
 import { PostsSurface } from "@/components/PostsSurface";
 import { OutboundSurface } from "@/components/OutboundSurface";
@@ -731,6 +732,21 @@ export default function App() {
   }, [draftId, draft, mayDiscard, adopt]);
 
   /**
+   * From your record's "Draft from this": the server has made a draft that
+   * records the card it came from; open it in the Composer. Unsaved text in
+   * the Composer is asked about first, as opening any other draft is.
+   */
+  const onDraftFromCard = useCallback(
+    (made: { id: string; content: string }) => {
+      if (!mayDiscard("Open the draft made from this card")) return;
+      adopt({ id: made.id, content: made.content, status: "draft" });
+      setDraftsKey((key) => key + 1);
+      navigate("composer", true);
+    },
+    [mayDiscard, adopt, navigate],
+  );
+
+  /**
    * Opens a queued post from the Queue in the Composer, to correct its text.
    *
    * After Publish the Composer lets go of the post, so this is the way back
@@ -796,7 +812,7 @@ export default function App() {
 
       if (result.kind === "post") {
         if (result.opens !== "composer") {
-          navigate(result.opens === "queue" ? "queue" : "analytics");
+          navigate(result.opens === "queue" ? "queue" : "posts");
           return;
         }
         if (result.id === draftId) {
@@ -816,7 +832,7 @@ export default function App() {
         if (!found) {
           // Published or queued since the search ran, so it no longer belongs
           // in the editor.
-          navigate("analytics", true);
+          navigate("posts", true);
           return;
         }
         adopt({ ...found, status: "draft" });
@@ -1056,6 +1072,16 @@ export default function App() {
                     if (!navigate("leads")) return;
                     focusNonce.current += 1;
                     setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
+                  }}
+                />
+              )}
+              {active === "record" && (
+                <RecordSurface
+                  onOpenDraft={onDraftFromCard}
+                  onOpenHelp={(documentId, section) => {
+                    if (!navigate("docs")) return;
+                    focusNonce.current += 1;
+                    setFocus({ section: "docs", target: { id: documentId, anchor: section, nonce: focusNonce.current } });
                   }}
                 />
               )}

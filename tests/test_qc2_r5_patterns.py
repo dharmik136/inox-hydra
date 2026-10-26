@@ -37,16 +37,24 @@ def test_each_form_is_compared_once_without_statistics_words(studio):
     assert body.count("An opening line that asks a question") == 1, body
     assert "Each side needs 8 posts before a line is shown" in body, body
     assert "Settled means" in body, body
-    assert "THE TALLEST BAR IS" in body, body
+    # Posts by month, with its scale in words, moved to the Queue with the
+    # rest of the rhythm in cycle 4 (tests/test_qc4_t3_cadence_moved_to_queue.py).
+    assert "THE TALLEST BAR IS" not in body, body
 
 
 def test_the_help_describes_one_list():
+    """
+    Cycle 4 drew the one list from the contrast engine's records and retired
+    the EARLY tag, which could not fire (tests/test_qc4_t3_patterns_from_the_engine.py),
+    so the help names neither the old second list nor the tag.
+    """
     import os
 
     path = os.path.join(os.path.dirname(__file__), "..", "docs", "help", "see-what-worked-and-where-your-attention-goes.md")
     with open(path, encoding="utf-8") as handle:
         text = handle.read()
-    assert "Feature Contrasts" not in text and "**EARLY**" in text
+    assert "Feature Contrasts" not in text and "**EARLY**" not in text
+    assert "Evidence panel" in text, "the help no longer says the lines are the Evidence panel's"
 
 
 def test_the_topic_sentence_names_other_posts_once():
@@ -57,10 +65,11 @@ def test_the_topic_sentence_names_other_posts_once():
 
 
 def test_the_topic_sentence_on_screen(studio):
+    """The topics are forms now (cycle 4, decision 7); none is named twice over."""
     client = studio["client"]
     confirm_identity(client)
     _posts(client, 6)
     page = studio["page"]
     page.goto(studio["url"] + "/#/patterns", wait_until="networkidle")
-    page.wait_for_selector("text=Topic to Qualified Lead Attribution")
+    page.wait_for_selector("text=Your topics, compared the same way")
     assert "posts posts" not in page.inner_text("main")

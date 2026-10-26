@@ -83,9 +83,16 @@ def test_the_extension_cannot_reach_these_routes():
     # onboarding.py, which refuses anything not belonging to the creator the
     # studio has confirmed, and none executes, fetches or reads beyond the
     # creator's own identity and an import flag.
+    #
+    # /api/analytics/page-figures (cycle 4, track 5, phase 2) was reviewed on
+    # adding: a POST that writes only through own_insights.ingest_page, which
+    # refuses unless the author is the confirmed creator, keeps only the pages
+    # and figures it names (counts with their windows, never a name), and
+    # executes, fetches and reads nothing.
     relayed = set(re.findall(r'"(/api/[^"]+)"', block))
     assert relayed == {
         "/api/analytics/ingest",
+        "/api/analytics/page-figures",
         "/api/v1/posts/bind-urn",
         "/api/v1/crm/interactions/ingest",
         "/api/v1/bridge/heartbeat",

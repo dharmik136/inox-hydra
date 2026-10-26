@@ -54,7 +54,8 @@ inox-hydra/
 │   │   ├── vault.py            # Seals session cookies and the AI key at rest (DPAPI, Keychain, Secret Service)
 │   │   ├── ingress.py          # Telegram capture, outbound long-polling only
 │   │   ├── crm.py              # Reverse CRM & deterministic ICP scoring
-│   │   ├── intelligence_sync.py # ETag-cached CDN sync for hook archetypes
+│   │   ├── hook_forms.py       # The hook rail's starter forms and the opt-in pack, local
+│   │   ├── library_bundle.py   # The signed Inox library: fetched on request, verified with Ed25519
 │   │   ├── docs_engine.py      # SQLite FTS5 index over bundled documentation
 │   │   └── agno_agentos/       # Multi-agent orchestrator & BYO-AI gateway
 │   ├── core/rate_limiter.py    # Gaussian jitter governor & single-writer actor

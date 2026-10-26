@@ -63,7 +63,7 @@ Press **New post** in the top bar. The editor clears, and the post you were writ
 
 If you empty the editor, or select all of its text and type or paste over it, the Composer treats what follows as a new post. A line under the bar says your earlier draft is kept as it was saved, and the next **Save** creates a separate draft. Press **Write over that draft instead** on that line if you meant to rewrite the earlier draft.
 
-After **Copy and mark posted**, **Queue it** or **Send to LinkedIn**, the post leaves the draft list and the Composer clears, so the next post you type is saved as a new one and the one you just recorded or queued is not touched. A queued post stays on the **Queue**, and a published one in **Analytics**. See [Start a new post, or find one you wrote earlier](start-a-new-post-or-find-an-earlier-one.md) and [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md).
+After **Copy and mark posted**, **Queue it** or **Send to LinkedIn**, the post leaves the draft list and the Composer clears, so the next post you type is saved as a new one and the one you just recorded or queued is not touched. A queued post stays on the **Queue**, and a published one is on **Posts**: in the table once it is recorded as published, or, for one sent to LinkedIn, under **Published here, not yet seen on LinkedIn** until the bridge reads it there. See [Start a new post, or find one you wrote earlier](start-a-new-post-or-find-an-earlier-one.md) and [Publish, queue or send a post to LinkedIn](publish-queue-or-send-to-linkedin.md).
 
 ## If it does not work
 

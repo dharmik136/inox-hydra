@@ -1,18 +1,15 @@
-import { memo, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ChevronLeft, ChevronRight, Download } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, ArrowUpRight, Download } from "lucide-react";
 import {
+  fetchAnalyticsBest,
   fetchAnalyticsKpis,
   fetchAnalyticsOverview,
-  fetchAnalyticsPosts,
   type AnalyticsKpis,
   type AnalyticsPoint,
   type AnalyticsBest,
-  type AnalyticsPost,
   type AnalyticsRange,
   ANALYTICS_CSV_URL,
-  fetchPostAttribution,
   fetchPostDetail,
-  type PostAttribution,
 } from "@/lib/api";
 import { TimeSeriesChart, type SeriesPoint } from "./TimeSeriesChart";
 import { useStudioBack } from "@/lib/refresh";
@@ -20,18 +17,18 @@ import { cn } from "@/lib/utils";
 
 const RANGES: AnalyticsRange[] = ["7d", "30d", "90d"];
 
-// A summary, not a second copy of the Posts table: most seen first, a
-// handful at a time. The full, sortable, searchable table of every post
-// lives on the Posts screen; this answers "how are my posts doing", not
-// "show me all of them again".
-const ANALYTICS_PAGE_SIZE = 14;
-
-/** The measures worth plotting on their own axis, one at a time. */
+/**
+ * The measures worth plotting on their own axis, one at a time.
+ *
+ * Profile views are not offered: no reader on a real install writes one, so
+ * the measure was a permanent "not measured", a figure the screen could
+ * never answer (cycle 4, decision 8). The route still carries the column,
+ * so a reader can bring it back.
+ */
 const METRICS = [
   { key: "impressions", label: "Impressions" },
   { key: "reactions", label: "Reactions" },
   { key: "comments", label: "Comments" },
-  { key: "profile_views", label: "Profile views" },
   { key: "followers", label: "Followers" },
 ] as const;
 
@@ -43,10 +40,6 @@ type Kpis = AnalyticsKpis & {
   days_needed_to_compare?: number;
   /** Days each figure was read on, this period and the one before. */
   coverage?: Record<"impressions" | "engagements" | "rate", { current: number; previous: number }>;
-  /** Fields built from a figure LinkedIn rounded, such as 1.2K. */
-  approximate?: string[];
-  /** Changes not shown because they are smaller than that rounding. */
-  within_rounding?: string[];
 };
 
 /** A day as the overview route returns it, with how precisely LinkedIn wrote its figures. */
@@ -55,20 +48,24 @@ type Point = AnalyticsPoint & { precision?: string | null };
 /**
  * Analytics (blueprint section 13).
  *
- * A newspaper composition: range across the top, one large time series, three
- * written observations beside it, and a comparison table underneath. Not a
- * grid of glowing metric cards.
+ * A newspaper composition: range across the top, one large time series, and
+ * the written observations beside it. Not a grid of glowing metric cards.
+ *
+ * It carried a fourteen-row "Post comparison" table under the chart, over the
+ * same posts the Posts screen tables in full, sortable and searchable, while
+ * its own comment called it "a summary, not a second copy of the Posts
+ * table". The table moved to Posts (cycle 4, track 3, batch 1); the aside
+ * names the posts the engine ranks best and weakest, and links into Posts for
+ * the rest.
  */
 export function AnalyticsSurface() {
   const [range, setRange] = useState<AnalyticsRange>("30d");
   const [metric, setMetric] = useState<MetricKey>("impressions");
   const [series, setSeries] = useState<Point[] | null>(null);
   const [kpis, setKpis] = useState<Kpis | null>(null);
-  const [posts, setPosts] = useState<AnalyticsPost[] | null>(null);
+  // The engine's best and weakest posts, and whether that read came back.
   const [best, setBest] = useState<AnalyticsBest | null>(null);
-  const [postsTotal, setPostsTotal] = useState(0);
-  const [postsOffset, setPostsOffset] = useState(0);
-  const [postsHasMore, setPostsHasMore] = useState(false);
+  const [bestRead, setBestRead] = useState<"reading" | "done" | "failed">("reading");
   // The opening lines of the two posts the engine named, which are almost
   // never among the rows this page holds: the answer carries their figures
   // but not their text, and a URN names nothing a creator recognises.
@@ -79,25 +76,22 @@ export function AnalyticsSurface() {
   // failed while it was down does not stay failed once it is back.
   const back = useStudioBack();
 
-  // The posts do not depend on the range, so a range click does not read
-  // them again. At 2,000 posts, fetching every one of them on every click
-  // put the screen back to LOADING ANALYTICS for five seconds each time; now
-  // only a page turn asks for more, and it asks for one page of them.
+  // Which posts did best and worst does not depend on the range, so a range
+  // click does not read it again. A failure here is the aside's to say; the
+  // figures and the chart do not depend on it.
   useEffect(() => {
     let live = true;
-    fetchAnalyticsPosts({ limit: ANALYTICS_PAGE_SIZE, offset: postsOffset })
+    fetchAnalyticsBest()
       .then((answer) => {
         if (!live) return;
-        setPosts(answer.posts);
-        setBest(answer.best);
-        setPostsTotal(answer.total);
-        setPostsHasMore(answer.has_more);
+        setBest(answer);
+        setBestRead("done");
       })
-      .catch(() => live && setFailed(true));
+      .catch(() => live && setBestRead("failed"));
     return () => {
       live = false;
     };
-  }, [back, postsOffset]);
+  }, [back]);
 
   // The opening line of each post the engine named, read one post at a time
   // from the same endpoint the Posts screen's detail view reads.
@@ -177,6 +171,13 @@ export function AnalyticsSurface() {
           >
             <Download className="size-3" strokeWidth={2} aria-hidden="true" />
             CSV
+          </a>
+          {/* Exact figures for up to a year come from LinkedIn's own export, imported in Setup beside the archive. */}
+          <a
+            href="#/setup"
+            className="studio-meta text-[10px] text-ink-muted underline underline-offset-2 transition-colors hover:text-ink-primary"
+          >
+            Import LinkedIn&apos;s analytics export in Setup
           </a>
         <div className="flex items-center gap-1" role="group" aria-label="Date range" aria-busy={loadingRange}>
           {RANGES.map((candidate) => (
@@ -260,63 +261,15 @@ export function AnalyticsSurface() {
             </p>
           )}
 
-          {/* The comparison table sits with the chart rather than ten screens
-              under it: this screen was 58.9 screens tall, and the rows a
-              creator came for were all below the fold. */}
-          <section className="mt-6">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="studio-label">Post comparison</p>
-              {/* The order the route actually reads in, in its own words
-                  (routers/analytics.py: impressions, then reactions). It
-                  read "best first", which is the engine's word for a
-                  different ranking: results.best ranks by reactions against
-                  the creator's own median, so the panel beside this table
-                  named one post while this line implied another. */}
-              {posts !== null && postsTotal > 0 && (
-                <p className="studio-meta text-[11px] text-ink-muted">
-                  {`${postsOffset + 1}–${postsOffset + posts.length} of ${postsTotal.toLocaleString()}, most seen first`}
-                </p>
-              )}
-            </div>
-            {posts === null ? (
-              <p className="studio-meta text-ink-muted">READING YOUR POSTS</p>
-            ) : posts.length === 0 ? (
-              <p className="studio-meta text-ink-muted">NO PUBLISHED POSTS TO COMPARE</p>
-            ) : (
-              <>
-                <PostTable posts={posts} />
-                <div className="mt-2 flex items-center justify-end gap-1">
-                  <button
-                    type="button"
-                    onClick={() => setPostsOffset((current) => Math.max(0, current - ANALYTICS_PAGE_SIZE))}
-                    disabled={postsOffset === 0}
-                    aria-label="Previous posts"
-                    className="grid size-7 place-items-center rounded-md border border-edge text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
-                  >
-                    <ChevronLeft className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPostsOffset((current) => current + ANALYTICS_PAGE_SIZE)}
-                    disabled={!postsHasMore}
-                    aria-label="Next posts"
-                    className="grid size-7 place-items-center rounded-md border border-edge text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
-                  >
-                    <ChevronRight className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
-                  </button>
-                </div>
-              </>
-            )}
-          </section>
         </div>
 
-        <Observations kpis={kpis} posts={posts} best={best} named={named} />
+        <Observations kpis={kpis} bestRead={bestRead} best={best} named={named} />
       </div>
     </div>
   );
 }
 
-/** The five figures the range holds, each with its own change and its own honesty. */
+/** The four figures the range holds, each with its own change and its own honesty. */
 function KpiStrip({ kpis, range }: { kpis: Kpis | null; range: AnalyticsRange }) {
   if (!kpis) return null;
   const approx = new Set(kpis.approximate ?? []);
@@ -342,14 +295,10 @@ function KpiStrip({ kpis, range }: { kpis: Kpis | null; range: AnalyticsRange })
       label: "Followers", value: kpis.total_followers, key: "total_followers", changeKey: "follower_growth",
       change: kpis.follower_growth === null ? null : `${kpis.follower_growth > 0 ? "+" : ""}${kpis.follower_growth.toLocaleString()}`,
     },
-    {
-      label: "Profile views", value: kpis.profile_views, key: "profile_views", changeKey: "profile_views_delta_pct",
-      change: kpis.profile_views_delta_pct === null ? null : `${kpis.profile_views_delta_pct > 0 ? "+" : ""}${kpis.profile_views_delta_pct.toFixed(1)}%`,
-    },
   ];
   return (
     <>
-      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-y border-edge py-3 sm:grid-cols-3 lg:grid-cols-5">
+      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 border-y border-edge py-3 sm:grid-cols-4">
         {figures.map((figure) => (
           <div key={figure.label} className="min-w-0">
             <dt className="studio-meta text-[10px] text-ink-muted">{figure.label.toUpperCase()}</dt>
@@ -402,152 +351,6 @@ function KpiStrip({ kpis, range }: { kpis: Kpis | null; range: AnalyticsRange })
 }
 
 /**
- * The comparison table, drawn again only when the posts change.
- *
- * The posts do not depend on the range, and at 2,000 rows redrawing them on
- * every range click took most of a second.
- */
-const PostTable = memo(function PostTable({ posts }: { posts: AnalyticsPost[] }) {
-  // A post whose recorded engagements exceed its impressions has no rate: the
-  // two figures were read from different pages at different moments. One post
-  // of 1,417 read 877 reactions against 837 impressions, and the aside beside
-  // this table promoted it as "116.25% engagement".
-  const impossible = posts.filter(
-    (post) => post.engagement_rate_unmeasured === "more_engagements_than_impressions",
-  );
-  return (
-    <>
-    <table className="w-full text-left">
-      <thead>
-        <tr className="studio-label border-b border-edge">
-          <th scope="col" className="py-2 font-medium">Post</th>
-          <th scope="col" className="py-2 text-right font-medium">Impressions</th>
-          <th scope="col" className="py-2 text-right font-medium">Reactions</th>
-          <th scope="col" className="py-2 text-right font-medium">Comments</th>
-          <th scope="col" className="py-2 text-right font-medium">Rate</th>
-        </tr>
-      </thead>
-      <tbody>
-        {posts.map((post) => (
-          <PostRow key={post.id} post={post} />
-        ))}
-      </tbody>
-    </table>
-    {impossible.length > 0 && (
-      <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
-        {impossible.length} POST{impossible.length === 1 ? " ON THIS PAGE HAS" : "S ON THIS PAGE HAVE"} MORE
-        ENGAGEMENTS RECORDED THAN IMPRESSIONS, SO THOSE TWO FIGURES CAME FROM DIFFERENT READINGS AND NO RATE CAN
-        BE MEASURED FROM THEM.
-      </p>
-    )}
-    </>
-  );
-});
-
-/**
- * One post, expandable into the leads it actually produced.
- *
- * Attribution is fetched on expand rather than for every row up front: it is
- * one query per post and most rows are never opened.
- */
-function PostRow({ post }: { post: AnalyticsPost }) {
-  const [open, setOpen] = useState(false);
-  const [attribution, setAttribution] = useState<PostAttribution | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    if (!open || attribution) return;
-    let live = true;
-    fetchPostAttribution(post.id)
-      .then((result) => live && setAttribution(result))
-      .catch(() => live && setFailed(true));
-    return () => {
-      live = false;
-    };
-  }, [open, attribution, post.id]);
-
-  return (
-    <>
-      <tr className="border-b border-edge">
-        <td className="max-w-[40ch] py-2 pr-4">
-          <button
-            type="button"
-            onClick={() => setOpen((current) => !current)}
-            aria-expanded={open}
-            className="flex w-full items-center gap-1.5 text-left text-[12px] text-ink-secondary transition-colors hover:text-ink-primary"
-          >
-            <ChevronRight
-              className={cn("size-3 shrink-0 transition-transform", open && "rotate-90")}
-              strokeWidth={2}
-              aria-hidden="true"
-            />
-            <span className="truncate">{post.content.split("\n")[0]}</span>
-          </button>
-        </td>
-        <Cell value={post.impressions} />
-        <Cell value={post.reactions} />
-        <Cell value={post.comments} />
-        <Cell value={post.engagement_rate} suffix="%" />
-      </tr>
-
-      {open && (
-        <tr className="border-b border-edge">
-          <td colSpan={5} className="py-3 pl-5">
-            {failed ? (
-              <p className="studio-meta text-ink-muted">ATTRIBUTION UNAVAILABLE</p>
-            ) : !attribution ? (
-              <p className="studio-meta text-ink-muted">READING ATTRIBUTION</p>
-            ) : attribution.leads.length === 0 && attribution.summary.total_leads_generated === 0 ? (
-              <p className="studio-meta text-ink-muted">NO LEADS ATTRIBUTED TO THIS POST</p>
-            ) : (
-              <>
-                <p className="studio-meta mb-2">
-                  {attribution.summary.total_leads_generated} LEAD
-                  {attribution.summary.total_leads_generated === 1 ? "" : "S"}
-                  <span className="mx-1.5 text-ink-muted">·</span>
-                  {attribution.summary.total_interactions} INTERACTIONS
-                </p>
-                <ul className="flex flex-col gap-1.5">
-                  {attribution.leads.map((lead) => (
-                    <li key={lead.lead_id} className="border-l border-edge pl-3">
-                      <p className="text-[12px] text-ink-primary">
-                        {lead.name}
-                        {lead.company && <span className="text-ink-muted"> at {lead.company}</span>}
-                      </p>
-                      {lead.latest_comment && (
-                        <p className="mt-0.5 text-[11px] leading-snug text-ink-secondary">
-                          {lead.latest_comment}
-                        </p>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-                {attribution.summary.folded_leads > 0 && (
-                  <p className="studio-meta mt-2 text-[10px] text-ink-muted">
-                    {attribution.summary.folded_leads} MORE FROM REACTIONS OVER 24 MONTHS OLD, KEPT AS A COUNT
-                    WITHOUT NAMES (STORAGE AND PRIVACY)
-                  </p>
-                )}
-              </>
-            )}
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
-function Cell({ value, suffix = "" }: { value: number | null; suffix?: string }) {
-  return (
-    <td className="studio-meta py-2 text-right text-[11px] text-ink-secondary">
-      {/* An uncaptured metric is null, and null renders as "not measured"
-          rather than as a zero the reader would average. */}
-      {value === null ? <span className="text-ink-muted">not measured</span> : `${value.toLocaleString()}${suffix}`}
-    </td>
-  );
-}
-
-/**
  * The three written observations.
  *
  * Every line is a description of numbers the studio holds. None of them claims
@@ -558,12 +361,13 @@ function Cell({ value, suffix = "" }: { value: number | null; suffix?: string })
  */
 function Observations({
   kpis,
-  posts,
+  bestRead,
   best,
   named,
 }: {
   kpis: Kpis | null;
-  posts: AnalyticsPost[] | null;
+  /** Whether the engine's best and weakest came back: the last two panels say so either way. */
+  bestRead: "reading" | "done" | "failed";
   best: AnalyticsBest | null;
   /** The opening lines of the posts the engine named, by URN. */
   named: Record<string, string>;
@@ -632,8 +436,7 @@ function Observations({
       </section>
 
       {/* The posts the engine named, best and weakest, with the figures it
-          ranked them on. They are read from the whole history, so neither is
-          usually among the rows of the table beside this. */}
+          ranked them on, read from the whole history. */}
       {best && (best.best.length > 0 || best.worst.length > 0) && (
         <section>
           <p className="studio-label mb-1.5">Your best and your weakest</p>
@@ -670,8 +473,10 @@ function Observations({
 
       <section>
         <p className="studio-label mb-1.5">What to look at next</p>
-        {posts === null ? (
+        {bestRead === "reading" ? (
           <p className="studio-meta text-ink-muted">READING YOUR POSTS</p>
+        ) : bestRead === "failed" ? (
+          <p className="studio-meta text-ink-muted">YOUR POSTS COULD NOT BE READ. THEY ARE READ AGAIN WHEN THE STUDIO ANSWERS.</p>
         ) : best && strongest && ratio ? (
           <p className="text-[12px] leading-relaxed text-ink-secondary">
             Your strongest post, across the {best.ranked_posts} of your posts whose figures have settled, took{" "}
@@ -683,6 +488,23 @@ function Observations({
             No post of yours has settled figures to compare yet, so there is nothing to compare.
           </p>
         )}
+      </section>
+
+      {/* Every post, in one place. The table under the chart was a second
+          copy of the Posts screen's, fourteen at a time. */}
+      <section>
+        <p className="studio-label mb-1.5">Every post</p>
+        <p className="text-[12px] leading-relaxed text-ink-secondary">
+          Each of your posts, with its figures against your usual and the people it brought, sorted and searched as
+          you like, is on Posts.
+        </p>
+        <a
+          href="#/posts"
+          className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-medium text-ink-primary underline-offset-2 hover:underline"
+        >
+          Open Posts
+          <ArrowUpRight className="size-3" strokeWidth={2} aria-hidden="true" />
+        </a>
       </section>
     </aside>
   );
@@ -735,7 +557,6 @@ function describeRelationship(kpis: AnalyticsKpis): string {
 const WHAT_CHANGED = [
   { key: "impressions_delta_pct", label: "Impressions" },
   { key: "engagements_delta_pct", label: "Engagements" },
-  { key: "profile_views_delta_pct", label: "Profile views" },
   { key: "follower_growth", label: "Followers" },
 ] as const;
 
