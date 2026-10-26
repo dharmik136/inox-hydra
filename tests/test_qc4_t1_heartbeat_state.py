@@ -128,7 +128,7 @@ def test_a_call_that_names_a_member_or_a_post_is_counted_without_naming_them(pag
     page = pages.open("/feed/", page_html("<main></main>"), scripts=SCRIPTS, storage={"networkReading": True})
     _serve_voyager(page)
     page.clock.run_for(100)
-    _fetch(page, "https://www.linkedin.com/voyager/api/identity/profiles/williamhgates/profileView")
+    _fetch(page, "https://www.linkedin.com/voyager/api/identity/profiles/plainwordvanity/profileView")
     _fetch(page, "https://www.linkedin.com/voyager/api/socialActions/urn:li:activity:7385000000000000001/comments")
     _fetch(page, "https://www.linkedin.com/voyager/api/feed/updates/7385000000000000001")
     page.wait_for_timeout(200)
@@ -140,7 +140,7 @@ def test_a_call_that_names_a_member_or_a_post_is_counted_without_naming_them(pag
         "/voyager/api/feed/updates/_id_": 1,
     }
     flat = " ".join(calls)
-    assert "williamhgates" not in flat and "7385" not in flat and "urn" not in flat
+    assert "plainwordvanity" not in flat and "7385" not in flat and "urn" not in flat
 
 
 def test_switching_off_and_on_again_does_not_count_a_call_twice(pages):
