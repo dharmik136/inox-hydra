@@ -330,10 +330,11 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
             ever = conn.execute(
                 "SELECT 1 FROM post_metric_observations WHERE activity_urn = ? AND source = 'post_analytics'",
                 (latest["activity_urn"],)).fetchone()
+            first_hours = not ever and latest["age_hours"] < FIRST_HOURS
             return {"action": "open", "url": latest["analytics_url"],
                     "reason": ("Your latest post has no reading yet in its first hours; a reading taken early "
                                "is the first point its settle curve is built from."
-                               if not ever else
+                               if first_hours else
                                "Your latest post is in its first three days and its figures were not read in the last 12 hours.")}
     asked = _cadence_ask(state, latest, conn)
     if asked:
@@ -350,6 +351,9 @@ def _open_next(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) ->
 # after posting, the next morning, the two-day check). The day-7 point and
 # the Activity page's late readings of older posts were never asked for.
 DAY_SEVEN_WINDOW_HOURS = (144.0, 240.0)
+# A post younger than this with no reading at all is in its first hours: the
+# earliest settle-curve point, about 2 hours, is still to be taken.
+FIRST_HOURS = 24.0
 # A reading taken when the post was at least this old counts as its week point.
 DAY_SEVEN_READ_AT_HOURS = 120.0
 ACTIVITY_ASK_AFTER = timedelta(days=7)
@@ -374,7 +378,9 @@ def _cadence_ask(state: Dict[str, Any], latest: Optional[Dict[str, Any]], conn) 
                     "reason": ("Your latest post is about a week old and has no reading from that age; "
                                "a reading at about a week old is what your usual settle age rests on.")}
     vanity = (state.get("identity") or {}).get("vanity")
-    if not vanity:
+    # The Activity page gives late readings to posts the studio holds; with
+    # none held, Today says that instead.
+    if not vanity or not latest:
         return None
     posts_reader = next((h for h in state["health"] if h["extractor"] == "activity_posts"), None)
     last_good = posts_reader["last_good_at"] if posts_reader else None

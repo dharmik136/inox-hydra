@@ -144,3 +144,32 @@ def test_the_day_seven_ask_comes_before_the_weekly_activity_ask():
     _good_activity_read(9)
     step = _open_next()
     assert step["url"].endswith(f"/analytics/post-summary/{urn}/")
+
+
+def test_a_post_past_its_first_hours_is_not_said_to_be_in_them():
+    urn = _ready(latest_hours=50)
+    _good_activity_read(1)
+    step = _open_next()
+    assert step["url"].endswith(f"/analytics/post-summary/{urn}/")
+    assert "first hours" not in step["reason"]
+
+
+def test_with_no_post_held_the_weekly_ask_does_not_replace_the_setup_answer():
+    """
+    An import that read to the end of the list and held nothing (every card a
+    repost) completes the history, so the cadence rules are reached with no
+    post to give a late reading to. The answer stays the one that says so.
+    """
+    client.post("/api/v1/identity/observe", json={"vanity": ME, "self_evidence": ["owner_edit_controls"],
+                                                  "display_name": "Cadence Probe"})
+    client.post("/api/v1/identity/confirm", json={"vanity": ME})
+    client.post("/api/v1/bridge/heartbeat", json={"extension_version": "test"})
+    now = datetime.now(timezone.utc).isoformat()
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO self_import_requests (kind, requested_at, finished_at, items_seen, outcome) "
+                     "VALUES ('posts', ?, ?, 5, 'end_of_list')", (now, now))
+    conn.close()
+    step = _open_next()
+    assert "recent-activity" not in step.get("url", ""), "the weekly ask fired with no post held"
+    assert step["reason"] == "No post of yours has been imported yet."

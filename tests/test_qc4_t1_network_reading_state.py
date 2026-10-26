@@ -155,3 +155,13 @@ def test_the_workers_registration_outlives_a_newer_page_heartbeat(client):
     reading = _bridge(client)["network_reading"]
     assert reading["registered"] is True
     assert reading["state"] == "seeing"
+
+
+def test_the_side_panels_list_follows_the_same_rule_as_setup(client):
+    """The panel listed all five network readers as NOT SEEN YET with the switch off."""
+    _beat(client, page_kind="feed", network_reading={"switch": False})
+    names = [h["extractor"] for h in client.get("/api/v1/extension/health").json()["extractors"]]
+    assert not [n for n in names if n.startswith("voyager_")]
+    _beat(client, page_kind="feed", network_reading=ON_SEEING)
+    names = [h["extractor"] for h in client.get("/api/v1/extension/health").json()["extractors"]]
+    assert len([n for n in names if n.startswith("voyager_")]) == 5

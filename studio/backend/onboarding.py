@@ -502,6 +502,18 @@ def _write_capture(conn, extractor: str, payload: Dict[str, Any], refused: Optio
     conn.execute(PRUNE_CAPTURES, ((now - CAPTURE_RETENTION).isoformat(),))
 
 
+def listed_health(health: List[Dict[str, Any]], reading: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    The readers a screen lists: every one, except an opt-in network reader
+    that has never run while the switch is not known to be on. One rule for
+    Setup and the side panel, which listed all five as NOT SEEN YET with the
+    switch off.
+    """
+    switch_on = bool(reading) and reading.get("switch") is True
+    return [h for h in health
+            if h["extractor"] not in OPT_IN_EXTRACTORS or h["state"] != "never_run" or switch_on]
+
+
 def capture_health() -> List[Dict[str, Any]]:
     """
     Per extractor: when it last read something, and whether its latest run
@@ -725,7 +737,7 @@ def extension_health() -> Dict[str, Any]:
     bridge = bridge_status()
     return {
         "bridge": bridge,
-        "extractors": capture_health(),
+        "extractors": listed_health(capture_health(), bridge.get("network_reading")),
         # The three honest states, from the heartbeat, with the page's count
         # of LinkedIn's data calls by path and query name. None when no
         # heartbeat has carried it.
@@ -1894,12 +1906,9 @@ def onboarding_state() -> Dict[str, Any]:
         from archive_import import archive_state
     archive = archive_state(look=False)
     chain = get_active_sync_chain()
-    reading = bridge.get("network_reading") or {}
-    switch_on = reading.get("switch") is True
     return {
         "archive": archive,
-        "health": [h for h in capture_health()
-                   if h["extractor"] not in OPT_IN_EXTRACTORS or h["state"] != "never_run" or switch_on],
+        "health": listed_health(capture_health(), bridge.get("network_reading")),
         "session": session,
         "status": "success",
         "bridge": bridge,
