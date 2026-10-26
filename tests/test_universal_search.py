@@ -110,7 +110,7 @@ def test_only_a_draft_is_offered_for_editing(seeded):
     """
     opens = {post["id"]: post["opens"] for post in _search("xylophonic")["groups"]["posts"]}
     assert opens[seeded["draft"]] == "composer"
-    assert opens[seeded["published"]] == "analytics", opens
+    assert opens[seeded["published"]] == "posts", opens
     assert opens[seeded["scheduled"]] == "queue", opens
 
 

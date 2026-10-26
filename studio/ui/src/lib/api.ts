@@ -1981,7 +1981,7 @@ export const OWN_PROFILE_URL = "https://www.linkedin.com/in/me/";
 // ---------------------------------------------------------------------------
 
 /** Where a result opens. Chosen by the server from the row's own state. */
-export type SearchOpens = "composer" | "queue" | "analytics" | "leads" | "docs";
+export type SearchOpens = "composer" | "queue" | "posts" | "leads" | "docs";
 
 export interface SearchResult {
   kind: "post" | "lead" | "specimen" | "help";

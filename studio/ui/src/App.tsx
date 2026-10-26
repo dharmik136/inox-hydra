@@ -760,7 +760,7 @@ export default function App() {
 
       if (result.kind === "post") {
         if (result.opens !== "composer") {
-          navigate(result.opens === "queue" ? "queue" : "analytics");
+          navigate(result.opens === "queue" ? "queue" : "posts");
           return;
         }
         if (result.id === draftId) {
@@ -780,7 +780,7 @@ export default function App() {
         if (!found) {
           // Published or queued since the search ran, so it no longer belongs
           // in the editor.
-          navigate("analytics", true);
+          navigate("posts", true);
           return;
         }
         adopt({ ...found, status: "draft" });
