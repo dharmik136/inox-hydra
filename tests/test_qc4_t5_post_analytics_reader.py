@@ -5,20 +5,29 @@ The post analytics page reader: what it reads, what it marks, what it reports.
 Cycle 4, track 5, items 18 and 19. These run the shipped own_pages.js in
 headless Chromium (see qc_f3_pages.py) on fixture post analytics pages.
 
-The seven labels the reader has read since cycle 2 are measured. The labels
-LinkedIn's Help documents beside them (followers gained from this post,
-profile viewers from this post, link visits, the in-network and
-out-of-network split, viewer demographics) are not verified against a 2026
-page, so a page that plainly is the post analytics page and lacks one reports
-it as drift rather than staying silent: Setup shows the reader as drifting
-until the owner's live check settles the wording.
+The seven labels the reader has read since cycle 2 are measured, and only
+they can report drift. The labels LinkedIn's Help documents beside them
+(followers gained from this post, profile viewers from this post, link
+visits, the content-specific figures, the in-network and out-of-network
+split, viewer demographics) are not verified against a 2026 page, and by the
+owner's decision of 2026-10-26 an absent one is not drift: LinkedIn may not
+show those figures to every member or on every post. Nothing is sent for an
+absent one, and the studio derives from its readings how long each has gone
+unread (tests/test_qc4_t5_derive.py).
 """
+
+import os
+import sys
 
 import pytest
 
 from qc_f3_pages import Pages, page_html
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "studio", "backend"))
+
 SCRIPTS = ("voyager_schema.js", "content.js", "own_pages.js")
+NEW_FIELDS = {"followers_gained", "profile_viewers", "link_visits", "article_views", "video_views",
+              "in_network_pct", "out_of_network_pct", "demographics"}
 URN = "urn:li:activity:7386000000000000501"
 PATH = f"/analytics/post-summary/{URN}/"
 
@@ -125,24 +134,34 @@ def test_a_percentage_is_never_read_as_a_count(pages):
     assert metrics["members_reached"] == 2900 and metrics["impressions"] == 4100
 
 
-def test_an_absent_unverified_label_is_drift_not_silence(pages):
+def test_a_page_missing_every_new_label_is_read_with_no_drift(pages, monkeypatch, tmp_path):
     """
-    The page plainly is the post analytics page (the seven measured labels
-    are there), so each documented label it lacks is reported, by name.
+    The owner's decision of 2026-10-26: a label added this cycle that is
+    absent is not drift. A page carrying only the seven verified labels is
+    read in full, sends nothing for the others, never a 0, and leaves the
+    reader working.
     """
     page = _read(pages, f"<main><ul>{SEVEN}</ul></main>")
     capture = _capture(pages, page)[-1]
-    assert capture["items_seen"] == 7
-    assert set(capture["drift"]) == {"followers_gained", "profile_viewers", "in_network_pct", "out_of_network_pct",
-                                     "demographics"}
-    metrics = _sent(pages, page)[0]["metrics"]
-    assert "link_visits" not in metrics and "demographics" not in metrics, "a figure not on the page is not sent"
+    assert capture["items_seen"] == 7 and not capture["drift"]
+    assert not NEW_FIELDS & set(_sent(pages, page)[0]["metrics"]), "an absent figure is not sent"
+    # The studio's own reading of that capture: the reader is working.
+    monkeypatch.setenv("INOX_HYDRA_HOME", str(tmp_path))
+    from database import init_db
+    import onboarding
+    init_db()
+    onboarding.record_capture(capture)
+    health = {h["extractor"]: h for h in onboarding.capture_health()}
+    assert health["post_analytics"]["state"] == "working" and health["post_analytics"]["drift"] == []
 
 
-def test_content_specific_labels_are_not_drift_when_absent(pages):
-    """A text post has no link visits, article views or video views; their absence says nothing."""
-    page = _read(pages, f"<main><ul>{SEVEN}</ul></main>")
-    assert not {"link_visits", "article_views", "video_views"} & set(_capture(pages, page)[-1]["drift"] or [])
+def test_a_page_missing_a_verified_label_still_reports_drift(pages):
+    """Saves is one of the seven read since cycle 2: missing beside the other six, it is a changed label."""
+    six = "".join(_card(label, figure) for label, figure in (
+        ("Impressions", "1,912"), ("Members reached", "1,540"), ("Reactions", "57"), ("Comments", "9"),
+        ("Reposts", "2"), ("Sends", "1"), ("Followers gained from this post", "12")))
+    page = _read(pages, f"<main><ul>{six}</ul></main>")
+    assert _capture(pages, page)[-1]["drift"] == ["saves"]
 
 
 def test_a_page_with_no_labels_at_all_reports_only_the_labels(pages):
@@ -152,20 +171,24 @@ def test_a_page_with_no_labels_at_all_reports_only_the_labels(pages):
     assert _sent(pages, page) == []
 
 
-def test_a_demographics_heading_with_no_readable_entries_is_drift(pages):
+def test_a_demographics_heading_with_no_readable_entries_stores_nothing_and_is_not_drift(pages):
+    """LinkedIn may hold demographics back on a post with few viewers: nothing to store, and not drift."""
     body = f"<main><ul>{SEVEN}</ul><section><h3>Viewer demographics</h3><p>Not enough data yet</p></section></main>"
     page = _read(pages, body)
-    assert "demographics_entries" in _capture(pages, page)[-1]["drift"]
+    assert not _capture(pages, page)[-1]["drift"]
+    assert "demographics" not in _sent(pages, page)[0]["metrics"]
 
 
 # ---------------------------------------------------------------------------
 # Telling the split and the demographics apart from what sits near them
 # ---------------------------------------------------------------------------
 
-def test_a_network_split_that_does_not_add_up_is_drift_and_never_stored(pages):
+def test_a_network_split_that_does_not_add_up_is_dropped_and_is_not_drift(pages):
     """
     The two shares are complementary. In a column layout both labels can
     find the same percentage first; 62 and 62 is a misread, not a figure.
+    A new field that fails its own check is dropped, and is not drift
+    (owner, 2026-10-26).
     """
     body = f"""<main><ul>{SEVEN}</ul>
       <section><div><span>In your network</span><span>Outside your network</span></div>
@@ -173,7 +196,7 @@ def test_a_network_split_that_does_not_add_up_is_drift_and_never_stored(pages):
     page = _read(pages, body)
     metrics = _sent(pages, page)[0]["metrics"]
     assert "in_network_pct" not in metrics and "out_of_network_pct" not in metrics
-    assert "network_split" in _capture(pages, page)[-1]["drift"]
+    assert not _capture(pages, page)[-1]["drift"]
 
 
 def test_demographics_never_take_the_network_split_above_their_heading(pages):

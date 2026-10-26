@@ -1135,6 +1135,71 @@ def post_demographics(activity_urn: str) -> List[Dict[str, Any]]:
         conn.close()
 
 
+# The figures the post analytics reader added in cycle 4, in the words a
+# sentence uses. Their labels are unverified against a 2026 page, and by the
+# owner's decision of 2026-10-26 an absent one is not drift: nothing is
+# stored for it and the reader stays working. So that a label which never
+# appears is still visible, post_analytics_sightings says how long each has
+# gone unread, from the readings alone.
+UNVERIFIED_FIELDS = (
+    ("followers_gained", "followers gained from this post"),
+    ("profile_viewers", "profile viewers from this post"),
+    ("link_visits", "link visits"),
+    ("article_views", "article views"),
+    ("video_views", "video views"),
+    ("in_network_pct", "the share of impressions from your network"),
+    ("out_of_network_pct", "the share of impressions from outside your network"),
+    ("demographics", "viewer demographics"),
+)
+SIGHTINGS_MEANING = ("LinkedIn may not show this figure to every member or on every post. "
+                     "If it never appears, the label may have changed.")
+
+
+def _pages(count: int) -> str:
+    return "the latest post analytics page" if count == 1 else f"any of the last {count} post analytics pages"
+
+
+def post_analytics_sightings() -> Dict[str, Any]:
+    """
+    Per figure the post analytics reader added in cycle 4: when one of the
+    creator's post analytics pages last carried it, and how many post
+    analytics readings have been taken since, in a sentence such as
+    "followers gained from this post: not read on any of the last 12 post
+    analytics pages". Readings from the activity page carry none of these
+    figures and are not counted. The roll-up thins readings older than its
+    window, so a count that reaches back past it counts the readings kept.
+    """
+    conn = get_db()
+    try:
+        total = conn.execute(
+            "SELECT COUNT(*) FROM post_metric_observations WHERE source = 'post_analytics'").fetchone()[0]
+        fields = []
+        for field, label in UNVERIFIED_FIELDS:
+            if field == "demographics":
+                last = conn.execute("SELECT MAX(observed_at) FROM audience_demographic_readings "
+                                    "WHERE source = 'post_analytics'").fetchone()[0]
+            else:
+                last = conn.execute(f"SELECT MAX(observed_at) FROM post_metric_observations "
+                                    f"WHERE source = 'post_analytics' AND {field} IS NOT NULL").fetchone()[0]
+            since = total if last is None else conn.execute(
+                "SELECT COUNT(*) FROM post_metric_observations WHERE source = 'post_analytics' AND observed_at > ?",
+                (last,)).fetchone()[0]
+            if not total:
+                sentence = f"{label}: no post analytics page read yet"
+            elif last is None:
+                sentence = (f"{label}: not read on the one post analytics page read so far" if total == 1 else
+                            f"{label}: not read on any of the {total} post analytics pages read so far")
+            elif not since:
+                sentence = f"{label}: read on the latest post analytics page"
+            else:
+                sentence = f"{label}: not read on {_pages(since)}, last read {last[:10]}"
+            fields.append({"field": field, "label": label, "last_read_at": last, "readings_since": since,
+                           "sentence": sentence})
+    finally:
+        conn.close()
+    return {"status": "success", "post_analytics_readings": total, "fields": fields, "meaning": SIGHTINGS_MEANING}
+
+
 def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: Optional[str]) -> Optional[str]:
     """
     Connects one of the creator's LinkedIn posts to the studio record it came

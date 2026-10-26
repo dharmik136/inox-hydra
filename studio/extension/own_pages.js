@@ -1169,11 +1169,13 @@
   //
   // The first seven labels are measured. The rest are the figures LinkedIn's
   // Help documents on this page (followers gained from this post, profile
-  // viewers from this post, link visits, article views, video views) in the
-  // Help's wording; the wording on a 2026 page is unverified, so a page that
-  // plainly is this page and lacks a label every post should show is
-  // reported as drift (POST_LABELS_ON_EVERY_POST), never silently walked
-  // past. A label may be spelt two ways; the first spelling found wins.
+  // viewers from this post, link visits, article views, video views, the
+  // network split, the viewer demographics) in the Help's wording, which is
+  // unverified against a 2026 page. By the owner's decision of 2026-10-26 an
+  // absent one is not drift: LinkedIn may not show it to every member or on
+  // every post, so nothing is sent for it, and the studio derives from its
+  // readings how long each has gone unread (post_analytics_sightings). A
+  // label may be spelt two ways; the first spelling found wins.
 
   const POST_METRIC_LABELS = [
     ["members reached", "members_reached"],
@@ -1203,10 +1205,11 @@
     ["beyond your network", "out_of_network_pct"],
   ];
   // Absent on a page that plainly is the post analytics page, these are
-  // drift. Link visits, article views and video views are not: a text post
-  // has none, and their absence says nothing about the reader.
-  const POST_LABELS_ON_EVERY_POST = ["followers_gained", "profile_viewers", "in_network_pct",
-    "out_of_network_pct", "demographics"];
+  // drift: the seven labels this reader has read since cycle 2, and only
+  // those. No label added in cycle 4 belongs here (owner, 2026-10-26), and
+  // tests/test_qc4_t5_derive.py fails if one is planted.
+  const POST_LABELS_ON_EVERY_POST = ["members_reached", "impressions", "reactions", "comments", "reposts",
+    "saves", "sends"];
   const NUMBER_ONLY = /^[\d.,]+\s*[KkMm]?$/;
   const PERCENT_ONLY = /^\d{1,3}(?:[.,]\d+)?\s*%$/;
   const PERCENT_IN_TEXT = /(\d{1,3}(?:[.,]\d+)?)\s*%/;
@@ -1222,9 +1225,9 @@
   // The viewer demographics block: a heading naming demographics, a control
   // naming the dimension (job titles, locations, industries, company size,
   // companies, seniority) and the top entries, each a label beside a
-  // percentage. The block's markup is unverified: a heading with no readable
-  // entries is reported as drift ("demographics_entries"), and an entry is
-  // kept only when a label sits directly before its percentage.
+  // percentage. The block's markup is unverified, so an entry is kept only
+  // when a label sits directly before its percentage, and a block with none
+  // stores nothing.
   const DEMOGRAPHIC_DIMENSIONS = [
     [/^job titles?$/, "job_title"], [/^locations?$/, "location"], [/^industr(y|ies)$/, "industry"],
     [/^company sizes?$/, "company_size"], [/^compan(y|ies)$/, "company"], [/^seniority( levels?)?$/, "seniority"],
@@ -1236,13 +1239,14 @@
     return hit ? hit[1] : null;
   }
 
-  // null when the page has no demographics heading; [] when it has one and
-  // no entries the reader can pair; otherwise the entries, in page order.
+  // The entries, in page order, or [] when the page has no demographics
+  // heading or none the reader can pair, which is not drift (owner,
+  // 2026-10-26): LinkedIn may hold them back on a post with few viewers.
   // Only what follows the heading is read, so a block that shares an
   // ancestor with the network split never takes its percentages.
   function readPostDemographics(leaves) {
     const heading = leaves.find((el) => /demographics/i.test(clean(el.textContent)));
-    if (!heading) return null;
+    if (!heading) return [];
     const after = (el) => Boolean(heading.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
     // The block is the nearest ancestor holding at least two percentages after the heading.
     let box = heading.parentElement;
@@ -1326,45 +1330,39 @@
         }
       }
     }
-    // One precision per reading, as the analytics page's reader sends it:
-    // 'rounded' when any figure stored was abbreviated, 'exact' otherwise.
-    // A figure that is not a multiple of its rounding step is exact
-    // whatever the row says, so the studio can still say which ones.
     // The two shares are complementary, so a pair that does not add up to
     // about 100 is a misread (two labels that found one percentage), and is
-    // dropped and reported rather than stored.
-    let splitMisread = false;
+    // dropped rather than stored. A new field that fails its own check is
+    // not drift (owner, 2026-10-26).
     if (metrics.in_network_pct !== undefined && metrics.out_of_network_pct !== undefined &&
         Math.abs(metrics.in_network_pct + metrics.out_of_network_pct - 100) > 1) {
       delete metrics.in_network_pct;
       delete metrics.out_of_network_pct;
-      splitMisread = true;
     }
+    // One precision per reading, as the analytics page's reader sends it:
+    // 'rounded' when any figure stored was abbreviated, 'exact' otherwise.
+    // A figure that is not a multiple of its rounding step is exact
+    // whatever the row says, so the studio can still say which ones.
     if (Object.keys(metrics).length) metrics.precision = rounded.length ? "rounded" : "exact";
     const demographics = readPostDemographics(leaves);
-    if (demographics && demographics.length) metrics.demographics = demographics;
-    return { metrics, demographics, splitMisread };
+    if (demographics.length) metrics.demographics = demographics;
+    return metrics;
   }
 
-  // What a page that plainly is the post analytics page failed to show the
-  // reader, by name, so an unverified label shows in Setup as drift rather
-  // than as a figure that quietly never arrives.
-  function postAnalyticsDrift(metrics, demographics, splitMisread) {
-    const drift = POST_LABELS_ON_EVERY_POST.filter((key) => key !== "demographics" && metrics[key] === undefined);
-    if (splitMisread) drift.push("network_split");
-    if (demographics === null) drift.push("demographics");
-    else if (!demographics.length) drift.push("demographics_entries");
-    return drift;
+  // The verified labels a page that plainly is the post analytics page did
+  // not show, by name: the sign of LinkedIn changing this page that a
+  // creator cannot see for themselves.
+  function postAnalyticsDrift(metrics) {
+    return POST_LABELS_ON_EVERY_POST.filter((key) => metrics[key] === undefined);
   }
 
   async function capturePostAnalytics() {
     const urn = postAnalyticsUrn();
     const me = await getConfirmedVanity();
     if (!urn || !me) return;
-    const { metrics, demographics, splitMisread } = readPostAnalytics();
+    const metrics = readPostAnalytics();
     const found = Object.keys(metrics).filter((key) => key !== "precision" && key !== "demographics").length;
-    reportCapture("post_analytics", found, found,
-                  found ? postAnalyticsDrift(metrics, demographics, splitMisread) : ["metric_labels"]);
+    reportCapture("post_analytics", found, found, found ? postAnalyticsDrift(metrics) : ["metric_labels"]);
     if (!found) return;
     // The creator is standing on their own post's analytics page, having
     // opened it on purpose, so a refusal here is worth a sentence on the page.

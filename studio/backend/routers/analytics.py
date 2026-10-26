@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Response, Path, Query
 try:
     from ..database import get_db
     from .. import insights
+    from .. import onboarding
     from .. import post_summary
     from .. import results
     from ..crm import reverse_crm, VIP_THRESHOLD
@@ -25,6 +26,7 @@ try:
 except (ImportError, ValueError):
     from database import get_db
     import insights
+    import onboarding
     import post_summary
     import results
     from crm import reverse_crm, VIP_THRESHOLD
@@ -348,6 +350,17 @@ def get_analytics_overview(range: str = "30d"):
         }
     finally:
         conn.close()
+
+
+@router.get("/api/analytics/post-field-sightings")
+def get_post_field_sightings():
+    """
+    How long each figure the post analytics reader added in cycle 4 has gone
+    unread: onboarding.post_analytics_sightings, the one definition. An
+    absent one of those figures is not drift (owner, 2026-10-26), so this is
+    where a label that never appears shows.
+    """
+    return onboarding.post_analytics_sightings()
 
 
 @router.get("/api/analytics/export")

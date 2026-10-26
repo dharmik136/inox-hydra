@@ -897,3 +897,97 @@ def test_a_window_row_never_moves_the_daily_range(client):
     conn.close()
     alone = client.get("/api/analytics/overview?range=30d").json()
     assert alone["series"] == [] and [w["date"] for w in alone["windows"]] == ["2031-07-07"]
+
+
+# ---------------------------------------------------------------------------
+# The owner's decision of 2026-10-26: an unverified label that is absent is
+# not drift. Only the seven labels the reader had before this cycle can
+# drift; how long each new one has gone unread is derived from the readings.
+# ---------------------------------------------------------------------------
+
+OWN_PAGES = os.path.join(REPO_ROOT, "studio", "extension", "own_pages.js")
+# The seven labels in POST_METRIC_LABELS on main before this cycle, measured on
+# a live page in cycle 2. Nothing added in cycle 4 may drift.
+VERIFIED_LABELS = {"members_reached", "impressions", "reactions", "comments", "reposts", "saves", "sends"}
+
+
+def _labels_that_can_drift(source):
+    match = re.search(r"const POST_LABELS_ON_EVERY_POST = \[(.*?)\];", source, re.DOTALL)
+    assert match, "POST_LABELS_ON_EVERY_POST is gone from own_pages.js, so nothing says which labels drift"
+    return set(re.findall(r'"([a-z_]+)"', match.group(1)))
+
+
+def test_only_the_labels_read_before_this_cycle_can_drift():
+    with open(OWN_PAGES, encoding="utf-8") as handle:
+        listed = _labels_that_can_drift(handle.read())
+    assert listed, "no label can drift, so a changed page would read as working"
+    assert listed <= VERIFIED_LABELS, f"a label added this cycle can drift: {sorted(listed - VERIFIED_LABELS)}"
+
+
+def test_the_drift_guard_is_not_vacuous():
+    """A planted new label is found, so the guard above can fail."""
+    with open(OWN_PAGES, encoding="utf-8") as handle:
+        source = handle.read()
+    planted = source.replace("const POST_LABELS_ON_EVERY_POST = [", 'const POST_LABELS_ON_EVERY_POST = ["followers_gained", ', 1)
+    assert planted != source
+    assert "followers_gained" in _labels_that_can_drift(planted) - VERIFIED_LABELS
+
+
+def test_sightings_say_how_long_each_new_field_has_gone_unread(client):
+    """
+    A label that never appears is still visible: per new field, when a post
+    analytics page last carried it and how many have been read since,
+    derived from the readings and nothing else.
+    """
+    import onboarding
+    posts = [urn_hours_ago(30 + i, i) for i in range(5)]
+    _posts(client, *posts)
+    # A reading from the activity page is not a post analytics page, and is not counted.
+    client.post("/api/v1/self/posts/ingest", json={"author": ME, "posts": [
+        {"activity_urn": posts[0], "actor": ME, "reactions": 30}]})
+
+    def page(urn, **metrics):
+        answer = client.post("/api/v1/self/posts/analytics", json={
+            "author": ME, "activity_urn": urn, "metrics": {"impressions": 1000, **metrics}}).json()
+        assert answer["recorded"] is True
+
+    def seen():
+        out = onboarding.post_analytics_sightings()
+        return out, {f["field"]: f for f in out["fields"]}
+
+    out, fields = seen()
+    assert out["post_analytics_readings"] == 0
+    assert fields["followers_gained"]["sentence"] == "followers gained from this post: no post analytics page read yet"
+
+    page(posts[0], followers_gained=3, demographics=[{"dimension": "job_title", "label": "Founder", "percentage": 21}])
+    page(posts[1], profile_viewers=5)
+    page(posts[2])
+    page(posts[3])
+    out, fields = seen()
+    assert out["post_analytics_readings"] == 4
+    assert set(fields) == {"followers_gained", "profile_viewers", "link_visits", "article_views", "video_views",
+                           "in_network_pct", "out_of_network_pct", "demographics"}
+    followers = fields["followers_gained"]
+    assert followers["readings_since"] == 3 and followers["last_read_at"]
+    assert followers["sentence"] == ("followers gained from this post: not read on any of the last 3 post analytics "
+                                     f"pages, last read {followers['last_read_at'][:10]}")
+    assert fields["demographics"]["readings_since"] == 3
+    assert fields["profile_viewers"]["readings_since"] == 2
+    assert fields["link_visits"]["last_read_at"] is None and fields["link_visits"]["readings_since"] == 4
+    assert fields["link_visits"]["sentence"] == "link visits: not read on any of the 4 post analytics pages read so far"
+    # Absent is stored as nothing: the reading has no value for it, never a 0.
+    assert onboarding.post_readings(posts[2])[-1]["followers_gained"] is None
+
+    # Seen once and then not again; seen again on the latest page.
+    page(posts[4], followers_gained=1)
+    out, fields = seen()
+    assert fields["followers_gained"]["readings_since"] == 0
+    assert fields["followers_gained"]["sentence"] == "followers gained from this post: read on the latest post analytics page"
+    assert fields["profile_viewers"]["readings_since"] == 3
+    assert fields["demographics"]["readings_since"] == 4
+
+    route = client.get("/api/analytics/post-field-sightings").json()
+    assert route["status"] == "success" and route["post_analytics_readings"] == 5
+    assert {f["field"]: f["readings_since"] for f in route["fields"]} == {
+        f: fields[f]["readings_since"] for f in fields}
+    assert "may not show" in route["meaning"] and "label may have changed" in route["meaning"]
