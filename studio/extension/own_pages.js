@@ -122,10 +122,28 @@
     return null;
   }
 
+  // Each reader marks the start and end of its read, through content.js's
+  // timing (the same world), so the capture report carries how long the read
+  // took, the reads since the last report and how many took over 50 ms. A
+  // page loaded without content.js is not timed, and the report says so with
+  // no figure rather than a zero.
+  function timing() {
+    return window.__inoxReaderTiming || null;
+  }
+  function beginRead(extractor) {
+    if (timing()) timing().begin(extractor);
+  }
+  function endRead(extractor) {
+    if (timing()) timing().end(extractor);
+  }
+
   // One extractor run, for the studio's capture log (see content.js
   // reportCapture for why). Throttled per extractor per page.
   const lastReport = {};
   function reportCapture(extractor, itemsSeen, itemsKept, drift) {
+    // The read ends here whether or not the report gets through the
+    // throttle, so every read is counted.
+    endRead(extractor);
     // Keyed on whether this run drifted, so a clean read always gets through
     // after a drifted one. Otherwise an early read that ran before the page
     // finished rendering logged drift, and the good read that followed was
@@ -134,14 +152,14 @@
     const now = Date.now();
     if (lastReport[key] && now - lastReport[key] < 60000) return;
     lastReport[key] = now;
-    studio("/api/v1/bridge/capture", {
+    studio("/api/v1/bridge/capture", Object.assign({
       extractor,
       page_kind: pageKind(),
       items_seen: itemsSeen,
       items_kept: itemsKept,
       drift: drift && drift.length ? drift : null,
       extension_version: EXTENSION_VERSION,
-    });
+    }, timing() ? timing().take(extractor) : {}));
   }
 
   let confirmedVanity; // undefined: not asked yet; null: nobody confirmed
@@ -674,6 +692,7 @@
     const evidence = mine ? [] : selfEvidence();
     if (mine ? mine !== vanity : evidence.length === 0) return; // not ours: nothing leaves
 
+    beginRead("profile");
     const payload = { vanity, self_evidence: evidence };
     if (kind === "profile") {
       Object.assign(payload, readTopCard());
@@ -712,6 +731,7 @@
       reportCapture("profile", read.length + (payload.positions ? payload.positions.length : 0),
         read.length, payload.display_name ? [] : ["name"]);
     }
+    endRead("profile");
 
     const result = await studio("/api/v1/identity/observe", payload);
     if (result && result.status === "candidate") {
@@ -1109,7 +1129,18 @@
 
   const sentKeys = new Set();
 
+  function itemKey(item) {
+    return JSON.stringify([
+      item.activity_urn || item.target_activity_urn,
+      item.kind,
+      item.my_text,
+      item.text ? item.text.length : 0,
+      item.reactions
+    ]);
+  }
+
   async function sendActivity(kind, me) {
+    beginRead(kind);
     const cards = activityCards();
     const items = readActivity(kind, me);
     // Post cards on the page none of whose authors could be read are the
@@ -1120,22 +1151,19 @@
     if (kind === "activity_posts" && items.length && items.unreadActors === items.length) drift.push("post_author");
     reportCapture(kind, cards.length, items.length, drift);
 
-    const fresh = items.filter((item) => {
-      const key = JSON.stringify([
-        item.activity_urn || item.target_activity_urn,
-        item.kind,
-        item.my_text,
-        item.text ? item.text.length : 0,
-        item.reactions
-      ]);
-      if (sentKeys.has(key)) return false;
-      sentKeys.add(key);
-      return true;
-    });
+    const fresh = items.filter((item) => !sentKeys.has(itemKey(item)));
     if (!fresh.length) return 0;
     const path = kind === "activity_posts" ? "/api/v1/self/posts/ingest" : "/api/v1/self/outbound/ingest";
     const payload = kind === "activity_posts" ? { author: me, posts: fresh } : { actor: me, items: fresh };
     const answer = announce(await studioCall(path, payload), path);
+    // An item is marked sent only once the studio has answered: taken, kept
+    // by the worker for later, or refused for a reason asking again cannot
+    // change. With no answer at all (the worker gone mid-relay, the studio
+    // restarting during an import) it is read again next time, as the
+    // engagers path has always done. The keys used to be added before the
+    // call, so those items were silently lost for the rest of the page.
+    const decided = answer && (answer.ok || answer.kept || answer.httpStatus);
+    if (decided) fresh.forEach((item) => sentKeys.add(itemKey(item)));
     // A read the studio understood and stored nothing of. The creator asked
     // for this import, so being told "0 of 14" beats being told nothing,
     // which is what `skipped` got until now.
@@ -1204,6 +1232,7 @@
     const urn = postAnalyticsUrn();
     const me = await getConfirmedVanity();
     if (!urn || !me) return;
+    beginRead("post_analytics");
     const metrics = readPostAnalytics();
     const found = Object.keys(metrics).length;
     reportCapture("post_analytics", found, found, found ? [] : ["metric_labels"]);
@@ -1423,12 +1452,24 @@
   // a creator who pulled a new studio is told once to press Reload instead of
   // watching captures fail on a field name that moved. Said once per browser
   // session, by the service worker's own record of it.
+  // It also carries the state of network reading as this page sees it
+  // (content.js keeps it: the switch, the interceptor's marker, the count of
+  // LinkedIn's data calls by path and query name), so the studio can tell
+  // "off" from "on and matching nothing". Nothing is sent about it while the
+  // switch has not been read, which the studio shows as not measured.
   let reloadNoticeShown = false;
   async function heartbeat() {
-    const answer = await studio("/api/v1/bridge/heartbeat", {
+    const body = {
       extension_version: EXTENSION_VERSION,
       page_kind: pageKind(),
-    });
+    };
+    const reading = typeof window.__inoxNetworkReading === "function" ? window.__inoxNetworkReading() : null;
+    if (reading) {
+      body.network_reading = reading;
+      const calls = reading.switch && typeof window.__inoxVoyagerCalls === "function" ? window.__inoxVoyagerCalls() : null;
+      if (calls) body.voyager_calls = calls;
+    }
+    const answer = await studio("/api/v1/bridge/heartbeat", body);
     const shake = answer && answer.handshake;
     if (shake && shake.reload_required && shake.message && !reloadNoticeShown) {
       reloadNoticeShown = true;

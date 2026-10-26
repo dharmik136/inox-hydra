@@ -109,9 +109,15 @@ def test_a_studio_that_refused_this_browser_is_not_reported_as_synced(pages):
     assert "refused this browser" in text
 
 
-def test_a_saved_day_is_reported_as_synced(pages):
+def test_a_saved_day_draws_nothing_into_the_page(pages):
+    """
+    Cycle 4, decision D3: the capture confirmation lives on the action badge
+    and in the side panel, from the worker's own record of the relay
+    (tests/test_qc4_t1_worker_badge.py), and nothing is drawn into LinkedIn's
+    page for a capture that worked. What was not saved is still said here.
+    """
     text = _notice(pages, {"status": "success", "buckets_ingested": 1})
-    assert text.endswith("Inox Hydra: creator analytics synced to your local studio.")
+    assert text == ""
 
 
 def test_a_windowed_read_says_the_follower_count_was_kept(pages):

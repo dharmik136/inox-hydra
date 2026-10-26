@@ -26,6 +26,23 @@
     if (window.__inox_voyager_intercepted__) return;
     Object.defineProperty(window, '__inox_voyager_intercepted__', { value: true, enumerable: false, writable: false });
 
+    // One attribute on the document, so the extension's own scripts can say
+    // whether this page carries the reader: they run in another world and
+    // cannot see the flag above, but the DOM is shared. A tab opened before
+    // the switch was turned on has no marker, which the studio then names.
+    function markDocument() {
+        try {
+            if (typeof document === 'undefined' || !document.documentElement) return false;
+            document.documentElement.setAttribute('data-inox-voyager', '1');
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+    if (!markDocument() && typeof document !== 'undefined') {
+        try { document.addEventListener('DOMContentLoaded', markDocument, { once: true }); } catch (e) {}
+    }
+
     // Rate limiting: max 30 requests per minute to avoid memory pressure
     // Past bug: Capturing too many large Voyager responses quickly caused OOM crashes
     // in the background worker. A simple sliding window fixes this.
