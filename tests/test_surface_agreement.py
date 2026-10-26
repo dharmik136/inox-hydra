@@ -142,27 +142,20 @@ def test_the_dossier_does_not_date_the_engagement_it_cannot_date():
 # ---------------------------------------------------------------------------
 
 
-def test_the_seeded_specimens_repeat_their_category():
+def test_a_specimen_carries_its_category_once():
     """
-    Establishes the condition. Every seeded specimen carries topic == archetype,
-    which is what made the duplicated label universal rather than occasional.
+    The condition that made the duplicated label universal was the retired
+    /api/inspirations route answering topic == archetype for every form. The
+    one route left carries the category once, as archetype, and no topic.
     """
-    response = client.get("/api/inspirations")
+    assert client.get("/api/inspirations").status_code == 404
+    response = client.get("/api/v1/intelligence/templates?limit=200")
     assert response.status_code == 200, response.text
-    payload = response.json()
-    rows = payload.get("inspirations") or payload.get("templates") or []
+    rows = response.json().get("templates") or []
     if not rows:
         pytest.skip("no specimens in this database")
-
-    identical = [
-        row for row in rows
-        if str(row.get("archetype", "")).strip().lower()
-        == str(row.get("topic", "")).strip().lower()
-    ]
-    assert identical, (
-        "no specimen repeats its category any more, so the guard below is no "
-        "longer describing this data"
-    )
+    for row in rows:
+        assert "archetype" in row and "topic" not in row, row
 
 
 # The card that printed archetype and topic on one line was the Swipe File's,

@@ -12,12 +12,14 @@ import {
   Newspaper,
   Send,
   Shapes,
+  BookMarked,
   type LucideIcon,
 } from "lucide-react";
 
 export type SectionId =
   | "setup"
   | "today"
+  | "record"
   | "activity"
   | "posts"
   | "outbound"
@@ -65,6 +67,10 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   // Where a creator starts once the studio knows who they are: who to reply
   // to, how the latest post is doing, and the one page worth opening.
   { id: "today", label: "Today", blurb: "Who to reply to and how your latest post is doing", icon: Sunrise },
+  // Third in the Now group once Replies exists (cycle 4, track 4 restructures
+  // the rail into five groups): what from your own record, and from what
+  // you asked, is worth writing from today. One batch a day, computed once.
+  { id: "record", screenKey: "record", label: "From your record", blurb: "What from your own record, and what you asked, is worth writing from today", icon: BookMarked },
   { id: "activity", label: "Activity", blurb: "What the bridge has read from your LinkedIn, as it arrives", icon: Activity },
   { id: "composer", screenKey: "studio", label: "Composer", blurb: "Write, re-hook and stage the next post", icon: PenLine },
   { id: "queue", screenKey: "queue", label: "Queue", blurb: "Scheduled posts and peak engagement slots", icon: CalendarClock },

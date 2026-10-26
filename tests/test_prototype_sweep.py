@@ -79,43 +79,42 @@ def test_shipped_specimens_carry_no_engagement_counts():
     The defect measured at the endpoint, which is where the numbers were made.
 
     A shipped template was never posted, so it has no reactions and no
-    comments. Null is the only honest answer; a number here is manufactured.
+    comments. The route that manufactured those counts at render time
+    (/api/inspirations) is retired (cycle 4, track 7, batch 0); the one
+    route that serves the forms carries no count field at all, which is the
+    only honest answer. A number here is manufactured.
     """
-    response = client.get("/api/inspirations")
+    assert client.get("/api/inspirations").status_code == 404, "the manufacturing route is back"
+    response = client.get("/api/v1/intelligence/templates?limit=200")
     assert response.status_code == 200, response.text
-    rows = response.json().get("inspirations", [])
+    rows = response.json().get("templates", [])
     if not rows:
         pytest.skip("no specimens in this database")
 
     shipped = [r for r in rows if r.get("origin") == "shipped"]
     assert shipped, "no specimen reports its origin, so the column is not reaching the surface"
 
-    for row in shipped:
-        assert row.get("likes_count") is None, (
-            f"{row.get('id')} reports {row.get('likes_count')} reactions on a post that "
-            "was never made"
-        )
-        assert row.get("comments_count") is None, (
-            f"{row.get('id')} reports {row.get('comments_count')} comments on a post that "
-            "was never made"
-        )
+    for row in rows:
+        for invented in ("likes_count", "comments_count", "reactions", "comments", "impressions"):
+            assert invented not in row, f"{row.get('id')} carries a {invented} for a post that was never made"
 
 
 def test_velocity_survives_because_it_is_real():
     """
     The correction has to stop at the invented fields.
 
-    velocity_score is a stored rating of how strongly a form performs, which is
-    the entire point of a template library. Stripping it along with the
-    fabricated counts would fix the honesty problem by removing the feature.
+    velocity_score is a stored rating, typed by whoever wrote the form, and
+    the rail says so. A starter form carries none (null, nobody rated it) and
+    a pack form carries the editor's number. Stripping the column along with
+    the fabricated counts would fix the honesty problem by removing the field
+    the rail's "typed, not measured" label is about.
     """
-    rows = client.get("/api/inspirations").json().get("inspirations", [])
+    rows = client.get("/api/v1/intelligence/templates?limit=200").json().get("templates", [])
     if not rows:
         pytest.skip("no specimens in this database")
-    assert any(
-        isinstance(r.get("velocity_score"), (int, float)) and r["velocity_score"] > 0
-        for r in rows
-    ), "every specimen lost its velocity score, so the library no longer ranks anything"
+    assert all("velocity_score" in r for r in rows), "the rating column no longer reaches the surface"
+    for r in rows:
+        assert r["velocity_score"] is None or isinstance(r["velocity_score"], (int, float)), r
 
 
 def test_the_origin_column_exists_to_be_read():

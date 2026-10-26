@@ -25,6 +25,7 @@ import { reportBridge } from "@/lib/bridgeState";
 import { useRefresh } from "@/lib/refresh";
 import { cn } from "@/lib/utils";
 import { ArchiveImport, archiveStatus } from "./ArchiveImport";
+import { RecordSetupFields } from "./RecordSetupFields";
 
 /**
  * Setup: the studio learns who you are from your own LinkedIn.
@@ -334,6 +335,12 @@ export function OnboardingSurface({ onOpenToday }: { onOpenToday?: () => void } 
           )}
         </Step>
       </ol>
+
+      {/* From your record (cycle 4, track 7): three optional questions, each
+          with its reason and a Skip, kept as asks the section's cards match. */}
+      <div className="mb-8 rounded-md border border-edge p-4">
+        <RecordSetupFields />
+      </div>
 
       {finished && onOpenToday && (
         <div
@@ -764,6 +771,11 @@ function ForgetPanel({
         <li>
           {counts.connections !== undefined ? `${plural(counts.connections, "connection")} and ` : ""}the record of your
           archive and history imports
+        </li>
+        {/* From your record (cycle 4, track 7): forgetting clears these too. */}
+        <li>
+          What you asked From your record for, its daily cards, your marks on them and your notes, and the saved posts,
+          follows, votes, articles, reposts and searches your archive brought
         </li>
         <li>The name, headline and company Setup filled in Brand Studio, unless you changed them</li>
       </ul>

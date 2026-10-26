@@ -620,6 +620,8 @@ HELP_SECTIONS = [
         "title": "Write and publish",
         "blurb": "Write a post, try a new opening, check it before posting, and record, queue or send it.",
         "paths": [
+            # From your record (cycle 4, track 7): what to write about, before writing it.
+            "help/find-what-to-write-from-your-own-record.md",
             "help/start-a-new-post-or-find-an-earlier-one.md",
             "help/write-format-and-save-a-post.md",
             "help/try-a-different-opening-line.md",
@@ -710,6 +712,7 @@ HELP_SECTIONS = [
             "quality/CYCLE3_REGISTER.md",
             "quality/CYCLE4_2026-10_PRD.md",
             "quality/cycle4/t5-derive.md",
+            "quality/cycle4/t7-ideas.md",
             "UI_CONVENTIONS.md",
             "ICON_SYSTEM.md",
             "UI_AGENT_WORKFLOW.md",

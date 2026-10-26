@@ -254,9 +254,46 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Track 4's Health section is its caller once that section is built; until
 # then it sits in the unreachable column, where it is visible.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 173
-REACHED_BY_INTERFACE = 118
-UNREACHABLE = 55
+# ---------------------------------------------------------------------------
+# Cycle 4, track 7, batch 0 (honesty prerequisites): GET /api/inspirations is
+# retired. It served viral_templates under the retired Swipe File's name with
+# counts set to None at render time, nothing in the interface called it, and
+# it was the one way a library of other people's posts could have come back
+# (ideas report, "Other people's posts stay out of the database"). It sat in
+# the unreachable column. Total 172 -> 171, reached stays 118, unreachable
+# 54 -> 53.
+# ---------------------------------------------------------------------------
+# Cycle 4, track 7, batches 4 and 6 (the section and its asks): sixteen paths
+# under /api/v1/record, the day's batch and earlier days, Suggest new, the
+# marks and Unhide all, More of this, Draft from this, Kept, What the studio
+# knows, the asks, the Setup fields, the settings and the monthly note. Every
+# one is called by the section's screen except the monthly note, which the
+# evaluation batch's "Did these help" calls. Total 171 -> 187, reached
+# 118 -> 133, unreachable 53 -> 54.
+# ---------------------------------------------------------------------------
+# Cycle 4, track 7, batch 7 (the model stage): POST /api/v1/record/model,
+# today's one call to the creator's own model on their first open of the
+# section, and GET /api/v1/record/model/preview, exactly what it would send.
+# Both reached by the section. Total 187 -> 189, reached 133 -> 135.
+# ---------------------------------------------------------------------------
+# Cycle 4, track 7, batch 8 (the evaluation): GET /api/v1/record/evaluation,
+# "Did these help?", added and reached; the monthly note, recorded above as
+# unreachable until this batch, is now saved from that screen. Total
+# 189 -> 190, reached 135 -> 137, unreachable 54 -> 53.
+# ---------------------------------------------------------------------------
+# Cycle 4, track 7, batch 9 (the signed library): the unsigned sync's three
+# routes are gone with intelligence_sync.py (/api/v1/intelligence/status,
+# /bundle/export and /bundle/import, none reached by the interface), and the
+# library's two are added and reached from What the studio knows
+# (/api/v1/record/library/fetch and /import). Total 190 -> 189, reached
+# 137 -> 139, unreachable 53 -> 50.
+# ---------------------------------------------------------------------------
+# Integration (t5 then t7): 172 + 1 + 17 = 190 paths, reached 118 + 21 = 139,
+# unreachable 54 + 1 - 4 = 51.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 190
+REACHED_BY_INTERFACE = 139
+UNREACHABLE = 51
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
 

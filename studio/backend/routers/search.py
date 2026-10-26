@@ -24,7 +24,7 @@ try:
         internal_documents_shown
     )
     from .. import universal_search
-    from ..intelligence_sync import intelligence_sync_engine
+    from .. import hook_forms
 except (ImportError, ValueError):
     from paths import get_docs_dir, get_modules_docs_dir
     from docs_engine import (
@@ -39,7 +39,7 @@ except (ImportError, ValueError):
         internal_documents_shown
     )
     import universal_search
-    from intelligence_sync import intelligence_sync_engine
+    import hook_forms
 
 router = APIRouter()
 
@@ -297,7 +297,7 @@ def search_everything(q: str = "", limit: int = 6):
 
     try:
         found = []
-        for template in intelligence_sync_engine.get_templates(limit=500):
+        for template in hook_forms.get_templates(limit=500):
             hook = template.get("hook_text") or ""
             haystack = universal_search.fold(" ".join(str(template.get(key) or "") for key in
                                                       ("hook_text", "archetype", "pacing_style")))

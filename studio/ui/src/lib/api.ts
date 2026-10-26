@@ -3280,3 +3280,306 @@ export async function fetchRecentDrafts(limit: number): Promise<DraftSummary[]> 
     .map((row) => ({ id: row.id, content: row.content ?? "", created_at: row.created_at ?? null }))
     .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
 }
+
+// ---------------------------------------------------------------------------
+// From your record (cycle 4, track 7)
+// ---------------------------------------------------------------------------
+
+/** The six provenance labels, and the explicit abstention. Defined once, in record_cards.py. */
+export type RecordLabel = "measured" | "derived" | "typed" | "suggested" | "retrieved" | "curated" | "abstained";
+
+/** A figure on a card, with the row it was read from and when. */
+export interface RecordFigure {
+  name: string;
+  value: number;
+  table: string;
+  id: string | null;
+  observed_at: string | null;
+  source: string;
+}
+
+/** One of the creator's own posts that shares an ask's words. */
+export interface RecordMatch {
+  activity_urn: string;
+  excerpt: string;
+  date: string | null;
+  url: string | null;
+}
+
+export interface RecordCardPayload {
+  title?: string;
+  badge?: string;
+  excerpt?: string;
+  date?: string | null;
+  url?: string | null;
+  figures?: RecordFigure[];
+  figure_sentence?: string;
+  because?: string;
+  source_sentence?: string;
+  method_sentence?: string;
+  draft_text?: string;
+  /** An abstention's sentence: what is missing and what will fill it. */
+  sentence?: string;
+  block_label?: string;
+  matches?: RecordMatch[];
+  counts?: Record<string, number | null>;
+  topic?: string | null;
+  /** The provider that wrote a suggested card, when one did. */
+  provider?: string | null;
+  /** A suggested card's angle, the model's own reason, and the words it quoted from your post. */
+  angle?: string;
+  model_why?: string;
+  quote?: string;
+  /** The section of the studio's playbook that shares an ask's words: its heading and its document in Docs. */
+  playbook?: { document_id: string; section: string } | null;
+}
+
+export interface RecordCard {
+  day: string;
+  card_id: string;
+  slot: number;
+  block: string;
+  kind: string;
+  label: RecordLabel;
+  method: string;
+  status: "shown" | "abstained" | "dropped" | "replaced";
+  payload: RecordCardPayload;
+  provenance: Record<string, unknown>;
+  marks?: string[];
+  kept_day?: string;
+  kept_at?: string;
+}
+
+export interface RecordRun {
+  day: string;
+  finished_at: string | null;
+  seed: number | null;
+  rerolled_at: string | null;
+  model_status: string | null;
+  model_note: string | null;
+  dropped_cards: number;
+  note: string | null;
+  carried_from: string | null;
+  estimated_cost_usd: number | null;
+  price_date: string | null;
+}
+
+/** What the model stage can do today, said as the screen says it. */
+export interface RecordModelState {
+  configured: boolean;
+  allowed: boolean;
+  stage: "on" | "off";
+  status: string;
+  should_run: boolean;
+  provider: string | null;
+  provider_label: string | null;
+  statement: string | null;
+  ceiling_usd: number;
+  spent_today_usd: number | null;
+  price_date: string | null;
+  price_basis: string | null;
+  priced: boolean;
+  model: string | null;
+  reason: string | null;
+}
+
+export interface RecordToday {
+  day: string;
+  batch_day: string | null;
+  computed: string;
+  nothing_new: string | null;
+  run: RecordRun | null;
+  cards: RecordCard[];
+  days: string[];
+  model?: RecordModelState;
+}
+
+export async function fetchRecord(): Promise<RecordToday> {
+  return call<RecordToday>("/api/v1/record");
+}
+
+export async function fetchRecordDay(day: string): Promise<{ day: string; run: RecordRun | null; cards: RecordCard[] }> {
+  return call(`/api/v1/record/days/${encodeURIComponent(day)}`);
+}
+
+export async function rerollRecord(): Promise<void> {
+  await call("/api/v1/record/reroll", { method: "POST" });
+}
+
+export type RecordMark = "keep" | "skip" | "hide";
+
+export async function markRecordCard(day: string, cardId: string, mark: RecordMark): Promise<{ message: string }> {
+  return call("/api/v1/record/marks", { method: "POST", body: JSON.stringify({ day, card_id: cardId, mark }) });
+}
+
+export async function unmarkRecordCard(day: string, cardId: string, mark: RecordMark): Promise<{ message: string }> {
+  return call("/api/v1/record/marks/remove", { method: "POST", body: JSON.stringify({ day, card_id: cardId, mark }) });
+}
+
+export async function unhideAllRecord(): Promise<{ cards: number; message: string }> {
+  return call("/api/v1/record/unhide-all", { method: "POST" });
+}
+
+/** More of this: the card's topic becomes an ask. */
+export async function moreOfThis(day: string, cardId: string): Promise<{ text: string; message: string }> {
+  return call("/api/v1/record/more", { method: "POST", body: JSON.stringify({ day, card_id: cardId }) });
+}
+
+/** Draft from this: a Composer draft that records the card it came from. */
+export async function draftFromCard(day: string, cardId: string): Promise<{ id: string; content: string }> {
+  return call("/api/v1/record/draft", { method: "POST", body: JSON.stringify({ day, card_id: cardId }) });
+}
+
+export async function fetchKept(): Promise<RecordCard[]> {
+  const data = await call<{ kept?: RecordCard[] }>("/api/v1/record/kept");
+  return data.kept ?? [];
+}
+
+export interface RecordAsk {
+  id: number;
+  text: string;
+  source: string;
+  field: string | null;
+  status: "open" | "kept" | "retired";
+  created_at: string;
+  updated_at: string;
+  last_used_at: string | null;
+}
+
+export interface RecordSettings {
+  keep_days: string;
+  keep_days_options: string[];
+  model_stage: "on" | "off";
+  cost_ceiling_usd: number;
+  cost_ceiling_default_usd: number;
+}
+
+export interface RecordKnows {
+  asks: RecordAsk[];
+  setup: Record<string, string | null>;
+  marks: Record<string, number>;
+  hidden: { day: string; card_id: string; at: string; kind: string | null; title: string | null; excerpt: string | null }[];
+  archive: Record<string, number>;
+  batches: { days: number; first: string | null; last: string | null };
+  prune: { keep: string; days: number; cards: number; older_than?: string };
+  notes: { month: string; text: string; at: string }[];
+  settings: RecordSettings;
+  job: {
+    checked: string;
+    today: string;
+    today_built: boolean;
+    last_run: { day: string; finished_at: string | null; note: string | null; carried_from: string | null } | null;
+  };
+  library?: RecordLibraryState;
+  model?: RecordModelState;
+}
+
+export interface RecordLibraryState {
+  version: string | null;
+  signed_at: string | null;
+  key_id: string | null;
+  entries: number;
+  fetched_at: string | null;
+  source: string;
+  address: string;
+  contains: string;
+  sends: string;
+  keys: string[];
+}
+
+export async function fetchRecordKnows(): Promise<RecordKnows> {
+  return call<RecordKnows>("/api/v1/record/knows");
+}
+
+/** An ask typed into the section's box, or a Composer instruction the creator ticked to remember. */
+export async function addRecordAsk(text: string, source: "ask_box" | "composer"): Promise<{ message: string }> {
+  return call("/api/v1/record/asks", { method: "POST", body: JSON.stringify({ text, source }) });
+}
+
+export async function updateRecordAsk(id: number, changes: { text?: string; status?: string }): Promise<void> {
+  await call(`/api/v1/record/asks/${id}`, { method: "PUT", body: JSON.stringify(changes) });
+}
+
+export async function removeRecordAsk(id: number): Promise<void> {
+  await call(`/api/v1/record/asks/${id}`, { method: "DELETE" });
+}
+
+export type RecordSetupField = "topics" | "audience" | "avoid";
+
+export async function fetchRecordSetup(): Promise<Record<RecordSetupField, string | null>> {
+  const data = await call<{ fields: Record<RecordSetupField, string | null> }>("/api/v1/record/setup");
+  return data.fields;
+}
+
+export async function setRecordSetupField(field: RecordSetupField, text: string): Promise<void> {
+  await call(`/api/v1/record/setup/${field}`, { method: "PUT", body: JSON.stringify({ text }) });
+}
+
+export async function setRecordSettings(changes: Partial<Pick<RecordSettings, "keep_days" | "model_stage" | "cost_ceiling_usd">>): Promise<RecordSettings> {
+  return call("/api/v1/record/settings", { method: "PUT", body: JSON.stringify({ changes }) });
+}
+
+export async function saveRecordNote(month: string, text: string): Promise<void> {
+  await call("/api/v1/record/notes", { method: "POST", body: JSON.stringify({ month, text }) });
+}
+
+/**
+ * The creator opened From your record: today's one call to their own model,
+ * if it has not run and may. Answers at once; the idea arrives into today's
+ * batch when the model has answered, so read the batch again after.
+ */
+export async function runRecordModel(): Promise<{ status: string; reason?: string }> {
+  return call("/api/v1/record/model", { method: "POST" });
+}
+
+/** Exactly what the next call to the creator's model would send. Sends nothing. */
+export interface RecordModelPreview {
+  provider: string;
+  model: string;
+  system: string;
+  prompt: string;
+  posts: number;
+  asks: number;
+}
+
+export async function fetchRecordModelPreview(): Promise<RecordModelPreview> {
+  return call<RecordModelPreview>("/api/v1/record/model/preview");
+}
+
+/** A share under the studio's sample rules: the counts always, a rate only at 20 or more. */
+export interface RecordShare {
+  part: number;
+  whole: number;
+  said: string;
+  rate: number | null;
+}
+
+export interface RecordFunnelRow {
+  name: string;
+  shown: number;
+  kept: RecordShare;
+  drafted: RecordShare;
+  posted: RecordShare;
+}
+
+export interface RecordEvaluation {
+  funnel: { by_kind: RecordFunnelRow[]; by_label: RecordFunnelRow[]; total: RecordFunnelRow | null; note: string };
+  comparison: { sentence: string; verdict: string; n_with: number; n_without: number; window_days: number };
+  months: { month: string; template: "A" | "B" | "C"; sentence: string }[];
+  notes: Record<string, string>;
+  this_month: string;
+}
+
+export async function fetchRecordEvaluation(): Promise<RecordEvaluation> {
+  return call<RecordEvaluation>("/api/v1/record/evaluation");
+}
+
+/** The creator pressed Fetch: one request for the signed Inox library, carrying nothing of theirs. */
+export async function fetchLibraryBundle(): Promise<{ status: string; message: string }> {
+  return call("/api/v1/record/library/fetch", { method: "POST" });
+}
+
+/** A signed library file chosen by hand, verified exactly as a fetched one is. */
+export async function importLibraryBundle(text: string): Promise<{ status: string; message: string }> {
+  return call("/api/v1/record/library/import", { method: "POST", body: JSON.stringify({ text }) });
+}

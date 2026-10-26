@@ -171,6 +171,7 @@ SCREEN_REGISTRY: Dict[str, Dict[str, Any]] = {
     "tab-ai-command": {"key": "ai_command", "label": "AI Command", "owner": "ENGINEERING_MANAGER"},
     "tab-docs": {"key": "docs", "label": "Playbook and Docs", "owner": "CEO"},
     "tab-settings": {"key": "settings", "label": "Settings", "owner": "RELEASE_MANAGER"},
+    "tab-record": {"key": "record", "label": "From your record", "owner": "DESIGNER"},
 }
 
 UNMAPPED_PREFIX = "unmapped:"

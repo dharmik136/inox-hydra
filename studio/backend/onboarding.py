@@ -869,7 +869,10 @@ def forget_identity() -> Dict[str, Any]:
             for table in ("creator_identity", "creator_positions", "creator_education",
                           "creator_skills", "own_posts", "outbound_engagements", "self_import_requests",
                           "post_metric_observations",
-                          "audience_demographic_readings"):
+                          "audience_demographic_readings",
+                          # From your record (cycle 4, track 7): what they asked, the
+                          # batches built for them, their marks and their notes.
+                          "asks", "daily_view", "daily_run", "card_marks", "record_notes"):
                 conn.execute(f"DELETE FROM {table}")
             # And what LinkedIn's archive brought: connections and the record of each import.
             forget_archive(conn)

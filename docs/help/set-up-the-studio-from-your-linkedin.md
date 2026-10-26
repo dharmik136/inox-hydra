@@ -60,6 +60,8 @@ LinkedIn sends the archive in two parts. The first, `Basic_LinkedInDataExport_..
 | Your name, headline and about | Fills only what is empty. What the bridge read is kept. |
 | Your roles, education and skills | Roles and education only if none were read yet; skills are added to the ones already there. |
 | Your connections | Name, company, position and the date you connected. Email addresses are never imported. |
+| Posts you saved, members and companies you follow, polls you voted in, articles you published, posts you reposted without adding words (`Saved_Items.csv`, `Member_Follows.csv`, `Company Follows.csv`, `Votes.csv`, `Articles.csv`, `InstantReposts.csv`) | Your own record of what you chose to see and keep: a link, a name, a title or your choice, and the date where the file gives one, each row with the file it came from and the date it was imported. They feed **From your record**. The other person's post is never imported: a saved post is a link and a date, nothing more. |
+| What you searched for (`SearchQueries.csv`) | Unticked unless you tick it. It is the most personal file in the archive, and the studio keeps its own searches out of its log for the same reason. Ticked, each search lands as a row with its date, for From your record only. |
 
 Your messages stay in the archive and are never imported, and the list under **other files stay in the archive** says which other files were not read. If a file reads **NOT UNDERSTOOD**, LinkedIn has changed its columns; the note lists the ones it found, and nothing from that file is imported.
 
@@ -128,7 +130,7 @@ The extension reports at most once a minute per part per page, and the studio ke
 
 ## Delete it
 
-Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU**. Nothing is deleted yet. Setup lists what would go, with counts: your identity and profile, your imported posts and every reading of their figures, your comments and reactions, your connections, the record of your archive and history imports, and the Brand Studio fields Setup filled. Your leads and drafts are kept.
+Under **Your profile**, click **NOT YOU, OR WANT IT GONE? DELETE EVERYTHING THE STUDIO HOLDS ABOUT YOU**. Nothing is deleted yet. Setup lists what would go, with counts: your identity and profile, your imported posts and every reading of their figures, your comments and reactions, your connections, the record of your archive and history imports, what you asked **From your record** for with its daily cards, your marks and your notes, the saved posts, follows, votes, articles, reposts and searches your archive brought, and the Brand Studio fields Setup filled. Your leads and drafts are kept.
 
 It also says whether a backup of the studio exists, and **Back up first** takes one. Type `delete` and click **Delete everything** to go ahead, or **Keep it** to leave everything as it is. It cannot be undone except from a backup. The next time you open your profile, Setup asks again.
 
