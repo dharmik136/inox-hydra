@@ -185,15 +185,58 @@ def test_the_window_is_configurable_and_bounded(client):
     assert client.get("/api/v1/replies?days=400").status_code == 422
 
 
-def test_the_route_is_paged_by_comment_and_says_what_comes_next(client):
-    page_one = client.get("/api/v1/replies?limit=2").json()
-    assert len(_flat(page_one)) == 2
-    assert page_one["next_offset"] == 2
-    page_two = client.get("/api/v1/replies?limit=2&offset=2").json()
+def test_the_first_view_pages_by_post(client):
+    page_one = client.get("/api/v1/replies?limit=1").json()
+    assert page_one["unit"] == "posts" and page_one["total"] == 2
+    assert [g["activity_urn"] for g in page_one["posts"]] == [POST_ONE]
+    assert len(page_one["posts"][0]["comments"]) == 2
+    assert page_one["next_offset"] == 1
+    page_two = client.get("/api/v1/replies?limit=1&offset=1").json()
     assert _flat(page_two) == [("Asha Rao", POST_TWO, "Which roadmap tool did you use?")]
     assert page_two["next_offset"] is None
-    # The group's count is the post's, not the page's.
-    assert page_one["posts"][0]["waiting"] == 2
+
+
+def _post_id(urn):
+    return urn.rsplit(":", 1)[1]
+
+
+def test_a_busy_post_shows_its_longest_waiting_comments_and_opens_to_all_of_them(client):
+    """
+    One post with a hundred comments waiting filled the first view and hid
+    every other post. The first view shows each post's first few, and the
+    post opens to the rest.
+    """
+    from database import get_db
+    from migrations import interaction_comment_key
+    import replies
+    conn = get_db()
+    with conn:
+        for n in range(5):
+            lead_id = f"lead-busy-{n}"
+            conn.execute("INSERT INTO leads (id, name, full_name, lead_status) VALUES (?, ?, ?, 'NEW')",
+                         (lead_id, f"Busy {n}", f"Busy {n}"))
+            text = f"Busy comment {n}"
+            conn.execute(
+                "INSERT INTO lead_interactions (lead_id, post_urn, interaction_type, comment_text, interacted_at, "
+                "comment_key, first_seen_at, last_seen_at) VALUES (?, ?, 'COMMENT', ?, ?, ?, ?, ?)",
+                (lead_id, POST_TWO, text, _stamp(0, hours=10 - n), interaction_comment_key(text),
+                 _stamp(0, hours=10 - n), _stamp(0, hours=10 - n)))
+    conn.close()
+
+    first = client.get("/api/v1/replies").json()
+    busy = [g for g in first["posts"] if g["activity_urn"] == POST_TWO][0]
+    assert busy["in_view"] == 6 and busy["waiting"] == 6
+    assert len(busy["comments"]) == replies.PER_POST
+    assert busy["comments"][0]["name"] == "Asha Rao", "the longest waiting comes first"
+
+    opened = client.get(f"/api/v1/replies?post={_post_id(POST_TWO)}").json()
+    assert opened["unit"] == "comments" and opened["total"] == 6
+    names = [c["name"] for c in opened["posts"][0]["comments"]]
+    assert names == ["Asha Rao", "Busy 0", "Busy 1", "Busy 2", "Busy 3", "Busy 4"]
+    paged = client.get(f"/api/v1/replies?post={_post_id(POST_TWO)}&limit=2&offset=2").json()
+    assert [c["name"] for c in paged["posts"][0]["comments"]] == ["Busy 1", "Busy 2"]
+    assert paged["next_offset"] == 4
+    assert client.get("/api/v1/replies?post=not-an-id").status_code == 422
 
 
 # ---------------------------------------------------------------------------

@@ -3497,6 +3497,10 @@ export interface RepliesPage {
   view: RepliesView;
   window: { days: number; label: string; since: string };
   counts: { waiting: number; people: number; posts: number; answered_in_window: number; answered_last_7_days: number };
+  /** "posts": a page of posts with their first few comments each; "comments": one post's comments. */
+  unit: "posts" | "comments";
+  post: string | null;
+  per_post: number;
   offset: number;
   limit: number;
   total: number;
@@ -3504,8 +3508,17 @@ export interface RepliesPage {
   posts: ReplyPostGroup[];
 }
 
-export async function fetchReplies(days: number, view: RepliesView, offset = 0): Promise<RepliesPage> {
-  return call<RepliesPage>(`/api/v1/replies?days=${days}&view=${view}&offset=${offset}`);
+/** A page of posts with their first comments, or with `post` that post's comments. */
+export async function fetchReplies(
+  days: number,
+  view: RepliesView,
+  offset = 0,
+  options: { limit?: number; post?: string | null } = {},
+): Promise<RepliesPage> {
+  const query = new URLSearchParams({ days: String(days), view, offset: String(offset) });
+  if (options.limit) query.set("limit", String(options.limit));
+  if (options.post) query.set("post", options.post);
+  return call<RepliesPage>(`/api/v1/replies?${query.toString()}`);
 }
 
 type CommentRef = Pick<ReplyComment, "lead_id" | "post_urn" | "comment_key">;

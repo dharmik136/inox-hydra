@@ -18,6 +18,8 @@ Nothing appears until you have confirmed your profile in **Setup**.
 
 Comments are grouped by the post they were left on. The post with the comment that has waited longest comes first, and inside each post the comments run oldest first. The ICP score plays no part.
 
+Each post shows its three longest-waiting comments, so one busy post cannot fill the screen and hide the others. **Show all** and the count, for example **Show all 106 on this post**, opens that post with every comment waiting on it; **All posts** goes back.
+
 ## The time beside a comment
 
 Each comment says **SEEN BY THE STUDIO** and how long ago, for example **SEEN BY THE STUDIO 3 DAYS AGO**. That is when the bridge first read the comment on your post's page, not when the person wrote it: LinkedIn's own time is not captured. Opening the post again does not change it.
@@ -46,6 +48,6 @@ When nobody is waiting, the screen says so and names how many you marked answere
 - **Window** chooses the last 7, 14 or 30 days. Today always uses 14.
 - **Open the post** opens the post in the bridge browser, where you can reply. A post the studio has no LinkedIn address for has no such button.
 - A person's name opens their dossier in **Leads**.
-- **Show more** reads the next 30 comments; the line beside it says how many of the total are shown.
+- **Show more posts** reads the next eight posts, and on an opened post **Show more on this post** reads its next 50 comments; the line beside it says how many are shown of how many.
 
 Replies reads its list again every minute while the window is in view, and when you come back to it.

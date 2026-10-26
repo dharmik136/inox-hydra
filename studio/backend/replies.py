@@ -49,10 +49,14 @@ except ImportError:
     from database import get_db
     from text_cut import clip
 
-# How many comments one page of the route carries, and the most a caller may
-# ask for. The page is of comments rather than of posts, because one post can
-# hold a few hundred comments in a fortnight.
-PAGE = 30
+# The first view pages by post: PAGE posts at a time, each with its
+# PER_POST longest-waiting comments and the count of the rest, so a post with
+# a hundred comments waiting does not fill the screen and hide every other
+# post. One post opened (the second level) pages by comment, POST_PAGE at a
+# time. PAGE_MAX bounds what a caller may ask for either way.
+PAGE = 8
+PER_POST = 3
+POST_PAGE = 50
 PAGE_MAX = 100
 
 # The longest window a creator can ask for. Fourteen days is Today's.
@@ -178,11 +182,15 @@ def waiting_count(conn, days: Optional[int] = None) -> int:
 
 
 def overview(days: Optional[int] = None, view: str = "waiting", offset: int = 0,
-             limit: int = PAGE) -> Dict[str, Any]:
-    """One page of the comments in the view, grouped by post, with the counts for the whole window."""
+             limit: Optional[int] = None, post: Optional[str] = None) -> Dict[str, Any]:
+    """
+    The comments in the view, grouped by post, with the counts for the whole
+    window. Without `post`, a page of posts, each with its PER_POST first
+    comments; with `post` (an activity id), that post's comments, a page at a
+    time.
+    """
     days = days or default_days()
     view = view if view in VIEWS else "waiting"
-    limit = max(1, min(int(limit), PAGE_MAX))
     offset = max(0, int(offset))
     known = bool(onboarding.confirmed_vanity())
     conn = get_db()
@@ -195,12 +203,7 @@ def overview(days: Optional[int] = None, view: str = "waiting", offset: int = 0,
 
     waiting = [c for c in comments if not c["marked_at"]]
     answered = [c for c in comments if c["marked_at"]]
-    chosen = waiting if view == "waiting" else answered
-    ordered = _ordered(chosen, view)
-    flat = [(post_id, comment) for post_id, items in ordered for comment in items]
-    page = flat[offset:offset + limit]
-
-    per_post = {post_id: len(items) for post_id, items in ordered}
+    ordered = _ordered(waiting if view == "waiting" else answered, view)
     waiting_by_post: Dict[str, int] = {}
     for comment in waiting:
         waiting_by_post[comment["post_id"]] = waiting_by_post.get(comment["post_id"], 0) + 1
@@ -208,26 +211,36 @@ def overview(days: Optional[int] = None, view: str = "waiting", offset: int = 0,
     for comment in answered:
         answered_by_post[comment["post_id"]] = answered_by_post.get(comment["post_id"], 0) + 1
 
-    groups: List[Dict[str, Any]] = []
-    for post_id, comment in page:
-        if not groups or groups[-1]["post_id"] != post_id:
-            post = posts.get(post_id, {})
-            urn = post.get("activity_urn") or comment["post_urn"]
-            groups.append({
-                "post_id": post_id,
-                "activity_urn": urn,
-                "excerpt": post.get("excerpt"),
-                "published_at": post.get("published_at"),
-                "url": post_identity.linkedin_permalink(urn),
-                "in_view": per_post[post_id],
-                "waiting": waiting_by_post.get(post_id, 0),
-                "answered": answered_by_post.get(post_id, 0),
-                "comments": [],
-            })
-        groups[-1]["comments"].append({key: comment[key] for key in (
-            "lead_id", "post_urn", "comment_key", "comment_text", "seen_at", "name", "headline", "marked_at")})
+    def group(post_id: str, items: List[Dict[str, Any]], shown: List[Dict[str, Any]]) -> Dict[str, Any]:
+        found = posts.get(post_id, {})
+        urn = found.get("activity_urn") or items[0]["post_urn"]
+        return {
+            "post_id": post_id,
+            "activity_urn": urn,
+            "excerpt": found.get("excerpt"),
+            "published_at": found.get("published_at"),
+            "url": post_identity.linkedin_permalink(urn),
+            "in_view": len(items),
+            "waiting": waiting_by_post.get(post_id, 0),
+            "answered": answered_by_post.get(post_id, 0),
+            "comments": [{key: c[key] for key in (
+                "lead_id", "post_urn", "comment_key", "comment_text", "seen_at", "name", "headline", "marked_at")}
+                for c in shown],
+        }
 
-    following = offset + len(page)
+    if post is None:
+        limit = max(1, min(int(limit or PAGE), PAGE_MAX))
+        page = ordered[offset:offset + limit]
+        groups = [group(post_id, items, items[:PER_POST]) for post_id, items in page]
+        total = len(ordered)
+        unit = "posts"
+    else:
+        limit = max(1, min(int(limit or POST_PAGE), PAGE_MAX))
+        items = dict(ordered).get(post, [])
+        groups = [group(post, items, items[offset:offset + limit])] if items else []
+        total = len(items)
+        unit = "comments"
+    following = offset + limit
     return {
         "status": "success",
         "identity_known": known,
@@ -240,10 +253,13 @@ def overview(days: Optional[int] = None, view: str = "waiting", offset: int = 0,
             "answered_in_window": len(answered),
             "answered_last_7_days": answered_recently,
         },
+        "unit": unit,
+        "post": post,
+        "per_post": PER_POST,
         "offset": offset,
         "limit": limit,
-        "total": len(flat),
-        "next_offset": following if following < len(flat) else None,
+        "total": total,
+        "next_offset": following if following < total else None,
         "posts": groups,
     }
 

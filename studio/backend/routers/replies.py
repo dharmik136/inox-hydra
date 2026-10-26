@@ -36,14 +36,17 @@ def get_replies(
     days: Optional[int] = Query(None, ge=1, le=replies.WINDOW_MAX_DAYS),
     view: str = Query("waiting", pattern="^(waiting|answered)$"),
     offset: int = Query(0, ge=0),
-    limit: int = Query(replies.PAGE, ge=1, le=replies.PAGE_MAX),
+    limit: Optional[int] = Query(None, ge=1, le=replies.PAGE_MAX),
+    post: Optional[str] = Query(None, pattern=r"^\d{1,25}$"),
 ) -> Dict[str, Any]:
     """
     Comments on your posts, first seen by the studio in the window (14 days
     unless asked), that you have not marked answered, oldest first and grouped
-    by post. view=answered lists the ones you marked instead.
+    by post: a page of posts, each with its first few comments. post=<id>
+    pages through one post's comments. view=answered lists the ones you
+    marked instead.
     """
-    return replies.overview(days=days, view=view, offset=offset, limit=limit)
+    return replies.overview(days=days, view=view, offset=offset, limit=limit, post=post)
 
 
 @router.post("/api/v1/replies/mark")

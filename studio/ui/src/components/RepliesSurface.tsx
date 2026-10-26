@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ExternalLink, Loader2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2 } from "lucide-react";
 import {
   fetchReplies,
   launchBridge,
@@ -45,35 +45,33 @@ export function RepliesSurface({
 } = {}) {
   const [days, setDays] = useState<number>(14);
   const [view, setView] = useState<RepliesView>("waiting");
+  /** The post opened one level down, by its id, or null for the first view. */
+  const [opened, setOpened] = useState<string | null>(null);
   const [page, setPage] = useState<RepliesPage | null>(null);
-  /** The comments shown so far, by post, across every page read. */
+  /** What is on screen: posts in the first view, one post's comments when opened. */
   const [groups, setGroups] = useState<ReplyPostGroup[]>([]);
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
   /** The last comment marked here, so the mark can be taken back. */
   const [lastMarked, setLastMarked] = useState<ReplyComment | null>(null);
+  /** How many posts, or one post's comments, are on screen, so a read again keeps them. */
   const shown = useRef(0);
 
-  // The first page, or as many comments as are already on screen, so a read
-  // while the creator works down the list does not take away what they loaded.
   const load = useCallback(async () => {
     try {
-      const first = await fetchReplies(days, view, 0);
-      let merged = first.posts;
-      let last = first;
-      while (last.next_offset !== null && countOf(merged) < shown.current) {
-        last = await fetchReplies(days, view, last.next_offset);
-        merged = mergeGroups(merged, last.posts);
-      }
-      setPage({ ...first, next_offset: last.next_offset });
-      setGroups(merged);
-      shown.current = countOf(merged);
+      const answer = await fetchReplies(days, view, 0, {
+        post: opened,
+        limit: shown.current > 0 ? Math.min(shown.current, 100) : undefined,
+      });
+      setPage(answer);
+      setGroups(answer.posts);
+      shown.current = countShown(answer.posts, opened);
       setFailed(false);
     } catch {
       setFailed(true);
     }
-  }, [days, view]);
+  }, [days, view, opened]);
 
   useEffect(() => {
     shown.current = 0;
@@ -86,10 +84,12 @@ export function RepliesSurface({
     if (!page || page.next_offset === null) return;
     setBusy("more");
     try {
-      const next = await fetchReplies(days, view, page.next_offset);
+      const next = await fetchReplies(days, view, page.next_offset, { post: opened });
       setGroups((current) => {
-        const merged = mergeGroups(current, next.posts);
-        shown.current = countOf(merged);
+        const merged = opened
+          ? current.map((group) => ({ ...group, comments: [...group.comments, ...(next.posts[0]?.comments ?? [])] }))
+          : [...current, ...next.posts];
+        shown.current = countShown(merged, opened);
         return merged;
       });
       setPage((current) => (current ? { ...current, next_offset: next.next_offset } : next));
@@ -106,7 +106,6 @@ export function RepliesSurface({
     try {
       await markReplyAnswered(comment);
       setLastMarked(comment);
-      shown.current = Math.max(0, shown.current - 1);
       await load();
     } catch (caught) {
       setNote({ text: caught instanceof Error ? caught.message : "The mark could not be saved.", error: true });
@@ -264,14 +263,32 @@ export function RepliesSurface({
             </button>
           )}
         </div>
-      ) : groups.length === 0 ? (
+      ) : groups.length === 0 && !opened ? (
         <p className="mt-6 max-w-[64ch] text-[13px] leading-relaxed text-ink-secondary">
           {view === "waiting"
             ? `Nobody from the ${window.label} is waiting on a reply. ${answeredSentence(counts.answered_last_7_days)}`
             : `You have not marked any comment from the ${window.label} answered.`}
         </p>
       ) : (
-        <div className="mt-4 grid items-start gap-4 xl:grid-cols-2">
+        <>
+        {opened && (
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setOpened(null)}
+              className="flex items-center gap-1.5 rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary"
+            >
+              <ArrowLeft className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+              All posts
+            </button>
+            {groups.length === 0 && (
+              <p className="text-[13px] text-ink-secondary">
+                {view === "waiting" ? "Nothing on this post is waiting any more." : "Nothing on this post is marked answered."}
+              </p>
+            )}
+          </div>
+        )}
+        <div className={cn("mt-4 grid items-start gap-4", !opened && "xl:grid-cols-2")}>
           {groups.map((group) => (
             <section key={group.post_id} className="rounded-md border border-edge" aria-label={postName(group)}>
               <div className="flex items-start justify-between gap-3 border-b border-edge px-3 py-2">
@@ -302,19 +319,19 @@ export function RepliesSurface({
                 {group.comments.map((comment) => (
                   <li key={keyOf(comment)} className="px-3 py-2">
                     <div className="flex items-baseline justify-between gap-3">
-                      <div className="min-w-0">
+                      <div className="flex min-w-0 items-baseline gap-2">
                         {onOpenLead ? (
                           <button
                             type="button"
                             onClick={() => onOpenLead(comment.lead_id)}
-                            className="text-left text-[13px] font-medium text-ink-primary underline decoration-edge-strong underline-offset-2 hover:text-signal-orange-text"
+                            className="shrink-0 text-left text-[13px] font-medium text-ink-primary underline decoration-edge-strong underline-offset-2 hover:text-signal-orange-text"
                           >
                             {comment.name}
                           </button>
                         ) : (
-                          <span className="text-[13px] font-medium text-ink-primary">{comment.name}</span>
+                          <span className="shrink-0 text-[13px] font-medium text-ink-primary">{comment.name}</span>
                         )}
-                        {comment.headline && <p className="truncate text-[11px] text-ink-muted">{comment.headline}</p>}
+                        {comment.headline && <span className="truncate text-[11px] text-ink-muted">{comment.headline}</span>}
                       </div>
                       {view === "waiting" ? (
                         <button
@@ -342,7 +359,7 @@ export function RepliesSurface({
                       )}
                     </div>
                     {comment.comment_text ? (
-                      <p className="mt-1 line-clamp-4 text-[13px] leading-snug text-ink-secondary">
+                      <p className="mt-0.5 line-clamp-3 text-[13px] leading-snug text-ink-secondary">
                         &ldquo;{comment.comment_text}&rdquo;
                       </p>
                     ) : (
@@ -354,15 +371,22 @@ export function RepliesSurface({
                     </p>
                   </li>
                 ))}
-                {group.comments.length < group.in_view && (
-                  <li className="px-3 py-1.5 text-[11px] text-ink-muted">
-                    {group.comments.length} of {group.in_view} on this post shown; the rest follow below.
+                {!opened && group.comments.length < group.in_view && (
+                  <li className="px-3 py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setOpened(group.post_id)}
+                      className="text-[12px] text-ink-secondary underline decoration-edge-strong underline-offset-2 hover:text-ink-primary"
+                    >
+                      Show all {group.in_view.toLocaleString()} on this post
+                    </button>
                   </li>
                 )}
               </ul>
             </section>
           ))}
         </div>
+        </>
       )}
 
       {page.next_offset !== null && groups.length > 0 && (
@@ -373,10 +397,10 @@ export function RepliesSurface({
             disabled={busy !== null}
             className="rounded-md border border-edge px-3 py-1.5 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
           >
-            {busy === "more" ? "Reading" : "Show more"}
+            {busy === "more" ? "Reading" : opened ? "Show more on this post" : "Show more posts"}
           </button>
           <span className="studio-meta text-[10px] text-ink-muted">
-            {countOf(groups).toLocaleString()} OF {page.total.toLocaleString()} SHOWN
+            {countShown(groups, opened).toLocaleString()} OF {page.total.toLocaleString()} {opened ? "COMMENTS" : "POSTS"} SHOWN
           </span>
         </div>
       )}
@@ -388,19 +412,9 @@ function keyOf(comment: Pick<ReplyComment, "lead_id" | "post_urn" | "comment_key
   return `${comment.lead_id}|${comment.post_urn}|${comment.comment_key}`;
 }
 
-function countOf(groups: ReplyPostGroup[]): number {
-  return groups.reduce((sum, group) => sum + group.comments.length, 0);
-}
-
-/** A later page's groups joined to the ones on screen, one card per post. */
-function mergeGroups(current: ReplyPostGroup[], next: ReplyPostGroup[]): ReplyPostGroup[] {
-  const merged = current.map((group) => ({ ...group, comments: [...group.comments] }));
-  for (const group of next) {
-    const found = merged.find((existing) => existing.post_id === group.post_id);
-    if (found) found.comments.push(...group.comments.filter((c) => !found.comments.some((d) => keyOf(d) === keyOf(c))));
-    else merged.push(group);
-  }
-  return merged;
+/** Posts on screen in the first view; one post's comments when it is opened. */
+function countShown(groups: ReplyPostGroup[], opened: string | null): number {
+  return opened ? (groups[0]?.comments.length ?? 0) : groups.length;
 }
 
 function postName(group: ReplyPostGroup): string {
