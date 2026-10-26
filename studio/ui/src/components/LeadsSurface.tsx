@@ -6,6 +6,7 @@ import {
   LEADS_CSV_URL,
   LEAD_STATUSES,
   copyExtensionPath,
+  fetchAudiencePerson,
   fetchBrowserBridge,
   fetchLeadDmScript,
   fetchLeadOfferDraft,
@@ -19,6 +20,7 @@ import {
   removeLeadsNotOnYourPosts,
   updateLeadNotes,
   updateLeadStatus,
+  type AudiencePersonFacts,
   type BrowserBridge,
   type Lead,
   type LeadInteraction,
@@ -351,9 +353,24 @@ function Dossier({
   // went, is offered beside it rather than two clicks away in the pipeline.
   const [handedOver, setHandedOver] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // When the bridge first and last read an engagement of theirs, how often,
+  // and whether the archive lists them as a connection. Read on its own, so
+  // a failure here leaves the rest of the dossier standing.
+  const [facts, setFacts] = useState<AudiencePersonFacts | null>(null);
 
   const refresh = useCallback(async () => {
     setData(await fetchLeadTimeline(leadId));
+  }, [leadId]);
+
+  useEffect(() => {
+    let live = true;
+    setFacts(null);
+    fetchAudiencePerson(leadId)
+      .then((answer) => live && setFacts(answer))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
   }, [leadId]);
 
   /**
@@ -477,8 +494,34 @@ function Dossier({
               : `${lead.icp_score.toFixed(0)}${lead.qualification_tier ? ` · ${TIER_LABELS[lead.qualification_tier] ?? lead.qualification_tier}` : ""}`
           }
         />
-        <Field label="First seen" value={lead.created_at ? localDate(lead.created_at) : null} />
+        {/* First seen used to be when the lead's row was made. These are the
+            bridge's own readings of their engagements, from lead_interactions:
+            the first, the last, and how many readings in all. */}
+        {facts && facts.engagements > 0 ? (
+          <>
+            <Field label="First seen" value={facts.first_seen_at ? localDate(facts.first_seen_at) : null} />
+            <Field label="Last seen" value={facts.last_seen_at ? localDate(facts.last_seen_at) : null} />
+            <Field label="Times seen" value={facts.times_seen} />
+          </>
+        ) : (
+          <Field label="Added" value={lead.created_at ? localDate(lead.created_at) : null} />
+        )}
       </dl>
+      {facts && facts.engagements > 0 && (
+        <p className="studio-meta mt-1.5 text-[10px] text-ink-muted">
+          SEEN MEANS READ BY THE BRIDGE, NOT WHEN THEY ACTED. TIMES SEEN COUNTS EVERY READING, THE SAME COMMENT READ AGAIN
+          INCLUDED.
+        </p>
+      )}
+      {facts && facts.connections_held > 0 && (
+        <p className="mt-2 text-[12px] leading-snug text-ink-secondary">
+          {facts.connection
+            ? `Connected since ${facts.connection.connected_on ?? "a date the archive does not give"}, as of the archive of ${localDate(facts.connection.as_of)}.`
+            : facts.member_id_only
+              ? "Whether they are a connection cannot be told: the bridge read their profile link as a member number, which the archive's connections cannot be matched to."
+              : `Not among your connections, as of the archive of ${facts.connections_as_of ? localDate(facts.connections_as_of) : "your import"}.`}
+        </p>
+      )}
 
       {/* Where this person actually met the creator's writing, as opposed to
           "Recent interactions" below, which is every interaction in order

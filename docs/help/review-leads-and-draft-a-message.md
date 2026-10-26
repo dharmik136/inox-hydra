@@ -27,7 +27,11 @@ The right side is a sheet on one person. Under their name, **OPEN THEIR PROFILE 
 | Company | Taken from the headline, for example the part after "at". Left blank if the headline names none. |
 | Seniority | A level worked out from the headline, or Unknown |
 | ICP score | 0 to 100 and its tier: VIP from 80, Qualified from 60, Nurture from 30, otherwise Disqualified. A student or intern often scores 0, which is a score. "Not scored" appears only for someone added by hand, with nothing captured. |
-| First seen | The date the studio recorded them |
+| First seen | The first time the bridge read an engagement of theirs. For someone added by hand and never seen by the bridge, **Added** and the date they were added instead |
+| Last seen | The last time the bridge read an engagement of theirs |
+| Times seen | How many times the bridge read their engagements, the same comment read again included |
+
+Once you have imported your LinkedIn archive, a line under these says "Connected since" and the date when the person is one of your connections, as of the day the archive was imported; otherwise it says they are not among your connections, or that it cannot tell, because the bridge read their profile link as a member number. See [See who keeps coming back](see-who-keeps-coming-back.md).
 
 The ICP score is calculated on this machine by fixed rules: seniority words in the headline, how they engaged and how long their comment was, whether a company is known and what it is called, and whether the comment contains a question mark. It is worked out again at every capture, from their current headline and their best recorded engagement, so it can fall as well as rise.
 

@@ -640,6 +640,7 @@ HELP_SECTIONS = [
             "help/after-an-update-reload-the-extension.md",
             "help/check-the-bridge-is-reading.md",
             "help/review-leads-and-draft-a-message.md",
+            "help/see-who-keeps-coming-back.md",
             "help/see-what-worked-and-where-your-attention-goes.md",
             "help/read-your-analytics.md",
         ],

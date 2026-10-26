@@ -62,6 +62,7 @@ SECTIONS = {
     "composer": "Composer",
     "queue": "Queue",
     "leads": "Leads",
+    "audience": "Audience",
     "posts": "Posts",
     "patterns": "Patterns",
     "outbound": "Outbound",

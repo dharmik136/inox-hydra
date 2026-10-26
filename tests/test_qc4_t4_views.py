@@ -222,3 +222,89 @@ def test_today_counts_the_comments_waiting_and_opens_replies(studio):
     link.click()
     expect(page.locator("h1")).to_have_text("Who is waiting on a reply", timeout=5000)
     assert studio["errors"] == [], studio["errors"]
+
+
+# ---------------------------------------------------------------------------
+# Audience: among the people the bridge has seen, who keeps coming back, who
+# has gone quiet, and who is already a connection?
+# ---------------------------------------------------------------------------
+
+def _engage_on(client, name, vanity, urn, kind="LIKE", text=None):
+    answer = client.post("/api/v1/crm/interactions/ingest", json={
+        "full_name": name, "profile_url": f"https://www.linkedin.com/in/{vanity}",
+        "headline": f"Platform at {name.split()[0]} and Co", "company": "Co", "interaction_type": kind,
+        "comment_text": text, "post_urn": urn, "post_author": ME,
+    })
+    assert answer.status_code == 200, answer.text
+
+
+def _seed_audience(client):
+    urns = seed_creator(client, commenter="Anika Shah", comment="This matches what we saw last year.")
+    _engage_on(client, "Anika Shah", "anika-shah-x", urns[1])
+    _engage_on(client, "Anika Shah", "anika-shah-x", urns[2], "COMMENT", "Three for three, this one too.")
+    _engage_on(client, "Lena Fischer", "lena-fischer-x", urns[0])
+    _engage_on(client, "Lena Fischer", "lena-fischer-x", urns[3])
+    _engage_on(client, "Omar Haddad", "omar-haddad-x", urns[4])
+    from database import get_db
+    conn = get_db()
+    with conn:
+        conn.executemany(
+            "INSERT INTO connections (profile_url, first_name, last_name, company, position, connected_on, source, "
+            "imported_at) VALUES (?, ?, ?, ?, ?, ?, 'archive', '2026-09-01T10:00:00+00:00')",
+            [("https://www.linkedin.com/in/anika-shah-x", "Anika", "Shah", "Cargoline", "Head of Platform", "05 Mar 2024"),
+             ("https://www.linkedin.com/in/ravi-iyer-x", "Ravi", "Iyer", "Northwind", "Engineer", "12 Jun 2022")])
+    conn.close()
+    return urns
+
+
+def test_audience_answers_who_keeps_coming_back_in_the_first_viewport(studio):
+    _seed_audience(studio["client"])
+    page = open_section(studio, "audience")
+    expect(page.locator("h1")).to_have_text("Who keeps coming back")
+    main = page.locator("main")
+    expect(main).to_contain_text("among the 5 posts whose engagers were read", ignore_case=True, timeout=10000)
+    expect(main).to_contain_text("Anika Shah")
+    expect(main).to_contain_text("3 OF YOUR POSTS")
+    expect(main).to_contain_text("Lena Fischer")
+    expect(main).to_contain_text("as of the archive of", ignore_case=True)
+    expect(main).to_contain_text("Ravi Iyer")
+    expect(main).to_contain_text("nothing read")
+    assert page.locator("h1:visible").count() == 1
+
+    # Repeat engagers, gone quiet, new people and connections all start above
+    # the fold, with the four figures.
+    assert _inside_first_viewport(page, "main dl")
+    for column in ("Keep coming back", "Gone quiet", "New people by week", "Connections"):
+        heading = page.locator("main section p.studio-label", has_text=column).first
+        box = heading.bounding_box()
+        assert box is not None and box["y"] + box["height"] <= VIEWPORT_HEIGHT, f"{column} starts below the fold"
+
+    measured = _measure(page)
+    print(f"\nAudience at 1440x900: {measured['pages']:.2f} scroll pages, {measured['used']:.0%} of the width used, "
+          f"{measured['ink']:.0%} ink in the first viewport")
+    assert measured["pages"] <= 2.0, f"Audience is {measured['pages']:.2f} screens tall"
+    assert measured["used"] > 0.9
+    assert studio["errors"] == [], studio["errors"]
+
+
+def test_audience_opens_a_person_into_the_dossier_with_what_the_bridge_saw(studio):
+    _seed_audience(studio["client"])
+    page = open_section(studio, "audience")
+    page.get_by_role("button", name="Anika Shah").first.click()
+    main = page.locator("main")
+    expect(main).to_contain_text("Times seen", timeout=10000)
+    expect(main).to_contain_text("Last seen")
+    expect(main).to_contain_text("Connected since 05 Mar 2024, as of the archive of")
+    assert studio["errors"] == [], studio["errors"]
+
+
+def test_the_second_level_counts_open_on_request(studio):
+    _seed_audience(studio["client"])
+    page = open_section(studio, "audience")
+    page.get_by_role("button", name="Your pipeline and companies, as counts").click()
+    main = page.locator("main")
+    expect(main).to_contain_text("Stages you set in Leads", timeout=10000)
+    expect(main).to_contain_text("New Lead")
+    for guess in ("ICP", "Qualified", "tier"):
+        assert guess not in main.inner_text(), f"the counts show {guess}"
+    assert studio["errors"] == [], studio["errors"]

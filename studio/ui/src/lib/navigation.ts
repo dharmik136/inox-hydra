@@ -14,6 +14,7 @@ import {
   Shapes,
   HeartPulse,
   MessageSquareReply,
+  UsersRound,
   type LucideIcon,
 } from "lucide-react";
 
@@ -29,6 +30,7 @@ export type SectionId =
   | "composer"
   | "queue"
   | "leads"
+  | "audience"
   | "analytics"
   | "docs"
   | "settings"
@@ -79,6 +81,9 @@ export const STUDIO_SECTIONS: StudioSection[] = [
   { id: "composer", screenKey: "studio", label: "Composer", blurb: "Write, re-hook and stage the next post", icon: PenLine },
   { id: "queue", screenKey: "queue", label: "Queue", blurb: "Scheduled posts and peak engagement slots", icon: CalendarClock },
   { id: "leads", screenKey: "crm", label: "Leads", blurb: "Lead stream and person dossiers", icon: Users },
+  // The set, where Leads is one person: who keeps coming back, who has gone
+  // quiet, who is already a connection. Ordered by facts, never by score.
+  { id: "audience", label: "Audience", blurb: "Who keeps coming back, who has gone quiet, and who is a connection", icon: UsersRound },
   { id: "posts", label: "Posts", blurb: "Which of your posts worked, and who each one brought", icon: Newspaper },
   { id: "patterns", label: "Patterns", blurb: "What your own posts suggest, and how steadily you post", icon: Shapes },
   { id: "outbound", label: "Outbound", blurb: "Whose content you engage with, and whether it comes back", icon: Send },

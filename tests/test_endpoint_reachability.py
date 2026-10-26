@@ -264,8 +264,14 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # your posts waiting on a reply, and /api/v1/replies/mark and
 # /api/v1/replies/unmark, the creator's own Answered mark.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 177
-REACHED_BY_INTERFACE = 128
+# Then 177 -> 181 and 128 -> 132, with Audience (cycle 4, track 4). Four new
+# paths, all called by the interface: /api/v1/audience, the first view;
+# /api/v1/audience/connections, the searchable list; /api/v1/audience/counts,
+# the funnel and company counts one level down; and
+# /api/v1/audience/people/{lead_id}, the facts the Leads dossier draws.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 181
+REACHED_BY_INTERFACE = 132
 UNREACHABLE = 49
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

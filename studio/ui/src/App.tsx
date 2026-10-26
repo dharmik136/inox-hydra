@@ -13,6 +13,7 @@ import { TodaySurface } from "@/components/TodaySurface";
 import { ActivitySurface } from "@/components/ActivitySurface";
 import { HealthSurface } from "@/components/HealthSurface";
 import { RepliesSurface } from "@/components/RepliesSurface";
+import { AudienceSurface } from "@/components/AudienceSurface";
 import { PostsSurface } from "@/components/PostsSurface";
 import { OutboundSurface } from "@/components/OutboundSurface";
 import { PatternsSurface } from "@/components/PatternsSurface";
@@ -1031,6 +1032,16 @@ export default function App() {
                 />
               )}
               {active === "leads" && <LeadsSurface focus={focusFor("leads")} />}
+              {active === "audience" && (
+                <AudienceSurface
+                  onOpenSetup={() => navigate("setup")}
+                  onOpenLead={(leadId) => {
+                    if (!navigate("leads")) return;
+                    focusNonce.current += 1;
+                    setFocus({ section: "leads", target: { id: leadId, anchor: null, nonce: focusNonce.current } });
+                  }}
+                />
+              )}
               {active === "posts" && (
                 <PostsSurface
                   onOpenActivity={() => navigate("activity")}

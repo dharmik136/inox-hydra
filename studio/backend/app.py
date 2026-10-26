@@ -2042,6 +2042,15 @@ except (ImportError, ValueError):
 
 app.include_router(replies_router_module.router)
 
+# Audience: the set of people the bridge has seen, ordered by facts
+# (studio/backend/routers/audience.py, rules in studio/backend/audience.py).
+try:
+    from .routers import audience as audience_router_module
+except (ImportError, ValueError):
+    from routers import audience as audience_router_module
+
+app.include_router(audience_router_module.router)
+
 DOCS_DIR = search_router_module.DOCS_DIR
 MODULES_DIR = search_router_module.MODULES_DIR
 DOCS_MODULES = search_router_module.DOCS_MODULES

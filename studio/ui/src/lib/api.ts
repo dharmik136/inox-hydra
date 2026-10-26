@@ -3551,3 +3551,102 @@ export async function unmarkReplyAnswered(comment: CommentRef): Promise<{ remove
     body: JSON.stringify({ lead_id: comment.lead_id, post_urn: comment.post_urn, comment_key: comment.comment_key }),
   });
 }
+
+// ---------------------------------------------------------------------------
+// Audience: the set of people the bridge has seen, ordered by facts
+//
+// Never by the ICP score. Every list says what it rests on: the posts whose
+// engagers were read, the weeks the bridge read anything, the archive's date.
+// ---------------------------------------------------------------------------
+
+export interface AudiencePerson {
+  lead_id: string;
+  name: string | null;
+  headline: string | null;
+  /** Of your posts whose engagers were read. */
+  posts_engaged: number;
+  first_seen_at: string | null;
+  latest_at: string | null;
+}
+
+export interface AudienceWeek {
+  /** The Monday the week starts on (UTC). */
+  week: string;
+  /** Whether the bridge read any engagement that week; when not, new is null. */
+  read: boolean;
+  new: number | null;
+}
+
+export interface AudienceOverview {
+  own_posts: number;
+  repeat: { posts_read: number; label: string; min_posts: number; count: number; people: AudiencePerson[] };
+  quiet: {
+    judged: boolean;
+    recent_posts: number;
+    posts_read: number;
+    since: string | null;
+    count: number;
+    people: AudiencePerson[];
+  };
+  new_people: { partial: boolean; label: string; weeks: AudienceWeek[] };
+  connections: { count: number; as_of: string | null; leads_matched: number; leads_by_member_id: number };
+}
+
+export async function fetchAudience(): Promise<AudienceOverview> {
+  return call<AudienceOverview>("/api/v1/audience");
+}
+
+export interface AudienceConnection {
+  name: string | null;
+  company: string | null;
+  position: string | null;
+  connected_on: string | null;
+  as_of: string;
+  profile_url: string;
+  /** The lead this connection is, matched by profile; null when they are not one. */
+  lead_id: string | null;
+}
+
+export interface AudienceConnections {
+  q: string;
+  total: number;
+  as_of: string | null;
+  offset: number;
+  next_offset: number | null;
+  connections: AudienceConnection[];
+}
+
+export async function fetchAudienceConnections(q: string, offset = 0): Promise<AudienceConnections> {
+  const query = new URLSearchParams({ offset: String(offset) });
+  if (q.trim()) query.set("q", q.trim());
+  return call<AudienceConnections>(`/api/v1/audience/connections?${query.toString()}`);
+}
+
+export interface AudienceCounts {
+  people: number;
+  funnel: { status: string; label: string; people: number }[];
+  companies: { company: string; people: number }[];
+  companies_named: number;
+  no_company: number;
+}
+
+export async function fetchAudienceCounts(): Promise<AudienceCounts> {
+  return call<AudienceCounts>("/api/v1/audience/counts");
+}
+
+export interface AudiencePersonFacts {
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  /** How many times the bridge read an engagement of theirs; null when it never did. */
+  times_seen: number | null;
+  engagements: number;
+  connection: { connected_on: string | null; as_of: string } | null;
+  connections_held: number;
+  connections_as_of: string | null;
+  /** The bridge read their link as a member number, which the archive's connections cannot be matched to. */
+  member_id_only: boolean;
+}
+
+export async function fetchAudiencePerson(leadId: string): Promise<AudiencePersonFacts> {
+  return call<AudiencePersonFacts>(`/api/v1/audience/people/${encodeURIComponent(leadId)}`);
+}
