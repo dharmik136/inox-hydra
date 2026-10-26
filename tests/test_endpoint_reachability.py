@@ -247,8 +247,14 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # now, so the merge restored it. The pack has a way out and no way in until
 # its 36 first-person claims are rewritten, which is a decision, not a gap.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 172
-REACHED_BY_INTERFACE = 118
+# Cycle 4, track 6: seven paths added, every one with its surface. The phone's
+# Telegram bot under Local security (/api/v1/ingress/settings), and LinkedIn's
+# analytics export in Setup (/api/v1/analytics-export and its requested,
+# upload, preview, import and discard). Total 172 -> 179, reached 118 -> 125,
+# unreachable unchanged at 54.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 179
+REACHED_BY_INTERFACE = 125
 UNREACHABLE = 54
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")
