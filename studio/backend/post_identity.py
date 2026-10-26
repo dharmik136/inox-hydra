@@ -953,7 +953,8 @@ def forget_reconstructions(conn) -> int:
 def heal_publications(conn) -> int:
     """
     Gives every publication left without a post its post, by ensure_post.
-    Migration 28 runs it on installs the defect above reached. The work still
+    Track 1's migration (_migrate_reader_timing_and_network_reading) runs it
+    on installs the defect above reached. The work still
     to do is what is still without a post, so running it twice does nothing
     the second time. Returns how many publications it gave a post.
     """

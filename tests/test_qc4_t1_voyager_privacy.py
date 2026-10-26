@@ -12,7 +12,9 @@ Now the feed ingest keeps a reading only for a post that resolves to one of
 the creator's own; every other entry is dropped before anything is written
 and counted as a number. The other three schemas never leave the page, and
 the studio refuses them. Drift events keep a path cleaned of anything that
-names a member or a post. Migration 28 removes what the old behaviour stored.
+names a member or a post. This track's migration
+(_migrate_reader_timing_and_network_reading) removes what the old behaviour
+stored.
 
 Every name and text here is invented.
 

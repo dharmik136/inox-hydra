@@ -860,7 +860,8 @@ def forget_other_members_readings(conn) -> Dict[str, int]:
     creator's own posts only: readings of posts that are not the creator's,
     the summaries built from them, and drift events whose schema carries
     other members. Kept drift events keep a path that names nobody. Run by
-    migration 28, after the ledger's backup, inside its transaction.
+    this track's migration (_migrate_reader_timing_and_network_reading), after
+    the ledger's backup, inside its transaction.
     """
     gone = {"readings": 0, "drift_events": 0}
     others = [row[0] for row in conn.execute("SELECT DISTINCT activity_urn FROM post_metric_observations")

@@ -12,8 +12,9 @@ all. post_identity.resolve found no posts row, so the engagers route answered
 had engaged.
 
 The rule migration 26 applied once is now post_identity.ensure_post, applied
-wherever a post first becomes known, and migration 28 applies it to the
-publications the defect left behind.
+wherever a post first becomes known, and this track's migration
+(_migrate_reader_timing_and_network_reading) applies it to the publications
+the defect left behind.
 
 Every name and text here is invented.
 
