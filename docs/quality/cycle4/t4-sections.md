@@ -82,6 +82,8 @@ Every first view answers its question above the fold at 1440x900, which the brow
 | `tests/test_qc2_r5_names.py` | `test_setup_says_when_it_is_done` | It matched the whole `<OnboardingSurface onOpenToday=... />` element as a string, which the Health commit broke by handing Setup the way to Health too. It now checks that the element is given the way to Today, whatever else it is given; falsified by unwiring that prop. The Health commit (`07096c1`) left this test failing until the rail commit, because the subsets run before it did not include it |
 | `tests/test_qc2_r5_first_load.py` | the known-creator test | Decision 5: a creator whose Setup is done lands on Today; the test seeds a finished Setup and keeps its assertions |
 | `tests/test_e2e_browser_flows.py`, `tests/test_qc_f7_ui.py`, `tests/test_qc2_r4_storage_panel.py` | the clicks on the "Brand Studio" rail button | The rail entry is Settings (or Brand), which opens Brand Studio; the per-surface heading check now covers the new sections too |
+| `studio/backend/devtools.py` | `SCREEN_REGISTRY`, four rows | Registry rows for Replies, Audience, Health and Brand, so annotations filed on them resolve, and track 3's guard holds at merge |
+| `tests/test_devtools.py` | `test_maintainer_build_exposes_the_surface` | It pinned the registry at 8 rows; it now holds that the status route returns the whole registry, as track 3's version of the line does |
 | `studio/ui/src/components/SelectionToolbar.tsx` | the toolbar's position | The formatting toolbar is centred on the selection, and a selection at the start of a line put half of it past the writing column's left edge. With the labelled rail at 1280 pixels that half fell under the rail and Bold could not be clicked; three Composer tests (`tests/test_qc_f1a_composer.py`) failed in the full suite. It now keeps itself inside the column; the same three tests pass, and they failed against the unclamped toolbar. The overhang existed before at 1024 to about 1100 pixels with the icon rail |
 | `studio/ui/src/components/BrandStudioSurface.tsx` | 55, 74 | Registers its unsaved edits under the entry showing it (phase b owns the file's split) |
 | `docs/help/*.md` (six more articles) | the "Open **Brand Studio** from the rail" sentences | Name Settings or Brand, the entries that open it |
@@ -92,9 +94,13 @@ Every first view answers its question above the fold at 1440x900, which the brow
 ## Follow-ups for other tracks and for integration
 
 - Track 3 (`TodaySurface.tsx`) and the owner of `_open_next`: Today's drift case could return a `health` action with a Go to Health button instead of Go to Setup.
-- Track 3 (the screen registry's `screenKey` entries): the four new entries, Replies, Audience, Health and Brand, declare no `screenKey`; their registry keys belong with track 3's registry work, so annotations filed on them resolve to "unknown" until then.
+- Track 3 (the screen registry): track 3's guard requires every rail section to declare a `screenKey` with a registry row, and no row without a section. The four entries this track adds declare `replies`, `audience`, `health` and `brand`, each with a `tab-<id>` row in `studio/backend/devtools.py` in the registry's existing shape (Settings already had `settings`). Applied to this branch alone, the guard's two rules leave only what track 3 brings: seven older sections without a key and the two ghost rows. At merge, `tests/test_devtools.py`'s registry count conflicts with track 3's edit of the same line; both say the status route returns the whole registry, with floors of 13 and 12, so the merged registry (17 rows) meets either.
 - Track 5: Health has a named place for the post analytics fields block (`studio/ui/src/components/HealthSurface.tsx`, the comment headed POST ANALYTICS FIELDS, beside drift). Once track 5's route is merged, that block draws, per field, when it was last read and how many post analytics pages were read since, and nothing is drawn before that.
 - Track 1: Health reads `bridge.network_reading` from `/api/v1/extension/health` when the heartbeat carries it and says "not reported by this extension version" when it does not; once track 1's heartbeat field is merged, the sentence comes from track 1's `network_reading_sentence`.
+
+## Noted for phase b
+
+From the coordinator, for the phase b list: the Leads dossier's stage history gains the post a stage change came from ("from which post", which migration 14 promised and never held), a column for this track's migration; and the Brand and Settings split reconciles the two identities (`settings.creator_profile` and `creator_identity`) and the two keys for a stored LinkedIn session (`li_at`, read by Setup, and the session status Brand Studio reads) into one control, as the sections report's batch 5 says.
 
 ## Commits
 
@@ -107,5 +113,11 @@ Every first view answers its question above the fold at 1440x900, which the brow
 | `91ff7fd` | Health's all readers by day |
 | `a245172` | Audience and the Leads dossier's first, last and times seen |
 | `ff5c00f` | The rail: five groups, sixteen entries, labels at desktop width, Setup at the foot, the chip |
+| `8624a5c` | The formatting toolbar stays inside the writing column beside the wider rail |
+| `644c9a6` | Screen keys and registry rows for Replies, Audience, Health and Brand |
+
+## The suite
+
+`pytest tests studio/tests -q -rs` from the worktree root, as CI runs it, on the tree at `644c9a6` with this record: 3,202 passed, 17 skipped, 0 failed. The skips are the platform skips (Windows tray, mutex, autostart and job objects, macOS Keychain and LaunchAgent, a workstation browser), `yaml` not installed (three), and the interface not surfacing enrichment. An earlier full run, after the rail commit, failed three Composer tests; that is the toolbar fix above.
 
 The first commit carries the attribution line the brief gave (`Claude Fable 5.1`); the later ones carry the line the session's environment specified when the coordinator resumed the track (`Claude Opus 5.5`), as the coordinator asked.
