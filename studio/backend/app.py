@@ -78,6 +78,7 @@ try:
     from . import accounts
     from . import licensing
     from . import archive_import
+    from . import analytics_export
     from . import today as today_module
     from . import insights
     from . import devtools
@@ -152,6 +153,7 @@ except ImportError:
     import accounts
     import licensing
     import archive_import
+    import analytics_export
     import today as today_module
     import insights
     import devtools
@@ -319,6 +321,12 @@ async def lifespan(app: FastAPI):
         except Exception:
             logging.getLogger("studio.linkedin").warning(
                 "Could not remove the sessions kept in profiles beyond the first.", exc_info=True)
+        # A copy of an analytics export chosen by hand is kept for a day at
+        # most, whether or not Setup is opened again, as the policy says.
+        try:
+            analytics_export.sweep_uploads()
+        except OSError:
+            logging.getLogger("studio.analytics_export").warning("Could not sweep old export copies.", exc_info=True)
     # The offline documentation index, built here rather than on whichever
     # search happened to run first. It was imported into this module and never
     # called, so the index was a snapshot of the corpus as it stood the first

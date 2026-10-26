@@ -548,3 +548,17 @@ def test_the_setup_block_does_not_state_the_unverified_layout_as_fact():
     assert "the file it writes holds your impressions, engagements and new followers by day" not in block
     assert "help says the file holds your impressions and engagements" in block
     assert "preview.recognised" in block, "a file with nothing recognised is not said to be so"
+
+
+def test_a_copy_older_than_a_day_is_removed_when_the_studio_starts(studio):
+    """N-13: the policy says a copy chosen by hand is kept for a day at most; it was swept only when Setup opened."""
+    import time as _time
+    old = os.path.join(analytics_export._uploads_dir(), "0" * 32 + ".xlsx")
+    with open(old, "wb") as handle:
+        handle.write(b"x")
+    two_days_ago = _time.time() - 2 * 24 * 3600
+    os.utime(old, (two_days_ago, two_days_ago))
+    import app as app_module
+    with TestClient(app_module.app):
+        pass
+    assert not os.path.exists(old), "a copy older than a day outlived the studio's start"

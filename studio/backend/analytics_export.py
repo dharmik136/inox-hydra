@@ -234,6 +234,11 @@ def _uploads_dir() -> str:
     return paths._ensure(os.path.join(paths.get_data_dir(), "analytics_export_uploads"))
 
 
+def sweep_uploads() -> None:
+    """Removes copies chosen by hand that are older than a day. Run at startup as well as on each upload."""
+    _sweep_uploads()
+
+
 def _sweep_uploads() -> None:
     directory = _uploads_dir()
     cutoff = datetime.now().timestamp() - UPLOAD_TTL.total_seconds()
