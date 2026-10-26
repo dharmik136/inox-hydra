@@ -341,3 +341,96 @@ def test_the_export_carries_the_new_readings_and_the_storage_panel_files_them(cl
     filed = {table for _key, _label, names in retention.CATEGORIES for table in names}
     assert {"insight_readings", "insight_daily_points", "own_reposts", "analytics_windows",
             "audience_demographic_readings"} <= filed, "a table the Storage panel files under 'other' is lost in it"
+
+
+# ---------------------------------------------------------------------------
+# The extension's wiring: loaded where its helpers are, and its writes relayed
+# ---------------------------------------------------------------------------
+
+EXT = os.path.join(REPO_ROOT, "studio", "extension")
+
+
+def _text_of(*parts):
+    with open(os.path.join(*parts), encoding="utf-8") as handle:
+        return handle.read()
+
+
+def test_the_manifest_loads_own_insights_after_the_helpers_it_uses():
+    """It calls content.js's parseMetricValue, analyticsPeriodOf and studioApi, which exist only after content.js."""
+    import json
+    manifest = json.loads(_text_of(EXT, "manifest.json"))
+    entries = [entry["js"] for entry in manifest["content_scripts"] if "own_insights.js" in entry["js"]]
+    assert len(entries) == 1, "own_insights.js is loaded once"
+    scripts = entries[0]
+    assert "content.js" in scripts and scripts.index("content.js") < scripts.index("own_insights.js")
+    assert scripts.index("own_pages.js") < scripts.index("own_insights.js")
+
+
+def test_every_studio_path_own_insights_calls_is_relayed_and_served():
+    own = _text_of(EXT, "own_insights.js")
+    background = _text_of(EXT, "background.js")
+    called = set(re.findall(r'"(/api/[^"]+)"', own))
+    assert called == {"/api/analytics/page-figures"}
+    allow = set(re.findall(r'"(/api/[^"]+)"', background.split("RELAYABLE_PATHS")[1].split("]);")[0]))
+    assert called <= allow, f"the worker refuses to relay {sorted(called - allow)}, so those reads are lost silently"
+    routers = _text_of(BACKEND, "routers", "analytics.py")
+    for path in called:
+        assert f'@router.post("{path}")' in routers
+
+
+def test_own_insights_never_requests_anything_from_linkedin():
+    own = _text_of(EXT, "own_insights.js")
+    assert not re.search(r"\bfetch\s*\(|XMLHttpRequest|\.open\(\s*['\"](GET|POST)", own)
+
+
+# ---------------------------------------------------------------------------
+# The privacy policy names what own_insights.js keeps
+# ---------------------------------------------------------------------------
+
+POLICY_PATH = os.path.join(REPO_ROOT, "docs", "PRIVACY_POLICY.md")
+INSIGHT_WORDS = {
+    "profile_views": "profile views", "search_appearances": "search appearances", "views": "article views",
+    "impressions": "impressions", "members_reached": "members reached", "reactions": "reactions",
+    "comments": "comments", "reposts": "reposts", "subscribers": "subscribers", "email_sends": "email sends",
+    "email_open_rate_pct": "open rate",
+}
+
+
+def _insight_keys(source):
+    match = re.search(r"const LABELS = \{(.*?)\n  \};", source, re.DOTALL)
+    assert match, "LABELS is gone from own_insights.js"
+    return set(re.findall(r'\["[^"]+", "([a-z_]+)"\]', match.group(1)))
+
+
+def _insight_paragraph(policy):
+    match = re.search(r"From \*\*your own account and content analytics pages\*\*.*?(?:\n\n|\Z)", policy, re.DOTALL)
+    assert match, "the policy has no paragraph for the pages own_insights.js reads"
+    return " ".join(match.group(0).split()).lower()
+
+
+def _insight_disagreements(source, policy):
+    keys, paragraph = _insight_keys(source), _insight_paragraph(policy)
+    problems = [f"own_insights.js keeps {key}, which the test does not know how the policy names"
+                for key in sorted(keys - set(INSIGHT_WORDS))]
+    problems += [f"the policy does not name {INSIGHT_WORDS[key]!r}" for key in sorted(keys & set(INSIGHT_WORDS))
+                 if INSIGHT_WORDS[key] not in paragraph]
+    for words in ("own_insights.js", "new followers", "never a viewer", "reposted", "never the original",
+                  "marked edited", "window"):
+        if words not in paragraph:
+            problems.append(f"the paragraph does not say {words!r}")
+    return problems
+
+
+def test_the_privacy_policy_names_everything_own_insights_keeps():
+    problems = _insight_disagreements(_text_of(EXT, "own_insights.js"), _text_of(POLICY_PATH))
+    assert not problems, "the policy and own_insights.js disagree:\n" + "\n".join(problems)
+
+
+def test_the_own_insights_policy_guard_is_not_vacuous():
+    source, policy = _text_of(EXT, "own_insights.js"), _text_of(POLICY_PATH)
+    planted = source.replace('["subscribers", "subscribers"],', '["subscribers", "subscribers"], ["unsubscribes", "unsubscribes"],', 1)
+    assert any("unsubscribes" in p for p in _insight_disagreements(planted, policy))
+    start = policy.index("From **your own account and content analytics pages**")
+    end = policy.index("\n\n", start)
+    dropped = policy[:start] + policy[start:end].replace("subscribers", "readers", 1) + policy[end:]
+    assert any("'subscribers'" in p for p in _insight_disagreements(source, dropped))

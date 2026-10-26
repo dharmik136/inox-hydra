@@ -33,6 +33,8 @@ const STUDIO_TOKEN_HEADER = "X-Inox-Token";
 // purpose proxy into the creator's local database.
 const RELAYABLE_PATHS = new Set([
   "/api/analytics/ingest",
+  // The creator's own account and content pages (own_insights.js, track 5).
+  "/api/analytics/page-figures",
   "/api/v1/posts/bind-urn",
   "/api/v1/crm/interactions/ingest",
   // Onboarding (own_pages.js). Every write is refused by the studio unless it

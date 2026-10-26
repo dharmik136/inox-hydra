@@ -1343,12 +1343,13 @@ POLICY_WORDS = {
     "followers_gained": "followers gained", "profile_viewers": "profile viewers", "link_visits": "link visits",
     "article_views": "article views", "video_views": "video views",
     "in_network_pct": "inside", "out_of_network_pct": "outside your network", "demographics": "demographics",
+    "watch_time_seconds": "watch time", "average_watch_seconds": "average watch time",
 }
 
 
 def _reader_keys(source):
     keys = set()
-    for name in ("POST_METRIC_LABELS", "POST_SHARE_LABELS"):
+    for name in ("POST_METRIC_LABELS", "POST_SHARE_LABELS", "POST_DURATION_LABELS"):
         match = re.search(rf"const {name} = \[(.*?)\n  \];", source, re.DOTALL)
         assert match, f"{name} is gone from own_pages.js"
         keys |= set(re.findall(r'\["[^"]+", "([a-z_]+)"\]', match.group(1)))

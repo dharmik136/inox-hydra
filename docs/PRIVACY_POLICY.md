@@ -52,8 +52,22 @@ page shows them, followers gained from the post, profile viewers from the
 post, link visits, article views, video views, the share of impressions from
 inside and from outside your network, and the viewer demographics for the
 post, which are LinkedIn's aggregate percentages (such as the share of viewers
-with a job title or in a location), never names. Each reading is kept with the
-post's age and the day it was read.
+with a job title or in a location), never names, and for a video post its
+watch time and average watch time. Each reading is kept with the post's age and
+the day it was read.
+
+From **your own account and content analytics pages** (`own_insights.js`), and
+only yours: on your analytics dashboard, your profile views and search
+appearances, each with the window the page names (such as the past 90 days),
+and your new followers by day from the followers graph; the profile viewer count
+on "Who viewed your profile" and the count on your search appearances page,
+with their windows, and never a viewer's or a searcher's name, headline or
+company; and on your own articles' and newsletters' analytics pages, their
+article views, impressions, members reached, reactions, comments, reposts,
+subscribers, email sends and email open rate. From your own Activity tab it
+also keeps that you reposted a post, when, and the repost's own figures where
+they can be told apart, never the original's author, words or figures, and
+when one of your posts was first seen marked edited.
 
 From **your own profile and activity pages** (`own_pages.js`), and only yours:
 your profile fields, experience, education and skills; the contact details on
