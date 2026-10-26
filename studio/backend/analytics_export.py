@@ -62,6 +62,7 @@ import re
 import threading
 import uuid
 import zipfile
+import zlib
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from xml.etree import ElementTree
@@ -356,7 +357,21 @@ class _Parts:
         self.read_bytes += info.file_size
         if self.read_bytes > MAX_TOTAL_BYTES:
             raise ExportError("That file unpacks to far more than a spreadsheet should, so it was not read.")
-        data = self.archive.read(name)
+        try:
+            data = self.archive.read(name)
+        except (zipfile.BadZipFile, zlib.error, EOFError) as error:
+            raise ExportError("A part of that file is damaged, so it could not be read. Export it from LinkedIn "
+                              "again and choose the new file.") from error
+        except NotImplementedError as error:
+            # Before RuntimeError, of which it is a subclass: an unknown
+            # compression method, or strong encryption.
+            raise ExportError("That file is packed in a way a spreadsheet is not, so it could not be read.") from error
+        except RuntimeError as error:
+            # zipfile's answer to an encrypted member with no password.
+            raise ExportError("That file is protected with a password, which LinkedIn's export never is, so it "
+                              "could not be read.") from error
+        except OSError as error:
+            raise ExportError(f"That file could not be read: {error.strerror or 'the disk refused it'}.") from error
         if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
             raise ExportError("That file carries markup a spreadsheet never does, so it was not read.")
         return data
@@ -480,7 +495,7 @@ def read_workbook(path: str) -> Dict[str, Any]:
         raise ExportError("That file is larger than any LinkedIn analytics export the studio expects.")
     try:
         archive = zipfile.ZipFile(path)
-    except zipfile.BadZipFile as error:
+    except (zipfile.BadZipFile, ValueError, OSError) as error:
         raise ExportError("That file is not an .xlsx spreadsheet: it does not open as one.") from error
     with archive:
         if len(archive.infolist()) > MAX_MEMBERS:

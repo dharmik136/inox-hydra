@@ -431,3 +431,39 @@ def test_the_1900_system_is_still_read_as_before(studio):
     preview = _upload(studio["client"], fx.build(sheets), name="analytics.xlsx").json()
     assert preview["range"]["start"] == "2026-10-20" and preview["range"]["end"] == "2026-10-22"
 
+
+# ---------------------------------------------------------------------------
+# Review round, SF-5: a damaged or unusual member is a sentence, never a 500
+# ---------------------------------------------------------------------------
+
+def _patched_central_directory(data, offset, value):
+    """Every central directory entry's two bytes at `offset` set to `value` (8 = flags, 10 = method)."""
+    out = bytearray(data)
+    at = out.find(b"PK\x01\x02")
+    while at != -1:
+        out[at + offset:at + offset + 2] = value.to_bytes(2, "little")
+        at = out.find(b"PK\x01\x02", at + 4)
+    return bytes(out)
+
+
+def _damaged(kind):
+    import zipfile as _zip
+    stored = fx.build(fx.dashboard_sheets(), compression=_zip.ZIP_STORED)
+    if kind == "bad_crc":
+        at = stored.find(b"<sheetData>")
+        return stored[:at] + b"<sheetDatA>" + stored[at + len(b"<sheetData>"):]
+    if kind == "encrypted":
+        return _patched_central_directory(stored, 8, 0x0001)
+    return _patched_central_directory(stored, 10, 99)
+
+
+@pytest.mark.parametrize("kind, words", [
+    ("bad_crc", "damaged"),
+    ("encrypted", "password"),
+    ("unsupported_method", "packed in a way"),
+])
+def test_a_damaged_or_unusual_member_is_refused_with_a_sentence(studio, kind, words):
+    res = _upload(studio["client"], _damaged(kind))
+    assert res.status_code == 400, f"{kind}: {res.status_code} {res.text[:200]}"
+    assert words in res.json()["detail"], res.json()["detail"]
+    assert os.listdir(analytics_export._uploads_dir()) == [], "the uploaded copy was left behind"
