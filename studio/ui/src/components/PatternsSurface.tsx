@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronsUpDown } from "lucide-react";
 import {
-  fetchCadenceInsights,
   fetchPatternsInsights,
   fetchContrastInsights,
   fetchTopicAttribution,
-  type CadenceInsights,
   type PatternFinding,
   type PatternsInsights,
   type ContrastInsights,
@@ -13,7 +11,6 @@ import {
   type SettledAfter,
   type TopicAttributionInsights,
 } from "@/lib/api";
-import { gapOrNotMeasured } from "@/lib/cadence";
 import { useStudioBack } from "@/lib/refresh";
 import { ratioTone } from "@/lib/results";
 import { cn } from "@/lib/utils";
@@ -28,19 +25,20 @@ type TopicRow = Omit<TopicAttributionInsights["topics"][number], "lead_conversio
 type TopicSortKey = "topic" | "posts" | "total_reactions" | "people_engaged" | "qualified_leads" | "lead_conversion_rate";
 
 /**
- * Patterns and cadence: what your own posts suggest, and how steadily you post.
+ * Patterns: what your own posts suggest.
  *
  * Patterns compare your week-old posts that have a form against those that do
  * not, by median reactions, always with both counts. The wording is "went
  * with", never "causes", and a pattern whose two sides come from different
  * periods is marked, because then the difference may be about when you
- * posted rather than how. Cadence shows counts and gaps and deliberately names
- * no best day: you chose the days you posted on, so they cannot be separated
- * from everything else about those posts.
+ * posted rather than how.
+ *
+ * How steadily you post is the Queue's: this screen drew the same cadence
+ * payload as the Queue's "Against your own rhythm" a second time, and the
+ * week lives on the Queue (cycle 4, track 3, batch 1).
  */
 export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}) {
   const [patterns, setPatterns] = useState<PatternsInsights | null>(null);
-  const [cadence, setCadence] = useState<CadenceInsights | null>(null);
   // How the "went with more or fewer reactions" list orders itself: by how
   // far from 1x the ratio sits (the server's own order), or by how many
   // posts the line rests on, for a creator who trusts a bigger sample over a
@@ -61,13 +59,11 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
   useEffect(() => {
     Promise.all([
       fetchPatternsInsights(),
-      fetchCadenceInsights(),
       fetchContrastInsights().catch(() => null),
       fetchTopicAttribution().catch(() => null),
     ])
-      .then(([p, c, co, a]) => {
+      .then(([p, co, a]) => {
         setPatterns(p);
-        setCadence(c);
         if (co) setContrasts(co);
         if (a) setAttribution(a);
         setFailed(false);
@@ -76,8 +72,8 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
   }, [back]);
 
   if (failed && !patterns) return <Centered>PATTERNS ARE UNAVAILABLE. IS THE STUDIO RUNNING?</Centered>;
-  if (!patterns || !cadence) return <Centered>LOADING PATTERNS</Centered>;
-  if (!cadence.posts) {
+  if (!patterns) return <Centered>LOADING PATTERNS</Centered>;
+  if (!patterns.posts_held) {
     return (
       <EmptySurface label="Patterns" title="What your own posts suggest" onOpenSetup={onOpenSetup}>
         None of your posts have been imported yet. Once they are, this compares the ones that share a
@@ -148,7 +144,7 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
         </p>
       )}
 
-      <div className="mt-5 grid gap-x-6 gap-y-5 lg:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-5 grid gap-x-6 gap-y-5 lg:grid-cols-2">
         <div className="min-w-0">
           <section>
             <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -248,44 +244,6 @@ export function PatternsSurface({ onOpenSetup }: { onOpenSetup?: () => void } = 
               . EACH SIDE NEEDS {patterns.min_per_side}.
             </p>
           )}
-        </div>
-
-        <div className="min-w-0">
-          <section>
-            <p className="studio-label">Cadence</p>
-            <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-2 border-y border-edge py-3 sm:grid-cols-4">
-              <Stat label="Posts" value={`${cadence.posts}`} />
-              <Stat label="Since last post" value={gapOrNotMeasured(cadence.days_since_last)} />
-              <Stat label="Usual gap" value={gapOrNotMeasured(cadence.median_gap_days)} />
-              <Stat
-                label="Queued, next 14 days"
-                value={`${cadence.queue?.scheduled_next_14_days ?? 0} of ${Math.min(cadence.queue?.weekly_slots ?? 0, 99) * 2} slots`}
-              />
-            </dl>
-            {cadence.longest_gap && (
-              <p className="mt-2 text-[12px] text-ink-muted">
-                Longest gap: {gapOrNotMeasured(cadence.longest_gap.days)}, {cadence.longest_gap.from} to {cadence.longest_gap.to}.
-              </p>
-            )}
-
-            <MonthStrip months={cadence.by_month ?? []} />
-
-            <div className="mt-4">
-              <p className="studio-meta mb-1.5 text-[10px] text-ink-muted">POSTS BY WEEKDAY</p>
-              <div className="flex gap-3">
-                {(cadence.by_weekday ?? []).map((d) => (
-                  <div key={d.day} className="text-center">
-                    <p className="text-[13px] tabular-nums text-ink-primary">{d.posts}</p>
-                    <p className="studio-meta text-[10px] text-ink-muted">{d.day.toUpperCase()}</p>
-                  </div>
-                ))}
-              </div>
-              <p className="mt-2 text-[12px] leading-snug text-ink-muted">
-                No best day is named. You chose the days you posted on, and a few posts per day cannot separate the day from
-                everything else about those posts.
-              </p>
-            </div>
-          </section>
         </div>
 
         <div className="min-w-0">
@@ -573,38 +531,6 @@ function TopicAttributionSection({
         </table>
       </div>
     </section>
-  );
-}
-
-function MonthStrip({ months }: { months: { month: string; posts: number }[] }) {
-  if (!months.length) return null;
-  const peak = Math.max(1, ...months.map((m) => m.posts));
-  return (
-    <div className="mt-6">
-      <p className="studio-meta mb-1.5 text-[10px] text-ink-muted">
-        POSTS BY MONTH, {months[0].month} TO {months[months.length - 1].month}. THE TALLEST BAR IS {peak}{" "}
-        {peak === 1 ? "POST" : "POSTS"}
-      </p>
-      <div className="flex h-16 items-end gap-px overflow-x-auto" role="img" aria-label="Posts per month" tabIndex={0}>
-        {months.map((m) => (
-          <div
-            key={m.month}
-            title={`${m.month}: ${m.posts} post${m.posts === 1 ? "" : "s"}`}
-            className={cn("w-2 shrink-0 rounded-t-sm", m.posts ? "bg-ink-secondary" : "bg-edge")}
-            style={{ height: m.posts ? `${Math.max(12, (m.posts / peak) * 100)}%` : "3px" }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <dt className="text-[11px] text-ink-muted">{label}</dt>
-      <dd className="text-[14px] tabular-nums text-ink-primary">{value}</dd>
-    </div>
   );
 }
 

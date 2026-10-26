@@ -37,7 +37,9 @@ def test_each_form_is_compared_once_without_statistics_words(studio):
     assert body.count("An opening line that asks a question") == 1, body
     assert "Each side needs 8 posts before a line is shown" in body, body
     assert "Settled means" in body, body
-    assert "THE TALLEST BAR IS" in body, body
+    # Posts by month, with its scale in words, moved to the Queue with the
+    # rest of the rhythm in cycle 4 (tests/test_qc4_t3_cadence_moved_to_queue.py).
+    assert "THE TALLEST BAR IS" not in body, body
 
 
 def test_the_help_describes_one_list():

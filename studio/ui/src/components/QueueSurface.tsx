@@ -661,6 +661,45 @@ function Cadence({
                     : `Your slots are about the rhythm you have kept: one every ${formatDays(slotGap)} against your usual ${formatDays(usual)}.`}
               </p>
             )}
+            {/* The rest of the rhythm, which Patterns drew as a second copy of
+                this payload under "Cadence" (cycle 4, track 3, batch 1): the
+                week lives on this screen, so how steadily you post does too. */}
+            <dl className="mt-2 flex flex-col gap-1.5">
+              <Line
+                label="Longest gap"
+                value={
+                  rhythm.longest_gap
+                    ? `${gapOrNotMeasured(rhythm.longest_gap.days)}, ${rhythm.longest_gap.from} to ${rhythm.longest_gap.to}`
+                    : NOT_MEASURED
+                }
+              />
+              <Line
+                label="Next 14 days"
+                value={
+                  rhythm.queue
+                    ? `${rhythm.queue.scheduled_next_14_days} queued, ${rhythm.queue.weekly_slots * 2} slots`
+                    : NOT_MEASURED
+                }
+              />
+            </dl>
+            <MonthStrip months={rhythm.by_month ?? []} />
+            {(rhythm.by_weekday ?? []).length > 0 && (
+              <div className="mt-3">
+                <p className="studio-meta mb-1.5 text-[10px] text-ink-muted">POSTS BY WEEKDAY</p>
+                <div className="flex gap-3">
+                  {(rhythm.by_weekday ?? []).map((d) => (
+                    <div key={d.day} className="text-center">
+                      <p className="text-[13px] tabular-nums text-ink-primary">{d.posts}</p>
+                      <p className="studio-meta text-[10px] text-ink-muted">{d.day.toUpperCase()}</p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-[12px] leading-snug text-ink-muted">
+                  No best day is named. You chose the days you posted on, and a few posts per day cannot separate the
+                  day from everything else about those posts.
+                </p>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -852,6 +891,30 @@ function WeeklySlots({ slots, onChanged }: { slots: QueueSlot[]; onChanged: () =
         </div>
       )}
     </section>
+  );
+}
+
+/** Posts per month, as bars with their scale said in words. Moved here from Patterns with the rest of the rhythm. */
+function MonthStrip({ months }: { months: { month: string; posts: number }[] }) {
+  if (!months.length) return null;
+  const peak = Math.max(1, ...months.map((m) => m.posts));
+  return (
+    <div className="mt-3">
+      <p className="studio-meta mb-1.5 text-[10px] text-ink-muted">
+        POSTS BY MONTH, {months[0].month} TO {months[months.length - 1].month}. THE TALLEST BAR IS {peak}{" "}
+        {peak === 1 ? "POST" : "POSTS"}
+      </p>
+      <div className="flex h-16 items-end gap-px overflow-x-auto" role="img" aria-label="Posts per month" tabIndex={0}>
+        {months.map((m) => (
+          <div
+            key={m.month}
+            title={`${m.month}: ${m.posts} post${m.posts === 1 ? "" : "s"}`}
+            className={cn("w-2 shrink-0 rounded-t-sm", m.posts ? "bg-ink-secondary" : "bg-edge")}
+            style={{ height: m.posts ? `${Math.max(12, (m.posts / peak) * 100)}%` : "3px" }}
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 

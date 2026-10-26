@@ -11,9 +11,22 @@ Open **Queue** in the rail. The top row shows:
 | Figure | Meaning |
 | --- | --- |
 | **Queued** | How many posts are queued and not yet due |
-| **Cadence health** | 100% with no collisions, otherwise 100 minus 25 for each collision, never below 20% |
 | **Collisions** | Pairs of scheduled posts less than 12 hours apart |
 | **Closest spacing** | The smallest gap between two scheduled posts, in hours. Reads Not measured with fewer than two scheduled posts |
+| **Slots a week** | How many weekly slots are switched on |
+
+**Against your own rhythm** sets those slots beside how you have actually posted, measured from the posts the studio holds:
+
+| Line | Meaning |
+| --- | --- |
+| **Posts read** | How many of your posts the studio holds |
+| **Your usual gap** | The median gap between your posts, for example 0.9 days between posts |
+| **Since your last** | How long since your newest post |
+| **These slots** | The gap your slots ask for, for example one post every 1.4 days, with a sentence saying whether that is more, less or about what you have kept |
+| **Longest gap** | Your longest gap between two posts, with its dates |
+| **Next 14 days** | How many posts are queued in the next 14 days, against the slots those two weeks hold |
+
+Under them, **POSTS BY MONTH** draws one bar per month and says how many posts the tallest bar stands for, and **POSTS BY WEEKDAY** counts your posts by the day they went out. No best day or time is named: you chose the days you posted on, and a few posts per day cannot separate the day from everything else about those posts. Any line the studio cannot measure, such as a gap with only one post, reads Not measured.
 
 **Next slot** shows the day, time and label of the next free slot, then either `12H CLEAR OF THE LAST POST` or `ONLY 6H SINCE THE LAST POST` (with your own figures). The hours are the distance to the nearest scheduled or published post.
 

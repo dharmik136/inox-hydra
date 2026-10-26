@@ -2426,6 +2426,8 @@ export interface SettleCurve {
 }
 
 export interface PatternsInsights {
+  /** How many of the creator's posts the studio holds, whatever their age or figures. */
+  posts_held: number;
   posts_compared: number;
   metric: string;
   patterns: PatternFinding[];
