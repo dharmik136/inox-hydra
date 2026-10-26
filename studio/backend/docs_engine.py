@@ -664,6 +664,9 @@ HELP_SECTIONS = [
             # the public address the browser stores require, so a creator can
             # read it here rather than taking the store's word for it.
             "PRIVACY_POLICY.md",
+            # LinkedIn's own words on third-party tools, quoted verbatim and
+            # dated, with where each feature stands beside them (cycle 4).
+            "help/where-each-feature-stands-with-linkedins-terms.md",
             "help/keep-each-creator-separate-and-enter-a-licence.md",
             "help/connect-your-linkedin-session.md",
             "help/back-up-restore-and-export.md",
@@ -708,6 +711,7 @@ HELP_SECTIONS = [
             "quality/CYCLE2_2026-10_PRD.md",
             "quality/CYCLE3_2026-10_PRD.md",
             "quality/CYCLE3_REGISTER.md",
+            "quality/cycle4/t6-posture.md",
             "UI_CONVENTIONS.md",
             "ICON_SYSTEM.md",
             "UI_AGENT_WORKFLOW.md",
