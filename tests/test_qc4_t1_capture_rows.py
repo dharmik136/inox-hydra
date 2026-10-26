@@ -84,6 +84,7 @@ def test_the_migration_is_named_for_what_it_records(studio):
     assert len(entries) == 1, "the track's one migration is not registered"
     description = entries[0][1]
     assert "reader" in description.lower() and "network reading" in description.lower(), description
+    assert "every publication has its post" in description.lower(), description
 
 
 def test_the_migration_adds_the_timing_and_heartbeat_columns(studio):

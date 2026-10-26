@@ -1443,6 +1443,16 @@ def _migrate_reader_timing_and_network_reading(cursor: sqlite3.Cursor) -> None:
     carried it, so "off" and "on but capturing nothing" were the same
     silence. The heartbeat now carries that state, and the page's count of
     LinkedIn's data calls by path and query name, never a query string.
+
+    And every publication has its post again. Migration 26 gave every
+    publication the studio held its posts row, once; one the bridge or the
+    archive found after it got none, so its engagers route answered 404 and
+    Posts said nobody was captured from it, however many had engaged (found
+    by cycle 4's track 3 on 2.7.0). Each such publication is given its post
+    here by post_identity.heal_publications, the rule every path now
+    follows: the posts row it already has, the one studio draft its words
+    match, or one made from it. The work still to do is what is still
+    without a post, so a second run changes nothing.
     """
     captures = {row[1] for row in cursor.execute("PRAGMA table_info(captures)")}
     for column, kind in (("duration_ms", "REAL"), ("reads", "INTEGER"), ("slow_reads", "INTEGER"),
@@ -1453,6 +1463,12 @@ def _migrate_reader_timing_and_network_reading(cursor: sqlite3.Cursor) -> None:
     for column in ("network_reading", "voyager_calls"):
         if column not in heartbeats:
             cursor.execute(f"ALTER TABLE bridge_heartbeats ADD COLUMN {column} TEXT")
+
+    try:
+        from . import post_identity
+    except (ImportError, ValueError):
+        import post_identity
+    post_identity.heal_publications(cursor.connection)
 
 
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
@@ -1483,7 +1499,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (26, "One identity for a post: every publication has its post, and the dead queue is gone",
      _migrate_one_post_identity),
     (27, "A lead's score is recomputed when what it is computed from changes", _migrate_current_scores),
-    (28, "Each reader says how long it took, and the bridge says whether network reading is on",
+    (28, "Each reader says how long it took, the bridge says whether network reading is on, "
+         "and every publication has its post again",
      _migrate_reader_timing_and_network_reading),
 ]
 

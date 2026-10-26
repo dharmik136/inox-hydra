@@ -181,6 +181,18 @@ def ingest_crm_interaction(req: IngestInteractionRequest):
         if outcome == ingest_contract.REFUSED:
             ingest_contract.refuse(reason, refused)
         return ingest_contract.nothing_new(reason, refused)
+    # The gate let this person through because the post is the creator's, so
+    # the post is made known before anyone is filed under it: its publication
+    # and its posts row, by the one rule (post_identity.ensure_post). A post
+    # first found through its engagers used to have neither, and its engagers
+    # route answered 404. A failure here is logged and the capture still
+    # kept, because the next read of the post or the next upgrade gives it its
+    # post, and the person is the creator's either way.
+    if req.post_urn:
+        try:
+            ingest_contract.through_the_writer("Recording the post", onboarding.note_own_post, req.post_urn)
+        except Exception as error:  # noqa: BLE001
+            ingest_contract.logger.warning("The post of a captured engagement was not recorded: %s", error)
     urn = req.linkedin_urn or req.profile_url or f"local:unresolved:{uuid.uuid4().hex[:12]}"
     raw_type = (req.interaction_type or "COMMENT").upper()
     if "COMMENT" in raw_type:

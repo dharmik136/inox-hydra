@@ -151,6 +151,14 @@ def _count(value: Any) -> Optional[int]:
     return number if number >= 0 else None
 
 
+def _post_identity():
+    try:
+        from . import post_identity
+    except ImportError:
+        import post_identity
+    return post_identity
+
+
 def find_archive_twin(conn, urn: str, text: str, archive_only: bool = True) -> Optional[str]:
     try:
         from .archive_import import find_twin
@@ -1067,6 +1075,10 @@ def forget_identity() -> Dict[str, Any]:
     conn = get_db()
     try:
         with conn:
+            # The posts made from the creator's publications go with them,
+            # where nothing in the studio has touched them: they hold the
+            # creator's post text and LinkedIn id and nothing written here.
+            _post_identity().forget_reconstructions(conn)
             for table in ("creator_identity", "creator_positions", "creator_education",
                           "creator_skills", "own_posts", "outbound_engagements", "self_import_requests",
                           "post_metric_observations"):
@@ -1222,6 +1234,9 @@ def ingest_post_analytics(author: Any, activity_urn: Any, metrics: Any) -> Dict[
             _require_me(conn, author)
             if not conn.execute("SELECT 1 FROM own_posts WHERE activity_urn = ?", (urn,)).fetchone():
                 raise RefusedCapture("this post is not one of your recorded posts; import your posts first")
+            # A publication recorded before every path gave it its post (an
+            # archive import, or the bridge before cycle 4) is given it here.
+            _post_identity().ensure_post(conn, urn)
             recorded = _record_observation(conn, urn, "post_analytics", metrics)
             impressions = _count(metrics.get("impressions"))
             if impressions is not None:
@@ -1246,23 +1261,79 @@ def post_readings(activity_urn: str) -> List[Dict[str, Any]]:
 def _bind_to_studio(conn, activity_urn: str, text: Optional[str], published_at: Optional[str]) -> Optional[str]:
     """
     Connects one of the creator's LinkedIn posts to the studio record it came
-    from. Returns how it bound ("post", "draft"), or None.
+    from, and gives it one when there is none. Returns how it bound ("post",
+    "draft"), or None when it was already bound or a post was made for it.
 
     An imported own post is already proven to be the creator's, by its actor,
     so any writing of theirs may be its source. Which record it is is decided
-    by post_identity.bind_activity_urn, the one binder: this used to be a
-    second implementation of that rule, with a different candidate set and a
-    different tie break from the permalink route's, so a post could bind one
-    way and not the other.
+    by post_identity.bind_activity_urn, the one binder, called through
+    post_identity.ensure_post, the one rule for a publication's post: this
+    used to bind only, so a post that matched no studio draft was left with
+    no posts row and its engagers route answered 404.
     """
     try:
         from . import post_identity
     except ImportError:
         import post_identity
 
-    result = post_identity.bind_activity_urn(
-        conn, activity_urn, text, published_at=published_at, from_history=True)
-    return result.get("how") if result.get("bound") else None
+    result = post_identity.ensure_post(conn, activity_urn, text, published_at=published_at)
+    how = result.get("how") if result else None
+    return how if how in ("post", "draft") else None
+
+
+def note_own_post(post_urn: Any) -> Optional[str]:
+    """
+    The creator's post an engager was read on, made known to the studio.
+
+    The engagement gate lets an engager through when the post's author is the
+    confirmed creator, and a post the studio had never recorded was then left
+    holding people it could not answer for: no publication, no posts row, and
+    the engagers route said 404 (found by cycle 4's track 3 on 2.7.0). Its
+    publication is recorded here, with no words, which the page did not
+    send, and a date read from its id; an archive record of the same post is
+    joined rather than repeated; and its post comes from
+    post_identity.ensure_post, the one rule. Returns the post's id, or None
+    for a URN that is not an activity of the creator's to record.
+
+    Only an activity URN is recorded: a share or ugcPost id read off a feed
+    card cannot be told apart from the activity the bridge will later read
+    the same post under, so recording it would make one post two.
+    """
+    try:
+        from . import post_identity
+    except ImportError:
+        import post_identity
+
+    urn = post_identity.canonical_urn(post_urn) if isinstance(post_urn, str) else None
+    if not urn:
+        return None
+    conn = get_db()
+    try:
+        with conn:
+            known = post_identity._publication_by_urn(conn, urn)
+            if known is None:
+                # A post a studio record already carries is known, and its
+                # engagers already resolve to it: nothing is written.
+                carried = post_identity.bound_post(conn, urn)
+                if carried:
+                    return carried[0]["id"]
+            if known is None and not _ACTIVITY_URN.match(urn):
+                return None
+            if known is None:
+                twin = find_archive_twin(conn, urn, "", archive_only=True)
+                if twin:
+                    conn.execute("UPDATE own_posts SET activity_urn = ? WHERE activity_urn = ?", (urn, twin))
+                else:
+                    now = _now()
+                    published = published_at_from_urn(urn)
+                    conn.execute(
+                        "INSERT INTO own_posts (activity_urn, text, published_at, published_at_source, "
+                        "first_seen_at, last_seen_at) VALUES (?, NULL, ?, ?, ?, ?)",
+                        (urn, published, "urn_decode" if published else None, now, now))
+            result = post_identity.ensure_post(conn, urn)
+    finally:
+        conn.close()
+    return result["post_id"] if result else None
 
 
 def ingest_outbound(actor: Any, items: Any) -> Dict[str, Any]:
