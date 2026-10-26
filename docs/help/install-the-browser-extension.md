@@ -79,8 +79,9 @@ The part of the extension that runs inside LinkedIn pages can reach only a fixed
 
 Open one of your posts with comments. A capture that worked is confirmed outside LinkedIn's page, from the extension's own record of it, with no call to the studio:
 
-- The extension's toolbar icon shows a count, the captures taken in this tab this session, on a green badge. The count clears when you open the side panel. The badge turns orange while captures are waiting for a studio that was busy or closed, or after a part of the capture reported that it could not read a page; the icon's tooltip says which.
-- The side panel's header reads, for example, "Captured an engager on your post just now." It names the kind of thing and when, never the person, and it updates the moment the next capture lands. The popup shows the same line.
+- The extension's toolbar icon shows a count on a green badge: how many captures from this tab the studio stored this session. Only what the studio stored is counted, so the engagers of other people's posts, which the studio deliberately does not keep, never add to it. The count clears when you open the side panel.
+- The badge turns orange while captures are waiting for a studio that was busy or closed, and in a tab with no count of its own it then shows how many are waiting. It also turns orange, with a `!` in such a tab, after a part of the capture reported this session that it could not read a page. The icon's tooltip says which.
+- The side panel's header reads, for example, "Captured an engager on your post just now." It names the kind of thing and when, never the person, and it updates the moment the next capture lands. When the last page read gave the studio nothing new, it reads "Read LinkedIn just now; nothing new to keep." The popup shows the same line.
 - The people are now in **Leads**. Reopen **Leads** to see them.
 
 Two notices still appear on the LinkedIn page itself, because they are things you can act on:
@@ -88,7 +89,9 @@ Two notices still appear on the LinkedIn page itself, because they are things yo
 - "Inox Hydra: N engager(s) had no profile link and were not saved."
 - "Inox Hydra: could not reach your studio, so nothing was saved." The studio is not running, or this browser was never paired.
 
-When a part of the capture cannot read a page LinkedIn has rebuilt, the side panel's header says so once per kind of page per browser session, for example "LinkedIn's feed page: cannot read commenter name. See Capture health in Setup.", and the badge turns orange. Nothing about it is drawn into LinkedIn's page.
+When a part of the capture cannot read a page LinkedIn has rebuilt, the side panel's header says so once per kind of page per browser session, for example "LinkedIn's feed page: cannot read commenter name, noticed 2 min ago. See Capture health in Setup.", and the badge turns orange. The notice goes when that part next reads the same kind of page cleanly, and when you close the browser. Nothing about it is drawn into LinkedIn's page.
+
+The side panel's **Health** tab also lists the data calls the last LinkedIn page made while network reading was on, by query name and how many times, for example `voyagerFeedDashMainFeed (9)`, so you can see what LinkedIn calls without opening the browser's developer tools.
 
 ## If it does not work
 
