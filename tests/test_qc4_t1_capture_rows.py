@@ -197,10 +197,11 @@ def _age(extractor, days, **fields):
     try:
         with conn:
             conn.execute(
-                "INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept, drift) "
-                "VALUES (?,?,?,?,?,?)",
+                "INSERT INTO captures (observed_at, extractor, page_kind, items_seen, items_kept, drift, refused) "
+                "VALUES (?,?,?,?,?,?,?)",
                 (when.isoformat(), extractor, "own_profile",
-                 fields.get("items_seen", 1), fields.get("items_kept", 1), fields.get("drift")),
+                 fields.get("items_seen", 1), fields.get("items_kept", 1), fields.get("drift"),
+                 fields.get("refused")),
             )
     finally:
         conn.close()
@@ -224,3 +225,51 @@ def test_every_state_is_one_the_screens_know(studio):
     """The states a row can produce, in one place, so a screen cannot meet one it does not draw."""
     import onboarding
     assert set(onboarding.CAPTURE_STATES) == {"never_run", "working", "drifting", "read_nothing", "refused"}
+
+
+# ---------------------------------------------------------------------------
+# Review finding S2: a refused row is never a good run, nor a capture
+# ---------------------------------------------------------------------------
+
+def test_the_prune_keeps_the_last_good_run_behind_refused_runs(studio):
+    """
+    The review's scenario: creator analytics by network reading worked ten
+    days ago and has been refused for identity since. The prune kept "the
+    latest run with no drift that saw something", which was the newest
+    refused row, so the next capture of any reader deleted the real last good
+    run and Setup read REFUSED with no LAST WORKED date.
+    """
+    import onboarding
+    worked = _age("voyager_creator_analytics", days=10, items_seen=1, items_kept=0)
+    _age("voyager_creator_analytics", days=9, items_seen=1, items_kept=0, refused="identity")
+    _age("voyager_creator_analytics", days=3, items_seen=1, items_kept=0, refused="identity")
+    onboarding.record_capture({"extractor": "engagers", "page_kind": "feed", "items_seen": 3, "items_kept": 1})
+    entry = _health("voyager_creator_analytics")
+    assert entry["state"] == "refused"
+    assert entry["last_good_at"] == worked.isoformat(), "the prune deleted the last good run behind a refused one"
+
+
+def test_a_refused_reading_is_not_a_network_capture(studio):
+    """The side panel read "Voyager Active" and "24h Network Captures: 1" when nothing was stored."""
+    import onboarding
+    with pytest.raises(onboarding.RefusedCapture):
+        onboarding.record_voyager_ingest({
+            "schema_name": "creator_analytics", "vanity": "nobody-confirmed",
+            "data": [{"followers": 10}], "extension_version": "test",
+        })
+    health = onboarding.extension_health()
+    assert health["voyager_24h_captures"] == 0, "a refused reading is counted as a capture"
+    assert health["voyager_active"] is False
+
+
+def test_todays_last_capture_is_never_a_refused_run(studio):
+    import onboarding
+    import today
+    captured = _age("engagers", days=2, items_seen=3, items_kept=3)
+    with pytest.raises(onboarding.RefusedCapture):
+        onboarding.record_voyager_ingest({
+            "schema_name": "creator_analytics", "vanity": "nobody-confirmed",
+            "data": [{"followers": 10}], "extension_version": "test",
+        })
+    assert today.today_brief()["freshness"]["last_capture_at"] == captured.isoformat(), (
+        "Today's LAST CAPTURE moved with a reading the studio refused")

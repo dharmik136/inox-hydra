@@ -502,10 +502,17 @@ CAPTURE_RETENTION = timedelta(days=7)
 # to ask about were the ones the screen was least able to answer for.
 #
 # So the two rows the screen reads are kept whatever their age: the latest run
-# of each extractor, and the latest run of each that read something without
-# drift, which is the LAST WORKED date shown beside a drifting reader. Rows
-# the screen does not read still age out at the window above.
-PRUNE_CAPTURES = """
+# of each extractor, and the latest good run of each, which is the LAST WORKED
+# date shown beside a drifting or refused reader. Rows the screen does not
+# read still age out at the window above.
+#
+# A good run read something, missed nothing it expected, and was not refused.
+# One rule, asked by capture_health and by the prune, unqualified so that it
+# reads the table of whichever query it sits in. Without the refused clause a
+# reader refused for identity every day since it last worked lost that day to
+# the prune, because its newest refused row looked like the good run to keep.
+GOOD_RUN = "drift IS NULL AND refused IS NULL AND COALESCE(items_seen, 0) > 0"
+PRUNE_CAPTURES = f"""
 DELETE FROM captures
  WHERE observed_at < ?
    AND id NOT IN (
@@ -515,11 +522,10 @@ DELETE FROM captures
    )
    AND id NOT IN (
          SELECT keep.id FROM captures AS keep
-          WHERE keep.drift IS NULL AND COALESCE(keep.items_seen, 0) > 0
+          WHERE {GOOD_RUN}
             AND keep.observed_at = (SELECT MAX(observed_at) FROM captures
                                      WHERE extractor = keep.extractor
-                                       AND drift IS NULL
-                                       AND COALESCE(items_seen, 0) > 0)
+                                       AND {GOOD_RUN})
    )
 """
 DRIFT_RETENTION = timedelta(days=30)
@@ -608,15 +614,19 @@ def capture_health() -> List[Dict[str, Any]]:
                 "long_tasks, long_task_ms FROM captures "
                 "WHERE extractor = ? ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
             last_good = conn.execute(
-                "SELECT observed_at FROM captures WHERE extractor = ? AND drift IS NULL AND refused IS NULL "
-                "AND COALESCE(items_seen, 0) > 0 ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
-            rows[extractor] = (latest, last_good)
+                f"SELECT observed_at FROM captures WHERE extractor = ? AND {GOOD_RUN} "
+                "ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
+            # A run the studio refused stored nothing, so it is not a capture.
+            last_capture = conn.execute(
+                "SELECT observed_at FROM captures WHERE extractor = ? AND refused IS NULL "
+                "ORDER BY observed_at DESC LIMIT 1", (extractor,)).fetchone()
+            rows[extractor] = (latest, last_good, last_capture)
     finally:
         conn.close()
 
     health = []
     for extractor, label in EXTRACTORS.items():
-        latest, last_good = rows[extractor]
+        latest, last_good, last_capture = rows[extractor]
         drift = json.loads(latest["drift"]) if latest and latest["drift"] else []
         if not latest:
             state = "never_run"
@@ -633,6 +643,7 @@ def capture_health() -> List[Dict[str, Any]]:
             "label": label,
             "last_run_at": latest["observed_at"] if latest else None,
             "last_good_at": last_good["observed_at"] if last_good else None,
+            "last_capture_at": last_capture["observed_at"] if last_capture else None,
             "drift": drift,
             "refused": latest["refused"] if latest else None,
             "state": state,
@@ -867,7 +878,7 @@ def extension_health() -> Dict[str, Any]:
         voyager_captures = conn.execute(
             """
             SELECT COUNT(*) FROM captures
-            WHERE extractor LIKE 'voyager_%' AND observed_at > ?
+            WHERE extractor LIKE 'voyager_%' AND refused IS NULL AND observed_at > ?
             """,
             ((datetime.now(timezone.utc) - timedelta(hours=24)).isoformat(),)
         ).fetchone()[0]
