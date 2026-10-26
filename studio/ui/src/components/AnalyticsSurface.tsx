@@ -49,10 +49,6 @@ type Kpis = AnalyticsKpis & {
   days_needed_to_compare?: number;
   /** Days each figure was read on, this period and the one before. */
   coverage?: Record<"impressions" | "engagements" | "rate", { current: number; previous: number }>;
-  /** Fields built from a figure LinkedIn rounded, such as 1.2K. */
-  approximate?: string[];
-  /** Changes not shown because they are smaller than that rounding. */
-  within_rounding?: string[];
 };
 
 /** A day as the overview route returns it, with how precisely LinkedIn wrote its figures. */

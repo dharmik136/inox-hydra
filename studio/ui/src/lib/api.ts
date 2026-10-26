@@ -608,6 +608,14 @@ export interface AnalyticsKpis {
   follower_growth: number | null;
   profile_views: number | null;
   profile_views_delta_pct: number | null;
+  /**
+   * Fields built from a figure LinkedIn rounded, such as 1.2K, which is
+   * anything from 1,150 to 1,249. Every screen that draws these figures
+   * marks them: Analytics did, and Today's thirty days drew them unmarked.
+   */
+  approximate?: string[];
+  /** Changes not shown because they are smaller than that rounding. */
+  within_rounding?: string[];
 }
 
 export async function fetchAnalyticsKpis(range: AnalyticsRange): Promise<AnalyticsKpis> {

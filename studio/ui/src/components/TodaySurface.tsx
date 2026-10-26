@@ -576,7 +576,31 @@ function Panel({
  * at the size of a label rather than the size of a number, so it cannot be
  * read as a zero at a glance.
  */
-function Figure({ label, value, note }: { label: string; value: string; note?: string | null }) {
+/** The ~ that marks a rounded figure, with the word a screen reader hears instead. */
+function About() {
+  return (
+    <>
+      <span aria-hidden="true">~</span>
+      <span className="sr-only">about </span>
+    </>
+  );
+}
+
+function Figure({
+  label,
+  value,
+  note,
+  approximate = false,
+  noteApproximate = false,
+}: {
+  label: string;
+  value: string;
+  note?: string | null;
+  /** The figure was built from one LinkedIn rounded, such as 1.2K. */
+  approximate?: boolean;
+  /** The change under it was. */
+  noteApproximate?: boolean;
+}) {
   const unknown = value === NOT_MEASURED;
   return (
     <div className="min-w-0">
@@ -587,9 +611,15 @@ function Figure({ label, value, note }: { label: string; value: string; note?: s
           unknown ? "studio-meta mt-1 text-ink-muted" : "mt-0.5 text-[19px] leading-tight font-semibold text-ink-primary",
         )}
       >
+        {approximate && !unknown && <About />}
         {value}
       </p>
-      {note ? <p className="studio-meta mt-0.5 truncate text-[10px] text-ink-muted">{note}</p> : null}
+      {note ? (
+        <p className="studio-meta mt-0.5 truncate text-[10px] text-ink-muted">
+          {noteApproximate && note !== NOT_MEASURED && <About />}
+          {note}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -809,6 +839,10 @@ function NextOut({
 /** The last thirty days, as one strip of four figures with their deltas. */
 function ThirtyDays({ read }: { read: Read<AnalyticsKpis> }) {
   const kpis = read.data;
+  // Which figures and changes LinkedIn had rounded (1.2K is anything from
+  // 1,150 to 1,249). Analytics marks them with a ~ and this strip drew the
+  // same figures unmarked.
+  const approx = new Set(kpis?.approximate ?? []);
   return (
     <section className="shrink-0 rounded-md border border-edge px-3 py-2">
       <div className="flex items-baseline justify-between gap-3">
@@ -827,8 +861,20 @@ function ThirtyDays({ read }: { read: Read<AnalyticsKpis> }) {
         // No profile views: no reader on a real install writes one, so the
         // figure was a permanent "not measured" (cycle 4, decision 8).
         <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
-          <Figure label="Impressions" value={count(kpis.impressions)} note={deltaOf(kpis.impressions_delta_pct)} />
-          <Figure label="Engagements" value={count(kpis.total_engagements)} note={deltaOf(kpis.engagements_delta_pct)} />
+          <Figure
+            label="Impressions"
+            value={count(kpis.impressions)}
+            note={deltaOf(kpis.impressions_delta_pct)}
+            approximate={approx.has("impressions")}
+            noteApproximate={approx.has("impressions_delta_pct")}
+          />
+          <Figure
+            label="Engagements"
+            value={count(kpis.total_engagements)}
+            note={deltaOf(kpis.engagements_delta_pct)}
+            approximate={approx.has("total_engagements")}
+            noteApproximate={approx.has("engagements_delta_pct")}
+          />
           <Figure
             label="Followers"
             value={count(kpis.total_followers)}
@@ -837,8 +883,15 @@ function ThirtyDays({ read }: { read: Read<AnalyticsKpis> }) {
                 ? `${kpis.follower_growth! > 0 ? "+" : ""}${kpis.follower_growth}`
                 : NOT_MEASURED
             }
+            approximate={approx.has("total_followers")}
+            noteApproximate={approx.has("follower_growth")}
           />
         </div>
+      )}
+      {approx.size > 0 && (
+        <p className="studio-meta mt-1 text-[10px] leading-snug text-ink-muted">
+          ~ MARKS A FIGURE OR CHANGE BUILT FROM ONE LINKEDIN ROUNDED, SUCH AS 1.2K, SO IT IS APPROXIMATE.
+        </p>
       )}
     </section>
   );
