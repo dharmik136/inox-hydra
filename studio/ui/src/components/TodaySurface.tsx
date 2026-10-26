@@ -76,8 +76,12 @@ const PENDING: Read<never> = { data: null, failed: false, loading: true };
  * One panel's own read, kept apart from every other panel's.
  *
  * `load` is held in a ref so a caller may pass a fresh arrow each render
- * without the read running again; `again` is what the thirty second refresh
- * calls for the two reads that change minute to minute.
+ * without the read running again. The read runs once on mount and again
+ * under useRefresh with no interval: when the studio answers after an
+ * outage, and when the window comes back after being away. The panels'
+ * failure sentence promises that, and it was true only of Today's own read:
+ * the six side panels were read once per mount, so one that failed stayed
+ * failed until the creator left the screen.
  */
 function useRead<T>(load: () => Promise<T>, onData?: (value: T) => void): [Read<T>, () => void] {
   const [state, setState] = useState<Read<T>>(PENDING);
@@ -93,6 +97,7 @@ function useRead<T>(load: () => Promise<T>, onData?: (value: T) => void): [Read<
       .catch(() => setState({ data: null, failed: true, loading: false }));
   }, []);
   useEffect(again, [again]);
+  useRefresh(again);
   return [state, again];
 }
 
@@ -135,7 +140,9 @@ export function TodaySurface({
   // The panels beside Today's own read. Each is its own endpoint, and none of
   // them is polled: evidence, cadence, the thirty day totals, the week's
   // slots and the two held signals all move on the scale of days, so
-  // re-reading them every half minute would be work nobody asked for.
+  // re-reading them every half minute would be work nobody asked for. Each
+  // is read again when the studio is back after an outage and when the
+  // window comes back (useRead), which is what their failure sentence says.
   const [evidence] = useRead(useCallback(() => fetchEvidenceBrief(), []));
   const [cadence] = useRead(useCallback(() => fetchCadenceInsights(), []));
   const [kpis] = useRead(useCallback(() => fetchAnalyticsKpis("30d"), []));
