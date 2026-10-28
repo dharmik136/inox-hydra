@@ -819,7 +819,8 @@ function WhatWorked({ read, grow }: { read: Read<RetrievalEvidenceBrief>; grow?:
       <p className="studio-meta mt-0.5 text-[10px] text-ink-muted">
         {count(item.reactions)} reactions
         {measured(item.comments) ? ` · ${count(item.comments)} comments` : ""}
-        {` · ${count(item.qualified_leads)} qualified leads`}
+        {/* No "qualified leads": who is qualified rests on the ICP tier, a
+            guess, and decision 7 retired that framing (sections report). */}
       </p>
     </li>
   );
