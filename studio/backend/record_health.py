@@ -50,9 +50,9 @@ def job() -> Dict[str, Any]:
     else:
         built = "today" if last["day"] == state["today"] else f"for {last['day']}"
         sentence = (f"{'Built' if state['today_built'] else 'Not built yet today; last built'} {built} at "
-                    f"{_clock(last.get('finished_at'))}, "
-                    + (f"carried forward from {last['carried_from']}, because nothing it is built from had changed"
-                       if last.get("carried_from") else "built from your record"))
+                    f"{_clock(last.get('finished_at'))}"
+                    + (f", carried forward from {last['carried_from']}, because nothing it is built from had changed"
+                       if last.get("carried_from") else " from your record"))
         dropped = last.get("dropped_cards") or 0
         if dropped:
             sentence += f"; {dropped} {'card' if dropped == 1 else 'cards'} failed a check and {'is' if dropped == 1 else 'are'} not shown"

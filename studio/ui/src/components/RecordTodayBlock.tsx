@@ -42,10 +42,12 @@ export function RecordTodayBlock() {
       <ul className="grid gap-x-4 gap-y-1 px-3 py-2 md:grid-cols-2 xl:grid-cols-5">
         {lines.lines.map((line) => (
           <li key={line.card_id} className="min-w-0">
+            {/* The block is said to a screen reader and left out of sight, so the
+                line's own words have the width: five lines share one row. */}
             <a href="#/record" className="block truncate text-[12px] text-ink-secondary hover:text-ink-primary">
-              <span className="studio-meta mr-1.5 text-[10px] text-ink-muted">{(line.block_label ?? "").toUpperCase()}</span>
-              {line.title}
-              {line.line ? `: ${line.line}` : ""}
+              {line.block_label && <span className="sr-only">{line.block_label}: </span>}
+              <span className="text-ink-primary">{line.title}</span>
+              {line.line ? ` ${line.line}` : ""}
             </a>
           </li>
         ))}

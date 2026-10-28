@@ -347,8 +347,7 @@ def signature_state() -> Dict[str, Any]:
     held = status()
     if not held["entries"]:
         return {**held, "state": "none",
-                "sentence": "No library is held: nothing has been fetched or imported, and the fifth card waits for "
-                            "your own model."}
+                "sentence": "No library is held: nothing has been fetched or imported."}
     said = (f"{held['entries']} entries, bundle {held['version']}, signed {held['signed_at']} with {held['key_id']}"
             f", {held['source']}")
     if held["key_id"] in PUBLIC_KEYS:
