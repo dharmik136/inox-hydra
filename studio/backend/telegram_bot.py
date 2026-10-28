@@ -49,9 +49,13 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 try:
+    from . import changes
+    from . import collection
     from . import egress as _egress
     from .database import get_db
 except ImportError:
+    import changes
+    import collection
     import egress as _egress
     from database import get_db
 
@@ -92,7 +96,7 @@ WEEKLY_POSTS_SHOWN = 7
 # The buttons, by the one letter a button's data ends with, and which a
 # message of each kind carries.
 BUTTON_LABELS = {"u": "Undo", "r": "Remind me in an hour", "d": "Done"}
-BUTTON_ROWS = {"undo": (("u",),), "due": (("r",), ("d",))}
+BUTTON_ROWS = {"undo": (("u",),), "item": (("u",),), "due": (("r",), ("d",))}
 
 # The worker looks for something to tell between polls, at most this often.
 NOTIFY_EVERY_SECONDS = 60.0
@@ -141,8 +145,14 @@ SENTENCES = {
     "button_used": "That button was already used, so nothing more was done.",
     "button_old": "That button is old, so nothing was done.",
     "press_failed": "Your studio could not do that. Open the studio to see why.",
-    "drafts": "Drafts saved from your phone in the last seven days: {count}.",
-    "drafts_none": "No draft was saved from your phone in the last seven days.",
+    "drafts": "Drafts made from what you sent, in the last seven days: {count}.",
+    "drafts_none": "No draft was made from what you sent in the last seven days.",
+    # Phase 3: everything sent lands in the collection.
+    "collected": "Saved to your collection.",
+    "bookmarked": "Saved to your collection as a bookmark. Your studio never opens other people's posts.",
+    "undone_item": "Undone: it is removed from your collection.",
+    "undo_item_kept": "Not undone: you have used it in your studio since, so it was kept.",
+    "undo_item_gone": "Nothing to undo: it is no longer in your collection.",
 }
 
 # Where a figure was read, as /today says it.
@@ -159,19 +169,21 @@ FIGURE_WORDS = (("impressions", "impressions"), ("reactions", "reactions"), ("co
 # What /start and /help answer: what the bot does, how to pair, and what it
 # never sends. Fixed, like every sentence above.
 HELP = "\n".join((
-    "I am your Inox Hydra bot. I pass what you send me to your studio on your computer.",
+    "I am your Inox Hydra bot. Everything you send me goes into the collection in your studio on your computer.",
     "",
     "Send me:",
-    "- any text: saved as a draft",
+    "- any text, or a message you forward: kept in your collection, to write from when you like",
+    "- /idea and your idea: kept in your collection as an idea",
     "- a link to one of your LinkedIn posts: Today asks you to open its analytics",
-    "- /idea and your idea: saved as a draft, tagged as an idea",
+    "- a link to someone else's post: kept as a bookmark, never opened",
+    "- Draft: and your post: saved straight as a draft",
     "- /ask and what your studio should remember when it picks what to write about",
     "- /status: whether your studio and its bridge are running",
     "- /today: your latest post's figures, replies waiting and your next scheduled post, only if you allow "
     "figures in your studio",
-    "- /drafts: how many drafts you saved from your phone in the last seven days",
+    "- /drafts: how many drafts were made from what you sent in the last seven days",
     "",
-    "Press Undo under Saved as a draft to remove that draft, while you have not changed it in your studio.",
+    "Press Undo under my answer to take it back, while it is still new in your studio.",
     "",
     "To pair a chat: in your studio, open Settings, then Local security, and press This is me beside it.",
     "",
@@ -491,22 +503,12 @@ def next_scheduled(conn) -> str:
     return f"Next scheduled post: {when.astimezone().strftime('%a %d %b, %H:%M')} (your computer's time)."
 
 
-def phone_drafts(conn, start: datetime, end: datetime) -> int:
-    """How many drafts the phone saved from `start` up to `end`: a count, read from when each was saved."""
-    count = 0
-    for row in conn.execute("SELECT created_at FROM drafts WHERE tags LIKE ? AND substr(created_at, 1, 10) >= ?",
-                            ('%"mobile-ingress"%', (start - timedelta(days=1)).date().isoformat())):
-        when = _instant(row["created_at"])
-        count += 1 if when is not None and start <= when < end else 0
-    return count
-
-
 def drafts_answer() -> str:
-    """/drafts: how many drafts the phone saved in the last seven days. A count, never a draft's words."""
+    """/drafts: how many drafts were made from what was sent in the last seven days. A count, never words."""
     now = datetime.now(timezone.utc)
     conn = get_db()
     try:
-        count = phone_drafts(conn, now - timedelta(days=7), now + timedelta(minutes=1))
+        count = collection.drafts_made(conn, now - timedelta(days=7), now + timedelta(minutes=1))
     finally:
         conn.close()
     return SENTENCES["drafts"].format(count=count) if count else SENTENCES["drafts_none"]
@@ -535,10 +537,10 @@ def weekly_summary(conn, moment: datetime) -> str:
         if when is not None and start <= when < moment:
             published.append((when, row["activity_urn"]))
     published.sort(reverse=True)
-    drafts = phone_drafts(conn, start, moment)
+    drafts = collection.drafts_made(conn, start, moment)
     lines = [f"Your week, the seven days to {moment.strftime('%a %d %b, %H:%M')} on your computer's clock:",
              f"Posts published, as your studio recorded them: {len(published)}",
-             f"Drafts saved from your phone: {drafts}",
+             f"Drafts made from what you sent: {drafts}",
              f"Replies waiting: {replies.waiting_count(conn)}",
              next_scheduled(conn)]
     if published and figures_on():
@@ -740,10 +742,35 @@ def draft_of(record: Optional[Dict[str, Any]]) -> Optional[int]:
         return None
 
 
+def _item(record: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """The collection item a message made, whether it was words (collected) or a link alone (desk_request)."""
+    if not record:
+        return {}
+    if record.get("kind") == "collected":
+        return record.get("item") or {}
+    if record.get("kind") == "desk_request":
+        return record.get("collection_item") or {}
+    return {}
+
+
+def item_of(record: Optional[Dict[str, Any]]) -> Optional[int]:
+    """The id of the item a message was collected as, which its answer's Undo removes while it is new."""
+    item = _item(record)
+    if item.get("kind") not in collection.MATERIAL or item.get("status") != "new":
+        return None
+    return item.get("id")
+
+
 def answer_for(record: Optional[Dict[str, Any]]) -> Optional[str]:
     """The sentence that confirms what became of an accepted message, from what was stored."""
     if not record:
         return None
+    if _item(record):
+        kind = _item(record).get("kind")
+        if kind == "bookmark":
+            return SENTENCES["bookmarked"]
+        extra = {"post": SENTENCES["post"], "link": SENTENCES["short"]}.get(kind)
+        return f"{SENTENCES['collected']} {extra}" if extra else SENTENCES["collected"]
     request = record.get("desk_request") if record.get("kind") != "desk_request" else record
     said = []
     if record.get("kind") != "desk_request":
@@ -937,7 +964,9 @@ def press(data: Any, chat_id: Any) -> Dict[str, Any]:
                 return {"key": "button_old", "answer": SENTENCES["button_old"], "edit": None}
             if record.get("used"):
                 return {"key": "button_used", "answer": SENTENCES["button_used"], "edit": None}
-            if letter == "u":
+            if letter == "u" and record.get("kind") == "item":
+                key = collection.undo(record.get("item"))
+            elif letter == "u":
                 key = _undo(conn, record.get("draft"))
             elif letter == "r":
                 key = _remind(conn, record.get("due") or [])
@@ -981,6 +1010,10 @@ def _undo(conn, draft_id: Any) -> str:
             (post_id, draft_id, draft["raw_content"], draft["tags"] or "")).rowcount
         if removed:
             conn.execute("DELETE FROM drafts WHERE id = ?", (draft_id,))
+            # The collection recorded the draft; taken back, it goes too.
+            collection.forget_draft(conn, post_id)
+    if removed:
+        changes.publish("collection")
     return "undone" if removed else "undo_changed"
 
 

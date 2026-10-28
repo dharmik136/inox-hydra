@@ -188,18 +188,21 @@ def forget_archive(conn) -> None:
 
 def forget_phone_and_export(conn) -> None:
     """
-    The phone's desk requests, what the Telegram bot has told (which names
-    the creator's posts, 2.11.0), what its buttons do and the reminders asked
-    for with them (which name the creator's drafts and posts), and the
-    analytics export's record of its imports (cycle 4, track 6).
+    The phone's desk requests, everything sent to the bot (its collection,
+    phase 3), what the Telegram bot has told (which names the creator's
+    posts, 2.11.0), what its buttons do and the reminders asked for with them
+    (which name the creator's drafts and posts), and the analytics export's
+    record of its imports (cycle 4, track 6).
     """
     try:
-        from . import analytics_export, desk_requests, telegram_bot
+        from . import analytics_export, collection, desk_requests, telegram_bot
     except ImportError:
         import analytics_export
+        import collection
         import desk_requests
         import telegram_bot
     desk_requests.forget(conn)
+    collection.forget(conn)
     conn.execute("DELETE FROM settings WHERE key IN (?, ?, ?)",
                  (telegram_bot.TOLD_KEY, telegram_bot.BUTTONS_KEY, telegram_bot.REMIND_KEY))
     analytics_export.forget(conn)

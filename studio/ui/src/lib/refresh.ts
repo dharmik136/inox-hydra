@@ -27,7 +27,8 @@ const EVENTS_PATH = "/api/v1/events";
  * figures; "people" is someone engaging with a post of the creator's and
  * "outbound" the creator engaging elsewhere; "desk" is a post the phone asked
  * the desk to read, "ideas" the daily section's cards, "replies" a comment the
- * creator marked answered in Replies, or unmarked. "database" is a write nothing
+ * creator marked answered in Replies, or unmarked, "collection" something sent
+ * to the bot, or an item of the collection changed. "database" is a write nothing
  * announced (the command line, a second studio, a path that does not say what
  * it wrote): every listener takes it as "anything may have changed".
  */
@@ -45,6 +46,7 @@ export type StudioChange =
   | "desk"
   | "ideas"
   | "replies"
+  | "collection"
   | "database";
 
 /** Every kind, for a screen whose one read shows whatever the bridge writes. */
@@ -62,6 +64,7 @@ export const ANY_CHANGE: readonly StudioChange[] = [
   "desk",
   "ideas",
   "replies",
+  "collection",
   "database",
 ];
 

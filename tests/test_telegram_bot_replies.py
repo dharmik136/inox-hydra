@@ -30,7 +30,7 @@ for folder in (os.path.join(REPO_ROOT, "studio", "backend"), os.path.dirname(__f
         sys.path.insert(0, folder)
 
 import telegram_bot  # noqa: E402
-from test_telegram_bot_e2e import OWNER, STRANGER, TOKEN, _drafts, _save, _until, bot  # noqa: E402,F401
+from test_telegram_bot_e2e import OWNER, STRANGER, TOKEN, _collected, _drafts, _save, _until, bot  # noqa: E402,F401
 
 SAID = telegram_bot.SENTENCES
 ME = "replies-creator"
@@ -60,10 +60,10 @@ def _own_post(bot, days=1, salt=1):
     return urn
 
 
-def test_a_saved_draft_is_confirmed_without_its_text(bot):
+def test_a_saved_message_is_confirmed_without_its_text(bot):
     _saved(bot)
     bot["fake"].push(OWNER, "Idea: pricing for a two person studio")
-    assert _until(lambda: _texts(bot) == [SAID["draft"]]), _texts(bot)
+    assert _until(lambda: _texts(bot) == [SAID["collected"]]), _texts(bot)
     assert "pricing" not in " ".join(m["text"] for m in bot["fake"].sent), "the creator's words went back out"
 
 
@@ -75,7 +75,9 @@ def test_a_post_link_a_strangers_post_and_a_short_link_each_get_their_sentence(b
     bot["fake"].push(OWNER, f"https://www.linkedin.com/feed/update/{stranger_post}/")
     bot["fake"].push(OWNER, "https://lnkd.in/p/dXyZ4bQ7")
     assert _until(lambda: len(_texts(bot)) == 3), _texts(bot)
-    assert _texts(bot) == [SAID["post"], SAID["not_yours"], SAID["short"]]
+    # Phase 3: each is listed in the collection; someone else's post as a bookmark.
+    assert _texts(bot) == [f"{SAID['collected']} {SAID['post']}", SAID["bookmarked"],
+                           f"{SAID['collected']} {SAID['short']}"]
 
 
 def test_text_with_a_post_link_says_both(bot):
@@ -111,7 +113,7 @@ def test_another_chat_is_told_the_bot_is_its_owners_once(bot):
     assert _until(lambda: bot["fake"].waiting() == [])
     assert _until(lambda: len(_texts(bot, STRANGER)) == 1)
     assert _texts(bot, STRANGER) == [SAID["other_chat"]]
-    assert _drafts() == []
+    assert _drafts() == [] and _collected() == []
 
 
 def test_a_message_with_no_text_says_nothing_was_saved(bot):
@@ -125,7 +127,7 @@ def test_the_confirmations_can_be_turned_off_and_the_message_is_still_saved(bot)
     res = bot["client"].post("/api/v1/ingress/options", json={"replies": False})
     assert res.status_code == 200 and res.json()["options"]["replies"] is False
     bot["fake"].push(OWNER, "Idea: quietly")
-    assert _until(lambda: _drafts() == ["quietly"])
+    assert _until(lambda: _collected() == ["quietly"])
     assert _until(lambda: bot["fake"].waiting() == [])
     assert _texts(bot) == []
 
@@ -157,14 +159,14 @@ def test_a_reply_lost_to_the_network_is_tried_again(bot):
     bot["fake"].plan("sendMessage", ("drop",))
     bot["fake"].push(OWNER, "Idea: twice")
     assert _until(lambda: len(_texts(bot)) == 1, timeout=8.0), "the reply was dropped after a network fault"
-    assert _drafts() == ["twice"], "the message was saved twice when its reply had to be sent again"
+    assert _collected() == ["twice"], "the message was saved twice when its reply had to be sent again"
 
 
 def test_a_chat_that_blocked_the_bot_is_said_in_plain_words(bot):
     _saved(bot)
     bot["fake"].blocked_chats.add(OWNER)
     bot["fake"].push(OWNER, "Idea: unheard")
-    assert _until(lambda: _drafts() == ["unheard"])
+    assert _until(lambda: _collected() == ["unheard"])
     assert _until(lambda: bool(bot["client"].get("/api/v1/ingress/settings").json().get("last_send_error")))
     said = bot["client"].get("/api/v1/ingress/settings").json()["last_send_error"]
     assert "blocked" in said and TOKEN not in said

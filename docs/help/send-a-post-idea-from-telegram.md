@@ -1,12 +1,12 @@
 # Send a post idea or a post link from your phone with Telegram
 
-Make a Telegram bot of your own, set it up under Local security, and the messages you send it arrive in the studio: text as a draft, and a LinkedIn post link as the page Today asks you to open at this computer.
+Make a Telegram bot of your own, set it up under Local security, and everything you send it lands in your collection in the studio, under **From your record**: notes, ideas, messages you forward and links. A link to one of your own LinkedIn posts is also the page Today asks you to open at this computer.
 
 ## What it is, and what it is not
 
 - It is optional and off until you set it up. The studio asks Telegram for your bot's messages while it is running, and opens no port. Each request is counted under the `ingress` row of **What has left this machine** under **Local security** in **Settings**.
 - The phone sends a link, never a figure. Nothing you send is written as a reading: a post link becomes a request to read that post here, where the extension reads the real page.
-- The bot answers each message with one short fixed sentence, so you can tell it arrived. See [What the bot says back](#what-the-bot-says-back). Some of its messages carry buttons, such as **Undo** under a saved draft. See [Buttons you can press](#buttons-you-can-press).
+- The bot answers each message with one short fixed sentence, so you can tell it arrived. See [What the bot says back](#what-the-bot-says-back). Some of its messages carry buttons, such as **Undo** under what you sent. See [Buttons you can press](#buttons-you-can-press).
 - Your message text passes through Telegram's servers. See [What leaves this machine, and when](what-leaves-this-machine.md).
 - The bot belongs to the creator profile you set it up in, and its messages are saved there whichever profile is open. One bot is asked at a time: the one saved most recently, or when the studio starts, the first profile that has one. A profile whose bot is not the one being asked says so in its panel.
 
@@ -33,29 +33,41 @@ For maintainers, the older way still works: `INOX_DEV_MODE=1`, `TELEGRAM_BOT_TOK
 
 ## Send an idea, or a post
 
-Send the bot a text message. You can start it with a prefix, in any letter case. Every saved draft is tagged `mobile-ingress`.
+Send the bot a message. You can start it with a prefix, in any letter case. Nothing is written from what you send until you ask: it waits in your collection.
 
-| You send | What the studio saves |
+| You send | Where it goes |
 | --- | --- |
-| Plain text | The text, as a draft |
-| `Draft: your text` | The text without the prefix |
-| `Idea: your text` | The text without the prefix, also tagged `idea` |
-| `Schedule <when>: your text` | The text without the prefix, also tagged `scheduled` |
-| A link to one of your own posts, from the LinkedIn app's share menu or copied from the feed | A request to read that post's analytics at this computer. Nothing is saved as a draft |
-| `Read: <post link>` | The same request; any text beside the link is saved as a draft tagged `read` |
-| Text and a post link together | The request, and the text without the link as a draft |
-| A link to someone else's post, or to a post the studio does not hold | Nothing is read. The link is listed in the panel as not one of your posts |
-| A short `lnkd.in` link, which the LinkedIn app's **Copy link** gives, alone or with text around it | A post sent from your phone: Today shows "You sent a post from your phone". Nothing in that message is saved as a draft, so send an idea in a message of its own. See below |
-| A link to a profile, or any other address | Kept in the text as an ordinary draft |
-| A voice note | Only the placeholder "[Voice Memo Received: Local transcription pending]" |
-| A photo, file, sticker or other message with no text | Nothing. It is skipped, and so is any caption |
+| Plain text | Your collection, as a note |
+| `Idea: your text`, or `/idea your text` | Your collection, as an idea, without the prefix |
+| A message you forward from another chat | Your collection, as a forwarded note: its text, and never who or what it was forwarded from |
+| `Draft: your text` | Straight to a draft in the Composer, as before, and listed in your collection as used |
+| `Schedule <when>: your text` | Straight to a draft, as `Draft:` is (see below), and listed as used |
+| A link to one of your own posts, from the LinkedIn app's share menu or copied from the feed | A request on Today to read that post's analytics at this computer, listed in your collection; any words with it are kept there as your note |
+| `Read: <post link>` | The same |
+| A link to someone else's post, or to a post the studio does not hold | A bookmark in your collection: the post's address rebuilt from its number (never the name and words the address you shared carries), with your own words. The studio never opens it |
+| A short `lnkd.in` link, which the LinkedIn app's **Copy link** gives, alone or with text around it | A post sent from your phone: Today shows "You sent a post from your phone", and your collection lists it. Nothing else in that message is kept, so send an idea in a message of its own. See below |
+| A link to a profile, or any other address | Kept in the words of your note |
+| A photo, a voice note, a file, a sticker or other message with no text | Nothing, yet. It is skipped, and so is any caption |
 
-Any `#hashtag` in the text also becomes a tag, up to 30. An em dash in your message is saved as ` -- `.
+Any `#hashtag` in the text is one of the item's tags, up to 30, and its topic is the first of your own topics from Setup ("What you write about") that its words name, or else its first hashtag. An em dash in your message is saved as ` -- `.
 
 > [!WARNING]
-> `Schedule <when>:` does not schedule anything. The time is read but not stored, and the post is saved as an ordinary draft. Voice notes are not transcribed.
+> `Schedule <when>:` does not schedule anything. The time is read but not stored, and the post is saved as an ordinary draft. Voice notes are not kept, and not transcribed.
 
 The `Schedule` prefix is recognised only in a one-line message whose `<when>` uses just letters, digits, spaces, colons and hyphens, followed by `:` or `|`. Otherwise the whole message, prefix included, is saved as plain text. If your text contains another colon, everything before the last colon is taken as `<when>` and dropped.
+
+## Your collection
+
+Everything you send your bot lands in **From your record**, on its **Your collection** level, the moment it arrives: the page shows it without a reload. Each item says what it is (Note, Idea, Forwarded, Bookmark, Your post or Link), when it came, its words, its tags and topic, and what it became.
+
+- **New**, **Not now**, **Used** and **All** show the items of each kind of status, each with how many; **Every kind** and **Find a word** narrow the list.
+- **Use as a draft** makes a Composer draft of the item's words as they are, and opens it. The item is then used, and says "Became: A draft in the Composer", with **Open it**.
+- **Not now** sets an item aside, and **Back to new** brings it back.
+- **Remove** takes an item out for good, once you confirm. A draft made from it stays a draft.
+
+A link to one of your posts, and a short link, are also requests on Today, and the item says what became of the request. A link to someone else's post is a bookmark, which the studio never opens; your own browser does, if you click it. What you sent before this version is listed too, as used: each message the bot saved as a draft, and each link it asked Today to open.
+
+Your collection is counted in **Storage and privacy** as "Your collection: what you sent your bot", is in the data export and in backups like everything else, and is deleted when you delete everything the studio holds about you. A message is kept once, even if Telegram sends it again after a restart.
 
 ## Commands
 
@@ -64,11 +76,11 @@ Send a command as a message on its own, as Telegram's menu does. Letter case doe
 | You send | What happens |
 | --- | --- |
 | `/start` or `/help` | The bot says what it does, what **Undo** does, how to pair a chat and what it never sends |
-| `/idea your idea` | Your idea is saved as a draft tagged `idea`, as `Idea: your idea` is. A link inside it stays part of the idea |
-| `/ask what to remember` | It is remembered as an ask in **From your record**, with the source Telegram, and listed under **What the studio knows** there, where you can change or remove it. It takes effect on tomorrow's cards. Nothing is saved as a draft |
+| `/idea your idea` | Your idea is kept in your collection as an idea, as `Idea: your idea` is. A link inside it stays part of the idea |
+| `/ask what to remember` | It is remembered as an ask in **From your record**, with the source Telegram, and listed under **What the studio knows** there, where you can change or remove it. It takes effect on tomorrow's cards. It is not kept in your collection |
 | `/status` | Whether your studio is running, and whether the bridge in your browser is connected. No figures |
 | `/today` | Your latest post's figures, how many replies are waiting and when your next post is scheduled, only if you turned on **The bot may answer with your figures**. Otherwise it says your figures stay in the studio |
-| `/drafts` | How many drafts you saved from your phone in the last seven days: "Drafts saved from your phone in the last seven days: 5." A count, never their words |
+| `/drafts` | How many drafts were made from what you sent in the last seven days: "Drafts made from what you sent, in the last seven days: 5." A `Draft:` message, or an item you used as a draft. A count, never their words |
 | Any other command | "I do not know that command. Send /help to see what I do." |
 
 `/start`, `/help`, `/status`, `/today` and `/drafts` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
@@ -101,7 +113,7 @@ Tick **Send me a weekly summary** and pick a day and a whole hour beside **On** 
 | --- | --- |
 | Your week, the seven days to Mon 02 Nov, 09:00 on your computer's clock: | The seven days it covers, ending at the moment you picked |
 | Posts published, as your studio recorded them: 3 | Your posts the studio holds as published in those days. A post the studio has not read yet is not counted |
-| Drafts saved from your phone: 5 | Drafts your bot saved in those days, even one you changed or deleted in the studio since. One you took back with **Undo** is not counted |
+| Drafts made from what you sent: 5 | Drafts made in those days from what you sent your bot: a `Draft:` message, or an item you used as a draft, even one you changed or deleted in the studio since. One you took back with **Undo** is not counted |
 | Replies waiting: 2 | Comments on your posts waiting for your reply, as Today counts them. A count, never who or what |
 | Next scheduled post: Thu 05 Nov, 09:00 (your computer's time). | Or "No post is scheduled." |
 
@@ -125,7 +137,8 @@ Two kinds of message carry buttons, which you press in Telegram:
 
 | Under | Button | What it does |
 | --- | --- | --- |
-| "Saved as a draft in your studio." | **Undo** | Removes that draft from your studio, while it is untouched there: still a draft, with the words, tags and media the bot saved, never queued or published. A draft you changed is kept |
+| "Saved to your collection." | **Undo** | Takes it out of your collection, while it is still new there: never used as a draft and never set aside |
+| "Saved as a draft in your studio." | **Undo** | Removes that draft from your studio, and its line in your collection, while it is untouched there: still a draft, with the words, tags and media the bot saved, never queued or published. A draft you changed is kept |
 | "A post in your queue is due now." | **Remind me in an hour** | The bot tells you again in an hour, if the post is still due then, with the same two buttons |
 | The same | **Done** | Clears the reminder, and that is all: nothing is marked as posted, and nothing is done on LinkedIn. The post stays due in your studio until you post it |
 
@@ -133,6 +146,9 @@ After a press your phone shows a short notice, the message says under its first 
 
 | What happened | The bot says |
 | --- | --- |
+| **Undo** took it out of your collection | Undone: it is removed from your collection. |
+| **Undo** found you had used it, or set it aside | Not undone: you have used it in your studio since, so it was kept. |
+| **Undo** found it already removed | Nothing to undo: it is no longer in your collection. |
 | **Undo** removed the draft | Undone: the draft is removed from your studio. |
 | **Undo** found the draft changed in your studio | Not undone: the draft has changed in your studio since, so it was kept. |
 | **Undo** found the draft already deleted in your studio | Nothing to undo: the draft is no longer in your studio. |
@@ -151,10 +167,11 @@ Each message gets one short sentence back, the same words every time. None carri
 
 | What became of your message | The bot says |
 | --- | --- |
-| Saved as a draft | Saved as a draft in your studio. (With **Undo** under it.) |
-| A link to one of your posts | Today will ask you to open this post's analytics at your computer. |
-| A short `lnkd.in` link | Today will ask you to open this link at your computer. |
-| A link to a post that is not yours | That is not one of your posts, so your studio will not read it. |
+| Kept in your collection | Saved to your collection. (With **Undo** under it.) |
+| A link to one of your posts | Saved to your collection. Today will ask you to open this post's analytics at your computer. |
+| A short `lnkd.in` link | Saved to your collection. Today will ask you to open this link at your computer. |
+| A link to a post that is not yours | Saved to your collection as a bookmark. Your studio never opens other people's posts. |
+| A `Draft:` message | Saved as a draft in your studio. (With **Undo** under it.) |
 | A photo, a sticker or anything with no text | That message had no text, so nothing was saved. |
 | A message your studio could not save, after three tries | Your studio could not save that message. Open the studio to see why. |
 | You pressed **This is me**, or saved a chat id | Paired. Messages from this chat now arrive in your studio. Send /help to see what I do. |
@@ -187,10 +204,7 @@ In the panel, a short link is listed by its address until its post is known.
 
 ## What happens to text
 
-Each accepted message is saved in the local database as a post with status draft. The open studio page does not update by itself. To find it:
-
-- Press Ctrl+K and look under **Posts**. See [Search everything with Ctrl+K](use-the-command-palette.md).
-- Or reload the page. The Composer opens the draft you created most recently, which may or may not be this one. See [Start a new post, or find one you wrote earlier](start-a-new-post-or-find-an-earlier-one.md).
+Each message lands in your collection, not in the Composer: open **From your record**, then **Your collection**, where it appears as soon as it arrives. Nothing is written from it until you press **Use as a draft**. A message starting `Draft:` is saved as a draft as before: open **Drafts** in the Composer, or press Ctrl+K and look under **Posts**. See [Search everything with Ctrl+K](use-the-command-palette.md) and [Start a new post, or find one you wrote earlier](start-a-new-post-or-find-an-earlier-one.md).
 
 Each check asks Telegram to wait up to 30 seconds for a new message, so a message sent during a check arrives straight away. Between checks the studio pauses about 2 seconds, 120 seconds between 23:00 and 06:00 local time, and up to 60 seconds after errors. When Telegram asks it to slow down, it waits as long as Telegram says. This night-time pause is fixed, and separate from [quiet hours](#quiet-hours), which hold only notifications.
 
@@ -227,4 +241,4 @@ Click **Remove the bot** in the panel. The token and chat id are removed from th
 | Today still says "You sent a post from your phone" after you opened it | The post's page did not keep the link's ending, so the extension could not say which post it was. Press **Done** once you have seen it |
 | Arrivals are slow | Night-time polling, error backoff, or a Telegram rate limit, which the studio waits out |
 | A message sent while the studio was off is missing | It is fetched at next start only if Telegram still holds it; how long it does is Telegram's policy |
-| The same idea appears twice after a restart | It arrived just before the studio stopped, before the studio had confirmed it to Telegram. Delete the extra draft |
+| A message you sent is not in your collection | Check you are in the profile the bot was set up in, which the panel names when another profile is open. A `Draft:` message is in the Composer's **Drafts**, and listed in your collection under **Used** |

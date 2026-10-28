@@ -4,7 +4,7 @@ Open **From your record** for five cards a day, drawn from your own posts, your 
 
 ## Where it is
 
-**From your record** is in the rail's **Now** group, after **Today** and **Replies**, and once today's cards are built, **Today** lists them, one line each, with a link here. The buttons at the top right switch between its four views: **Today's cards**, **Kept**, **What the studio knows** and **Did these help?**
+**From your record** is in the rail's **Now** group, after **Today** and **Replies**, and once today's cards are built, **Today** lists them, one line each, with a link here. The buttons at the top right switch between its five views: **Today's cards**, **Your collection**, **Kept**, **What the studio knows** and **Did these help?**
 
 It needs no AI provider and, without one, sends nothing anywhere. Import your LinkedIn archive in **Setup** and it has cards from the first day. See [Set up the studio from your LinkedIn](set-up-the-studio-from-your-linkedin.md).
 
@@ -61,6 +61,10 @@ An ask is kept only when you do one of these on purpose:
 - A search from your archive's `SearchQueries.csv`, only if you ticked that file in **Setup** and only when it shares one of your recurring topic words. These are never sent to your model.
 
 An ask is matched to your posts from the next day's cards.
+
+## Your collection
+
+Everything you send your Telegram bot, newest first, as it arrives: notes, ideas, messages you forward, and links, each with what it became. **Use as a draft** opens an item's words in the Composer as they are; **Not now** sets it aside; **Remove** takes it out for good. See [Your collection](send-a-post-idea-from-telegram.md#your-collection).
 
 ## Kept
 

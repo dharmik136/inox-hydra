@@ -432,8 +432,15 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # unreachable stays 48. Then Send a test message
 # (/api/v1/ingress/test-message), which the panel presses: 228, 180, 48.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 228
-REACHED_BY_INTERFACE = 180
+# ---------------------------------------------------------------------------
+# Phase 3 of the Telegram bot, item 1: the collection box. Four paths, each
+# read or pressed by From your record's Your collection level:
+# /api/v1/collection, /api/v1/collection/{item_id}/status,
+# /api/v1/collection/{item_id}/draft and /api/v1/collection/{item_id}.
+# Total 228 -> 232, reached 180 -> 184, unreachable stays 48.
+# ---------------------------------------------------------------------------
+TOTAL_API_PATHS = 232
+REACHED_BY_INTERFACE = 184
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

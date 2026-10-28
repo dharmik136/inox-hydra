@@ -84,8 +84,9 @@ def _summaries(bot):
 def _week_of_records():
     """
     Two posts published this week (one read, one not), one the week before;
-    two drafts from the phone this week, one from the week before and one
-    written in the studio; two comments waiting from someone; a post queued.
+    two drafts made this week from what was sent (since phase 3 the
+    collection records what each item became), one the week before, and an
+    item made into nothing; two comments waiting from someone; a post queued.
     """
     latest = _record(latest_days=2, read_hours_ago=3, waiting=2, scheduled_in_hours=26)
     unread = _urn(3, 3)
@@ -93,11 +94,11 @@ def _week_of_records():
     with conn:
         conn.execute("INSERT INTO own_posts (activity_urn, text, published_at, first_seen_at, last_seen_at) "
                      "VALUES (?, 'More of my own words', ?, ?, ?)", (unread, _stamp(72), _stamp(72), _stamp(1)))
-        for days, tags in ((1, '["mobile-ingress"]'), (2, '["idea", "mobile-ingress"]'),
-                           (10, '["mobile-ingress"]'), (1, '["studio"]')):
-            moment = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-            conn.execute("INSERT INTO drafts (title, raw_content, tags, status, created_at, updated_at) "
-                         "VALUES ('t', 'A draft of mine', ?, 'DRAFT', ?, ?)", (tags, moment, moment))
+        for days, post_id in ((1, "post-a"), (2, "post-b"), (10, "post-c"), (1, None)):
+            moment = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            conn.execute("INSERT INTO collection_items (received_at, kind, text, status, post_id, source, used_at) "
+                         "VALUES (?, 'idea', 'A draft of mine', ?, ?, 'telegram', ?)",
+                         (moment, "used" if post_id else "new", post_id, moment if post_id else None))
     conn.close()
     return latest, unread
 
@@ -127,7 +128,7 @@ def test_the_summary_counts_the_week_and_says_the_next_post(notifying, clock):
     lines = summary.split("\n")
     assert lines[0] == f"{HEAD}{moment.strftime('%a %d %b, %H:%M')} on your computer's clock:"
     assert "Posts published, as your studio recorded them: 2" in lines
-    assert "Drafts saved from your phone: 2" in lines
+    assert "Drafts made from what you sent: 2" in lines
     assert "Replies waiting: 2" in lines
     assert any(line.startswith("Next scheduled post: ") and line.endswith("(your computer's time).") for line in lines)
     assert "impressions" not in summary, "figures went with the figures switch off"
@@ -241,5 +242,5 @@ def test_the_help_the_policy_and_the_panel_say_what_the_summary_sends():
                  encoding="utf-8").read()
     for text in (article, policy, panel):
         assert "Send me a weekly summary" in text
-    assert HEAD.strip() in article and "Drafts saved from your phone" in article
+    assert HEAD.strip() in article and "Drafts made from what you sent" in article
     assert "weekly summary" in policy and "replies are waiting (a count)" in policy

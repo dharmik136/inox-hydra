@@ -80,6 +80,15 @@ def _drafts():
         conn.close()
 
 
+def _collected():
+    """What the paired chat's messages became: since phase 3, items in the collection."""
+    conn = get_db()
+    try:
+        return [r[0] for r in conn.execute("SELECT text FROM collection_items ORDER BY id")]
+    finally:
+        conn.close()
+
+
 def _until(predicate, timeout=8.0):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -92,7 +101,7 @@ def _until(predicate, timeout=8.0):
 def test_a_message_from_the_paired_chat_is_saved_and_then_confirmed(bot):
     _save(bot)
     bot["fake"].push(OWNER, "Idea: the first post idea from my phone")
-    assert _until(lambda: _drafts() == ["the first post idea from my phone"]), "the message never became a draft"
+    assert _until(lambda: _collected() == ["the first post idea from my phone"]), "the message was never collected"
     # Confirmed by the next poll's offset, after it was handled: Telegram then never sends it again.
     assert _until(lambda: bot["fake"].waiting() == []), "the handled update was never confirmed"
 
@@ -101,7 +110,7 @@ def test_a_strangers_message_is_refused_end_to_end(bot):
     _save(bot)
     bot["fake"].push(STRANGER, "Idea: let me in")
     assert _until(lambda: bot["fake"].waiting() == [])
-    assert _drafts() == []
+    assert _drafts() == [] and _collected() == []
     chats = bot["client"].get("/api/v1/ingress/settings").json()["refused_chats"]
     assert [c["chat_id"] for c in chats] == [STRANGER]
 
@@ -114,7 +123,7 @@ def test_an_update_is_never_confirmed_before_it_is_handled(bot, monkeypatch):
         attempts.append(True)
         raise RuntimeError("the disk is full")
 
-    monkeypatch.setattr(ingress, "create_draft", failing)
+    monkeypatch.setattr(ingress.collection, "add", failing)
     _save(bot)
     update = bot["fake"].push(OWNER, "Idea: will not fit")
     assert _until(lambda: len(attempts) >= 1)
@@ -134,7 +143,7 @@ def test_a_429_is_waited_out_for_as_long_as_telegram_asked(bot):
     first, second = bot["fake"].calls_of("getUpdates")[:2]
     assert second["at"] - first["at"] >= 0.9, "the worker asked again before Telegram's retry_after had passed"
     bot["fake"].push(OWNER, "Idea: after the wait")
-    assert _until(lambda: _drafts() == ["after the wait"])
+    assert _until(lambda: _collected() == ["after the wait"])
 
 
 def test_a_dropped_connection_is_retried_with_backoff_and_recovers(bot):
@@ -145,7 +154,7 @@ def test_a_dropped_connection_is_retried_with_backoff_and_recovers(bot):
     gaps = [b["at"] - a["at"] for a, b in zip(calls, calls[1:3])]
     assert gaps[1] > gaps[0], f"the wait after a second failure did not grow: {gaps}"
     bot["fake"].push(OWNER, "Idea: back online")
-    assert _until(lambda: _drafts() == ["back online"]), "the worker did not recover after the network came back"
+    assert _until(lambda: _collected() == ["back online"]), "the worker did not recover after the network came back"
 
 
 def test_the_token_never_reaches_the_egress_ledger(bot):
@@ -157,7 +166,7 @@ def test_the_token_never_reaches_the_egress_ledger(bot):
     import egress
     _save(bot)
     bot["fake"].push(OWNER, "Idea: counted, not shown")
-    assert _until(lambda: _drafts() == ["counted, not shown"])
+    assert _until(lambda: _collected() == ["counted, not shown"])
     assert _until(lambda: len(bot["fake"].calls_of("sendMessage")) >= 1)
     ledger = repr(egress.describe())
     assert TOKEN not in ledger and TOKEN.split(":")[1] not in ledger, "the bot's token is in the egress ledger"

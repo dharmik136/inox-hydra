@@ -252,14 +252,15 @@ def test_a_bots_messages_are_saved_in_its_own_profile_whichever_is_open(tmp_path
     assert record is not None
 
     def drafts(profile_id):
+        # Since phase 3 a message lands in the collection of the bot's profile.
         with paths.using_profile(profile_id):
             conn = get_db()
             try:
-                return conn.execute("SELECT COUNT(*) FROM drafts WHERE tags LIKE '%mobile-ingress%'").fetchone()[0]
+                return conn.execute("SELECT COUNT(*) FROM collection_items").fetchone()[0]
             finally:
                 conn.close()
 
-    assert drafts(paths.DEFAULT_PROFILE_ID) == 1, "the draft did not land in the bot's own profile"
+    assert drafts(paths.DEFAULT_PROFILE_ID) == 1, "the message did not land in the bot's own profile"
     assert drafts("client-b") == 0, "the phone's draft was filed in another creator's profile"
 
 

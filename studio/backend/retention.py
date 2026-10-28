@@ -265,6 +265,8 @@ CATEGORIES = (
     # company's signed library sits with the hook forms under posts.
     ("record", "From your record: your asks, the daily cards, their marks and your notes",
      ("asks", "daily_view", "daily_run", "card_marks", "record_notes")),
+    # Phase 3 of the Telegram bot: everything sent to the bot.
+    ("collection", "Your collection: what you sent your bot", ("collection_items",)),
     ("archive_records", "What your LinkedIn archive says you saved, followed, voted on, reposted and searched for",
      ("archive_records",)),
     ("analytics", "Daily analytics", ("analytics_daily", "audience_demographics", "analytics_windows",

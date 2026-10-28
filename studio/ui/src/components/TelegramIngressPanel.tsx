@@ -172,7 +172,7 @@ export function TelegramIngressPanel() {
               <p className="studio-meta text-ink-muted">WHAT THE BOT SAYS BACK</p>
               <OptionRow
                 label="The bot confirms each message"
-                detail="A short fixed sentence back, such as Saved as a draft in your studio, or Today will ask you to open this post's analytics. Never your words, never your figures. Under a saved draft, Undo removes it while you have not changed it here."
+                detail="A short fixed sentence back, such as Saved to your collection, or Today will ask you to open this post's analytics. Never your words, never your figures. Under it, Undo takes it back while it is still new here."
                 checked={state.options.replies}
                 disabled={busy}
                 onChange={(on) => void setOption({ replies: on }, on ? "The bot confirms each message." : "The bot no longer confirms messages.")}

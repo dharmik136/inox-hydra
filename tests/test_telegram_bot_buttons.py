@@ -87,7 +87,12 @@ def _linkedin_counts():
 
 
 def _idea(bot, words):
-    bot["fake"].push(OWNER, "Idea: " + words)
+    """
+    A message saved straight as a draft, whose answer carries the draft's
+    Undo. Since phase 3 that is "Draft:"; an idea lands in the collection,
+    with an Undo of its own (tests/test_collection_box.py).
+    """
+    bot["fake"].push(OWNER, "Draft: " + words)
     assert _until(lambda: words in _drafts()), _drafts()
     assert _until(lambda: SAID["draft"] in _texts(bot)), _texts(bot)
     return _newest(bot, SAID["draft"])
@@ -166,7 +171,7 @@ def test_an_old_or_unknown_button_says_so_in_plain_words(bot, monkeypatch):
     _saved(bot)
     monkeypatch.setattr(telegram_bot, "BUTTONS_KEPT", 1)
     first = _idea(bot, "the older one")
-    bot["fake"].push(OWNER, "Idea: the newer one")
+    bot["fake"].push(OWNER, "Draft: the newer one")
     assert _until(lambda: _texts(bot).count(SAID["draft"]) == 2)
     # The older message's button is no longer kept: it is old.
     bot["fake"].press_button("Undo", OWNER, message_id=first["message_id"])

@@ -122,8 +122,10 @@ function briefMayChange(change: StudioChangeNote, brief: TodayBrief | null): boo
     case "outbound":
     case "account":
     case "ideas":
+    case "collection":
       // The brief shows neither the creator's engagement elsewhere nor the
-      // daily totals, which have their own panel, nor the daily section.
+      // daily totals, which have their own panel, nor the daily section and
+      // its collection (a link that asks Today to open a post says "desk").
       return false;
     case "replies":
       // A comment marked answered in Replies leaves the list and its count.

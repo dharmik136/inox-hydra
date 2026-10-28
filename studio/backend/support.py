@@ -114,7 +114,9 @@ EXPORTABLE_TABLES = ("drafts", "posts", "leads", "lead_interactions",
                      "asks", "daily_view", "daily_run", "card_marks", "record_notes", "archive_records",
                      # Phase 2: account and own content readings, graph points,
                      # and the creator's own reposts.
-                     "insight_readings", "insight_daily_points", "own_reposts")
+                     "insight_readings", "insight_daily_points", "own_reposts",
+                     # Phase 3 of the Telegram bot: everything sent to the bot.
+                     "collection_items")
 
 EXPORT_FORMATS = ("json", "csv", "obsidian")
 

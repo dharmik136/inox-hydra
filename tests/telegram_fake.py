@@ -115,7 +115,8 @@ class FakeTelegram:
         with self._cond:
             update_id = self._next_update
             self._next_update += 1
-            body = {"message_id": update_id, "chat": {"id": int(chat_id), "type": "private"}, **message}
+            body = {"message_id": update_id, "date": int(time.time()), "chat": {"id": int(chat_id), "type": "private"},
+                    **message}
             if text is not None:
                 body["text"] = text
             self._updates.append({"update_id": update_id, "message": body})

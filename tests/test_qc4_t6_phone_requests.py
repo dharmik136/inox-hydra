@@ -18,6 +18,7 @@ Strict Invariants:
 """
 
 import io
+import itertools
 import os
 import sys
 from datetime import datetime, timedelta, timezone
@@ -38,8 +39,10 @@ client = TestClient(app_module.app)
 ME = "phone-probe-creator"
 TOKEN = "123456789:AAFnotarealkeyZZZZZZZZZZZZZZZZZZZZZZZ"
 OWNER = "555000111"
+# collection_items since phase 3: a message is kept once by its update id,
+# which these tests reuse from one test to the next.
 TABLES = ("creator_identity", "own_posts", "post_metric_observations", "self_import_requests",
-          "bridge_heartbeats", "captures", "desk_requests")
+          "bridge_heartbeats", "captures", "desk_requests", "collection_items")
 
 
 def urn_days_ago(days, salt=0):
@@ -98,8 +101,13 @@ def _daemon():
     return TelegramIngressDaemon(bot_token=TOKEN, authorized_chat_id=OWNER)
 
 
+_UPDATES = itertools.count(7)
+
+
 def _message(text, chat_id=OWNER):
-    return {"update_id": 7, "message": {"chat": {"id": chat_id}, "text": text}}
+    # Each message its own update id, as Telegram numbers them: since phase 3 a
+    # message is kept once by its update id, so two messages never share one.
+    return {"update_id": next(_UPDATES), "message": {"chat": {"id": chat_id}, "text": text}}
 
 
 def _requests():

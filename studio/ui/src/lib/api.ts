@@ -3737,6 +3737,60 @@ export async function removeRecordAsk(id: number): Promise<void> {
 
 export type RecordSetupField = "topics" | "audience" | "avoid";
 
+// -------------------------------------------------------------
+// Your collection: what the creator sent their Telegram bot
+// -------------------------------------------------------------
+
+export type CollectionKind = "note" | "idea" | "forward" | "post" | "link" | "bookmark" | "photo" | "voice";
+export type CollectionStatus = "new" | "used" | "not_now";
+
+/** One thing sent to the bot: its words, what it is, and what it became. */
+export interface CollectionItem {
+  id: number;
+  received_at: string;
+  kind: CollectionKind;
+  /** The kind as the box says it: Note, Idea, Forwarded, Your post, Link, Bookmark. */
+  kind_said: string;
+  /** The creator's own words; a forward's text, never its origin. */
+  text: string;
+  /** A post's address rebuilt from its id, or a short link; never another person's slug. */
+  link: string | null;
+  tags: string[];
+  topic: string | null;
+  status: CollectionStatus;
+  source: "telegram" | "studio";
+  /** A draft, and where it is now; or the request on Today, and its state; null while it is material. */
+  became: { kind: "draft" | "request"; said: string; post_id?: string } | null;
+}
+
+export interface CollectionListing {
+  items: CollectionItem[];
+  counts: Record<CollectionStatus | "all", number>;
+}
+
+export async function fetchCollection(
+  options: { status?: CollectionStatus | "all"; kind?: CollectionKind | ""; q?: string } = {},
+): Promise<CollectionListing> {
+  const params = new URLSearchParams();
+  params.set("status", options.status ?? "new");
+  if (options.kind) params.set("kind", options.kind);
+  if (options.q?.trim()) params.set("q", options.q.trim());
+  return call<CollectionListing>(`/api/v1/collection?${params.toString()}`);
+}
+
+export async function setCollectionStatus(id: number, status: "new" | "not_now"): Promise<void> {
+  await call(`/api/v1/collection/${id}/status`, { method: "POST", body: JSON.stringify({ status }) });
+}
+
+/** Use as a draft: the item's words, as they are, as a Composer draft. */
+export async function draftFromCollection(id: number): Promise<{ id: string; content: string }> {
+  return call<{ id: string; content: string }>(`/api/v1/collection/${id}/draft`, { method: "POST" });
+}
+
+export async function removeCollectionItem(id: number): Promise<void> {
+  await call(`/api/v1/collection/${id}`, { method: "DELETE" });
+}
+
 export async function fetchRecordSetup(): Promise<Record<RecordSetupField, string | null>> {
   const data = await call<{ fields: Record<RecordSetupField, string | null> }>("/api/v1/record/setup");
   return data.fields;

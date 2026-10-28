@@ -125,9 +125,10 @@ def _held():
 
 
 def _drafts():
+    """What the paired chat's messages were saved as: since phase 3, items in the collection, not drafts."""
     conn = get_db()
     try:
-        return [r[0] for r in conn.execute("SELECT raw_content FROM drafts WHERE tags LIKE '%mobile-ingress%'")]
+        return [r[0] for r in conn.execute("SELECT text FROM collection_items ORDER BY id")]
     finally:
         conn.close()
 

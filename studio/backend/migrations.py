@@ -2116,6 +2116,116 @@ def _migrate_desk_request_short_links(cursor: sqlite3.Cursor) -> None:
         cursor.execute("ALTER TABLE desk_requests ADD COLUMN link TEXT")
 
 
+def _migrate_collection_box(cursor: sqlite3.Cursor) -> None:
+    """
+    Migration 38 (phase 3 of the Telegram bot):
+    Everything sent to the bot from the phone lands in one collection, with
+    what each item became.
+
+    collection_items: one row per thing sent, whatever its kind: a note, an
+    idea, a forwarded message, a link to one of the creator's posts or a
+    short link (each also a request on Today, desk_request_id), a bookmark
+    (a link to someone else's post, kept as the address rebuilt from its
+    activity id and never its slug), a photo or a voice note. `text` is the
+    creator's own words (a forward's text is kept as their note; its origin
+    never is). `status` is new, used or not_now; `post_id` is the draft it
+    became. `origin_ref` keys a message so it is written once; `offered_at`
+    and `angles` are the morning idea's and the angles' own.
+
+    What the phone sent before this table existed is recorded in it once,
+    as used: each draft tagged mobile-ingress, and each request from
+    Telegram, so the box lists everything sent and its counts carry on. Only
+    when the table is created here: run again, it never brings back an item
+    the creator removed.
+    """
+    cursor.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'collection_items'")
+    existed = cursor.fetchone() is not None
+    # grain: one row per message sent to the bot (or line from the tray).
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS collection_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            received_at TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('note', 'idea', 'forward', 'post', 'link', 'bookmark',
+                                               'photo', 'voice')),
+            text TEXT NOT NULL DEFAULT '',
+            link TEXT,
+            activity_urn TEXT,
+            desk_request_id INTEGER,
+            tags TEXT NOT NULL DEFAULT '[]',
+            topic TEXT,
+            status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'used', 'not_now')),
+            post_id TEXT,
+            source TEXT NOT NULL DEFAULT 'telegram',
+            origin_ref TEXT,
+            updated_at TEXT,
+            used_at TEXT,
+            offered_at TEXT,
+            angles TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_collection_items_status "
+                   "ON collection_items(status, received_at DESC)")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_collection_items_origin ON collection_items(origin_ref)")
+    if existed:
+        return
+
+    def instant(text):
+        value = str(text or "").strip()
+        if not value:
+            return "1970-01-01T00:00:00+00:00"
+        if "T" not in value:
+            value = value.replace(" ", "T", 1)
+        if not (value.endswith("Z") or "+" in value[10:] or value[10:].count("-")):
+            value += "+00:00"
+        return value
+
+    parser_tags = {"mobile-ingress", "idea", "read", "scheduled"}
+    cursor.execute("SELECT id, raw_content, tags, created_at FROM drafts WHERE tags LIKE '%mobile-ingress%'")
+    for draft_id, raw, tags_json, created in cursor.fetchall():
+        try:
+            tags = [str(t) for t in json.loads(tags_json or "[]")]
+        except (TypeError, ValueError):
+            tags = []
+        if "mobile-ingress" not in tags:
+            continue
+        cursor.execute("SELECT 1 FROM posts WHERE id = ?", (f"post-draft-{draft_id}",))
+        post_id = f"post-draft-{draft_id}" if cursor.fetchone() else None
+        when = instant(created)
+        kept_tags = sorted({t.lower() for t in tags if t.lower() not in parser_tags})
+        cursor.execute(
+            "INSERT OR IGNORE INTO collection_items (received_at, kind, text, tags, status, post_id, source, "
+            "origin_ref, updated_at, used_at) VALUES (?, ?, ?, ?, 'used', ?, 'telegram', ?, ?, ?)",
+            (when, "idea" if "idea" in tags else "note", raw or "", json.dumps(kept_tags), post_id,
+             f"draft:{draft_id}", when, when))
+
+    cursor.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'desk_requests'")
+    if not cursor.fetchone():
+        return
+    cursor.execute("PRAGMA table_info(desk_requests)")
+    has_link = "link" in {row[1] for row in cursor.fetchall()}
+    cursor.execute("SELECT id, activity_urn, asked_at, state" + (", link" if has_link else ", NULL")
+                   + " FROM desk_requests WHERE source = 'telegram'")
+    for request_id, urn, asked, state, short in cursor.fetchall():
+        urn = str(urn or "")
+        if short:
+            kind, link = "link", short
+        elif urn.startswith("urn:li:"):
+            kind = "bookmark" if state == "refused" else "post"
+            link = f"https://www.linkedin.com/feed/update/{urn}/"
+        else:
+            continue
+        when = instant(asked)
+        # Sent before the collection existed: listed, never offered as new
+        # material. A refused link is set aside rather than called used.
+        status = "not_now" if kind == "bookmark" else "used"
+        cursor.execute(
+            "INSERT OR IGNORE INTO collection_items (received_at, kind, text, link, activity_urn, "
+            "desk_request_id, status, source, origin_ref, updated_at, used_at) "
+            "VALUES (?, ?, '', ?, ?, ?, ?, 'telegram', ?, ?, ?)",
+            (when, kind, link, urn or None, request_id, status, f"desk:{request_id}", when,
+             when if status == "used" else None))
+
+
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (2, "Migrate inspirations to viral_templates and drop inspirations table", _migrate_inspirations),
     (3, "Create internal_sheet_issues table for visual screen concept identification", _migrate_internal_sheet),
@@ -2167,6 +2277,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
      _migrate_content_page_figures),
     (37, "A short link from the phone is a desk request that waits for the post it opens",
      _migrate_desk_request_short_links),
+    (38, "Everything sent to the bot from the phone lands in one collection, with what each item became",
+     _migrate_collection_box),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

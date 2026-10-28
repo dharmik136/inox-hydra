@@ -30,7 +30,7 @@ for folder in (os.path.join(REPO_ROOT, "studio", "backend"), os.path.dirname(__f
 
 import ingress  # noqa: E402
 import telegram_bot  # noqa: E402
-from test_telegram_bot_e2e import OWNER, STRANGER, TOKEN, _drafts, _save, _until, bot  # noqa: E402,F401
+from test_telegram_bot_e2e import OWNER, STRANGER, TOKEN, _collected, _save, _until, bot  # noqa: E402,F401
 from test_telegram_bot_replies import _saved  # noqa: E402
 
 SAID = telegram_bot.SENTENCES
@@ -98,12 +98,12 @@ def test_no_message_words_and_no_token_reach_the_logs(bot, caplog, monkeypatch):
     _saved(bot)
     bot["fake"].push(OWNER, "Idea: a private thought about Acme pricing")
     bot["fake"].push(STRANGER, "a stranger's private words")
-    assert _until(lambda: _drafts() == ["a private thought about Acme pricing"])
+    assert _until(lambda: _collected() == ["a private thought about Acme pricing"])
 
     def failing(*args, **kwargs):
         raise ValueError("could not store: a secret plan for Zenith")
 
-    monkeypatch.setattr(ingress, "create_draft", failing)
+    monkeypatch.setattr(ingress.collection, "add", failing)
     bot["fake"].push(OWNER, "Idea: a secret plan for Zenith")
     assert _until(lambda: bot["fake"].waiting() == [], timeout=10.0)
     for private in ("Acme", "stranger's private", "Zenith", TOKEN, TOKEN.split(":")[1]):

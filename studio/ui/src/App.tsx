@@ -736,13 +736,14 @@ export default function App() {
   }, [draftId, draft, mayDiscard, adopt]);
 
   /**
-   * From your record's "Draft from this": the server has made a draft that
-   * records the card it came from; open it in the Composer. Unsaved text in
-   * the Composer is asked about first, as opening any other draft is.
+   * From your record's "Draft from this", and Your collection's "Use as a
+   * draft": the server has made a draft that records the card or the item it
+   * came from; open it in the Composer. Unsaved text in the Composer is asked
+   * about first, as opening any other draft is.
    */
   const onDraftFromCard = useCallback(
     (made: { id: string; content: string }) => {
-      if (!mayDiscard("Open the draft made from this card")) return;
+      if (!mayDiscard("Open the new draft")) return;
       adopt({ id: made.id, content: made.content, status: "draft" });
       setDraftsKey((key) => key + 1);
       navigate("composer", true);

@@ -32,7 +32,7 @@ for folder in (os.path.join(REPO_ROOT, "studio", "backend"), os.path.dirname(__f
         sys.path.insert(0, folder)
 
 import telegram_bot  # noqa: E402
-from test_telegram_bot_e2e import OWNER, _drafts, _until, bot  # noqa: E402,F401
+from test_telegram_bot_e2e import OWNER, _collected, _until, bot  # noqa: E402,F401
 from test_telegram_bot_figures import _record  # noqa: E402
 from test_telegram_bot_notifications import _due, _settle, notifying  # noqa: E402,F401
 from test_telegram_bot_replies import _saved, _texts  # noqa: E402
@@ -99,10 +99,10 @@ def test_answers_to_the_creators_own_messages_commands_and_presses_are_never_hel
     bot["fake"].push(OWNER, "Idea: a thought at three in the morning")
     bot["fake"].push(OWNER, "/status")
     assert _until(lambda: len(_texts(bot)) == 2), _texts(bot)
-    assert _texts(bot)[0] == SAID["draft"] and _texts(bot)[1].startswith("Your studio is running.")
+    assert _texts(bot)[0] == SAID["collected"] and _texts(bot)[1].startswith("Your studio is running.")
     bot["fake"].press_button("Undo", OWNER)
-    assert _until(lambda: [a["text"] for a in bot["fake"].answered] == [SAID["undone"]])
-    assert _drafts() == []
+    assert _until(lambda: [a["text"] for a in bot["fake"].answered] == [SAID["undone_item"]])
+    assert _collected() == []
 
 
 def test_with_quiet_hours_off_nothing_waits(notifying, clock):

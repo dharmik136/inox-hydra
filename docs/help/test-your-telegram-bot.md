@@ -19,10 +19,10 @@ Before you start: the studio is running on this computer, and you have your bot'
 ## 3. The bot answers (two minutes)
 
 1. Send `/help`. The bot says what it does, how to pair and what it never sends.
-2. Send `Idea: testing the bot`. The bot answers "Saved as a draft in your studio." In the studio, press Ctrl+K and search for `testing the bot`: the draft is there.
+2. Send `Idea: testing the bot`. The bot answers "Saved to your collection." In the studio, open **From your record**, then **Your collection**: it is there, without a reload. (A message starting `Draft:` still goes straight to a draft: "Saved as a draft in your studio.")
 3. Send `/status`. The bot answers "Your studio is running." and whether the bridge in your browser is connected.
 4. In the LinkedIn app, open one of your own posts, use **Copy link**, and send the link to the bot. The bot answers "Today will ask you to open this link at your computer.", and **Today** shows "You sent a post from your phone". Press **Not now** there if you do not want to open it.
-5. Send `Idea: undo me`, then press **Undo** under the answer. The message changes to end "Undone: the draft is removed from your studio.", its button goes, and Ctrl+K no longer finds `undo me`.
+5. Send `Idea: undo me`, then press **Undo** under the answer. The message changes to end "Undone: it is removed from your collection.", its button goes, and **Your collection** no longer lists `undo me`.
 
 ## 4. The panel's own check (thirty seconds)
 
@@ -43,7 +43,7 @@ These need a post to come due, or an hour to come round, so they take as long as
 4. Press **Done** under the reminder: the message ends "Reminder cleared. Nothing was marked as posted: it stays due in your studio until you post it." In the studio the post is still due: Done changed nothing there.
 5. Quiet hours: set **Hold notifications during quiet hours** to run from this hour to the next, and schedule another post a few minutes ahead. When it comes due no message comes, and the panel says "QUIET NOW". Untick **Hold notifications during quiet hours**: within about a minute the bot says the post is due. Set quiet hours back as you like them.
 6. The weekly summary: tick **Send me a weekly summary** and pick today and the next whole hour. The panel says "NEXT SUMMARY:" with that time. At that hour the bot sends "Your week, the seven days to ..." with your counts and your next scheduled post, and your figures only if **The bot may answer with your figures** is on. Pick the day and hour you want afterwards.
-7. Send `/drafts`. The bot answers with how many drafts you saved from your phone in the last seven days, for example "Drafts saved from your phone in the last seven days: 2.", a count and never their words.
+7. Send `/drafts`. The bot answers with how many drafts were made from what you sent in the last seven days, for example "Drafts made from what you sent, in the last seven days: 2.", a count and never their words.
 
 ## When a step does not match
 
@@ -52,7 +52,7 @@ These need a post to come due, or an hour to come round, so they take as long as
 | **Asking Telegram for messages** reads NO | **Last problem reaching Telegram** in the panel, in plain words. Telegram not recognising the token means the token was pasted wrong: paste it again and save |
 | No answer to `hello`, and nothing under **CHATS THE BOT REFUSED** | That you messaged the bot whose token you saved, and that **Asking Telegram for messages** reads YES. Another program asking for the same bot is named under **Last problem reaching Telegram** |
 | The panel lists your chat, but the phone got no answer | **Last message the bot could not send**: the bot may be blocked in your chat. Unblock it in Telegram and send it a message |
-| The bot answers, but no draft appears | Reload the studio page. The draft is saved in the profile the bot was set up in, which the panel names when another profile is open |
+| The bot answers, but **Your collection** does not list it | Check you are in the profile the bot was set up in, which the panel names when another profile is open. A `Draft:` message is in the Composer's **Drafts** |
 | **Send a test message** says Telegram took it, and the phone shows nothing | That you are looking at the chat with your own bot, and that Telegram's notifications are on for it |
 | A button keeps spinning, and the message never changes | That **Asking Telegram for messages** reads YES. A press reaches the studio the way a message does; at night the studio asks Telegram less often, so an answer can take up to two minutes |
 | **Undo** says the draft has changed | The draft was edited, queued or published in the studio after it arrived, so it was kept. Delete it in the studio if you do not want it |

@@ -69,12 +69,14 @@ _log = logging.getLogger("studio.changes")
 # account and content pages); "people" is someone engaging with one of the
 # creator's posts and "outbound" the creator engaging elsewhere; "desk" is a
 # post the phone asked the desk to read, "ideas" the daily section's cards,
-# "replies" a comment the creator marked answered in Replies, or unmarked.
+# "replies" a comment the creator marked answered in Replies, or unmarked;
+# "collection" something sent to the bot landed in the collection box, or an
+# item there changed.
 # "database" is the watcher's, something was committed that no publisher
 # named, and a writer of several unrelated things says it too: either way a
 # window takes it as "anything may have changed".
 KINDS = ("capture", "heartbeat", "posts", "readings", "account", "people", "outbound",
-         "identity", "imports", "queue", "desk", "ideas", "replies", "database")
+         "identity", "imports", "queue", "desk", "ideas", "replies", "collection", "database")
 
 # What a change may carry beside its kind, so a window can tell whether it
 # alters what that window shows: which reader ran and whether it drifted, whether

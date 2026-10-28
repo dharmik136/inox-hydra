@@ -33,7 +33,7 @@ for folder in (os.path.join(REPO_ROOT, "studio", "backend"), os.path.dirname(__f
 
 import telegram_bot  # noqa: E402
 from database import get_db  # noqa: E402
-from test_telegram_bot_e2e import OWNER, STRANGER, _drafts, _until, bot  # noqa: E402,F401
+from test_telegram_bot_e2e import OWNER, STRANGER, _collected, _drafts, _until, bot  # noqa: E402,F401
 from test_telegram_bot_replies import _saved, _texts  # noqa: E402
 
 SAID = telegram_bot.SENTENCES
@@ -43,6 +43,14 @@ def _asks():
     conn = get_db()
     try:
         return [dict(r) for r in conn.execute("SELECT text, source, status FROM asks ORDER BY id")]
+    finally:
+        conn.close()
+
+
+def _kinds():
+    conn = get_db()
+    try:
+        return [r[0] for r in conn.execute("SELECT kind FROM collection_items ORDER BY id")]
     finally:
         conn.close()
 
@@ -72,25 +80,25 @@ def test_start_and_help_say_what_the_bot_does_how_to_pair_and_what_it_never_send
         assert words in answer, words
 
 
-def test_idea_saves_a_draft_tagged_as_an_idea(bot):
+def test_idea_keeps_an_idea_in_the_collection(bot):
     _saved(bot)
     answers = _ask(bot, "/idea pricing for a two person studio", "/IDEA@InoxHydraBot hiring loops")
-    assert _drafts() == ["pricing for a two person studio", "hiring loops"]
-    assert all('"idea"' in tags for tags in _tags())
-    assert answers == [SAID["draft"], SAID["draft"]]
+    assert _collected() == ["pricing for a two person studio", "hiring loops"]
+    assert _kinds() == ["idea", "idea"] and _drafts() == []
+    assert answers == [SAID["collected"], SAID["collected"]]
 
 
 def test_an_idea_keeps_a_short_link_as_part_of_the_idea(bot):
-    """/idea says what the message is: its words stay a draft even with a link in them."""
+    """/idea says what the message is: its words stay an idea even with a link in them."""
     _saved(bot)
     _ask(bot, "/idea compare with https://lnkd.in/p/dXyZ4bQ7 next week")
-    assert _drafts() == ["compare with https://lnkd.in/p/dXyZ4bQ7 next week"]
+    assert _collected() == ["compare with https://lnkd.in/p/dXyZ4bQ7 next week"]
 
 
 def test_an_empty_idea_or_ask_says_how_to_send_one(bot):
     _saved(bot)
     assert _ask(bot, "/idea", "/ask   ") == [SAID["empty_idea"], SAID["empty_ask"]]
-    assert _drafts() == [] and _asks() == []
+    assert _drafts() == [] and _collected() == [] and _asks() == []
 
 
 def test_ask_writes_an_ask_through_the_stores_rule(bot):
@@ -128,7 +136,7 @@ def test_questions_are_answered_with_the_confirmations_off_and_an_idea_is_not_co
     assert _until(lambda: len(_texts(bot)) >= 1)
     assert _until(lambda: bot["fake"].waiting() == [])
     assert _texts(bot) == [telegram_bot.HELP]
-    assert _drafts() == ["quietly"]
+    assert _collected() == ["quietly"]
 
 
 def test_a_refused_chats_command_is_refused(bot):
@@ -151,28 +159,38 @@ def test_the_help_lists_the_commands():
         assert f"`{command}" in article, command
 
 
-def _phone_draft(days_ago, tags='["mobile-ingress"]', words="An idea of mine"):
+def _made_from_what_was_sent(days_ago, post_id, words="An idea of mine"):
+    """An item of the collection that became a draft this long ago."""
     from datetime import timedelta
-    moment = (datetime.now(timezone.utc) - timedelta(days=days_ago)).strftime("%Y-%m-%d %H:%M:%S")
+    moment = (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat()
     conn = get_db()
     with conn:
-        conn.execute("INSERT INTO drafts (title, raw_content, tags, status, created_at, updated_at) "
-                     "VALUES ('t', ?, ?, 'DRAFT', ?, ?)", (words, tags, moment, moment))
+        conn.execute("INSERT INTO collection_items (received_at, kind, text, status, post_id, source, used_at) "
+                     "VALUES (?, 'idea', ?, 'used', ?, 'telegram', ?)", (moment, words, post_id, moment))
     conn.close()
 
 
 def test_drafts_answers_how_many_drafts_came_from_the_phone_in_seven_days_as_a_count(bot):
-    """Phase 2: a count, never a draft's words; answered whatever the confirmations switch says."""
+    """
+    Phase 2, counted through the collection since phase 3: drafts made from
+    what was sent; a count, never a draft's words; answered whatever the
+    confirmations switch says.
+    """
     _saved(bot)
-    for days in (0.5, 2, 6.5):
-        _phone_draft(days)
-    _phone_draft(8)
-    _phone_draft(1, tags='["studio"]', words="Written at the desk")
+    for n, days in enumerate((0.5, 2, 6.5)):
+        _made_from_what_was_sent(days, f"post-{n}")
+    _made_from_what_was_sent(8, "post-old")
+    conn = get_db()
+    with conn:
+        conn.execute("INSERT INTO collection_items (received_at, kind, text, status, source) "
+                     "VALUES (?, 'note', 'Not made into anything', 'new', 'telegram')",
+                     (datetime.now(timezone.utc).isoformat(),))
+    conn.close()
     bot["client"].post("/api/v1/ingress/options", json={"replies": False})
     [answer] = _ask(bot, "/drafts")
     assert answer == SAID["drafts"].format(count=3)
-    assert "idea of mine" not in answer and "desk" not in answer
-    assert len(_drafts()) == 4 and not any("drafts" in d for d in _drafts()), "/drafts was saved as a draft"
+    assert "idea of mine" not in answer and "Not made" not in answer
+    assert len(_collected()) == 5 and _drafts() == [], "/drafts was kept as something sent"
 
 
 def test_drafts_with_none_says_none(bot):

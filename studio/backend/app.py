@@ -2073,6 +2073,15 @@ except (ImportError, ValueError):
 
 app.include_router(record_router_module.router)
 
+# The collection box (phase 3 of the Telegram bot): what the creator sent
+# their bot, which From your record's "Your collection" level reads.
+try:
+    from .routers import collection as collection_router_module
+except (ImportError, ValueError):
+    from routers import collection as collection_router_module
+
+app.include_router(collection_router_module.router)
+
 # Your phone, through Telegram: the settings behind the Local security panel.
 try:
     from .routers import phone as phone_router_module

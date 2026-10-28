@@ -54,8 +54,10 @@ ME = "short-link-creator"
 TOKEN = "123456789:AAFnotarealkeyZZZZZZZZZZZZZZZZZZZZZZZ"
 OWNER = "487215963"
 SHORT = "https://lnkd.in/p/dXyZ4bQ7"
+# collection_items since phase 3: a message is kept once by its update id,
+# which these tests reuse from one test to the next.
 TABLES = ("creator_identity", "own_posts", "post_metric_observations", "self_import_requests",
-          "bridge_heartbeats", "captures", "desk_requests")
+          "bridge_heartbeats", "captures", "desk_requests", "collection_items")
 
 
 def urn_days_ago(days, salt=0):
@@ -237,7 +239,8 @@ def test_a_short_link_polled_from_the_simulated_telegram_becomes_a_request(monke
     assert all("api.telegram.org" in (u[1] if isinstance(u, tuple) else u) for u in fetched)
     assert not [u for u in fetched if "lnkd.in" in str(u)], "the studio fetched the short link"
     assert _requests()[0]["link"] == SHORT
-    assert [r["text"] for r in replies] == [telegram_bot.SENTENCES["short"]]
+    # Phase 3: the link is listed in the collection too, and the answer says so first.
+    assert [r["text"] for r in replies] == [f"{telegram_bot.SENTENCES['collected']} {telegram_bot.SENTENCES['short']}"]
     assert "lnkd.in" not in replies[0]["text"]
 
 

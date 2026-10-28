@@ -38,7 +38,7 @@ def test_the_checklist_is_filed_with_the_telegram_help():
 
 def test_every_sentence_it_promises_is_the_one_the_bot_says():
     article = _article()
-    for key in ("paired", "draft", "short"):
+    for key in ("paired", "collected", "draft", "short"):
         assert telegram_bot.SENTENCES[key] in article, key
     assert telegram_bot.SENTENCES["not_paired"].split(" beside chat")[0] in article
     assert telegram_bot.SENTENCES["test"].split(" If you can")[0] in article
@@ -71,7 +71,7 @@ def test_the_buttons_it_promises_are_the_ones_the_bot_shows():
     article = _article()
     for label in telegram_bot.BUTTON_LABELS.values():
         assert f"**{label}**" in article, label
-    for key in ("undone", "due_one", "remind_set", "due_again_one", "done"):
+    for key in ("undone_item", "due_one", "remind_set", "due_again_one", "done"):
         assert telegram_bot.SENTENCES[key] in article, key
 
 

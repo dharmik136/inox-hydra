@@ -41,9 +41,10 @@ import time
 
 try:
     from .database import get_db, create_draft, get_draft
-    from . import desk_requests, paths, post_identity, secret_settings, telegram_bot
+    from . import collection, desk_requests, paths, post_identity, secret_settings, telegram_bot
 except ImportError:
     from database import get_db, create_draft, get_draft
+    import collection
     import desk_requests
     import paths
     import post_identity
@@ -93,6 +94,12 @@ SHORT_LINK = re.compile(r"\bhttps?://lnkd\.in(/[A-Za-z0-9_\-/]{1,80})", re.IGNOR
 SHORT_LINK_HOST = "lnkd.in"
 
 MAX_UPDATE_ATTEMPTS = 3
+
+# What says a message was forwarded. The text of a forward is kept as the
+# creator's note (phase 3); who or what it came from (a person, an account,
+# a channel, a signature) is never read past this check, and never kept.
+FORWARD_FIELDS = ("forward_origin", "forward_from", "forward_from_chat", "forward_sender_name", "forward_date",
+                  "forward_signature", "is_automatic_forward")
 
 # What the studio asks Telegram for: the messages sent to the bot, and the
 # presses of its buttons. Telegram keeps the kinds a bot last asked for, so
@@ -415,11 +422,12 @@ class TelegramIngressDaemon:
         return nullcontext()
 
     def _reply(self, chat_id: str, text: Optional[str], always: bool = False,
-               draft_id: Optional[int] = None) -> None:
+               draft_id: Optional[int] = None, item_id: Optional[int] = None) -> None:
         """
         Queues one of the bot's fixed sentences for a chat: a confirmation when
         the bot confirms messages, and an answer to a question (always) in any
-        case. A confirmation of a saved draft carries Undo, which removes it.
+        case. A confirmation of a saved draft, or of an item kept in the
+        collection, carries Undo, which takes it back.
         """
         if not text or not chat_id or not self.bot_token:
             return
@@ -430,8 +438,13 @@ class TelegramIngressDaemon:
                         return
             except Exception:
                 return
-        self.outbox.put(chat_id, text, self._buttons(chat_id, text, "undo", draft=draft_id)
-                        if draft_id is not None else None)
+        if draft_id is not None:
+            keyboard = self._buttons(chat_id, text, "undo", draft=draft_id)
+        elif item_id is not None:
+            keyboard = self._buttons(chat_id, text, "item", item=item_id)
+        else:
+            keyboard = None
+        self.outbox.put(chat_id, text, keyboard)
 
     def _buttons(self, chat_id: str, text: str, kind: str, **target: Any) -> Optional[Dict[str, Any]]:
         """A message's buttons, kept in the bot's profile; None if they cannot be kept (the message goes anyway)."""
@@ -602,12 +615,13 @@ class TelegramIngressDaemon:
                 return None
 
         if not text:
-            if "voice" in message:
-                text = "[Voice Memo Received: Local transcription pending]"
-            else:
-                if from_telegram:
-                    self._reply(chat_id, telegram_bot.SENTENCES["no_text"])
-                return None
+            # A photo, a voice note, a sticker: nothing of it is kept, and the
+            # chat is told. (A voice note used to leave a placeholder draft
+            # promising a transcription that never came.)
+            if from_telegram:
+                self._reply(chat_id, telegram_bot.SENTENCES["no_text"])
+            return None
+        forwarded = any(field in message for field in FORWARD_FIELDS)
 
         # A message from Telegram is saved in the profile its bot was set up
         # in. A message through the local simulate route is the open
@@ -618,16 +632,19 @@ class TelegramIngressDaemon:
                                "saved. Set the bot up again in the profile you use.")
             return None
         with (paths.using_profile(pinned) if pinned else nullcontext()):
-            command = telegram_bot.parse_command(text)
+            # A forwarded "/help" is someone else's words, not the creator's command.
+            command = None if forwarded else telegram_bot.parse_command(text)
             if command:
-                stored, answer, question = self._command(command, update)
+                stored, answer, question = self._command(command, update, from_telegram)
             else:
-                stored, question = self._store(text), False
-                answer = telegram_bot.answer_for(stored)
+                stored = self._store(text, origin=_origin(update, from_telegram), from_telegram=from_telegram,
+                                     forwarded=forwarded)
+                question, answer = False, telegram_bot.answer_for(stored)
             if from_telegram and stored is not None:
                 _note_heard()
         if from_telegram:
-            self._reply(chat_id, answer, always=question, draft_id=telegram_bot.draft_of(stored))
+            self._reply(chat_id, answer, always=question, draft_id=telegram_bot.draft_of(stored),
+                        item_id=telegram_bot.item_of(stored))
         return stored
 
     def _press(self, callback: Dict[str, Any]) -> None:
@@ -667,7 +684,7 @@ class TelegramIngressDaemon:
             else:
                 self.outbox.put_call("editMessageReplyMarkup", {"chat_id": chat_id, "message_id": message_id})
 
-    def _command(self, command, update: Dict[str, Any]):
+    def _command(self, command, update: Dict[str, Any], from_telegram: bool = True):
         """One of the bot's commands: (what was stored or done, the answer, whether it was a question)."""
         name, argument = command
         done = {"kind": "command", "command": name}
@@ -686,7 +703,8 @@ class TelegramIngressDaemon:
         if name == "idea":
             if not argument:
                 return done, telegram_bot.SENTENCES["empty_idea"], False
-            stored = self._store("Idea: " + argument, links=False)
+            stored = self._store("Idea: " + argument, links=False, origin=_origin(update, from_telegram),
+                                 from_telegram=from_telegram)
             return stored, telegram_bot.answer_for(stored), False
         if name == "ask":
             # An explicit act of the creator's, so it goes through the asks
@@ -702,42 +720,81 @@ class TelegramIngressDaemon:
             return {"kind": "ask", "id": kept.get("id")}, telegram_bot.SENTENCES["ask"], False
         return done, telegram_bot.SENTENCES["unknown_command"], False
 
-    def _store(self, text: str, links: bool = True) -> Optional[Dict[str, Any]]:
-        """Saves one accepted message: a desk request for a post link, a draft for any text."""
-        parsed = IngressMessageParser.parse_message(text, links=links)
+    def _store(self, text: str, links: bool = True, origin: Optional[str] = None, from_telegram: bool = True,
+               forwarded: bool = False) -> Optional[Dict[str, Any]]:
+        """
+        Saves one accepted message in the collection (phase 3): a note, an
+        idea, a forwarded message, a bookmark (a link to someone else's post),
+        or a link that is also a request on Today. Nothing is written from it
+        until the creator asks. "Draft:" and "Schedule <when>:" still go
+        straight to a draft, as they always did, recorded in the collection
+        as used. A forward's links are part of its text, never a request.
+        """
+        parsed = IngressMessageParser.parse_message(text, links=links and not forwarded)
+        source = "telegram" if from_telegram else "studio"
+        # Handled again: what it made the first time, and nothing written twice.
+        held = collection.by_origin(origin) if origin else None
+        if held:
+            return {"kind": "collected", "archetype": parsed["archetype"], "item": held, "desk_request": None}
 
-        # A post link is a request to read that post at the desk. Recorded
-        # first, so a message that is only a link is not a draft of nothing.
+        # A post link is a request to read that post at the desk, recorded
+        # first: one of the creator's posts is open on Today, anyone else's
+        # is refused there and kept here as a bookmark.
         request = None
         asked = parsed.get("read_request")
         if asked and asked.get("short_link"):
             request = self._record_short_link(asked["short_link"])
         elif asked:
             request = self._record_desk_request(asked["activity_urn"])
-        if not parsed["raw_content"].strip():
-            return {"kind": "desk_request", **request} if request else None
+        words = parsed["raw_content"].strip()
 
-        # One record of what the creator wrote: create_draft writes the posts
-        # row with the draft, so this used to write a second posts row of its
-        # own for the same text.
-        draft_id = create_draft(
-            title=parsed["title"],
-            raw_content=parsed["raw_content"],
-            formatted_content=parsed["formatted_content"],
-            char_count=parsed["char_count"],
-            lines_above_fold=parsed["lines_above_fold"],
-            pre_fold_chars=parsed["pre_fold_chars"],
-            is_pre_fold_safe=parsed["is_pre_fold_safe"],
-            archetype=parsed["archetype"],
-            tags=parsed["tags"],
-        )
+        straight = not forwarded and (parsed["archetype"] == "Scheduled Post"
+                                      or (parsed["archetype"] == "Draft" and "read" not in parsed["tags"]))
+        if straight and words:
+            # One record of what the creator wrote: create_draft writes the
+            # posts row with the draft.
+            draft_id = create_draft(
+                title=parsed["title"],
+                raw_content=parsed["raw_content"],
+                formatted_content=parsed["formatted_content"],
+                char_count=parsed["char_count"],
+                lines_above_fold=parsed["lines_above_fold"],
+                pre_fold_chars=parsed["pre_fold_chars"],
+                is_pre_fold_safe=parsed["is_pre_fold_safe"],
+                archetype=parsed["archetype"],
+                tags=parsed["tags"],
+            )
+            record = get_draft(draft_id)
+            if not record:
+                return None
+            if request:
+                record["desk_request"] = request
+            record["collection_item"] = collection.add(
+                "note", words, status="used", post_id=f"post-draft-{draft_id}",
+                desk_request_id=request["id"] if request else None, source=source, origin_ref=origin)
+            return record
 
-        record = get_draft(draft_id)
-        if not record:
+        if not words and not request:
             return None
-        if request:
-            record["desk_request"] = request
-        return record
+        link = urn = None
+        if request is None:
+            kind = "forward" if forwarded else ("idea" if parsed["archetype"] == "Raw Idea" else "note")
+        elif request.get("link") and not request.get("activity_urn"):
+            kind, link = "link", request["link"]
+        else:
+            urn = request["activity_urn"]
+            kind = "bookmark" if request.get("state") == desk_requests.REFUSED else "post"
+            link = collection.canonical_post_link(urn)
+        # A request with no words of the creator's has become what it is for;
+        # anything with words is material until something is made from it.
+        status = "new" if words or kind == "bookmark" else "used"
+        item = collection.add(kind, words, link=link, activity_urn=urn,
+                              desk_request_id=request["id"] if request else None, status=status, source=source,
+                              origin_ref=origin)
+        if request and not words:
+            # A link alone: what it made is the request, as it always was, and the item that lists it.
+            return {"kind": "desk_request", **request, "collection_item": item, "archetype": parsed["archetype"]}
+        return {"kind": "collected", "archetype": parsed["archetype"], "item": item, "desk_request": request}
 
     @staticmethod
     def _record_desk_request(activity_urn: str) -> Dict[str, Any]:
@@ -1009,6 +1066,19 @@ ingress_daemon = TelegramIngressDaemon()
 # ---------------------------------------------------------------------------
 # The settings behind the Local security panel (cycle 4, decision D6)
 # ---------------------------------------------------------------------------
+
+def _origin(update: Dict[str, Any], from_telegram: bool) -> Optional[str]:
+    """
+    What keys a Telegram message so it is kept once, even if its update is
+    handled again (a failure after it was kept, or a restart before Telegram
+    was told). Update ids are each bot's own and a new bot's may meet an old
+    one's, so the message's own date goes with it.
+    """
+    if not from_telegram or not isinstance(update, dict) or not isinstance(update.get("update_id"), int):
+        return None
+    message = update.get("message") if isinstance(update.get("message"), dict) else {}
+    return f"telegram:{update['update_id']}:{message.get('date')}"
+
 
 def _note_heard() -> None:
     """A message from the saved chat was saved: the first time, the open profile records when."""

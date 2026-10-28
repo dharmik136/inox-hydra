@@ -10,6 +10,7 @@ import {
   type RecordToday,
 } from "@/lib/api";
 import { useRefresh, useStudioBack } from "@/lib/refresh";
+import { CollectionPanel } from "./CollectionPanel";
 import { formatLocalDay } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { RecordCardView } from "./RecordCardView";
@@ -29,8 +30,10 @@ import { RecordEvaluationPanel } from "./RecordEvaluationPanel";
  * Three levels: Today; Kept, the Library the earlier report deferred for
  * want of a writer, read from the keep marks; and What the studio knows,
  * every ask, mark and setting the section holds, editable and reversible.
+ * And Your collection (phase 3 of the Telegram bot): everything the creator
+ * sent their bot, the material they write from.
  */
-type Level = "today" | "kept" | "knows" | "helped";
+type Level = "today" | "collection" | "kept" | "knows" | "helped";
 
 export function RecordSurface({
   onOpenDraft,
@@ -155,6 +158,7 @@ export function RecordSurface({
             [
               // Not "Today": the rail's Today button sits beside it with that name.
               ["today", "Today's cards"],
+              ["collection", "Your collection"],
               ["kept", "Kept"],
               ["knows", "What the studio knows"],
               ["helped", "Did these help?"],
@@ -261,6 +265,12 @@ export function RecordSurface({
             </div>
           )}
         </section>
+      )}
+
+      {level === "collection" && (
+        <div className="mt-4">
+          <CollectionPanel onOpenDraft={onOpenDraft} />
+        </div>
       )}
 
       {level === "knows" && (

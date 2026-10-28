@@ -138,6 +138,7 @@ function activityMayChange(change: StudioChangeNote, stream: ActivityStreamData 
     case "desk":
     case "ideas":
     case "replies":
+    case "collection":
       return false;
     default:
       return true;

@@ -73,6 +73,7 @@ function setupMayChange(change: StudioChangeNote, state: SetupState | null): boo
     case "desk":
     case "ideas":
     case "replies":
+    case "collection":
       return false;
     default:
       return true;
@@ -778,6 +779,8 @@ function ForgetPanel({
           What you asked From your record for, its daily cards, your marks on them and your notes, and the saved posts,
           follows, votes, articles, reposts and searches your archive brought
         </li>
+        {/* Phase 3 of the Telegram bot: forgetting clears these too. */}
+        <li>Everything you sent your Telegram bot (your collection), and the links it asked Today to open</li>
         <li>The name, headline and company Setup filled in your Brand byline, unless you changed them</li>
       </ul>
       <p className="mt-2 text-[12px] text-ink-muted">Your leads, drafts and the posts you wrote in the studio are kept.</p>
