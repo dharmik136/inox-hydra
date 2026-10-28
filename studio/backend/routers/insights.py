@@ -154,6 +154,15 @@ def get_outbound_insights() -> Dict[str, Any]:
     return insights.outbound_overview()
 
 
+@router.get("/api/v1/insights/outbound/author")
+def get_outbound_author(name: str = Query(..., min_length=1, max_length=200)) -> Dict[str, Any]:
+    """One account: the posts of theirs you engaged with, and theirs on yours with the time between."""
+    detail = insights.outbound_author(name)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="You have not engaged with an account of that name")
+    return detail
+
+
 @router.get("/api/v1/insights/evidence")
 def get_evidence_brief() -> Dict[str, Any]:
     """Retrieval evidence brief, top and bottom exemplars, and conclusive contrasts (CP2 and CP3)."""

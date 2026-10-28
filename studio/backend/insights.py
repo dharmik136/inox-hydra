@@ -390,6 +390,32 @@ def outbound_overview() -> Dict[str, Any]:
             key = _name_key(row["target_author"])
             if (row["at"] or "") >= (said.get(key, {}).get("at") or ""):
                 said[key] = {"at": row["at"], "text": row["my_text"]}
+        # What the table drew nothing of (sections report, batch 8): when the
+        # studio first saw you engage with each account, the kind of your
+        # last reaction, and the opening of the last post of theirs you
+        # engaged with, each folded by name as the counts are.
+        first_seen: Dict[str, str] = {}
+        for row in conn.execute(
+                "SELECT target_author, MIN(first_seen_at) AS at FROM outbound_engagements "
+                "WHERE target_author IS NOT NULL GROUP BY target_author"):
+            key = _name_key(row["target_author"])
+            if row["at"] and (key not in first_seen or row["at"] < first_seen[key]):
+                first_seen[key] = row["at"]
+        reacted: Dict[str, Dict[str, Any]] = {}
+        for row in conn.execute(
+                "SELECT target_author, MAX(last_seen_at) AS at, reaction_kind FROM outbound_engagements "
+                "WHERE kind = 'reaction' AND target_author IS NOT NULL GROUP BY target_author"):
+            key = _name_key(row["target_author"])
+            if (row["at"] or "") >= (reacted.get(key, {}).get("at") or ""):
+                reacted[key] = {"at": row["at"], "kind": row["reaction_kind"]}
+        excerpt: Dict[str, Dict[str, Any]] = {}
+        for row in conn.execute(
+                "SELECT target_author, MAX(last_seen_at) AS at, target_excerpt FROM outbound_engagements "
+                "WHERE target_excerpt IS NOT NULL AND target_excerpt != '' AND target_author IS NOT NULL "
+                "GROUP BY target_author"):
+            key = _name_key(row["target_author"])
+            if (row["at"] or "") >= (excerpt.get(key, {}).get("at") or ""):
+                excerpt[key] = {"at": row["at"], "text": row["target_excerpt"]}
         own_ids = onboarding._own_activity_ids(conn)
         # People who engaged with your posts, by display name, and on how
         # many of them: a comment and a like on one post is one post, not two.
@@ -487,6 +513,12 @@ def outbound_overview() -> Dict[str, Any]:
         # Their own words, clipped the way every other excerpt in the studio
         # is. None when you have only ever reacted to them.
         entry["last_comment"] = clip(" ".join((said.get(key, {}).get("text") or "").split()), 120) or None
+        # When the studio first saw you engage with them: the capture time of
+        # the earliest row it holds, which is when it read your Activity page,
+        # not necessarily when you engaged.
+        entry["first_seen_at"] = first_seen.get(key)
+        entry["last_reaction_kind"] = reacted.get(key, {}).get("kind")
+        entry["last_excerpt"] = clip(" ".join((excerpt.get(key, {}).get("text") or "").split()), 120) or None
         # Quiet is a claim about someone who used to come back, not about a
         # stranger who never has: that is one_way's claim, below, and the two
         # are kept separate so neither reads as the other.
@@ -543,6 +575,69 @@ def outbound_overview() -> Dict[str, Any]:
         "gone_quiet": ([{"name": a["name"], "days_since": round(results.age_hours(a["last_inbound_at"]) / 24)}
                         for a in ranked if a["gone_quiet"]][:12] if judged else []),
         "gone_quiet_days": GONE_QUIET_DAYS,
+        "matched_by": "display name",
+    }
+
+
+def outbound_author(name: str) -> Optional[Dict[str, Any]]:
+    """
+    One account, one level down: every post of theirs you engaged with,
+    newest first, and, where their name is one captured person's, every
+    engagement of theirs on a post of yours, with the time from each of yours
+    to their next one. Both sides are when the studio saw them, so the time
+    between is as the studio saw it. None for a name you never engaged with.
+    """
+    key = _name_key(name)
+    if not key:
+        return None
+    conn = get_db()
+    try:
+        names = [r[0] for r in conn.execute(
+            "SELECT DISTINCT target_author FROM outbound_engagements WHERE target_author IS NOT NULL")
+            if _name_key(r[0]) == key]
+        if not names:
+            return None
+        marks = ",".join("?" for _ in names)
+        targets = [dict(r) for r in conn.execute(
+            "SELECT target_activity_urn, target_excerpt, kind, reaction_kind, my_text, first_seen_at, last_seen_at "
+            f"FROM outbound_engagements WHERE target_author IN ({marks}) ORDER BY first_seen_at DESC, id DESC", names)]
+        leads = [r["id"] for r in conn.execute("SELECT id, COALESCE(full_name, name) AS name FROM leads")
+                 if _name_key(r["name"]) == key]
+        inbound = None
+        if len(leads) == 1:
+            own_ids = onboarding._own_activity_ids(conn)
+            inbound = [dict(r) for r in conn.execute(
+                "SELECT post_urn, interaction_type, interacted_at FROM lead_interactions "
+                "WHERE lead_id = ? AND post_urn IS NOT NULL ORDER BY interacted_at DESC", (leads[0],))
+                if onboarding._activity_id(r["post_urn"]) in own_ids]
+    finally:
+        conn.close()
+    for target in targets:
+        target["target_excerpt"] = clip(" ".join((target["target_excerpt"] or "").split()), 160) or None
+        target["my_text"] = clip(" ".join((target["my_text"] or "").split()), 160) or None
+    lags = None
+    if inbound is not None:
+        onboarding.annotate_interactions(inbound)
+        for item in inbound:
+            item.pop("post_origin", None)
+        # From each engagement of yours to their next one on a post of yours.
+        theirs = sorted(item["interacted_at"] for item in inbound if item["interacted_at"])
+        lags = []
+        for target in sorted(targets, key=lambda t: t["first_seen_at"] or ""):
+            start = target["first_seen_at"]
+            after = next((at for at in theirs if start and at > start), None)
+            if after:
+                days = (datetime.fromisoformat(after.replace("Z", "+00:00"))
+                        - datetime.fromisoformat(start.replace("Z", "+00:00"))).total_seconds() / 86400
+                lags.append({"from": start, "to": after, "days": round(days, 1)})
+    return {
+        "status": "success",
+        "name": names[0],
+        "named_people": len(leads),
+        "lead_id": leads[0] if len(leads) == 1 else None,
+        "targets": targets,
+        "inbound": inbound,
+        "lags": lags,
         "matched_by": "display name",
     }
 

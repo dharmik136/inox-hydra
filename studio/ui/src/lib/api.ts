@@ -2389,6 +2389,38 @@ export interface OutboundAuthor {
   lead_id: string | null;
   /** How many captured people answer to this name. More than 1 cannot be told apart. */
   named_people: number;
+  /** When the studio first saw you engage with them: when it read your Activity page, not when you engaged. */
+  first_seen_at: string | null;
+  /** Your last reaction to them: like, celebrate, support, love, insightful or funny. */
+  last_reaction_kind: string | null;
+  /** The opening of the last post of theirs you engaged with, clipped. */
+  last_excerpt: string | null;
+}
+
+/** One account one level down (GET /api/v1/insights/outbound/author). */
+export interface OutboundAuthorDetail {
+  name: string;
+  named_people: number;
+  lead_id: string | null;
+  /** Every post of theirs you engaged with, newest first, as the studio first saw each. */
+  targets: {
+    target_activity_urn: string;
+    target_excerpt: string | null;
+    kind: "reaction" | "comment";
+    reaction_kind: string | null;
+    my_text: string | null;
+    first_seen_at: string;
+    last_seen_at: string;
+  }[];
+  /** Theirs on your posts, newest first; null when the name is not one captured person's. */
+  inbound: { post_urn: string; interaction_type: string | null; interacted_at: string; post_excerpt: string | null }[] | null;
+  /** From each engagement of yours to their next one on a post of yours, as the studio saw both. */
+  lags: { from: string; to: string; days: number }[] | null;
+  matched_by: string;
+}
+
+export async function fetchOutboundAuthor(name: string): Promise<OutboundAuthorDetail> {
+  return call<OutboundAuthorDetail>(`/api/v1/insights/outbound/author?name=${encodeURIComponent(name)}`);
 }
 
 export interface GoneQuietAuthor {

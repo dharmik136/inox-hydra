@@ -399,9 +399,13 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # Track 2 (the show path) merged into track 4 after track 1, for 2.9.0,
 # measured on the merged tree: 215 paths, 167 reached, 48 unreachable. Track
 # 4's 214 and 166 with /api/v1/events, which the window opens.
+#
+# Cycle 4, track 4, phase b (for 2.10.0), each path counted as it lands:
+# Outbound's one account, /api/v1/insights/outbound/author, which the screen
+# opens: 216 paths, 168 reached, 48 unreachable.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 215
-REACHED_BY_INTERFACE = 167
+TOTAL_API_PATHS = 216
+REACHED_BY_INTERFACE = 168
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

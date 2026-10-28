@@ -56,15 +56,19 @@ LinkedIn's archive names the post you reacted to or commented on, but not its au
 
 | Section | What it shows |
 | --- | --- |
-| **Engaged back** | People you engage with who have also engaged with one of your posts |
+| **Engaged back, matched by display name** | People you engage with who have also engaged with one of your posts |
 | **One-way** | People and pages you have engaged with at least three times who have not engaged with your posts |
 | **Most engaged with** | Everyone you engage with, most first, with your reactions, your comments, and on how many of your posts they appeared |
+
+In **Most engaged with**, **FIRST SEEN** is when the studio first saw you engage with that account, which is when it read your Activity page, not necessarily the day you engaged. **WHAT YOU LAST SAID TO THEM** is your last comment, or "Only reactions" with the kind of your last reaction (like, celebrate, support, love, insightful or funny), followed by the opening of the last post of theirs you engaged with.
+
+Click the arrow beside a name to open that account: every post of theirs you engaged with, newest first, with what you did and said; and, where the name is one captured person's, their engagements on your posts, with how many days after each of yours they next engaged with one of your posts. Both sides are when the studio saw them, so the days between are as the studio saw it.
 
 **One-way** is not shown until the studio has read who engaged with at least half of your posts. Until then it says how many it has read. Opening your posts in the bridge browser, for example from **Posts**, is what reads them.
 
 > [!NOTE]
-> "Engaged back" is matched by display name. A reaction records the author's name, not their profile, so two people with the same name would be counted together.
+> "Engaged back" is matched by display name, and says so beside the figure and the list. A reaction records the author's name, not their profile. A name more than one person you have captured answers to is not matched at all: its row says how many people have that name instead of counting them together.
 
 ## Lead history
 
-In a lead's dossier in **Leads**, each change you make under **Pipeline** is now kept, and listed under the buttons with its date. That history is what lets **Posts** count conversations.
+In a lead's dossier in **Leads**, each change you make under **Pipeline** is now kept, and listed under the buttons with its date, and with the post it came from when you opened the person from one (in **Replies**, or from **Who engaged** in a post's detail). That history is what lets **Posts** count conversations.

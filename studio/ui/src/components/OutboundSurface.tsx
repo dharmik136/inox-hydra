@@ -1,5 +1,12 @@
-import { useEffect, useState } from "react";
-import { fetchOutboundInsights, type GoneQuietAuthor, type OutboundInsights } from "@/lib/api";
+import { Fragment, useEffect, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+import {
+  fetchOutboundAuthor,
+  fetchOutboundInsights,
+  type GoneQuietAuthor,
+  type OutboundAuthorDetail,
+  type OutboundInsights,
+} from "@/lib/api";
 import { useStudioBack } from "@/lib/refresh";
 import { formatLocalDay } from "@/lib/time";
 import { EmptySurface } from "./EmptySurface";
@@ -32,6 +39,8 @@ export function OutboundSurface({
 }: { onOpenSetup?: () => void; onOpenLead?: (leadId: string) => void } = {}) {
   const [data, setData] = useState<OutboundInsights | null>(null);
   const [failed, setFailed] = useState(false);
+  // One account opened one level down: its posts you engaged with, and theirs on yours.
+  const [open, setOpen] = useState<string | null>(null);
   // Read again when the studio answers after an outage, so a screen that
   // failed while it was down does not stay failed once it is back.
   const back = useStudioBack();
@@ -100,7 +109,7 @@ export function OutboundSurface({
             history where no name belongs to one captured person this read
             "0 of 1,540" and the reason was a footnote under the table. */}
         <Figure
-          label={`Engaged back, of ${data.matched_names.toLocaleString()} named people`}
+          label={`Engaged back, matched by display name, of ${data.matched_names.toLocaleString()} named people`}
           value={`${data.reciprocal_count.toLocaleString()} of ${data.matched_names.toLocaleString()}`}
         />
       </dl>
@@ -113,6 +122,7 @@ export function OutboundSurface({
               <thead>
                 <tr className="studio-meta text-[10px] text-ink-muted">
                   <th className="py-1 font-normal">NAME</th>
+                  <th className="py-1 font-normal whitespace-nowrap">FIRST SEEN</th>
                   <th className="py-1 font-normal">WHAT YOU LAST SAID TO THEM</th>
                   <th className="py-1 text-right font-normal">REACTIONS</th>
                   <th className="py-1 text-right font-normal">COMMENTS</th>
@@ -123,8 +133,22 @@ export function OutboundSurface({
               </thead>
               <tbody className="divide-y divide-edge border-y border-edge">
                 {data.authors.map((author) => (
-                  <tr key={author.name}>
+                  <Fragment key={author.name}>
+                  <tr>
                     <td className="py-1 text-ink-primary">
+                      <button
+                        type="button"
+                        onClick={() => setOpen(open === author.name ? null : author.name)}
+                        aria-expanded={open === author.name}
+                        aria-label={`${open === author.name ? "Close" : "Open"} the posts of ${author.name}'s you engaged with`}
+                        className="mr-1 inline-grid size-4 place-items-center align-middle text-ink-muted hover:text-ink-primary"
+                      >
+                        {open === author.name ? (
+                          <ChevronDown className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                        ) : (
+                          <ChevronRight className="size-3.5" strokeWidth={1.75} aria-hidden="true" />
+                        )}
+                      </button>
                       {/* Opens the person, so "they engaged back" can become a
                           reply. Plain text when the name is not one lead's
                           alone, because the match is by display name and a
@@ -148,8 +172,16 @@ export function OutboundSurface({
                         attention goes" that a count cannot show. Reacting
                         without commenting leaves nothing to show, and that
                         reads as what it is rather than as a gap. */}
+                    {/* When the studio first saw you engage with them: when it
+                        read your Activity page, not necessarily when you did. */}
+                    <td className="py-1 text-ink-secondary whitespace-nowrap">{formatLocalDay(author.first_seen_at, "Not measured")}</td>
                     <td className="max-w-[46ch] truncate py-1 text-ink-secondary">
-                      {author.last_comment ?? <span className="text-ink-muted">Only reactions</span>}
+                      {author.last_comment ?? (
+                        <span className="text-ink-muted">
+                          Only reactions{author.last_reaction_kind ? `, last ${author.last_reaction_kind}` : ""}
+                        </span>
+                      )}
+                      {author.last_excerpt && <span className="text-ink-muted">{` · on \u201c${author.last_excerpt}\u201d`}</span>}
                     </td>
                     <td className="py-1 text-right tabular-nums text-ink-secondary">{author.reactions}</td>
                     <td className="py-1 text-right tabular-nums text-ink-secondary">{author.comments}</td>
@@ -177,13 +209,22 @@ export function OutboundSurface({
                       {formatLocalDay(author.last_outbound_at, "Not measured")}
                     </td>
                   </tr>
+                  {open === author.name && (
+                    <tr>
+                      <td colSpan={8} className="bg-canvas px-3 py-2">
+                        <AuthorDetail name={author.name} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
           </div>
           <p className="studio-meta mt-2 text-[10px] leading-snug text-ink-muted">
             &ldquo;ON YOUR POSTS&rdquo; AND &ldquo;LAST FROM THEM&rdquo; ARE MATCHED BY {data.matched_by.toUpperCase()}:
-            A REACTION RECORDS THE AUTHOR&rsquo;S NAME, NOT THEIR PROFILE.{" "}
+            A REACTION RECORDS THE AUTHOR&rsquo;S NAME, NOT THEIR PROFILE. &ldquo;FIRST SEEN&rdquo; IS WHEN THE STUDIO
+            FIRST SAW YOU ENGAGE WITH THEM, WHICH IS WHEN IT READ YOUR ACTIVITY PAGE.{" "}
             {data.shared_names > 0 &&
               `${data.shared_names} OF THESE NAMES BELONG TO MORE THAN ONE PERSON YOU HAVE CAPTURED, SO THEY ARE NOT MATCHED. `}
             {judged
@@ -193,7 +234,7 @@ export function OutboundSurface({
         </section>
 
         <div className="flex flex-col gap-5">
-          <People label="Engaged back" names={data.reciprocal}>
+          <People label="Engaged back, matched by display name" names={data.reciprocal}>
             NOBODY YOU ENGAGE WITH HAS BEEN SEEN ON YOUR POSTS YET.
           </People>
 
@@ -251,6 +292,77 @@ export function OutboundSurface({
             </p>
           </section>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * One account one level down, read when it is opened: the posts of theirs you
+ * engaged with, and, where the name is one captured person's, their
+ * engagements on your posts with the time from each of yours to their next.
+ * Both sides are when the studio saw them.
+ */
+function AuthorDetail({ name }: { name: string }) {
+  const [detail, setDetail] = useState<OutboundAuthorDetail | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    fetchOutboundAuthor(name)
+      .then((answer) => live && setDetail(answer))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [name]);
+
+  if (failed) return <p className="text-[12px] text-ink-muted">This account could not be read.</p>;
+  if (!detail) return <p className="text-[12px] text-ink-muted">Reading this account.</p>;
+  return (
+    <div className="grid gap-4 text-[11px] text-ink-secondary md:grid-cols-2">
+      <div>
+        <p className="studio-meta mb-1 text-[10px] text-ink-muted">
+          THEIR POSTS YOU ENGAGED WITH, {detail.targets.length.toLocaleString()}, NEWEST FIRST
+        </p>
+        <ul className="flex flex-col gap-0.5">
+          {detail.targets.map((target) => (
+            <li key={`${target.target_activity_urn}-${target.kind}-${target.first_seen_at}`} className="truncate">
+              <span className="studio-meta text-[10px] text-ink-muted">{formatLocalDay(target.first_seen_at).toUpperCase()}</span>{" "}
+              {target.kind === "comment" ? "You commented" : `You reacted${target.reaction_kind ? `, ${target.reaction_kind}` : ""}`}
+              {target.target_excerpt ? ` on \u201c${target.target_excerpt}\u201d` : ""}
+              {target.my_text ? `: \u201c${target.my_text}\u201d` : ""}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <p className="studio-meta mb-1 text-[10px] text-ink-muted">THEIRS ON YOUR POSTS, MATCHED BY {detail.matched_by.toUpperCase()}</p>
+        {detail.inbound === null ? (
+          <p className="text-ink-muted">
+            {detail.named_people > 1
+              ? `${detail.named_people} people you have captured have this name, so which of them engaged cannot be told.`
+              : "Nobody you have captured has this name, so none of their engagement on your posts is known."}
+          </p>
+        ) : detail.inbound.length === 0 ? (
+          <p className="text-ink-muted">Not seen on any post of yours whose engagers the studio read.</p>
+        ) : (
+          <ul className="flex flex-col gap-0.5">
+            {detail.inbound.map((item, index) => (
+              <li key={`${item.post_urn}-${item.interacted_at}-${index}`} className="truncate">
+                <span className="studio-meta text-[10px] text-ink-muted">{formatLocalDay(item.interacted_at).toUpperCase()}</span>{" "}
+                {(item.interaction_type ?? "engaged").toLowerCase()}
+                {item.post_excerpt ? ` on \u201c${item.post_excerpt}\u201d` : ""}
+              </li>
+            ))}
+          </ul>
+        )}
+        {detail.lags && detail.lags.length > 0 && (
+          <p className="mt-1.5 text-ink-muted">
+            After {detail.lags.length} of your engagements they next engaged with a post of yours{" "}
+            {detail.lags.map((lag) => `${lag.days} days`).join(", ")} later, as the studio saw both.
+          </p>
+        )}
       </div>
     </div>
   );
