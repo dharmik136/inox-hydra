@@ -10,10 +10,17 @@ product the installer will not find is worse than one with fewer images.
 
 Nothing here is a mock-up. A throwaway home is seeded with the studio's own
 demo data through the studio's own startup, the built interface is served from
-a loopback port, and each image is whatever the browser drew. The captions in
+a loopback port, and each image is whatever the browser drew. The one thing
+done sooner than the studio would do it itself: the daily section's batch,
+which the scheduler builds a few minutes after the studio starts, is built at
+once by the same function (record_daily.run_scheduled), so From your record
+shows its cards rather than "nothing computed yet". The captions in
 SCREENSHOTS.md are written from the images, not from this file.
 
-    python3 tools/store_screenshots.py --out ~/.cache/inox-qc3/store/screenshots
+    python3 tools/store_screenshots.py --out ~/.cache/inox-qc4/store/screenshots
+
+The PNGs a previous set left in --out under this tool's naming (NN-name.png)
+and not in this set are removed, so the folder holds one set to upload.
 
 Requires the interface to be built (npm --prefix studio/ui run build) and
 Playwright's chromium. The studio's own port is left alone: this serves its
@@ -37,14 +44,20 @@ BUILT = os.path.join(REPO, "studio", "frontend_next", "index.html")
 # its own audits; this is the listing's size, not the product's.
 WIDTH, HEIGHT = 1280, 800
 
-# Each entry is the rail section to open and the file to write. The order is
-# the order the stores show them in, and it leads with what the extension
-# reads, because that is the question a cautious installer actually has.
+# Each entry is the rail section to open, the file to write and the heading it
+# should carry. The order is the order the stores show them in. It leads with
+# what the studio is for now (cycle 4): the next hour, the comments waiting on
+# a reply, which posts worked and who they brought, and what is worth writing
+# from your own record; then what the extension read, the question a cautious
+# installer has. Health is left out on purpose: a demo has no extension
+# running, so every reader there reads NOT SEEN YET, which is true and shows
+# nothing a listing can use. Five, the most the Chrome Web Store takes.
 SHOTS = (
-    ("activity", "01-activity-what-the-bridge-read.png", "What the bridge has read"),
-    ("today", "02-today-the-next-hour.png", "What to do in the next hour"),
-    ("leads", "03-leads-and-a-dossier.png", None),
-    ("posts", "04-posts-what-worked.png", "What worked, and who it brought"),
+    ("today", "01-today-the-next-hour.png", "What to do in the next hour"),
+    ("replies", "02-replies-who-is-waiting.png", "Who is waiting on a reply"),
+    ("posts", "03-posts-what-worked.png", "What worked, and who it brought"),
+    ("record", "04-record-worth-writing-from.png", "What is worth writing from today"),
+    ("activity", "05-activity-what-the-bridge-read.png", "What the bridge has read"),
 )
 
 
@@ -89,8 +102,17 @@ def main():
 
     out = os.path.abspath(os.path.expanduser(args.out))
     os.makedirs(out, exist_ok=True)
+    keep = {filename for _section, filename, _heading in SHOTS}
+    for name in sorted(os.listdir(out)):
+        if name.endswith(".png") and name[:2].isdigit() and name[2:3] == "-" and name not in keep:
+            os.remove(os.path.join(out, name))
+            print(f"  removed {name}, from an earlier set")
     home = tempfile.mkdtemp(prefix="inox_store_shots_")
     server, url = _serve(home)
+    # The daily section's batch, built now by the function the scheduler runs
+    # a few minutes after start, from the same demo data.
+    import record_daily
+    record_daily.run_scheduled()
     written = []
     try:
         with sync_playwright() as play:
