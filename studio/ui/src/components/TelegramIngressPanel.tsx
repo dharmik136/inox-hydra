@@ -165,7 +165,7 @@ export function TelegramIngressPanel() {
               <ul className="mt-1 flex flex-col gap-1.5">
                 {state.recent_links.map((link) => (
                   <li key={link.id} className="text-[12px] leading-snug">
-                    <span className="studio-meta block truncate text-ink-secondary">{link.activity_urn}</span>
+                    <span className="studio-meta block truncate text-ink-secondary">{link.activity_urn || link.link}</span>
                     <span className={link.state === "refused" ? "text-signal-orange-text" : "text-ink-secondary"}>
                       {link.said}
                     </span>

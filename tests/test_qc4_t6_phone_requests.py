@@ -144,10 +144,16 @@ def test_text_beside_the_link_is_kept_without_the_link():
     assert parsed["raw_content"] == "Look at this one it moved overnight"
 
 
-def test_a_short_link_names_nothing_and_the_text_is_kept_whole():
+def test_a_short_link_is_a_post_sent_from_the_phone_not_a_draft():
+    """
+    2.10.1: the LinkedIn app's Copy link gives an lnkd.in link, which used to
+    stay in the text as a draft. It is a request now, never a draft, with the
+    post found in the creator's browser (tests/test_qc4_t6_short_links.py).
+    """
     parsed = IngressMessageParser.parse_message("idea: https://lnkd.in/abc123 this one")
-    assert parsed["read_request"] is None
-    assert parsed["raw_content"] == "https://lnkd.in/abc123 this one"
+    assert parsed["read_request"] == {"url": "https://lnkd.in/abc123", "activity_urn": None,
+                                      "short_link": "https://lnkd.in/abc123"}
+    assert parsed["raw_content"] == ""
 
 
 def test_a_profile_link_is_not_a_post():

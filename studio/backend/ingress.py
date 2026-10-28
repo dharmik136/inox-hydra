@@ -11,6 +11,11 @@ request (desk_requests.py) that Today surfaces as the page to open at this
 computer. The phone sends a link, never a figure: nothing it says is written
 as a reading, and the extension reads the real page at the desk.
 
+A short link, which the LinkedIn app's Copy link gives (lnkd.in/p/<code>),
+names no post, and the studio never fetches it. It is a post sent from the
+phone all the same: a desk request holding the short link, never a draft,
+which Today opens in the creator's own browser (2.10.1).
+
 Strict Invariants:
 - Zero open inbound ports (pure outbound HTTP long-polling).
 - Zero em-dashes in any generated or parsed text.
@@ -77,9 +82,14 @@ REFUSED_START_CHARS = 60
 # A LinkedIn address in a message. The app's share menu writes
 # /posts/<slug>-activity-<id>-<suffix> with tracking parameters; the feed
 # writes /feed/update/urn:li:activity:<id>/. post_identity.extract_activity_urn
-# reads both. An lnkd.in short link names nothing the studio can resolve
-# without fetching it, which it will not do, so it stays ordinary text.
+# reads both.
 LINKEDIN_URL = re.compile(r"https?://(?:[a-z]{1,3}\.)?linkedin\.com/[^\s<>\"']+", re.IGNORECASE)
+# The app's Copy link: an lnkd.in short link, whose code names nothing the
+# studio can resolve without fetching it, which it never does. Kept as its
+# address alone: the host lower-cased, the code exactly as written (its case
+# is part of it), with no query, fragment or punctuation after it.
+SHORT_LINK = re.compile(r"\bhttps?://lnkd\.in(/[A-Za-z0-9_\-/]{1,80})", re.IGNORECASE)
+SHORT_LINK_HOST = "lnkd.in"
 
 MAX_UPDATE_ATTEMPTS = 3
 
@@ -191,6 +201,15 @@ class IngressMessageParser:
                 read_request = {"url": url, "activity_urn": urn}
                 content = re.sub(r"[ \t]{2,}", " ", content.replace(url, " ")).strip()
                 break
+        # A short link is a post sent from the phone, alone or with text
+        # around it: the request, and never a draft. The text around it is
+        # the share sheet's or a note on the post, not a post idea.
+        if read_request is None:
+            short = SHORT_LINK.search(content)
+            if short:
+                link = "https://" + SHORT_LINK_HOST + short.group(1).rstrip("/")
+                read_request = {"url": link, "activity_urn": None, "short_link": link}
+                content = ""
 
         # Extract hashtags from text (capped to 30 unique tags, max 50 chars each)
         raw_hashtags = re.findall(r"#(\w+)", content)
@@ -201,7 +220,7 @@ class IngressMessageParser:
         lines = [l.strip() for l in content.splitlines() if l.strip()]
         title = lines[0][:60] if lines else "Untitled Mobile Ingress"
         if read_request and not lines:
-            title = "Read request from the phone"
+            title = "A post sent from the phone" if read_request.get("short_link") else "Read request from the phone"
 
         metrics = cls.calculate_fold_metrics(content)
 
@@ -476,8 +495,11 @@ class TelegramIngressDaemon:
         # A post link is a request to read that post at the desk. Recorded
         # first, so a message that is only a link is not a draft of nothing.
         request = None
-        if parsed.get("read_request"):
-            request = self._record_desk_request(parsed["read_request"]["activity_urn"])
+        asked = parsed.get("read_request")
+        if asked and asked.get("short_link"):
+            request = self._record_short_link(asked["short_link"])
+        elif asked:
+            request = self._record_desk_request(asked["activity_urn"])
         if not parsed["raw_content"].strip():
             return {"kind": "desk_request", **request} if request else None
 
@@ -514,6 +536,19 @@ class TelegramIngressDaemon:
         conn = get_db()
         try:
             return desk_requests.record(conn, activity_urn, source=desk_requests.SOURCE_TELEGRAM)
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _record_short_link(link: str) -> Dict[str, Any]:
+        """
+        Writes a short link as a request that waits for its post. Nothing
+        follows the link here: which post it is becomes known only in the
+        creator's own browser, when they open it from Today.
+        """
+        conn = get_db()
+        try:
+            return desk_requests.record_short(conn, link, source=desk_requests.SOURCE_TELEGRAM)
         finally:
             conn.close()
 

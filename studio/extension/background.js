@@ -54,7 +54,11 @@ const RELAYABLE_PATHS = new Set([
   "/api/v1/self/posts/analytics",
   "/api/v1/self/outbound/ingest",
   "/api/v1/self/imports/pending",
-  "/api/v1/self/imports/event"
+  "/api/v1/self/imports/event",
+  // A short link from the phone, opened from Today, landed on this post
+  // (content.js, 2.10.1). The studio attaches it only to an open request
+  // still waiting for its post, and only if the post is the creator's.
+  "/api/v1/desk-requests/landed"
 ]);
 
 // What the popup and side panel may read, through PANEL_API. Reads only, and

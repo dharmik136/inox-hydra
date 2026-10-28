@@ -3,6 +3,7 @@ import { Activity, CheckCheck, Copy, Download, ExternalLink, Loader2, PenLine } 
 import {
   dismissDemoCleanupNotice,
   dismissDeskRequest,
+  markDeskRequestDone,
   fetchAnalyticsKpis,
   fetchCadenceInsights,
   fetchEvidenceBrief,
@@ -258,6 +259,21 @@ export function TodaySurface({
     setNote(null);
     try {
       await dismissDeskRequest(id);
+      load();
+    } catch (caught) {
+      setNote({ text: caught instanceof Error ? caught.message : "That did not work.", at: "top", error: true });
+    } finally {
+      setOpening(null);
+    }
+  }
+
+  // Done, for a short link from the phone: the creator has seen the post,
+  // and the browser did not say which it was. Never inferred.
+  async function finishPhoneRequest(id: number) {
+    setOpening("phone-request");
+    setNote(null);
+    try {
+      await markDeskRequestDone(id);
       load();
     } catch (caught) {
       setNote({ text: caught instanceof Error ? caught.message : "That did not work.", at: "top", error: true });
@@ -530,6 +546,16 @@ export function TodaySurface({
                   className="rounded-md bg-signal-orange px-2.5 py-1 text-[12px] font-medium text-on-signal transition-[filter] hover:brightness-110"
                 >
                   Go to Setup
+                </button>
+              )}
+              {brief.open_next.phone_request?.short_link && (
+                <button
+                  type="button"
+                  disabled={opening !== null}
+                  onClick={() => void finishPhoneRequest(brief.open_next.phone_request!.id)}
+                  className="rounded-md border border-edge px-2.5 py-1 text-[12px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+                >
+                  Done
                 </button>
               )}
               {brief.open_next.phone_request && (

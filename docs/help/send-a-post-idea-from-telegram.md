@@ -45,7 +45,8 @@ Send the bot a text message. You can start it with a prefix, in any letter case.
 | `Read: <post link>` | The same request; any text beside the link is saved as a draft tagged `read` |
 | Text and a post link together | The request, and the text without the link as a draft |
 | A link to someone else's post, or to a post the studio does not hold | Nothing is read. The link is listed in the panel as not one of your posts |
-| A link to a profile, a short `lnkd.in` link, or any other address | Kept in the text as an ordinary draft. A short link names no post the studio can read without fetching it, which it will not do |
+| A short `lnkd.in` link, which the LinkedIn app's **Copy link** gives, alone or with text around it | A post sent from your phone: Today shows "You sent a post from your phone". Nothing in that message is saved as a draft, so send an idea in a message of its own. See below |
+| A link to a profile, or any other address | Kept in the text as an ordinary draft |
 | A voice note | Only the placeholder "[Voice Memo Received: Local transcription pending]" |
 | A photo, file, sticker or other message with no text | Nothing. It is skipped, and so is any caption |
 
@@ -64,6 +65,17 @@ The link names the post by the number in it, which is the same for the app's sha
 - **Anything else**, such as someone else's post, or a post of yours the studio has not read yet: a post that is not yours is never read. The link is listed under **LINKS FROM YOUR PHONE** in the panel with "Not one of your posts", and never appears on Today. If it is yours and new, run **Posts you wrote** in Setup's step 5, then share the link again.
 
 The panel's **Posts asked for from the phone, waiting** line counts the open requests, and **LINKS FROM YOUR PHONE** lists the newest links with what became of each.
+
+## What happens to a short link
+
+The LinkedIn app's **Copy link** gives a short link, such as `https://lnkd.in/p/AbC123`, with no post number in it. The studio never fetches it, and never contacts lnkd.in or LinkedIn to find out where it goes: your own browser does, when you open it.
+
+1. **Today** says "You sent a post from your phone" under **ONE THING TO OPEN**, with **Open it in the bridge browser**, **Done** and **Not now**.
+2. **Open it in the bridge browser** opens the short link in your browser with `#inox-desk-` and the request's number on the end. A browser keeps that ending when the short link sends it on to the post, so the extension, on the post's page, tells the studio which post it was.
+3. If it is one of your posts, **Today** then asks you to open that post's analytics, as for any post link, and the request is done once that page has been read. If it is someone else's post, the request is closed as not one of your posts.
+4. If LinkedIn's page drops that ending before the extension can read it, nothing is reported, and the studio does not guess: press **Done** on Today once you have seen the post. **Not now** closes it either way, and it is closed with a note after a week.
+
+In the panel, a short link is listed by its address until its post is known.
 
 ## What happens to text
 
@@ -97,6 +109,7 @@ Click **Remove the bot** in the panel. The token and chat id are removed from th
 | **Asking Telegram for messages** reads NO after saving | Reload the page. If it stays NO, see [The studio will not open or shows an error](the-studio-will-not-open.md) |
 | Nothing arrives, no error | Check the chat id is yours, then search with Ctrl+K instead of waiting for the page |
 | A post link arrived but Today does not offer it | The panel lists it as not one of your posts: the studio holds no post of yours with that link. If it is yours and new, run **Posts you wrote** in Setup's step 5, then share it again |
+| Today still says "You sent a post from your phone" after you opened it | The post's page did not keep the link's ending, so the extension could not say which post it was. Press **Done** once you have seen it |
 | Arrivals are slow | Night-time polling, error backoff, or a Telegram rate limit, which the studio waits out |
 | A message sent while the studio was off is missing | It is fetched at next start only if Telegram still holds it; how long it does is Telegram's policy |
 | The same idea appears twice after a restart | It arrived just before the studio stopped, before the studio had confirmed it to Telegram. Delete the extra draft |

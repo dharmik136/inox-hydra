@@ -2290,8 +2290,12 @@ export interface TodayBrief {
     action: "open" | "setup";
     url?: string;
     reason: string;
-    /** Present when the page to open is one the phone asked for through the Telegram bot. */
-    phone_request?: { id: number; activity_urn: string; asked_at: string; source: string };
+    /**
+     * Present when the page to open is one the phone asked for through the
+     * Telegram bot. short_link is set for an lnkd.in link whose post is not
+     * known yet: the url opens it with #inox-desk-<id>, and Done closes it.
+     */
+    phone_request?: { id: number; activity_urn: string; asked_at: string; source: string; short_link?: string | null };
   };
   /** What the demo cleanup removed, until dismissed; null when there is nothing to say. */
   demo_cleanup?: { removed: { kind: string; count: number }[]; backup: string | null; removed_at: string | null } | null;
@@ -2307,6 +2311,12 @@ export async function fetchToday(): Promise<TodayBrief> {
 export async function dismissDeskRequest(id: number): Promise<boolean> {
   const data = await call<{ dismissed?: boolean }>(`/api/v1/desk-requests/${id}/dismiss`, { method: "POST" });
   return !!data.dismissed;
+}
+
+/** Today's Done, for a short link from the phone whose post the browser never reported. */
+export async function markDeskRequestDone(id: number): Promise<boolean> {
+  const data = await call<{ done?: boolean }>(`/api/v1/desk-requests/${id}/done`, { method: "POST" });
+  return !!data.done;
 }
 
 // -------------------------------------------------------------
@@ -3883,10 +3893,13 @@ export interface IngressSettings {
   /** The newest links from the phone, newest first, each with what became of it in a sentence. */
   recent_links: {
     id: number;
+    /** Empty for a short link whose post is not known yet. */
     activity_urn: string;
+    /** The lnkd.in short link the phone sent, or null for a full post link. */
+    link: string | null;
     asked_at: string;
     done_at: string | null;
-    state: "open" | "read" | "expired" | "dismissed" | "refused";
+    state: "open" | "read" | "expired" | "dismissed" | "done" | "refused";
     said: string;
   }[];
   /** The chats this profile's bot refused, newest first; This is me saves one. */
