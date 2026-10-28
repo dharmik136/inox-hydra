@@ -61,6 +61,9 @@ def test_gstack_backlog_table_schema_and_indexes():
 def test_day04_draft_seeding_and_mobile_fold_safety():
     """Validates that Day 04 Post is properly seeded with correct fold metrics and status."""
     init_db()
+    # The Launch Kit is no longer seeded at start, even in demo mode (cycle 4,
+    # track 4, phase b); its seeders stay as the cleanup's definition.
+    seed_day04_draft()
     conn = get_db()
     c = conn.cursor()
 
@@ -95,6 +98,7 @@ def test_day04_draft_seeding_and_mobile_fold_safety():
 # -------------------------------------------------------------
 def test_day04_strict_zero_em_dashes():
     """Validates that the character \\u2014 is 100% absent across Day 04 codebase and drafts."""
+    seed_day04_draft()
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT title, raw_content FROM drafts WHERE title LIKE '%G-Stack in Practice%'")

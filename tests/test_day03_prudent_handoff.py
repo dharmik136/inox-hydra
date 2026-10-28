@@ -66,6 +66,9 @@ def test_viral_templates_table_schema_and_indexes():
 def test_day03_draft_seeding_and_mobile_fold_safety():
     """Validates that Day 03 Post is properly seeded with correct fold metrics and status."""
     init_db()
+    # The Launch Kit is no longer seeded at start, even in demo mode (cycle 4,
+    # track 4, phase b); its seeders stay as the cleanup's definition.
+    seed_day03_draft()
     conn = get_db()
     c = conn.cursor()
 
@@ -99,6 +102,7 @@ def test_day03_draft_seeding_and_mobile_fold_safety():
 # -------------------------------------------------------------
 def test_day03_strict_zero_em_dashes():
     """Validates that the character \\u2014 is 100% absent across Day 03 codebase, drafts, and templates."""
+    seed_day03_draft()
     conn = get_db()
     c = conn.cursor()
     c.execute("SELECT title, raw_content FROM drafts WHERE title LIKE '%Passive Telemetry%'")

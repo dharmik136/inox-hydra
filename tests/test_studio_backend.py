@@ -223,16 +223,19 @@ def test_ai_engine():
 
 
 def test_scheduled_post_integrity():
+    # The demo's queued posts (cycle 4, track 4, phase b): the September post
+    # this checked was retired, because a demo opened after its date showed
+    # it missed. The queue's own posts sit at the creator's next slots.
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT * FROM posts WHERE id = 'post-enterprise-scheduled'")
-    post = c.fetchone()
-    assert post is not None, "Crucial post 'post-enterprise-scheduled' not found!"
-    assert post["status"] in ["scheduled", "published"], f"Expected post status 'scheduled' or 'published', got '{post['status']}'"
-    assert "\u2014" not in post["content"], "Post contains forbidden em-dash!"
-    assert "12:00:00" in post["scheduled_for"], f"Unexpected schedule time: {post['scheduled_for']}"
+    c.execute("SELECT * FROM posts WHERE id LIKE 'demo-queued-%' ORDER BY scheduled_for")
+    posts = c.fetchall()
+    assert posts, "the demo's queued posts were not seeded"
+    for post in posts:
+        assert post["status"] == "scheduled", f"Expected status 'scheduled', got '{post['status']}'"
+        assert "\u2014" not in post["content"], "Post contains forbidden em-dash!"
+        assert post["scheduled_for"] and post["scheduled_for"].endswith("Z"), post["scheduled_for"]
     conn.close()
-    print("✅ test_scheduled_post_integrity passed (5:30 PM IST post confirmed intact)!")
 
 
 def test_static_assets_and_docs():
