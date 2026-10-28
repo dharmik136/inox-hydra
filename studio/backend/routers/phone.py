@@ -36,6 +36,7 @@ class DeskLandingPayload(BaseModel):
 
 class IngressOptionsPayload(BaseModel):
     replies: Optional[bool] = Field(None, description="The bot confirms each message with a short fixed sentence")
+    figures: Optional[bool] = Field(None, description="The bot may answer /today with your own figures")
 
 
 class IngressSettingsPayload(BaseModel):
@@ -66,7 +67,7 @@ def post_ingress_settings(payload: IngressSettingsPayload):
 @router.post("/api/v1/ingress/options", tags=["Phone"])
 def post_ingress_options(payload: IngressOptionsPayload):
     """The bot's switches for this profile. A switch not sent is left as it is."""
-    telegram_bot.save_options(replies=payload.replies)
+    telegram_bot.save_options(replies=payload.replies, figures=payload.figures)
     return ingress.describe_settings()
 
 

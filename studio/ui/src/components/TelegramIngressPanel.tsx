@@ -148,6 +148,13 @@ export function TelegramIngressPanel() {
                 disabled={busy}
                 onChange={(on) => void setOption({ replies: on }, on ? "The bot confirms each message." : "The bot no longer confirms messages.")}
               />
+              <OptionRow
+                label="The bot may answer with your figures"
+                detail="When on, /today answers with your latest post's figures, how many replies are waiting and when your next post is scheduled. Those figures then sit on Telegram's servers, as everything in the chat does. Never anyone else's name or comment."
+                checked={state.options.figures}
+                disabled={busy}
+                onChange={(on) => void setOption({ figures: on }, on ? "The bot may answer /today with your figures." : "Your figures stay in the studio.")}
+              />
             </div>
           )}
           {state.running && state.configured_from === "settings" && (

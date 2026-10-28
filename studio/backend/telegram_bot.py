@@ -33,6 +33,7 @@ import logging
 import re
 import threading
 import time
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -51,6 +52,7 @@ API_BASE = "https://api.telegram.org"
 
 # Settings, each in the profile the bot belongs to.
 REPLIES_KEY = "telegram_replies"   # the bot confirms each message: on unless "off"
+FIGURES_KEY = "telegram_figures"   # the bot may answer with your figures: off unless "on"
 
 # Every sentence the bot answers a message with. Fixed: none carries the
 # creator's data. {chat_id} is the recipient's own chat id.
@@ -73,7 +75,22 @@ SENTENCES = {
     "bridge_quiet": ("The bridge in your browser has not been heard from in the last few minutes: open LinkedIn "
                      "in the bridge browser."),
     "bridge_never": "The bridge has not been heard from yet: install it, then open LinkedIn in the bridge browser.",
+    "figures_off": ("Your figures stay in your studio. To have me answer with them, turn on The bot may answer "
+                    "with your figures under Local security."),
+    "no_post": "No post of yours is in your studio yet.",
+    "nothing_scheduled": "No post is scheduled.",
 }
+
+# Where a figure was read, as /today says it.
+SOURCE_WORDS = {
+    "post_analytics": "on its analytics page",
+    "activity_page": "on your Activity tab",
+    "linkedin_export": "from LinkedIn's analytics export",
+    "voyager_network": "by network reading",
+    "snapshot": "as your feed last showed it",
+}
+FIGURE_WORDS = (("impressions", "impressions"), ("reactions", "reactions"), ("comments", "comments"),
+                ("reposts", "reposts"))
 
 # What /start and /help answer: what the bot does, how to pair, and what it
 # never sends. Fixed, like every sentence above.
@@ -86,6 +103,8 @@ HELP = "\n".join((
     "- /idea and your idea: saved as a draft, tagged as an idea",
     "- /ask and what your studio should remember when it picks what to write about",
     "- /status: whether your studio and its bridge are running",
+    "- /today: your latest post's figures, replies waiting and your next scheduled post, only if you allow "
+    "figures in your studio",
     "",
     "To pair a chat: in your studio, open Settings, then Local security, and press This is me beside it.",
     "",
@@ -93,7 +112,7 @@ HELP = "\n".join((
 ))
 
 # Commands answered whatever the confirmations switch says: they are questions.
-QUESTIONS = ("start", "help", "status")
+QUESTIONS = ("start", "help", "status", "today")
 _COMMAND = re.compile(r"^/([A-Za-z][A-Za-z0-9_]{0,31})(?:@[A-Za-z0-9_]{1,64})?(?:\s+(.*))?$", re.DOTALL)
 
 
@@ -281,8 +300,91 @@ class Outbox:
 
 
 def _now() -> str:
-    from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
+
+
+def _instant(text: Any) -> Optional[datetime]:
+    if not text:
+        return None
+    try:
+        when = datetime.fromisoformat(str(text))
+    except ValueError:
+        return None
+    return when if when.tzinfo else when.replace(tzinfo=timezone.utc)
+
+
+def ago(when: Optional[datetime]) -> str:
+    """How long ago, in words: minutes under an hour, hours under two days, then days."""
+    if when is None:
+        return "at a time not recorded"
+    hours = max(0.0, (datetime.now(timezone.utc) - when).total_seconds() / 3600.0)
+    if hours < 1:
+        minutes = max(1, int(round(hours * 60)))
+        return f"{minutes} minute ago" if minutes == 1 else f"{minutes} minutes ago"
+    if hours < 48:
+        whole = int(hours)
+        return f"{whole} hour ago" if whole == 1 else f"{whole} hours ago"
+    days = int(hours // 24)
+    return f"{days} days ago"
+
+
+def _where(entry: Dict[str, Any]) -> str:
+    source = entry.get("source") or ""
+    words = SOURCE_WORDS.get(source) or "by your studio"
+    return f"read {words} {ago(_instant(entry.get('read_at')))}"
+
+
+def today_answer() -> str:
+    """
+    /today, with figures allowed: the latest post's figures, each with where
+    and how long ago it was read; how many replies are waiting; when the next
+    post is scheduled. Counts and the creator's own figures only: no one's
+    name, no comment, not even the creator's own words.
+    """
+    try:
+        from . import post_identity, replies, results
+    except ImportError:
+        import post_identity
+        import replies
+        import results
+    conn = get_db()
+    try:
+        said = []
+        row = conn.execute(
+            "SELECT activity_urn, published_at FROM own_posts WHERE published_at IS NOT NULL "
+            "AND activity_urn NOT LIKE ? ORDER BY published_at DESC LIMIT 1",
+            (post_identity.LOCAL_URN_PREFIX + "%",)).fetchone()
+        if not row:
+            said.append(SENTENCES["no_post"])
+        else:
+            figure = results.figures(conn, [row["activity_urn"]]).get(row["activity_urn"]) or {}
+            by_figure = figure.get("by_figure") or {}
+            read = [(field, words) for field, words in FIGURE_WORDS if figure.get(field) is not None]
+            head = f"Your latest post, published {ago(_instant(row['published_at']))}"
+            if not read:
+                said.append(f"{head}, has no figures read yet.")
+            else:
+                places = {(by_figure.get(f) or {}).get("source") or figure.get("source"): None for f, _w in read}
+                times = {(by_figure.get(f) or {}).get("read_at") or figure.get("read_at") for f, _w in read}
+                if len(places) == 1 and len(times) == 1:
+                    first = by_figure.get(read[0][0]) or figure
+                    counts = ", ".join(f"{figure[f]:,} {w}" for f, w in read)
+                    said.append(f"{head}: {counts}, {_where(first)}.")
+                else:
+                    counts = ", ".join(f"{figure[f]:,} {w} ({_where(by_figure.get(f) or figure)})" for f, w in read)
+                    said.append(f"{head}: {counts}.")
+        said.append(f"Replies waiting: {replies.waiting_count(conn)}.")
+        upcoming = conn.execute("SELECT scheduled_for FROM posts WHERE status = 'scheduled' "
+                                "AND scheduled_for IS NOT NULL ORDER BY scheduled_for LIMIT 1").fetchone()
+        when = _instant(upcoming[0]) if upcoming else None
+        if when is not None:
+            local = when.astimezone()
+            said.append(f"Next scheduled post: {local.strftime('%a %d %b, %H:%M')} (your computer's time).")
+        else:
+            said.append(SENTENCES["nothing_scheduled"])
+        return " ".join(said)
+    finally:
+        conn.close()
 
 
 # ---------------------------------------------------------------------------
@@ -303,16 +405,23 @@ def replies_on() -> bool:
     return (_setting(REPLIES_KEY) or "on") != "off"
 
 
+def figures_on() -> bool:
+    """Whether the bot may answer with the creator's figures, in the open profile. Off unless turned on."""
+    return (_setting(FIGURES_KEY) or "off") == "on"
+
+
 def options() -> Dict[str, Any]:
     """The bot's switches, as the panel shows them."""
-    return {"replies": replies_on()}
+    return {"replies": replies_on(), "figures": figures_on()}
 
 
-def save_options(replies: Optional[bool] = None) -> Dict[str, Any]:
+def save_options(replies: Optional[bool] = None, figures: Optional[bool] = None) -> Dict[str, Any]:
     """Saves the switches the panel sent; a switch not sent is left as it is."""
     changes = {}
     if replies is not None:
         changes[REPLIES_KEY] = "on" if replies else "off"
+    if figures is not None:
+        changes[FIGURES_KEY] = "on" if figures else "off"
     if changes:
         conn = get_db()
         try:

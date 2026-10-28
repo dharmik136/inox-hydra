@@ -559,6 +559,11 @@ class TelegramIngressDaemon:
             return done, telegram_bot.HELP, True
         if name == "status":
             return done, telegram_bot.status_sentence(), True
+        if name == "today":
+            # The creator's own figures leave only when they turned that on.
+            if not telegram_bot.figures_on():
+                return done, telegram_bot.SENTENCES["figures_off"], True
+            return done, telegram_bot.today_answer(), True
         if name == "idea":
             if not argument:
                 return done, telegram_bot.SENTENCES["empty_idea"], False

@@ -67,9 +67,18 @@ Send a command as a message on its own, as Telegram's menu does. Letter case doe
 | `/idea your idea` | Your idea is saved as a draft tagged `idea`, as `Idea: your idea` is. A link inside it stays part of the idea |
 | `/ask what to remember` | It is remembered as an ask in **From your record**, with the source Telegram, and listed under **What the studio knows** there, where you can change or remove it. It takes effect on tomorrow's cards. Nothing is saved as a draft |
 | `/status` | Whether your studio is running, and whether the bridge in your browser is connected. No figures |
+| `/today` | Your latest post's figures, how many replies are waiting and when your next post is scheduled, only if you turned on **The bot may answer with your figures**. Otherwise it says your figures stay in the studio |
 | Any other command | "I do not know that command. Send /help to see what I do." |
 
-`/start`, `/help` and `/status` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
+`/start`, `/help`, `/status` and `/today` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
+
+## Your figures on Telegram, only if you allow it
+
+**The bot may answer with your figures** is off until you tick it in the panel. With it on, `/today` answers, for example:
+
+> Your latest post, published 2 days ago: 1,234 impressions, 56 reactions, 7 comments, read on its analytics page 3 hours ago. Replies waiting: 2. Next scheduled post: Thu 30 Oct, 09:00 (your computer's time).
+
+Each figure says where it was read and how long ago; a figure nobody read is left out, never shown as 0. Replies are a count. It never carries a person's name, a comment, or the words of your posts. Once sent, those figures sit on Telegram's servers, as everything in the chat does. Untick the switch and `/today` says your figures stay in the studio.
 
 ## What the bot says back
 

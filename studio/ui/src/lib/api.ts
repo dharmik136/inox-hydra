@@ -3875,6 +3875,8 @@ export interface RefusedChat {
 export interface IngressOptions {
   /** The bot confirms each message with a short fixed sentence. On unless turned off. */
   replies: boolean;
+  /** The bot may answer /today with your own figures. Off unless turned on. */
+  figures: boolean;
 }
 
 export interface IngressSettings {
