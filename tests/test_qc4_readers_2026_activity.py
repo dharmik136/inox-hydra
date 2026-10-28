@@ -22,7 +22,7 @@ import json
 import pytest
 
 ME = "ada-example"
-SCRIPTS = ("voyager_schema.js", "content.js", "own_pages.js", "own_insights.js")
+SCRIPTS = ("content.js", "own_pages.js", "own_insights.js")
 
 
 @pytest.fixture(scope="module")

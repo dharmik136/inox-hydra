@@ -113,11 +113,15 @@ def test_telemetry_buffer_batch_flushing_and_eviction(temp_telemetry_env):
 
 
 def test_api_analytics_ingest_with_telemetry_shard():
-    """Validates /api/analytics/ingest passes through to both core DB and telemetry shard."""
+    """
+    Validates /api/analytics/ingest passes through to both core DB and telemetry shard. The
+    payload used to name network reading's request observer as its source; that observer was
+    retired in 2.10.2, and what it sends is answered without being written
+    (tests/test_network_reading_retired.py), so this one names the extension.
+    """
     init_db()
     payload = {
-        "event_type": "feed_updates_v2",
-        "source": "chrome_mv3_observer",
+        "source": "extension",
         "posts": [
             {
                 "id": "post-shard-test-1",
@@ -160,19 +164,22 @@ def test_api_analytics_ingest_with_telemetry_shard():
 
 
 def test_extension_background_observer_contract():
-    """Validates background.js interceptors and token sanitization logic."""
+    """
+    Validates background.js's token sanitization and its analytics relay. The Voyager API
+    listeners and their telemetry were retired with network reading in 2.10.2.
+    """
     ext_bg = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "extension", "background.js"))
     assert os.path.exists(ext_bg)
 
     with open(ext_bg, "r", encoding="utf-8") as f:
         content = f.read()
 
-    # Required Voyager API listeners
-    assert "/voyager/api/feed/updatesV2" in content
-    assert "/voyager/api/identity/profiles" in content
-    assert "voyager/api/identity/dash/creatorAnalytics" in content
+    # The Voyager API listeners are gone; the sanitizer still guards every relay.
+    assert "/voyager/api/feed/updatesV2" not in content
+    assert "/voyager/api/identity/profiles" not in content
+    assert "voyager/api/identity/dash/creatorAnalytics" not in content
     assert "sanitizeTelemetryPayload" in content
-    assert "forwardPassiveTelemetry" in content
+    assert "forwardPassiveTelemetry" not in content
     # The literal URL moved into studioFetch, which attaches the token and
     # sends from the extension origin rather than the LinkedIn page.
     assert 'STUDIO_ORIGIN = "http://127.0.0.1:8000"' in content

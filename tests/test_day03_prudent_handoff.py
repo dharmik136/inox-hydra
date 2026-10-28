@@ -182,7 +182,11 @@ def test_intelligence_api_endpoints():
 # TASK 6: Extension Bridge Configuration
 # -------------------------------------------------------------
 def test_extension_manifest_and_passive_background():
-    """Validates Chrome Extension MV3 manifest and background passive observation listener."""
+    """
+    Validates the Chrome Extension MV3 manifest and the background's analytics relay. The passive
+    observer of LinkedIn's /voyager/api/ requests, and the webRequest permission it needed, were
+    retired with network reading in 2.10.2 (tests/test_network_reading_retired.py).
+    """
     extension_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "studio", "extension"))
     manifest_path = os.path.join(extension_dir, "manifest.json")
     bg_path = os.path.join(extension_dir, "background.js")
@@ -194,7 +198,7 @@ def test_extension_manifest_and_passive_background():
         manifest = json.load(f)
 
     assert manifest["manifest_version"] == 3
-    assert "webRequest" in manifest["permissions"]
+    assert "webRequest" not in manifest["permissions"]
     assert "alarms" in manifest["permissions"]
     assert "sidePanel" in manifest["permissions"]
     assert "http://127.0.0.1:8000/*" in manifest["host_permissions"]
@@ -202,7 +206,7 @@ def test_extension_manifest_and_passive_background():
     with open(bg_path, "r", encoding="utf-8") as f:
         bg_content = f.read()
 
-    assert "voyager/api/identity/dash/creatorAnalytics" in bg_content
+    assert "voyager/api/identity/dash/creatorAnalytics" not in bg_content
     assert "INGEST_ANALYTICS" in bg_content
     # Same endpoint, now reached through the token aware helper.
     assert 'STUDIO_ORIGIN = "http://127.0.0.1:8000"' in bg_content

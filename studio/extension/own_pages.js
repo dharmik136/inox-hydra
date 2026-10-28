@@ -1874,14 +1874,9 @@
   // Every tab used to send the studio a heartbeat a minute of its own, so
   // ten tabs wrote ten rows a minute. The worker now beats once for the
   // browser (cycle 4, track 1, phase 2) and carries what each tab tells it
-  // here: the kind of page, whether the tab is visible, and network reading
-  // as this page sees it (content.js keeps it: the switch, whether the
-  // interceptor answered, the count of LinkedIn's data calls by path and
-  // query name), so the studio can tell "off" from "on and matching
-  // nothing". From a hidden tab too: the launcher opens LinkedIn behind the
-  // studio's tab. A message to the worker, never a request to the studio,
-  // and nothing about network reading while the switch has not been read,
-  // which the studio shows as not measured. The worker answers the
+  // here: the kind of page and whether the tab is visible. From a hidden tab
+  // too: the launcher opens LinkedIn behind the studio's tab. A message to
+  // the worker, never a request to the studio. The worker answers the
   // studio's handshake, and says once when the extension needs reloading.
   function pageState() {
     const state = {
@@ -1890,12 +1885,6 @@
       visible: document.visibilityState === "visible",
       extension_version: EXTENSION_VERSION,
     };
-    const reading = typeof window.__inoxNetworkReading === "function" ? window.__inoxNetworkReading() : null;
-    if (reading) {
-      state.network_reading = reading;
-      const calls = reading.switch && typeof window.__inoxVoyagerCalls === "function" ? window.__inoxVoyagerCalls() : null;
-      if (calls) state.voyager_calls = calls;
-    }
     try {
       chrome.runtime.sendMessage(state, () => { void chrome.runtime.lastError; });
     } catch (err) {
@@ -1957,16 +1946,6 @@
 
   pageState();
   setInterval(pageState, HEARTBEAT_MS);
-  // The first report leaves before content.js has read the network reading
-  // switch (both scripts run in one task; the storage read answers after),
-  // so it carries no state. content.js says when the switch is known, when
-  // it changes and when the page has said whether it carries the reader,
-  // and the page reports at once rather than a minute later. A function
-  // call in this world: an event on LinkedIn's window would be heard by
-  // LinkedIn's own scripts.
-  if (typeof window.__inoxOnNetworkReading === "function") {
-    window.__inoxOnNetworkReading(() => { pageState(); });
-  }
   document.addEventListener("visibilitychange", () => {
     pageState();
     if (document.visibilityState === "visible") onRoute();

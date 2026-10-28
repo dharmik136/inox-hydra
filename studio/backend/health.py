@@ -125,19 +125,15 @@ def readers() -> Dict[str, Any]:
     """
     The first view: per reader, its state as capture_health decides it and
     its runs in the prune's window, as counts; then the heartbeat summary over
-    the same week, and network reading as the bridge last reported it. The
-    runs themselves and the day rows are one level down, in reader(), so the
-    first paint stays small however long the studio runs.
+    the same week. The runs themselves and the day rows are one level down,
+    in reader(), so the first paint stays small however long the studio runs.
 
-    The readers listed are onboarding.listed_health's, the one rule Setup's
-    state, the side panel and the extension health route follow: every page
-    reader, and a network-reading reader once it has run or while the switch
-    is reported on. Listed with the switch off before it ran, it read NOT
-    SEEN YET for a reader that cannot run (cycle 2, SETUP-17).
+    The readers listed are capture_health's, the list Setup's state, the side
+    panel and the extension health route follow. Network reading's two
+    readers went with it in 2.10.2; where it ran, one sentence says so.
     """
     windows = _windows()
     health = onboarding.capture_health()
-    reading = onboarding.bridge_status().get("network_reading")
     conn = get_db()
     try:
         # SUM is NULL when no run of the window measured the count, which is
@@ -149,13 +145,12 @@ def readers() -> Dict[str, Any]:
         held = {r["extractor"]: r["n"] for r in conn.execute(
             "SELECT extractor, COUNT(*) AS n FROM capture_days GROUP BY extractor")}
         listed = []
-        for state in onboarding.listed_health(health, reading):
+        for state in health:
             extractor = state["extractor"]
             counted = week.get(extractor)
             listed.append({
                 "extractor": extractor,
                 "label": onboarding.EXTRACTORS[extractor],
-                "opt_in": extractor in onboarding.OPT_IN_EXTRACTORS,
                 "state": state["state"],
                 "last_run_at": state["last_run_at"],
                 "last_good_at": state["last_good_at"],
@@ -170,6 +165,7 @@ def readers() -> Dict[str, Any]:
         heartbeat_days = onboarding.HEARTBEAT_RETENTION.days
         beats = _heartbeats(conn, (windows["now"] - onboarding.HEARTBEAT_RETENTION).isoformat(), heartbeat_days)
         by_day = _by_day(conn, windows["now"])
+        retired = onboarding.network_reading_retired(conn)
     finally:
         conn.close()
     return {
@@ -177,9 +173,8 @@ def readers() -> Dict[str, Any]:
         "window": windows["window"],
         "days_window": windows["days_window"],
         "readers": listed,
-        # The three honest states (onboarding.network_reading_sentence), or
-        # None when no heartbeat has carried the state: not reported, never off.
-        "network_reading": reading,
+        # "Network reading was retired in 2.10.2: ...", only where it ran.
+        "network_reading_retired": retired,
         "by_day": by_day,
         "heartbeats": beats,
     }

@@ -25,7 +25,7 @@ from qc_f3_pages import Pages, page_html
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "studio", "backend"))
 
-SCRIPTS = ("voyager_schema.js", "content.js", "own_pages.js")
+SCRIPTS = ("content.js", "own_pages.js")
 NEW_FIELDS = {"followers_gained", "profile_viewers", "link_visits", "article_views", "video_views",
               "in_network_pct", "out_of_network_pct", "demographics"}
 URN = "urn:li:activity:7386000000000000501"

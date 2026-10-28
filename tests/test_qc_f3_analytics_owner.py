@@ -15,6 +15,10 @@ before the profile has confirmed who it is. The bridge learns the signed-in
 account only from LinkedIn itself (the creator's own profile, shown with its
 owner's controls or reached through /in/me/) and forgets it when the
 browser's LinkedIn sign-in changes.
+
+The follower counts from network reading went with it in 2.10.2, when
+network reading was retired; a network reading an older extension still
+sends now keeps nothing for any account (tests/test_network_reading_retired.py).
 """
 
 import json
@@ -115,28 +119,12 @@ def test_page_analytics_from_the_confirmed_account_are_kept(confirmed_creator):
     assert _rows() == [{"date": DAY, "followers": 3105, "impressions": 512}]
 
 
-def _network_reading(vanity):
-    body = {"schema_name": "creator_analytics", "data": [{"followers": 98765}]}
-    if vanity is not None:
-        body["vanity"] = vanity
-    return client.post("/api/v1/bridge/voyager-ingest", json=body)
-
-
-def test_network_follower_counts_from_another_account_or_none_are_refused(confirmed_creator):
-    assert _network_reading("bob").status_code == 409
-    assert _network_reading(None).status_code == 409
+def test_a_network_follower_count_is_kept_for_no_account_since_it_was_retired(confirmed_creator):
+    """Even from the confirmed account: network reading was retired in 2.10.2."""
+    response = client.post("/api/v1/bridge/voyager-ingest", json={
+        "schema_name": "creator_analytics", "data": [{"followers": 98765}], "vanity": confirmed_creator})
+    assert response.status_code == 200 and response.json()["status"] == "retired", response.text
     assert _rows() == []
-
-
-def test_network_follower_counts_before_any_identity_are_refused(no_identity):
-    assert _network_reading("studio-test-creator").status_code == 409
-    assert _rows() == []
-
-
-def test_network_follower_counts_from_the_confirmed_account_are_kept(confirmed_creator):
-    response = _network_reading(confirmed_creator)
-    assert response.status_code == 200, response.text
-    assert [r["followers"] for r in _rows()] == [98765]
 
 
 # ---------------------------------------------------------------------------
@@ -163,19 +151,6 @@ def test_the_analytics_page_names_the_signed_in_account(pages):
     assert sent and sent[-1]["author"] == "test-creator"
 
 
-def test_the_network_reading_names_the_signed_in_account(pages):
-    page = pages.open("/analytics/creator/content/", ANALYTICS,
-                      storage={"signedInVanity": "test-creator", "networkReading": True})
-    page.clock.run_for(100)
-    page.evaluate("""() => window.postMessage({type: 'INOX_VOYAGER_CAPTURE', source: 'inox-voyager-interceptor',
-        payload: {url: 'https://www.linkedin.com/voyager/api/identity/dash/creatorAnalytics', status: 200,
-                  body: {elements: [{followerCount: 4100}]}, captureId: 'c1', timestamp: 't'}}, '*')""")
-    page.clock.run_for(100)
-    sent = pages.sent(page, "/api/v1/bridge/voyager-ingest")
-    assert sent and sent[-1]["vanity"] == "test-creator"
-    assert sent[-1]["data"] == [{"followers": 4100}]
-
-
 PROFILE = """
 <main><section aria-label="Primary content"><section>
   <h2>Test Creator</h2><div>Founder at Local-First Labs</div><div>Berlin</div>
@@ -187,7 +162,7 @@ PROFILE = """
 
 def test_your_own_profile_teaches_the_bridge_which_account_is_signed_in(pages):
     page = pages.open("/in/test-creator/", page_html(PROFILE, title="Test Creator | LinkedIn"),
-                      scripts=("voyager_schema.js", "content.js", "own_pages.js"))
+                      scripts=("content.js", "own_pages.js"))
     page.clock.run_for(4000)
     assert page.evaluate("() => window.__storage.signedInVanity") == "test-creator"
 
@@ -196,7 +171,7 @@ def test_a_strangers_profile_teaches_it_nothing(pages):
     stranger = PROFILE.replace("Test Creator", "Stranger Author").replace("test-creator", "stranger-author") \
         .replace('<button aria-label="Edit intro">Edit</button>', "<button>Connect</button><button>Message</button>")
     page = pages.open("/in/stranger-author/", page_html(stranger, title="Stranger Author | LinkedIn"),
-                      scripts=("voyager_schema.js", "content.js", "own_pages.js"),
+                      scripts=("content.js", "own_pages.js"),
                       storage={"signedInVanity": "test-creator"})
     page.clock.run_for(4000)
     assert page.evaluate("() => window.__storage.signedInVanity") == "test-creator"

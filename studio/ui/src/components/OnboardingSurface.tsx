@@ -490,10 +490,9 @@ function counted(count: number, noun: string): string {
 
 function bridgeLine(state: OnboardingState): string {
   const { bridge } = state;
-  // The network-reading sentence is the studio's, from the last heartbeat
-  // that carried the state; an extension that has not reported it says
-  // nothing here rather than "off".
-  const reading = bridge.network_reading ? ` ${bridge.network_reading.sentence}` : "";
+  // Network reading was retired in 2.10.2; the studio says so once, only
+  // where it had run, in its own sentence.
+  const reading = state.network_reading_retired ? ` ${state.network_reading_retired}` : "";
   // More than one browser: each named, so two clients' bridges can be told
   // apart (cycle 4, track 1, phase 2).
   const others = (bridge.bridges ?? []).length > 1

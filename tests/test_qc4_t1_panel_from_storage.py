@@ -7,8 +7,9 @@ once when opened and never refreshed, and the capture confirmation lived on
 LinkedIn's page. They now render the worker's lastCapture, the waiting count
 and the drift notice from chrome.storage, and follow storage.onChanged, so a
 capture shows the moment it lands with no studio call and nothing drawn into
-LinkedIn's document. The panel's Health tab prints the studio's own
-network-reading sentence.
+LinkedIn's document. The panel's Health tab printed the studio's own
+network-reading sentence until network reading was retired in 2.10.2; it
+now says nothing of network reading, even to a studio that still answers it.
 """
 
 import json
@@ -123,25 +124,16 @@ def test_opening_the_panel_tells_the_worker(pages):
     assert page.evaluate("() => window.__sent.some((m) => m.action === 'PANEL_OPENED')")
 
 
-def test_the_health_tab_prints_the_studios_network_reading_sentence(pages):
+def test_the_health_tab_says_nothing_of_network_reading_or_voyager(pages):
+    """An older studio still answers network reading and the Voyager figures; the panel shows none of it."""
     page = _open(pages, PANEL, "sidepanel.js", {})
     page.click("#tab-health-btn")
     page.clock.run_for(300)
     health = _text(page, "health-mini-list")
-    assert "Network reading is on and matching nothing" in health
-    assert "Standby" not in health and "Exact JSON" not in health
-    # The coverage meter's names, most called first, readable without DevTools.
-    assert "voyagerFeedDashMainFeed (9), /voyager/api/identity/dash/profiles (3)" in health
-
-
-def test_the_health_tab_says_when_the_state_was_never_reported(pages):
-    unreported = {**HEALTH, "network_reading": None}
-    page = pages.open("/sidepanel.html", PANEL, scripts=("sidepanel.js",), before=_fake(unreported), storage={})
-    page.evaluate("() => document.dispatchEvent(new Event('DOMContentLoaded'))")
-    page.click("#tab-health-btn")
-    page.clock.run_for(300)
-    health = _text(page, "health-mini-list")
-    assert "not reported" in health.lower()
+    badge = _text(page, "sp-health-badge")
+    for gone in ("Network reading", "voyager", "Voyager", "Schema Registry", "Network Captures", "drift detected"):
+        assert gone not in health and gone not in (badge or ""), f"the panel still says {gone!r}"
+    assert badge == "Connected"
 
 
 def test_the_popup_names_the_last_capture_and_follows_storage(pages):

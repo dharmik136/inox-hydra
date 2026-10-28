@@ -80,386 +80,41 @@ function studioApi(path, body, method) {
 }
 
 // -------------------------------------------------------------
-// Voyager API Network Capture (Phase 1: Self-Healing)
+// The signed-in account, and the card stamper's channel
 // -------------------------------------------------------------
-// The MAIN-world interceptor (voyager_interceptor.js) patches fetch() on the
-// LinkedIn page and posts structured JSON from Voyager responses via
-// window.postMessage. This listener receives those messages in the extension's
-// isolated world, where chrome.runtime is available.
-//
-// WHY DUAL-PATH:
-// DOM scraping (the original approach) breaks when LinkedIn rehashes class
-// names, loses precision with "1.2K" abbreviations, and misses data the user
-// hasn't scrolled to. Network capture gives us exact numbers in structured
-// JSON. But LinkedIn can also change their API response shapes, so we keep
-// DOM as a fallback and report drift when network extraction fails.
-//
-// The schema registry (voyager_schema.js, loaded before this file) maps
-// Voyager response structures to our internal data model. When fields move,
-// updating the schema fixes extraction without touching this code.
+// Network reading, retired in 2.10.2, used to begin here: a listener for
+// voyager_interceptor.js, which wrapped LinkedIn's fetch while the creator
+// had it switched on, the schema registry it matched responses against, and
+// a Resource Timing meter that counted the page's /voyager/api/ calls.
+// LinkedIn's 2026 web app makes no such calls: its data arrives through
+// React Server Component actions in an internal streaming format, so all
+// three are gone. The pages' own readers below are how the bridge reads.
 
-// The interceptor runs only while the creator has network reading switched
-// on (background.js registers it then). Messages claiming to come from it are
-// ignored while it is off: any script on the page can post one.
-//
-// null until chrome.storage has answered. The interceptor runs at
-// document_start and LinkedIn's first responses arrive before the storage
-// read resolves, and every message that arrived in that gap used to be
-// dropped without a trace: the first captures of every page were lost. They
-// are held below and handled once the switch is known.
-let networkReadingOn = null;
-const EARLY_CAPTURES_LIMIT = 20;
-const earlyCaptures = [];
-// The schemas whose responses carry the creator's own data and nobody else's:
-// their own posts' figures and their follower count. onboarding.VOYAGER_KEPT
-// is the studio's list of the same, and a test holds the two equal.
-const FORWARDED_SCHEMAS = new Set(["feed_updates", "creator_analytics"]);
 // The LinkedIn account this browser is signed in to, as LinkedIn itself has
 // shown it (own_pages.js notes it on the creator's own profile; the worker
-// forgets it when the sign-in changes). Analytics carry it, because neither
-// the analytics page nor LinkedIn's response names the account, and the
-// studio refuses a reading that is not from the profile open in it.
+// forgets it when the sign-in changes). Analytics carry it, because the
+// analytics page does not name the account, and the studio refuses a
+// reading that is not from the profile open in it.
 let signedInVanity = null;
-// own_pages.js runs in this same isolated world and is told by a function
-// call when the state changes, not by an event on LinkedIn's window, which
-// LinkedIn's own scripts can hear.
-const networkReadingListeners = [];
-window.__inoxOnNetworkReading = (fn) => {
-  if (typeof fn === "function") networkReadingListeners.push(fn);
-};
-function announceNetworkReading() {
-  networkReadingListeners.forEach((fn) => {
-    try { fn(); } catch (err) {}
-  });
-}
-
-// Whether this page carries the interceptor. It runs in LinkedIn's own
-// world, out of this script's sight, so the page is asked over the window
-// channel the interceptor already uses, and only while the switch is on:
-// with network reading off the page is never asked. null until it
-// has answered or the grace below has passed; a tab opened before the switch
-// was turned on carries no interceptor and does not answer. It used to mark
-// LinkedIn's root element with an attribute any script there could read.
-const INTERCEPTOR_GRACE_MS = 1500;
-let interceptorAnswered = null;
-let interceptorAskTimer = null;
-
-function askForInterceptor() {
-  if (interceptorAskTimer) clearTimeout(interceptorAskTimer);
-  interceptorAskTimer = null;
-  if (!networkReadingOn) {
-    interceptorAnswered = null;
-    return;
-  }
-  if (interceptorAnswered === true) return;
-  interceptorAnswered = null;
-  interceptorAskTimer = setTimeout(() => {
-    interceptorAskTimer = null;
-    if (interceptorAnswered === null && networkReadingOn) {
-      interceptorAnswered = false;
-      announceNetworkReading();
-    }
-  }, INTERCEPTOR_GRACE_MS);
-  try {
-    window.postMessage({ type: "INOX_VOYAGER_PING", source: "inox-bridge" }, window.location.origin);
-  } catch (err) {}
-}
-
-function noteInterceptor() {
-  if (!networkReadingOn || interceptorAnswered === true) return;
-  if (interceptorAskTimer) clearTimeout(interceptorAskTimer);
-  interceptorAskTimer = null;
-  interceptorAnswered = true;
-  announceNetworkReading();
-}
-
 try {
-  chrome.storage.local.get(["networkReading", "signedInVanity"], (items) => {
-    networkReadingOn = !chrome.runtime.lastError && !!items && items.networkReading === true;
+  chrome.storage.local.get(["signedInVanity"], (items) => {
     signedInVanity = (!chrome.runtime.lastError && items && items.signedInVanity) || null;
-    followNetworkReading();
-    askForInterceptor();
-    const held = earlyCaptures.splice(0, earlyCaptures.length);
-    if (networkReadingOn) held.forEach(handleVoyagerCapture);
-    // own_pages.js reports the state on its heartbeat; it is known now.
-    announceNetworkReading();
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.networkReading) {
-      networkReadingOn = changes.networkReading.newValue === true;
-      followNetworkReading();
-      askForInterceptor();
-      announceNetworkReading();
-    }
     if (area === "local" && changes.signedInVanity) {
       signedInVanity = changes.signedInVanity.newValue || null;
     }
   });
 } catch (e) {}
 
-const voyagerCaptureStats = {
-  total: 0,
-  matched: 0,
-  successful: 0,
-  drifted: 0,
-  lastCaptureTime: 0
-};
-
+// The card stamper (card_urns.js) runs in the page's own world and reports
+// its runs on the window channel; only its own message is taken.
 window.addEventListener("message", (event) => {
-  // Only accept messages from the same page (our MAIN-world scripts).
   if (event.source !== window || !event.data) return;
-  if (event.data.source === "inox-voyager-interceptor" && event.data.type === "INOX_VOYAGER_PRESENT") {
-    noteInterceptor();
-    return;
-  }
   if (event.data.source === "inox-card-urns" && event.data.type === "INOX_CARD_URNS_REPORT") {
     forwardCardUrnsReport(event.data.report);
-    return;
   }
-  if (event.data.type !== "INOX_VOYAGER_CAPTURE") return;
-  if (event.data.source !== "inox-voyager-interceptor") return;
-  if (networkReadingOn === null) holdEarlyCapture(event.data);
-  if (!networkReadingOn) return;
-  handleVoyagerCapture(event.data);
 });
-
-function holdEarlyCapture(data) {
-  if (earlyCaptures.length < EARLY_CAPTURES_LIMIT) earlyCaptures.push(data);
-}
-
-function handleVoyagerCapture(data) {
-  const payload = data && data.payload;
-  if (!payload || !payload.url || !payload.body) return;
-
-  // The schema registry is loaded as voyager_schema.js before this file and
-  // exposes its API on window.__InoxVoyagerSchema.
-  const VSchema = window.__InoxVoyagerSchema;
-  if (!VSchema) {
-    console.debug("[Studio Bridge] Voyager schema registry not loaded, skipping capture.");
-    return;
-  }
-
-  try {
-    voyagerCaptureStats.total++;
-
-    const schema = VSchema.resolveSchema(payload.url);
-    if (!schema) {
-      // URL doesn't match any known schema - ignore silently.
-      // This is normal for Voyager endpoints we don't care about.
-      return;
-    }
-    voyagerCaptureStats.matched++;
-    // Own data only. The registry also knows profiles, reactions on posts
-    // and comments, and those responses are about other members: they are
-    // matched and counted here, and nothing of them, not their data and not
-    // their drift, leaves the page. The studio refuses them too.
-    const schemaName = Object.keys(VSchema.VOYAGER_SCHEMAS).find((k) => VSchema.VOYAGER_SCHEMAS[k] === schema);
-    if (!FORWARDED_SCHEMAS.has(schemaName)) return;
-
-    const result = VSchema.extractWithSchema(schema, payload.body);
-
-    // The run's drift, named the way the DOM readers name theirs: a field
-    // this reader cannot do without, missing from every entry of a response
-    // that plainly matched its endpoint, or a response with no list of
-    // entries at all. A missing optional figure is not drift for the reader
-    // (most of a feed is other members' posts, which carry no view count);
-    // it still goes to the drift log below. Every network run used to be
-    // written with no drift, and one whose first entry lacked a required
-    // field was not sent at all, so Setup could never say a network reader
-    // had stopped reading.
-    const entries = Array.isArray(result.data) ? result.data : (result.data ? [result.data] : []);
-    const answered = payload.status >= 200 && payload.status < 300;
-    const body = payload.body;
-    const runDrift = !answered ? []
-      : (body && typeof body === "object" && !Array.isArray(body.elements)) ? ["elements"]
-      : schema.required.filter((field) => entries.length > 0 &&
-          !entries.some((entry) => entry && entry[field] !== undefined && entry[field] !== null));
-
-    if (result.success) {
-      voyagerCaptureStats.successful++;
-      voyagerCaptureStats.lastCaptureTime = Date.now();
-    }
-    if (result.success || runDrift.length || entries.length) {
-      // Forward structured data to the backend.
-      studioApi("/api/v1/bridge/voyager-ingest", {
-        schema_name: schemaName,
-        schema_version: result.schema_version,
-        confidence: result.confidence,
-        data: entries,
-        drift: runDrift,
-        // Whose figures these are; see signedInVanity.
-        vanity: signedInVanity,
-        source_url: payload.url,
-        http_status: payload.status,
-        capture_id: payload.captureId,
-        timestamp: payload.timestamp,
-        extension_version: chrome.runtime.getManifest().version
-      });
-    }
-
-    // Report drift whenever extraction found missing fields, whether or not
-    // the extraction itself "succeeded" (required fields present but optional
-    // ones missing still counts as drift worth tracking).
-    if (result.drift && result.drift.length > 0) {
-      voyagerCaptureStats.drifted++;
-
-      studioApi("/api/v1/bridge/schema-drift", {
-        schema_name: schemaName,
-        schema_version: result.schema_version,
-        drift_fields: result.drift,
-        confidence: result.confidence,
-        success: result.success,
-        source_url: payload.url,
-        // Include the top-level keys from the response so the backend can
-        // diagnose what LinkedIn changed. Only keys, never values, so no
-        // private data leaks into drift telemetry.
-        response_top_keys: Object.keys(payload.body || {}),
-        timestamp: payload.timestamp,
-        extension_version: chrome.runtime.getManifest().version
-      });
-    }
-
-    console.debug(
-      `[Studio Bridge] Voyager capture: ${result.success ? "OK" : "DRIFT"}`,
-      `confidence=${result.confidence}`,
-      `drift=[${(result.drift || []).join(", ")}]`
-    );
-  } catch (err) {
-    // Never interrupt the user experience for a capture failure.
-    console.debug("[Studio Bridge] Voyager capture error:", err.message);
-  }
-}
-
-// -------------------------------------------------------------
-// What LinkedIn calls, counted from the page's own timeline
-// -------------------------------------------------------------
-// The one question the studio could not answer about network reading was
-// why it captured nothing: the switch, the registration, the page and the
-// patterns all failed silently in the same direction. Resource Timing lists
-// every request the page made, so while the switch is on the page counts
-// its /voyager/api/ calls by path plus GraphQL query name (the part before
-// the dot; the hash after it rotates), never a query string or a URN, and
-// how many of them match the patterns the bridge reads. The heartbeat
-// carries the counts, so the studio can say "LinkedIn made N data calls on
-// this page, K matched" without anyone opening DevTools.
-const voyagerCalls = {};
-let voyagerCallsSeen = 0;
-let voyagerCallsMatched = 0;
-let coverageObserver = null;
-
-// A path names the resource LinkedIn was asked for, and its REST paths put
-// the thing asked about in the path itself: /identity/profiles/<vanity>/,
-// /socialActions/<urn>/. That is another member, or a post, and is never
-// kept. A segment is kept only if it is a word from this fixed list of the
-// words LinkedIn's data API puts in its paths, compared without regard to
-// case and written as listed; every other segment becomes "_id_", and so does
-// the segment after a collection that takes an identifier. An unknown word
-// costs a less specific key, never a person. The list used to be the other
-// way round, the identifiers to blank, and a plain-word vanity after any
-// collection it did not name went through. onboarding.VOYAGER_PATH_WORDS is
-// the studio's copy, which refuses anything else; a test holds the two equal.
-const VOYAGER_PATH_WORDS = [
-  "voyager", "api", "graphql", "me", "identity", "dash", "profiles", "miniProfiles", "profileView",
-  "profileContactInfo", "publicContactInfo", "networkinfo", "memberBadges", "memberIdentity",
-  "profileActions", "feed", "updates", "updatesV2", "social", "socialActions", "socialDetails", "comments",
-  "reactions", "likes", "followerInfo", "hashtags", "contentcreation", "normShares", "shares", "posts",
-  "activities", "creatorAnalytics", "analytics", "messaging", "conversations", "events", "messages",
-  "threads", "notifications", "badges", "relationships", "memberRelationships", "connections", "invitations",
-  "invitationViews", "search", "clusters", "blended", "typeahead", "hitsV2", "hits", "organization",
-  "organizations", "companies", "entities", "jobs", "jobPostings", "premium", "growth", "legoWidgets",
-  "pageContent", "settings", "highlights", "recommendations", "skills", "positions", "educations",
-  "featured", "followers", "following", "people", "members", "groups", "schools"
-];
-const VOYAGER_ID_AFTER = [
-  "profiles", "miniProfiles", "profileContactInfo", "publicContactInfo", "networkinfo", "memberBadges",
-  "profileActions", "updates", "updatesV2", "social", "socialActions", "socialDetails", "comments",
-  "reactions", "likes", "followerInfo", "hashtags", "shares", "posts", "activities", "conversations",
-  "events", "messages", "threads", "connections", "invitations", "organizations", "companies", "jobs",
-  "jobPostings", "people", "members", "groups", "schools"
-];
-const PATH_WORD = new Map(VOYAGER_PATH_WORDS.map((word) => [word.toLowerCase(), word]));
-const ID_AFTER = new Set(VOYAGER_ID_AFTER.map((word) => word.toLowerCase()));
-// A GraphQL query name has one shape: "voyager" and a capitalised name.
-// Anything else in that slot is "other".
-const VOYAGER_QUERY_NAME = /^voyager[A-Z][A-Za-z0-9]{1,78}$/;
-
-function cleanVoyagerPath(pathname) {
-  const out = [];
-  let previous = "";
-  for (const segment of String(pathname).split("/").filter(Boolean).slice(0, 8)) {
-    let word = ID_AFTER.has(previous) ? null : PATH_WORD.get(segment.toLowerCase()) || null;
-    if (!word && previous === "api" && VOYAGER_QUERY_NAME.test(segment)) word = segment;
-    out.push(word || "_id_");
-    // What the segment was taken as, not the text it held: an identifier that
-    // happens to spell a collection's name takes no identifier after it.
-    previous = (word || "_id_").toLowerCase();
-  }
-  return "/" + out.join("/");
-}
-
-function voyagerCallKey(name) {
-  let url;
-  try {
-    url = new URL(name);
-  } catch (err) {
-    return null;
-  }
-  if (!url.pathname.includes("/voyager/api/")) return null;
-  const queryId = url.searchParams.get("queryId");
-  const head = queryId ? String(queryId).split(".")[0] : "";
-  const queryName = queryId ? (VOYAGER_QUERY_NAME.test(head) ? head : "other") : "";
-  return { key: cleanVoyagerPath(url.pathname).slice(0, 160) + (queryName ? " " + queryName : ""),
-           path: url.origin + url.pathname };
-}
-
-function noteVoyagerCall(entry) {
-  const call = voyagerCallKey(entry && entry.name);
-  if (!call) return;
-  voyagerCallsSeen += 1;
-  voyagerCalls[call.key] = (voyagerCalls[call.key] || 0) + 1;
-  const VSchema = window.__InoxVoyagerSchema;
-  if (VSchema && VSchema.resolveSchema(call.path)) voyagerCallsMatched += 1;
-}
-
-function followNetworkReading() {
-  if (networkReadingOn && !coverageObserver && typeof PerformanceObserver !== "undefined") {
-    // A new observer is handed the page's buffered entries again, so the
-    // counts start again with it: switched off and on in one tab, the early
-    // calls would otherwise be counted twice. The page's buffer holds its
-    // first 250 entries, so on a heavy first load the count is of the calls
-    // the bridge saw, which is how the studio words it.
-    for (const key of Object.keys(voyagerCalls)) delete voyagerCalls[key];
-    voyagerCallsSeen = 0;
-    voyagerCallsMatched = 0;
-    try {
-      coverageObserver = new PerformanceObserver((list) => list.getEntries().forEach(noteVoyagerCall));
-      coverageObserver.observe({ type: "resource", buffered: true });
-    } catch (err) {
-      coverageObserver = null;
-    }
-  } else if (!networkReadingOn && coverageObserver) {
-    try { coverageObserver.disconnect(); } catch (err) {}
-    coverageObserver = null;
-  }
-}
-
-// The state of network reading as this page can see it, for the heartbeat
-// own_pages.js sends. null while the switch has not been read: the studio
-// shows that as not measured, never as off. `registered` is the worker's
-// to know, so the page leaves it null and the worker's heartbeat says it.
-window.__inoxNetworkReading = () => {
-  if (networkReadingOn === null) return null;
-  return {
-    switch: networkReadingOn,
-    registered: null,
-    injected: networkReadingOn ? interceptorAnswered : null,
-    voyager_calls_seen: networkReadingOn ? voyagerCallsSeen : null,
-    matched: networkReadingOn ? voyagerCallsMatched : null,
-    captured: networkReadingOn ? voyagerCaptureStats.total : null,
-    last_capture_at: voyagerCaptureStats.lastCaptureTime ? new Date(voyagerCaptureStats.lastCaptureTime).toISOString() : null,
-  };
-};
-window.__inoxVoyagerCalls = () => (networkReadingOn ? Object.assign({}, voyagerCalls) : null);
 
 // -------------------------------------------------------------
 // Reader self-timing
@@ -599,8 +254,8 @@ function reportCapture(extractor, itemsSeen, itemsKept, drift, timing) {
 }
 
 // The card stamper runs in the page's own world (card_urns.js) and cannot
-// reach the worker, so it posts its run on the window channel the
-// interceptor uses: how many feed cards were on screen, how many carry a
+// reach the worker, so it posts its run on the window channel: how many feed
+// cards were on screen, how many carry a
 // post id, and its own timing. Cards on screen with not one id among them is
 // the React properties changing shape, which is the drift that leaves every
 // feed engager without a post. It used to write the run onto LinkedIn's root

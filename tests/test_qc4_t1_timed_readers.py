@@ -93,7 +93,7 @@ def test_the_engagers_reader_reports_its_timing(pages):
 
 def test_the_activity_reader_reports_its_timing(pages):
     page = pages.open("/in/test-creator/recent-activity/all/", POSTS,
-                      scripts=("voyager_schema.js", "content.js", "own_pages.js"))
+                      scripts=("content.js", "own_pages.js"))
     page.clock.run_for(4000)
     reports = _reports(pages, page, "activity_posts")
     assert reports
@@ -109,7 +109,7 @@ def test_the_analytics_reader_reports_its_timing(pages):
 
 
 def test_the_profile_reader_reports_its_timing(pages):
-    page = pages.open("/in/test-creator/", PROFILE, scripts=("voyager_schema.js", "content.js", "own_pages.js"))
+    page = pages.open("/in/test-creator/", PROFILE, scripts=("content.js", "own_pages.js"))
     page.clock.run_for(4000)
     reports = _reports(pages, page, "profile")
     assert reports
@@ -117,7 +117,7 @@ def test_the_profile_reader_reports_its_timing(pages):
 
 
 def test_the_card_stamper_reports_through_the_isolated_world(pages):
-    page = pages.open("/feed/", FEED, scripts=("card_urns.js", "voyager_schema.js", "content.js"))
+    page = pages.open("/feed/", FEED, scripts=("card_urns.js", "content.js"))
     page.clock.run_for(2000)
     page.wait_for_timeout(50)
     reports = _reports(pages, page, "card_urns")

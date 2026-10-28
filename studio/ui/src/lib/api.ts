@@ -1793,8 +1793,6 @@ export interface BridgeStatus {
   seconds_ago: number | null;
   extension_version: string | null;
   page_kind: string | null;
-  /** null until a heartbeat has carried the state: not measured, never off. */
-  network_reading: NetworkReadingState | null;
   /** Each browser the bridge runs in, newest first (cycle 4, track 1, phase 2). */
   bridges?: BridgeEntry[];
 }
@@ -1883,22 +1881,6 @@ export interface CaptureHealth {
   slow_reads: number | null;
   long_tasks: number | null;
   long_task_ms: number | null;
-}
-
-/** The three honest states of network reading, as the last heartbeat reported them. */
-export interface NetworkReadingState {
-  state: "off" | "seeing" | "matching_nothing";
-  sentence: string;
-  switch: boolean;
-  registered: boolean | null;
-  injected: boolean | null;
-  voyager_calls_seen: number | null;
-  matched: number | null;
-  captured: number | null;
-  last_capture_at: string | null;
-  reported_at: string;
-  reported_by: string | null;
-  voyager_calls: Record<string, number> | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -2011,6 +1993,8 @@ export interface OnboardingState {
   imports: SelfImport[];
   /** history: your posts read to the end of the list, the last of Setup's steps. */
   steps: { bridge: boolean; identity: boolean; posts: boolean; activity: boolean; archive: boolean; history?: boolean };
+  /** "Network reading was retired in 2.10.2: ...", only where network reading once ran; else null. */
+  network_reading_retired?: string | null;
 }
 
 export async function fetchOnboardingState(): Promise<OnboardingState> {
@@ -4071,8 +4055,6 @@ export interface HealthReaderDay {
 export interface HealthReader {
   extractor: string;
   label: string;
-  /** A network-reading part: listed once it has run, or while the switch is reported on. */
-  opt_in: boolean;
   state: CaptureHealth["state"];
   last_run_at: string | null;
   last_good_at: string | null;
@@ -4118,8 +4100,8 @@ export interface HealthReaders {
   /** How long the day rows are kept. */
   days_window: { days: number; label: string };
   readers: HealthReader[];
-  /** Network reading as the bridge last reported it; null when no heartbeat carried it (not reported, never off). */
-  network_reading: NetworkReadingState | null;
+  /** "Network reading was retired in 2.10.2: ...", only where network reading once ran; else null. */
+  network_reading_retired: string | null;
   /** Every reader together, a row per day, newest first. */
   by_day: {
     days: number;
@@ -4146,22 +4128,9 @@ export async function fetchHealthReader(extractor: string): Promise<HealthReader
   return call<HealthReaderDetail>(`/api/v1/bridge/readers/${encodeURIComponent(extractor)}`);
 }
 
-export interface SchemaDriftEvent {
-  schema_name: string;
-  schema_version: string;
-  drift_fields: string[];
-  confidence: number;
-  success: boolean;
-  observed_at: string;
-}
-
 export interface ExtensionHealth {
   bridge: BridgeStatus;
   extractors: CaptureHealth[];
-  voyager_active: boolean;
-  voyager_24h_captures: number;
-  /** The newest drift events the studio holds, from the network reader. */
-  recent_drift: SchemaDriftEvent[];
   contract: {
     contract_version: number;
     extension_contract_version: number | null;

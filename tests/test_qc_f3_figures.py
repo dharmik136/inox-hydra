@@ -28,7 +28,7 @@ def pages():
 
 def _parse(pages, lang, cases):
     page = pages.open("/analytics/creator/content/", page_html("<main></main>", lang=lang),
-                      scripts=("voyager_schema.js", "content.js"))
+                      scripts=("content.js",))
     out = page.evaluate(PARSE, cases)
     page.context.close()
     return dict(zip(cases, [tuple(v) if v else None for v in out]))
@@ -121,7 +121,7 @@ PROFILE = """
 
 def test_the_profile_top_card_reads_a_german_follower_count(pages):
     page = pages.open("/in/test-creator/", page_html(PROFILE, title="Test Creator | LinkedIn", lang="de"),
-                      scripts=("voyager_schema.js", "content.js", "own_pages.js"))
+                      scripts=("content.js", "own_pages.js"))
     page.clock.run_for(4000)
     observed = pages.sent(page, "/api/v1/identity/observe")
     assert observed, "the creator's profile was not read"
@@ -131,7 +131,7 @@ def test_the_profile_top_card_reads_a_german_follower_count(pages):
 
 def test_the_profile_top_card_refuses_a_dotted_count_of_unknown_language(pages):
     page = pages.open("/in/test-creator/", page_html(PROFILE, title="Test Creator | LinkedIn"),
-                      scripts=("voyager_schema.js", "content.js", "own_pages.js"))
+                      scripts=("content.js", "own_pages.js"))
     page.clock.run_for(4000)
     observed = pages.sent(page, "/api/v1/identity/observe")
     assert observed
@@ -156,7 +156,7 @@ def test_indian_grouping_is_read_as_before(pages):
 def test_the_profile_top_card_reads_an_indian_follower_count(pages):
     body = PROFILE.replace("8.210 Follower", "1,23,456 followers").replace("1.204 connections", "500+ connections")
     page = pages.open("/in/test-creator/", page_html(body, title="Test Creator | LinkedIn", lang="en-IN"),
-                      scripts=("voyager_schema.js", "content.js", "own_pages.js"))
+                      scripts=("content.js", "own_pages.js"))
     page.clock.run_for(4000)
     observed = pages.sent(page, "/api/v1/identity/observe")
     assert observed and observed[0]["follower_count"] == 123456

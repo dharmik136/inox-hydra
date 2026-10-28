@@ -495,10 +495,23 @@ def test_a_posts_analytics_page_says_readings(studio, creator):
     assert "readings" in kinds, kinds
 
 
-def test_a_network_reading_says_readings(studio, creator):
-    kinds = _published_by(studio["port"], "/api/v1/bridge/voyager-ingest", {
-        "schema_name": "feed_updates", "data": [{"urn": creator["urn"], "likes": 6, "comments": 1}]})
-    assert "readings" in kinds, kinds
+def test_a_retired_network_reading_says_nothing(studio, creator):
+    """
+    It said "readings" and "account" while it wrote. Network reading was
+    retired in 2.10.2: an extension not yet reloaded is answered "retired",
+    nothing is written, and no screen is woken for it.
+    """
+    before = changes.sequence()
+    for path, body in (
+            ("/api/v1/bridge/voyager-ingest",
+             {"schema_name": "feed_updates", "data": [{"urn": creator["urn"], "likes": 6, "comments": 1}]}),
+            ("/api/v1/bridge/voyager-ingest",
+             {"schema_name": "creator_analytics", "vanity": ME, "data": [{"followers": 401}]}),
+            ("/api/v1/bridge/schema-drift",
+             {"schema_name": "feed_updates", "schema_version": "x", "drift_fields": ["likes"]})):
+        status, text = _post(studio["port"], path, body)
+        assert status == 200 and json.loads(text)["status"] == "retired", text
+    assert changes.sequence() == before, "a retired route announced a change"
 
 
 def test_the_creators_outbound_activity_says_outbound(studio, creator):
@@ -516,12 +529,6 @@ def test_the_creators_analytics_page_says_account(studio, creator):
     kinds = _published_by(studio["port"], "/api/analytics/ingest", {
         "author": ME, "period_label": "1d", "series": [{"date": today, "impressions": 900, "reactions": 9,
                                                         "followers": 400}]})
-    assert kinds == ["account"], kinds
-
-
-def test_a_network_reading_of_the_account_says_account(studio, creator):
-    kinds = _published_by(studio["port"], "/api/v1/bridge/voyager-ingest", {
-        "schema_name": "creator_analytics", "vanity": ME, "data": [{"followers": 401}]})
     assert kinds == ["account"], kinds
 
 

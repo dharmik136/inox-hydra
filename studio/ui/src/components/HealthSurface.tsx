@@ -183,7 +183,7 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
   const listed = readers?.readers ?? [];
   const working = listed.filter((r) => r.state === "working").length;
   const drifting = listed.filter((r) => r.state === "drifting").length;
-  const reading = readers?.network_reading ?? null;
+  const retired = readers?.network_reading_retired ?? null;
   const bridge = extension?.bridge ?? null;
 
   return (
@@ -250,24 +250,12 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
               THE STUDIO KEEPS A WEEK OF RUNS, AND A ROW PER READER PER DAY {readers ? readers.days_window.label.toUpperCase() : ""}
             </p>
           </div>
-          {readers && (
-            // Network reading in its three honest states, in the studio's one
-            // sentence (onboarding.network_reading_sentence): off, on and
-            // seeing LinkedIn's data calls, or on and matching nothing. It sits
-            // over the readers because its two readers are listed only while
-            // it is on or once they have run (onboarding.listed_health).
-            <p className={cn("mb-2 text-[12px] leading-snug", reading?.state === "matching_nothing" ? "text-signal-orange-text" : "text-ink-secondary")}>
-              <span
-                aria-hidden="true"
-                className={cn(
-                  "mr-1.5 inline-block size-1.5 rounded-full align-middle",
-                  reading?.state === "seeing" && "bg-signal-green",
-                  reading?.state === "matching_nothing" && "bg-signal-orange",
-                  (!reading || reading.state === "off") && "bg-edge-strong",
-                )}
-              />
-              {reading ? reading.sentence : "Whether network reading is on is not reported by this extension version."}
-            </p>
+          {retired && (
+            // Network reading was retired in 2.10.2 and its two readers are no
+            // longer listed. Said once, over the readers, in the studio's own
+            // sentence, and only where network reading had run
+            // (onboarding.network_reading_retired).
+            <p className="mb-2 text-[12px] leading-snug text-ink-secondary">{retired}</p>
           )}
           {!readers ? (
             <p className="text-[13px] text-ink-muted">The readers were not answered by the studio on the last read.</p>
@@ -409,25 +397,6 @@ export function HealthSurface({ onOpenSetup }: { onOpenSetup?: () => void } = {}
                     ))
                 )}
               </dl>
-            )}
-          </Block>
-
-          <Block title="Network reading and drift">
-            {!extension ? (
-              <Muted>Not answered on the last read.</Muted>
-            ) : extension.recent_drift.length === 0 ? (
-              <Muted>{driftEmptyLine(extension)}</Muted>
-            ) : (
-              <ul className="flex flex-col gap-1 text-[12px] text-ink-secondary">
-                {extension.recent_drift.map((event, index) => (
-                  <li key={`${event.schema_name}-${event.observed_at}-${index}`} className="flex items-baseline justify-between gap-3">
-                    <span className="truncate">
-                      {event.schema_name} {event.schema_version}: {event.drift_fields.length ? event.drift_fields.join(", ") : "no field named"}
-                    </span>
-                    <span className="studio-meta shrink-0 text-[10px] text-ink-muted">{formatLocal(event.observed_at).toUpperCase()}</span>
-                  </li>
-                ))}
-              </ul>
             )}
           </Block>
 
@@ -709,12 +678,6 @@ function bridgeSentence(bridge: ExtensionHealth["bridge"]): string {
   return "Not seen yet. Open a LinkedIn tab in the bridge browser with the extension loaded.";
 }
 
-function driftEmptyLine(extension: ExtensionHealth): string {
-  const reading = extension.bridge.network_reading;
-  if (reading && reading.switch === false) return "Network reading is off, so there are no drift events: the page readers report what they cannot read in the table.";
-  if (reading && reading.switch === true) return "Network reading is on and no drift event has been recorded.";
-  return "No drift event is held. Whether network reading is on is not reported by this extension version.";
-}
 
 function measured(value: number | null | undefined): string {
   return value === null || value === undefined ? "not measured" : value.toLocaleString();

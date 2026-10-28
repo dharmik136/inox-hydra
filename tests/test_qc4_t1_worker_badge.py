@@ -192,8 +192,9 @@ const busy = { status: 503, retryAfter: 0.01, body: { detail: { code: "studio_bu
   out.badgeAfterPanel = badge.text.filter((d) => d.tabId !== undefined).slice(-2).map((d) => d.text);
   out.countsAfterPanel = storage.badgeCounts || null;
 
-  // 6. The worker heartbeat carries the switch and the registration. It
-  //    beats on its own minute's alarm (cycle 4, track 1, phase 2).
+  // 6. The worker heartbeat, on its own minute's alarm (cycle 4, track 1,
+  //    phase 2), with a network reading switch an earlier version left
+  //    stored: retired in 2.10.2, it is not reported.
   sent.length = 0;
   storage.networkReading = true;
   storage.keptCaptures = [];
@@ -332,12 +333,11 @@ def test_opening_the_panel_clears_the_badge(run):
     assert run["badgeAfterPanel"] == [None, None]
 
 
-def test_the_worker_heartbeat_carries_the_switch_and_the_registration(run):
+def test_the_worker_heartbeat_says_nothing_of_network_reading(run):
+    """It carried the switch and the interceptor's registration; network reading was retired in 2.10.2."""
     beat = run["workerBeat"]
     assert beat, "the worker sent no heartbeat"
-    reading = beat["network_reading"]
-    assert reading["switch"] is True and reading["registered"] is True
-    assert reading["injected"] is None and reading["voyager_calls_seen"] is None, "the worker invented a page's figures"
+    assert "network_reading" not in beat and "voyager_calls" not in beat, "the heartbeat still reports network reading"
 
 
 def test_the_badge_is_put_back_on_startup(run):
@@ -391,7 +391,7 @@ def test_a_waiting_notice_is_carried_by_the_waiting_count_not_a_mark(run):
 # the creator's data: never kept for a busy studio and never a capture. The
 # landing of a short link from the phone (2.10.1) is a moment: lost to a busy
 # studio, the creator opens the link again from Today, or presses Done.
-BOOKKEEPING = {"/api/v1/bridge/heartbeat", "/api/v1/bridge/capture", "/api/v1/bridge/schema-drift",
+BOOKKEEPING = {"/api/v1/bridge/heartbeat", "/api/v1/bridge/capture",
                "/api/v1/identity/me", "/api/v1/self/imports/pending", "/api/v1/self/imports/event",
                "/api/v1/desk-requests/landed"}
 

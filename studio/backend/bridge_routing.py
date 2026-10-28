@@ -15,9 +15,10 @@ account, and app.pin_creator_profile pins the request to it.
 
 A capture for an account no profile holds is held, not written: the worker
 keeps it and sends it when a profile for that account is confirmed, and
-Health shows it meanwhile. A run of a reader for such an account, an
-import question or a drift event is answered nothing_new: it is about a
-moment, not the creator's data. A profile still being set up (the active
+Health shows it meanwhile. A run of a reader for such an account or an
+import question is answered nothing_new: it is about a moment, not the
+creator's data. Network reading's two paths, retired in 2.10.2, are on
+neither list: they answer "retired" wherever they arrive. A profile still being set up (the active
 one, with no confirmed account) takes what its browser reads, as before, so
 a new client can be onboarded. A capture that names no account goes to the
 active profile, as every capture did.
@@ -51,7 +52,6 @@ DATA_PATHS = frozenset({
     "/api/v1/self/outbound/ingest",
     "/api/v1/identity/observe",
     "/api/v1/posts/bind-urn",
-    "/api/v1/bridge/voyager-ingest",
     "/api/analytics/ingest",
     "/api/analytics/page-figures",
 })
@@ -60,7 +60,6 @@ DATA_PATHS = frozenset({
 # one, and otherwise answered nothing_new without a write anywhere.
 BOOKKEEPING_PATHS = frozenset({
     "/api/v1/bridge/capture",
-    "/api/v1/bridge/schema-drift",
     "/api/v1/identity/me",
     "/api/v1/self/imports/pending",
     "/api/v1/self/imports/event",

@@ -66,7 +66,7 @@ def pages():
 
 def _open_profile(pages, body, vanity="test-creator", storage=None):
     page = pages.open(f"/in/{vanity}/", page_html(body, title="Test Creator | LinkedIn"),
-                      scripts=("voyager_schema.js", "content.js", "own_pages.js"), storage=storage)
+                      scripts=("content.js", "own_pages.js"), storage=storage)
     page.clock.run_for(4000)
     return page
 

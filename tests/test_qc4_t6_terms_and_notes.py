@@ -81,14 +81,16 @@ def test_the_quotes_are_dated_and_sourced():
 
 def test_each_feature_has_its_standing():
     article = _flat(_read(ARTICLE))
-    for standing in ("Tolerated in practice, not permitted in text", "Opt-in", "first creator profile only",
+    for standing in ("Tolerated in practice, not permitted in text", "Retired in 2.10.2", "first creator profile only",
                      "Nothing acts on LinkedIn except when you press Insert", "Outside the words quoted here"):
         assert standing in article, f"the article lost the standing {standing!r}"
-    # The words beside the switch are the popup's own, quoted as it shows them.
+    # The switch's words were the popup's own, quoted as it showed them. Network
+    # reading was retired in 2.10.2 and the switch went with it, so the article
+    # quotes them as what was said, and the popup says them no more.
     with io.open(os.path.join(REPO_ROOT, "studio", "extension", "popup.js"), encoding="utf-8") as handle:
         popup = _flat(handle.read().replace('" +\n', "").replace('"', ""))
-    assert "which LinkedIn may treat as automation" in popup
-    assert "which LinkedIn may treat as automation" in article
+    assert "which LinkedIn may treat as automation" not in popup
+    assert "which LinkedIn may treat as automation" in article and "LinkedIn's site no longer sends the data it read" in article
 
 
 def test_the_risk_note_starts_the_lawyer_from_the_right_place():

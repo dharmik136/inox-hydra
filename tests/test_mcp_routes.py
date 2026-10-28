@@ -96,6 +96,9 @@ def test_the_extension_cannot_reach_these_routes():
     # for its post, and only when it is one of the creator's recorded posts
     # (anyone else's refuses the request). It executes, fetches and reads
     # nothing beyond that request and own_posts.
+    #
+    # /api/v1/bridge/voyager-ingest and /api/v1/bridge/schema-drift left the
+    # list in 2.10.2, when network reading was retired.
     relayed = set(re.findall(r'"(/api/[^"]+)"', block))
     assert relayed == {
         "/api/analytics/ingest",
@@ -104,8 +107,6 @@ def test_the_extension_cannot_reach_these_routes():
         "/api/v1/crm/interactions/ingest",
         "/api/v1/bridge/heartbeat",
         "/api/v1/bridge/capture",
-        "/api/v1/bridge/voyager-ingest",
-        "/api/v1/bridge/schema-drift",
         "/api/v1/identity/me",
         "/api/v1/identity/observe",
         "/api/v1/self/posts/ingest",
