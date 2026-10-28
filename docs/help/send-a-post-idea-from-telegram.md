@@ -147,7 +147,10 @@ The panel under **Your phone, through Telegram** reads:
 - **Asking Telegram for messages**: YES while the studio is polling.
 - **Messages saved since the studio started**: how many messages were saved since startup.
 - **Posts asked for from the phone, waiting**: open requests.
-- **Last problem reaching Telegram**: the most recent error, with the bot token removed. It is cleared after each successful check.
+- **Last problem reaching Telegram**: the most recent problem, in plain words, such as Telegram not recognising the token, another program asking for the same bot's messages, or no connection. It is cleared after each successful check. After a problem the studio waits longer before asking again, and as long as Telegram asks when it says to slow down.
+- **Last message the bot could not send**: why the bot's last answer did not go, in plain words.
+
+**Send a test message** sends one fixed sentence to your paired chat at once: "This is a test message from your Inox Hydra studio. If you can read it, the bot can reach you." The panel then says whether Telegram took it, or why not. Telegram taking it means your chat received it; whether your phone showed it, only your phone can say.
 
 ## Turn it off
 
@@ -161,7 +164,9 @@ Click **Remove the bot** in the panel. The token and chat id are removed from th
 | No chat appears under **CHATS THE BOT REFUSED** after you message the bot | Check **Asking Telegram for messages** reads YES, and that you messaged the bot whose token you saved. The list is kept in memory, so it starts empty each time the studio starts |
 | A sentence under the buttons says the token or chat id is not the right shape | Paste the token exactly as BotFather gave it, and the chat id as digits only |
 | **Asking Telegram for messages** reads NO after saving | Reload the page. If it stays NO, see [The studio will not open or shows an error](the-studio-will-not-open.md) |
-| Nothing arrives, no error | Check the chat id is yours, then search with Ctrl+K instead of waiting for the page |
+| Nothing arrives, no error | Press **Send a test message**. If it says Telegram took it and your phone shows nothing, check you are looking at the chat with your own bot |
+| **Last problem reaching Telegram** says Telegram does not recognise the token | Paste the token BotFather gave you again, and save |
+| **Last problem reaching Telegram** says another program is asking for this bot's messages | Only one program can ask at a time: close the other studio, or remove the webhook the bot was given elsewhere |
 | A post link arrived but Today does not offer it | The panel lists it as not one of your posts: the studio holds no post of yours with that link. If it is yours and new, run **Posts you wrote** in Setup's step 5, then share it again |
 | Today still says "You sent a post from your phone" after you opened it | The post's page did not keep the link's ending, so the extension could not say which post it was. Press **Done** once you have seen it |
 | Arrivals are slow | Night-time polling, error backoff, or a Telegram rate limit, which the studio waits out |

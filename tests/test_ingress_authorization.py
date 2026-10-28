@@ -123,7 +123,7 @@ def test_the_environment_can_supply_the_chat_id(monkeypatch):
 # The token never reaches a surface anyone can read
 # ---------------------------------------------------------------------------
 
-def test_a_connection_error_does_not_carry_the_token(monkeypatch):
+def test_a_connection_error_does_not_carry_the_token(monkeypatch, caplog):
     """
     The real path. requests puts the request URL in its exception message, and
     the token is a path segment of that URL.
@@ -141,6 +141,7 @@ def test_a_connection_error_does_not_carry_the_token(monkeypatch):
     monkeypatch.setattr(ingress_module.requests, "get", explode)
     monkeypatch.setattr(ingress_module._egress, "require", lambda *a, **k: None)
 
+    caplog.set_level("ERROR", logger="studio.ingress")
     with pytest.raises(RuntimeError):
         daemon.poll_once()
 
@@ -149,7 +150,10 @@ def test_a_connection_error_does_not_carry_the_token(monkeypatch):
         f"the bot token is in last_error, which GET /api/v1/ingress/status "
         f"returns verbatim: {daemon.last_error}"
     )
-    assert "<redacted>" in daemon.last_error
+    # 2.11.0: the panel says it in plain words; the detail goes to the log,
+    # where the token is redacted.
+    assert "could not reach Telegram" in daemon.last_error
+    assert "<redacted>" in caplog.text and TOKEN not in caplog.text
 
 
 def test_the_token_is_removed_from_both_spellings(monkeypatch):

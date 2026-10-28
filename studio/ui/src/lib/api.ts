@@ -3935,6 +3935,12 @@ export async function fetchIngressSettings(): Promise<IngressSettings> {
  * what is held: a token alone starts pairing, and a chat id alone (This is
  * me) pairs that chat with the token already saved.
  */
+/** One fixed sentence to the paired chat, now: whether Telegram took it, and why not in plain words. */
+export async function sendIngressTestMessage(): Promise<{ sent: boolean; said: string }> {
+  const data = await call<{ sent?: boolean; said?: string }>("/api/v1/ingress/test-message", { method: "POST" });
+  return { sent: !!data.sent, said: data.said ?? "" };
+}
+
 /** Saves the switches sent; a switch left out keeps its value. */
 export async function saveIngressOptions(options: Partial<IngressOptions>): Promise<IngressSettings> {
   return call<IngressSettings>("/api/v1/ingress/options", { method: "POST", body: JSON.stringify(options) });

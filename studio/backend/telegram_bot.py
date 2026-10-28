@@ -91,6 +91,7 @@ SENTENCES = {
                     "with your figures under Local security."),
     "no_post": "No post of yours is in your studio yet.",
     "nothing_scheduled": "No post is scheduled.",
+    "test": "This is a test message from your Inox Hydra studio. If you can read it, the bot can reach you.",
     "due_one": "A post in your queue is due now. Open your studio to post it.",
     "due_many": "{count} posts in your queue are due now. Open your studio to post them.",
 }
@@ -192,7 +193,7 @@ def plain_words(status: int, description: str = "", retry_after: Optional[float]
     text = (description or "").lower()
     if status == 429:
         wait = f"{float(retry_after):.1f}s" if retry_after else "a while"
-        return f"Telegram asked the studio to slow down, so it waits {wait} before asking again."
+        return f"Rate limited by Telegram, which asked the studio to slow down: it waits {wait} before asking again."
     if status in (401, 404):
         return "Telegram does not recognise this bot's token. Paste the token BotFather gave you again."
     if status == 403:

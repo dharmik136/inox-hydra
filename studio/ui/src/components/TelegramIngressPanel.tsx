@@ -4,6 +4,7 @@ import {
   fetchIngressSettings,
   saveIngressOptions,
   saveIngressSettings,
+  sendIngressTestMessage,
   type IngressOptions,
   type IngressSettings,
 } from "@/lib/api";
@@ -61,6 +62,19 @@ export function TelegramIngressPanel() {
     }, 4000);
     return () => window.clearInterval(timer);
   }, [pairing]);
+
+  async function sendTest() {
+    setBusy(true);
+    setNote(null);
+    try {
+      const answer = await sendIngressTestMessage();
+      setNote(answer.said);
+    } catch (caught) {
+      setNote(caught instanceof Error ? caught.message : "The test message was not sent.");
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function setOption(change: Partial<IngressOptions>, said: string) {
     setBusy(true);
@@ -275,6 +289,16 @@ export function TelegramIngressPanel() {
             {busy && <Loader2 className="size-3 animate-spin" aria-hidden="true" />}
             Save and start
           </button>
+          {state?.configured && (
+            <button
+              type="button"
+              onClick={() => void sendTest()}
+              disabled={busy}
+              className="rounded-md border border-edge px-2.5 py-1 text-[11px] text-ink-secondary transition-colors hover:bg-soft hover:text-ink-primary disabled:opacity-40"
+            >
+              Send a test message
+            </button>
+          )}
           {state?.has_token && (
             <button
               type="button"

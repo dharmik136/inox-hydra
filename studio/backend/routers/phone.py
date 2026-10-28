@@ -66,6 +66,12 @@ def post_ingress_settings(payload: IngressSettingsPayload):
     return result
 
 
+@router.post("/api/v1/ingress/test-message", tags=["Phone"])
+def post_ingress_test_message():
+    """Send a test message: one fixed sentence to the paired chat, and whether Telegram took it."""
+    return ingress.send_test_message()
+
+
 @router.post("/api/v1/ingress/options", tags=["Phone"])
 def post_ingress_options(payload: IngressOptionsPayload):
     """The bot's switches for this profile. A switch not sent is left as it is."""

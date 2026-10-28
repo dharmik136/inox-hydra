@@ -429,10 +429,11 @@ UI_SRC = os.path.join(REPO_ROOT, "studio", "ui", "src")
 # ---------------------------------------------------------------------------
 # 2.11.0, the Telegram bot: the bot's switches (/api/v1/ingress/options),
 # which the Telegram panel saves. Total 226 -> 227, reached 178 -> 179,
-# unreachable stays 48.
+# unreachable stays 48. Then Send a test message
+# (/api/v1/ingress/test-message), which the panel presses: 228, 180, 48.
 # ---------------------------------------------------------------------------
-TOTAL_API_PATHS = 227
-REACHED_BY_INTERFACE = 179
+TOTAL_API_PATHS = 228
+REACHED_BY_INTERFACE = 180
 UNREACHABLE = 48
 
 ROUTER_DIR = os.path.join(REPO_ROOT, "studio", "backend", "routers")

@@ -292,6 +292,9 @@ class TelegramIngressDaemon:
         # message that can never be handled does not block the ones behind it.
         self._failed_updates = {}
         self.total_polls = 0
+        # The last poll was answered with an error (not a 429, which has its
+        # own deadline): the loop backs off as from a network fault.
+        self.poll_failed = False
         self.total_messages_processed = 0
         self.last_poll_at: Optional[str] = None
         self.last_error: Optional[str] = None
@@ -772,9 +775,11 @@ class TelegramIngressDaemon:
                         except Exception as update_error:
                             attempts = self._failed_updates.get(update_id, 0) + 1
                             self._failed_updates[update_id] = attempts
+                            # The kind of failure only: an exception's text can
+                            # quote the message, and no message reaches a log.
                             logger.error(
                                 "Could not process Telegram update %s (attempt %d of %d): %s",
-                                update_id, attempts, MAX_UPDATE_ATTEMPTS, update_error,
+                                update_id, attempts, MAX_UPDATE_ATTEMPTS, type(update_error).__name__,
                             )
                             if attempts < MAX_UPDATE_ATTEMPTS:
                                 # Leave the offset where it is so Telegram
@@ -795,12 +800,13 @@ class TelegramIngressDaemon:
                             self.last_update_id = update_id
                     self.total_messages_processed += len(processed)
                     self.last_error = None
+                    self.poll_failed = False
                     self.flush_replies()
                     return processed
                 else:
-                    self.last_error = self._redact(
-                        f"Telegram API error: {data.get('description', 'Unknown')}"
-                    )
+                    self.poll_failed = True
+                    self.last_error = self._redact(telegram_bot.plain_words(
+                        int(data.get("error_code") or 400), str(data.get("description") or "")))
             elif res.status_code == 429:
                 # Telegram says wait. Record it as a deadline, not as a delay.
                 #
@@ -832,16 +838,22 @@ class TelegramIngressDaemon:
                     )
 
                 self.rate_limited_until = time.monotonic() + self.current_delay
-                self.last_error = (
-                    f"HTTP 429: Rate limited by Telegram API, "
-                    f"backing off {self.current_delay:.1f}s"
-                )
+                self.last_error = telegram_bot.plain_words(429, retry_after=self.current_delay)
             else:
-                self.last_error = self._redact(f"HTTP {res.status_code}: {res.text[:100]}")
+                # Any other answer is a failure the loop backs off from, said
+                # in plain words: a token Telegram does not know, a second
+                # program asking for the same bot, Telegram's own trouble.
+                self.poll_failed = True
+                try:
+                    description = str((res.json() or {}).get("description") or "")
+                except Exception:
+                    description = ""
+                self.last_error = self._redact(telegram_bot.plain_words(res.status_code, description))
         except Exception as err:
-            # Redacted, because the token is in the URL and the URL is in the
-            # exception. See _redact for the whole path this travels.
-            self.last_error = self._redact(str(err))
+            # Plain words for the panel; the detail, redacted because the
+            # token is in the URL and the URL is in the exception, for the log.
+            self.last_error = (telegram_bot.EGRESS_OFF if isinstance(err, _egress.EgressRefused)
+                               else telegram_bot.UNREACHABLE)
             logger.error("Polling error: %s", self._redact(str(err)))
             raise
         return []
@@ -865,11 +877,13 @@ class TelegramIngressDaemon:
                     continue
 
                 has_err = False
+                self.poll_failed = False
                 try:
                     self.poll_once()
                 except Exception as e:
                     has_err = True
                     logger.error("Worker loop error: %s", self._redact(str(e)))
+                has_err = has_err or self.poll_failed
                 self.check_notifications()
 
                 delay = self.calculate_next_poll_interval(has_error=has_err)
@@ -1016,6 +1030,22 @@ def save_settings(bot_token: str, chat_id: str) -> Dict[str, Any]:
         ingress_daemon._reply(chat, telegram_bot.SENTENCES["paired"])
         ingress_daemon.flush_replies()
     return describe_settings()
+
+
+def send_test_message() -> Dict[str, Any]:
+    """
+    The panel's Send a test message: one fixed sentence to the paired chat,
+    now, and whether Telegram took it. Telegram's answer says the chat
+    received it; whether the phone showed it, only the phone can say.
+    """
+    held = read_settings()
+    if not held["token"] or not held["chat_id"]:
+        return {"status": "success", "sent": False,
+                "said": "Pair a chat first: message the bot from your phone, then press This is me."}
+    result = telegram_bot.send_message(held["token"], held["chat_id"], telegram_bot.SENTENCES["test"])
+    if result["ok"]:
+        return {"status": "success", "sent": True, "said": "Sent: Telegram took it for your chat. Check your phone."}
+    return {"status": "success", "sent": False, "said": result["said"]}
 
 
 def _asking_for_this_profile() -> bool:
