@@ -288,6 +288,9 @@ class TelegramIngressDaemon:
         # message that can never be handled does not block the ones behind it.
         self._failed_updates = {}
         self.total_polls = 0
+        # The last poll was answered with an error (not a 429, which has its
+        # own deadline): the loop backs off as from a network fault.
+        self.poll_failed = False
         self.total_messages_processed = 0
         self.last_poll_at: Optional[str] = None
         self.last_error: Optional[str] = None
@@ -606,8 +609,11 @@ class TelegramIngressDaemon:
         self.last_poll_at = datetime.now(timezone.utc).isoformat()
 
         try:
-            # Refuses rather than connecting when this category is off. See egress.py.
-            _egress.require(url, "ingress")
+            # Refuses rather than connecting when this category is off. See
+            # egress.py. Counted under the address without the token: the
+            # ledger shows each category's last destination on Local
+            # security, and the Bot API carries the token in the path.
+            _egress.require("https://api.telegram.org/bot<token>/getUpdates", "ingress")
             res = requests.get(url, params=params, timeout=35)
             if token != self.bot_token:
                 # The bot changed while this request waited on Telegram. The
@@ -648,9 +654,11 @@ class TelegramIngressDaemon:
                         except Exception as update_error:
                             attempts = self._failed_updates.get(update_id, 0) + 1
                             self._failed_updates[update_id] = attempts
+                            # The kind of failure only: an exception's text can
+                            # quote the message, and no message reaches a log.
                             logger.error(
                                 "Could not process Telegram update %s (attempt %d of %d): %s",
-                                update_id, attempts, MAX_UPDATE_ATTEMPTS, update_error,
+                                update_id, attempts, MAX_UPDATE_ATTEMPTS, type(update_error).__name__,
                             )
                             if attempts < MAX_UPDATE_ATTEMPTS:
                                 # Leave the offset where it is so Telegram
@@ -667,8 +675,10 @@ class TelegramIngressDaemon:
                             self.last_update_id = update_id
                     self.total_messages_processed += len(processed)
                     self.last_error = None
+                    self.poll_failed = False
                     return processed
                 else:
+                    self.poll_failed = True
                     self.last_error = self._redact(
                         f"Telegram API error: {data.get('description', 'Unknown')}"
                     )
@@ -708,6 +718,12 @@ class TelegramIngressDaemon:
                     f"backing off {self.current_delay:.1f}s"
                 )
             else:
+                # Any other answer is a failure the loop backs off from: a
+                # token Telegram does not know (401), a second program asking
+                # for the same bot (409), Telegram's own trouble (5xx). It
+                # used to count as a good poll, so the worker asked again
+                # every two seconds.
+                self.poll_failed = True
                 self.last_error = self._redact(f"HTTP {res.status_code}: {res.text[:100]}")
         except Exception as err:
             # Redacted, because the token is in the URL and the URL is in the
@@ -736,11 +752,13 @@ class TelegramIngressDaemon:
                     continue
 
                 has_err = False
+                self.poll_failed = False
                 try:
                     self.poll_once()
                 except Exception as e:
                     has_err = True
                     logger.error("Worker loop error: %s", self._redact(str(e)))
+                has_err = has_err or self.poll_failed
 
                 delay = self.calculate_next_poll_interval(has_error=has_err)
                 if stop.wait(delay):
