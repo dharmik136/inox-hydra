@@ -350,29 +350,121 @@ def note_waiting(count: Any, oldest_at: Any = None) -> None:
         _waiting["reported_at"] = datetime.now(timezone.utc).isoformat()
 
 
-def handshake(extension_version: Any = None, contract_version: Any = None) -> Dict[str, Any]:
+def _version(text: Any) -> tuple:
+    parts = []
+    for chunk in str(text or "").split("."):
+        digits = "".join(c for c in chunk if c.isdigit())[:10]
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts + [0] * (4 - len(parts)))[:4]
+
+
+def _studio_version() -> Optional[str]:
+    try:
+        from ..__version__ import __version__
+    except (ImportError, ValueError):
+        try:
+            import os
+            import sys
+            sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+            from __version__ import __version__
+        except ImportError:
+            return None
+    return __version__
+
+
+def _newest_fresh_bridge() -> Optional[Dict[str, Any]]:
+    """What the newest bridge heard from inside the freshness window said of itself, or None."""
+    try:
+        from . import onboarding
+    except (ImportError, ValueError):
+        import onboarding
+    for bridge in onboarding.bridges():
+        if bridge.get("connected") and (bridge.get("extension_version") or bridge.get("contract_version") is not None):
+            return bridge
+    return None
+
+
+def handshake(extension_version: Any = None, contract_version: Any = None, self_reload: Any = None,
+              files_version: Any = None, tabs_needing_reload: Any = None,
+              studio_version: Optional[str] = None) -> Dict[str, Any]:
     """
-    What the studio is, what it needs, and whether this client is old enough
-    to need reloading. Answered on the heartbeat and on extension health.
+    What the studio is, what it needs, and whether this client truly needs
+    reloading. Answered on the heartbeat and on extension health.
+
+    Judged on what the extension said: on the line, what it just sent;
+    otherwise the newest heartbeat inside the bridge's freshness window, which
+    carries its contract and whether it reloads itself. With neither, it is
+    not known, and nothing is said: after every restart the studio used to
+    judge a remembered nothing as stale and tell the creator to reload.
+
+    A reload is required when the extension speaks an older contract and is
+    not about to reload itself, or runs an older version than the studio and
+    cannot reload itself (2.10.0 on reloads itself when its files change).
+    An extension whose files are newer than it is updating itself. Tabs the
+    worker could not give the new readers are their own sentence: those tabs
+    need reloading, not the extension.
     """
     note_client(extension_version, contract_version)
-    with _lock:
-        seen = dict(_client)
-    # A client on the line is judged on what it just said, not on what some
-    # earlier client said. Only a read with nobody on the line, such as the
-    # side panel's health call, falls back to what is remembered.
+    studio_version = studio_version or _studio_version()
     on_the_line = extension_version is not None or contract_version is not None
-    speaks = (contract_version if isinstance(contract_version, int) else None) if on_the_line \
-        else seen.get("contract_version")
-    stale = speaks is None or speaks < CONTRACT_VERSION
-    return {
-        "contract_version": CONTRACT_VERSION,
-        "extension_contract_version": speaks,
-        "extension_version": seen.get("extension_version"),
-        "last_seen_at": seen.get("last_seen_at"),
-        "reload_required": stale,
-        "message": RELOAD_MESSAGE if stale else None,
-    }
+    if on_the_line:
+        said: Optional[Dict[str, Any]] = {
+            "extension_version": str(extension_version)[:40] if extension_version else None,
+            "contract_version": contract_version if isinstance(contract_version, int) else None,
+            "self_reload": self_reload is True,
+            "files_version": str(files_version)[:40] if files_version else None,
+            "tabs_needing_reload": tabs_needing_reload if isinstance(tabs_needing_reload, int) else None,
+        }
+    else:
+        said = _newest_fresh_bridge()
+        if said is not None:
+            # A heartbeat from 2.10.0 on says whether it reloads itself; one
+            # that does not say is from before, and cannot.
+            said = dict(said, self_reload=said.get("self_reload") is True)
+        with _lock:
+            seen = dict(_client)
+        # A capture spoke after the newest heartbeat: what it said is newer.
+        # It does not say whether the extension reloads itself, so only its
+        # contract is judged.
+        if seen.get("last_seen_at") and (said is None or seen["last_seen_at"] > (said.get("last_seen_at") or "")):
+            said = {"extension_version": seen.get("extension_version"), "contract_version": seen.get("contract_version"),
+                    "self_reload": None, "files_version": None, "last_seen_at": seen.get("last_seen_at"),
+                    "tabs_needing_reload": (said or {}).get("tabs_needing_reload")}
+    base = {"contract_version": CONTRACT_VERSION, "studio_version": studio_version}
+    if not said:
+        with _lock:
+            seen = dict(_client)
+        return dict(base, extension_contract_version=None, extension_version=seen.get("extension_version"),
+                    last_seen_at=seen.get("last_seen_at"), reload_required=None, updating=False, message=None,
+                    tabs_needing_reload=None, tabs_message=None, known=False)
+    running = said.get("extension_version")
+    speaks = said.get("contract_version")
+    reloads_itself = said.get("self_reload") is True
+    on_disk = said.get("files_version")
+    updating = reloads_itself and bool(on_disk) and bool(running) and on_disk != running
+    stale_contract = speaks is None or speaks < CONTRACT_VERSION
+    older = bool(running) and bool(studio_version) and _version(running) < _version(studio_version)
+    cannot_reload_itself = said.get("self_reload") is False
+    required = not updating and (stale_contract or (older and cannot_reload_itself))
+    if not required:
+        message = None
+    elif older and cannot_reload_itself and running:
+        message = (f"This browser runs Inox Hydra Bridge {running}, older than the studio's {studio_version}, and "
+                   "that version cannot reload itself. Open chrome://extensions and press Reload on Inox Hydra "
+                   "Bridge once; from this version on it reloads itself when its files change.")
+    else:
+        message = RELOAD_MESSAGE
+    tabs = said.get("tabs_needing_reload") or 0
+    tabs_message = None
+    if tabs:
+        tabs_message = (f"{tabs} LinkedIn tab{'s' if tabs != 1 else ''} still carr{'y' if tabs != 1 else 'ies'} "
+                        "an older copy of the bridge's readers, which the update could not replace: reload "
+                        f"{'them' if tabs != 1 else 'it'}.")
+    with _lock:
+        last_seen = _client.get("last_seen_at")
+    return dict(base, extension_contract_version=speaks, extension_version=running,
+                last_seen_at=said.get("last_seen_at") or last_seen, reload_required=required, updating=updating,
+                message=message, tabs_needing_reload=tabs, tabs_message=tabs_message, known=True)
 
 
 def refusal_counts() -> Dict[str, Any]:

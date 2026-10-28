@@ -521,8 +521,15 @@ function bridgeLine(state: OnboardingState): string {
   // that carried the state; an extension that has not reported it says
   // nothing here rather than "off".
   const reading = bridge.network_reading ? ` ${bridge.network_reading.sentence}` : "";
+  // More than one browser: each named, so two clients' bridges can be told
+  // apart (cycle 4, track 1, phase 2).
+  const others = (bridge.bridges ?? []).length > 1
+    ? ` Bridges: ${(bridge.bridges ?? []).map((entry) =>
+        `${entry.browser ?? "a browser"}${entry.signed_in_vanity ? ` (${entry.signed_in_vanity})` : ""} ` +
+        (entry.connected ? "connected" : `last heard from ${ago(entry.seconds_ago)}`)).join("; ")}.`
+    : "";
   if (bridge.connected) {
-    return `Connected${bridge.extension_version ? `, extension ${bridge.extension_version}` : ""}.${reading}`;
+    return `Connected${bridge.extension_version ? `, extension ${bridge.extension_version}` : ""}.${reading}${others}`;
   }
   if (bridge.seconds_ago !== null) return `Last heard from ${ago(bridge.seconds_ago)}. Open a LinkedIn tab in the bridge browser.`;
   return "Not seen yet";

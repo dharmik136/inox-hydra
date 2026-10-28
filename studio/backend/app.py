@@ -1627,7 +1627,9 @@ def post_bridge_heartbeat(payload: BridgeHeartbeat):
         self_reload=payload.self_reload, files_version=payload.files_version)
     ingest_contract.note_waiting(payload.waiting_captures, payload.oldest_waiting_at)
     changes.publish("heartbeat", waiting=payload.waiting_captures is not None)
-    seen["handshake"] = ingest_contract.handshake(payload.extension_version, payload.contract_version)
+    seen["handshake"] = ingest_contract.handshake(
+        payload.extension_version, payload.contract_version, self_reload=payload.self_reload,
+        files_version=payload.files_version, tabs_needing_reload=payload.tabs_needing_reload)
     # The accounts a profile here has confirmed, so the worker sends what it
     # held for one of them as soon as it has a home.
     seen["profile_vanities"] = bridge_routing.profile_vanities()
