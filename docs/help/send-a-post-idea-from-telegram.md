@@ -57,6 +57,20 @@ Any `#hashtag` in the text also becomes a tag, up to 30. An em dash in your mess
 
 The `Schedule` prefix is recognised only in a one-line message whose `<when>` uses just letters, digits, spaces, colons and hyphens, followed by `:` or `|`. Otherwise the whole message, prefix included, is saved as plain text. If your text contains another colon, everything before the last colon is taken as `<when>` and dropped.
 
+## Commands
+
+Send a command as a message on its own, as Telegram's menu does. Letter case does not matter, and `/help@YourBot` is read as `/help`.
+
+| You send | What happens |
+| --- | --- |
+| `/start` or `/help` | The bot says what it does, how to pair a chat and what it never sends |
+| `/idea your idea` | Your idea is saved as a draft tagged `idea`, as `Idea: your idea` is. A link inside it stays part of the idea |
+| `/ask what to remember` | It is remembered as an ask in **From your record**, with the source Telegram, and listed under **What the studio knows** there, where you can change or remove it. It takes effect on tomorrow's cards. Nothing is saved as a draft |
+| `/status` | Whether your studio is running, and whether the bridge in your browser is connected. No figures |
+| Any other command | "I do not know that command. Send /help to see what I do." |
+
+`/start`, `/help` and `/status` are answered even when **The bot confirms each message** is off, because you asked a question. A command from a chat that is not paired is refused like any other message.
+
 ## What the bot says back
 
 Each message gets one short sentence back, the same words every time. None carries your words, your figures or anything about anyone else:
@@ -72,6 +86,8 @@ Each message gets one short sentence back, the same words every time. None carri
 | You pressed **This is me**, or saved a chat id | Paired. Messages from this chat now arrive in your studio. Send /help to see what I do. |
 | A message before any chat is paired | Not paired yet. In your studio, open Settings, then Local security, and press This is me beside chat 487215963. (Your own chat's number.) |
 | A message from a chat that is not the paired one | This bot takes messages only from the chat its owner paired. |
+| `/ask` | Remembered. Your studio uses it when it picks what to write about, from tomorrow's cards. |
+| `/idea` or `/ask` with nothing after it | How to send one, with an example |
 
 A chat that is refused is answered at most once in ten minutes. The answers are on by default; to stop them, untick **The bot confirms each message** in the panel. Your messages are still saved. If a sentence cannot be sent, the panel says why under **Last message the bot could not send**, and the studio tries again after a network fault or when Telegram asks it to wait.
 

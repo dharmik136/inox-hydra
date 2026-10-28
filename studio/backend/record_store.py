@@ -9,7 +9,8 @@ the asks store is written only by explicit acts (decision 5):
   setup         the optional topics, audience and things-to-avoid fields
   ask_box       the box on the section itself
   composer      an instruction, only when the creator ticked "remember this"
-  telegram      an "Idea:" sent from the phone (record_daily.sync_telegram_ideas)
+  telegram      an "Idea:" or /idea sent from the phone (record_daily.sync_telegram_ideas),
+                and /ask from the phone's paired chat (ingress.py, 2.11.0)
   more_of_this  "More of this" on a card, which writes the card's topic
   archive_search  never written here: the archive's search queries are
                 archive_records, imported only behind their own tick
@@ -53,7 +54,7 @@ except ImportError:  # top-level import mode
     from database import get_db
 
 MAX_ASK_CHARS = 2000
-CREATOR_SOURCES = ("setup", "ask_box", "composer", "more_of_this")
+CREATOR_SOURCES = ("setup", "ask_box", "composer", "more_of_this", "telegram")
 SETUP_FIELDS = ("topics", "audience", "avoid")
 CREATOR_MARKS = ("keep", "skip", "hide")
 STATUSES = ("open", "kept", "retired")
@@ -88,7 +89,8 @@ def _clean(text: Any) -> str:
 def add_ask(text: Any, source: str, field: Optional[str] = None, origin_ref: Optional[str] = None) -> Dict[str, Any]:
     """Records an ask the creator made. Refused for an empty text or a source no creator act is."""
     if source not in CREATOR_SOURCES:
-        raise Refused("An ask comes from Setup, the ask box, a ticked Composer instruction or More of this.")
+        raise Refused("An ask comes from Setup, the ask box, a ticked Composer instruction, More of this or "
+                      "/ask from your phone.")
     if field is not None and field not in SETUP_FIELDS:
         raise Refused(f"A Setup field is one of {', '.join(SETUP_FIELDS)}.")
     cleaned = _clean(text)

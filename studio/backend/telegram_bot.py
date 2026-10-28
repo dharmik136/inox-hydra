@@ -30,9 +30,10 @@ Strict Invariants:
 """
 
 import logging
+import re
 import threading
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import requests
 
@@ -64,7 +65,63 @@ SENTENCES = {
     "other_chat": "This bot takes messages only from the chat its owner paired.",
     "no_text": "That message had no text, so nothing was saved.",
     "not_saved": "Your studio could not save that message. Open the studio to see why.",
+    "ask": "Remembered. Your studio uses it when it picks what to write about, from tomorrow's cards.",
+    "empty_idea": "Send /idea with your idea after it, for example /idea pricing for a small studio.",
+    "empty_ask": "Send /ask with what your studio should remember, for example /ask more on hiring.",
+    "unknown_command": "I do not know that command. Send /help to see what I do.",
+    "bridge_connected": "The bridge in your browser is connected.",
+    "bridge_quiet": ("The bridge in your browser has not been heard from in the last few minutes: open LinkedIn "
+                     "in the bridge browser."),
+    "bridge_never": "The bridge has not been heard from yet: install it, then open LinkedIn in the bridge browser.",
 }
+
+# What /start and /help answer: what the bot does, how to pair, and what it
+# never sends. Fixed, like every sentence above.
+HELP = "\n".join((
+    "I am your Inox Hydra bot. I pass what you send me to your studio on your computer.",
+    "",
+    "Send me:",
+    "- any text: saved as a draft",
+    "- a link to one of your LinkedIn posts: Today asks you to open its analytics",
+    "- /idea and your idea: saved as a draft, tagged as an idea",
+    "- /ask and what your studio should remember when it picks what to write about",
+    "- /status: whether your studio and its bridge are running",
+    "",
+    "To pair a chat: in your studio, open Settings, then Local security, and press This is me beside it.",
+    "",
+    "I never send your posts, your drafts, your words, or anything about other people.",
+))
+
+# Commands answered whatever the confirmations switch says: they are questions.
+QUESTIONS = ("start", "help", "status")
+_COMMAND = re.compile(r"^/([A-Za-z][A-Za-z0-9_]{0,31})(?:@[A-Za-z0-9_]{1,64})?(?:\s+(.*))?$", re.DOTALL)
+
+
+def parse_command(text: str) -> Optional[Tuple[str, str]]:
+    """(name, what follows it) for a command such as /idea or /idea@YourBot, or None for any other text."""
+    found = _COMMAND.match((text or "").strip())
+    if not found:
+        return None
+    return found.group(1).lower(), (found.group(2) or "").strip()
+
+
+def status_sentence() -> str:
+    """/status: whether the studio and its bridge are running. No figure, no time, no count."""
+    try:
+        from . import onboarding
+    except ImportError:
+        import onboarding
+    try:
+        bridge = onboarding.bridge_status()
+    except Exception:
+        bridge = {"connected": False, "last_seen_at": None}
+    if bridge.get("connected"):
+        said = SENTENCES["bridge_connected"]
+    elif bridge.get("last_seen_at"):
+        said = SENTENCES["bridge_quiet"]
+    else:
+        said = SENTENCES["bridge_never"]
+    return f"Your studio is running. {said}"
 
 # A chat the bot refused is answered at most this often, so a stranger who
 # writes twenty times is answered once, and the owner who writes twice before

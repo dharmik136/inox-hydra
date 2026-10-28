@@ -147,8 +147,11 @@ class IngressMessageParser:
         }
 
     @classmethod
-    def parse_message(cls, raw_text: Any) -> Dict[str, Any]:
-        """Extracts intent, content, scheduling directives, and tags from incoming message."""
+    def parse_message(cls, raw_text: Any, links: bool = True) -> Dict[str, Any]:
+        """
+        Extracts intent, content, scheduling directives, and tags from incoming message.
+        With links=False (/idea) a link is part of the text, never a request.
+        """
         if raw_text is None:
             text = ""
         elif not isinstance(raw_text, str):
@@ -195,7 +198,7 @@ class IngressMessageParser:
         # names no post (a short link, a profile) stays in the text, so the
         # message is kept whole as a draft rather than lost.
         read_request: Optional[Dict[str, Any]] = None
-        for url in LINKEDIN_URL.findall(content):
+        for url in (LINKEDIN_URL.findall(content) if links else ()):
             # A link copied with its colons encoded (urn%3Ali%3Aactivity) names the same post.
             urn = post_identity.extract_activity_urn(unquote(url))
             if urn:
@@ -205,7 +208,7 @@ class IngressMessageParser:
         # A short link is a post sent from the phone, alone or with text
         # around it: the request, and never a draft. The text around it is
         # the share sheet's or a note on the post, not a post idea.
-        if read_request is None:
+        if read_request is None and links:
             short = SHORT_LINK.search(content)
             if short:
                 link = "https://" + SHORT_LINK_HOST + short.group(1).rstrip("/")
@@ -393,16 +396,20 @@ class TelegramIngressDaemon:
             return paths.using_profile(self.profile_id)
         return nullcontext()
 
-    def _reply(self, chat_id: str, text: Optional[str]) -> None:
-        """Queues one of the bot's fixed sentences for a chat, when the bot confirms messages."""
+    def _reply(self, chat_id: str, text: Optional[str], always: bool = False) -> None:
+        """
+        Queues one of the bot's fixed sentences for a chat: a confirmation when
+        the bot confirms messages, and an answer to a question (always) in any case.
+        """
         if not text or not chat_id or not self.bot_token:
             return
-        try:
-            with self._bots_profile():
-                if not telegram_bot.replies_on():
-                    return
-        except Exception:
-            return
+        if not always:
+            try:
+                with self._bots_profile():
+                    if not telegram_bot.replies_on():
+                        return
+            except Exception:
+                return
         self.outbox.put(chat_id, text)
 
     def _answer_refusal(self, chat_id: str, key: str) -> None:
@@ -532,16 +539,48 @@ class TelegramIngressDaemon:
                                "saved. Set the bot up again in the profile you use.")
             return None
         with (paths.using_profile(pinned) if pinned else nullcontext()):
-            stored = self._store(text)
+            command = telegram_bot.parse_command(text)
+            if command:
+                stored, answer, question = self._command(command, update)
+            else:
+                stored, question = self._store(text), False
+                answer = telegram_bot.answer_for(stored)
             if from_telegram and stored is not None:
                 _note_heard()
         if from_telegram:
-            self._reply(chat_id, telegram_bot.answer_for(stored))
+            self._reply(chat_id, answer, always=question)
         return stored
 
-    def _store(self, text: str) -> Optional[Dict[str, Any]]:
+    def _command(self, command, update: Dict[str, Any]):
+        """One of the bot's commands: (what was stored or done, the answer, whether it was a question)."""
+        name, argument = command
+        done = {"kind": "command", "command": name}
+        if name in ("start", "help"):
+            return done, telegram_bot.HELP, True
+        if name == "status":
+            return done, telegram_bot.status_sentence(), True
+        if name == "idea":
+            if not argument:
+                return done, telegram_bot.SENTENCES["empty_idea"], False
+            stored = self._store("Idea: " + argument, links=False)
+            return stored, telegram_bot.answer_for(stored), False
+        if name == "ask":
+            # An explicit act of the creator's, so it goes through the asks
+            # store's own rule (record_store.py), from the paired chat only.
+            try:
+                from . import record_store
+            except ImportError:
+                import record_store
+            try:
+                kept = record_store.add_ask(argument, "telegram", origin_ref=f"telegram:{update.get('update_id')}")
+            except record_store.Refused:
+                return done, telegram_bot.SENTENCES["empty_ask"], False
+            return {"kind": "ask", "id": kept.get("id")}, telegram_bot.SENTENCES["ask"], False
+        return done, telegram_bot.SENTENCES["unknown_command"], False
+
+    def _store(self, text: str, links: bool = True) -> Optional[Dict[str, Any]]:
         """Saves one accepted message: a desk request for a post link, a draft for any text."""
-        parsed = IngressMessageParser.parse_message(text)
+        parsed = IngressMessageParser.parse_message(text, links=links)
 
         # A post link is a request to read that post at the desk. Recorded
         # first, so a message that is only a link is not a draft of nothing.
