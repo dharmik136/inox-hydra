@@ -418,6 +418,9 @@ class NativeScheduler:
         LinkedIn publishes that one itself, so it is recorded as published at
         its time.
         """
+        # What became of each decision, whether or not the queue is paused:
+        # a post posted or moved while paused is still no longer due.
+        self.resolve_dispatches()
         if self.is_queue_paused():
             logger.info("Scheduler cycle skipped: Publishing queue is currently paused by creator.")
             return []
@@ -458,6 +461,9 @@ class NativeScheduler:
                     )
                     claimed = cursor.rowcount
                     cursor.execute("DELETE FROM settings WHERE key = ?", (LINKEDIN_HOLDS_KEY + post_id,))
+                    if claimed:
+                        self._record_dispatch(cursor, post_id, post["scheduled_for"], now_iso, overdue_minutes,
+                                              "published_by_linkedin", resolved="published")
                     conn.commit()
                     if claimed == 0:
                         continue
@@ -488,9 +494,14 @@ class NativeScheduler:
                         "UPDATE posts SET status = 'due' WHERE id = ? AND status = 'scheduled'",
                         (post_id,)
                     )
+                    claimed = cursor.rowcount
+                    if claimed:
+                        self._record_dispatch(
+                            cursor, post_id, post["scheduled_for"], now_iso, overdue_minutes,
+                            "due_on_time" if overdue_minutes <= ON_TIME_THRESHOLD_MINUTES else "due_within_grace")
                     conn.commit()
 
-                    if cursor.rowcount == 0:
+                    if claimed == 0:
                         logger.info(
                             "Post %s was already dispatched by another cycle. Skipping.",
                             post_id
@@ -543,6 +554,8 @@ class NativeScheduler:
                                 "late_minutes": round(overdue_minutes, 1),
                             })),
                         )
+                        self._record_dispatch(cursor, post_id, post["scheduled_for"], now_iso, overdue_minutes,
+                                              "missed_due")
                     conn.commit()
 
                     if claimed == 0:
@@ -574,6 +587,51 @@ class NativeScheduler:
             changes.publish("queue")
 
         return actions
+
+    @staticmethod
+    def _record_dispatch(cursor, post_id: str, scheduled_for: Optional[str], noticed_at: str,
+                         overdue_minutes: float, outcome: str, resolved: Optional[str] = None) -> None:
+        """
+        One decision about a post whose time came, kept (queue_dispatches):
+        how late, by which rule. Written in the claim's own transaction, so a
+        decision another cycle won is never recorded twice.
+        """
+        cursor.execute(
+            "INSERT INTO queue_dispatches (post_id, scheduled_for, noticed_at, late_minutes, outcome, "
+            "resolved_at, resolution) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (post_id, scheduled_for, noticed_at, round(overdue_minutes, 1), outcome,
+             noticed_at if resolved else None, resolved))
+
+    def resolve_dispatches(self) -> int:
+        """
+        Says what became of each decision whose post is no longer due: its
+        status when the studio saw it ("published", "scheduled", "draft"), or
+        "deleted". The note that a post was missed is deleted at that point;
+        this row is what stays. Returns how many it resolved.
+        """
+        now_iso = datetime.now(timezone.utc).isoformat()
+        conn = get_db()
+        try:
+            with conn:
+                return conn.execute(
+                    "UPDATE queue_dispatches SET resolved_at = ?, resolution = COALESCE("
+                    "(SELECT status FROM posts WHERE posts.id = queue_dispatches.post_id), 'deleted') "
+                    "WHERE resolved_at IS NULL AND post_id NOT IN (SELECT id FROM posts WHERE status = 'due')",
+                    (now_iso,)).rowcount
+        finally:
+            conn.close()
+
+    def open_dispatches(self, conn, post_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """The newest unresolved decision for each of these posts: how late, by which rule."""
+        if not post_ids:
+            return {}
+        marks = ",".join("?" for _ in post_ids)
+        out: Dict[str, Dict[str, Any]] = {}
+        for row in conn.execute(
+                f"SELECT post_id, scheduled_for, noticed_at, late_minutes, outcome FROM queue_dispatches "
+                f"WHERE resolved_at IS NULL AND post_id IN ({marks}) ORDER BY noticed_at", list(post_ids)):
+            out[row["post_id"]] = dict(row)
+        return out
 
     def missed_notes(self, conn) -> Dict[str, Dict[str, Any]]:
         """The missed note of every due post that has one, by post id."""

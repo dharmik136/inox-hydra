@@ -30,9 +30,19 @@ Under them, **POSTS BY MONTH** draws one bar per month and says how many posts t
 
 **Next slot** shows the day, time and label of the next free slot, then either `12H CLEAR OF THE LAST POST` or `ONLY 6H SINCE THE LAST POST` (with your own figures). The hours are the distance to the nearest scheduled or published post.
 
-**Due, waiting for you to post it** lists every post whose time has come, with DUE and its time, its first line, **Copy text** and **I posted it**, or NOTHING IS DUE.
+**Due, waiting for you to post it** lists every post whose time has come, with DUE and its time, its first line, **Copy text** and **I posted it**, or NOTHING IS DUE. Under each, how late it was when the studio marked it due, and by which rule: for example MARKED DUE 2 MINUTES AFTER ITS TIME, ON TIME, or MARKED DUE 47 MINUTES LATE, WITHIN THE TWO HOUR GRACE.
 
-**Weekly slots** shows a card per day with each slot's time and label, or None. **Queued posts** lists every queued post, earliest time first, with its time in this computer's local time and its first line, or NOTHING IS QUEUED.
+**Weekly slots** shows a card per day with each slot's time and label, or None. **Queued posts** lists every queued post, earliest time first, with its time in this computer's local time and its first line, or NOTHING IS QUEUED. A queued post less than 12 hours from another says so in orange, for example 5 H FROM THE POST QUEUED FOR THU 23 OCT, 09:00; point at it to see that post's first words.
+
+## The Calendar
+
+Press **Calendar** above the week to see a month at a time, and the arrows to move between months; **This week** goes back. Each day of the month lists, by your own calendar day:
+
+- **PUBLISHED**: your posts as the bridge read them, with their time.
+- **SCHEDULED** and **DUE**: queued posts and posts whose time has come.
+- **MISSED**: a post the queue marked missed, kept after you dealt with it, with what became of it: THEN POSTED, THEN QUEUED AGAIN, THEN BACK IN THE DRAFTS or THEN DELETED.
+
+The line above the month counts each kind. Under it, your posts published that month by weekday, and in each of the last twelve months. No best day is named: these are your own counts, not advice.
 
 To add a post, use **Publish** then **Queue it** on the Composer, or press **Queue the newest draft** under **Drafts waiting**.
 
@@ -95,7 +105,9 @@ If you open the post on LinkedIn with the bridge running, it is linked to its Li
 
 1. Open **Queue**.
 2. Press **Check for due posts**.
-3. Read the note below the buttons: for example 1 POST MARKED DUE, or NOTHING WAS DUE.
+3. Read the note below the buttons, which says what the check decided by rule: for example CHECKED: 1 ON TIME; 1 WITHIN THE TWO HOUR GRACE (47 MINUTES LATE), or NOTHING WAS DUE.
+
+The studio keeps each of these decisions, which is how the Calendar can show a missed post after you have posted or moved it.
 
 ## Pause the queue and Resume the queue
 

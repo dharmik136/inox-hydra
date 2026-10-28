@@ -51,6 +51,14 @@ export function formatLocalDay(iso: string | null | undefined, missing = "Date u
  * 12-hour machine Today read "Mon 05:30 PM" and "Tuesday 17:30" in one card.
  * A value that is not a time reads as itself.
  */
+/** A stored time as a local time of day alone, for example "08:30", where the day is already shown. */
+export function formatLocalTime(iso: string | null | undefined, missing = ""): string {
+  if (!iso) return missing;
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return iso;
+  return when.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
 export function formatSlotTime(hhmm: string | null | undefined): string {
   const match = /^(\d{1,2}):(\d{2})/.exec(hhmm ?? "");
   if (!match) return hhmm ?? "";

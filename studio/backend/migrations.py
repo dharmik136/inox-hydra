@@ -31,6 +31,7 @@ Strict Invariants:
 - Never put schema changes in init_db() again. They belong here.
 """
 
+import json
 import os
 import sqlite3
 from datetime import datetime
@@ -1957,10 +1958,11 @@ def _migrate_reader_timing_and_network_reading(cursor: sqlite3.Cursor) -> None:
     onboarding.forget_other_members_readings(cursor.connection)
 
 
-def _migrate_stage_change_post(cursor: sqlite3.Cursor) -> None:
+def _migrate_stage_post_and_queue_dispatches(cursor: sqlite3.Cursor) -> None:
     """
     Migration 34:
-    A stage change keeps the post it came from.
+    A stage change keeps the post it came from, and the queue keeps what it
+    dispatched and missed.
 
     Migration 14 created lead_stage_events to answer "which post brought the
     people I ended up talking to", and wrote no post: every change said when
@@ -1973,6 +1975,48 @@ def _migrate_stage_change_post(cursor: sqlite3.Cursor) -> None:
     columns = {row[1] for row in cursor.execute("PRAGMA table_info(lead_stage_events)")}
     if "post_urn" not in columns:
         cursor.execute("ALTER TABLE lead_stage_events ADD COLUMN post_urn TEXT")
+
+    # The queue's decisions (sections report, decision 12). When a post's
+    # time came, the scheduler decided one of four things and kept none of
+    # them: the note that a post was missed was a settings key deleted once
+    # the post was posted or moved, and the automatic check's answer was
+    # thrown away. Each decision is a row now, and stays after the post moves
+    # on, with what became of it: resolution is the post's status when the
+    # studio next saw it no longer due ("published", "scheduled", "draft"),
+    # or "deleted". It holds ids and times, never a post's words.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS queue_dispatches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id TEXT NOT NULL,
+            scheduled_for TEXT,
+            noticed_at TEXT NOT NULL,
+            late_minutes REAL,
+            outcome TEXT NOT NULL CHECK (outcome IN
+                ('due_on_time', 'due_within_grace', 'missed_due', 'published_by_linkedin')),
+            resolved_at TEXT,
+            resolution TEXT
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_queue_dispatches_post ON queue_dispatches(post_id, noticed_at)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_queue_dispatches_scheduled ON queue_dispatches(scheduled_for)")
+    # The missed notes still held become the first rows, so a post missed
+    # before this version is in the history too.
+    for key, value in cursor.execute(
+            "SELECT key, value FROM settings WHERE key LIKE 'missed_post:%'").fetchall():
+        try:
+            note = json.loads(value or "")
+        except (TypeError, ValueError):
+            continue
+        if not isinstance(note, dict) or not note.get("noticed_at"):
+            continue
+        post_id = key[len("missed_post:"):]
+        if cursor.execute("SELECT 1 FROM queue_dispatches WHERE post_id = ? AND outcome = 'missed_due' "
+                          "AND noticed_at = ?", (post_id, note["noticed_at"])).fetchone():
+            continue
+        cursor.execute(
+            "INSERT INTO queue_dispatches (post_id, scheduled_for, noticed_at, late_minutes, outcome) "
+            "VALUES (?, ?, ?, ?, 'missed_due')",
+            (post_id, note.get("scheduled_for"), note["noticed_at"], note.get("late_minutes")))
 
 
 MIGRATIONS: List[Tuple[int, str, Payload]] = [
@@ -2016,7 +2060,8 @@ MIGRATIONS: List[Tuple[int, str, Payload]] = [
     (33, "Each reader says how long it took, the bridge says whether network reading is on, "
          "network reading keeps only your own posts, and every publication has its post again",
      _migrate_reader_timing_and_network_reading),
-    (34, "A stage change keeps the post it came from", _migrate_stage_change_post),
+    (34, "A stage change keeps the post it came from, and the queue keeps what it dispatched and missed",
+     _migrate_stage_post_and_queue_dispatches),
 ]
 
 SCHEMA_VERSION = BASELINE_VERSION + len(MIGRATIONS)

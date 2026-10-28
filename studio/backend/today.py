@@ -284,12 +284,20 @@ def due_posts(conn, limit: Optional[int] = DUE_LIMIT) -> List[Dict[str, Any]]:
         missed = native_scheduler.missed_notes(conn)
     except Exception:
         missed = {}
+    rows = conn.execute(
+        "SELECT id, content, scheduled_for FROM posts WHERE status = 'due' "
+        "ORDER BY scheduled_for LIMIT ?", (-1 if limit is None else limit,)).fetchall()
+    # How late each was when the studio marked it due, and by which rule (the
+    # scheduler's own record, queue_dispatches); both screens carry it.
+    try:
+        dispatched = native_scheduler.open_dispatches(conn, [r["id"] for r in rows])
+    except Exception:
+        dispatched = {}
     return [{"post_id": r["id"], "scheduled_for": r["scheduled_for"], "content": r["content"] or "",
              "excerpt": clip(" ".join((r["content"] or "").split()), 120),
-             "missed": _missed(missed.get(r["id"]), r["scheduled_for"])}
-            for r in conn.execute(
-                "SELECT id, content, scheduled_for FROM posts WHERE status = 'due' "
-                "ORDER BY scheduled_for LIMIT ?", (-1 if limit is None else limit,))]
+             "missed": _missed(missed.get(r["id"]), r["scheduled_for"]),
+             "dispatch": dispatched.get(r["id"])}
+            for r in rows]
 
 
 def _queue(conn) -> Dict[str, Any]:

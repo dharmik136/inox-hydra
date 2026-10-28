@@ -684,6 +684,53 @@ export interface ScheduledPost {
   id: string;
   content: string;
   scheduled_for: string | null;
+  /**
+   * Its nearest post inside the cadence rule (validate_schedule_cadence), or
+   * null when nothing is that close: which post, when, and how far apart.
+   */
+  collision?: {
+    other_id: string;
+    other_excerpt: string | null;
+    other_status: string | null;
+    other_at: string | null;
+    distance_hours: number;
+    kind: "duplicate" | "cadence";
+  } | null;
+}
+
+/** One decision the scheduler made about a post whose time came (queue_dispatches). */
+export interface QueueDispatch {
+  post_id: string;
+  scheduled_for: string | null;
+  noticed_at: string;
+  late_minutes: number | null;
+  outcome: "due_on_time" | "due_within_grace" | "missed_due" | "published_by_linkedin";
+}
+
+/** A month of your posts by your own calendar day (GET /api/queue/calendar). */
+export interface QueueCalendar {
+  month: string;
+  /** 0 is Monday. */
+  first_weekday: number;
+  days_in_month: number;
+  days: Record<string, {
+    kind: "published" | "scheduled" | "due" | "missed";
+    at: string | null;
+    ref: string;
+    excerpt: string | null;
+    late_minutes?: number | null;
+    /** What became of a missed post: its status when next seen ("published", "scheduled", "draft"), or "deleted". */
+    resolution?: string | null;
+  }[]>;
+  counts: Record<"published" | "scheduled" | "due" | "missed", number>;
+  /** The month's own published posts by weekday, Monday first. */
+  by_weekday: number[];
+  /** Published posts in each of the twelve months ending with this one. */
+  months: { month: string; published: number }[];
+}
+
+export async function fetchQueueCalendar(month: string): Promise<QueueCalendar> {
+  return call<QueueCalendar>(`/api/queue/calendar?month=${encodeURIComponent(month)}`);
 }
 
 export interface NextSlot {
@@ -765,11 +812,19 @@ export async function toggleQueuePause(paused: boolean): Promise<boolean> {
   return data.queue_paused;
 }
 
-export async function dispatchQueueNow(): Promise<string[]> {
+/** What one check of the queue decided, post by post: which rule, and how late. */
+export interface DispatchAction {
+  post_id: string;
+  action: QueueDispatch["outcome"];
+  overdue_minutes: number;
+}
+
+export async function dispatchQueueNow(): Promise<DispatchAction[]> {
   const data = await call<{ actions?: unknown }>("/api/v1/scheduler/dispatch/now", { method: "POST" });
   const actions = data.actions;
-  if (Array.isArray(actions)) return actions.map((a) => (typeof a === "string" ? a : JSON.stringify(a)));
-  return [];
+  return Array.isArray(actions)
+    ? actions.filter((a): a is DispatchAction => typeof a === "object" && a !== null && "action" in a)
+    : [];
 }
 
 // ---------------------------------------------------------------------------
@@ -3137,6 +3192,8 @@ export interface TodayDuePost {
   excerpt: string;
   /** Present when the post was missed while the studio was closed or asleep. */
   missed?: { scheduled_for: string; noticed_at: string | null; late_minutes: number | null } | null;
+  /** How late it was when the studio marked it due, and by which rule (the Queue's list only). */
+  dispatch?: QueueDispatch | null;
 }
 
 /**
