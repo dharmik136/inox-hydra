@@ -81,9 +81,41 @@
       (el) => el.children.length === 0 && clean(el.textContent).length > 0 && clean(el.textContent).length < 80);
   }
 
+  // The card a label sits in: its list item, as LinkedIn's summary cards
+  // are ("li" around "15 Search appearances 0% past 7 days"), else the box
+  // its figure was found in.
+  function cardOf(el, box) {
+    const item = el.closest("li");
+    return item && item.contains(box) ? item : box;
+  }
+
+  // The words of a card after its label, the label's own words excluded.
+  function wordsAfter(el, card) {
+    if (!card || !card.contains(el) || card === el) return "";
+    const range = document.createRange();
+    range.setStartAfter(el);
+    range.setEnd(card, card.childNodes.length);
+    return clean(range.toString());
+  }
+
+  // The figure printed right before a label in its card's words, as the
+  // 2026 summary cards print it ("15 Search appearances"): the last word
+  // before the label, and only when it is a count. A percentage is never a
+  // count, so the change printed beside it ("0%") is never the figure.
+  function figureBefore(label, text, share) {
+    const said = clean(text).toLowerCase();
+    const at = said.indexOf(label);
+    if (at <= 0) return null;
+    const before = said.slice(0, at).trim().split(/\s+/);
+    return figureOf(before[before.length - 1], share);
+  }
+
   // A labelled figure: the number in a leaf beside the label, within a few
-  // levels, or leading the label's own line ("412 profile viewers ...").
-  // The window is the one the label's line, its card or the page names.
+  // levels, or leading the label's own line ("412 profile viewers ..."), or
+  // the word right before the label in its card. The window is the one the
+  // label's line, its card or the page names; on its card, after the label
+  // too, where the 2026 cards print it after the change ("0% past 7 days")
+  // in a line that is not a leaf of its own.
   function readLabels(page, leaves) {
     const found = [];
     const taken = new Set();
@@ -102,13 +134,45 @@
         const near = leavesOf(box).find((leaf) => leaf !== el && figureOf(leaf.textContent, share));
         if (near) figure = figureOf(near.textContent, share);
       }
+      const card = cardOf(el, box);
+      if (!figure) figure = figureBefore(label, card.textContent, share);
       if (!figure) continue;
       // Its own line's window, else its own card's: never a neighbouring
       // card's, which may name another range.
       const period = windowOf(el.textContent) ||
-        leavesOf(box).map((leaf) => windowOf(leaf.textContent)).find(Boolean) || null;
+        leavesOf(box).map((leaf) => windowOf(leaf.textContent)).find(Boolean) ||
+        windowOf(wordsAfter(el, card)) || null;
       taken.add(key);
       found.push({ key, figure, period });
+    }
+    return found.concat(readLines(page, taken));
+  }
+
+  // A label that is no element of its own: one line carries the figure, the
+  // label and the window ("15 Search appearances 0% past 7 days"). The
+  // figure is the count right before the label; the window is named after
+  // it. The smallest element holding such a line is read, once per label.
+  function readLines(page, taken) {
+    const found = [];
+    const root = document.querySelector("main") || document.body;
+    for (const [label, key] of LABELS[page]) {
+      if (taken.has(key)) continue;
+      const share = SHARES.has(key);
+      const lines = Array.from(root.querySelectorAll("p, span, li, div, a, h1, h2, h3, h4, h5, h6")).filter((el) => {
+        const raw = el.textContent || "";
+        if (raw.length > 400) return false;
+        const text = clean(raw);
+        return text.length > 0 && text.length < 120 && text.toLowerCase().includes(label) &&
+          figureBefore(label, text, share);
+      });
+      const line = lines.find((el) => !lines.some((other) => other !== el && el.contains(other)));
+      if (!line) continue;
+      const text = clean(line.textContent).toLowerCase();
+      const card = line.closest("li") || line;
+      const period = windowOf(text.slice(text.indexOf(label) + label.length)) ||
+        windowOf(wordsAfter(line, card)) || null;
+      taken.add(key);
+      found.push({ key, figure: figureBefore(label, text, share), period });
     }
     return found;
   }
