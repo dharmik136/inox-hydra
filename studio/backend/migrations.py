@@ -2021,7 +2021,7 @@ def _migrate_stage_post_and_queue_dispatches(cursor: sqlite3.Cursor) -> None:
 
 def _migrate_bridge_coordination(cursor: sqlite3.Cursor) -> None:
     """
-    Migration 34:
+    Migration 35:
     One bridge per browser: a heartbeat row per browser per minute, a capture
     row per browser, reader and minute, and a history import claimed by one
     tab.
