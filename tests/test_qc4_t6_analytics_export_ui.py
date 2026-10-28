@@ -145,6 +145,24 @@ def test_setup_previews_the_export_sheet_by_sheet_and_imports_what_is_ticked(pag
     conn.close()
 
 
+def test_the_aggregate_exports_demographics_are_said_kept_with_their_day(page, studio):
+    """The real file's sheets, invented values: each demographics sheet says how many shares it kept, and when."""
+    block = _setup(page, studio)
+    page.set_input_files('input[aria-label="Choose your LinkedIn analytics export"]',
+                         files=[{"name": fx.AGGREGATE_NAME, "mimeType": XLSX, "buffer": fx.build(fx.aggregate_sheets())}])
+    expect(block.get_by_text("Your audience's demographics", exact=True)).to_be_visible()
+    expect(block.get_by_text("Who engaged with your posts", exact=True)).to_be_visible()
+    expect(block.get_by_text("Your most recent posts", exact=True)).to_be_visible()
+    assert _axe(page, 'section[aria-labelledby="analytics-export-title"]') == []
+    block.get_by_role("button", name="Import what is ticked").click()
+    expect(block.get_by_text("AUDIENCE DEMOGRAPHICS: 5 shares kept, dated 2026-10-28; 1 given only as a bound, "
+                             "such as < 1%, left out.")).to_be_visible()
+    expect(block.get_by_text("CONTENT DEMOGRAPHICS: 3 shares kept, dated 2026-10-28.")).to_be_visible()
+    conn = get_db()
+    assert conn.execute("SELECT COUNT(*) FROM audience_demographic_readings WHERE activity_urn = ''").fetchone()[0] == 8
+    conn.close()
+
+
 def test_analytics_links_to_the_export_in_setup(page, studio):
     page.goto(studio["url"] + "/#/analytics", wait_until="networkidle")
     link = page.get_by_role("link", name="Import LinkedIn's analytics export in Setup")

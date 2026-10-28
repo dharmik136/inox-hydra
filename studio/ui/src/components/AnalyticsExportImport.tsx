@@ -92,7 +92,8 @@ export function AnalyticsExportImport({
       <p className="mt-1.5 text-[13px] leading-relaxed text-ink-secondary">
         The archive carries your posts but no figures. On LinkedIn&apos;s analytics page, choose a range of up to a
         year and press Export. LinkedIn&apos;s help says the file holds your impressions and engagements for that
-        range, exact rather than rounded; the studio also looks in it for new followers by day and your top posts.
+        range, exact rather than rounded; the studio also looks in it for new followers by day, your top and most
+        recent posts, and the demographics LinkedIn gives as percentages.
         Bring it here and nothing is written until you have seen what is in it.
       </p>
       <p className="studio-meta mt-1.5 leading-relaxed text-signal-orange-text">{state.verification.toUpperCase()}</p>
@@ -290,6 +291,10 @@ function resultLine(name: string, tally: Record<string, unknown>): string {
     return `${name}: ${count("added")} of your posts read; ${count("published_outside_the_range")} published outside the range left out; ${count("not_yours")} not among your recorded posts.`;
   }
   if ("days_read" in tally) return `${name}: ${count("days_read")} days read.`;
+  if ("shares_kept" in tally) {
+    const bounds = count("left_out_as_bounds");
+    return `${name}: ${count("shares_kept")} shares kept, dated ${String(tally.dated)}${bounds ? `; ${bounds} given only as a bound, such as < 1%, left out` : ""}.`;
+  }
   if (tally.kept && typeof tally.kept === "object") return `${name}: kept with the record of this import.`;
   if ("added" in tally) return `${name}: ${count("added") ? "read" : "not among your recorded posts"}.`;
   return `${name}: done.`;

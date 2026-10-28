@@ -581,6 +581,26 @@ def _hold(studio, *posts):
     conn.close()
 
 
+def _demographics(studio, source=None):
+    sql = ("SELECT observed_on, activity_urn, source, dimension, label, percentage "
+           "FROM audience_demographic_readings")
+    if source:
+        return _rows(studio["db"], sql + " WHERE source = ? ORDER BY dimension, label", (source,))
+    return _rows(studio["db"], sql + " ORDER BY source, dimension, label")
+
+
+def test_the_aggregate_exports_sheets_are_each_recognised(studio):
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+    kinds = {s["name"]: s["kind"] for s in preview["sheets"]}
+    assert kinds == {"DISCOVERY": "discovery", "ENGAGEMENT": "engagement", "MOST RECENT POSTS": "recent_posts",
+                     "TOP POSTS": "top_posts", "FOLLOWERS": "followers",
+                     "AUDIENCE DEMOGRAPHICS": "audience_demographics",
+                     "CONTENT DEMOGRAPHICS": "content_demographics"}
+    assert preview["range"] == {"start": "2025-09-24", "end": "2026-10-28", "from": "the file's name"}
+    for name in ("MOST RECENT POSTS", "AUDIENCE DEMOGRAPHICS", "CONTENT DEMOGRAPHICS"):
+        assert _sheet(preview, name)["importable"] is True, _sheet(preview, name)["note"]
+
+
 def test_most_recent_posts_are_read_like_top_posts(studio):
     """
     The real file's MOST RECENT POSTS was refused as a post's own export with
@@ -612,3 +632,85 @@ def test_a_list_of_posts_without_their_links_is_not_matched_by_anything_else(stu
     preview = _upload(studio["client"], fx.build(sheets), name=fx.AGGREGATE_NAME).json()
     sheet = _sheet(preview, "MOST RECENT POSTS")
     assert sheet["importable"] is False and "without a link to each post" in sheet["note"]
+
+
+def test_the_audience_and_content_demographics_are_kept_apart_and_dated(studio):
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+    res = studio["client"].post("/api/v1/analytics-export/import", json={
+        "source": preview["source"], "include": ["AUDIENCE DEMOGRAPHICS", "CONTENT DEMOGRAPHICS"]})
+    summary = res.json()["summary"]
+    assert summary["AUDIENCE DEMOGRAPHICS"]["shares_kept"] == 5
+    assert summary["AUDIENCE DEMOGRAPHICS"]["left_out_as_bounds"] == 1
+    assert summary["AUDIENCE DEMOGRAPHICS"]["dated"] == "2026-10-28"
+    audience = _demographics(studio, "linkedin_export_audience")
+    content = _demographics(studio, "linkedin_export_content")
+    assert len(audience) == 5 and len(content) == 3
+    assert {r["observed_on"] for r in audience + content} == {"2026-10-28"}, "not dated by the export's end"
+    assert {r["activity_urn"] for r in audience + content} == {""}, "an account's demographics were filed under a post"
+    first = next(r for r in audience if r["label"] == "Software Engineer")
+    assert (first["dimension"], first["percentage"]) == ("job titles", 12.0)
+    assert next(r for r in audience if r["label"] == "Product Manager")["percentage"] == 6.5
+    assert not [r for r in audience if r["label"] == "10,001+ employees"], "a bound (< 1%) was stored as a figure"
+    assert next(r for r in content if r["label"] == "Mumbai")["percentage"] == 14.0
+
+
+def test_importing_the_demographics_twice_keeps_one_reading_a_day(studio):
+    for _ in range(2):
+        preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+        studio["client"].post("/api/v1/analytics-export/import", json={
+            "source": preview["source"], "include": ["AUDIENCE DEMOGRAPHICS", "CONTENT DEMOGRAPHICS"]})
+    assert len(_demographics(studio)) == 8
+
+
+def test_a_later_export_ending_the_same_day_replaces_that_days_shares_rather_than_mixing_them(studio):
+    """A 7-day and a 365-day export can end on the same day; one day's set is one export's."""
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+    studio["client"].post("/api/v1/analytics-export/import",
+                          json={"source": preview["source"], "include": ["CONTENT DEMOGRAPHICS"]})
+    shorter = [["Job titles", "Founder", "11%"], ["Locations", "Pune", "8%"]]
+    name = "AggregateAnalytics_Sample Creator_2026-10-22_2026-10-28.xlsx"
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets(content=shorter)), name=name).json()
+    studio["client"].post("/api/v1/analytics-export/import",
+                          json={"source": preview["source"], "include": ["CONTENT DEMOGRAPHICS"]})
+    got = {(r["dimension"], r["label"]): r["percentage"] for r in _demographics(studio, "linkedin_export_content")}
+    assert got == {("job titles", "Founder"): 11.0, ("locations", "Pune"): 8.0}
+
+
+def test_no_post_screen_shows_the_accounts_demographics(studio):
+    """Only per-post readers read this table, by post; the export's rows are the account's."""
+    _hold(studio, (fx.RECENT_A, date(2026, 10, 20)), (fx.RECENT_B, date(2026, 10, 10)))
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+    studio["client"].post("/api/v1/analytics-export/import", json={"source": preview["source"]})
+    assert len(_demographics(studio)) == 8
+    import onboarding
+    for row in _rows(studio["db"], "SELECT activity_urn FROM own_posts"):
+        assert onboarding.post_demographics(row["activity_urn"]) == [], "a post's screen shows the account's shares"
+
+
+def test_a_share_stored_as_a_percent_formatted_number_is_read_as_a_percentage(studio):
+    shares = [["Job titles", "Designer", fx.Pct(0.25)], ["Locations", "Pune", fx.Pct(0.075)]]
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets(audience=shares)), name=fx.AGGREGATE_NAME).json()
+    studio["client"].post("/api/v1/analytics-export/import",
+                          json={"source": preview["source"], "include": ["AUDIENCE DEMOGRAPHICS"]})
+    got = {r["label"]: r["percentage"] for r in _demographics(studio, "linkedin_export_audience")}
+    assert got == {"Designer": 25.0, "Pune": 7.5}
+
+
+def test_plain_numbers_that_could_be_fractions_or_percentages_are_not_guessed(studio):
+    """0.3 with no percent sign and no percent format could be 30 percent or 0.3 percent."""
+    shares = [["Job titles", "Designer", 0.3], ["Locations", "Pune", 0.2]]
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets(audience=shares)), name=fx.AGGREGATE_NAME).json()
+    sheet = _sheet(preview, "AUDIENCE DEMOGRAPHICS")
+    assert sheet["importable"] is False and "30 percent or 0.3 percent" in sheet["note"]
+    shares = [["Job titles", "Designer", 31], ["Locations", "Pune", 0.4]]
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets(audience=shares)), name=fx.AGGREGATE_NAME).json()
+    assert _sheet(preview, "AUDIENCE DEMOGRAPHICS")["importable"] is True, "a column with 31 in it is percentages"
+
+
+def test_deleting_everything_forgets_the_exports_demographics(studio):
+    preview = _upload(studio["client"], fx.build(fx.aggregate_sheets()), name=fx.AGGREGATE_NAME).json()
+    studio["client"].post("/api/v1/analytics-export/import", json={"source": preview["source"]})
+    assert _demographics(studio)
+    import onboarding
+    onboarding.forget_identity()
+    assert _demographics(studio) == []
