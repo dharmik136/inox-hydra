@@ -1636,9 +1636,9 @@ def post_bridge_heartbeat(payload: BridgeHeartbeat):
         payload.extension_version, payload.contract_version, self_reload=payload.self_reload,
         files_version=payload.files_version, tabs_needing_reload=payload.tabs_needing_reload,
         files_readable=payload.files_readable, files_checked_at=payload.files_checked_at)
-    # The accounts a profile here has confirmed, so the worker sends what it
-    # held for one of them as soon as it has a home.
-    seen["profile_vanities"] = bridge_routing.profile_vanities()
+    # The accounts a profile here has confirmed, as one-way digests, so the
+    # worker sends what it held for one of them as soon as it has a home.
+    seen["profile_accounts"] = bridge_routing.profile_account_digests()
     return seen
 
 

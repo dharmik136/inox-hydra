@@ -149,19 +149,24 @@ def test_a_capture_for_an_account_no_profile_holds_is_kept_until_one_does():
       await w.tick(80);
       const beforeHome = w.sent.filter((s) => s.path === "/api/v1/crm/interactions/ingest").length;
       w.recipes["/api/v1/crm/interactions/ingest"] = accept;
-      w.recipes["/api/v1/bridge/heartbeat"] = [{ status: 200, body: { status: "success", profile_vanities: ["second-account"] } }];
+      const digest = require("crypto").createHash("sha256").update("second-account").digest("hex");
+      w.recipes["/api/v1/bridge/heartbeat"] = [{ status: 200, body: { status: "success", profile_accounts: [digest] } }];
       w.fire("alarm", { name: "inox_bridge_heartbeat" });
       await w.tick(200);
       process.stdout.write(JSON.stringify({ answer: { kept: answer.kept, held: answer.held }, keptAfter, beforeHome,
         afterHome: w.sent.filter((s) => s.path === "/api/v1/crm/interactions/ingest").length,
         left: (w.storage.keptCaptures || []).length,
-        heldOnBeat: (w.sent.filter((s) => s.path === "/api/v1/bridge/heartbeat")[0] || {}).body.held }));
+        heldOnBeat: (w.sent.filter((s) => s.path === "/api/v1/bridge/heartbeat")[0] || {}).body.held,
+        stored: w.storage.profileAccounts || null, digest,
+        names: JSON.stringify(w.storage).includes('"profileVanities"') }));
     """)
     assert out["answer"] == {"kept": True, "held": True}
     assert out["keptAfter"] == ["second-account"]
     assert out["beforeHome"] == 1, "a held capture was sent again before any profile held its account"
     assert out["heldOnBeat"] == {"second-account": 1}, "the heartbeat does not say what is held"
     assert out["afterHome"] == 2 and out["left"] == 0, "the held capture was not sent when its account got a profile"
+    assert out["stored"] == [out["digest"]], "the browser does not keep the profiles' accounts as digests"
+    assert out["names"] is False, "the browser keeps the profiles' account names"
 
 
 def test_the_worker_beats_once_for_the_browser_with_the_pages_it_has_open():

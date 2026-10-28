@@ -165,5 +165,10 @@ def test_a_profile_being_set_up_takes_what_its_browser_reads(agency):
 
 
 def test_the_heartbeat_tells_the_worker_which_accounts_have_a_profile(agency):
+    import hashlib
     answer = agency.post("/api/v1/bridge/heartbeat", json={"extension_version": "2.10.0", "contract_version": 1})
-    assert sorted(answer.json()["profile_vanities"]) == [ALICE, BOB]
+    told = answer.json()["profile_accounts"]
+    # One-way digests: the worker recognises the account it holds captures
+    # for, and no client's account name is kept in the browser.
+    assert sorted(told) == sorted(hashlib.sha256(v.encode()).hexdigest() for v in (ALICE, BOB))
+    assert ALICE not in answer.text and BOB not in answer.text

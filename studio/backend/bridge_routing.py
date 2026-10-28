@@ -28,6 +28,7 @@ Strict Invariants:
   about another member is read here.
 """
 
+import hashlib
 import os
 import sqlite3
 import threading
@@ -129,9 +130,19 @@ def profile_for(vanity: Optional[str]) -> Optional[str]:
     return account_map().get(str(vanity).strip().lower())
 
 
-def profile_vanities() -> List[str]:
-    """Every account a profile here has confirmed, for the worker to send what it held for one."""
-    return sorted(account_map())
+def account_digest(vanity: str) -> str:
+    """The one-way digest of an account, as the worker computes it for what it holds."""
+    return hashlib.sha256(str(vanity).strip().lower().encode("utf-8")).hexdigest()
+
+
+def profile_account_digests() -> List[str]:
+    """
+    Every account a profile here has confirmed, as digests, for the worker to
+    send what it held for one. Digests, not names: with several creator
+    profiles the browser would otherwise keep every client's account name,
+    when it needs only to recognise the one it holds captures for.
+    """
+    return sorted(account_digest(vanity) for vanity in account_map())
 
 
 def decide(path: str, vanity: Optional[str]) -> Tuple[str, Optional[str]]:

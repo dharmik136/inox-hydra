@@ -829,12 +829,12 @@ async function sendKeptCaptures() {
     await afterQueueChanged();
     return 0;
   }
-  const homes = new Set((await readLocal(PROFILE_VANITIES_KEY)) || []);
+  const homes = new Set((await readLocal(PROFILE_ACCOUNTS_KEY)) || []);
   const still = [];
   let sent = 0;
   let unreachable = false;
   for (const item of kept) {
-    if (unreachable || (item.heldFor && !homes.has(item.heldFor))) {
+    if (unreachable || (item.heldFor && !homes.has(await accountDigest(item.heldFor)))) {
       still.push(item);
       continue;
     }
@@ -950,7 +950,15 @@ async function rememberRefusal(path, answer) {
 const HEARTBEAT_ALARM = "inox_bridge_heartbeat";
 const TAB_REGISTRY_KEY = "tabRegistry";
 const NEEDS_RELOAD_KEY = "tabsNeedingReload";
-const PROFILE_VANITIES_KEY = "profileVanities";
+// The accounts the studio's creator profiles have confirmed, as one-way
+// digests: enough to recognise the account a held capture waits for, without
+// keeping every profile's account name in this browser.
+const PROFILE_ACCOUNTS_KEY = "profileAccounts";
+
+async function accountDigest(vanity) {
+  const bytes = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(vanity).trim().toLowerCase()));
+  return Array.from(new Uint8Array(bytes)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 const FILES_VERSION_KEY = "filesVersion";
 // When the extension last read its own folder, and whether it could.
 const FILES_CHECK_KEY = "filesCheck";
@@ -1093,10 +1101,14 @@ async function sendWorkerHeartbeat() {
       (shake.studio_version && shake.studio_version !== chrome.runtime.getManifest().version))) {
     checkOwnFiles();
   }
-  if (answer && Array.isArray(answer.profile_vanities)) {
-    await storeLocal({ [PROFILE_VANITIES_KEY]: answer.profile_vanities.filter((v) => typeof v === "string") });
-    if (kept.some((item) => item.heldFor && answer.profile_vanities.includes(item.heldFor))) {
-      sendKeptCapturesLater();
+  if (answer && Array.isArray(answer.profile_accounts)) {
+    const homes = answer.profile_accounts.filter((v) => typeof v === "string" && /^[0-9a-f]{64}$/.test(v));
+    await storeLocal({ [PROFILE_ACCOUNTS_KEY]: homes });
+    for (const item of kept) {
+      if (item.heldFor && homes.includes(await accountDigest(item.heldFor))) {
+        sendKeptCapturesLater();
+        break;
+      }
     }
   }
 }
